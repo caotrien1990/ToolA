@@ -88,3 +88,8 @@ Thumbs.db
 .idea/
 # Local Pi runtime state
 .atl/
+
+# junk cleanup 2026-08-14
+.council/council_events.jsonl
+.council/usage_log.jsonl
+.council/dispatch_ledger.jsonl
