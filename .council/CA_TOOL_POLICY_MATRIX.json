@@ -1,0 +1,437 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CA Tool Policy Matrix",
+  "version": "1.0.0",
+  "status": "active_sot",
+  "acronym": "CSLt",
+  "north_star": [
+    "Correctness",
+    "Save token",
+    "Less context",
+    "Time fee"
+  ],
+  "north_star_text": "Correctness > Save token > Less context > Time fee",
+  "owner": "ToolA Project Orchestrator",
+  "path": ".council/CA_TOOL_POLICY_MATRIX.json",
+  "purpose": "Machine-checkable [A]-first routing policy for every registered CA.",
+  "scope": {
+    "registered_cas": "all",
+    "desktop_ca": "A-first for project work",
+    "cli_worker_c_suffix": "HTTP-only",
+    "project_paths": "full policy",
+    "outside_project": "native read-only only when no project governance",
+    "unknown": "fail loud; tool_decision_hint; no silent native"
+  },
+  "transport": {
+    "canonical_non_t4": "HTTP POST /api/call/<tool>",
+    "worker": "HTTP-only",
+    "t4_stateful_exception": "MCP only when CORE_RULE permits",
+    "native_is_not_default_fallback": true
+  },
+  "native_policy_vocabulary": {
+    "forbid": "Native forbidden; [A] provides governed capability.",
+    "allow_readonly": "Read-only outside project governance/explicit environment probe.",
+    "allow_with_log_native_event": "Approved exception; immediate log; if down pending audit then sync.",
+    "hybrid_upgrade_only": "Only [A] self-upgrade with authorization, audit, validation, restart gate, verification."
+  },
+  "decision_workflow": [
+    "bootstrap [A] once; stop on connection-refused",
+    "classify task",
+    "resolve project scope",
+    "select primary tools",
+    "inspect live schema if unknown",
+    "execute via [A] HTTP",
+    "verify per row",
+    "native only if permitted",
+    "audit native exception",
+    "fail loud on unknown/conflict/unverified"
+  ],
+  "metrics_contract": {
+    "bypass_event": "native action matched to native_policy=forbid",
+    "bypass_rate_formula": "forbidden_native_actions / all_classified_governed_actions",
+    "required_counters": [
+      "forbidden_native_count",
+      "allowed_native_count",
+      "via_a_count",
+      "unclassified_count",
+      "bypass_rate"
+    ],
+    "zero_denominator": "null",
+    "group_by": [
+      "agent_id",
+      "task_class",
+      "project_path",
+      "time_window"
+    ]
+  },
+  "rows": [
+    {
+      "task_class": "bootstrap_rule",
+      "match": "session bootstrap/rule recovery",
+      "tier": "T1",
+      "toolset_primary": [
+        "get_rule_core_text",
+        "bootstrap_session"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "forbid",
+      "session_required": false,
+      "token_required": false,
+      "verification": "ok; stable agent_id; cache respected",
+      "why_cslt": "Prevents stale contracts/repeated discovery."
+    },
+    {
+      "task_class": "project_path_resolution",
+      "match": "resolve project root/scope/tree/existence",
+      "tier": "T1",
+      "toolset_primary": [
+        "resolve_project_path",
+        "folder_exists",
+        "list_structure",
+        "get_project_summary"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "forbid",
+      "session_required": false,
+      "token_required": false,
+      "verification": "absolute root and bounded result",
+      "why_cslt": "Avoids wrong-root scans."
+    },
+    {
+      "task_class": "read_project_file",
+      "match": "bounded project file read",
+      "tier": "T1",
+      "toolset_primary": [
+        "read_file_range"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "forbid",
+      "session_required": false,
+      "token_required": false,
+      "verification": "exact bounded range",
+      "why_cslt": "Correct and token/context efficient."
+    },
+    {
+      "task_class": "search_project_code",
+      "match": "text/regex/symbol/caller/usage/AST/index search",
+      "tier": "T1",
+      "toolset_primary": [
+        "search_code",
+        "find_symbol",
+        "find_callers",
+        "find_definition_and_usage",
+        "ast_query",
+        "query_index",
+        "import_graph"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "forbid",
+      "session_required": false,
+      "token_required": false,
+      "verification": "mode and bounded matches",
+      "why_cslt": "Project intelligence beats raw grep."
+    },
+    {
+      "task_class": "write_existing_file",
+      "match": "edit existing project file/range",
+      "tier": "T2",
+      "toolset_primary": [
+        "write_fix",
+        "write_fix_html",
+        "replace_between_anchors"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "forbid",
+      "session_required": true,
+      "token_required": false,
+      "verification": "validation ok; no auto-revert; read-back",
+      "why_cslt": "Backup/checks/auto-revert protect correctness."
+    },
+    {
+      "task_class": "create_project_file",
+      "match": "create project file",
+      "tier": "T2",
+      "toolset_primary": [
+        "write_new_file"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "forbid",
+      "session_required": true,
+      "token_required": false,
+      "verification": "created; validation; read-back",
+      "why_cslt": "Prevents overwrite/encoding drift."
+    },
+    {
+      "task_class": "batch_project_write",
+      "match": "multi-file/atomic mutation",
+      "tier": "T2",
+      "toolset_primary": [
+        "write_transaction",
+        "apply_after_dry_run",
+        "post_write_batch_verify"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "forbid",
+      "session_required": true,
+      "token_required": true,
+      "verification": "dry-run identity; batch verify; rollback status",
+      "why_cslt": "Atomicity and rollback are critical."
+    },
+    {
+      "task_class": "delete_or_copy_project_file",
+      "match": "delete/governed project copy",
+      "tier": "T2",
+      "toolset_primary": [
+        "delete_file",
+        "copy_file"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "forbid",
+      "session_required": true,
+      "token_required": "live schema",
+      "verification": "target state and audit event",
+      "why_cslt": "Destructive operations require governance."
+    },
+    {
+      "task_class": "project_command",
+      "match": "shell/script/build/install/project command",
+      "tier": "T2",
+      "toolset_primary": [
+        "run_project_command",
+        "run_node_script",
+        "run_ps1_script"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "forbid",
+      "session_required": true,
+      "token_required": "live schema/mutability",
+      "verification": "stdout/stderr/exit_code; side-effect check",
+      "why_cslt": "Captures evidence and gates mutations."
+    },
+    {
+      "task_class": "project_test",
+      "match": "tests/test profile",
+      "tier": "T2",
+      "toolset_primary": [
+        "run_project_test_script",
+        "run_test_profile",
+        "validate_file",
+        "post_write_batch_verify"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "forbid",
+      "session_required": "live schema",
+      "token_required": "live schema",
+      "verification": "real exit code and counts",
+      "why_cslt": "Tests encode WHY and prove execution."
+    },
+    {
+      "task_class": "session_backup_audit",
+      "match": "session/backup/native audit/report",
+      "tier": "T3",
+      "toolset_primary": [
+        "open_session",
+        "backup_project",
+        "backup_status",
+        "log_native_event",
+        "create_pending_audit",
+        "sync_pending_audit",
+        "get_session_events",
+        "session_audit_summary"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "forbid",
+      "session_required": "tool-specific",
+      "token_required": "live schema",
+      "verification": "session/ledger/backup record",
+      "why_cslt": "Ledger enables attribution/metrics."
+    },
+    {
+      "task_class": "council_dispatch",
+      "match": "route/message/monitor workers",
+      "tier": "T1/T3",
+      "toolset_primary": [
+        "convene_council",
+        "council_worker_model",
+        "council_message",
+        "council_tracker",
+        "leader_bootstrap"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "forbid",
+      "session_required": false,
+      "token_required": false,
+      "verification": "model read-back; reply/artifact marker",
+      "why_cslt": "Broker/model state has no native equivalent."
+    },
+    {
+      "task_class": "mission_workflow",
+      "match": "durable mission/workflow",
+      "tier": "T1/T3",
+      "toolset_primary": [
+        "mission_create",
+        "mission_next",
+        "mission_dispatch",
+        "mission_report",
+        "mission_status",
+        "mission_gate",
+        "workflow_start",
+        "workflow_status",
+        "workflow_checkpoint"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "forbid",
+      "session_required": false,
+      "token_required": false,
+      "verification": "durable expected transition",
+      "why_cslt": "Prevents context loss/rework."
+    },
+    {
+      "task_class": "agent_rule_sync",
+      "match": "register/set mode/sync/audit agent contracts",
+      "tier": "T3",
+      "toolset_primary": [
+        "manage_agent",
+        "rule_drift_check",
+        "audit_tool_matrix",
+        "mcp_surface_diff"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "forbid",
+      "session_required": false,
+      "token_required": false,
+      "verification": "GET/list read-back",
+      "why_cslt": "Makes policy identity machine-checkable."
+    },
+    {
+      "task_class": "t4_snapshot",
+      "match": "project screenshot/read-only DOM",
+      "tier": "T4a",
+      "toolset_primary": [
+        "desktop_screenshot",
+        "describe_page",
+        "dom_state_diff",
+        "read_page",
+        "read_console_errors"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "forbid",
+      "session_required": false,
+      "token_required": false,
+      "verification": "disk artifact/page/DOM snapshot",
+      "why_cslt": "Reproducible runtime evidence."
+    },
+    {
+      "task_class": "t4_action",
+      "match": "click/fill/evaluate/launch project runtime",
+      "tier": "T4b",
+      "toolset_primary": [
+        "launch_electron_with_cdp",
+        "click_selector",
+        "fill_value",
+        "evaluate_js",
+        "invoke_app_function"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "forbid",
+      "session_required": true,
+      "token_required": "live schema",
+      "verification": "before-after DOM and console",
+      "why_cslt": "Verifies actual behavior."
+    },
+    {
+      "task_class": "orchestrator_lifecycle",
+      "match": "inspect/restart [A]",
+      "tier": "T4c",
+      "toolset_primary": [
+        "server_lifecycle_status",
+        "detect_stale_server",
+        "port_owner_inspect",
+        "restart_orchestrator_via_bat",
+        "restart_orchestrator_via_task"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "forbid",
+      "session_required": false,
+      "token_required": "task restart only",
+      "verification": "in-flight gate; new PID/generation/health",
+      "why_cslt": "Protects workers and proves replacement."
+    },
+    {
+      "task_class": "upgrade_orchestrator",
+      "match": "edit [A] backend/contract",
+      "tier": "HYBRID",
+      "toolset_primary": [
+        "native edit",
+        "log_native_event",
+        "validate_file",
+        "restart_orchestrator_via_bat",
+        "manage_agent"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "hybrid_upgrade_only",
+      "session_required": true,
+      "token_required": "tool-specific",
+      "verification": "audit; tests; generation; sync",
+      "why_cslt": "Self-edit is circular but remains governed."
+    },
+    {
+      "task_class": "a_unreachable_mid_task",
+      "match": "[A] unavailable after bootstrap",
+      "tier": "SAFETY",
+      "toolset_primary": [
+        "create_pending_audit",
+        "sync_pending_audit"
+      ],
+      "toolset_fallback": "approved native only",
+      "native_policy": "allow_with_log_native_event",
+      "session_required": false,
+      "token_required": false,
+      "verification": "pending audit persisted/synced",
+      "why_cslt": "Audited continuity; no silent fallback."
+    },
+    {
+      "task_class": "outside_project_os_read",
+      "match": "read-only OS config/env outside projects",
+      "tier": "native/T1",
+      "toolset_primary": [
+        "native read-only"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "allow_readonly",
+      "session_required": false,
+      "token_required": false,
+      "verification": "outside-project scope; no mutation",
+      "why_cslt": "Cheaper when project governance adds nothing."
+    },
+    {
+      "task_class": "general_web_research",
+      "match": "public web/docs outside project runtime",
+      "tier": "native web",
+      "toolset_primary": [
+        "native browser/web read-only",
+        "webfetch"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "allow_readonly",
+      "session_required": false,
+      "token_required": false,
+      "verification": "current cited sources",
+      "why_cslt": "Outside project mutation governance."
+    },
+    {
+      "task_class": "unknown",
+      "match": "no row/conflicting rows",
+      "tier": "STOP",
+      "toolset_primary": [
+        "tool_decision_hint"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "forbid",
+      "session_required": false,
+      "token_required": false,
+      "verification": "one policy selected/explained first",
+      "why_cslt": "Never guess unknown operations."
+    }
+  ]
+}

@@ -1,0 +1,979 @@
+from __future__ import annotations
+
+import asyncio
+import concurrent.futures
+import fnmatch
+import json
+import os
+import re
+import threading
+import time
+from pathlib import Path, PurePosixPath
+
+from orchestrator import search_snapshots
+from orchestrator.fileops import common as fo
+from orchestrator.server.executor_lanes import get_executor_lane
+from orchestrator.server.fair_admission import FAIR_ADMISSION
+
+MAX_SEARCH_CONTEXT_LINES = fo.MAX_SEARCH_CONTEXT_LINES
+MAX_SEARCH_RESULTS = fo.MAX_SEARCH_RESULTS
+
+_SEARCH_MODE_ALIASES = {
+    "plain": "text", "literal": "text", "raw": "text", "exact": "text",
+    "string": "text", "fixed": "text", "re": "regex", "pattern": "regex", "regexp": "regex",
+    "definition": "symbol", "definitions": "symbol", "def": "symbol",
+    "usage": "definition_usage", "usages": "definition_usage", "definition_and_usage": "definition_usage",
+    "all": "definition_usage", "caller": "callers", "refs": "callers", "references": "callers",
+    "idx": "index", "project_index": "index", "dom": "dom_candidates", "dom_candidate": "dom_candidates",
+    "fuzzy": "smart", "or": "smart",
+}
+_SEARCH_CODE_MODES = ["text", "regex", "symbol", "callers", "definition_usage", "index", "dom_candidates", "smart"]
+_SEARCH_SINGLEFLIGHT_LOCK = threading.Lock()
+_SEARCH_SINGLEFLIGHT: dict[tuple, concurrent.futures.Future[dict]] = {}
+_SEARCH_CLEANUP_GRACE_SECONDS = 0.25
+
+
+def _snapshot_root_for(base: Path, project_path: str = "") -> Path:
+    base_resolved = base.resolve(strict=False)
+    if project_path:
+        explicit = Path(project_path).resolve()
+        if base_resolved.is_relative_to(explicit):
+            return explicit
+    return base_resolved.parent if base.is_file() else base_resolved
+
+
+def _search_snapshot_token(root: Path) -> tuple:
+    """Return the immutable generation ID used in the singleflight key."""
+    snapshot_id = search_snapshots.current_snapshot_id(root)
+    if snapshot_id:
+        return "snapshot", snapshot_id
+    try:
+        root_stat = root.stat()
+        return "snapshot-missing", root_stat.st_mtime_ns, root_stat.st_size
+    except OSError:
+        return "snapshot-missing", str(root).casefold()
+
+
+def _load_snapshot_index(root: Path) -> dict:
+    """Compatibility helper; lazy text snapshots intentionally do not trust live INDEX."""
+    index_path = root / ".orchestrator_cache" / "INDEX.json"
+    try:
+        payload = json.loads(index_path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def _pin_or_create_snapshot(
+    root: Path,
+    expected_id: str | None = None,
+    *,
+    deadline_at: float | None = None,
+) -> search_snapshots.SnapshotPin:
+    try:
+        return search_snapshots.pin_current_snapshot(
+            root,
+            expected_id=expected_id,
+            deadline_at=deadline_at,
+        )
+    except search_snapshots.SnapshotUnavailable:
+        if expected_id is not None or search_snapshots.current_snapshot_id(root) is not None:
+            raise
+        snapshot_id = search_snapshots.publish_snapshot(
+            root,
+            include_file=fo.should_scan_for_text,
+            skip_dir=fo.should_skip_dir,
+            index=None,
+            deadline_at=deadline_at,
+        )
+        return search_snapshots.pin_current_snapshot(
+            root,
+            expected_id=snapshot_id,
+            deadline_at=deadline_at,
+        )
+
+
+def _remove_search_singleflight(
+    key: tuple,
+    completed: concurrent.futures.Future[dict],
+) -> None:
+    with _SEARCH_SINGLEFLIGHT_LOCK:
+        if _SEARCH_SINGLEFLIGHT.get(key) is completed:
+            _SEARCH_SINGLEFLIGHT.pop(key, None)
+
+
+def _consume_cancelled_waiter_result(done: asyncio.Future) -> None:
+    if not done.cancelled():
+        done.exception()
+
+
+async def _run_search_singleflight(
+    key: tuple,
+    producer,
+    *,
+    follower_release=None,
+    owner_transfer=None,
+    owner_done=None,
+    timeout: float | None = None,
+) -> dict:
+    """Share one producer future while each caller keeps independent cancellation."""
+    permit = None
+    with _SEARCH_SINGLEFLIGHT_LOCK:
+        shared_future = _SEARCH_SINGLEFLIGHT.get(key)
+    if shared_future is None:
+        lane = get_executor_lane("search")
+        deadline = time.monotonic() + (timeout if timeout is not None else lane.queue_wait_timeout)
+        permit = await FAIR_ADMISSION.acquire("search", deadline=deadline)
+        with _SEARCH_SINGLEFLIGHT_LOCK:
+            shared_future = _SEARCH_SINGLEFLIGHT.get(key)
+            if shared_future is None:
+                try:
+                    shared_future = lane.submit(producer)
+                except BaseException:
+                    permit.release()
+                    raise
+                _SEARCH_SINGLEFLIGHT[key] = shared_future
+                created = True
+            else:
+                permit.release()
+                permit = None
+                created = False
+    else:
+        created = False
+
+    if not created and follower_release is not None:
+        follower_release()
+    elif created and owner_transfer is not None:
+        owner_transfer()
+
+    if created:
+        def _producer_done(completed) -> None:
+            _remove_search_singleflight(key, completed)
+            if permit is not None:
+                permit.release()
+            if owner_done is not None:
+                owner_done()
+
+        shared_future.add_done_callback(_producer_done)
+
+    loop_future = asyncio.wrap_future(shared_future)
+    try:
+        waiter = asyncio.shield(loop_future)
+        if timeout is not None:
+            return await asyncio.wait_for(waiter, timeout=max(0.001, timeout))
+        return await waiter
+    except asyncio.TimeoutError:
+        try:
+            await asyncio.wait_for(
+                asyncio.shield(loop_future),
+                timeout=_SEARCH_CLEANUP_GRACE_SECONDS,
+            )
+        except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
+            pass
+        loop_future.add_done_callback(_consume_cancelled_waiter_result)
+        raise
+    except asyncio.CancelledError:
+        loop_future.add_done_callback(_consume_cancelled_waiter_result)
+        raise
+
+
+async def find_symbol(name: str = "", path: str = "", project_path: str = "",
+                      context_lines: int = 0, include: str = "def",
+                      name_encoding: str = "plain", include_impact: bool = False,
+                      **aliases) -> str:
+    """Find a symbol's DEFINITION in Python/JS-style source files.
+
+    TT-A-01 scope contract (2026-08-10): the live-filesystem fallback only
+    scans ``.py .pyi .js .jsx .ts .tsx .mjs .cjs .vue .svelte`` and only
+    recognises Python ``def``/``class`` and JS/TS ``function``/``const``/
+    ``let``/``var``/method-shorthand definition forms. It does NOT support
+    Go/Rust/C-family/Java/Kotlin/Scala/Ruby/PHP/Swift/Lua/R/ObjC/shell
+    definition grammar. For other languages or broad reference search use
+    ``find_definition_and_usage`` or ``search_code`` instead.
+    """
+    name = name or aliases.get("query") or aliases.get("symbol") or aliases.get("symbol_name") or ""
+    if name and name_encoding and name_encoding != "plain":
+        decoded_name, _, decode_err = fo.decode_text_payload(name, name_encoding)
+        if decode_err:
+            decode_err.setdefault("error_name", "INVALID_NAME_ENCODING")
+            return json.dumps(decode_err, ensure_ascii=False)
+        if decoded_name is not None:
+            name = decoded_name
+    path = project_path or path or aliases.get("file_path", "")
+    if include_impact and name:
+        # CAN-053 P2 opt-in: run the base lookup, then attach bounded graph
+        # impact_scope for the symbol (fail-open, graph-disabled tolerated).
+        base_raw = await find_symbol(name=name, path=path, project_path=project_path,
+                                     context_lines=context_lines, include=include,
+                                     name_encoding="plain")
+        try:
+            base = json.loads(base_raw)
+            if base.get("results"):
+                from orchestrator.graph.query import template_query as _tq
+                imp = _tq(project_path or path, "impact_scope", name=name, depth=2, limit=25)
+                base["impact_scope"] = {k: imp.get(k) for k in
+                                        ("results", "count", "truncated", "error")}
+                return json.dumps(base, ensure_ascii=False)
+        except Exception:
+            pass
+        return base_raw
+    if not name:
+        return json.dumps({
+            "ok": False,
+            "error": "Missing required field(s) for 'find_symbol': name",
+            "error_name": "MISSING_REQUIRED_FIELD",
+            "type": "SCHEMA_VIOLATION",
+            "severity": "error",
+            "retryable": True,
+            "missing_fields": ["name"],
+            "required_fields": ["name"],
+            "accepted_fields": ["query", "name", "symbol", "symbol_name", "path", "project_path", "file_path", "context_lines"],
+            "payload_example": {"project_path": "D:/path/to/project", "query": "function_name", "context_lines": 20},
+            "ca_next_action": "rebuild_payload_using_required_and_accepted_fields",
+            "write_performed": False,
+            "applied": False,
+        }, ensure_ascii=False)
+    if not path:
+        return json.dumps({
+            "ok": False,
+            "error": "Missing required field(s) for 'find_symbol': path or project_path",
+            "error_name": "MISSING_REQUIRED_FIELD",
+            "type": "SCHEMA_VIOLATION",
+            "severity": "error",
+            "retryable": True,
+            "missing_fields": ["path", "project_path"],
+            "required_fields": ["path", "project_path"],
+            "accepted_fields": ["query", "name", "symbol", "symbol_name", "path", "project_path", "file_path", "context_lines"],
+            "payload_example": {"project_path": "D:/path/to/project", "query": "function_name", "context_lines": 20},
+            "ca_next_action": "rebuild_payload_using_required_and_accepted_fields",
+            "write_performed": False,
+            "applied": False,
+        }, ensure_ascii=False)
+    base = Path(path)
+    if not base.exists():
+        return json.dumps({"error": f"Path not found: {path}"})
+    project_root = str(base) if base.is_dir() else (fo.find_project_root(str(base)) or str(base.parent))
+    stale = await fo.ensure_fresh_index(project_root)
+    stale_info = json.loads(stale) if stale else None
+    # B-02 (2026-08-10): gate the definition-only graph adapter on include='def'.
+    # The graph adapter (find_symbol_as_search_response) returns ONLY the
+    # definition-shaped `results` array; it has no callers/usages payload.
+    # Previously the early `return graph_resp` fired for every include value,
+    # so find_callers (include='callers') returned the definition list back
+    # to the caller with no callers array, no include tag, and no isolation
+    # of executable call sites — exactly what B-02 observed live (mixed
+    # definition + registry-string + archived-copy hits, no callers field).
+    # Now: the graph adapter only runs when include='def' (default), and
+    # callers/usage/all fall through to the live scanner below which has the
+    # TT-A-02 isolation logic (pop results, attach callers[], drop non-source
+    # artifacts, filter comment lines, exclude should_skip_dir trees).
+    inc = (include or "def").lower().strip()
+    try:
+        from orchestrator.graph.config import use_graph_for
+        from orchestrator.graph.query import find_symbol_as_search_response
+        if inc == "def" and use_graph_for("find_symbol"):
+            # Anh 2026-08-10: the graph adapter queries the symbol graph DB; run it
+            # off the event loop so include='def' find_symbol/search never pins the
+            # loop (was an on-loop blocker alongside index_delta).
+            graph_resp = await asyncio.to_thread(
+                find_symbol_as_search_response, name, project_root, context_lines=context_lines
+            )
+            if graph_resp is not None:
+                if stale_info:
+                    graph_data = json.loads(graph_resp)
+                    graph_data.update({
+                        "warning": "INDEX stale; returned live filesystem search results",
+                        "category": "stale_index_live_fallback",
+                        "drift": stale_info.get("drift"),
+                    })
+                    return json.dumps(graph_data, ensure_ascii=False)
+                return graph_resp
+    except Exception:
+        pass
+
+    escaped = re.escape(name)
+    # TT-A-01 fix (2026-08-10): definition-only patterns. Removed the catch-all
+    # `export .* \b{name}\b` branch which matched re-exports and any export
+    # statement containing the identifier (call-site-shaped in JS/TS barrels),
+    # and tightened the method-shorthand branch so it cannot match a call site
+    # like `result = mod.name(5)` (requires leading identifier/keyword, not
+    # attribute access or assignment target).
+    patterns = re.compile(
+        rf"^\s*(async\s+)?def\s+{escaped}\s*\("
+        rf"|^\s*class\s+{escaped}\s*[\(:]"
+        rf"|^\s*(export\s+)?(async\s+)?function\s+{escaped}\s*\("
+        rf"|^\s*(export\s+)?(const|let|var)\s+{escaped}\s*[=:(]"
+        rf"|^\s*(export\s+)?(async\s+|static\s+|get\s+|set\s+)*{escaped}\s*\([^)]*\)\s*\{{"
+        rf"|^\s*{escaped}\s*:\s*(async\s+)?function"
+    )
+
+    # TT-A-01 fix: definitions live in source files only. JSON artifacts,
+    # INDEX.json snapshots, cache DBs, logs, markdown, and text dumps cannot
+    # host a definition and previously produced call-site-shaped noise.
+    #
+    # TT-A-01 scope refinement (2026-08-10): honestly scope this fallback to
+    # Python/JS-style languages whose definition grammar the regex above
+    # actually recognizes ('def', 'class', 'function', 'const/let/var', and
+    # method shorthand). Removed Go/Rust/C-family/Java/Kotlin/Scala/Ruby/PHP/
+    # Swift/Lua/R/ObjC/shell because the regex does NOT match their definition
+    # forms (e.g. 'func name()', 'fn name()', 'type name func()', 'def name;
+    # end', etc.) and previously produced either zero hits (false advertisement)
+    # or stray matches inside block comments / multiline strings. For other
+    # languages or broad reference search, callers should use
+    # find_definition_and_usage or search_code instead.
+    _DEF_SOURCE_EXTS = {
+        ".py", ".pyi", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
+        ".vue", ".svelte",
+    }
+
+    def _is_def_source_file(fp: Path) -> bool:
+        if fp.suffix.lower() not in _DEF_SOURCE_EXTS:
+            return False
+        # Belt-and-braces: skip cache/artifact directories even if a source-
+        # looking extension leaks in (e.g. snapshot .py copies).
+        parts = {p.lower() for p in fp.parts}
+        if ".orchestrator_cache" in parts or "__pycache__" in parts:
+            return False
+        return True
+
+    def _is_comment_or_string_line(line: str) -> bool:
+        s = line.lstrip()
+        if not s:
+            return False
+        # Python / shell / ruby
+        if s.startswith("#"):
+            return True
+        # JS/TS/C-style single-line
+        if s.startswith("//"):
+            return True
+        # Block-comment openers
+        if s.startswith("/*") or s.startswith("*"):
+            return True
+        return False
+
+    def _search() -> list[dict]:
+        results: list[dict] = []
+        for root, dirs, files in os.walk(base, onerror=lambda e: None):
+            dirs[:] = [d for d in dirs if not fo.should_skip_dir(d)]
+            for fn in files:
+                fp = Path(root) / fn
+                if not _is_def_source_file(fp):
+                    continue
+                if not fo.should_scan_for_text(fp):
+                    continue
+                try:
+                    lines = fp.read_text(encoding="utf-8", errors="ignore").splitlines()
+                except Exception:
+                    continue
+                # TT-A-01 scope refinement: track Python triple-quoted string
+                # state per file so a definition-shaped line inside a
+                # docstring/multiline string is NOT returned. Line-based scan
+                # cannot use a real tokenizer here (kept lightweight);
+                # triple-quote toggling is a conservative approximation: a
+                # lone opener flips state; same-line open+close nets zero.
+                in_triple: str | None = None
+                # TT-A-01 v2 (2026-08-10): also track C-style block-comment
+                # state for JS/TS/Vue/Svelte so a method-shaped line inside
+                # a /* ... */ interior is not returned. Line-based: enter on
+                # "/*", exit on "*/"; same-line open+close nets zero.
+                # Documented limitation: this does not handle nested block
+                # comments or comment markers inside string literals, which
+                # matches the conservative approximation used for Python
+                # triple-quoted strings.
+                in_block_comment: bool = False
+                # C-style block-comment tracking is only meaningful for
+                # JS-family files; Python has no /* */ comments.
+                _JS_FAMILY = {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue", ".svelte"}
+                track_block_comment = fp.suffix.lower() in _JS_FAMILY
+                for i, line in enumerate(lines, 1):
+                    if in_triple is not None:
+                        # Inside a triple-quoted string; only the matching
+                        # closing delimiter can end it.
+                        if in_triple in line:
+                            in_triple = None
+                        continue
+                    if in_block_comment:
+                        # Inside a C-style block comment; only "*/" ends it.
+                        if "*/" in line:
+                            in_block_comment = False
+                            # Tail of the line after "*/" could host real code
+                            # but is rare; conservative: skip the line.
+                        continue
+                    # TT-A-01 v2 fix #2 (round 2): detect C-style block-comment
+                    # opener BEFORE the generic comment early-continue. The
+                    # opener line itself often starts with "/*" which
+                    # `_is_comment_or_string_line` would skip; that prevented
+                    # the state from ever being set and let interior lines
+                    # (which do NOT start with "/*" or "*") leak through.
+                    if track_block_comment:
+                        bc_idx = line.find("/*")
+                        if bc_idx != -1:
+                            # Same-line open+close -> not persistent; fall
+                            # through to normal def handling for the tail.
+                            if line.find("*/", bc_idx + 2) == -1:
+                                # Persistent opener; check whether a definition
+                                # match on this line comes BEFORE the opener.
+                                m_pre = patterns.search(line)
+                                if m_pre is not None and m_pre.start() < bc_idx:
+                                    # Definition text before "/*" — real def
+                                    # followed by a persistent comment opener
+                                    # (rare). Return the def via fall-through
+                                    # AND still enter block-comment state so
+                                    # subsequent lines inside the block are
+                                    # not leaked as definitions (TT-A-01 v3).
+                                    in_block_comment = True
+                                else:
+                                    in_block_comment = True
+                                    continue
+                    if _is_comment_or_string_line(line):
+                        continue
+                    # TT-A-01 v2 fix #1 + #3: locate triple-quote openers by
+                    # EARLIEST character position (matches Python
+                    # tokenisation); and run the definition check FIRST so a
+                    # valid `def name(): """docstring"""` line is still
+                    # returned when the definition regex matches text that
+                    # precedes the string opener.
+                    def _earliest_triple(text: str) -> tuple[int, str | None]:
+                        # TT-A-01 v3 fix: lexical left-to-right scan. The
+                        # FIRST triple-quote delimiter of any type opens the
+                        # string; only its matching closer can end it. A
+                        # different marker type between opener and closer is
+                        # string content, not a delimiter (e.g. the ''' inside
+                        # """content containing ''' text""" must be ignored).
+                        # After a same-line close, resume scanning the rest of
+                        # the line for a later persistent opener. Return
+                        # (index, marker) of the persistent opener, or
+                        # (-1, None) when no unclosed opener exists.
+                        pos = 0
+                        while True:
+                            best_idx = -1
+                            best_marker: str | None = None
+                            for marker in (chr(34) * 3, chr(39) * 3):
+                                idx = text.find(marker, pos)
+                                if idx == -1:
+                                    continue
+                                if best_idx == -1 or idx < best_idx:
+                                    best_idx = idx
+                                    best_marker = marker
+                            if best_idx == -1 or best_marker is None:
+                                return -1, None
+                            closer = text.find(best_marker, best_idx + 3)
+                            if closer == -1:
+                                # No matching closer on this line: the first
+                                # delimiter is a persistent opener.
+                                return best_idx, best_marker
+                            # String opened AND closed on this line; resume
+                            # the scan after the closer.
+                            pos = closer + 3
+
+                    triple_idx, triple_marker = _earliest_triple(line)
+                    m_def = patterns.search(line)
+                    if m_def is not None:
+                        # If a persistent triple-quote opener exists AND it
+                        # starts BEFORE the definition match, the definition
+                        # text is actually inside a string continuation —
+                        # skip it. Otherwise this is a real definition even
+                        # if a docstring opener appears later on the line.
+                        if triple_idx != -1 and triple_idx < m_def.start():
+                            in_triple = triple_marker
+                            continue
+                        entry = {"file": str(fp.relative_to(base)), "line": i, "match": line.strip(), "range_id": f"{fp.name}:{i}"}
+                        if context_lines > 0:
+                            body_lines = lines[i - 1:i - 1 + context_lines]
+                            entry["body"] = "\n".join(body_lines)
+                            entry["range_id"] = f"{fp.name}:{i}p{context_lines}"
+                        results.append(entry)
+                        if len(results) >= 20:
+                            return results
+                        # A definition may itself OPEN a docstring on the same
+                        # line (e.g. `def f(): """summary`). Even though the
+                        # definition was returned, the string state must be
+                        # tracked for subsequent lines.
+                        if triple_idx != -1:
+                            in_triple = triple_marker
+                        continue
+                    # No definition match: enter triple-quote state if a
+                    # persistent opener is present.
+                    if triple_idx != -1:
+                        in_triple = triple_marker
+                        continue
+        return results
+
+    results = await asyncio.to_thread(_search)
+    response: dict = {"results": results, "count": len(results)}
+    if stale_info:
+        response.update({
+            "warning": "INDEX stale; returned live filesystem search results",
+            "category": "stale_index_live_fallback",
+            "drift": stale_info.get("drift"),
+        })
+
+    # inc was already normalized above (B-02 moved it next to the graph
+    # adapter gate so the definition-only shortcut only fires for include='def').
+    if inc in ("callers", "usage", "all"):
+        # TT-A-02 (2026-08-10): exclude lines that are obviously not executable
+        # call sites — full-line Python (#) and JS/TS (//) comments. A comment
+        # mentioning `name(` is documentation, not a caller, and previously
+        # polluted find_callers results. This is deliberately conservative:
+        # we only strip lines whose first non-whitespace char is a comment
+        # marker, so trailing inline comments on real code still count.
+        _COMMENT_LINE = re.compile(r"^\s*(#|//)")
+        # TT-A-02: also drop hits in non-source artifacts even when the file
+        # extension slips past should_scan_for_text (e.g. .json/.md added by
+        # text_file_extensions()). A call edge cannot live in data/docs.
+        _NON_SOURCE_EXTS = {".json", ".md", ".txt", ".log", ".yaml", ".yml",
+                            ".xml", ".csv", ".html", ".css"}
+
+        def _scan(pat: re.Pattern[str], cap: int = 50) -> list[dict]:
+            hits: list[dict] = []
+            def_lines = {(r["file"], r["line"]) for r in results}
+            for root2, dirs2, files2 in os.walk(base, onerror=lambda e: None):
+                dirs2[:] = [d for d in dirs2 if not fo.should_skip_dir(d)]
+                for fn2 in files2:
+                    fp2 = Path(root2) / fn2
+                    if fp2.suffix.lower() in _NON_SOURCE_EXTS:
+                        continue
+                    if not fo.should_scan_for_text(fp2):
+                        continue
+                    try:
+                        lines2 = fp2.read_text(encoding="utf-8", errors="ignore").splitlines()
+                    except Exception:
+                        continue
+                    rel2 = str(fp2.relative_to(base))
+                    for i2, line2 in enumerate(lines2, 1):
+                        if (rel2, i2) in def_lines:
+                            continue
+                        if _COMMENT_LINE.match(line2):
+                            continue
+                        if pat.search(line2):
+                            hits.append({"file": rel2, "line": i2, "match": line2.strip()[:200], "range_id": f"{fp2.name}:{i2}"})
+                            if len(hits) >= cap:
+                                return hits
+            return hits
+
+        if inc in ("callers", "all"):
+            callers_pat = re.compile(rf"\b{re.escape(name)}\s*\(")
+            response["callers"] = await asyncio.to_thread(_scan, callers_pat, 50)
+            response["callers_count"] = len(response["callers"])
+        if inc in ("usage", "all"):
+            usage_pat = re.compile(rf"\b{re.escape(name)}\b")
+            response["usages"] = await asyncio.to_thread(_scan, usage_pat, 100)
+            response["usages_count"] = len(response["usages"])
+        if inc == "all":
+            response["definition"] = results
+            response["include"] = "all"
+        elif inc == "callers":
+            # TT-A-02: when the caller explicitly asked for include='callers',
+            # the response shape must isolate executable call sites. Carrying
+            # `results` (the definition list) over from the base lookup made
+            # find_callers indistinguishable from find_symbol(include='def')
+            # plus a callers array — the defining node itself was surfaced
+            # as a top-level result. Drop it so the response is callers-only.
+            response.pop("results", None)
+            response.pop("count", None)
+            response["include"] = "callers"
+
+    return json.dumps(response, ensure_ascii=False)
+
+
+async def search_code(query: str = "", path: str = "", project_path: str = "",
+                      file_pattern: str = "*", literal_search: bool = True,
+                      mode: str = "text", query_encoding: str = "plain",
+                      max_context_lines: int = MAX_SEARCH_CONTEXT_LINES,
+                      max_results: int = MAX_SEARCH_RESULTS,
+                      flags: str = "i", force: bool = False,
+                      include_impact: bool = False, regex_deadline_seconds: float | None = None, **aliases) -> str:
+    import time
+
+    search_started_at = time.monotonic()
+
+    alias_pattern = aliases.get("pattern") or aliases.get("regex")
+    alias_forced_regex = False
+    if not query and alias_pattern:
+        query = alias_pattern
+        literal_search = False
+        alias_forced_regex = True
+    query = query or aliases.get("q") or aliases.get("name") or aliases.get("symbol") or aliases.get("symbol_name") or ""
+    path = path or aliases.get("file_path", "")
+    _path = path or project_path
+
+    decoded_query, _, decode_err = fo.decode_text_payload(query, query_encoding)
+    if decode_err:
+        decode_err.setdefault("error_name", "INVALID_QUERY_ENCODING")
+        return json.dumps(decode_err, ensure_ascii=False)
+    if decoded_query is not None:
+        query = decoded_query
+
+    raw_mode = (mode or ("text" if literal_search else "regex")).lower().strip()
+    if alias_forced_regex and raw_mode == "text":
+        raw_mode = "regex"
+    # CSLt 2026-07-16 (upgrade #1): mode='auto' detects intent from the query —
+    # bare identifier -> symbol lookup, anything else -> literal text search. And
+    # _SEARCH_MODE_ALIASES is now actually applied: it was only advertised in the
+    # UNSUPPORTED_MODE payload before, so documented aliases like mode='literal'
+    # were rejected instead of mapping to their canonical mode.
+    if raw_mode == "auto":
+        raw_mode = "symbol" if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", (query or "").strip()) else "text"
+    mode = _SEARCH_MODE_ALIASES.get(raw_mode, raw_mode)
+    if mode == "base64":
+        return fo.json_error(
+            "search_code: mode='base64' was removed. Use query_encoding='base64' instead.",
+            error_name="SCHEMA_VIOLATION",
+            type="SCHEMA_VIOLATION",
+            retryable=False,
+            ca_next_action="resend_with_query_encoding_base64_and_mode_text_or_regex",
+            accepted_modes=_SEARCH_CODE_MODES,
+            accepted_encodings=["plain", "base64"],
+        )
+
+    if mode in {"symbol", "callers", "definition_usage"}:
+        if not query:
+            return json.dumps({"ok": False, "error": "Missing query", "error_name": "MISSING_REQUIRED_FIELD", "accepted_fields": ["query", "name", "symbol", "symbol_name", "project_path", "path", "mode"]}, ensure_ascii=False)
+        include = {"symbol": "def", "callers": "callers", "definition_usage": "all"}[mode]
+        return await find_symbol(name=query, path=path, project_path=project_path, context_lines=max_context_lines, include=include, include_impact=include_impact)
+
+    if mode == "index":
+        if not project_path and not path:
+            return json.dumps({"ok": False, "error": "Missing project_path", "error_name": "MISSING_REQUIRED_FIELD", "accepted_fields": ["project_path", "query", "group", "file_pattern", "max_results", "mode"]}, ensure_ascii=False)
+        from code_tools import query_index
+        return await query_index(project_path=project_path or path, query=query, group=aliases.get("group"), min_complexity=aliases.get("min_complexity"), min_loc=aliases.get("min_loc"), file_pattern=file_pattern or aliases.get("glob") or aliases.get("pattern"), max_results=max_results, auto_refresh=aliases.get("auto_refresh", True))
+
+    if mode == "dom_candidates":
+        page_id = aliases.get("page_id") or aliases.get("page") or ""
+        if not page_id:
+            return json.dumps({"ok": False, "error": "Missing page_id", "error_name": "MISSING_REQUIRED_FIELD", "accepted_fields": ["page_id", "filter", "max_items", "mode"]}, ensure_ascii=False)
+        from tools_v15 import query_dom_candidates
+        return await query_dom_candidates(page_id=page_id, filter=aliases.get("filter") or query or "all", max_items=aliases.get("max_items", aliases.get("limit", aliases.get("max_results", max_results))), auto_artifact=aliases.get("auto_artifact", False), project_path=project_path, round_id=aliases.get("round_id", ""), auto_artifact_max_bytes=aliases.get("auto_artifact_max_bytes", 4096))
+
+    if mode not in {"text", "regex", "smart"}:
+        return json.dumps({"ok": False, "error": f"UNSUPPORTED_MODE: {mode}", "error_name": "UNSUPPORTED_FIELD", "accepted_modes": _SEARCH_CODE_MODES, "mode_aliases": _SEARCH_MODE_ALIASES}, ensure_ascii=False)
+    if not query:
+        return json.dumps({"ok": False, "error": "Missing query", "error_name": "MISSING_REQUIRED_FIELD", "accepted_fields": ["query", "pattern", "regex", "q", "project_path", "path", "mode"]}, ensure_ascii=False)
+    if not _path:
+        return json.dumps({"ok": False, "error": "Missing path - pass 'path' or 'project_path'", "error_name": "MISSING_REQUIRED_FIELD"}, ensure_ascii=False)
+
+    regex_worker = None
+    effective_regex_deadline = None
+    if mode == "regex":
+        from orchestrator import search_regex_worker as regex_worker
+
+        effective_regex_deadline = regex_worker.normalize_deadline_seconds(
+            regex_deadline_seconds
+            if regex_deadline_seconds is not None
+            else regex_worker.DEFAULT_DEADLINE_SECONDS
+        )
+        regex_deadline_at = search_started_at + effective_regex_deadline
+        try:
+            regex_worker.validate_pattern_budget(query)
+        except regex_worker.RegexSearchBudgetExceeded as exc:
+            return json.dumps({
+                "ok": False,
+                "error": str(exc),
+                "error_name": exc.error_name,
+                "retryable": True,
+                "bounded": True,
+                "ca_next_action": "shorten_regex_pattern",
+            }, ensure_ascii=False)
+
+    # CAN-053 P2: selectivity estimator — catch-all patterns walk the whole
+    # tree for near-zero information. Refuse with guidance unless force=true.
+    _q_sel = (query or "").strip()
+    _broad = (
+        _q_sel in {".", ".*", ".+", "*", ".?"}
+        or (mode in {"text", "smart"} and len(_q_sel) < 3 and (file_pattern or "*") == "*")
+    )
+    if _broad and not force:
+        return json.dumps({
+            "ok": False,
+            "error": f"SEARCH_TOO_BROAD: query {_q_sel!r} would scan every file with near-zero selectivity",
+            "error_name": "SEARCH_TOO_BROAD",
+            "retryable": True,
+            "hint": "Narrow the query (>=3 chars), add file_pattern, or use query_index(file_pattern=...) / project_context_pack for inventory. Pass force=true to run anyway.",
+            "ca_next_action": "narrow_query_or_use_query_index",
+            "corrected_payload": {"query": _q_sel, "file_pattern": "*.py", "force": True},
+        }, ensure_ascii=False)
+    base = Path(_path)
+    if path and project_path and not base.is_absolute():
+        candidate = Path(project_path) / path
+        if candidate.exists():
+            base = candidate
+        else:
+            candidate2 = Path(project_path) / path.lstrip("./").lstrip(".\\")
+            if candidate2.exists():
+                base = candidate2
+    if not base.exists():
+        return json.dumps({"ok": False, "error": f"Path not found: {_path}", "error_name": "PATH_NOT_FOUND", "tried_paths": [str(Path(_path)), str(Path(project_path) / path) if (project_path and path) else None], "ca_next_action": "verify_path_or_pass_project_path_with_relative_path", "hint": "Pass path as absolute OR pair (project_path, path) where path is relative to project root."}, ensure_ascii=False)
+
+    if mode == "smart":
+        raw_tokens = [t for t in re.split(r"[\s,;:|/\\\"'`()\[\]{}]+", query) if len(t) >= 2]
+        pattern = re.escape(query.strip()) if len(raw_tokens) <= 1 else "|".join(re.escape(t) for t in raw_tokens)
+    elif mode == "text":
+        pattern = re.escape(query)
+    else:
+        pattern = query
+    re_flags = 0
+    if "i" in (flags or ""):
+        re_flags |= re.IGNORECASE
+    if "m" in (flags or ""):
+        re_flags |= re.MULTILINE
+    if "s" in (flags or ""):
+        re_flags |= re.DOTALL
+    pat = None
+    if mode != "regex":
+        try:
+            pat = re.compile(pattern, re_flags)
+        except re.error as exc:
+            return json.dumps({"error": f"Invalid regex: {exc}", "error_name": "INVALID_REGEX"})
+    try:
+        effective_context = max(0, min(int(max_context_lines), 5))
+    except (TypeError, ValueError):
+        effective_context = MAX_SEARCH_CONTEXT_LINES
+    try:
+        effective_max_results = max(1, min(int(max_results), MAX_SEARCH_RESULTS))
+    except (TypeError, ValueError):
+        effective_max_results = MAX_SEARCH_RESULTS
+
+    snapshot_root = _snapshot_root_for(base, project_path)
+    base_resolved = base.resolve()
+    base_is_file = base.is_file()
+    if not base_resolved.is_relative_to(snapshot_root):
+        return json.dumps({
+            "ok": False,
+            "error": f"Search path escapes snapshot root: {base_resolved}",
+            "error_name": "PATH_OUTSIDE_PROJECT",
+            "snapshot_root": str(snapshot_root),
+        }, ensure_ascii=False)
+
+    def _search_snapshot(
+        expected_snapshot_id: str | None,
+        producer_deadline_at: float | None,
+    ) -> dict:
+        def _regex_remaining() -> float:
+            remaining = producer_deadline_at - time.monotonic()
+            if remaining < regex_worker.MIN_DEADLINE_SECONDS:
+                raise regex_worker.RegexSearchTimeout(
+                    f"regex search exceeded hard deadline of {effective_regex_deadline:.3f}s"
+                )
+            return remaining
+
+        if mode == "regex":
+            _regex_remaining()
+        try:
+            if mode == "regex":
+                pin = _pin_or_create_snapshot(
+                    snapshot_root,
+                    expected_id=expected_snapshot_id,
+                    deadline_at=producer_deadline_at,
+                )
+            else:
+                pin = _pin_or_create_snapshot(
+                    snapshot_root,
+                    expected_id=expected_snapshot_id,
+                )
+        except search_snapshots.SnapshotDeadlineExceeded as exc:
+            raise regex_worker.RegexSearchTimeout(
+                f"regex search exceeded hard deadline of {effective_regex_deadline:.3f}s"
+            ) from exc
+        if mode == "regex":
+            _regex_remaining()
+
+        try:
+            if mode == "regex":
+                regex_worker.preflight_pattern(
+                    pattern,
+                    re_flags,
+                    deadline_seconds=_regex_remaining(),
+                )
+                _regex_remaining()
+
+            records: list[tuple[str, str, bytes]] = []
+            base_relative = base_resolved.relative_to(snapshot_root).as_posix()
+            base_prefix = (
+                None
+                if base_relative in {"", "."} or base_is_file
+                else PurePosixPath(base_relative)
+            )
+            regex_record_count = 0
+            regex_total_bytes = 0
+
+            def _append_record(
+                relative_path: str,
+                label: str,
+                expected_size: int,
+            ) -> None:
+                nonlocal regex_record_count, regex_total_bytes
+                virtual_path = snapshot_root.joinpath(*PurePosixPath(relative_path).parts)
+                if not fo.should_scan_for_text(virtual_path):
+                    return
+                if mode == "regex":
+                    _regex_remaining()
+                    regex_worker.validate_next_record_budget(
+                        regex_record_count,
+                        regex_total_bytes,
+                        expected_size,
+                    )
+                payload = pin.read_bytes(relative_path)
+                if mode == "regex":
+                    next_total = regex_worker.validate_next_record_budget(
+                        regex_record_count,
+                        regex_total_bytes,
+                        len(payload),
+                    )
+                    regex_worker.validate_line_budget(payload)
+                    regex_record_count += 1
+                    regex_total_bytes = next_total
+                    _regex_remaining()
+                records.append((relative_path, label, payload))
+
+            results: list[dict] = []
+
+            def _search_text_record(relative_path: str, label: str) -> None:
+                virtual_path = snapshot_root.joinpath(*PurePosixPath(relative_path).parts)
+                if not fo.should_scan_for_text(virtual_path):
+                    return
+                payload = pin.read_bytes(relative_path)
+                lines = payload.decode("utf-8", errors="ignore").splitlines()
+                for i, line in enumerate(lines, 1):
+                    if pat.search(line):
+                        before = ""
+                        after = ""
+                        if effective_context:
+                            before = "\n".join(
+                                ln.strip()
+                                for ln in lines[max(0, i - 1 - effective_context):i - 1]
+                            )
+                            after = "\n".join(
+                                ln.strip()
+                                for ln in lines[i:min(len(lines), i + effective_context)]
+                            )
+                        results.append({
+                            "file": label,
+                            "line": i,
+                            "match": line.strip(),
+                            "context_before": before,
+                            "context_after": after,
+                        })
+                        if len(results) >= effective_max_results:
+                            return
+
+            for record in pin.iter_records(base_resolved):
+                relative_path = str(record["path"])
+                relative = PurePosixPath(relative_path)
+                if not base_is_file and file_pattern != "*" and not fnmatch.fnmatch(relative.name, file_pattern):
+                    continue
+                if base_is_file:
+                    label = base.name
+                elif base_prefix is None:
+                    label = relative.as_posix()
+                else:
+                    label = relative.relative_to(base_prefix).as_posix()
+                if mode == "regex":
+                    _append_record(relative_path, label, int(record["size"]))
+                else:
+                    _search_text_record(relative_path, label)
+                    if len(results) >= effective_max_results:
+                        break
+
+            if mode == "regex":
+                results = regex_worker.search_records(
+                    pattern,
+                    re_flags,
+                    records,
+                    max_results=effective_max_results,
+                    context_lines=effective_context,
+                    deadline_seconds=_regex_remaining(),
+                )
+            return {"results": results, "snapshot_id": pin.snapshot_id}
+        finally:
+            pin.release()
+
+    try:
+        for pin_attempt in range(2):
+            snapshot_token = _search_snapshot_token(snapshot_root)
+            expected_snapshot_id = (
+                str(snapshot_token[1]) if snapshot_token[0] == "snapshot" else None
+            )
+            search_key = (
+                snapshot_token,
+                str(base_resolved).casefold(), pattern, re_flags, file_pattern,
+                mode, effective_regex_deadline,
+                effective_context, effective_max_results,
+            )
+            wait_timeout = None
+            producer_deadline_at = None
+            if mode == "regex":
+                wait_timeout = regex_deadline_at - time.monotonic()
+                if wait_timeout <= 0:
+                    raise regex_worker.RegexSearchTimeout(
+                        f"regex search exceeded hard deadline of {effective_regex_deadline:.3f}s"
+                    )
+                producer_deadline_at = regex_deadline_at
+            try:
+                producer_payload = await _run_search_singleflight(
+                    search_key,
+                    lambda: _search_snapshot(expected_snapshot_id, producer_deadline_at),
+                    owner_transfer=lambda: None,
+                    owner_done=lambda: None,
+                    timeout=wait_timeout,
+                )
+                break
+            except search_snapshots.SnapshotUnavailable:
+                if pin_attempt or _search_snapshot_token(snapshot_root) == snapshot_token:
+                    raise
+        else:  # pragma: no cover - loop either returns or raises
+            raise search_snapshots.SnapshotUnavailable("snapshot changed during pin")
+    except asyncio.TimeoutError:
+        return json.dumps({
+            "ok": False,
+            "error": f"regex search exceeded hard deadline of {effective_regex_deadline:.3f}s",
+            "error_name": "REGEX_SEARCH_TIMEOUT",
+            "retryable": True,
+            "bounded": True,
+            "ca_next_action": "narrow_or_simplify_regex",
+        }, ensure_ascii=False)
+    except Exception as exc:
+        if regex_worker is not None and isinstance(exc, regex_worker.RegexSearchInvalid):
+            return json.dumps({
+                "ok": False,
+                "error": f"Invalid regex: {exc}",
+                "error_name": "REGEX_INVALID",
+                "retryable": True,
+                "corrected_payload": {"query": query, "mode": "text"},
+                "hint": "Pattern fails to compile. If you meant a literal/symbol, resend with mode='text'; otherwise escape the metacharacters.",
+                "ca_next_action": "resend_with_mode_text_or_escaped_regex",
+                "bounded": True,
+            }, ensure_ascii=False)
+        if regex_worker is not None and isinstance(exc, regex_worker.RegexSearchError):
+            retryable = isinstance(
+                exc,
+                (regex_worker.RegexSearchTimeout, regex_worker.RegexSearchBudgetExceeded),
+            )
+            if isinstance(exc, regex_worker.RegexSearchTimeout):
+                next_action = "narrow_or_simplify_regex"
+            elif isinstance(exc, regex_worker.RegexSearchBudgetExceeded):
+                next_action = "narrow_path_or_reduce_regex_input"
+            else:
+                next_action = "inspect_regex_worker_failure"
+            return json.dumps({
+                "ok": False,
+                "error": str(exc),
+                "error_name": exc.error_name,
+                "retryable": retryable,
+                "bounded": True,
+                "ca_next_action": next_action,
+            }, ensure_ascii=False)
+        raise
+    results = producer_payload["results"]
+    response = {
+        "results": results,
+        "count": len(results),
+        "mode": mode,
+        "max_results": effective_max_results,
+        "max_context_lines": effective_context,
+        "bounded": True,
+        "snapshot_id": producer_payload["snapshot_id"],
+    }
+    if not results and mode == "text" and len(query.split()) > 1:
+        response["tip"] = "0 hits for text multi-word query. Try regex OR-split or search_code(mode='symbol')."
+        response["ca_next_action"] = "retry_with_regex_or_symbol_mode"
+    return json.dumps(response, ensure_ascii=False)

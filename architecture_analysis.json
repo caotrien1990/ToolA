@@ -1,0 +1,177 @@
+{
+  "layers": {
+    "backend_automation": {
+      "files": [
+        "client_auth.py",
+        "aws.py",
+        "completion.py",
+        "fine_tuning_job.py",
+        "message_queue.py",
+        "_index_tricks_impl.py",
+        "_histograms_impl.py",
+        "group.py",
+        "sse.py",
+        "expr.py"
+      ],
+      "desc": "Backend API + automation logic",
+      "patterns": [
+        "class.*Orchestrator",
+        "def.*api_",
+        "FastAPI",
+        "endpoint"
+      ]
+    },
+    "rule_global": {
+      "files": [
+        "_dispatch_fix_r3_codo.py",
+        "_dispatch_verify_r3.py",
+        "register-task-epoch-tools_3bdb4c9cd846f2cd.py",
+        "test_xroot_policy.py",
+        "update-core-rule-antidrift_62ddaa69dedb6847.py",
+        "_dispatch_fix_r3.py",
+        "xroot.py",
+        "tools_v15.py",
+        "_dispatch_cluster_scan.py",
+        "_dispatch_scan3.py"
+      ],
+      "desc": "Global rules injected into context",
+      "patterns": [
+        "CORE_RULE",
+        "get_rule_core",
+        "rule.*text"
+      ]
+    },
+    "skill_guide": {
+      "files": [
+        "ncl.py",
+        "templates.py",
+        "_migration.py",
+        "video_create_params.py",
+        "orchestrator_server.py",
+        "polysys.py",
+        "coordsysrect.py",
+        "chat_completion_content_part_text_param.py",
+        "pascal.py",
+        "response_function_tool_call_item.py"
+      ],
+      "desc": "Procedural guides for specific tasks",
+      "patterns": [
+        "skill",
+        "guide",
+        "procedure"
+      ]
+    },
+    "schema_hint": {
+      "files": [
+        "test_prerel_contract.py",
+        "registry_data.py",
+        "search.py",
+        "process.py",
+        "code_tools.py",
+        "mcp_debug_fails.py",
+        "phase1p5_build_truthset.py",
+        "test_orchestrator_server_contract.py",
+        "test_ca_first_upgrade_contract.py",
+        "orchestrator_server.py"
+      ],
+      "desc": "Tool usage hints and examples",
+      "patterns": [
+        "schema_hint",
+        "payload_example",
+        "usage.*example"
+      ]
+    },
+    "alias_info": {
+      "files": [
+        "pythonintegerring.py",
+        "ncl.py",
+        "templates.py",
+        "_migration.py",
+        "terminal.py",
+        "str.py",
+        "json.py",
+        "test_p6_js_extractor.py",
+        "test_evalf.py",
+        "orchestrator_server.py"
+      ],
+      "desc": "Tool name aliases and mappings",
+      "patterns": [
+        "alias",
+        "ALIAS_MAP",
+        "tool.*mapping"
+      ]
+    },
+    "api_mcp": {
+      "files": [
+        "response_mcp_call_arguments_delta_event.py",
+        "client_auth.py",
+        "settings.py",
+        "input_token_count_params.py",
+        "realtime_tools_config_param.py",
+        "templates.py",
+        "message_queue.py",
+        "update-parity-explicit-full_b7ba36c445daee52.py",
+        "response_input_param.py",
+        "win32gui_taskbar.py"
+      ],
+      "desc": "MCP protocol + HTTP API surface",
+      "patterns": [
+        "mcp",
+        "MCP",
+        "/api/",
+        "tool_map"
+      ]
+    }
+  },
+  "conflicts": [
+    {
+      "type": "RULE_VS_API",
+      "issue": "Core Rule mentions native tools but API provides wrapped tools",
+      "severity": "HIGH",
+      "location": "examples/CORE_RULE.txt"
+    },
+    {
+      "type": "ALIAS_SCHEMA_MISMATCH",
+      "issue": "File code_tools.py has both alias and schema logic",
+      "severity": "MEDIUM",
+      "location": "code_tools.py"
+    },
+    {
+      "type": "ALIAS_SCHEMA_MISMATCH",
+      "issue": "File orchestrator_server.py has both alias and schema logic",
+      "severity": "MEDIUM",
+      "location": "orchestrator_server.py"
+    },
+    {
+      "type": "ALIAS_SCHEMA_MISMATCH",
+      "issue": "File surgical_mapper.py has both alias and schema logic",
+      "severity": "MEDIUM",
+      "location": "surgical_mapper.py"
+    },
+    {
+      "type": "ALIAS_SCHEMA_MISMATCH",
+      "issue": "File tools_v15.py has both alias and schema logic",
+      "severity": "MEDIUM",
+      "location": "tools_v15.py"
+    },
+    {
+      "type": "ALIAS_SCHEMA_MISMATCH",
+      "issue": "File _dispatch_cluster_scan.py has both alias and schema logic",
+      "severity": "MEDIUM",
+      "location": "_dispatch_cluster_scan.py"
+    },
+    {
+      "type": "ALIAS_SCHEMA_MISMATCH",
+      "issue": "File _dispatch_scan2_v2.py has both alias and schema logic",
+      "severity": "MEDIUM",
+      "location": "_dispatch_scan2_v2.py"
+    },
+    {
+      "type": "ALIAS_SCHEMA_MISMATCH",
+      "issue": "File code_tools.py has both alias and schema logic",
+      "severity": "MEDIUM",
+      "location": "code_tools.py"
+    }
+  ],
+  "scan_timestamp": "1784118393.7493095"
+}

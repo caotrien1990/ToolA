@@ -1,0 +1,219 @@
+---
+name: server_lifecycle
+description: |
+  Use when [A] orchestrator or any project server is stuck, port-blocked, cache-stale,
+  or "code changed but UI shows old version". Wraps T4c tools (server_lifecycle_status,
+  port_owner_inspect, detect_stale_server, static_asset_cache_check, bundle_version_check,
+  restart_server_via_bat_hint). Avoids "Run as admin" trap (V15 R7 fix).
+trigger:
+  - task_pattern: "port | stuck | won't restart | server status | stale | cache | admin | High IL | schtasks"
+  - error_name: "PORT_IN_USE | STALE_SERVER_SUSPECTED | ADMIN_REQUIRED | CACHE_STALE"
+  - tool: "server_lifecycle_status | port_owner_inspect | restart_server_via_bat_hint | bundle_version_check | cancel_pending_restart | restart_orchestrator_via_bat | restart_orchestrator_via_task"
+preconditions:
+  - "Health OK or KNOWN-DOWN (some tools work even when [A] itself is down)"
+related_skills:
+  - 11_repo_vs_runtime
+  - 18_runtime_dom_T4
+  - 12_native_audit
+risk_level: medium
+---
+
+# 16 — Server Lifecycle
+
+## ⚠️ V15 R28 — Stale cache decision table
+
+`workflow_status` response in R28 includes `stale_decision` field with explicit T1/T2/T4 routing. Use it instead of guessing:
+
+| `cache_status` | Task tier | Action |
+|---|---|---|
+| `stale` + `drift_warning` | **T1 read-only** | warning_only_proceed |
+| `stale` + `drift_warning` | **T2 write/mutate** | **BLOCKER** — call `refresh_project_map` before any T2 |
+| `stale` + `drift_warning` | **T4 runtime** | warning — only restart if probe-stale evidence (`detect_stale_server` returns drift) |
+| `ok` | any | proceed |
+
+Anti-pattern: ❌ Treat stale as always-blocker. Read-only T1 (search_code/find_symbol) on slightly-stale index is fine — search still returns correct hits; only write/mutate needs fresh INDEX.
+
+## Tools (T4c, V15 R8 B.4)
+
+| Tool | Purpose | EXECUTE trigger? |
+|------|---------|------------------|
+| `server_lifecycle_status(port)` | Full PID + cmdline + can_kill probe | No (read-only) |
+| `port_owner_inspect(port)` | Lighter: just PID + process name | No |
+| `detect_stale_server(port, expected_bundle_version?)` | Hash/etag diff vs last known | No |
+| `static_asset_cache_check(url)` | HEAD + 2nd-fetch hash compare | No |
+| `bundle_version_check(html_url, marker_regex?)` | Extract `<meta name=version>` or `?v=` | No |
+| `restart_server_via_bat_hint(bat_path, port?)` | Returns structured kill+relaunch command | No (hint only, no execute) |
+| `restart_orchestrator_via_task(delay_seconds=2)` | V15 R13.2: spawn detached helper → `schtasks /end` + `/run` → [A] relaunch at High IL, no UAC. Tool returns immediately with `status=restart_queued`. | No (idempotent; mutating self) |
+| `restart_orchestrator_via_bat` | Preferred when [A] still up: queue [A:S] hidden helper (`CREATE_NO_WINDOW`); call only `delay_seconds=2`; do **NOT** pass `expected_generation`; verify **new** `/health.generation` | Needs "tiến hành" / user go-ahead (T4c) |
+
+## When to invoke each
+
+| Symptom | Tool flow |
+|---------|-----------|
+| Port 8083 already in use | `server_lifecycle_status(8083)` → if same [A] running, OK; else kill old |
+| New code, UI same | `bundle_version_check(http://localhost:3099)` then `static_asset_cache_check` |
+| Stop-Process Access Denied | `server_lifecycle_status` → `can_kill=false` → recommend User Task Manager + .bat |
+| "Restart but health still old PID" | `detect_stale_server(8083, expected_bundle_version=<from log>)` |
+| Browser shows old text after re-deploy | `static_asset_cache_check(<asset url>)` → Cache-Control + hash compare |
+| schtasks LastResult=1 / NO_8083 | Diagnose High-IL `&&` short-circuit (below); do not thrash more restarts first |
+
+## Admin / High IL pattern (V15 R13 — Task Scheduler bypass UAC)
+
+### Goal
+[A] needs to run at **High IL (Administrator)** so it can drive admin-context windows via WM_LBUTTONDOWN/UP (UIPI blocks Medium → High IL message routing). But "Right-click → Run as Administrator" prompts UAC every restart and breaks cross-elevation kills.
+
+### Solution — Windows Task Scheduler `RunLevel=Highest`
+1. **One-time setup (User, elevated PowerShell — NOT right-click the .ps1):**
+   - Win11 often **hides** “Run as administrator” on `.ps1` files. Open **PowerShell/Terminal as Administrator first**, then run the installer:
+   ```powershell
+   cd "D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator"
+   Set-ExecutionPolicy -Scope Process Bypass -Force
+   .\install_orchestrator_admin_task.ps1
+   schtasks /Run /TN ToolA_Orchestrator
+   ```
+   - Alt GUI: Task Scheduler → `ToolA_Orchestrator` → Actions = `cmd.exe /c "...\start_orchestrator_high_il.cmd"` + **Run with highest privileges**.
+   - PASS: LastResult=0, ArgsHasWrapper (not `&&` chain), `/health` ok.
+2. **Every restart (no UAC):**
+   - User: double-click `start_orchestrator.bat` → bat detects task → `schtasks /run /tn ToolA_Orchestrator` (no UAC).
+   - CA: call tool `restart_orchestrator_via_bat` (preferred when live; hidden `CREATE_NO_WINDOW` helper, only `delay_seconds=2`) or `restart_orchestrator_via_task` (Task Scheduler fallback). Do not open a visible cmd/powershell.
+3. Result: [A] always launched at High IL, no UAC every time.
+
+### Why cross-elevation kills fail (UIPI)
+- User-context `Stop-Process -Id <pythonw_PID>` → ACCESS DENIED if target is High IL.
+- Fix: `schtasks /end /tn ToolA_Orchestrator` — Task Scheduler runs as SYSTEM, can stop its own High IL children.
+
+### Tool: `restart_orchestrator_via_task` (V15 R13.2)
+- Spawn-detached helper pattern: tool returns `{ok:true, status:"restart_queued", poll_health_after_seconds:N}` IMMEDIATELY (~500ms), helper kills self+relaunches independently.
+- Caller polls `/health` until ok=true → restart complete.
+- Returns `INSTALL_TASK_REQUIRED` if `install_orchestrator_admin_task.ps1` hasn't been run.
+
+### Tool: `restart_orchestrator_via_bat` (preferred when live)
+- Canonical T0 restart for [A]: POST `/api/call/restart_orchestrator_via_bat` with **only** `delay_seconds=2`.
+- Do **NOT** pass `expected_generation` / `controller_url` / `request_id` (internal). Do **NOT** invent a kill pipeline.
+- Helper is **hidden**: `CREATE_NO_WINDOW` on the cmd helper (never OR with `DETACHED_PROCESS`); `start_orchestrator.bat` powershell uses `-WindowStyle Hidden`. Do not steal Anh's mouse/keyboard.
+- Returns `{status:"restart_queued", mechanism:"[A:S] start_orchestrator.bat (hidden helper)", helper_log, delay_before_restart_seconds}`.
+- **Verify:** capture pre-restart PID + `generation` → poll `/health` every ~2s until `ok=true` **and** PID + `generation` changed.
+- Prefer this over ad-hoc kill / raw `schtasks /Run` alone when [A] is still up enough to queue the helper.
+- Before restart: check council broker / unreplied dispatch (in-flight gate). Empty broker → safe.
+
+### Tool: `restart_server_via_bat_hint`
+Returns the exact Task-Scheduler-friendly message User can execute (no admin language).
+
+## High-IL task short-circuit pitfall (CSLt 2026-07)
+
+### Symptom
+- `schtasks /Run /TN ToolA_Orchestrator` → **LastResult=1**, port **8083 free**, [A] never comes up.
+- Task action still contains `restart_orchestrator.py && start "" pythonw orchestrator_server.py`.
+
+### Root cause
+Windows `cmd` `&&`: if `restart_orchestrator.py` exits **non-zero**, **pythonw never starts**. Legacy hard_fail when port free / race makes this common.
+
+### Code fixes (repo)
+1. `restart_orchestrator.py` **soft-clear**: port free / nothing to kill → **exit 0** so chain can start.
+2. Wrapper `start_orchestrator_high_il.cmd` always launches pythonw + logs `.orchestrator_cache/high_il_start.log`.
+3. `install_orchestrator_admin_task.ps1` must point task action at the **wrapper**, not `restart && start`.
+
+### Diagnose before "more restarts"
+```
+# Task action still fragile?
+ArgsHasAndAnd=true  → needs admin rebind
+ArgsHasWrapper=true  → good
+LastResult=0 + high_il_start.log OK → healthy High-IL path
+```
+PowerShell: read `Get-ScheduledTask -TaskName ToolA_Orchestrator` Actions + `Get-ScheduledTaskInfo` LastTaskResult.
+
+### Admin boundary (do not loop)
+- Non-admin `Set-ScheduledTask` → **Access denied**. CA **cannot** rebind High-IL task silently.
+- Report Anh once: **elevated PowerShell first**, then `.\install_orchestrator_admin_task.ps1` + `schtasks /Run /TN ToolA_Orchestrator` (do **not** tell Anh to right-click the `.ps1` — Win11 often has no admin entry there).
+- Soft-clear alone may make old `&&` chain work **temporarily** (LastResult=0) — still rebind to wrapper for durability.
+
+### Restart queued → [A] stays DOWN (recovery)
+Symptom after `restart_orchestrator_via_bat` / schtasks end+run:
+- Helper log says task started / health wait, but **NO_8083**, lock stale or cleared, no python orchestrator process.
+Cause: High-IL task **ended** old instance but failed to relaunch (fragile `&&` action, LastResult≠0, or import crash).
+Recovery (medium-IL, continue work; High-IL still needs Anh admin rebind later):
+1. Confirm no listen on 8083 + no orchestrator python; clear stale `.orchestrator_cache/orchestrator.lock*` only if nothing owns the port.
+2. Start detached medium-IL: `venv312/Scripts/python.exe -u orchestrator_server.py` from project root (background).
+3. Poll `/health` until ok + new generation; resume acceptance/governance verify.
+4. Still report Anh: durable High-IL = admin installer rebind — medium-IL is temporary bootstrap only.
+
+### Import crash blocks start (related)
+If [A] dies immediately after restart: tail `orchestrator.log`. Classic: `registry_data.py` JSON-style `true`/`false` in Python → **NameError** at import → process never listens. Fix data, then [A:S] / medium-IL bootstrap again.
+
+### Reference
+See `references/high_il_restart_pitfalls.md` for verify checklist + admin rebind recipe.
+
+## 2-failed-cycle escalation (CORE_RULE)
+
+When code edits did not change runtime after 2 attempts:
+```
+1. detect_stale_server(<app_port>, expected_bundle_version=<from server log>)
+   → if stale=true → notify User, return STALE_SERVER_SUSPECTED
+2. If !stale → static_asset_cache_check(<main asset url>)
+   → if cache=stale → ask User Ctrl+F5 + recheck
+3. If !cache_stale + !server_stale → genuinely a code issue, back to repo
+```
+
+## bundle_version_check details
+
+- For HTML pages with build metadata: extract `<meta name="build-version" content="...">` or query `?v=2026-05-13` from CSS/JS link
+- Compare against expected_bundle_version (CA tracks from last deploy)
+- Returns `{version_found, version_expected, drift: bool}`
+
+## static_asset_cache_check details
+
+- HEAD request → returns Cache-Control + ETag + Last-Modified
+- Second GET (same URL, ignore-cache) → hash compare with first
+- If different headers but same body → false cache scare; report
+- If same headers different body → server-side update behind cache
+
+## restart_server_via_bat_hint output
+
+```json
+{
+  "ok": true,
+  "current_pid": 13628,
+  "current_started_at": "2026-05-14T08:15:00",
+  "bat_path": "D:/proj/start_app.bat",
+  "kill_command": "Task Manager → end pythonw.exe PID 13628 (or close the cmd window that ran the bat)",
+  "relaunch_command": "Double-click D:/proj/start_app.bat (NO admin required)",
+  "post_check": "node -e \"...health probe...\""
+}
+```
+
+CA shows this to User; does NOT execute the kill itself (User in charge of admin/permission boundary).
+
+## Anti-patterns
+
+- ❌ Suggesting "Run as administrator" (V15 R7 obsolete)
+- ❌ Opening a visible cmd/powershell when restarting [A] (`DETACHED_PROCESS`, `CREATE_NEW_CONSOLE`, powershell without `-WindowStyle Hidden`)
+- ❌ Passing `expected_generation` from a CA call (internal only)
+- ❌ Combining `DETACHED_PROCESS | CREATE_NO_WINDOW` (Win32 combo is invalid / undefined)
+- ❌ Calling Stop-Process from CA (permission boundary; User does it)
+- ❌ Polling `/health` rapidly during restart (1 probe per 2s; not 10/s)
+- ❌ Inferring "server fixed" from health OK alone — also check bundle_version_check (app) **or generation change** ([A])
+- ❌ Looping non-admin `Set-ScheduledTask` after Access denied
+- ❌ Claiming High-IL durable while task still has `&&` chain (`ArgsHasAndAnd=true`)
+
+## Guardrails
+
+- T4c tools are READ-ONLY by default — never execute kills
+- Any kill/restart suggestion → User-actionable hint, not automation
+- Port 0-1024 always treated as admin-protected (warn User)
+- Restart [A] needs user "tiến hành" / go-ahead; notify council; in-flight gate first
+
+## Operational Impact
+
+- 1 lifecycle check saves 5-10 wrong-direction code edits
+- Cache check is fast (~200ms × 2) vs hours of CSS debugging
+- bundle_version_check is 1 fetch vs full DevTools session
+- Diagnosing `&&` short-circuit once avoids thrashing schtasks while [A] never listens
+
+## Harness
+
+- Test 1: kill [A] → `port_owner_inspect(8083)` → returns process_name=null, listening=false
+- Test 2: start [A] → `server_lifecycle_status(8083)` → returns own PID + can_kill=true
+- Test 3: simulate cache stale (Cache-Control: max-age=3600 on CSS) → 2nd fetch differs → flag
+- Test 4: restart_server_via_bat_hint → returns Task-Manager instruction (no admin language)
+- Test 5: restart_orchestrator_via_bat → pre gen G0 → post gen G1≠G0 + health ok
+- Test 6: task ArgsHasAndAnd=true + restart non-zero → LastResult=1 expected until wrapper rebind

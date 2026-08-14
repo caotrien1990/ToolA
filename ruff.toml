@@ -1,0 +1,6 @@
+target-version = 'py312'
+
+[lint]
+# Start with fatal parser/runtime-binding checks across all tracked Python,
+# including .council. Broader style and modernization rules are legacy debt.
+select = ['E9', 'F63', 'F7']

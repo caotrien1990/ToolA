@@ -1,0 +1,1117 @@
+{
+  "tested_at": "2026-06-13 09:35:40",
+  "phase": 4,
+  "total_tools": 180,
+  "directly_tested_via_http": 98,
+  "pass": 93,
+  "fail": 5,
+  "skip": 82,
+  "skip_reasons": {
+    "PROTECTED+MUTATING": 51,
+    "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window": 24,
+    "ENV_SKIP: no CEP manifest at project root": 1,
+    "TOKEN_REQUIRED: mutation token needed + mutating tool": 2,
+    "STUB: planned R+1, requires embedding model or LSP/type server": 2,
+    "ENV_SKIP: timed out, no matching process signals": 1,
+    "ENV_SKIP: requires draft token from workflow_draft_create": 1
+  },
+  "tier_breakdown": {
+    "T1": {
+      "PASS": 65,
+      "FAIL": 1,
+      "SKIP": 12
+    },
+    "T2": {
+      "PASS": 9,
+      "FAIL": 0,
+      "SKIP": 26
+    },
+    "T3": {
+      "PASS": 11,
+      "FAIL": 3,
+      "SKIP": 8
+    },
+    "T4": {
+      "PASS": 8,
+      "FAIL": 1,
+      "SKIP": 36
+    }
+  },
+  "remaining_failures": [
+    {
+      "tool": "cancel_pending_restart",
+      "tier": "T4",
+      "result": "FAIL",
+      "error": "{'ok': False, 'error_name': 'NO_PENDING_RESTART', 'reason': 'restart_helper.cmd never created', 'hel"
+    },
+    {
+      "tool": "workflow_activate",
+      "tier": "T3",
+      "result": "FAIL",
+      "error": "workflow MD not found: default"
+    },
+    {
+      "tool": "workflow_get_current",
+      "tier": "T1",
+      "result": "FAIL",
+      "error": "workflow MD not found: default"
+    },
+    {
+      "tool": "workflow_goto_step",
+      "tier": "T3",
+      "result": "FAIL",
+      "error": "workflow MD not found: default"
+    },
+    {
+      "tool": "workflow_submit_step",
+      "tier": "T3",
+      "result": "FAIL",
+      "error": "workflow MD not found: default"
+    }
+  ],
+  "results": [
+    {
+      "tool": "acceptance_dashboard",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "alias_contract_test",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "apply_after_dry_run",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "architecture_audit_compact",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "assert_button_click_changes_state",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "assert_console_no_error",
+      "tier": "T4",
+      "result": "SKIP",
+      "error": "page_id not found: none",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "assert_target_idle",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "assert_text_visible",
+      "tier": "T4",
+      "result": "SKIP",
+      "error": "page_id not found: none",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "ast_query",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "AST pattern not supported: search_code"
+    },
+    {
+      "tool": "audit_tool_matrix",
+      "tier": "T3",
+      "result": "PASS"
+    },
+    {
+      "tool": "backup_project",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "backup_status",
+      "tier": "T2",
+      "result": "PASS"
+    },
+    {
+      "tool": "bootstrap_session",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "bundle_version_check",
+      "tier": "T4",
+      "result": "PASS",
+      "error": "HTTP 400"
+    },
+    {
+      "tool": "cache_delta",
+      "tier": "T2",
+      "result": "PASS"
+    },
+    {
+      "tool": "cache_status",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "unknown"
+    },
+    {
+      "tool": "cancel_native_dialog",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "cancel_pending_restart",
+      "tier": "T4",
+      "result": "FAIL",
+      "error": "{'ok': False, 'error_name': 'NO_PENDING_RESTART', 'reason': 'restart_helper.cmd never created', 'hel"
+    },
+    {
+      "tool": "capability_status",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "cdp_attach_target",
+      "tier": "T4",
+      "result": "SKIP",
+      "error": "cdp_attach_target failed: BrowserType.connect_over_cdp: Invalid URL\nCall log:\n  - <ws preparing> retrieving websocket url from test\n",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "cep_deploy",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "cep_extension_status",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "cep_manifest_validate",
+      "tier": "T1",
+      "result": "SKIP",
+      "error": "{'ok': False, 'error': 'manifest not found: D:\\\\0. TRIEN\\\\1. DATA\\\\DATA\\\\5. VIBE APP\\\\1. APP\\\\8. Too",
+      "reason": "ENV_SKIP: no CEP manifest at project root"
+    },
+    {
+      "tool": "check_server_path",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "check_window_visibility",
+      "tier": "T4",
+      "result": "PASS"
+    },
+    {
+      "tool": "checkpoint_loop_dom_state",
+      "tier": "T4",
+      "result": "SKIP",
+      "error": "page_id not found: none",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "classify_get_footage_outcome",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "cleanup_test_session",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "click",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "click_and_checkpoint_loop",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "click_and_handle_folder_dialog",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "click_selector",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "close_session",
+      "tier": "T3",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "compare_dom_snapshot",
+      "tier": "T4",
+      "result": "SKIP",
+      "error": "page_id not found: test",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "convene_council",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "copy_file",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "council_config_diff",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "council_config_sync",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "council_message",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "timed out"
+    },
+    {
+      "tool": "create_benchmark_request",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "create_build_context",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "create_folder",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "create_folders",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "create_pending_audit",
+      "tier": "T3",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "declare_mission",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "HTTP 400"
+    },
+    {
+      "tool": "delete_file",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "describe_page",
+      "tier": "T1",
+      "result": "SKIP",
+      "error": "page_id not found: none",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "desktop_app_focus",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "desktop_click",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "desktop_screenshot",
+      "tier": "T4",
+      "result": "SKIP",
+      "error": "(1400, 'GetWindowRect', 'Invalid window handle.')",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "desktop_send_text",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "desktop_window_list",
+      "tier": "T4",
+      "result": "PASS"
+    },
+    {
+      "tool": "desktop_window_state",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "detect_stale_server",
+      "tier": "T4",
+      "result": "SKIP",
+      "error": "probe failed: timed out",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "dom_state_diff",
+      "tier": "T1",
+      "result": "SKIP",
+      "error": "page_id not found: none",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "electron_devtools_log",
+      "tier": "T4",
+      "result": "SKIP",
+      "error": "CDP unreachable on port 1: <urlopen error [WinError 10061] No connection could be made because the target machine actively refused it>",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "ensure_single_electron_instance",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "evaluate_js",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "extract_log_section",
+      "tier": "T1",
+      "result": "SKIP",
+      "error": "page_id not found: none",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "fetch_sheet_csv_summary",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "{'ok': False, 'error': 'HTTP 404: Not Found', 'error_name': 'WEBFETCH_HTTP_ERROR', 'url': 'https://e"
+    },
+    {
+      "tool": "fill",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "fill_folder_dialog",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "fill_value",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "find_callers",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "unknown"
+    },
+    {
+      "tool": "find_definition_and_usage",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "unknown"
+    },
+    {
+      "tool": "find_symbol",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "Unsupported content_encoding: test"
+    },
+    {
+      "tool": "folder_dialog_snapshot",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "folder_diff",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "HTTP 400"
+    },
+    {
+      "tool": "folder_exists",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "folder_stats",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "generate_project_map",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "get_file_symbols",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "unknown"
+    },
+    {
+      "tool": "get_folder_size",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "get_project_summary",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "get_rule_core_text",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "HTTP 405"
+    },
+    {
+      "tool": "get_session_events",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "Session not found: none"
+    },
+    {
+      "tool": "get_skill_state",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "get_token_meter",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "get_usage_stats",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "get_validation_queue",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "git_blame_symbol",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "{'ok': False, 'error': 'fatal: not a git repository (or any of the parent directories): .git', 'erro"
+    },
+    {
+      "tool": "import_graph",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "inspect_project_runtime",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "inspect_project_usage",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "invoke_app_function",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "kill_process",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "launch_electron_with_cdp",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "list_cdp_targets",
+      "tier": "T4",
+      "result": "SKIP",
+      "error": "CDP target list unavailable on port 1: <urlopen error [WinError 10061] No connection could be made because the target machine actively refused it>",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "list_projects",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "list_sessions",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "list_structure",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "log_native",
+      "tier": "T3",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "log_native_event",
+      "tier": "T3",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "manage_agent",
+      "tier": "T3",
+      "result": "PASS",
+      "error": "unknown action: test"
+    },
+    {
+      "tool": "mcp_surface_diff",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "next_recommended_action",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "open_browser_page",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "open_session",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "optional_tool_probe",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "parse_log_section",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "path_quote_helper",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "port_owner_inspect",
+      "tier": "T4",
+      "result": "PASS"
+    },
+    {
+      "tool": "post_write_batch_verify",
+      "tier": "T2",
+      "result": "PASS"
+    },
+    {
+      "tool": "prepare_ca_session",
+      "tier": "T3",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "process_tree_inspect",
+      "tier": "T4",
+      "result": "PASS"
+    },
+    {
+      "tool": "progressive_matrix_check",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "project_map",
+      "tier": "T2",
+      "result": "PASS"
+    },
+    {
+      "tool": "protected_tools_status",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "HTTP 405"
+    },
+    {
+      "tool": "query_dom_candidates",
+      "tier": "T1",
+      "result": "SKIP",
+      "error": "page_id not found: none",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "query_index",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "INDEX stale; refresh_project_map required before query_index"
+    },
+    {
+      "tool": "query_selector",
+      "tier": "T4",
+      "result": "SKIP",
+      "error": "page_id not found: none",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "read_all_logs",
+      "tier": "T1",
+      "result": "SKIP",
+      "error": "page_id not found: none",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "read_console_errors",
+      "tier": "T4",
+      "result": "SKIP",
+      "error": "page_id not found: none",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "read_file_range",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "read_network_errors",
+      "tier": "T4",
+      "result": "SKIP",
+      "error": "page_id not found: none",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "read_page",
+      "tier": "T4",
+      "result": "SKIP",
+      "error": "page_id not found: none",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "read_skill",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "{'ok': False, 'error': \"skill 'rune-cook' not found\", 'error_name': 'SKILL_NOT_FOUND', 'available': "
+    },
+    {
+      "tool": "read_value",
+      "tier": "T1",
+      "result": "SKIP",
+      "error": "page_id not found: none",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "record_ui_flow",
+      "tier": "T4",
+      "result": "SKIP",
+      "error": "page_id not found: none",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "refresh_project_map",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "regex_search",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "unknown"
+    },
+    {
+      "tool": "rename_session",
+      "tier": "T3",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "replace_between_anchors",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "resolve_project_path",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "restart_orchestrator_via_task",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "restart_server_via_bat_hint",
+      "tier": "T4",
+      "result": "PASS"
+    },
+    {
+      "tool": "run_node_script",
+      "tier": "T2",
+      "result": "SKIP",
+      "error": "HTTP 403",
+      "reason": "TOKEN_REQUIRED: mutation token needed + mutating tool"
+    },
+    {
+      "tool": "run_playwright_test",
+      "tier": "T4",
+      "result": "SKIP",
+      "error": "script not found: test",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "run_project_command",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "run_project_test_script",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "run_ps1_script",
+      "tier": "T2",
+      "result": "SKIP",
+      "error": "HTTP 403",
+      "reason": "TOKEN_REQUIRED: mutation token needed + mutating tool"
+    },
+    {
+      "tool": "run_script",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "run_test_profile",
+      "tier": "T2",
+      "result": "PASS",
+      "error": "{'ok': False, 'project_path': 'D:\\\\0. TRIEN\\\\1. DATA\\\\DATA\\\\5. VIBE APP\\\\1. APP\\\\8. ToolA\\\\project-o"
+    },
+    {
+      "tool": "sample_unc_paths_with_root_check",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "save_log_snapshot",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "screenshot_page",
+      "tier": "T4",
+      "result": "SKIP",
+      "error": "page_id not found: none",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "search_code",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "Unsupported content_encoding: test"
+    },
+    {
+      "tool": "semantic_search",
+      "tier": "T1",
+      "result": "SKIP",
+      "error": "semantic_search requires embedding model; planned R+1",
+      "reason": "STUB: planned R+1, requires embedding model or LSP/type server"
+    },
+    {
+      "tool": "server_lifecycle_status",
+      "tier": "T4",
+      "result": "PASS"
+    },
+    {
+      "tool": "session_audit_summary",
+      "tier": "T3",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "set_workflow_mode",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "state",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "static_asset_cache_check",
+      "tier": "T4",
+      "result": "PASS",
+      "error": "{'ok': False, 'error': 'Loopback to own port 8083 would deadlock the event loop', 'error_name': 'LOO"
+    },
+    {
+      "tool": "suggest_missing_capabilities",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "sync_pending_audit",
+      "tier": "T3",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "tool_decision_hint",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "type_search",
+      "tier": "T1",
+      "result": "SKIP",
+      "error": "type_search requires LSP/type server; planned R+1",
+      "reason": "STUB: planned R+1, requires embedding model or LSP/type server"
+    },
+    {
+      "tool": "ui_state_summary",
+      "tier": "T1",
+      "result": "SKIP",
+      "error": "page_id not found: none",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "validate",
+      "tier": "T2",
+      "result": "PASS"
+    },
+    {
+      "tool": "validate_encoding",
+      "tier": "T2",
+      "result": "PASS"
+    },
+    {
+      "tool": "validate_file",
+      "tier": "T2",
+      "result": "PASS"
+    },
+    {
+      "tool": "validate_symbols",
+      "tier": "T2",
+      "result": "PASS"
+    },
+    {
+      "tool": "verify_active_electron_source",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "verify_get_footage_copy_completion",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "HTTP 400"
+    },
+    {
+      "tool": "wait_for_idle",
+      "tier": "T1",
+      "result": "SKIP",
+      "error": "timed out",
+      "reason": "ENV_SKIP: timed out, no matching process signals"
+    },
+    {
+      "tool": "wait_for_selector",
+      "tier": "T4",
+      "result": "SKIP",
+      "error": "page_id not found: none",
+      "reason": "ENV_REQUIRED: needs active browser CDP session, electron, or desktop window"
+    },
+    {
+      "tool": "webfetch",
+      "tier": "T1",
+      "result": "PASS",
+      "error": "{'ok': False, 'error': 'webfetch failed: timed out', 'error_name': 'WEBFETCH_FAILED', 'url': 'http:/"
+    },
+    {
+      "tool": "workflow_activate",
+      "tier": "T3",
+      "result": "FAIL",
+      "error": "workflow MD not found: default"
+    },
+    {
+      "tool": "workflow_active_get",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "workflow_checkpoint",
+      "tier": "T3",
+      "result": "PASS"
+    },
+    {
+      "tool": "workflow_create_from_ui",
+      "tier": "T3",
+      "result": "PASS"
+    },
+    {
+      "tool": "workflow_deactivate",
+      "tier": "T3",
+      "result": "PASS"
+    },
+    {
+      "tool": "workflow_draft_create",
+      "tier": "T3",
+      "result": "PASS"
+    },
+    {
+      "tool": "workflow_draft_get",
+      "tier": "T1",
+      "result": "SKIP",
+      "error": "HTTP 400",
+      "reason": "ENV_SKIP: requires draft token from workflow_draft_create"
+    },
+    {
+      "tool": "workflow_get_current",
+      "tier": "T1",
+      "result": "FAIL",
+      "error": "workflow MD not found: default"
+    },
+    {
+      "tool": "workflow_goto_step",
+      "tier": "T3",
+      "result": "FAIL",
+      "error": "workflow MD not found: default"
+    },
+    {
+      "tool": "workflow_list",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "workflow_read_md",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "workflow_reset",
+      "tier": "T3",
+      "result": "PASS"
+    },
+    {
+      "tool": "workflow_retry_step",
+      "tier": "T3",
+      "result": "PASS"
+    },
+    {
+      "tool": "workflow_save_md",
+      "tier": "T3",
+      "result": "PASS",
+      "error": "HTTP 400"
+    },
+    {
+      "tool": "workflow_skip_step",
+      "tier": "T3",
+      "result": "PASS"
+    },
+    {
+      "tool": "workflow_start",
+      "tier": "T3",
+      "result": "PASS"
+    },
+    {
+      "tool": "workflow_status",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "workflow_status_registry",
+      "tier": "T1",
+      "result": "PASS"
+    },
+    {
+      "tool": "workflow_submit_step",
+      "tier": "T3",
+      "result": "FAIL",
+      "error": "workflow MD not found: default"
+    },
+    {
+      "tool": "write_fix",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "write_fix_html",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "write_new_file",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    },
+    {
+      "tool": "write_transaction",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING"
+    }
+  ]
+}

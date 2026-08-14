@@ -1,0 +1,43 @@
+{
+  "generated_at": "2026-07-08T11:50:52.649558+00:00",
+  "project_path": "D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/project-orchestrator",
+  "graph_db_path": "D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/project-orchestrator/.orchestrator_cache/graph.db",
+  "sample": 21266,
+  "confirmed": 2204,
+  "refuted": 2673,
+  "unresolved": 16389,
+  "buckets": {
+    "0.3": {
+      "confirmed": 0,
+      "refuted": 2198,
+      "unresolved": 11850
+    },
+    "0.7": {
+      "confirmed": 297,
+      "refuted": 212,
+      "unresolved": 1858
+    },
+    "0.9": {
+      "confirmed": 1907,
+      "refuted": 263,
+      "unresolved": 2681
+    }
+  },
+  "ext_target_split": {
+    "confirmed": 0,
+    "refuted": 2198,
+    "unresolved": 11850
+  },
+  "fp_rate_of_checked": 0.5481,
+  "resolution_gain": 0.1036,
+  "v1_compare": {
+    "v1_joinable_old_graph": 5981,
+    "v1_candidates_old_graph": 31245,
+    "v1_orphaned_join_old": 25264,
+    "v2_candidates_new_graph": 21266,
+    "v2_orphaned_join_new": 0,
+    "note": "new graph clean-rebuilt: 0 orphaned-join -> all calls edges joinable"
+  },
+  "errors": [],
+  "elapsed_ms": 178266.0
+}

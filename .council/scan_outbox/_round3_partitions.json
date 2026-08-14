@@ -1,0 +1,334 @@
+{
+  "KiloC": [
+    {
+      "file": "research/CBM_CG/CBM/scripts/extract_nomic_vectors.py",
+      "loc": 528
+    },
+    {
+      "file": "clm_real_query_benchmark.py",
+      "loc": 353
+    },
+    {
+      "file": ".council/mcp_phase2_fix.py",
+      "loc": 281
+    },
+    {
+      "file": ".council/tmp_qsleep/build/lease_manager.py",
+      "loc": 235
+    },
+    {
+      "file": "research/CBM_CG/CBM/scripts/audit-license-provenance.py",
+      "loc": 226
+    },
+    {
+      "file": ".council/tmp_qsleep/build/kick_qsleep.py",
+      "loc": 210
+    },
+    {
+      "file": ".council/tmp_qsleep/build/measure_vram.py",
+      "loc": 139
+    },
+    {
+      "file": "tests/test_extractor_callable_refs.py",
+      "loc": 128
+    },
+    {
+      "file": ".council/tmp_p2/p0_benchmark.py",
+      "loc": 109
+    },
+    {
+      "file": "scripts/missions_migrate.py",
+      "loc": 107
+    },
+    {
+      "file": "tests/test_a7_env_verify.py",
+      "loc": 92
+    },
+    {
+      "file": ".council/tmp_qsleep/build/adjudication_client.py",
+      "loc": 79
+    },
+    {
+      "file": "tests/test_council_config_diff.py",
+      "loc": 74
+    },
+    {
+      "file": "_round3_partition.py",
+      "loc": 53
+    },
+    {
+      "file": "_golden_regression.py",
+      "loc": 47
+    },
+    {
+      "file": "mkp.py",
+      "loc": 26
+    },
+    {
+      "file": "staging/check_ceiling.py",
+      "loc": 25
+    },
+    {
+      "file": "bootstrap_core_rule.py",
+      "loc": 14
+    },
+    {
+      "file": ".pytest_basetemp/run/test_python_callable_reference5/register_handler_kwarg/mod.py",
+      "loc": 10
+    },
+    {
+      "file": ".pytest_basetemp/run/test_python_callable_reference3/module_assign_call/mod.py",
+      "loc": 5
+    }
+  ],
+  "OpeC": [
+    {
+      "file": "tests/test_ca_first_upgrade_contract.py",
+      "loc": 448
+    },
+    {
+      "file": ".council/tmp_qsleep/build/loop_orchestrator.py",
+      "loc": 369
+    },
+    {
+      "file": ".council/tmp_qsleep/build/artifact_schemas.py",
+      "loc": 327
+    },
+    {
+      "file": "phase1p5_build_truthset.py",
+      "loc": 267
+    },
+    {
+      "file": ".council/tmp_qsleep/build/qsleep_core.py",
+      "loc": 215
+    },
+    {
+      "file": ".council/mcp_phase4_final.py",
+      "loc": 188
+    },
+    {
+      "file": ".council/tmp_qsleep/build/lease_orchestrator.py",
+      "loc": 156
+    },
+    {
+      "file": "_dispatch_scan2_v2.py",
+      "loc": 134
+    },
+    {
+      "file": "research/CBM_CG/CBM/scripts/license-gate-check-npm.py",
+      "loc": 109
+    },
+    {
+      "file": "research/CBM_CG/CBM/scripts/test_mcp_rapid_init.py",
+      "loc": 98
+    },
+    {
+      "file": "_dispatch_scan2.py",
+      "loc": 93
+    },
+    {
+      "file": ".council/mcp_phase4_fix.py",
+      "loc": 84
+    },
+    {
+      "file": "scripts/mcp_api_parity_check.py",
+      "loc": 70
+    },
+    {
+      "file": "tests/test_release_gate_182.py",
+      "loc": 56
+    },
+    {
+      "file": "__reeval_run.py",
+      "loc": 41
+    },
+    {
+      "file": ".council/_verify_comc_argv.py",
+      "loc": 34
+    },
+    {
+      "file": "_download_model.py",
+      "loc": 22
+    },
+    {
+      "file": "research/CBM_CG/CBM/pkg/pypi/src/codebase_memory_mcp/__init__.py",
+      "loc": 17
+    },
+    {
+      "file": "orchestrator/__init__.py",
+      "loc": 7
+    },
+    {
+      "file": ".pytest_basetemp/run/test_python_callable_reference2/sort_key_kwarg/mod.py",
+      "loc": 6
+    }
+  ],
+  "ComC": [
+    {
+      "file": "research/CBM_CG/CBM/scripts/gen-py-stdlib.py",
+      "loc": 432
+    },
+    {
+      "file": "scripts/comc_real_tool_usage_test.py",
+      "loc": 380
+    },
+    {
+      "file": "COUNCIL_TRACKER.py",
+      "loc": 339
+    },
+    {
+      "file": ".council/mcp_phase3_fix.py",
+      "loc": 262
+    },
+    {
+      "file": "tests/test_schema_params_contract.py",
+      "loc": 211
+    },
+    {
+      "file": "tests/test_p5_council_context.py",
+      "loc": 200
+    },
+    {
+      "file": ".council/tmp_qsleep/build/queue_builder.py",
+      "loc": 151
+    },
+    {
+      "file": "scripts/bench_p6_clustering.py",
+      "loc": 124
+    },
+    {
+      "file": "research/CBM_CG/CBM/scripts/gen-ui-licenses.py",
+      "loc": 113
+    },
+    {
+      "file": ".council/tmp_qsleep/build/test_jinja_toolcall.py",
+      "loc": 99
+    },
+    {
+      "file": "scripts/gen_alias_contract.py",
+      "loc": 92
+    },
+    {
+      "file": ".council/tmp_qsleep/build/guardrails.py",
+      "loc": 87
+    },
+    {
+      "file": ".council/tmp_b4/bench_runner.py",
+      "loc": 69
+    },
+    {
+      "file": ".council/mcp_debug_fails.py",
+      "loc": 55
+    },
+    {
+      "file": "bootstrap_rule_loader.py",
+      "loc": 37
+    },
+    {
+      "file": ".council/tmp_qsleep/build/stop_conditions.py",
+      "loc": 35
+    },
+    {
+      "file": "send_council_message.py",
+      "loc": 26
+    },
+    {
+      "file": "build_req.py",
+      "loc": 14
+    },
+    {
+      "file": ".pytest_basetemp/run/test_python_callable_reference0/asyncio_to_thread_arg/mod.py",
+      "loc": 9
+    },
+    {
+      "file": ".pytest_basetemp/run/test_python_callable_reference4/hasattr_string_ref/mod.py",
+      "loc": 6
+    }
+  ],
+  "HermC": [
+    {
+      "file": ".council/mcp_full_surface_test.py",
+      "loc": 430
+    },
+    {
+      "file": "staging/clm_qwen_rerank.py",
+      "loc": 430
+    },
+    {
+      "file": ".council/mcp_full_test_v3.py",
+      "loc": 295
+    },
+    {
+      "file": "scripts/sync_tool_matrix.py",
+      "loc": 248
+    },
+    {
+      "file": "research/CBM_CG/CBM/pkg/pypi/src/codebase_memory_mcp/_cli.py",
+      "loc": 224
+    },
+    {
+      "file": ".council/tmp_qsleep/build/cluster_runner.py",
+      "loc": 181
+    },
+    {
+      "file": "broker_research.py",
+      "loc": 168
+    },
+    {
+      "file": "research/CBM_CG/CBM/scripts/generate-lang-code.py",
+      "loc": 118
+    },
+    {
+      "file": ".council/tmp_qsleep/build/process_guard.py",
+      "loc": 117
+    },
+    {
+      "file": ".council/tmp_qsleep/build/qwake.py",
+      "loc": 105
+    },
+    {
+      "file": ".council/tmp_qsleep/build/kick_safety.py",
+      "loc": 91
+    },
+    {
+      "file": ".council/tmp_qsleep/build/test_adjudication_gate.py",
+      "loc": 83
+    },
+    {
+      "file": "mkpromo5.py",
+      "loc": 57
+    },
+    {
+      "file": "tests/test_registry_pipeline.py",
+      "loc": 56
+    },
+    {
+      "file": "research/CBM_CG/CBM/scripts/license-gate-check.py",
+      "loc": 53
+    },
+    {
+      "file": "staging/debug_candidates.py",
+      "loc": 34
+    },
+    {
+      "file": "rule_core.py",
+      "loc": 21
+    },
+    {
+      "file": "orchestrator/runtime/__init__.py",
+      "loc": 16
+    },
+    {
+      "file": ".pytest_basetemp/run/test_python_callable_reference1/thread_target_kwarg/mod.py",
+      "loc": 9
+    },
+    {
+      "file": "research/CBM_CG/CBM/pkg/pypi/src/codebase_memory_mcp/__main__.py",
+      "loc": 4
+    },
+    {
+      "file": "orchestrator/council/__init__.py",
+      "loc": 0
+    }
+  ]
+}

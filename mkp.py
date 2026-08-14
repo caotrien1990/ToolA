@@ -1,0 +1,26 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+import os
+H=[]
+def a(s): H.append(s)
+a('<!DOCTYPE html>')
+a('<html lang="vi">')
+a('<head>')
+a('<meta charset="UTF-8">')
+a('<title>BAN TIN PROMOTION &amp; MODEL FREE</title>')
+a('<style>')
+a('*{margin:0;padding:0;box-sizing:border-box}')
+a('body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:20px;line-height:1.6}')
+a('.container{max-width:1100px;margin:0 auto}')
+a('.header{text-align:center;padding:40px 0 30px;border-bottom:1px solid #30363d;margin-bottom:30px}')
+a('.header h1{font-size:2rem;font-weight:700;background:linear-gradient(135deg,#58a6ff,#3fb950,#f0883e);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}')
+a('.header .date{color:#8b949e;margin-top:8px}')
+a('.section{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:24px;margin-bottom:24px}')
+a('.section h2{font-size:1.4rem;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid #30363d}')
+a('table{width:100%;border-collapse:collapse;margin:12px 0}')
+a('th,td{padding:10px 14px;text-align:left;border-bottom:1px solid #21262d}')
+a('th{background:#21262d;color:#8b949e;font-weight:600;font-size:.85rem;text-transform:uppercase}')
+a('tr:hover td{background:#1c2333}')
+a('.good{color:#3fb950;font-weight:600}')
+a('.bad{color:#f85149}')
+a('.warn{color:#d29922}')

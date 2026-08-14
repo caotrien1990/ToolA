@@ -1,0 +1,1 @@
+"""Session, log, and process lifecycle helpers extracted from code_tools."""

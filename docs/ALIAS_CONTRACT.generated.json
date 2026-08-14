@@ -1,0 +1,335 @@
+{
+  "ast_query": {
+    "limit": "max_results",
+    "max_items": "max_results",
+    "top_k": "max_results"
+  },
+  "cbm_dead_code": {
+    "max_items": "limit",
+    "max_results": "limit",
+    "top_k": "limit"
+  },
+  "cbm_edges_query": {
+    "max_items": "limit",
+    "max_results": "limit",
+    "top_k": "limit"
+  },
+  "cbm_nodes_query": {
+    "max_items": "limit",
+    "max_results": "limit",
+    "top_k": "limit"
+  },
+  "cbm_template_query": {
+    "max_items": "limit",
+    "max_results": "limit",
+    "top_k": "limit"
+  },
+  "cdp_attach_target": {
+    "port": "cdp_port"
+  },
+  "checkpoint_loop_dom_state": {
+    "observe_selector": "selector",
+    "snapshot_fields": "fields"
+  },
+  "click_and_checkpoint_loop": {
+    "click_selector": "click_selector_str",
+    "observe_selector": "watch_selector",
+    "watch": "watch_selector"
+  },
+  "click_selector": {
+    "verify_state_after": "before_after_state"
+  },
+  "council_cron_job_list": {
+    "max_items": "limit",
+    "max_results": "limit",
+    "top_k": "limit"
+  },
+  "council_message": {
+    "async": "async_dispatch",
+    "frm": "sender",
+    "from": "sender",
+    "from_agent": "sender",
+    "message": "text",
+    "msg": "text",
+    "non_blocking": "async_dispatch",
+    "recipient": "to",
+    "to_agent": "to"
+  },
+  "council_message_async": {
+    "frm": "sender",
+    "from": "sender",
+    "from_agent": "sender",
+    "message": "text",
+    "msg": "text",
+    "recipient": "to",
+    "to_agent": "to"
+  },
+  "council_route_scorecard": {
+    "max_items": "limit",
+    "max_results": "limit",
+    "top_k": "limit"
+  },
+  "council_status": {
+    "id": "dispatch_id"
+  },
+  "council_worker_model": {
+    "id": "model",
+    "model_id": "model",
+    "worker": "agent"
+  },
+  "delete_file": {
+    "file": "file_path",
+    "path": "file_path"
+  },
+  "desktop_window_list": {
+    "pattern": "title_filter",
+    "title_contains": "title_filter"
+  },
+  "evaluate_js": {
+    "code": "expression",
+    "js": "expression",
+    "script": "expression"
+  },
+  "extract_log_section": {
+    "section": "section_title"
+  },
+  "fill_folder_dialog": {
+    "path": "folder_path"
+  },
+  "find_callers": {
+    "name": "symbol",
+    "q": "symbol",
+    "query": "symbol",
+    "symbol_name": "symbol"
+  },
+  "find_symbol": {
+    "file_path": "path",
+    "q": "name",
+    "query": "name",
+    "symbol": "name",
+    "symbol_name": "name"
+  },
+  "folder_diff": {
+    "folder_a": "path_a",
+    "folder_b": "path_b"
+  },
+  "folder_exists": {
+    "folder_path": "path"
+  },
+  "folder_stats": {
+    "folder_path": "path",
+    "project_path": "path"
+  },
+  "get_file_symbols": {
+    "file": "file_path",
+    "path": "file_path"
+  },
+  "get_folder_size": {
+    "path": "folder_path",
+    "project_path": "folder_path"
+  },
+  "get_session_events": {
+    "max_items": "limit",
+    "max_results": "limit",
+    "top_k": "limit"
+  },
+  "git_commit": {
+    "msg": "message"
+  },
+  "git_diff": {
+    "files": "paths"
+  },
+  "git_log": {
+    "max_items": "limit",
+    "max_results": "limit",
+    "top_k": "limit"
+  },
+  "git_stage": {
+    "files": "paths"
+  },
+  "git_unstage": {
+    "files": "paths"
+  },
+  "launch_electron_with_cdp": {
+    "port": "cdp_port",
+    "timeout_ms": "verify_after_ms",
+    "wait_ms": "verify_after_ms"
+  },
+  "list_cdp_targets": {
+    "port": "cdp_port"
+  },
+  "list_projects": {
+    "max_items": "limit",
+    "max_results": "limit",
+    "top_k": "limit"
+  },
+  "list_sessions": {
+    "max_items": "limit",
+    "max_results": "limit",
+    "top_k": "limit"
+  },
+  "mcp_pack_generate": {
+    "agent": "agent_id",
+    "ca": "ca_id",
+    "catalog": "catalog_json",
+    "pack": "pack_id",
+    "targets": "targets_json",
+    "tools": "tools_json"
+  },
+  "memory_ingest_path": {
+    "new_content": "content",
+    "replacement": "content"
+  },
+  "memory_query": {
+    "k": "top_k",
+    "limit": "top_k",
+    "max_items": "top_k",
+    "max_results": "top_k",
+    "q": "query"
+  },
+  "open_browser_page": {
+    "timeout": "timeout_ms",
+    "wait_until": "wait_for"
+  },
+  "open_session": {
+    "description": "session_title",
+    "intent": "session_title",
+    "title": "session_title"
+  },
+  "optional_tool_probe": {
+    "names": "tools",
+    "tool_names": "tools"
+  },
+  "parse_log_section": {
+    "section": "section_title"
+  },
+  "process_tree_inspect": {
+    "name": "name_pattern",
+    "pid": "root_pid",
+    "process_name": "name_pattern"
+  },
+  "query_dom_candidates": {
+    "category": "filter",
+    "kind": "filter",
+    "limit": "max_items",
+    "max_results": "max_items",
+    "top_k": "max_items",
+    "type": "filter"
+  },
+  "query_index": {
+    "category": "group",
+    "filter": "group",
+    "glob": "file_pattern",
+    "limit": "max_results",
+    "max_items": "max_results",
+    "pattern": "file_pattern",
+    "top_k": "max_results"
+  },
+  "query_sqlite": {
+    "max_items": "limit",
+    "max_results": "limit",
+    "top_k": "limit"
+  },
+  "read_context_batch": {
+    "limit": "max_items",
+    "max_results": "max_items",
+    "top_k": "max_items"
+  },
+  "read_file_range": {
+    "end": "end_line",
+    "file": "file_path",
+    "from_line": "start_line",
+    "line_end": "end_line",
+    "line_start": "start_line",
+    "path": "file_path",
+    "start": "start_line",
+    "to_line": "end_line"
+  },
+  "read_skill": {
+    "max_chars": "max_lines",
+    "skill": "name",
+    "skill_name": "name"
+  },
+  "regex_search": {
+    "limit": "max_results",
+    "max_items": "max_results",
+    "q": "pattern",
+    "query": "pattern",
+    "regex": "pattern",
+    "top_k": "max_results"
+  },
+  "replace_between_anchors": {
+    "content": "new_content",
+    "replacement": "new_content"
+  },
+  "restart_orchestrator_via_bat": {
+    "delay": "delay_seconds",
+    "delay_sec": "delay_seconds"
+  },
+  "run_script": {
+    "code": "script_inline",
+    "expression": "script_inline",
+    "inline": "script_inline",
+    "script": "script_inline"
+  },
+  "save_log_snapshot": {
+    "log_selector": "selector",
+    "title": "section_title"
+  },
+  "search_code": {
+    "file_path": "path",
+    "pattern": "query",
+    "q": "query",
+    "regex": "query"
+  },
+  "sync_pending_audit": {
+    "max_items": "limit",
+    "max_results": "limit",
+    "top_k": "limit"
+  },
+  "tool_decision_hint": {
+    "task": "task_description"
+  },
+  "validate_encoding": {
+    "file": "file_path",
+    "path": "file_path"
+  },
+  "validate_file": {
+    "file": "file_path",
+    "path": "file_path"
+  },
+  "validate_symbols": {
+    "file": "file_path",
+    "path": "file_path"
+  },
+  "workflow_submit_step": {
+    "note": "evidence",
+    "step_number": "step"
+  },
+  "write_draft_patch": {
+    "content": "new_content",
+    "replacement": "new_content"
+  },
+  "write_fix": {
+    "content": "new_content",
+    "end": "end_line",
+    "line_end": "end_line",
+    "line_start": "start_line",
+    "path": "file_path",
+    "replacement": "new_content",
+    "start": "start_line"
+  },
+  "write_fix_html": {
+    "content": "new_content",
+    "end": "end_line",
+    "line_end": "end_line",
+    "line_start": "start_line",
+    "path": "file_path",
+    "replacement": "new_content",
+    "start": "start_line"
+  },
+  "write_new_file": {
+    "content": "new_content",
+    "file_path": "path"
+  }
+}

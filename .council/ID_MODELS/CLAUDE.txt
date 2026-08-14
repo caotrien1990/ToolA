@@ -1,0 +1,12 @@
+CLAUDE
+
+ID model:
+claude-opus-4-8
+
+ID model:
+claude-sonet-5
+
+ID model:
+claude-haiku-4-5
+
+

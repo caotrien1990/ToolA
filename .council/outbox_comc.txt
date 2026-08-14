@@ -1,0 +1,57 @@
+## RES — ComC verify sau fallback fix | 2026-06-13
+
+### VERDICT: PASS — KHÔNG CÓ DRIFT, KHÔNG CÓ CỤM CŨ TRONG ACTIVE FILES
+
+---
+
+### TESTS
+
+**T1: Matrix/Registry drift**
+- open_session → matrix_drift_present=false, drift_count=0, ok_count=180
+- 180 tools khớp giữa code_tools / schema_tools / inventory
+- Kết quả: PASS ✅
+
+**T2: Grep cụm cũ trong active files (bỏ qua research/ .orchestrator_cache/)**
+
+| Cụm cũ | Active files | Vị trí |
+|--------|-------------|--------|
+| "ClauC leader-1" | 0 match | — |
+| "CodoC leader-2/conductor" | 0 match | — |
+| "receiving agent becomes leader" | 0 match | — |
+| "leader=reason old" | 0 match | — |
+| "coding/edit + general worker (Cline)" | 0 match | — |
+| "coding/edit to clinC" | 0 match | — |
+| "ComC1 / ComC2 / ComC3" | 0 match | — |
+| "Qwen" trong ComC model map | 0 match | — |
+| "DS Flash" trong ComC model map | 0 match | — |
+
+Tất cả references cũ chỉ tồn tại trong research/ (latest_session_full.md, COUNCIL_USE_CASE_ASSIGNMENT_R2.md) — được loại trừ theo task spec.
+Kết quả: PASS ✅
+
+**T3: Rule mới — kiểm tra consistency**
+
+| Rule | CORE_RULE | council_config | SLIM_RULE | 24_council_tr | council_rule_leader |
+|------|-----------|----------------|-----------|---------------|---------------------|
+| Codo leader | ✅ line 95 | ✅ coord_rule | ✅ line 29 | ✅ line 8 | ✅ line 17 |
+| worker routing != ComC model routing | ✅ line 95 | ✅ coord_rule | ✅ line 29 | ✅ line 46 | ✅ line 61 |
+| ComC one sequential worker | ✅ line 95 | ✅ role line 34 | ✅ line 29 | ✅ line 47 | ✅ line 49 |
+| model map DS V4 Pro/xiaomi/MiniMax | ✅ line 95 | ✅ role+coord_rule | ✅ line 29 | ✅ line 46-48 | ✅ line 64 |
+| ClauC = Judgement | ✅ line 95 | ✅ role line 10 | ✅ line 29 | ✅ line 12 | ✅ line 44 |
+
+Kết quả: PASS ✅ — tất cả 5 rule mới đồng bộ trên toàn bộ 5 file SOT.
+
+### FAILURES
+
+Không có.
+
+### REMAINING RISKS
+
+1. **agents_registry.json giữ legacy_worker_name "ClinC"** (line ~42) cho agent clin đã DISABLED. Không phải routing hazard vì council_config.json đã ghi enabled=false, nhưng là stale metadata nên clean khi có dịp.
+
+2. **research/ chứa references cũ** (Qwen, DS Flash, receiving agent leader, ClinC > ComC cost order cũ). Task spec yêu cầu bỏ qua research/ nên không phải issue — nhưng nếu ai đó đọc research/ mà không kiểm tra config SOT có thể bị nhầm.
+
+3. **ClinC vẫn trong roster_order** của council_config.json (line 73) dù enabled=false. Không gây lỗi vì convene_council đọc enabled flag trước, nhưng nên dọn roster_order khi xác nhận permanent disable.
+
+### TÓM TẮT
+
+Fallback fix thành công. KHÔNG có cụm cũ nào trong active files. 5 rule mới đồng bộ trên toàn bộ SOT chain (CORE_RULE.txt → SLIM_RULE.txt → council_config.json → 24_council_tr.md → council_rule_leader.md). Matrix 180 tools clean, 0 drift. Chỉ còn 3 risk nhỏ (stale metadata trong registry + roster_order, research/ docs cũ) — không blocking.

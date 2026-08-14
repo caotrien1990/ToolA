@@ -1,0 +1,215 @@
+{
+  "flow": {
+    "description": "Librarian capture + distill pipeline — batch/idle, not per-turn",
+    "stages": [
+      {
+        "stage": "capture",
+        "trigger": "on_turn_end (per writer session)",
+        "actors": ["Claude", "Codex"],
+        "collects": ["tool_use_block", "user_prompt", "assistant_response"],
+        "storage": "raw_staging (append-only JSONL)",
+        "note": "Tool use already captured; prompt+response is NEW addition"
+      },
+      {
+        "stage": "batch_distill",
+        "trigger": "idle_timer(30s) OR buffer_size(>=5 turns) OR session_end",
+        "input": "raw_staging unprocessed entries",
+        "output": "distilled_points (subject/subtopic/point triples)",
+        "note": "Never per-turn — batch only to save token cost on distill LLM call"
+      },
+      {
+        "stage": "verify",
+        "actor": "OpeC (read-only audit)",
+        "input": "raw_staging + distilled_points",
+        "output": "verification_marks (ok|suspect|reject per distilled_point)",
+        "gate": "Only verified points proceed to clean RAG"
+      },
+      {
+        "stage": "clean_rag_ingest",
+        "trigger": "verification_marks all resolved",
+        "input": "verified distilled_points only",
+        "output": "clean_rag index (never raw transcript)",
+        "policy": "RAW NEVER PROMOTED DIRECTLY TO RAG"
+      }
+    ]
+  },
+  "raw_schema": {
+    "description": "Raw capture in JSONL staging — immutable append-only",
+    "fields": {
+      "id": "uuid v7 (time-sorted)",
+      "writer": "claude|codex",
+      "session_id": "string",
+      "turn_index": "int (0-based within session)",
+      "timestamp": "ISO 8601",
+      "user_prompt": "string (full text)",
+      "assistant_response": "string (full text)",
+      "tool_use_blocks": "object[] (existing capture, passthrough)",
+      "project_context": "string|null (repo/project slug from session)",
+      "status": "unprocessed|distilled|verified|archived",
+      "distilled_at": "ISO 8601|null",
+      "distilled_point_ids": "uuid[]|null (refs into distilled_points)"
+    },
+    "indexes": ["status", "writer", "session_id", "timestamp"],
+    "retention": "keep_raw_until_verified_then_optional_prune (OpeC gates purge)"
+  },
+  "distilled_point_schema": {
+    "description": "One distilled_point per semantic unit — subject/subtopic/point triple",
+    "fields": {
+      "id": "uuid v7",
+      "raw_ref_ids": "uuid[] (source raw_entry ids, 1..N)",
+      "subject": "string (broad domain, e.g. RAG pipeline, auth)",
+      "subtopic": "string (narrower, e.g. chunking strategy, token refresh)",
+      "point": "string (the atomic fact/decision/insight, <=280 chars)",
+      "confidence": "float 0..1 (distill model self-score)",
+      "evidence_snippet": "string|null (key quote from raw, for OpeC audit)",
+      "writer": "claude|codex (inherited from raw)",
+      "session_ids": "string[] (sessions this point was observed in)",
+      "observation_count": "int (how many turns reinforce this point)",
+      "first_seen": "ISO 8601",
+      "last_seen": "ISO 8601",
+      "verification": {
+        "status": "pending|ok|suspect|reject",
+        "verifier": "opeC",
+        "verified_at": "ISO 8601|null",
+        "note": "string|null"
+      },
+      "rag_indexed": "bool (false until clean_rag ingest)",
+      "tags": "string[] (auto-extracted or OpeC-added)"
+    },
+    "dedup_rule": "If same (subject, subtopic, semantic_equivalent(point)) exists, increment observation_count + merge session_ids instead of creating new",
+    "indexes": ["subject", "subtopic", "verification.status", "rag_indexed"]
+  },
+  "lifecycle": {
+    "states": {
+      "RAW": {
+        "description": "Entry just captured in raw_staging",
+        "allowed_transitions": ["DISTILLING"],
+        "max_age_without_distill": "1 session or 24h"
+      },
+      "DISTILLING": {
+        "description": "Batch distill in progress",
+        "allowed_transitions": ["DISTILLED", "ERROR"],
+        "timeout": "60s per batch"
+      },
+      "DISTILLED": {
+        "description": "Distilled points created, awaiting OpeC verification",
+        "allowed_transitions": ["VERIFIED", "PARTIALLY_VERIFIED"],
+        "max_age_without_verify": "72h (auto-escalate to OpeC)"
+      },
+      "PARTIALLY_VERIFIED": {
+        "description": "Some points ok, some suspect/rejected",
+        "allowed_transitions": ["VERIFIED"],
+        "action": "Resolve suspect/reject before clean RAG ingest"
+      },
+      "VERIFIED": {
+        "description": "All distilled points for this batch verified",
+        "allowed_transitions": ["RAG_INDEXED", "ARCHIVED"]
+      },
+      "RAG_INDEXED": {
+        "description": "Points ingested into clean RAG index",
+        "allowed_transitions": ["ARCHIVED"]
+      },
+      "ARCHIVED": {
+        "description": "Raw may be pruned (optional, OpeC-gated)",
+        "allowed_transitions": []
+      },
+      "ERROR": {
+        "description": "Distill or verify failure",
+        "allowed_transitions": ["RAW"],
+        "action": "Retry with backoff or manual intervention"
+      }
+    }
+  },
+  "writer_policy": {
+    "allowed_writers": ["claude", "codex"],
+    "capture_mode": "automatic — every turn end appends to raw_staging",
+    "excluded_writers": ["hermes", "commandcode", "opencode", "cline"],
+    "excluded_reason": "Query-only clients; their context is volatile/search, not canonical knowledge",
+    "tool_use_only": false,
+    "note": "Extended from tool-use-only to full turn capture (prompt + response)"
+  },
+  "distill_policy": {
+    "mode": "batch",
+    "trigger": {
+      "buffer_size_threshold": 5,
+      "idle_timeout_seconds": 30,
+      "session_end": true
+    },
+    "anti_per_turn": "Never distill a single turn — wait for batch threshold",
+    "model": "fast/cheap LLM (distill is extractive summarization, not generation)",
+    "prompt_template": "Extract atomic facts/decisions from these {N} conversation turns. Output JSON array of {subject, subtopic, point, confidence, evidence_snippet}. Deduplicate semantically identical points.",
+    "max_turns_per_batch": 50,
+    "output": "distilled_points (merge-deduplicated into existing set)"
+  },
+  "rag_policy": {
+    "source": "distilled_points WHERE verification.status='ok' AND rag_indexed=false",
+    "never_promote": "RAW transcripts — no bypass, no exception",
+    "index_format": "Vector embed subject+subtopic+point; metadata = {id, tags, writer, observation_count, last_seen}",
+    "refresh_strategy": "Incremental — only newly verified points",
+    "staleness": "Points with observation_count>=5 AND last_seen > 90d → OpeC review for decay",
+    "query_clients": ["hermes", "commandcode", "opencode", "cline"],
+    "query_access": "READ-ONLY — cannot write raw or distilled, can only READ clean RAG index"
+  },
+  "test_plan": {
+    "unit": [
+      "Raw capture appends correctly for Claude/Codex turns",
+      "Raw capture REJECTS writes from Hermes/CommandCode/OpenCode/Cline",
+      "Batch distill triggers at buffer_size=5",
+      "Idle timer fires distill after 30s of no turns",
+      "Session end flushes remaining buffer",
+      "Dedup: same point increments observation_count, does not duplicate",
+      "Confidence threshold: points below 0.5 auto-flagged suspect"
+    ],
+    "integration": [
+      "Full pipeline: capture → idle → batch distill → OpeC verify → RAG ingest",
+      "OpeC reject cascades: rejected point never reaches RAG",
+      "RAG query from Hermes returns only verified points",
+      "Raw pruning only after OpeC confirms all entries verified"
+    ],
+    "edge_cases": [
+      "Empty turn (no prompt/response) — skip capture with warning",
+      "Very long prompt (>100K chars) — truncate with marker, flag for review",
+      "Distill model timeout — retry 3x then escalate to OpeC",
+      "Concurrent writes from two Claude sessions — JSONL append is safe (append-only)",
+      "RAG index corruption — rebuild from verified distilled_points (idempotent)"
+    ]
+  },
+  "failure_modes": {
+    "F1_capture_loss": {
+      "symptom": "Turn not appended to raw_staging",
+      "cause": "Writer crash mid-write, disk full, permission error",
+      "mitigation": "JSONL append is atomic per line; detect gap in turn_index sequence",
+      "recovery": "Replay missing turn from session log (if available) or mark gap"
+    },
+    "F2_distill_hallucination": {
+      "symptom": "Distilled point not supported by raw evidence",
+      "cause": "Distill LLM fabricates or over-extrapolates",
+      "mitigation": "OpeC verification step with evidence_snippet cross-check",
+      "recovery": "Reject point; optionally re-distill with lower temperature"
+    },
+    "F3_rag_pollution": {
+      "symptom": "Raw or unverified points in clean RAG",
+      "cause": "RAG policy bypass (bug or misconfiguration)",
+      "mitigation": "Hard gate: rag_indexed flag ONLY set after verification.status='ok'",
+      "recovery": "Purge RAG index, rebuild from verified distilled_points"
+    },
+    "F4_stale_points": {
+      "symptom": "Outdated facts in RAG (e.g. old API, deprecated pattern)",
+      "cause": "No decay/refresh mechanism",
+      "mitigation": "observation_count + last_seen staleness check; OpeC periodic audit",
+      "recovery": "OpeC marks stale → re-verify or tombstone"
+    },
+    "F5_writer_spoof": {
+      "symptom": "Query-only client writes to raw_staging",
+      "cause": "Auth bypass or misconfigured writer policy",
+      "mitigation": "Enforce writer allowlist at capture entrypoint (not just policy doc)",
+      "recovery": "Audit log; delete unauthorized entries; harden entrypoint"
+    }
+  },
+  "metadata": {
+    "artifact_version": "1.0.0",
+    "generated_by": "ComC",
+    "generated_at": "2026-06-18T00:00:00Z",
+    "status": "draft_for_review"
+  }
+}

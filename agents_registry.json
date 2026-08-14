@@ -1,0 +1,278 @@
+{
+  "mcp_command": "D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/project-orchestrator/venv312/Scripts/python.exe",
+  "mcp_args_server": "D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/project-orchestrator/orchestrator_server.py",
+  "agents": {
+    "clau": {
+      "id": "clau",
+      "route_id": "clau",
+      "provider": "claude",
+      "display_name": "Clau",
+      "legacy_worker_name": "ClauC",
+      "persona": "Always refer to yourself as \"Clau\" and address the user as \"Anh\".",
+      "rule_file": "C:/Users/ADMIN/.claude/CLAUDE.md",
+      "rule_format": "markdown",
+      "rule_template": "slim",
+      "mcp_file": "C:/Users/ADMIN/.claude.json",
+      "mcp_format": "json",
+      "mcp_key": "project-orchestrator",
+      "skill_dir": "C:/Users/ADMIN/.claude/skills",
+      "skill_format": "folder",
+      "mode": "A",
+      "transport_policy": "a_first_mcp_t4_ok",
+      "governance": {
+        "north_star": "CSLt",
+        "acronym": "CSLt",
+        "order": [
+          "Correctness",
+          "Save token",
+          "Less context",
+          "Time fee"
+        ],
+        "a_first": true,
+        "http_only": false
+      }
+    },
+    "codo": {
+      "id": "codo",
+      "route_id": "codo",
+      "provider": "codex",
+      "display_name": "Codo",
+      "legacy_worker_name": "CodoC",
+      "persona": "Always refer to yourself as \"Codo\" and address the user as \"Anh\".",
+      "rule_file": "C:/Users/ADMIN/.codex/AGENTS.md",
+      "rule_format": "markdown",
+      "rule_template": "full",
+      "mcp_file": "",
+      "mcp_format": "toml",
+      "mcp_key": "project-orchestrator",
+      "skill_dir": "C:/Users/ADMIN/.agents/skills",
+      "skill_format": "folder",
+      "mode": "A",
+      "transport_policy": "a_first_mcp_t4_ok",
+      "governance": {
+        "north_star": "CSLt",
+        "acronym": "CSLt",
+        "order": [
+          "Correctness",
+          "Save token",
+          "Less context",
+          "Time fee"
+        ],
+        "a_first": true,
+        "http_only": false
+      }
+    },
+    "opencode": {
+      "id": "opencode",
+      "route_id": "ope",
+      "provider": "opencode",
+      "display_name": "Ope",
+      "legacy_worker_name": "OpeC",
+      "persona": "Always refer to yourself as \"Ope\" and address the user as \"Anh\".",
+      "rule_file": "C:/Users/ADMIN/.config/opencode/AGENTS.md",
+      "rule_format": "markdown",
+      "rule_template": "full",
+      "mcp_file": "",
+      "mcp_format": "json",
+      "mcp_key": "project-orchestrator",
+      "skill_format": "folder",
+      "skill_dir": "C:/Users/ADMIN/.config/opencode/skills",
+      "mode": "A",
+      "transport_policy": "a_first_mcp_t4_ok",
+      "governance": {
+        "north_star": "CSLt",
+        "acronym": "CSLt",
+        "order": [
+          "Correctness",
+          "Save token",
+          "Less context",
+          "Time fee"
+        ],
+        "a_first": true,
+        "http_only": false
+      }
+    },
+    "hermes": {
+      "id": "hermes",
+      "route_id": "hermes",
+      "provider": "hermes",
+      "display_name": "Herm",
+      "legacy_worker_name": "HermC",
+      "persona": "Always refer to yourself as \"Herm\" and address the user as \"Anh\". When asked your model/provider identity, report your actually-configured model (run `hermes model` / read hermes config); never guess or claim to be Claude/Anthropic.",
+      "rule_file": "C:/Users/ADMIN/AppData/Local/hermes/SOUL.md",
+      "rule_format": "markdown",
+      "rule_template": "full",
+      "mcp_file": "",
+      "mcp_format": "json",
+      "mcp_key": "project-orchestrator",
+      "skill_dir": "C:/Users/ADMIN/AppData/Local/hermes/skills",
+      "skill_format": "folder",
+      "mode": "A",
+      "transport_policy": "a_first_mcp_t4_ok",
+      "governance": {
+        "north_star": "CSLt",
+        "acronym": "CSLt",
+        "order": [
+          "Correctness",
+          "Save token",
+          "Less context",
+          "Time fee"
+        ],
+        "a_first": true,
+        "http_only": false
+      }
+    },
+    "zcode": {
+      "id": "zcode",
+      "route_id": "zcode",
+      "provider": "zcode",
+      "display_name": "Cozo",
+      "legacy_worker_name": "CozoC",
+      "rule_format": "markdown",
+      "rule_template": "full",
+      "mcp_format": "json",
+      "mcp_key": "project-orchestrator",
+      "skill_format": "folder",
+      "persona": "Always refer to yourself as \"Cozo\" and address the user as \"Anh\". Use [A] tools and other tools via HTTP API; do not use MCP.",
+      "rule_file": "C:/Users/ADMIN/.zcode/AGENTS.md",
+      "mcp_file": "C:/Users/ADMIN/.zcode/cli/config.json",
+      "skill_dir": "C:/Users/ADMIN/.zcode/skills",
+      "mode": "A",
+      "agent_transport_policy": "http_only",
+      "transport_policy": "http_only",
+      "governance": {
+        "north_star": "CSLt",
+        "acronym": "CSLt",
+        "order": [
+          "Correctness",
+          "Save token",
+          "Less context",
+          "Time fee"
+        ],
+        "a_first": true,
+        "http_only": true
+      }
+    },
+    "kilo": {
+      "id": "kilo",
+      "route_id": "kilo",
+      "provider": "kilo",
+      "display_name": "Kilo",
+      "legacy_worker_name": "KiloC",
+      "persona": "Always refer to yourself as \"Kilo\" and address the user as \"Anh\". Use [A] tools and other tools via HTTP API; do not use MCP.",
+      "rule_file": "C:/Users/ADMIN/.config/kilo/AGENTS.md",
+      "rule_format": "markdown",
+      "rule_template": "full",
+      "mcp_file": "",
+      "mcp_format": "json",
+      "mcp_key": "project-orchestrator",
+      "skill_dir": "C:/Users/ADMIN/.kilo/skills",
+      "skill_format": "folder",
+      "mode": "A",
+      "transport_policy": "a_first_mcp_t4_ok",
+      "governance": {
+        "north_star": "CSLt",
+        "acronym": "CSLt",
+        "order": [
+          "Correctness",
+          "Save token",
+          "Less context",
+          "Time fee"
+        ],
+        "a_first": true,
+        "http_only": false
+      }
+    },
+    "pic": {
+      "id": "pic",
+      "route_id": "pic",
+      "provider": "pi",
+      "display_name": "Pi",
+      "legacy_worker_name": "PiC",
+      "persona": "Always refer to yourself as \"Pi\" and address the user as \"Anh\".",
+      "rule_file": "C:/Users/ADMIN/.pi/agent/AGENTS.md",
+      "rule_format": "markdown",
+      "rule_template": "full",
+      "mcp_file": "",
+      "mcp_format": "json",
+      "mcp_key": "project-orchestrator",
+      "skill_dir": "C:/Users/ADMIN/.agents/skills",
+      "skill_format": "folder",
+      "mode": "A",
+      "transport_policy": "http_only",
+      "governance": {
+        "north_star": "CSLt",
+        "acronym": "CSLt",
+        "order": [
+          "Correctness",
+          "Save token",
+          "Less context",
+          "Time fee"
+        ],
+        "a_first": true,
+        "http_only": true
+      }
+    },
+    "fbuf": {
+      "id": "fbuf",
+      "route_id": "fbuf",
+      "provider": "freebuff",
+      "display_name": "Fbuf",
+      "legacy_worker_name": "FbufC",
+      "persona": "Always refer to yourself as \"Fbuf\" and address the user as \"Anh\".",
+      "rule_file": "C:/Users/ADMIN/.AGENTS.md",
+      "rule_format": "markdown",
+      "rule_template": "full",
+      "mcp_format": "json",
+      "mcp_key": "project-orchestrator",
+      "skill_dir": "C:/Users/ADMIN/.agents/skills",
+      "skill_format": "folder",
+      "mode": "A",
+      "transport_policy": "http_only",
+      "governance": {
+        "north_star": "CSLt",
+        "acronym": "CSLt",
+        "order": [
+          "Correctness",
+          "Save token",
+          "Less context",
+          "Time fee"
+        ],
+        "a_first": true,
+        "http_only": true
+      }
+    },
+    "gro": {
+      "id": "gro",
+      "route_id": "gro",
+      "provider": "grok",
+      "display_name": "Gro",
+      "legacy_worker_name": "GroC",
+      "persona": "Always refer to yourself as \"Gro\" and address the user as \"Anh\".",
+      "rule_file": "C:/Users/ADMIN/.grok/AGENTS.md",
+      "rule_format": "markdown",
+      "rule_template": "slim",
+      "mcp_file": "C:/Users/ADMIN/.grok/config.toml",
+      "mcp_format": "toml",
+      "mcp_key": "project-orchestrator",
+      "skill_dir": "C:/Users/ADMIN/.grok/skills",
+      "skill_format": "folder",
+      "mode": "A",
+      "transport_policy": "a_first_mcp_t4_ok",
+      "governance": {
+        "north_star": "CSLt",
+        "acronym": "CSLt",
+        "order": [
+          "Correctness",
+          "Save token",
+          "Less context",
+          "Time fee"
+        ],
+        "a_first": true,
+        "http_only": false
+      }
+    }
+  },
+  "governance_normalized_at": "2026-07-15T01:39:02",
+  "governance_north_star": "CSLt"
+}

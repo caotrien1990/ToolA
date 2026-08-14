@@ -1,0 +1,29 @@
+# Pi CLI model catalog (provider=ltnai)
+# Selector equals the configured unprefixed wire model ID.
+
+ID model:
+openai/gpt-5.6-sol
+
+ID model:
+openai/gpt-5.6-terra
+
+ID model:
+openai/gpt-5.6-luna
+
+ID model:
+alibaba/qwen3.8-max
+
+ID model:
+xiaomi/mimo-v2.5-pro
+
+ID model:
+deepseek/deepseek-v4-pro
+
+ID model:
+deepseek/deepseek-v4-flash-0731
+
+ID model:
+moonshotai/kimi-k3
+
+ID model:
+minimax/minimax-m3

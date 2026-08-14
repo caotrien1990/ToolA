@@ -1,0 +1,3300 @@
+{
+  "created": "2026-07-04",
+  "method": "50 queries via POST /pre_search top_k=5; expected_relevant judged by HermC5 reading snippet content for actual topic/fact match; queries phrased as search-intent to pass gatekeeper",
+  "note": "DRAFT - can leader review truoc khi ComC3 chay benchmark chinh thuc. Gatekeeper model: deepseek-v4-flash (openrouter). Queries phrased as 'search memory for...' to pass gatekeeper yes/hint gate. Judge criteria: snippet must contain the key term/fact, not just generic subject match.",
+  "group_summary": {
+    "A_code_lookup": "15 queries, 7 with non-empty expected",
+    "B_continuity_history": "15 queries, 6 with non-empty expected",
+    "C_factual_recall": "10 queries, 9 with non-empty expected",
+    "D_ambiguous": "10 queries, 5 with non-empty expected"
+  },
+  "queries": [
+    {
+      "id": "A01",
+      "group": "A",
+      "query": "search memory for cbm_index function in orchestrator",
+      "pre_search_memory_ids": [
+        2536,
+        467,
+        1402,
+        1395,
+        486
+      ],
+      "pre_search_scores": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 2536,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Phase 1 complete. Files: orchestrator/graph/{config,__init__,schema,store,extractors/python,indexer,status,query,tools}.py + orchestrator/tools/search.py line76 graph-first prepend + cod",
+          "source": "fts",
+          "writer": "A"
+        },
+        {
+          "id": 467,
+          "score": 0.5,
+          "subject": "rawcut",
+          "snippet": "Subject: rawcut Subtopic: <observed_from_primary_session> <what_happened>mcp__plugin_claude-mem_mcp-search__smart_search</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1402,
+          "score": 0.5,
+          "subject": "rawcut",
+          "snippet": "Memory point: Got it — you want to bring [Ab] Rawcut's input functions (paste sheet link, manual text, choose target folder) **into** the [Ac] Autocutter CEP panel. I'm in plan mode, so I'll explore b",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1395,
+          "score": 0.5,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: No \"tiến hành\" trigger in this message — so per the orchestrator guard I'll stay in **T1 read-only**: investigate all 3 issues, confirm root causes, and present a concrete fix plan for y",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 486,
+          "score": 0.5,
+          "subject": "bugfix/debug",
+          "snippet": "Subject: bugfix/debug Subtopic: <observed_from_primary_session> <what_happened>Grep</what_happened> <occurred_at>2026-06-18T06:14:09.928Z</occurred_at> ... Writer: claude Project: C:\\Users\\ADMIN\\.clau",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "A02",
+      "group": "A",
+      "query": "find information about graph_find_symbol tool in ToolQ",
+      "pre_search_memory_ids": [
+        1288,
+        2107,
+        1248,
+        1236,
+        2319
+      ],
+      "pre_search_scores": [
+        0.7167,
+        0.6667,
+        0.6667,
+        0.6667,
+        0.6667
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 1288,
+          "score": 0.7167,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Tức là: **Qwen đã đủ điều kiện để plug**, nhưng chưa được gắn thành cơ chế vận hành thật trong ToolQ Evidence: Tức là: **Qwen đã đủ điều kiện để plug**, nhưng chưa được gắn thành cơ chế ",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 2107,
+          "score": 0.6667,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Codo sẽ nạp CORE_RULE của [A] trước, rồi đọc hai report qua kênh [A] nếu tool phù hợp có sẵn. Nếu [A] không nhận kết nối, Codo sẽ dừng đúng rule và báo Anh ngay Evidence: Codo sẽ nạp COR",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1248,
+          "score": 0.6667,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: bởi vì bài test benchmark của bạn drift lỗi. toolQ rawdata chỉ có history session của claude và codex mà thôi. ngáo ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sess",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1236,
+          "score": 0.6667,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: PLEASE IMPLEMENT THIS PLAN: # Plan Chốt Tuyệt Đối ToolQ Step 1.1-1.4 Bằng Council ## Summary Mục tiêu là khóa chuẩn lại ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 2319,
+          "score": 0.6667,
+          "subject": "[A]/council",
+          "snippet": "Memory point: CP01 build PASS** (OpeC4): 4 artifacts + SHA256, **28/28 bảng row-count khớp** live↔backup, dùng SQLite Online Backup API (an toàn). Backup an toàn tại `21. ToolQ\\backups\\devine_cp01_202",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "A03",
+      "group": "A",
+      "query": "look up write_fix function usage in orchestrator codebase",
+      "pre_search_memory_ids": [
+        2455,
+        593,
+        1338,
+        218,
+        1100
+      ],
+      "pre_search_scores": [
+        0.4,
+        0.4,
+        0.2673,
+        0.2354,
+        0.2342
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 2455,
+          "score": 0.4,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Chào Anh, em verify `.headroom` tại ToolA (read-only): Evidence: Chào Anh, em verify `.headroom` tại ToolA (read-only): Subject: [A]/council Subtopic: @\"D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE ",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 593,
+          "score": 0.4,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: khoan đã. nút function pause đã thành stop rồi mà! Writer: claude Project: D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\0. Tr_MEDIA_BOT\\2. ROOM 2\\1. backend User intent: ",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1338,
+          "score": 0.2673,
+          "subject": "bugfix/debug",
+          "snippet": "Memory point: Xin chào! 👋 Bootstrap đã hoàn tất. Tôi đang kiểm tra sức khỏe của Orchestrator Evidence: Xin chào! 👋 Bootstrap đã hoàn tất. Tôi đang kiểm tra sức khỏe của Orchestrator Subject: bugfix/de",
+          "source": "vector",
+          "writer": "claude"
+        },
+        {
+          "id": 218,
+          "score": 0.2354,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: có vấn đề về council broker. tôi đã test CLI commandcode với minimax m3 free và opencode riêng vẫn chạy bình thường. ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\ses",
+          "source": "vector",
+          "writer": "codex"
+        },
+        {
+          "id": 1100,
+          "score": 0.2342,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Subject: workflow-loop-guardrails Subtopic: ok tiến hành Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessions\\2026\\06\\20 User intent: ok tiến hành Memory point: Rõ Anh. Codo sẽ tiến hành phase integr",
+          "source": "vector",
+          "writer": "codex"
+        }
+      ]
+    },
+    {
+      "id": "A04",
+      "group": "A",
+      "query": "search memory for council_message HTTP endpoint implementation",
+      "pre_search_memory_ids": [
+        1994,
+        818,
+        579,
+        278,
+        1995
+      ],
+      "pre_search_scores": [
+        0.6,
+        0.6,
+        0.4,
+        0.4,
+        0.4
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 1994,
+          "score": 0.6,
+          "subject": "frontend/design",
+          "snippet": "Memory point: Đúng Anh: `http://127.0.0.1:8088` là endpoint local của **llama.cpp `llama-server.exe`**, đang serve model: Evidence: Đúng Anh: `http://127.0.0.1:8088` là endpoint local của **llama.cpp ",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 818,
+          "score": 0.6,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: codo sẽ prompt ra sao để loop chạy? Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessions\\2026\\06\\15 User intent: codo sẽ prompt ra sao để loop chạy? Memory point: You m",
+          "source": "fts+vector",
+          "writer": "codex"
+        },
+        {
+          "id": 579,
+          "score": 0.4,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: <observed_from_primary_session> <what_happened>Bash</what_happened> <occurred_at>2026-06-18T04:56:57.201Z</occurred_at> ... Writer: claude Project: C:\\Users\\ADMIN\\.claud",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 278,
+          "score": 0.4,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: rool app: D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\21. A1990 [A] vẫn ở [A:P] không thay đổi. nên làm gì đầu tiên? Writer: codex Project: C:\\Users\\ADMIN\\.codex\\session",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1995,
+          "score": 0.4,
+          "subject": "frontend/design",
+          "snippet": "Memory point: `http://127.0.0.1:8082` Evidence: `http://127.0.0.1:8082` Subject: frontend/design Subtopic: http://127.0.0.1:8088 là UI của gì vậy? llama hả? thấy kết nối với qwen Writer: codex Project",
+          "source": "fts",
+          "writer": "codex"
+        }
+      ]
+    },
+    {
+      "id": "A05",
+      "group": "A",
+      "query": "find docs about manage_agent tool and sync_rule action",
+      "pre_search_memory_ids": [
+        1874,
+        972,
+        238,
+        1318,
+        447
+      ],
+      "pre_search_scores": [
+        0.45,
+        0.4,
+        0.4,
+        0.2563,
+        0.2558
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 1874,
+          "score": 0.45,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Codo dừng tại đây, không làm thêm tool/action nào nữa Evidence: Codo dừng tại đây, không làm thêm tool/action nào nữa Subject: [A]/council Subtopic: bạn lại drift rule rồi. restart [A] b",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 972,
+          "score": 0.4,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: đã test lại với Comc 3. pass tiến hành set đồng bộ toàn bộ cho tất cả CA đã đăng ký Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessions\\2026\\06\\18 User intent: đã test",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 238,
+          "score": 0.4,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: RULE thì sao? đồng bộ hết chưa? global rule? leader rule? worker rule? Chỉ trả lời khoan làm! Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessions\\2026\\06\\17 User inten",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1318,
+          "score": 0.2563,
+          "subject": "clau-mem/librarian",
+          "snippet": "Memory point: Read-only searcher agents dispatched via `council_message` API to `localhost:8083` Evidence: Read-only searcher agents dispatched via `council_message` API to `localhost:8083` Subject: c",
+          "source": "vector",
+          "writer": "claude"
+        },
+        {
+          "id": 447,
+          "score": 0.2558,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: You are a knowledge agent with access to 20 observations from the \"codex-rawcut-memory\" corpus. This corpus is scoped ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-",
+          "source": "vector",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "A06",
+      "group": "A",
+      "query": "search memory for get_rule_core_text API endpoint",
+      "pre_search_memory_ids": [
+        579,
+        445,
+        438,
+        2277,
+        278
+      ],
+      "pre_search_scores": [
+        0.75,
+        0.75,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "expected_relevant_ids": [
+        2277
+      ],
+      "judge_note": "1/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 579,
+          "score": 0.75,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: <observed_from_primary_session> <what_happened>Bash</what_happened> <occurred_at>2026-06-18T04:56:57.201Z</occurred_at> ... Writer: claude Project: C:\\Users\\ADMIN\\.claud",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 445,
+          "score": 0.75,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: T?m t?t RAG map hi?n c? cho [A] v? Rawcut trong 5 ? ng?n. Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer-sessions User intent: T?m t?t RAG map hi?n c? cho [",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 438,
+          "score": 0.5,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: [A]/council Subtopic: You are a shared memory librarian for Claude, Codex, and future CAs. Use ONLY this curated corpus as distilled ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\obs",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 2277,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Memory point: | **Chức năng [A]** (41 tool: open_session, write_fix, search_code, get_rule_core_text...) | **MCP registration** | ❌ KHÔNG. Cả 4 agent đã đăng ký MCP → **đều có đủ 41 tool y hệt** | Evi",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 278,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: rool app: D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\21. A1990 [A] vẫn ở [A:P] không thay đổi. nên làm gì đầu tiên? Writer: codex Project: C:\\Users\\ADMIN\\.codex\\session",
+          "source": "fts",
+          "writer": "codex"
+        }
+      ]
+    },
+    {
+      "id": "A07",
+      "group": "A",
+      "query": "look up desktop_screenshot tool in orchestrator",
+      "pre_search_memory_ids": [
+        696,
+        700,
+        694,
+        746,
+        693
+      ],
+      "pre_search_scores": [
+        0.7167,
+        0.6667,
+        0.3333,
+        0.3333,
+        0.3333
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 696,
+          "score": 0.7167,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: tiếp Writer: claude Project: D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\0. Tr_MEDIA_BOT\\2. ROOM 2\\1. backend User intent: tiếp Memory point: Session resume — [A] đang r",
+          "source": "fts+vector",
+          "writer": "claude"
+        },
+        {
+          "id": 700,
+          "score": 0.6667,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Subject: workflow-loop-guardrails Subtopic: tool mới có cần cập nhật mcp hay không? riêng hook claude có cần cập nhật hay không? nếu có cập nhật hết. nếu không trả ... Writer: claude Project: D:\\0. TR",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 694,
+          "score": 0.3333,
+          "subject": "mcp-config",
+          "snippet": "Subject: mcp-config Subtopic: 1. Ok tiến hành 2. Các tác vụ khác cần snapshot của [A] cũng đang hạn chế, chỉ chụp monitor 1, tôi cần [A] có thể cho ... Writer: claude Project: D:\\0. TRIEN\\1. DATA\\DATA",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 746,
+          "score": 0.3333,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: tôi không thấy gửi codoc song song. luôn kiểm tra hoặc dùng T4 [A] snapshot để nắm tình hình council Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessions\\2026\\06\\15 Use",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 693,
+          "score": 0.3333,
+          "subject": "mcp-config",
+          "snippet": "Subject: mcp-config Subtopic: 1. Ok tiến hành 2. Các tác vụ khác cần snapshot của [A] cũng đang hạn chế, chỉ chụp monitor 1, tôi cần [A] có thể cho ... Writer: claude Project: D:\\0. TRIEN\\1. DATA\\DATA",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "A08",
+      "group": "A",
+      "query": "find information about describe_page DOM inspection tool",
+      "pre_search_memory_ids": [
+        1705,
+        583,
+        1346,
+        1781,
+        1656
+      ],
+      "pre_search_scores": [
+        0.5,
+        0.5,
+        0.5,
+        0.25,
+        0.25
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 1705,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Memory point: EXC EXECUTE — Tiến hành 3 fix (cách B: codo implement + Clau review). codo lo phần [A] code/rule; em (Clau) lo persona CLAUDE.md (ngoài [A], không đụng nhau). Dispatch codo: Evidence: EX",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 583,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: 1. cơ chế đó lỗi thời rồi, hiện tại [A] đã có tool đổi model. đây là lỗi plan, fix nhẹ plan đoạn đó để tránh quên. Plan ... Writer: claude Project: D:\\0. TRIEN\\1. DATA\\D",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1346,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Issue click-không-trigger:** CDP `Input.dispatchMouseEvent` ok=true nhưng handler không fire → có thể framework dùng pointer events / event delegation, hoặc click trúng element khác. Cần",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1781,
+          "score": 0.25,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Query/inspect live rule hiện tại: leader skill, council worker rule, core rule, tool schemas write Evidence: Query/inspect live rule hiện tại: leader skill, council worker rule, core rul",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1656,
+          "score": 0.25,
+          "subject": "[A]/council",
+          "snippet": "Memory point: MCP **chỉ thắng thật** ở: (a) là kênh bootstrap bắt buộc 1 lần (`get_rule_core_text`), (b) **T4 stateful** — điều khiển DOM/CDP/browser/Electron nơi cần giữ trạng thái trang qua nhiều ca",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "A09",
+      "group": "A",
+      "query": "search memory for convene_council leader routing function",
+      "pre_search_memory_ids": [
+        1878,
+        1599,
+        2419,
+        1480,
+        1032
+      ],
+      "pre_search_scores": [
+        0.8,
+        0.6,
+        0.6,
+        0.6,
+        0.4
+      ],
+      "expected_relevant_ids": [
+        1878
+      ],
+      "judge_note": "1/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 1878,
+          "score": 0.8,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Trước first-dispatch: em lấy worker routing spec từ [Q] + schema convene_council (bắt buộc theo leader rule): Evidence: Trước first-dispatch: em lấy worker routing spec từ [Q] + schema c",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1599,
+          "score": 0.6,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Leader skill vNext nạp xong (routing: OpeC1/HermC1 scan, ComC1 breakdown/judgement, dispatch **tuần tự**; same-agent multi-slot vẫn block). Giờ force-refresh CORE_RULE (rule đã cập nhật)",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 2419,
+          "score": 0.6,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Leader skill loaded. Load verify-new-function skill: Evidence: Leader skill loaded. Load verify-new-function skill: Subject: workflow-loop-guardrails Subtopic: Base directory for this sk",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1480,
+          "score": 0.6,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Routing model-slot rõ hơn:** ComC1=DeepSeek-v4-pro (edge/bug/breakdown), ComC2=MiniMax-M3 (plan/phản biện), ComC3=Mimo-v2.5 (brainstorm/tool-test); CodoC=code builder; OpeC1/HermC1=fast ",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1032,
+          "score": 0.4,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: Base directory for this skill: C:\\Users\\ADMIN\\.claude\\skills\\leader-council-skill # Leader_council_skill ## Activation ... Writer: claude Project: D:\\0. TRIEN\\1. DATA\\DA",
+          "source": "fts+vector",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "A10",
+      "group": "A",
+      "query": "find docs about refresh_project_map tool",
+      "pre_search_memory_ids": [
+        461,
+        234,
+        314,
+        183,
+        186
+      ],
+      "pre_search_scores": [
+        0.6667,
+        0.3333,
+        0.3333,
+        0.2408,
+        0.229
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 461,
+          "score": 0.6667,
+          "subject": "bugfix/debug",
+          "snippet": "Subject: bugfix/debug Subtopic: <observed_from_primary_session> <what_happened>Bash</what_happened> <occurred_at>2026-06-18T06:07:57.810Z</occurred_at> ... Writer: claude Project: C:\\Users\\ADMIN\\.clau",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 234,
+          "score": 0.3333,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: Không cần auto open output file nữa, chỉ cần báo path cho CA dùng tool. Tiến hành. Làm xong check tất cả tool diff đề ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\se",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 314,
+          "score": 0.3333,
+          "subject": "frontend/design",
+          "snippet": "Subject: frontend/design Subtopic: build tool giúp bạn có thể paste qua lại với 2 agent. tiến hành và thực thi hội đồng sau khi tool hoạt động. Writer: claude Project: D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE",
+          "source": "fts+vector",
+          "writer": "claude"
+        },
+        {
+          "id": 183,
+          "score": 0.2408,
+          "subject": "frontend/design",
+          "snippet": "Subject: frontend/design Subtopic: 2 proj hiện tại đã xong, cập nhật readme khi tôi chốt project nào thì tự move history project đó, folder project ở ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\s",
+          "source": "vector",
+          "writer": "codex"
+        },
+        {
+          "id": 186,
+          "score": 0.229,
+          "subject": "frontend/design",
+          "snippet": "Subject: frontend/design Subtopic: thêm trigger mở project nữa, khi tôi báo mở project thì tự hỏi tôi tên project để mở folder mới opec phải xem timeline ... Writer: codex Project: C:\\Users\\ADMIN\\.cod",
+          "source": "vector",
+          "writer": "codex"
+        }
+      ]
+    },
+    {
+      "id": "A11",
+      "group": "A",
+      "query": "search memory for log_native_event function in orchestrator",
+      "pre_search_memory_ids": [
+        1625,
+        2536,
+        467,
+        1402,
+        1463
+      ],
+      "pre_search_scores": [
+        0.75,
+        0.5,
+        0.5,
+        0.5,
+        0.2876
+      ],
+      "expected_relevant_ids": [
+        1463
+      ],
+      "judge_note": "1/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 1625,
+          "score": 0.75,
+          "subject": "frontend/design",
+          "snippet": "Memory point: Anh chốt **P1: memory tools trong [A]**. Đây là sửa **chính [A]** (orchestrator) — có inventory/schema/matrix audit nghiêm (drift_count phải = 0), và rule yêu cầu \"edit [A] = native edit",
+          "source": "fts+vector",
+          "writer": "claude"
+        },
+        {
+          "id": 2536,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Phase 1 complete. Files: orchestrator/graph/{config,__init__,schema,store,extractors/python,indexer,status,query,tools}.py + orchestrator/tools/search.py line76 graph-first prepend + cod",
+          "source": "fts",
+          "writer": "A"
+        },
+        {
+          "id": 467,
+          "score": 0.5,
+          "subject": "rawcut",
+          "snippet": "Subject: rawcut Subtopic: <observed_from_primary_session> <what_happened>mcp__plugin_claude-mem_mcp-search__smart_search</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1402,
+          "score": 0.5,
+          "subject": "rawcut",
+          "snippet": "Memory point: Got it — you want to bring [Ab] Rawcut's input functions (paste sheet link, manual text, choose target folder) **into** the [Ac] Autocutter CEP panel. I'm in plan mode, so I'll explore b",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1463,
+          "score": 0.2876,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: \"tiến hành\" — apply fix vào [A] (HYBRID self-upgrade: native edit + log_native_event → py_compile → restart [A:S] → verify Evidence: \"tiến hành\" — apply fix vào [A] (HYBRID self-upgrade:",
+          "source": "vector",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "A12",
+      "group": "A",
+      "query": "look up read_file_range tool for project files",
+      "pre_search_memory_ids": [
+        1460,
+        1365,
+        548,
+        1364,
+        1461
+      ],
+      "pre_search_scores": [
+        0.6,
+        0.6,
+        0.6,
+        0.6,
+        0.4
+      ],
+      "expected_relevant_ids": [
+        1460
+      ],
+      "judge_note": "1/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 1460,
+          "score": 0.6,
+          "subject": "[A]/council",
+          "snippet": "Memory point: \"tiến hành B\" — rõ. Em tự quét bằng [A] T1 read-only (search_code / read_file_range qua MCP `call_tool` — hợp lệ cho clauC interactive, T1 read không cần đụng shell/security). Hint từ op",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1365,
+          "score": 0.6,
+          "subject": "rawcut",
+          "snippet": "Memory point: Rawcut FROZEN**: 15 files / 37.8GB stuck for 12.5 min. No terminal marker. Read systemLog tail for diagnosis Evidence: Rawcut FROZEN**: 15 files / 37.8GB stuck for 12.5 min. No terminal ",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 548,
+          "score": 0.6,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: Hello memory agent, you are continuing to observe the primary Claude session. <observed_from_primary_session> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-m",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1364,
+          "score": 0.6,
+          "subject": "rawcut",
+          "snippet": "Memory point: min no terminal — Rawcut still copying UNC files. Per Step 21 \"do not timeout by wall-clock\". Check progress + keep waiting Evidence: min no terminal — Rawcut still copying UNC files. Pe",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1461,
+          "score": 0.4,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Lấy schema 2 tool đọc trước để gọi đúng payload: Evidence: Lấy schema 2 tool đọc trước để gọi đúng payload: Subject: [A]/council Subtopic: tiến hành B Writer: claude Project: D:\\0. TRIEN",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "A13",
+      "group": "A",
+      "query": "find information about broker_filtered.jsonl cross-agent transcript",
+      "pre_search_memory_ids": [
+        225,
+        1316,
+        18,
+        1673,
+        1650
+      ],
+      "pre_search_scores": [
+        0.25,
+        0.2127,
+        0.2125,
+        0.2001,
+        0.2
+      ],
+      "expected_relevant_ids": [
+        1650
+      ],
+      "judge_note": "1/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "weak_hit",
+      "hits_detail": [
+        {
+          "id": 225,
+          "score": 0.25,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: MÁ BỰC THẬT. KIỂM TRA COUNCIL RESPONSE, xem đã dispatch gì cho comc Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessions\\2026\\06\\17 User intent: MÁ BỰC THẬT. KIỂM TRA C",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1316,
+          "score": 0.2127,
+          "subject": "clau-mem/librarian",
+          "snippet": "Memory point: Note:** While the corpus is titled \"airtag-vietnam-child-tracker\" with a research prompt about AirTag and child tracking devices under 500k VND in Vietnam, the actual observations contai",
+          "source": "vector",
+          "writer": "claude"
+        },
+        {
+          "id": 18,
+          "score": 0.2125,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Subject: workflow-loop-guardrails Subtopic: You are a knowledge agent with access to 23 observations from the \"shared-10d-staging\" corpus. This corpus is scoped to ... Writer: claude Project: C:\\Users",
+          "source": "vector",
+          "writer": "claude"
+        },
+        {
+          "id": 1673,
+          "score": 0.2001,
+          "subject": "frontend/design",
+          "snippet": "Memory point: → Investigation phải **điều tra sâu sự bất đối xứng này** (vì sao worker↔worker giữ được mà user→worker mất), **tận dụng khả năng sẵn có**, làm context **nhẹ** — không nhồi cả transcript",
+          "source": "vector",
+          "writer": "claude"
+        },
+        {
+          "id": 1650,
+          "score": 0.2,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Để xác định lỗi dấu là do [A] (encoding lúc dispatch) hay do input của em, em đọc trực tiếp `broker_filtered.jsonl` xem text prompt được [A] ghi/giao thực tế ra sao Evidence: Để xác định",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "A14",
+      "group": "A",
+      "query": "search memory for Q_S.bat launch script for ToolQ",
+      "pre_search_memory_ids": [
+        2114,
+        1327,
+        1443,
+        1978,
+        1562
+      ],
+      "pre_search_scores": [
+        0.8,
+        0.8,
+        0.6,
+        0.6,
+        0.6
+      ],
+      "expected_relevant_ids": [
+        2114,
+        1327
+      ],
+      "judge_note": "2/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 2114,
+          "score": 0.8,
+          "subject": "frontend/design",
+          "snippet": "Memory point: Anh đã yêu cầu `Q:S`, nên Codo sẽ chạy đúng launcher `D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\21. ToolQ\\Q_S.bat` để restart/bring up Q, rồi kiểm tra ngắn xem process gọi đã launch đư",
+          "source": "fts+vector",
+          "writer": "codex"
+        },
+        {
+          "id": 1327,
+          "score": 0.8,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Phạm vi cần tìm: `CLAUDE_MEM_HOME`, `[Q:P]`, `Q_S.bat`, scheduled task, API service scripts, hardcoded `Path.home() / \".claude-mem\"`, logs, DB paths, skill/rule references, tests, docs, ",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1443,
+          "score": 0.6,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Đã đọc kỹ báo cáo deepseekchat. Trước khi soạn câu hỏi cho CA, mình tự verify những gì có thể đọc được trên disk (để không hỏi CA thứ mình tự tra được — đúng tinh thần đọc trước khi hỏi)",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1978,
+          "score": 0.6,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Tiếp build Qnight-resident. (Lưu ý: prompt \"detect dev servers → launch.json\" không áp dụng — ToolQ là pipeline Python, không có dev-server JS/preview; em bỏ qua, tiếp tục việc thật Evid",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1562,
+          "score": 0.6,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Bước 1 — đo VRAM đầy đủ** (nhiều cấu hình `--cpu-moe`/`--n-cpu-moe`, giữ 64K, đo cả VRAM lẫn tốc độ). Viết script đo rồi chạy: Evidence: Bước 1 — đo VRAM đầy đủ** (nhiều cấu hình `--cpu-",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "A15",
+      "group": "A",
+      "query": "find docs about council_worker_model routing",
+      "pre_search_memory_ids": [
+        2071,
+        2137,
+        1793,
+        2048,
+        1788
+      ],
+      "pre_search_scores": [
+        0.6667,
+        0.4203,
+        0.4092,
+        0.3333,
+        0.3333
+      ],
+      "expected_relevant_ids": [
+        2071,
+        2137,
+        1793,
+        2048,
+        1788
+      ],
+      "judge_note": "all 5 hits relevant by snippet",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 2071,
+          "score": 0.6667,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Codo tiếp tục từ trạng thái đã bật hội đồng: bước đầu tiên là lấy Q routing hint, kiểm schema `council_message/council_worker_model`, dựng room `loop_merge`, rồi dispatch L1 trước. Codo ",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 2137,
+          "score": 0.4203,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Rõ rồi Anh. Codo sẽ bắt đầu leader run: convene council, đọc live schema cho `council_message/council_worker_model`, set worker model route, rồi dispatch phase đầu `P-encoding` theo đúng",
+          "source": "vector",
+          "writer": "codex"
+        },
+        {
+          "id": 1793,
+          "score": 0.4092,
+          "subject": "[A]/council",
+          "snippet": "Memory point: `council_worker_model` schema đúng không có `slot` Evidence: `council_worker_model` schema đúng không có `slot` Subject: [A]/council Subtopic: rồi mấy rule skill vừa cập nhật bạn đã chec",
+          "source": "vector",
+          "writer": "codex"
+        },
+        {
+          "id": 2048,
+          "score": 0.3333,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Codo kiểm trực tiếp `council_worker_model` schema/guidance để trả chắc, không dựa vào trí nhớ của vòng vừa rồi Evidence: Codo kiểm trực tiếp `council_worker_model` schema/guidance để trả",
+          "source": "fts+vector",
+          "writer": "codex"
+        },
+        {
+          "id": 1788,
+          "score": 0.3333,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Đúng, `council_worker_model` không “thiếu” hoàn toàn. Lỗi là rule/hint cũ vẫn có chỗ dễ làm CA drift sang field `slot`, nên mình đã siết lại như guardrail chống tái phát. Giờ mình sẽ làm",
+          "source": "fts+vector",
+          "writer": "codex"
+        }
+      ]
+    },
+    {
+      "id": "B01",
+      "group": "B",
+      "query": "search memory for A_Q devine upgrade project history",
+      "pre_search_memory_ids": [
+        2536,
+        2061,
+        2083,
+        2023,
+        59
+      ],
+      "pre_search_scores": [
+        1.0,
+        1.0,
+        1.0,
+        0.8,
+        0.4
+      ],
+      "expected_relevant_ids": [
+        2536,
+        2083,
+        2023
+      ],
+      "judge_note": "3/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 2536,
+          "score": 1.0,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Phase 1 complete. Files: orchestrator/graph/{config,__init__,schema,store,extractors/python,indexer,status,query,tools}.py + orchestrator/tools/search.py line76 graph-first prepend + cod",
+          "source": "fts",
+          "writer": "A"
+        },
+        {
+          "id": 2061,
+          "score": 1.0,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Codo kiểm tra nhanh đúng folder và đọc bounded nội dung từng file để không xác nhận mù Evidence: Codo kiểm tra nhanh đúng folder và đọc bounded nội dung từng file để không xác nhận mù Su",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 2083,
+          "score": 1.0,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Codo sẽ kiểm đúng folder `D:\\BR\\A_Q_devineupgrade_breakdown_plan2nd`, bỏ qua `loop*` và `old`, rồi so hash/nội dung plan 2nd với bản plan gốc còn lại nếu tìm thấy. Đoạn này read-only để ",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 2023,
+          "score": 0.8,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Codo sẽ làm đúng giới hạn Anh đặt: chỉ đọc đúng báo cáo `A_Q_RESEARCH_REPORT_OPEC4.md`, không quét hai repo. Vì Anh gọi `council brainstorm`, Codo đọc skill đó trước để giữ đúng quy trìn",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 59,
+          "score": 0.4,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: còn chức năng truy vấn khi cần thiết ở tất cả history session thì sao? Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessions\\2026\\06\\18 User intent: còn chức năng",
+          "source": "fts",
+          "writer": "codex"
+        }
+      ]
+    },
+    {
+      "id": "B02",
+      "group": "B",
+      "query": "find information about QSleep feature development",
+      "pre_search_memory_ids": [
+        1316,
+        2431,
+        2151,
+        2149,
+        1829
+      ],
+      "pre_search_scores": [
+        0.3333,
+        0.3333,
+        0.3333,
+        0.2204,
+        0.1999
+      ],
+      "expected_relevant_ids": [
+        2151,
+        1829
+      ],
+      "judge_note": "2/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "weak_hit",
+      "hits_detail": [
+        {
+          "id": 1316,
+          "score": 0.3333,
+          "subject": "clau-mem/librarian",
+          "snippet": "Memory point: Note:** While the corpus is titled \"airtag-vietnam-child-tracker\" with a research prompt about AirTag and child tracking devices under 500k VND in Vietnam, the actual observations contai",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 2431,
+          "score": 0.3333,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Anh giao task gì cho hội đồng ạ? (vd: scan/audit code, sửa lỗi, viết feature, test runtime...). Cho em mục tiêu + phạm vi để em chia việc Evidence: Anh giao task gì cho hội đồng ạ? (vd: ",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 2151,
+          "score": 0.3333,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Có, Anh, mốc đạt mục tiêu **phải có QSleep**, nhưng QSleep không nên đứng ở vai “verify chính” hay “vector chính” Evidence: Có, Anh, mốc đạt mục tiêu **phải có QSleep**, nhưng QSleep khô",
+          "source": "fts+vector",
+          "writer": "codex"
+        },
+        {
+          "id": 2149,
+          "score": 0.2204,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Sinh candidate cải thiện: redistill, merge, purge, bổ sung context Evidence: Sinh candidate cải thiện: redistill, merge, purge, bổ sung context Subject: workflow-loop-guardrails Subtopic",
+          "source": "vector",
+          "writer": "codex"
+        },
+        {
+          "id": 1829,
+          "score": 0.1999,
+          "subject": "frontend/design",
+          "snippet": "Memory point: Chọn cụm cho QSleep:** `machine_cluster_report` dùng `ids_for_query` (lexical/term-match) — tức QSleep input đã có BM Evidence: Chọn cụm cho QSleep:** `machine_cluster_report` dùng `ids_",
+          "source": "vector",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "B03",
+      "group": "B",
+      "query": "look up council routing changes recent sessions",
+      "pre_search_memory_ids": [
+        708,
+        464,
+        1206,
+        1753,
+        578
+      ],
+      "pre_search_scores": [
+        0.55,
+        0.5,
+        0.3333,
+        0.3333,
+        0.3333
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 708,
+          "score": 0.55,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: vậy clauc gửi tin đó làm gì vậy? Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessions\\2026\\06\\15 User intent: vậy clauc gửi tin đó làm gì vậy? Memory point: Chốt trạng ",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 464,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: <observed_from_primary_session> <what_happened>ToolSearch</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer-sessions User intent: <observed",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1206,
+          "score": 0.3333,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: Bạn là CodoC independent verifier cho Anh. Nhiệm vụ: verify consolidated audit points only, no code changes. Quan ... Writer: codex Project: C:\\Users\\ADMIN\\.codex",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1753,
+          "score": 0.3333,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Các function mới (P0 `/capture`, P1 memory tools, P2/P3 review+apply, P4b scorer, recent-mode, /query-consume): đã qua **verify thủ công + ComC1 design-review**, **chưa** qua skill verif",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 578,
+          "score": 0.3333,
+          "subject": "bugfix/debug",
+          "snippet": "Subject: bugfix/debug Subtopic: You are a Claude-Mem, a specialized observer tool for creating searchable memory FOR FUTURE SESSIONS. CRITICAL: Record ... Writer: claude Project: C:\\Users\\ADMIN\\.claud",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "B04",
+      "group": "B",
+      "query": "search memory for rawcut video editing project",
+      "pre_search_memory_ids": [
+        466,
+        467,
+        469,
+        468,
+        1365
+      ],
+      "pre_search_scores": [
+        0.6,
+        0.6,
+        0.6,
+        0.6,
+        0.6
+      ],
+      "expected_relevant_ids": [
+        467,
+        469,
+        468,
+        1365
+      ],
+      "judge_note": "4/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 466,
+          "score": 0.6,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: <observed_from_primary_session> <what_happened>ToolSearch</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer-sessions User intent: <observed",
+          "source": "fts+vector",
+          "writer": "claude"
+        },
+        {
+          "id": 467,
+          "score": 0.6,
+          "subject": "rawcut",
+          "snippet": "Subject: rawcut Subtopic: <observed_from_primary_session> <what_happened>mcp__plugin_claude-mem_mcp-search__smart_search</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 469,
+          "score": 0.6,
+          "subject": "rawcut",
+          "snippet": "Subject: rawcut Subtopic: <observed_from_primary_session> <what_happened>mcp__plugin_claude-mem_mcp-search__smart_search</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 468,
+          "score": 0.6,
+          "subject": "rawcut",
+          "snippet": "Subject: rawcut Subtopic: <observed_from_primary_session> <what_happened>mcp__plugin_claude-mem_mcp-search__smart_search</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1365,
+          "score": 0.6,
+          "subject": "rawcut",
+          "snippet": "Memory point: Rawcut FROZEN**: 15 files / 37.8GB stuck for 12.5 min. No terminal marker. Read systemLog tail for diagnosis Evidence: Rawcut FROZEN**: 15 files / 37.8GB stuck for 12.5 min. No terminal ",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "B05",
+      "group": "B",
+      "query": "find history about phase1p5 benchmark planning",
+      "pre_search_memory_ids": [
+        1248,
+        2223,
+        1316,
+        2221,
+        2222
+      ],
+      "pre_search_scores": [
+        0.25,
+        0.25,
+        0.25,
+        0.25,
+        0.25
+      ],
+      "expected_relevant_ids": [
+        1248
+      ],
+      "judge_note": "1/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "weak_hit",
+      "hits_detail": [
+        {
+          "id": 1248,
+          "score": 0.25,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: bởi vì bài test benchmark của bạn drift lỗi. toolQ rawdata chỉ có history session của claude và codex mà thôi. ngáo ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sess",
+          "source": "fts+vector",
+          "writer": "codex"
+        },
+        {
+          "id": 2223,
+          "score": 0.25,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Chạy pipeline nhỏ ở mid mode, không full blast: Evidence: Chạy pipeline nhỏ ở mid mode, không full blast: Subject: workflow-loop-guardrails Subtopic: zone1: test history session mà codo ",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1316,
+          "score": 0.25,
+          "subject": "clau-mem/librarian",
+          "snippet": "Memory point: Note:** While the corpus is titled \"airtag-vietnam-child-tracker\" with a research prompt about AirTag and child tracking devices under 500k VND in Vietnam, the actual observations contai",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 2221,
+          "score": 0.25,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: ingest -> distill/verify mock hoặc local-safe -> vectorizing gated -> query -> feedback -> qsleep/repair check -> delete cleanup Evidence: ingest -> distill/verify mock hoặc local-safe -",
+          "source": "fts+vector",
+          "writer": "codex"
+        },
+        {
+          "id": 2222,
+          "score": 0.25,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Kiểm tra: silent usage không auto-promote, feedback explicit mới tác động, không `human_override` Zone Evidence: Kiểm tra: silent usage không auto-promote, feedback explicit mới tác động",
+          "source": "fts+vector",
+          "writer": "codex"
+        }
+      ]
+    },
+    {
+      "id": "B06",
+      "group": "B",
+      "query": "search memory for breakdown plan second iteration",
+      "pre_search_memory_ids": [
+        2536,
+        1480,
+        1905,
+        250,
+        2083
+      ],
+      "pre_search_scores": [
+        0.6,
+        0.6,
+        0.4,
+        0.3281,
+        0.3232
+      ],
+      "expected_relevant_ids": [
+        1480,
+        1905,
+        2083
+      ],
+      "judge_note": "3/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 2536,
+          "score": 0.6,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Phase 1 complete. Files: orchestrator/graph/{config,__init__,schema,store,extractors/python,indexer,status,query,tools}.py + orchestrator/tools/search.py line76 graph-first prepend + cod",
+          "source": "fts",
+          "writer": "A"
+        },
+        {
+          "id": 1480,
+          "score": 0.6,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Routing model-slot rõ hơn:** ComC1=DeepSeek-v4-pro (edge/bug/breakdown), ComC2=MiniMax-M3 (plan/phản biện), ComC3=Mimo-v2.5 (brainstorm/tool-test); CodoC=code builder; OpeC1/HermC1=fast ",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1905,
+          "score": 0.4,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: ComC1** (deepseek-v4-pro) = breakdown/dev/bug; **ComC3** = brainstorm rẻ. ComC2/HermC2 đã bỏ Evidence: ComC1** (deepseek-v4-pro) = breakdown/dev/bug; **ComC3** = brainstorm rẻ. ComC2/Her",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 250,
+          "score": 0.3281,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Subject: workflow-loop-guardrails Subtopic: bạn đã có file devine break down plan tổng hợp từ break down plan 5 round chưa? Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessions\\2026\\06\\17 User intent",
+          "source": "vector",
+          "writer": "codex"
+        },
+        {
+          "id": 2083,
+          "score": 0.3232,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Codo sẽ kiểm đúng folder `D:\\BR\\A_Q_devineupgrade_breakdown_plan2nd`, bỏ qua `loop*` và `old`, rồi so hash/nội dung plan 2nd với bản plan gốc còn lại nếu tìm thấy. Đoạn này read-only để ",
+          "source": "vector",
+          "writer": "codex"
+        }
+      ]
+    },
+    {
+      "id": "B07",
+      "group": "B",
+      "query": "look up orchestrator transport policy changes",
+      "pre_search_memory_ids": [
+        479,
+        579,
+        445,
+        428,
+        708
+      ],
+      "pre_search_scores": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.3
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 479,
+          "score": 0.5,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Subject: workflow-loop-guardrails Subtopic: --- MODE SWITCH: PROGRESS SUMMARY --- ⚠️ CRITICAL TAG REQUIREMENT — READ CAREFULLY: • You MUST wrap your ENTIRE ... Writer: claude Project: C:\\Users\\ADMIN\\.",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 579,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: <observed_from_primary_session> <what_happened>Bash</what_happened> <occurred_at>2026-06-18T04:56:57.201Z</occurred_at> ... Writer: claude Project: C:\\Users\\ADMIN\\.claud",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 445,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: T?m t?t RAG map hi?n c? cho [A] v? Rawcut trong 5 ? ng?n. Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer-sessions User intent: T?m t?t RAG map hi?n c? cho [",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 428,
+          "score": 0.5,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: Tóm tắt ngắn RAG map hiện có: corpus này đang bao phủ những nhóm memory nào và thiếu gì cần cập nhật tiếp? Trả lời bằng ... Writer: claude Project: C:\\Users\\ADMIN",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 708,
+          "score": 0.3,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: vậy clauc gửi tin đó làm gì vậy? Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessions\\2026\\06\\15 User intent: vậy clauc gửi tin đó làm gì vậy? Memory point: Chốt trạng ",
+          "source": "fts",
+          "writer": "codex"
+        }
+      ]
+    },
+    {
+      "id": "B08",
+      "group": "B",
+      "query": "find memory about council broker dispatch routing",
+      "pre_search_memory_ids": [
+        1599,
+        1679,
+        209,
+        1316,
+        549
+      ],
+      "pre_search_scores": [
+        0.8333,
+        0.6667,
+        0.55,
+        0.3333,
+        0.3333
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 1599,
+          "score": 0.8333,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Leader skill vNext nạp xong (routing: OpeC1/HermC1 scan, ComC1 breakdown/judgement, dispatch **tuần tự**; same-agent multi-slot vẫn block). Giờ force-refresh CORE_RULE (rule đã cập nhật)",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1679,
+          "score": 0.6667,
+          "subject": "frontend/design",
+          "snippet": "Memory point: Cost routing: opeC scan, codo design Evidence: Cost routing: opeC scan, codo design Subject: frontend/design Subtopic: Bạn hiểu sai ý tôi rồi. để tôi ghi lại 1. Issue 1: ok 2. issue 2: o",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 209,
+          "score": 0.55,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Subject: workflow-loop-guardrails Subtopic: cập nhật đi edge case của loop trước đó địt mẹ. gửi cùng danh tính thì phải gửi bằng user Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessions\\2026\\06\\17 U",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1316,
+          "score": 0.3333,
+          "subject": "clau-mem/librarian",
+          "snippet": "Memory point: Note:** While the corpus is titled \"airtag-vietnam-child-tracker\" with a research prompt about AirTag and child tracking devices under 500k VND in Vietnam, the actual observations contai",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 549,
+          "score": 0.3333,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: Hello memory agent, you are continuing to observe the primary Claude session. <observed_from_primary_session> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-m",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "B09",
+      "group": "B",
+      "query": "search memory for HermC OpeC worker model assignment",
+      "pre_search_memory_ids": [
+        1133,
+        1132,
+        1662,
+        852,
+        2518
+      ],
+      "pre_search_scores": [
+        0.8833,
+        0.8833,
+        0.8333,
+        0.6667,
+        0.5
+      ],
+      "expected_relevant_ids": [
+        1133,
+        1132,
+        852
+      ],
+      "judge_note": "3/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 1133,
+          "score": 0.8833,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: \"- **Roster + routing**: Codo = leader; ComC = single sequential worker; OpeC = local/code/data heavy scan; HermC = ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sess",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1132,
+          "score": 0.8833,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: \"- **Roster + routing**: Codo = leader; ComC = single sequential worker; OpeC = local/code/data heavy scan; HermC = ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sess",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1662,
+          "score": 0.8333,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Đây là chiến dịch lớn — với vai leader, em sẽ **điều hành**, không tự nghiên cứu (giữ token Claude). Nhưng trước khi tung chiến dịch, em phải **verify năng lực thật** của worker (fail-lo",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 852,
+          "score": 0.6667,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: dùng hermc fetch internet trước để clear issue, dùng opec search để khoanh vùng fix, dùng comc minimax m3 free để ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessio",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 2518,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Việc tìm Codex session là search file đơn giản — em làm trực tiếp (rẻ, tin cậy, tránh friction dispatch): Evidence: Việc tìm Codex session là search file đơn giản — em làm trực tiếp (rẻ,",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "B10",
+      "group": "B",
+      "query": "find information about gatekeeper model deepseek-v4-flash",
+      "pre_search_memory_ids": [
+        1220,
+        970,
+        377,
+        378,
+        1480
+      ],
+      "pre_search_scores": [
+        0.45,
+        0.4,
+        0.2235,
+        0.2205,
+        0.2183
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 1220,
+          "score": 0.45,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: vì trong lúc fix thì hermc bị kẹt ở provider custom. Tức là khi chọn minimax m3, provider tự chọn custom. đây là ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\session",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 970,
+          "score": 0.4,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: ok tiến hành và test lại. nếu 2 tool ổn thì test lại bài test với comc 3 Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessions\\2026\\06\\18 User intent: ok tiến hàn",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 377,
+          "score": 0.2235,
+          "subject": "mcp-config",
+          "snippet": "Subject: mcp-config Subtopic: đã cài cline cli. set vào đi. mặc định model deepseek 4 flash Writer: claude Project: D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\0. Tr_MEDIA_BOT\\2. ROOM 2\\1. backend Use",
+          "source": "vector",
+          "writer": "claude"
+        },
+        {
+          "id": 378,
+          "score": 0.2205,
+          "subject": "mcp-config",
+          "snippet": "Subject: mcp-config Subtopic: provider cline đang free 3 model: minimax m3, xiaomi/mimo 2.5 và deepseek v4 flash xem có không. nếu không có deepseek ... Writer: claude Project: D:\\0. TRIEN\\1. DATA\\DAT",
+          "source": "vector",
+          "writer": "claude"
+        },
+        {
+          "id": 1480,
+          "score": 0.2183,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Routing model-slot rõ hơn:** ComC1=DeepSeek-v4-pro (edge/bug/breakdown), ComC2=MiniMax-M3 (plan/phản biện), ComC3=Mimo-v2.5 (brainstorm/tool-test); CodoC=code builder; OpeC1/HermC1=fast ",
+          "source": "vector",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "B11",
+      "group": "B",
+      "query": "search memory for context pool write feature",
+      "pre_search_memory_ids": [
+        737,
+        552,
+        499,
+        466,
+        467
+      ],
+      "pre_search_scores": [
+        0.65,
+        0.6,
+        0.4,
+        0.4,
+        0.4
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 737,
+          "score": 0.65,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Subject: workflow-loop-guardrails Subtopic: trong prompt mẫu đâu có broker prompt round1 only đâu mà worker biết? ''' You are `comc2` for Phase 0 brainstorm Round ... Writer: codex Project: C:\\Users\\A",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 552,
+          "score": 0.6,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: <observed_from_primary_session> <what_happened>ToolSearch</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer-sessions User intent: <o",
+          "source": "fts+vector",
+          "writer": "claude"
+        },
+        {
+          "id": 499,
+          "score": 0.4,
+          "subject": "bugfix/debug",
+          "snippet": "Subject: bugfix/debug Subtopic: <observed_from_primary_session> <what_happened>Write</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer-sessions User intent: <observed_fro",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 466,
+          "score": 0.4,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: <observed_from_primary_session> <what_happened>ToolSearch</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer-sessions User intent: <observed",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 467,
+          "score": 0.4,
+          "subject": "rawcut",
+          "snippet": "Subject: rawcut Subtopic: <observed_from_primary_session> <what_happened>mcp__plugin_claude-mem_mcp-search__smart_search</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "B12",
+      "group": "B",
+      "query": "look up path_session skill development history",
+      "pre_search_memory_ids": [
+        1029,
+        168,
+        167,
+        126,
+        124
+      ],
+      "pre_search_scores": [
+        0.3,
+        0.3,
+        0.3,
+        0.2664,
+        0.2635
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "weak_hit",
+      "hits_detail": [
+        {
+          "id": 1029,
+          "score": 0.3,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Subject: workflow-loop-guardrails Subtopic: ok tiến hành tiếp. từ breakdown của comc. nếu có gì cần clarify thêm hoặc thắc mắc thì querry hoặc hỏi tôi Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sess",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 168,
+          "score": 0.3,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Subject: workflow-loop-guardrails Subtopic: hệ thống lại: BR root folder 1. History 2. Working 3. Data 4. Output history là các file log file không còn cần đọc tới ... Writer: codex Project: C:\\Users\\",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 167,
+          "score": 0.3,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Subject: workflow-loop-guardrails Subtopic: hệ thống lại: BR root folder 1. History 2. Working 3. Data 4. Output history là các file log file không còn cần đọc tới ... Writer: codex Project: C:\\Users\\",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 126,
+          "score": 0.2664,
+          "subject": "mcp-config",
+          "snippet": "Subject: mcp-config Subtopic: khi vận hành bạn có thêm các bước thông báo đã làm gì ở session nữa. tôi cần biết 1 history session có cấu trúc gì? Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessions\\",
+          "source": "vector",
+          "writer": "codex"
+        },
+        {
+          "id": 124,
+          "score": 0.2635,
+          "subject": "mcp-config",
+          "snippet": "Subject: mcp-config Subtopic: khi vận hành bạn có thêm các bước thông báo đã làm gì ở session nữa. tôi cần biết 1 history session có cấu trúc gì? Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessions\\",
+          "source": "vector",
+          "writer": "codex"
+        }
+      ]
+    },
+    {
+      "id": "B13",
+      "group": "B",
+      "query": "find memory about tool_tiers skill creation",
+      "pre_search_memory_ids": [
+        1129,
+        1316,
+        549,
+        1127,
+        1128
+      ],
+      "pre_search_scores": [
+        0.6,
+        0.4,
+        0.4,
+        0.4,
+        0.4
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 1129,
+          "score": 0.6,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: Sai rồi. ''' Leader must protect ClauC from broad scan/read/context gathering and new-code creation. ClauC has two ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessi",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1316,
+          "score": 0.4,
+          "subject": "clau-mem/librarian",
+          "snippet": "Memory point: Note:** While the corpus is titled \"airtag-vietnam-child-tracker\" with a research prompt about AirTag and child tracking devices under 500k VND in Vietnam, the actual observations contai",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 549,
+          "score": 0.4,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: Hello memory agent, you are continuing to observe the primary Claude session. <observed_from_primary_session> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-m",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1127,
+          "score": 0.4,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: Sai rồi. ''' Leader must protect ClauC from broad scan/read/context gathering and new-code creation. ClauC has two ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessi",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1128,
+          "score": 0.4,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: Sai rồi. ''' Leader must protect ClauC from broad scan/read/context gathering and new-code creation. ClauC has two ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessi",
+          "source": "fts",
+          "writer": "codex"
+        }
+      ]
+    },
+    {
+      "id": "B14",
+      "group": "B",
+      "query": "search memory for error_schema_hints skill",
+      "pre_search_memory_ids": [
+        936,
+        937,
+        957,
+        466,
+        467
+      ],
+      "pre_search_scores": [
+        0.7167,
+        0.7167,
+        0.6667,
+        0.3333,
+        0.3333
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 936,
+          "score": 0.7167,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: core rule và ép skill luôn đi. đổi \"tiếp tục bằng tool thường thành bypass this rule\" câu hỏi: pre_search này là search ... Writer: codex Project: C:\\Users\\ADMIN\\",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 937,
+          "score": 0.7167,
+          "subject": "mcp-config",
+          "snippet": "Subject: mcp-config Subtopic: ok vậy task sẽ là cập nhật leader rule và ép skill luôn cho codo và clau trước đúng không? vì 2 CA này thường là leader ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\s",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 957,
+          "score": 0.6667,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: 1. chia prompt ra nếu qua 8192, search nhiều đợt thôi easy mà. 2. ok 3. nên mới cần gatekeepers. hoặc cho thủ thư làm ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\se",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 466,
+          "score": 0.3333,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: <observed_from_primary_session> <what_happened>ToolSearch</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer-sessions User intent: <observed",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 467,
+          "score": 0.3333,
+          "subject": "rawcut",
+          "snippet": "Subject: rawcut Subtopic: <observed_from_primary_session> <what_happened>mcp__plugin_claude-mem_mcp-search__smart_search</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "B15",
+      "group": "B",
+      "query": "find history about broker-worker-bootstrap setup",
+      "pre_search_memory_ids": [
+        1316,
+        549,
+        1370,
+        2284,
+        2418
+      ],
+      "pre_search_scores": [
+        0.3333,
+        0.3333,
+        0.3333,
+        0.3333,
+        0.3333
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "weak_hit",
+      "hits_detail": [
+        {
+          "id": 1316,
+          "score": 0.3333,
+          "subject": "clau-mem/librarian",
+          "snippet": "Memory point: Note:** While the corpus is titled \"airtag-vietnam-child-tracker\" with a research prompt about AirTag and child tracking devices under 500k VND in Vietnam, the actual observations contai",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 549,
+          "score": 0.3333,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: Hello memory agent, you are continuing to observe the primary Claude session. <observed_from_primary_session> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-m",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1370,
+          "score": 0.3333,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Health + setup + reset all 5 workflows for fresh re-run Evidence: Health + setup + reset all 5 workflows for fresh re-run Subject: workflow-loop-guardrails Subtopic: Tiến hành chạy lại v",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 2284,
+          "score": 0.3333,
+          "subject": "[A]/council",
+          "snippet": "Memory point: 🔍 Auto-start [A] khi Windows logon. Đây là setup hệ thống — Clau điều tra hiện trạng trước (chưa \"tiến hành\"): health, nội dung start_orchestrator.bat, scheduled task + startup folder hi",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 2418,
+          "score": 0.3333,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Anh, Clau setup rồi build. Bootstrap [A] (force rule) + reload 2 skill: Evidence: Anh, Clau setup rồi build. Bootstrap [A] (force rule) + reload 2 skill: Subject: [A]/council Subtopic: A",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "C01",
+      "group": "C",
+      "query": "search memory for Q librarian port 8082 configuration",
+      "pre_search_memory_ids": [
+        934,
+        935,
+        933,
+        1203,
+        438
+      ],
+      "pre_search_scores": [
+        0.85,
+        0.85,
+        0.85,
+        0.6,
+        0.6
+      ],
+      "expected_relevant_ids": [
+        934,
+        935,
+        933
+      ],
+      "judge_note": "3/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 934,
+          "score": 0.85,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: 1. do tool hiện tại của clau mem là mcp nên phải build api cho các tool đó. port 8082 2. ok. rule đủ không không thì áp ... Writer: codex Project: C:\\Users\\ADMIN\\",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 935,
+          "score": 0.85,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: 1. do tool hiện tại của clau mem là mcp nên phải build api cho các tool đó. port 8082 2. ok. rule đủ không không thì áp ... Writer: codex Project: C:\\Users\\ADMIN\\",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 933,
+          "score": 0.85,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: 1. do tool hiện tại của clau mem là mcp nên phải build api cho các tool đó. port 8082 2. ok. rule đủ không không thì áp ... Writer: codex Project: C:\\Users\\ADMIN\\",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1203,
+          "score": 0.6,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: chưa restart Q thì có real use test đúng không? Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessions\\2026\\06\\20 User intent: chưa restart Q thì có real use test ",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 438,
+          "score": 0.6,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: [A]/council Subtopic: You are a shared memory librarian for Claude, Codex, and future CAs. Use ONLY this curated corpus as distilled ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\obs",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "group": "C",
+      "query": "find information about orchestrator port 8083 API",
+      "pre_search_memory_ids": [
+        1563,
+        579,
+        445,
+        436,
+        1564
+      ],
+      "pre_search_scores": [
+        0.6667,
+        0.6667,
+        0.6667,
+        0.5,
+        0.3333
+      ],
+      "expected_relevant_ids": [
+        1563
+      ],
+      "judge_note": "1/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 1563,
+          "score": 0.6667,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Kiểm tra Orchestrator API (port 8083): Evidence: Kiểm tra Orchestrator API (port 8083): Subject: [A]/council Subtopic: ``` [CONTEXT] CA cấp thấp. Health check [A] (8083) TRƯỚC. Project o",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 579,
+          "score": 0.6667,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: <observed_from_primary_session> <what_happened>Bash</what_happened> <occurred_at>2026-06-18T04:56:57.201Z</occurred_at> ... Writer: claude Project: C:\\Users\\ADMIN\\.claud",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 445,
+          "score": 0.6667,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: T?m t?t RAG map hi?n c? cho [A] v? Rawcut trong 5 ? ng?n. Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer-sessions User intent: T?m t?t RAG map hi?n c? cho [",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 436,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: You are a knowledge agent with access to 18 observations from the \"codex-a-memory\" corpus. This corpus is scoped to the ... Writer: claude Project: C:\\Users\\ADMIN\\.claud",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1564,
+          "score": 0.3333,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Tôi là Claude Code Agent cho dự án Rawcut/Media-Bot này. Đang khởi động Evidence: Tôi là Claude Code Agent cho dự án Rawcut/Media-Bot này. Đang khởi động Subject: [A]/council Subtopic: `",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "group": "C",
+      "query": "look up OpeC5 model slot GLM 5.2 configuration",
+      "pre_search_memory_ids": [
+        2560,
+        2532,
+        2546,
+        2561,
+        2536
+      ],
+      "pre_search_scores": [
+        0.8333,
+        0.6667,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "expected_relevant_ids": [
+        2560,
+        2546,
+        2561
+      ],
+      "judge_note": "3/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 2560,
+          "score": 0.8333,
+          "subject": "[A]/council",
+          "snippet": "Memory point: EXC Nhận route update: **mid dev / audit data = OpeC5 + HermC5** (GLM 5.2, nhanh + mạnh). Clau lưu vào memory + verify slot HermC5 ngay (hermes đang rảnh; ope đang chạy consolidation nên",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 2532,
+          "score": 0.6667,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Codo hiểu: đây là kiểm tra read/verify quanh broker và `council_worker_model`, có thể đụng cấu hình model tạm thời khi `set`. Vì Anh đã yêu cầu test chuyển qua lại, Codo sẽ thao tác qua ",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 2546,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Memory point: ROUTE_RULE (verify session ToolQ fix): 5 worker fixed roster = ComC3 + OpeC7 + HermC7 + OpeC5 + HermC5 (2 deepseek-v4-pro audit + 2 glm-5.2 cross-verify + 1 mimo benchmark). Evidence: RO",
+          "source": "fts",
+          "writer": "A"
+        },
+        {
+          "id": 2561,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Memory point: EXC OpeC5 set + verified (`openai-compatible/glm-5.2`). Chờ 2 verify worker trả kết quả — nếu cả `FINAL_CONSOLE_PASS` + `MAPPING_COMPLETE` thì Phase 2 đóng, Clau vào Phase 3 devine audit",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 2536,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Phase 1 complete. Files: orchestrator/graph/{config,__init__,schema,store,extractors/python,indexer,status,query,tools}.py + orchestrator/tools/search.py line76 graph-first prepend + cod",
+          "source": "fts",
+          "writer": "A"
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "group": "C",
+      "query": "search memory for HermC5 GLM model assignment",
+      "pre_search_memory_ids": [
+        2560,
+        2532,
+        2536,
+        2547,
+        2546
+      ],
+      "pre_search_scores": [
+        0.8,
+        0.8,
+        0.6,
+        0.6,
+        0.6
+      ],
+      "expected_relevant_ids": [
+        2560,
+        2547,
+        2546
+      ],
+      "judge_note": "3/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 2560,
+          "score": 0.8,
+          "subject": "[A]/council",
+          "snippet": "Memory point: EXC Nhận route update: **mid dev / audit data = OpeC5 + HermC5** (GLM 5.2, nhanh + mạnh). Clau lưu vào memory + verify slot HermC5 ngay (hermes đang rảnh; ope đang chạy consolidation nên",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 2532,
+          "score": 0.8,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Codo hiểu: đây là kiểm tra read/verify quanh broker và `council_worker_model`, có thể đụng cấu hình model tạm thời khi `set`. Vì Anh đã yêu cầu test chuyển qua lại, Codo sẽ thao tác qua ",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 2536,
+          "score": 0.6,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Phase 1 complete. Files: orchestrator/graph/{config,__init__,schema,store,extractors/python,indexer,status,query,tools}.py + orchestrator/tools/search.py line76 graph-first prepend + cod",
+          "source": "fts",
+          "writer": "A"
+        },
+        {
+          "id": 2547,
+          "score": 0.6,
+          "subject": "[A]/council",
+          "snippet": "Memory point: SWAP_RULE: worker timeout 3x (backend slow/unreachable) -> swap sang worker dự phòng cùng tier (HermC7 v4-pro timeout -> HermC5 glm-5.2). Evidence: SWAP_RULE: worker timeout 3x (backend ",
+          "source": "fts",
+          "writer": "A"
+        },
+        {
+          "id": 2546,
+          "score": 0.6,
+          "subject": "[A]/council",
+          "snippet": "Memory point: ROUTE_RULE (verify session ToolQ fix): 5 worker fixed roster = ComC3 + OpeC7 + HermC7 + OpeC5 + HermC5 (2 deepseek-v4-pro audit + 2 glm-5.2 cross-verify + 1 mimo benchmark). Evidence: RO",
+          "source": "fts",
+          "writer": "A"
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "group": "C",
+      "query": "find information about ComC3 xiaomi mimo-v2.5-pro model",
+      "pre_search_memory_ids": [
+        2037,
+        2039,
+        970,
+        744,
+        2328
+      ],
+      "pre_search_scores": [
+        1.0,
+        1.0,
+        1.0,
+        0.5,
+        0.25
+      ],
+      "expected_relevant_ids": [
+        2037,
+        744,
+        2328
+      ],
+      "judge_note": "3/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 2037,
+          "score": 1.0,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Đúng, Anh bắt rất chuẩn: Codo đã để `ComC1` chạy bằng `mimo-v2.5-pro`, tức cùng model với `ComC3`, làm mất tác dụng đối trọng. Codo sẽ không vứt round cũ, nhưng từ Round 2 tiếp theo sẽ s",
+          "source": "fts+vector",
+          "writer": "codex"
+        },
+        {
+          "id": 2039,
+          "score": 1.0,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Codo dừng mở rộng dispatch ở đây và sẽ kiểm trạng thái thật trước: current model/provider của `comc`, artifact nào đã có/thiếu, rồi reset lại rule vận hành tiếp là `ComC1 = commandcode +",
+          "source": "fts+vector",
+          "writer": "codex"
+        },
+        {
+          "id": 970,
+          "score": 1.0,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: ok tiến hành và test lại. nếu 2 tool ổn thì test lại bài test với comc 3 Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessions\\2026\\06\\18 User intent: ok tiến hàn",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 744,
+          "score": 0.5,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Subject: [A]/council Subtopic: bạn phải kiểm tra model của comc chứ. model của comc đang là xiaomi mimo mà. mỗi lần dispatch comc phải biết comc đang ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\s",
+          "source": "fts+vector",
+          "writer": "codex"
+        },
+        {
+          "id": 2328,
+          "score": 0.25,
+          "subject": "clau-mem/librarian",
+          "snippet": "Memory point: Route rule cập nhật: **CodoC hết limit → bỏ**; **ComC3 (mimo v2.5 pro) dùng được như mid dev, song song với ComC1**. Cập nhật memory + check audit (dispatch CodoC vừa nãy chắc fail vì li",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "group": "C",
+      "query": "search memory for OpeC7 deepseek-v4-pro high judgement slot",
+      "pre_search_memory_ids": [
+        1131,
+        1132,
+        1133,
+        1599,
+        1480
+      ],
+      "pre_search_scores": [
+        0.55,
+        0.55,
+        0.55,
+        0.5,
+        0.5
+      ],
+      "expected_relevant_ids": [
+        1480
+      ],
+      "judge_note": "1/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 1131,
+          "score": 0.55,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: \"- **Roster + routing**: Codo = leader; ComC = single sequential worker; OpeC = local/code/data heavy scan; HermC = ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sess",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1132,
+          "score": 0.55,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: \"- **Roster + routing**: Codo = leader; ComC = single sequential worker; OpeC = local/code/data heavy scan; HermC = ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sess",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1133,
+          "score": 0.55,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: \"- **Roster + routing**: Codo = leader; ComC = single sequential worker; OpeC = local/code/data heavy scan; HermC = ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sess",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1599,
+          "score": 0.5,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Leader skill vNext nạp xong (routing: OpeC1/HermC1 scan, ComC1 breakdown/judgement, dispatch **tuần tự**; same-agent multi-slot vẫn block). Giờ force-refresh CORE_RULE (rule đã cập nhật)",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1480,
+          "score": 0.5,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Routing model-slot rõ hơn:** ComC1=DeepSeek-v4-pro (edge/bug/breakdown), ComC2=MiniMax-M3 (plan/phản biện), ComC3=Mimo-v2.5 (brainstorm/tool-test); CodoC=code builder; OpeC1/HermC1=fast ",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "group": "C",
+      "query": "look up Q_S_install_task.ps1 path for ToolQ",
+      "pre_search_memory_ids": [
+        2240,
+        2096,
+        2114,
+        1479,
+        626
+      ],
+      "pre_search_scores": [
+        0.5,
+        0.5,
+        0.25,
+        0.25,
+        0.25
+      ],
+      "expected_relevant_ids": [
+        2096,
+        2114,
+        1479
+      ],
+      "judge_note": "3/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 2240,
+          "score": 0.5,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: into the new vector path. - Optional fast-track: Qwen VERIFY may process current `verify_status='ok'` rows first; only rows that pass Qwen get `vector_eligible=1`. - Migration: idempoten",
+          "source": "fts",
+          "writer": "A"
+        },
+        {
+          "id": 2096,
+          "score": 0.5,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Với Task 1, Codo có quyền chạy read-only scan backend ToolQ và nếu cần gọi local ToolQ API không? Evidence: Với Task 1, Codo có quyền chạy read-only scan backend ToolQ và nếu cần gọi loc",
+          "source": "fts+vector",
+          "writer": "codex"
+        },
+        {
+          "id": 2114,
+          "score": 0.25,
+          "subject": "frontend/design",
+          "snippet": "Memory point: Anh đã yêu cầu `Q:S`, nên Codo sẽ chạy đúng launcher `D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\21. ToolQ\\Q_S.bat` để restart/bring up Q, rồi kiểm tra ngắn xem process gọi đã launch đư",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1479,
+          "score": 0.25,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Bounded scan guard:** leader đọc raw ≤30 dòng/2KB; ToolQ root phải là D, không để resolve về `C:\\Users\\ADMIN` Evidence: Bounded scan guard:** leader đọc raw ≤30 dòng/2KB; ToolQ root phải",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 626,
+          "score": 0.25,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Subject: workflow-loop-guardrails Subtopic: toàn bộ change log và cập nhật của session này đã xuất ra đủ file báo cáo rồi đúng không? Nếu đúng response ĐÚNG kèm ... Writer: claude Project: D:\\0. TRIEN",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "group": "C",
+      "query": "find memory about clm-librarian-api memory layer",
+      "pre_search_memory_ids": [
+        1316,
+        549,
+        437,
+        105,
+        1628
+      ],
+      "pre_search_scores": [
+        0.5,
+        0.5,
+        0.2867,
+        0.2809,
+        0.25
+      ],
+      "expected_relevant_ids": [
+        549,
+        437,
+        105,
+        1628
+      ],
+      "judge_note": "4/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 1316,
+          "score": 0.5,
+          "subject": "clau-mem/librarian",
+          "snippet": "Memory point: Note:** While the corpus is titled \"airtag-vietnam-child-tracker\" with a research prompt about AirTag and child tracking devices under 500k VND in Vietnam, the actual observations contai",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 549,
+          "score": 0.5,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: Hello memory agent, you are continuing to observe the primary Claude session. <observed_from_primary_session> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-m",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 437,
+          "score": 0.2867,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: You are a shared memory librarian for Claude, Codex, and future CAs. Use ONLY this curated corpus as distilled ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\obs",
+          "source": "vector",
+          "writer": "claude"
+        },
+        {
+          "id": 105,
+          "score": 0.2809,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: Ok đây là phần trích xuất và nạp thủ công. Giờ đến phần ghi tự động, có làm cho memory bị rối loạn không hay clau-mem ... Writer: codex Project: C:\\Users\\ADMIN\\.c",
+          "source": "vector",
+          "writer": "codex"
+        },
+        {
+          "id": 1628,
+          "score": 0.25,
+          "subject": "[A]/council",
+          "snippet": "Memory point: P1.5 UI browse** — sửa clm_librarian_api + cần Q cutover Evidence: P1.5 UI browse** — sửa clm_librarian_api + cần Q cutover Subject: [A]/council Subtopic: tiến hành \\p 1.5 / p4 Writer: c",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "group": "C",
+      "query": "search memory for taaq-protocol memory first query",
+      "pre_search_memory_ids": [
+        937,
+        2536,
+        23,
+        466,
+        467
+      ],
+      "pre_search_scores": [
+        0.7167,
+        0.6667,
+        0.6667,
+        0.3333,
+        0.3333
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 937,
+          "score": 0.7167,
+          "subject": "mcp-config",
+          "snippet": "Subject: mcp-config Subtopic: ok vậy task sẽ là cập nhật leader rule và ép skill luôn cho codo và clau trước đúng không? vì 2 CA này thường là leader ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\s",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 2536,
+          "score": 0.6667,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Phase 1 complete. Files: orchestrator/graph/{config,__init__,schema,store,extractors/python,indexer,status,query,tools}.py + orchestrator/tools/search.py line76 graph-first prepend + cod",
+          "source": "fts",
+          "writer": "A"
+        },
+        {
+          "id": 23,
+          "score": 0.6667,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: You are a shared memory librarian for Claude, Codex, and future CAs. Use ONLY this curated corpus as distilled ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\obs",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 466,
+          "score": 0.3333,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: <observed_from_primary_session> <what_happened>ToolSearch</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer-sessions User intent: <observed",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 467,
+          "score": 0.3333,
+          "subject": "rawcut",
+          "snippet": "Subject: rawcut Subtopic: <observed_from_primary_session> <what_happened>mcp__plugin_claude-mem_mcp-search__smart_search</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "group": "C",
+      "query": "find information about Q project path D drive ToolQ",
+      "pre_search_memory_ids": [
+        1540,
+        1204,
+        2096,
+        2097,
+        1514
+      ],
+      "pre_search_scores": [
+        0.75,
+        0.75,
+        0.75,
+        0.75,
+        0.5
+      ],
+      "expected_relevant_ids": [
+        2096
+      ],
+      "judge_note": "1/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 1540,
+          "score": 0.75,
+          "subject": "clau-mem/librarian",
+          "snippet": "Memory point: Codo sẽ làm đúng thứ tự: gọi Q/council trước, cho ComC1 breakdown và OpeC1 khoanh vùng evidence, rồi mới sửa code/runners/task. Sau đó Codo chạy unit/smoke/real-use và tạo artifact lock ",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1204,
+          "score": 0.75,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: chưa restart Q thì có real use test đúng không? Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessions\\2026\\06\\20 User intent: chưa restart Q thì có real use test ",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 2096,
+          "score": 0.75,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Với Task 1, Codo có quyền chạy read-only scan backend ToolQ và nếu cần gọi local ToolQ API không? Evidence: Với Task 1, Codo có quyền chạy read-only scan backend ToolQ và nếu cần gọi loc",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 2097,
+          "score": 0.75,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Mục tiêu skill: giúp leader chạy các loop kiểu “console → audit → verify → patch/close” ít drift hơn, có gate rõ, có artifact ledger, không bypass audit fail Evidence: Mục tiêu skill: gi",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1514,
+          "score": 0.5,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Verify skill: drive the **real CLI surface** (not import-and-call), against the **integrated [Q:P] copy**. Clau đọc `kick_qsleep.main()` để chạy đúng qua CLI: Evidence: Verify skill: dri",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "D01",
+      "group": "D",
+      "query": "search memory for fix loi path issue recent",
+      "pre_search_memory_ids": [
+        467,
+        466,
+        1034,
+        851,
+        464
+      ],
+      "pre_search_scores": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.3333
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 467,
+          "score": 0.5,
+          "subject": "rawcut",
+          "snippet": "Subject: rawcut Subtopic: <observed_from_primary_session> <what_happened>mcp__plugin_claude-mem_mcp-search__smart_search</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 466,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: <observed_from_primary_session> <what_happened>ToolSearch</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer-sessions User intent: <observed",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1034,
+          "score": 0.5,
+          "subject": "bugfix/debug",
+          "snippet": "Subject: bugfix/debug Subtopic: lưu ý codex desktop bản mới đang lỗi block snapshot. do đó mọi thao tác snapshot bạn phải giao cho council nhé. đợi ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\ses",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 851,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: dùng hermc fetch internet trước để clear issue, dùng opec search để khoanh vùng fix, dùng comc minimax m3 free để ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessio",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 464,
+          "score": 0.3333,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: <observed_from_primary_session> <what_happened>ToolSearch</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer-sessions User intent: <observed",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "D02",
+      "group": "D",
+      "query": "find information about restart the loop problem",
+      "pre_search_memory_ids": [
+        1872,
+        1431,
+        1396,
+        697,
+        2264
+      ],
+      "pre_search_scores": [
+        0.7167,
+        0.6667,
+        0.6667,
+        0.3333,
+        0.3333
+      ],
+      "expected_relevant_ids": [
+        1872,
+        1431,
+        1396,
+        697,
+        2264
+      ],
+      "judge_note": "all 5 hits relevant by snippet",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 1872,
+          "score": 0.7167,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Cụ thể: sau khi `restart_orchestrator.py --start` fail vì `Access is denied`, Codo tự diễn giải đó là “admin/UIPI recovery” rồi gọi `restart_orchestrator_via_task`. Nhưng rule project nó",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1431,
+          "score": 0.6667,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: \"tiến hành\" → EXECUTE. Note #1 (UI restart/step buttons) I actually landed last turn via R76 — I'll re-verify it's live + confirm. #2 is a real bug: the [Ae] PNG captured the top (inputs",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1396,
+          "score": 0.6667,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Let me mark a chapter and run the 3 investigations I still need: the restart gate, whether AutoCutter is symlink-vs-copy, and locate a `.heic` test file Evidence: Let me mark a chapter a",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 697,
+          "score": 0.3333,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: lạ vậy file .bat đã có thể kill pythonw3.12 và restart rồi mà. bạn chỉ cần [A:S] lại là [A] restart Writer: claude Project: D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\0",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 2264,
+          "score": 0.3333,
+          "subject": "mcp-config",
+          "snippet": "Memory point: Xong upgrade** → vì MCP gắn vòng đời Claude nên **không thể tự reload MCP**. Quy tắc: Claude restart HTTP server bằng `restart_orchestrator_via_task`, rồi **nhắc Anh restart Claude Code*",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "D03",
+      "group": "D",
+      "query": "look up broken function recent debugging",
+      "pre_search_memory_ids": [
+        1753,
+        466,
+        686,
+        1603,
+        1386
+      ],
+      "pre_search_scores": [
+        0.4,
+        0.4,
+        0.2632,
+        0.25,
+        0.2435
+      ],
+      "expected_relevant_ids": [
+        1603
+      ],
+      "judge_note": "1/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 1753,
+          "score": 0.4,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Các function mới (P0 `/capture`, P1 memory tools, P2/P3 review+apply, P4b scorer, recent-mode, /query-consume): đã qua **verify thủ công + ComC1 design-review**, **chưa** qua skill verif",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 466,
+          "score": 0.4,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: <observed_from_primary_session> <what_happened>ToolSearch</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer-sessions User intent: <observed",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 686,
+          "score": 0.2632,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Subject: workflow-loop-guardrails Subtopic: Đã tắt được premiere pro khi có dialog relink. Giữ function đó. Tôi muốn có thêm function chỉ tắt dialog thôi không tắt ... Writer: claude Project: D:\\0. TR",
+          "source": "vector",
+          "writer": "claude"
+        },
+        {
+          "id": 1603,
+          "score": 0.25,
+          "subject": "[A]/council",
+          "snippet": "Memory point: EXC Clau bắt đầu. Kế hoạch tổng: (0) trinh sát hiện trạng [A] + đọc research → (1) bung 4 worker quét song song (OpeC/HermC scan rộng, ComC edge-case/bug, CodoC insight/design) → (2) chố",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1386,
+          "score": 0.2435,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: Resuming — session open, round started, folder tools located. Read folder_exists/folder_stats area + find dispatch/tier registration to mirror for `create_folder` Evidence: Resuming — se",
+          "source": "vector",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "D04",
+      "group": "D",
+      "query": "search memory for port conflict issue resolution",
+      "pre_search_memory_ids": [
+        1358,
+        910,
+        934,
+        438,
+        466
+      ],
+      "pre_search_scores": [
+        0.8,
+        0.45,
+        0.45,
+        0.4,
+        0.4
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 1358,
+          "score": 0.8,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Health check trước, sau đó open session và analyze 3 issues approved Evidence: Health check trước, sau đó open session và analyze 3 issues approved Subject: [A]/council Subtopic: Xem xét",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 910,
+          "score": 0.45,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: distil local hiệu quả không? tôi tưởng các bước đều có LLM chứ? cần model local để lọc trước data ngắn và vô nghĩa. nó ... Writer: codex Project: C:\\Users\\ADMIN\\.",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 934,
+          "score": 0.45,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: 1. do tool hiện tại của clau mem là mcp nên phải build api cho các tool đó. port 8082 2. ok. rule đủ không không thì áp ... Writer: codex Project: C:\\Users\\ADMIN\\",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 438,
+          "score": 0.4,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: [A]/council Subtopic: You are a shared memory librarian for Claude, Codex, and future CAs. Use ONLY this curated corpus as distilled ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\obs",
+          "source": "fts+vector",
+          "writer": "claude"
+        },
+        {
+          "id": 466,
+          "score": 0.4,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: <observed_from_primary_session> <what_happened>ToolSearch</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer-sessions User intent: <observed",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "D05",
+      "group": "D",
+      "query": "find information about model not responding issue",
+      "pre_search_memory_ids": [
+        1369,
+        1135,
+        2476,
+        1846,
+        254
+      ],
+      "pre_search_scores": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "negation_review",
+      "hits_detail": [
+        {
+          "id": 1369,
+          "score": 0.5,
+          "subject": "bugfix/debug",
+          "snippet": "Memory point: Health check + scope: fix 4 actionable bugs (desktop_click target_selector, read_value textContent fallback, folder_stats recursive, close_session schema). Skip 2 (bash-escape not [A], f",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1135,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: Do not hardcode one CA as leader. thừa. câu này dành cho user có dành cho leader đâu??? Đã chỉ định rõ model cho comc ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\se",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 2476,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Chào Anh, nhiều issue liên quan. Em điều tra (không đoán): worker_models.json thật, broker history, code system-prompt + đường đọc model: Evidence: Chào Anh, nhiều issue liên quan. Em đi",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1846,
+          "score": 0.5,
+          "subject": "frontend/design",
+          "snippet": "Memory point: Chọn (b) mini-log. Trước khi build, em **điều tra sâu** (đúng yêu cầu \"xem model thật sự làm gì, đối chiếu prompt\"): BM25 nhanh vậy là đúng cơ chế hay chết sớm? + model treo RAM: Evidenc",
+          "source": "fts+vector",
+          "writer": "claude"
+        },
+        {
+          "id": 254,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: ở loop này 2 comc đều model minimax m3 free Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessions\\2026\\06\\17 User intent: ở loop này 2 comc đều model minimax m3 free Mem",
+          "source": "fts",
+          "writer": "codex"
+        }
+      ]
+    },
+    {
+      "id": "D06",
+      "group": "D",
+      "query": "search memory for upgrade plan next steps",
+      "pre_search_memory_ids": [
+        2107,
+        576,
+        481,
+        505,
+        2536
+      ],
+      "pre_search_scores": [
+        0.8,
+        0.6,
+        0.6,
+        0.6,
+        0.6
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 2107,
+          "score": 0.8,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Codo sẽ nạp CORE_RULE của [A] trước, rồi đọc hai report qua kênh [A] nếu tool phù hợp có sẵn. Nếu [A] không nhận kết nối, Codo sẽ dừng đúng rule và báo Anh ngay Evidence: Codo sẽ nạp COR",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 576,
+          "score": 0.6,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: --- MODE SWITCH: PROGRESS SUMMARY --- ⚠️ CRITICAL TAG REQUIREMENT — READ CAREFULLY: • You MUST wrap your ENTIRE ... Writer: claude Project: C:\\Users\\ADMIN\\.claude",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 481,
+          "score": 0.6,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Subject: workflow-loop-guardrails Subtopic: --- MODE SWITCH: PROGRESS SUMMARY --- ⚠️ CRITICAL TAG REQUIREMENT — READ CAREFULLY: • You MUST wrap your ENTIRE ... Writer: claude Project: C:\\Users\\ADMIN\\.",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 505,
+          "score": 0.6,
+          "subject": "bugfix/debug",
+          "snippet": "Subject: bugfix/debug Subtopic: --- MODE SWITCH: PROGRESS SUMMARY --- ⚠️ CRITICAL TAG REQUIREMENT — READ CAREFULLY: • You MUST wrap your ENTIRE ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\o",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 2536,
+          "score": 0.6,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Phase 1 complete. Files: orchestrator/graph/{config,__init__,schema,store,extractors/python,indexer,status,query,tools}.py + orchestrator/tools/search.py line76 graph-first prepend + cod",
+          "source": "fts",
+          "writer": "A"
+        }
+      ]
+    },
+    {
+      "id": "D07",
+      "group": "D",
+      "query": "look up connection refused error recent",
+      "pre_search_memory_ids": [
+        741,
+        837,
+        1437,
+        686,
+        399
+      ],
+      "pre_search_scores": [
+        0.4,
+        0.4,
+        0.2186,
+        0.2074,
+        0.2
+      ],
+      "expected_relevant_ids": [],
+      "judge_note": "no hits clearly relevant by snippet content - gap identified",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 741,
+          "score": 0.4,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: đề phòng [A] dừng cho phép worker fallback native Writer: codex Project: C:\\Users\\ADMIN\\.codex\\sessions\\2026\\06\\15 User intent: đề phòng [A] dừng cho phép worker fallbac",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 837,
+          "score": 0.4,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Subject: workflow-loop-guardrails Subtopic: ComC2 error là từ **broker retry**. Phân tích: ``` ⏰ 10:52 ── Dispatch Round 7 (run-ba33f620) → ✅ Thành công ComC2 viết ... Writer: codex Project: C:\\Users\\",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1437,
+          "score": 0.2186,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: I've now reviewed steps 44–59. Let me run the mandatory health check and read the remaining context (header + get-footage/poll steps 40–43) to finalize exact completion_signal placements",
+          "source": "vector",
+          "writer": "claude"
+        },
+        {
+          "id": 686,
+          "score": 0.2074,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Subject: workflow-loop-guardrails Subtopic: Đã tắt được premiere pro khi có dialog relink. Giữ function đó. Tôi muốn có thêm function chỉ tắt dialog thôi không tắt ... Writer: claude Project: D:\\0. TR",
+          "source": "vector",
+          "writer": "claude"
+        },
+        {
+          "id": 399,
+          "score": 0.2,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: Nhắc lại vấn đề restart agent. bạn hãy chủ động restart đi. tôi sẽ restart riêng clau thủ công. restart các agent và ... Writer: claude Project: D:\\0. TRIEN\\1. DATA\\DATA",
+          "source": "fts+vector",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "D08",
+      "group": "D",
+      "query": "search memory for config change recent session",
+      "pre_search_memory_ids": [
+        466,
+        467,
+        464,
+        438,
+        2536
+      ],
+      "pre_search_scores": [
+        0.6,
+        0.6,
+        0.6,
+        0.6,
+        0.6
+      ],
+      "expected_relevant_ids": [
+        2536
+      ],
+      "judge_note": "1/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 466,
+          "score": 0.6,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: <observed_from_primary_session> <what_happened>ToolSearch</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer-sessions User intent: <observed",
+          "source": "fts+vector",
+          "writer": "claude"
+        },
+        {
+          "id": 467,
+          "score": 0.6,
+          "subject": "rawcut",
+          "snippet": "Subject: rawcut Subtopic: <observed_from_primary_session> <what_happened>mcp__plugin_claude-mem_mcp-search__smart_search</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 464,
+          "score": 0.6,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: <observed_from_primary_session> <what_happened>ToolSearch</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer-sessions User intent: <observed",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 438,
+          "score": 0.6,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: [A]/council Subtopic: You are a shared memory librarian for Claude, Codex, and future CAs. Use ONLY this curated corpus as distilled ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\obs",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 2536,
+          "score": 0.6,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Phase 1 complete. Files: orchestrator/graph/{config,__init__,schema,store,extractors/python,indexer,status,query,tools}.py + orchestrator/tools/search.py line76 graph-first prepend + cod",
+          "source": "fts",
+          "writer": "A"
+        }
+      ]
+    },
+    {
+      "id": "D09",
+      "group": "D",
+      "query": "find information about memory cleanup task",
+      "pre_search_memory_ids": [
+        1447,
+        1316,
+        549,
+        458,
+        1955
+      ],
+      "pre_search_scores": [
+        0.6,
+        0.4,
+        0.4,
+        0.4,
+        0.4
+      ],
+      "expected_relevant_ids": [
+        1447
+      ],
+      "judge_note": "1/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 1447,
+          "score": 0.6,
+          "subject": "workflow-loop-guardrails",
+          "snippet": "Memory point: EXECUTE — \"tiến hành\" nhận. Task 1 cleanup + Task 2 compact prompt. Trước hết định vị state dir + test_scripts + kiểm Premiere có đang khoá file round không (để xoá an toàn): Evidence: E",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1316,
+          "score": 0.4,
+          "subject": "clau-mem/librarian",
+          "snippet": "Memory point: Note:** While the corpus is titled \"airtag-vietnam-child-tracker\" with a research prompt about AirTag and child tracking devices under 500k VND in Vietnam, the actual observations contai",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 549,
+          "score": 0.4,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: Hello memory agent, you are continuing to observe the primary Claude session. <observed_from_primary_session> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-m",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 458,
+          "score": 0.4,
+          "subject": "clau-mem/librarian",
+          "snippet": "Subject: clau-mem/librarian Subtopic: You are a Claude-Mem, a specialized observer tool for creating searchable memory FOR FUTURE SESSIONS. CRITICAL: Record ... Writer: claude Project: C:\\Users\\ADMIN\\",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1955,
+          "score": 0.4,
+          "subject": "general-session-memory",
+          "snippet": "Memory point: You've hit your session limit · resets 12:40pm (Asia/Bangkok Evidence: You've hit your session limit · resets 12:40pm (Asia/Bangkok Subject: general-session-memory Subtopic: <task-notifi",
+          "source": "fts",
+          "writer": "claude"
+        }
+      ]
+    },
+    {
+      "id": "D10",
+      "group": "D",
+      "query": "search memory for routing problem recent",
+      "pre_search_memory_ids": [
+        466,
+        467,
+        464,
+        1199,
+        1844
+      ],
+      "pre_search_scores": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "expected_relevant_ids": [
+        1199,
+        1844
+      ],
+      "judge_note": "2/5 hits relevant; some hits are tangential (subject mismatch or generic)",
+      "gatekeeper_decision": "hint",
+      "hits_detail": [
+        {
+          "id": 466,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: <observed_from_primary_session> <what_happened>ToolSearch</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer-sessions User intent: <observed",
+          "source": "fts+vector",
+          "writer": "claude"
+        },
+        {
+          "id": 467,
+          "score": 0.5,
+          "subject": "rawcut",
+          "snippet": "Subject: rawcut Subtopic: <observed_from_primary_session> <what_happened>mcp__plugin_claude-mem_mcp-search__smart_search</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 464,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Subject: [A]/council Subtopic: <observed_from_primary_session> <what_happened>ToolSearch</what_happened> ... Writer: claude Project: C:\\Users\\ADMIN\\.claude-mem\\observer-sessions User intent: <observed",
+          "source": "fts",
+          "writer": "claude"
+        },
+        {
+          "id": 1199,
+          "score": 0.5,
+          "subject": "bugfix/debug",
+          "snippet": "Subject: bugfix/debug Subtopic: PLEASE IMPLEMENT THIS PLAN: # Plan Khóa Cuốn Chiếu Hoàn Thiện ToolQ Với Council Routing ## Summary Mục tiêu là hoàn ... Writer: codex Project: C:\\Users\\ADMIN\\.codex\\ses",
+          "source": "fts",
+          "writer": "codex"
+        },
+        {
+          "id": 1844,
+          "score": 0.5,
+          "subject": "[A]/council",
+          "snippet": "Memory point: Codo sẽ dùng council để điều tra theo hướng read-only trước: xác minh bằng log/cấu hình/trace hiện có, không tự ý stress test hay sửa [A]. Vì việc này đụng lịch sử và routing, Codo gọi `",
+          "source": "fts",
+          "writer": "codex"
+        }
+      ]
+    }
+  ]
+}

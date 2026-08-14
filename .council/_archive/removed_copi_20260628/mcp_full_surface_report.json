@@ -1,0 +1,1896 @@
+{
+  "tested_at": "2026-06-13 09:24:03",
+  "total_tools": 180,
+  "directly_tested": 125,
+  "pass": 52,
+  "fail": 73,
+  "skip_safety": 55,
+  "tier_breakdown": {
+    "T1": {
+      "PASS": 38,
+      "FAIL": 40,
+      "SKIP": 0
+    },
+    "T2": {
+      "PASS": 2,
+      "FAIL": 6,
+      "SKIP": 27
+    },
+    "T3": {
+      "PASS": 3,
+      "FAIL": 10,
+      "SKIP": 9
+    },
+    "T4": {
+      "PASS": 9,
+      "FAIL": 17,
+      "SKIP": 19
+    }
+  },
+  "failures_detail": [
+    {
+      "tool": "assert_console_no_error",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'assert_console_no_error': url\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'assert_console_no_error': url\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"page_id\": \"<page_id>\"}, \"retry_sequence\": ["
+    },
+    {
+      "tool": "assert_text_visible",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'assert_text_visible': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\", \"text\"], \"accepted_fields\": [\"page_id\", \"text\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"selector\": \".status\", \"expected_text\": \"Complete\", \"timeout_ms\": 10000, \"_timeout_behavior\": \"Polls u"
+    },
+    {
+      "tool": "ast_query",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'ast_query': file_path, query\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'ast_query': file_path, query\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"pattern\": \"<pattern>\", \"project_path\": \"<proj"
+    },
+    {
+      "tool": "bundle_version_check",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'bundle_version_check': html_url\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): html_url\", \"missing_fields\": [\"html_url\"], \"required_fields\": [\"html_url\"], \"accepted_fields\": [\"html_url\"], \"payload_example\": {\"html_url\": \"<html_url>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \"applied\": "
+    },
+    {
+      "tool": "check_server_path",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'check_server_path': path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): path\", \"missing_fields\": [\"path\"], \"required_fields\": [\"path\"], \"accepted_fields\": [\"path\"], \"payload_example\": {\"path\": \"\\\\\\\\\\\\\\\\server\\\\\\\\share\\\\\\\\folder\", \"mode\": \"auto\", \"timeout_sec\": 5}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_"
+    },
+    {
+      "tool": "checkpoint_loop_dom_state",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'checkpoint_loop_dom_state': page_id, selector\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id, selector\", \"missing_fields\": [\"page_id\", \"selector\"], \"required_fields\": [\"page_id\", \"selector\"], \"accepted_fields\": [\"page_id\", \"selector\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"selector\": \"#btnStep3\", \"interval_sec\": 15, \"timeout_se"
+    },
+    {
+      "tool": "compare_dom_snapshot",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'compare_dom_snapshot': page_id_a, page_id_b\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id_a, page_id_b\", \"missing_fields\": [\"page_id_a\", \"page_id_b\"], \"required_fields\": [\"page_id_a\", \"page_id_b\"], \"accepted_fields\": [\"page_id_a\", \"page_id_b\"], \"payload_example\": {\"page_id_a\": \"<page_id_a>\", \"page_id_b\": \"<page_id_b>\"}, \"ca_next_acti"
+    },
+    {
+      "tool": "describe_page",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'describe_page': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\"], \"accepted_fields\": [\"page_id\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"area_class\": \"log-area\", \"view_id_pattern\": \"^view-\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_field"
+    },
+    {
+      "tool": "desktop_screenshot",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'desktop_screenshot': path\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'desktop_screenshot': path\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"hwnd\": 0, \"save_path\": \"\", \"monitor\": 0, \"all_monit"
+    },
+    {
+      "tool": "detect_stale_server",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'detect_stale_server': port\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): port\", \"missing_fields\": [\"port\"], \"required_fields\": [\"port\"], \"accepted_fields\": [\"port\"], \"payload_example\": {\"port\": 3000, \"expected_bundle_version\": \"v1.2.3\", \"_decision_note\": \"stale + drift \\u2192 BLOCKER for T2 write; warning for T1; restart only with probe evid"
+    },
+    {
+      "tool": "dom_state_diff",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'dom_state_diff': page_id, selector\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id, selector\", \"missing_fields\": [\"page_id\", \"selector\"], \"required_fields\": [\"page_id\", \"selector\"], \"accepted_fields\": [\"page_id\", \"selector\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"selector\": \"#btnGetFootage\", \"snapshot_fields\": [\"disabled\", \"bg\","
+    },
+    {
+      "tool": "extract_log_section",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'extract_log_section': page_id, section_title\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id, section_title\", \"missing_fields\": [\"page_id\", \"section_title\"], \"required_fields\": [\"page_id\", \"section_title\"], \"accepted_fields\": [\"page_id\", \"section_title\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"section_title\": \"System Error Log\", "
+    },
+    {
+      "tool": "fetch_sheet_csv_summary",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'fetch_sheet_csv_summary': url\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): url\", \"missing_fields\": [\"url\"], \"required_fields\": [\"url\"], \"accepted_fields\": [\"url\"], \"payload_example\": {\"url\": \"<url>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \"applied\": false}"
+    },
+    {
+      "tool": "find_callers",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'find_callers': file_pattern, symbol_name\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'find_callers': file_pattern, symbol_name\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"symbol\": \"<symbol>\", "
+    },
+    {
+      "tool": "find_definition_and_usage",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'find_definition_and_usage': file_pattern, symbol_name\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'find_definition_and_usage': file_pattern, symbol_name\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example"
+    },
+    {
+      "tool": "find_symbol",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'find_symbol': file_pattern\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'find_symbol': file_pattern\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"name\": \"function_name\", \"project_path\": \"D:/path/"
+    },
+    {
+      "tool": "folder_diff",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'folder_diff': path_a, path_b\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): path_a, path_b\", \"missing_fields\": [\"path_a\", \"path_b\"], \"required_fields\": [\"path_a\", \"path_b\"], \"accepted_fields\": [\"path_a\", \"path_b\"], \"payload_example\": {\"path_a\": \"<path_a>\", \"path_b\": \"<path_b>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_f"
+    },
+    {
+      "tool": "folder_exists",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'folder_exists': path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): path\", \"missing_fields\": [\"path\"], \"required_fields\": [\"path\"], \"accepted_fields\": [\"path\"], \"payload_example\": {\"path\": \"relative\\\\file.py\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \"applied\": false}"
+    },
+    {
+      "tool": "folder_stats",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'folder_stats': path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): path\", \"missing_fields\": [\"path\"], \"required_fields\": [\"path\"], \"accepted_fields\": [\"path\"], \"payload_example\": {\"path\": \"relative\\\\file.py\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \"applied\": false}"
+    },
+    {
+      "tool": "get_folder_size",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'get_folder_size': folder_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): folder_path\", \"missing_fields\": [\"folder_path\"], \"required_fields\": [\"folder_path\"], \"accepted_fields\": [\"folder_path\"], \"payload_example\": {\"folder_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_perfor"
+    },
+    {
+      "tool": "get_validation_queue",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'get_validation_queue': project_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): project_path\", \"missing_fields\": [\"project_path\"], \"required_fields\": [\"project_path\"], \"accepted_fields\": [\"project_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\project\", \"_lifecycle\": \"Returns pending dry_run_ids from write_fix/write_new_file/wr"
+    },
+    {
+      "tool": "git_blame_symbol",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'git_blame_symbol': symbol, project_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): symbol, project_path\", \"missing_fields\": [\"symbol\", \"project_path\"], \"required_fields\": [\"symbol\", \"project_path\"], \"accepted_fields\": [\"project_path\", \"symbol\"], \"payload_example\": {\"symbol\": \"<symbol>\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_a"
+    },
+    {
+      "tool": "import_graph",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'import_graph': project_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): project_path\", \"missing_fields\": [\"project_path\"], \"required_fields\": [\"project_path\"], \"accepted_fields\": [\"project_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_per"
+    },
+    {
+      "tool": "inspect_project_runtime",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'inspect_project_runtime': project_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): project_path\", \"missing_fields\": [\"project_path\"], \"required_fields\": [\"project_path\"], \"accepted_fields\": [\"project_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\electron-app\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fie"
+    },
+    {
+      "tool": "inspect_project_usage",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'inspect_project_usage': project_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): project_path\", \"missing_fields\": [\"project_path\"], \"required_fields\": [\"project_path\"], \"accepted_fields\": [\"project_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \""
+    },
+    {
+      "tool": "optional_tool_probe",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'optional_tool_probe': tool_name\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'optional_tool_probe': tool_name\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"tools\": [\"/api/tools?name_contains=\", \""
+    },
+    {
+      "tool": "parse_log_section",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'parse_log_section': page_id, section_title\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id, section_title\", \"missing_fields\": [\"page_id\", \"section_title\"], \"required_fields\": [\"page_id\", \"section_title\"], \"accepted_fields\": [\"page_id\", \"section_title\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"section_title\": \"System Error Log\", \"d"
+    },
+    {
+      "tool": "post_write_batch_verify",
+      "tier": "T2",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'post_write_batch_verify': project_path, changed_files\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): project_path, changed_files\", \"missing_fields\": [\"project_path\", \"changed_files\"], \"required_fields\": [\"project_path\", \"changed_files\"], \"accepted_fields\": [\"changed_files\", \"project_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\p"
+    },
+    {
+      "tool": "project_map",
+      "tier": "T2",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'project_map': project_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): project_path\", \"missing_fields\": [\"project_path\"], \"required_fields\": [\"project_path\"], \"accepted_fields\": [\"project_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_perf"
+    },
+    {
+      "tool": "query_dom_candidates",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'query_dom_candidates': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\"], \"accepted_fields\": [\"page_id\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"filter\": \"textareas\", \"max_items\": 50, \"_accepted_filters_doc\": [\"all\", \"inputs\", \"buttons\", \"textareas\", \"links\", \""
+    },
+    {
+      "tool": "query_index",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'query_index': query_text\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'query_index': query_text\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"project_path\": \"D:/path/to/project\", \"file_pattern\": "
+    },
+    {
+      "tool": "query_selector",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'query_selector': page_id, selector\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id, selector\", \"missing_fields\": [\"page_id\", \"selector\"], \"required_fields\": [\"page_id\", \"selector\"], \"accepted_fields\": [\"page_id\", \"selector\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"selector\": \"#btnStep1\", \"_visibility_note\": \"Returns {exists, visi"
+    },
+    {
+      "tool": "read_all_logs",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'read_all_logs': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\"], \"accepted_fields\": [\"page_id\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"max_chars\": 30000, \"include_view_panels\": true, \"view_id_pattern\": \"^view-\"}, \"ca_next_action\": \"rebuild_payload_using_requ"
+    },
+    {
+      "tool": "read_console_errors",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'read_console_errors': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\"], \"accepted_fields\": [\"page_id\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"level\": \"error\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \""
+    },
+    {
+      "tool": "read_network_errors",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'read_network_errors': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\"], \"accepted_fields\": [\"page_id\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"_filter_note\": \"No filter/max_entries fields in current contract; returns all failed+4xx+5xx.\"}, \"ca_next_action\": \"r"
+    },
+    {
+      "tool": "read_page",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'read_page': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\"], \"accepted_fields\": [\"page_id\"], \"payload_example\": {\"page_id\": \"<page_id>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \"applied\": false}"
+    },
+    {
+      "tool": "read_value",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'read_value': key\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'read_value': key\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"page_id\": \"cdp-...-0\", \"selector\": \"#systemLogArea\", \"encoding\": \"pla"
+    },
+    {
+      "tool": "record_ui_flow",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'record_ui_flow': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\"], \"accepted_fields\": [\"page_id\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"output_path\": \"D:/path/to/trace.zip\", \"_status\": \"EXPERIMENTAL: Playwright tracing stub. Use only when test fixture is set"
+    },
+    {
+      "tool": "regex_search",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'regex_search': query\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'regex_search': query\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"pattern\": \"<pattern>\", \"project_path\": \"<project_path>\", \"fil"
+    },
+    {
+      "tool": "resolve_project_path",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'resolve_project_path': input_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): input_path\", \"missing_fields\": [\"input_path\"], \"required_fields\": [\"input_path\"], \"accepted_fields\": [\"input_path\"], \"payload_example\": {\"input_path\": \"<input_path>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": fals"
+    },
+    {
+      "tool": "restart_server_via_bat_hint",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'restart_server_via_bat_hint': bat_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): bat_path\", \"missing_fields\": [\"bat_path\"], \"required_fields\": [\"bat_path\"], \"accepted_fields\": [\"bat_path\"], \"payload_example\": {\"bat_path\": \"D:/path/to/project/start_orchestrator.bat\", \"port\": 8083, \"_status\": \"HINT ONLY \\u2014 returns command string. Does "
+    },
+    {
+      "tool": "run_playwright_test",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'run_playwright_test': test_script_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): test_script_path\", \"missing_fields\": [\"test_script_path\"], \"required_fields\": [\"test_script_path\"], \"accepted_fields\": [\"test_script_path\"], \"payload_example\": {\"test_script_path\": \"<test_script_path>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_"
+    },
+    {
+      "tool": "run_test_profile",
+      "tier": "T2",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'run_test_profile': project_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): project_path\", \"missing_fields\": [\"project_path\"], \"required_fields\": [\"project_path\"], \"accepted_fields\": [\"project_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write"
+    },
+    {
+      "tool": "sample_unc_paths_with_root_check",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'sample_unc_paths_with_root_check': paths\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): paths\", \"missing_fields\": [\"paths\"], \"required_fields\": [\"paths\"], \"accepted_fields\": [\"paths\"], \"payload_example\": {\"paths\": \"<paths>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \"applied\": false}"
+    },
+    {
+      "tool": "screenshot_page",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'screenshot_page': path\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'screenshot_page': path\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"page_id\": \"<page_id>\", \"full_page\": false, \"save_path\": \""
+    },
+    {
+      "tool": "semantic_search",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'semantic_search': query_text\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'semantic_search': query_text\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"query\": \"<query>\", \"project_path\": \"\", \"kwarg"
+    },
+    {
+      "tool": "state",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'state': project_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): project_path\", \"missing_fields\": [\"project_path\"], \"required_fields\": [\"project_path\"], \"accepted_fields\": [\"project_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\""
+    },
+    {
+      "tool": "static_asset_cache_check",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'static_asset_cache_check': url\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): url\", \"missing_fields\": [\"url\"], \"required_fields\": [\"url\"], \"accepted_fields\": [\"url\"], \"payload_example\": {\"url\": \"http://localhost:3000/main.js\", \"_hint\": \"Compares HEAD ETag + GET hash. cache_stale=true \\u2192 consider hard-reload (Ctrl+F5) before assuming code "
+    },
+    {
+      "tool": "type_search",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'type_search': file_pattern, type_name\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'type_search': file_pattern, type_name\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"signature\": \"<signature>\", "
+    },
+    {
+      "tool": "ui_state_summary",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'ui_state_summary': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\"], \"accepted_fields\": [\"page_id\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"regions\": [{\"label\": \"Header\", \"selector\": \"#header\"}, {\"label\": \"Logs\", \"selector\": \"#systemLogArea\"}, {\"label\": \"Butto"
+    },
+    {
+      "tool": "validate_encoding",
+      "tier": "T2",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'validate_encoding': file_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): file_path\", \"missing_fields\": [\"file_path\"], \"required_fields\": [\"file_path\"], \"accepted_fields\": [\"file_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\project\", \"file_path\": \"relative\\\\file.py\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_acce"
+    },
+    {
+      "tool": "validate_file",
+      "tier": "T2",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'validate_file': file_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): file_path\", \"missing_fields\": [\"file_path\"], \"required_fields\": [\"file_path\"], \"accepted_fields\": [\"file_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\project\", \"file_path\": \"relative\\\\file.py\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted"
+    },
+    {
+      "tool": "validate_symbols",
+      "tier": "T2",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'validate_symbols': file_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): file_path\", \"missing_fields\": [\"file_path\"], \"required_fields\": [\"file_path\"], \"accepted_fields\": [\"file_path\"], \"payload_example\": {\"file_path\": \"relative\\\\file.py\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \"a"
+    },
+    {
+      "tool": "verify_active_electron_source",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'verify_active_electron_source': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\"], \"accepted_fields\": [\"page_id\"], \"payload_example\": {\"page_id\": \"<page-id from list_cdp_targets>\", \"expected_path\": \"D:\\\\\\\\absolute\\\\\\\\path\\\\\\\\to\\\\\\\\Source\\\\\\\\ui\\\\\\\\index.html\", \"cdp_po"
+    },
+    {
+      "tool": "verify_get_footage_copy_completion",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'verify_get_footage_copy_completion': target_folder\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): target_folder\", \"missing_fields\": [\"target_folder\"], \"required_fields\": [\"target_folder\"], \"accepted_fields\": [\"target_folder\"], \"payload_example\": {\"target_folder\": \"<target_folder>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accept"
+    },
+    {
+      "tool": "wait_for_idle",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'wait_for_idle': signals\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): signals\", \"missing_fields\": [\"signals\"], \"required_fields\": [\"signals\"], \"accepted_fields\": [\"signals\"], \"payload_example\": {\"signals\": [{\"kind\": \"folder_growth_stable\", \"folder\": \"D:/path/to/output\", \"stable_seconds\": 3}], \"stable_seconds\": 20, \"timeout_seconds\": 900, \"ch"
+    },
+    {
+      "tool": "wait_for_selector",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'wait_for_selector': page_id, selector\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id, selector\", \"missing_fields\": [\"page_id\", \"selector\"], \"required_fields\": [\"page_id\", \"selector\"], \"accepted_fields\": [\"page_id\", \"selector\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"selector\": \"#mainPanel\", \"timeout_ms\": 10000, \"_note\": \"Polls u"
+    },
+    {
+      "tool": "webfetch",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'webfetch': url\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): url\", \"missing_fields\": [\"url\"], \"required_fields\": [\"url\"], \"accepted_fields\": [\"url\"], \"payload_example\": {\"url\": \"<url>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \"applied\": false}"
+    },
+    {
+      "tool": "workflow_activate",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_activate': name\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name\", \"missing_fields\": [\"name\"], \"required_fields\": [\"name\"], \"accepted_fields\": [\"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_per"
+    },
+    {
+      "tool": "workflow_create_from_ui",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_create_from_ui': name, body_md\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name, body_md\", \"missing_fields\": [\"name\", \"body_md\"], \"required_fields\": [\"name\", \"body_md\"], \"accepted_fields\": [\"body_md\", \"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"body_md\": \"# title\\n\\n## Step 1\\n### sub\\nbody\", \"scope\": \"global\""
+    },
+    {
+      "tool": "workflow_draft_create",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_draft_create': name, body_md\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name, body_md\", \"missing_fields\": [\"name\", \"body_md\"], \"required_fields\": [\"name\", \"body_md\"], \"accepted_fields\": [\"body_md\", \"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"body_md\": \"# title\\n\\n## Step 1\\n### sub\\nbody\", \"ttl_sec\": 3600}, \""
+    },
+    {
+      "tool": "workflow_draft_get",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_draft_get': token\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): token\", \"missing_fields\": [\"token\"], \"required_fields\": [\"token\"], \"accepted_fields\": [\"token\"], \"payload_example\": {\"token\": \"<token-from-workflow_draft_create>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \"applie"
+    },
+    {
+      "tool": "workflow_get_current",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_get_current': name\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name\", \"missing_fields\": [\"name\"], \"required_fields\": [\"name\"], \"accepted_fields\": [\"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_"
+    },
+    {
+      "tool": "workflow_goto_step",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_goto_step': name, target_step\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name, target_step\", \"missing_fields\": [\"name\", \"target_step\"], \"required_fields\": [\"name\", \"target_step\"], \"accepted_fields\": [\"name\", \"target_step\"], \"payload_example\": {\"name\": \"rawcut_getfootage_sheet_v1\", \"target_step\": 10, \"reason\": \"V2 replay needs set"
+    },
+    {
+      "tool": "workflow_read_md",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_read_md': name\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name\", \"missing_fields\": [\"name\"], \"required_fields\": [\"name\"], \"accepted_fields\": [\"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_perf"
+    },
+    {
+      "tool": "workflow_reset",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_reset': name\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name\", \"missing_fields\": [\"name\"], \"required_fields\": [\"name\"], \"accepted_fields\": [\"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_perfor"
+    },
+    {
+      "tool": "workflow_retry_step",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_retry_step': name\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name\", \"missing_fields\": [\"name\"], \"required_fields\": [\"name\"], \"accepted_fields\": [\"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_p"
+    },
+    {
+      "tool": "workflow_save_md",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_save_md': name, body_md\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name, body_md\", \"missing_fields\": [\"name\", \"body_md\"], \"required_fields\": [\"name\", \"body_md\"], \"accepted_fields\": [\"body_md\", \"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"body_md\": \"# title\\n\\n## Step 1\\n### sub\\nbody\", \"scope\": \"global\", \"over"
+    },
+    {
+      "tool": "workflow_skip_step",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_skip_step': name\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name\", \"missing_fields\": [\"name\"], \"required_fields\": [\"name\"], \"accepted_fields\": [\"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"reason\": \"manual review\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_"
+    },
+    {
+      "tool": "workflow_start",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_start': name\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name\", \"missing_fields\": [\"name\"], \"required_fields\": [\"name\"], \"accepted_fields\": [\"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_perfor"
+    },
+    {
+      "tool": "workflow_status",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_status': name\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name\", \"missing_fields\": [\"name\"], \"required_fields\": [\"name\"], \"accepted_fields\": [\"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_perfo"
+    },
+    {
+      "tool": "workflow_status_registry",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_status_registry': project_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): project_path\", \"missing_fields\": [\"project_path\"], \"required_fields\": [\"project_path\"], \"accepted_fields\": [\"project_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\project\", \"_note\": \"Returns mode/cache_status/drift_warning + R28 stale_decision "
+    },
+    {
+      "tool": "workflow_submit_step",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_submit_step': name\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name\", \"missing_fields\": [\"name\"], \"required_fields\": [\"name\"], \"accepted_fields\": [\"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"step\": 3, \"status\": \"done\", \"evidence\": \"Clicked button, dialog appeared\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca"
+    }
+  ],
+  "results": [
+    {
+      "tool": "acceptance_dashboard",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"project_path\": \"\", \"generated_at\": \"2026-06-13T09:22:15\", \"all_pass\": true, \"targets_r29\": {\"drift_count\": 0, \"alias_drift_count_max\": 5, \"weak_schema_count_max\": 3, \"protected_mismatch_count_max\": 0, \"mutation_scope_consistent\": true, \"alias_contract_intact\": true, \"duplicate_key_count_max\": 0}, \"actuals\": {\"drift_count\": 0, \"alias_drift_count\": 0, \"weak_schema_count\": 0, \"protected_mismatch_count\": 0, \"mutation_scope_consistent\": true, \"alias_contract_intact\": true, \"duplicate_key_count\": 0,"
+    },
+    {
+      "tool": "alias_contract_test",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"alias_tests\": {\"tested\": 96, \"passed\": 96, \"failed\": 0, \"details\": [{\"tool\": \"cdp_attach_target\", \"legacy\": \"port\", \"canonical\": \"cdp_port\", \"status\": \"PASS\", \"applied\": [\"port->cdp_port\"]}, {\"tool\": \"checkpoint_loop_dom_state\", \"legacy\": \"observe_selector\", \"canonical\": \"selector\", \"status\": \"PASS\", \"applied\": [\"observe_selector->selector\"]}, {\"tool\": \"checkpoint_loop_dom_state\", \"legacy\": \"snapshot_fields\", \"canonical\": \"fields\", \"status\": \"PASS\", \"applied\": [\"snapshot_fields->fields\"]}, {\"t"
+    },
+    {
+      "tool": "apply_after_dry_run",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "architecture_audit_compact",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"project_path\": \"\", \"generated_at\": \"2026-06-13T09:22:20\", \"overall_status\": \"ok\", \"KtrB_backend\": {\"status\": \"ok\", \"code_tools\": 180, \"schema_tools\": 180, \"drift_count\": 0, \"note\": \"Backend tool registry intact\"}, \"KtrSK_skills\": {\"status\": \"ok\", \"skill_folders\": 23, \"skill_tools\": 86, \"alias_drift_count\": 0, \"alias_drift_severity\": \"none\", \"top_offending_files\": [], \"note\": \"All skill docs aligned\"}, \"KtrSH_schema_hint\": {\"status\": \"ok\", \"alias_contract_intact\": true, \"alias_contract_pass\": 1"
+    },
+    {
+      "tool": "assert_button_click_changes_state",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "assert_console_no_error",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'assert_console_no_error': url\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'assert_console_no_error': url\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"page_id\": \"<page_id>\"}, \"retry_sequence\": ["
+    },
+    {
+      "tool": "assert_target_idle",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"idle\": true, \"outcome\": \"no_signals\", \"outcome_enum\": [\"idle\", \"copy_in_progress\", \"process_busy\", \"busy\", \"unknown\", \"no_signals\"], \"ok_vs_idle_warning\": \"⚠️ DO NOT use `ok=true` as completion proof. `ok` only means the gate tool ran successfully. The real verdict is `outcome` or `idle`. Current outcome=`no_signals`. Wait + retry, do NOT submit step done.\", \"signals_evaluated\": [], \"busy_signals\": [], \"evidence\": [], \"signal_count\": 0, \"hint\": \"Soft gate — CA decides whether to pr"
+    },
+    {
+      "tool": "assert_text_visible",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'assert_text_visible': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\", \"text\"], \"accepted_fields\": [\"page_id\", \"text\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"selector\": \".status\", \"expected_text\": \"Complete\", \"timeout_ms\": 10000, \"_timeout_behavior\": \"Polls u"
+    },
+    {
+      "tool": "ast_query",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'ast_query': file_path, query\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'ast_query': file_path, query\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"pattern\": \"<pattern>\", \"project_path\": \"<proj"
+    },
+    {
+      "tool": "audit_tool_matrix",
+      "tier": "T3",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "backup_project",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "backup_status",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "bootstrap_session",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"orchestrator_health\": {\"service\": \"project-orchestrator\", \"port\": 8083, \"base_url\": \"http://localhost:8083\", \"version\": \"v15.r42\"}, \"active_workflow\": {\"ok\": true, \"active\": false}, \"key_tools_compact\": [{\"name\": \"open_session\", \"tier\": \"T3\", \"required\": [\"project_path\", \"session_title\"], \"aliases\": [\"intent->session_title\", \"title->session_title\"]}, {\"name\": \"read_file_range\", \"tier\": \"T1\", \"required\": [\"file_path\", \"project_path\"], \"aliases\": [\"path->file_path\", \"file->file_path\""
+    },
+    {
+      "tool": "bundle_version_check",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'bundle_version_check': html_url\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): html_url\", \"missing_fields\": [\"html_url\"], \"required_fields\": [\"html_url\"], \"accepted_fields\": [\"html_url\"], \"payload_example\": {\"html_url\": \"<html_url>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \"applied\": "
+    },
+    {
+      "tool": "cache_delta",
+      "tier": "T2",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"added\": [\"comc_report_codo.txt\", \"examples/SLIM_RULE.txt\", \"examples/SLIM_RULE_INLINE.txt\", \"orchestrator/__init__.py\", \"orchestrator/core/errors.py\", \"orchestrator/core/registry.py\", \"orchestrator/core/__init__.py\", \"orchestrator/council/dashboard.py\", \"orchestrator/council/__init__.py\", \"orchestrator/storage/fs.py\", \"orchestrator/storage/jsonl_store.py\", \"orchestrator/storage/json_store.py\", \"orchestrator/storage/__init__.py\", \"orchestrator/tools/read.py\", \"orchestrator/tools/sea"
+    },
+    {
+      "tool": "cache_status",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"cache_exists\": true, \"index_exists\": true, \"status\": \"stale\", \"last_updated\": 1781275517.9852822, \"last_updated_iso\": \"2026-06-12T21:45:17\", \"cache_files\": 107, \"message\": \"Cache is initialized.\", \"cache_age_hours\": 11.62, \"stale_warning\": true, \"ca_next_action\": \"refresh_project_map\", \"drift_warning\": true, \"drift_action\": \"refresh_project_map\", \"drift\": {\"added\": [\"comc_report_codo.txt\", \"examples/SLIM_RULE.txt\", \"examples/SLIM_RULE_INLINE.txt\", \"orchestrator/__init__.py\", \"orchestrator/core"
+    },
+    {
+      "tool": "cancel_native_dialog",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "cancel_pending_restart",
+      "tier": "T4",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": false, \"error_name\": \"NO_PENDING_RESTART\", \"reason\": \"restart_helper.cmd never created\", \"helper_path\": \"D:\\\\0. TRIEN\\\\1. DATA\\\\DATA\\\\5. VIBE APP\\\\1. APP\\\\8. ToolA\\\\project-orchestrator\\\\.orchestrator_cache\\\\restart_helper.cmd\"}"
+    },
+    {
+      "tool": "capability_status",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"capabilities\": [{\"name\": \"python_ast\", \"available\": true, \"install\": null, \"benefit\": \"Python functions/classes/imports without full file reads.\"}, {\"name\": \"tree_sitter_languages\", \"available\": true, \"install\": \"pip install tree-sitter-languages\", \"benefit\": \"Better JS/TS symbols and imports.\"}, {\"name\": \"yaml_parser\", \"available\": false, \"install\": \"pip install pyyaml\", \"benefit\": \"Structured YAML key-path cache.\"}, {\"name\": \"markdown\", \"available\": true, \"install\": null, \"benefi"
+    },
+    {
+      "tool": "cdp_attach_target",
+      "tier": "T4",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": false, \"error\": \"Provide ONE of: target_id (from list_cdp_targets) OR websocket_url (from /json/version). You do NOT need both.\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"missing_fields\": [\"target_id\", \"websocket_url\"], \"one_of\": [\"target_id\", \"websocket_url\"], \"hint\": \"R66: call list_cdp_targets(cdp_port) first, then pass that target's id as target_id. For Electron browser-level attach, pass websocket_url from /json/version instead.\", \"ca_next_action\": \"call_list_cdp_targets_then_retry_w"
+    },
+    {
+      "tool": "cep_deploy",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "cep_extension_status",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": false, \"error\": \"project_path (extension repo root) required and must exist\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"INTERNAL_ERROR\", \"severity\": \"error\", \"retryable\": false, \"reason\": \"project_path (extension repo root) required and must exist\", \"ca_next_action\": \"inspect_error_context_or_report_backend_issue\", \"phase\": \"schema\", \"hint\": \"Rebuild the payload using required_fields, accepted_fields, and payload_example.\", \"payload_example\": {\"project_path\": \"D:/path/to/project\"},"
+    },
+    {
+      "tool": "cep_manifest_validate",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": false, \"error\": \"Provide project_path (extension root) or manifest_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"INTERNAL_ERROR\", \"severity\": \"error\", \"retryable\": false, \"reason\": \"Provide project_path (extension root) or manifest_path\", \"ca_next_action\": \"inspect_error_context_or_report_backend_issue\", \"phase\": \"schema\", \"hint\": \"Rebuild the payload using required_fields, accepted_fields, and payload_example.\", \"payload_example\": {\"project_path\": \"D:/path/to/project\"}, \"retry_"
+    },
+    {
+      "tool": "check_server_path",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'check_server_path': path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): path\", \"missing_fields\": [\"path\"], \"required_fields\": [\"path\"], \"accepted_fields\": [\"path\"], \"payload_example\": {\"path\": \"\\\\\\\\\\\\\\\\server\\\\\\\\share\\\\\\\\folder\", \"mode\": \"auto\", \"timeout_sec\": 5}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_"
+    },
+    {
+      "tool": "check_window_visibility",
+      "tier": "T4",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": false, \"error\": \"WINDOW_NOT_FOUND\", \"error_name\": \"WINDOW_NOT_FOUND\", \"schema_version\": \"v15.r18\", \"reason\": \"WINDOW_NOT_FOUND\", \"hint\": \"Follow ca_guidance.payload_example and retry.\", \"ca_next_action\": \"inspect_ca_guidance\", \"payload_example\": {\"title_pattern\": \"Rawcut\", \"match_mode\": \"contains_case_insensitive\"}, \"retry_sequence\": [], \"ca_guidance\": {\"phase\": \"T4\", \"phase_label\": \"Runtime / DOM / Browser / Server lifecycle\", \"error_name\": \"WINDOW_NOT_FOUND\", \"ca_next_action\": \"inspect_"
+    },
+    {
+      "tool": "checkpoint_loop_dom_state",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'checkpoint_loop_dom_state': page_id, selector\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id, selector\", \"missing_fields\": [\"page_id\", \"selector\"], \"required_fields\": [\"page_id\", \"selector\"], \"accepted_fields\": [\"page_id\", \"selector\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"selector\": \"#btnStep3\", \"interval_sec\": 15, \"timeout_se"
+    },
+    {
+      "tool": "classify_get_footage_outcome",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"outcome\": \"unknown\", \"evidence\": {\"log_excerpt\": \"\", \"files_created\": 0, \"folder_stats\": {}, \"errors_found\": []}, \"ca_next_action\": \"read_full_logs_with_read_all_logs_for_deeper_investigation\"}"
+    },
+    {
+      "tool": "cleanup_test_session",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "click",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "click_and_checkpoint_loop",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "click_and_handle_folder_dialog",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "click_selector",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "close_session",
+      "tier": "T3",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "compare_dom_snapshot",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'compare_dom_snapshot': page_id_a, page_id_b\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id_a, page_id_b\", \"missing_fields\": [\"page_id_a\", \"page_id_b\"], \"required_fields\": [\"page_id_a\", \"page_id_b\"], \"accepted_fields\": [\"page_id_a\", \"page_id_b\"], \"payload_example\": {\"page_id_a\": \"<page_id_a>\", \"page_id_b\": \"<page_id_b>\"}, \"ca_next_acti"
+    },
+    {
+      "tool": "convene_council",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"roster\": [{\"agent\": \"ClauC\", \"bridge_agent\": \"clau\", \"role\": \"LEADER 1 (trigger receiver): coordinates + routes tasks + final review; T4/runtime/DOM/CDP/browser via MCP; reasoning. Prompts to workers MUST carry a concise guardrail+harness.\", \"cli_channel\": \"claude --print --model claude-opus-4-8 -p \\\"<prompt>\\\"  [diagnostic only; dispatch via council_message; log .council\\\\log_clau.txt]\"}, {\"agent\": \"OpeC\", \"bridge_agent\": \"ope\", \"role\": \"system chaining + understand functions/syst"
+    },
+    {
+      "tool": "copy_file",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "council_config_diff",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"config_source\": \"D:\\\\0. TRIEN\\\\1. DATA\\\\DATA\\\\5. VIBE APP\\\\1. APP\\\\8. ToolA\\\\project-orchestrator\\\\.council\\\\council_config.json\", \"enabled_agents\": [{\"id\": \"clau\", \"label\": \"ClauC\", \"cost_rank\": 1, \"free\": false, \"can_write_A\": true}, {\"id\": \"ope\", \"label\": \"OpeC\", \"cost_rank\": 5, \"free\": true, \"can_write_A\": false}, {\"id\": \"codo\", \"label\": \"CodoC\", \"cost_rank\": 2, \"free\": false, \"can_write_A\": true}, {\"id\": \"comc\", \"label\": \"ComC\", \"cost_rank\": 4, \"free\": false, \"can_write_A\": fa"
+    },
+    {
+      "tool": "council_config_sync",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "council_message",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": false, \"error_name\": \"MISSING_TEXT\", \"error\": \"text required\", \"reason\": \"text required\", \"hint\": \"Follow ca_guidance.payload_example and retry.\", \"ca_next_action\": \"inspect_ca_guidance\", \"payload_example\": {\"project_path\": \"D:/path/to/project\"}, \"retry_sequence\": [], \"ca_guidance\": {\"phase\": \"T1\", \"phase_label\": \"Discover / Analyze / Read\", \"error_name\": \"MISSING_TEXT\", \"ca_next_action\": \"inspect_ca_guidance\", \"call_pattern\": \"$body = @{ ... } | ConvertTo-Json -Depth 20\\nInvoke-RestMetho"
+    },
+    {
+      "tool": "create_benchmark_request",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "create_build_context",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "create_folder",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "create_folders",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "create_pending_audit",
+      "tier": "T3",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "declare_mission",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": false, \"error\": \"Provide mission text OR context_hints\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"accepted_fields\": [\"mission\", \"context_hints\", \"project_path\", \"top_skills\", \"top_tools\"], \"schema_version\": \"v15.r18\", \"reason\": \"Provide mission text OR context_hints\", \"hint\": \"Rebuild the payload using required_fields, accepted_fields, and payload_example.\", \"ca_next_action\": \"inspect_ca_guidance\", \"payload_example\": {\"mission\": \"test Electron Rawcut UI: launch, fill manual input, click S"
+    },
+    {
+      "tool": "delete_file",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "describe_page",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'describe_page': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\"], \"accepted_fields\": [\"page_id\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"area_class\": \"log-area\", \"view_id_pattern\": \"^view-\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_field"
+    },
+    {
+      "tool": "desktop_app_focus",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "desktop_click",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "desktop_screenshot",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'desktop_screenshot': path\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'desktop_screenshot': path\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"hwnd\": 0, \"save_path\": \"\", \"monitor\": 0, \"all_monit"
+    },
+    {
+      "tool": "desktop_send_text",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "desktop_window_list",
+      "tier": "T4",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"count\": 40, \"windows\": [{\"hwnd\": 136820, \"title\": \"HOOK 1 - File Explorer\", \"pid\": 10868, \"process_name\": \"explorer.exe\", \"class_name\": \"CabinetWClass\", \"parent_hwnd\": 0, \"owner_hwnd\": 0, \"visible\": true, \"enabled\": true, \"is_topmost\": false, \"is_toolwindow\": false, \"is_dialog_class\": false, \"rect\": {\"x\": 1912, \"y\": -8, \"w\": 1936, \"h\": 1048}}, {\"hwnd\": 466198, \"title\": \"The Most Talented Man in AI - YouTube - Google Chrome\", \"pid\": 18668, \"process_name\": \"chrome.exe\", \"class_name\": \"Chrome_Wid"
+    },
+    {
+      "tool": "desktop_window_state",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "detect_stale_server",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'detect_stale_server': port\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): port\", \"missing_fields\": [\"port\"], \"required_fields\": [\"port\"], \"accepted_fields\": [\"port\"], \"payload_example\": {\"port\": 3000, \"expected_bundle_version\": \"v1.2.3\", \"_decision_note\": \"stale + drift \\u2192 BLOCKER for T2 write; warning for T1; restart only with probe evid"
+    },
+    {
+      "tool": "dom_state_diff",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'dom_state_diff': page_id, selector\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id, selector\", \"missing_fields\": [\"page_id\", \"selector\"], \"required_fields\": [\"page_id\", \"selector\"], \"accepted_fields\": [\"page_id\", \"selector\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"selector\": \"#btnGetFootage\", \"snapshot_fields\": [\"disabled\", \"bg\","
+    },
+    {
+      "tool": "electron_devtools_log",
+      "tier": "T4",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": false, \"error\": \"CDP unreachable on port 9223: <urlopen error [WinError 10061] No connection could be made because the target machine actively refused it>\", \"error_name\": \"CDP_UNREACHABLE\", \"deprecated\": true, \"deprecated_since\": \"V15 R15\", \"sunset\": \"V16\", \"replacement\": \"cdp_attach_target → read_console_errors(level={error|warning|info|all})\", \"migration_hint\": \"1) Call cdp_attach_target(target_id=<from list_cdp_targets>) to get page_id. 2) Call read_console_errors(page_id=<...>, level="
+    },
+    {
+      "tool": "ensure_single_electron_instance",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "evaluate_js",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "extract_log_section",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'extract_log_section': page_id, section_title\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id, section_title\", \"missing_fields\": [\"page_id\", \"section_title\"], \"required_fields\": [\"page_id\", \"section_title\"], \"accepted_fields\": [\"page_id\", \"section_title\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"section_title\": \"System Error Log\", "
+    },
+    {
+      "tool": "fetch_sheet_csv_summary",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'fetch_sheet_csv_summary': url\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): url\", \"missing_fields\": [\"url\"], \"required_fields\": [\"url\"], \"accepted_fields\": [\"url\"], \"payload_example\": {\"url\": \"<url>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \"applied\": false}"
+    },
+    {
+      "tool": "fill",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "fill_folder_dialog",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "fill_value",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "find_callers",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'find_callers': file_pattern, symbol_name\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'find_callers': file_pattern, symbol_name\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"symbol\": \"<symbol>\", "
+    },
+    {
+      "tool": "find_definition_and_usage",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'find_definition_and_usage': file_pattern, symbol_name\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'find_definition_and_usage': file_pattern, symbol_name\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example"
+    },
+    {
+      "tool": "find_symbol",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'find_symbol': file_pattern\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'find_symbol': file_pattern\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"name\": \"function_name\", \"project_path\": \"D:/path/"
+    },
+    {
+      "tool": "folder_dialog_snapshot",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"candidates_count\": 0, \"candidates\": [], \"other_windows_count\": 0, \"other_windows\": [], \"rejected_count\": 0, \"rejected\": [], \"title_pattern_used\": \"(Select|Browse|Choose|Open|Mở|Chọn).*?(Folder|thư mục|File)|^Open$|^Save As$\", \"filters\": {\"owner_pid\": 0, \"parent_hwnd\": 0, \"launched_after_ts\": \"\"}, \"ca_next_action\": \"no_dialog_found_verify_app_state_or_button_click\"}"
+    },
+    {
+      "tool": "folder_diff",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'folder_diff': path_a, path_b\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): path_a, path_b\", \"missing_fields\": [\"path_a\", \"path_b\"], \"required_fields\": [\"path_a\", \"path_b\"], \"accepted_fields\": [\"path_a\", \"path_b\"], \"payload_example\": {\"path_a\": \"<path_a>\", \"path_b\": \"<path_b>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_f"
+    },
+    {
+      "tool": "folder_exists",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'folder_exists': path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): path\", \"missing_fields\": [\"path\"], \"required_fields\": [\"path\"], \"accepted_fields\": [\"path\"], \"payload_example\": {\"path\": \"relative\\\\file.py\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \"applied\": false}"
+    },
+    {
+      "tool": "folder_stats",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'folder_stats': path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): path\", \"missing_fields\": [\"path\"], \"required_fields\": [\"path\"], \"accepted_fields\": [\"path\"], \"payload_example\": {\"path\": \"relative\\\\file.py\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \"applied\": false}"
+    },
+    {
+      "tool": "generate_project_map",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "get_file_symbols",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"symbols\": [{\"name\": \"_ensure_mcp_loop\", \"type\": \"function\", \"line\": 83}, {\"name\": \"_run_mcp_coro\", \"type\": \"function\", \"line\": 106}, {\"name\": \"_log_session_event_safe\", \"type\": \"function\", \"line\": 157}, {\"name\": \"_resolve_project_from_session_id\", \"type\": \"function\", \"line\": 207}, {\"name\": \"_resolve_project_from_page_id\", \"type\": \"function\", \"line\": 227}, {\"name\": \"_cors\", \"type\": \"function\", \"line\": 249}, {\"name\": \"_is_local\", \"type\": \"function\", \"line\": 263}, {\"name\": \"_origin_ok\", \"type\": \""
+    },
+    {
+      "tool": "get_folder_size",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'get_folder_size': folder_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): folder_path\", \"missing_fields\": [\"folder_path\"], \"required_fields\": [\"folder_path\"], \"accepted_fields\": [\"folder_path\"], \"payload_example\": {\"folder_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_perfor"
+    },
+    {
+      "tool": "get_project_summary",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"project\": \"project-orchestrator\", \"project_name\": \"project-orchestrator\", \"generated_at\": \"2026-06-12T21:45:17\", \"last_write_at\": \"2026-06-12T21:45:15\", \"folder_size_mb\": 52.47, \"stats\": {\"files\": 104, \"loc\": 47340, \"functions\": 573, \"classes\": 7}, \"groups\": {\"config\": {\"files\": 7, \"loc\": 4838}, \"doc\": {\"files\": 57, \"loc\": 9838}, \"source\": {\"files\": 14, \"loc\": 21587}, \"script\": {\"files\": 7, \"loc\": 593}, \"entrypoint\": {\"files\": 1, \"loc\": 7390}, \"unknown\": {\"files\": 4, \"loc\": 286}, \""
+    },
+    {
+      "tool": "get_rule_core_text",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"already_fetched\": true, \"sha256\": \"47b1ddfaa8f87d6fe5b809c92b7a455325ffe42b1a06463bd12dc66299074500\", \"agent_id\": \"default\", \"hint\": \"CORE_RULE already returned for this agent within TTL; reuse the cached rule text in context. Pass force=true (or a distinct agent_id) to re-fetch.\"}"
+    },
+    {
+      "tool": "get_session_events",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": false, \"error\": \"session_id required (or project_path with active session)\", \"error_name\": \"SESSION_NOT_FOUND\", \"hint\": \"Pass session_id from list_sessions, or project_path when an active session exists.\", \"ca_next_action\": \"list_sessions\", \"reason\": \"session_id required (or project_path with active session)\", \"payload_example\": {\"project_path\": \"D:/path/to/project\"}, \"retry_sequence\": [], \"ca_guidance\": {\"phase\": \"T1\", \"phase_label\": \"Discover / Analyze / Read\", \"error_name\": \"SESSION_NO"
+    },
+    {
+      "tool": "get_skill_state",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"session_id\": \"\", \"skills_available\": [{\"name\": \"00_skill_router\", \"path\": \".ToolA_Skill/skills/00_skill_router/SKILL.md\", \"path_absolute\": \"D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/project-orchestrator/.ToolA_Skill/skills/00_skill_router/SKILL.md\", \"size_bytes\": 7392, \"read_file_range_payload\": {\"file_path\": \"D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/project-orchestrator/.ToolA_Skill/skills/00_skill_router/SKILL.md\", \"start_line\": 1, \"end_line\": 200}, \"read_file_range_pa"
+    },
+    {
+      "tool": "get_token_meter",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"session_id\": null, \"calls\": 0, \"bytes_in_estimate\": 0, \"bytes_out_estimate\": 0, \"note\": \"no active session\", \"ok\": true, \"schema_version\": \"v15.r18\"}"
+    },
+    {
+      "tool": "get_usage_stats",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"source\": \"sqlite:events\", \"entries_analyzed\": 200, \"top_tools\": [{\"tool\": \"read_file_range\", \"calls\": 64, \"error_rate\": 0.11, \"avg_ms\": 101}, {\"tool\": \"cache_status\", \"calls\": 35, \"error_rate\": 0.0, \"avg_ms\": 3}, {\"tool\": \"search_code\", \"calls\": 33, \"error_rate\": 0.0, \"avg_ms\": 630}, {\"tool\": \"apply_patch\", \"calls\": 11, \"error_rate\": 0.0, \"avg_ms\": 0}, {\"tool\": \"run_project_command\", \"calls\": 6, \"error_rate\": 0.17, \"avg_ms\": 3241}, {\"tool\": \"open_session\", \"calls\": 5, \"error_rate\":"
+    },
+    {
+      "tool": "get_validation_queue",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'get_validation_queue': project_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): project_path\", \"missing_fields\": [\"project_path\"], \"required_fields\": [\"project_path\"], \"accepted_fields\": [\"project_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\project\", \"_lifecycle\": \"Returns pending dry_run_ids from write_fix/write_new_file/wr"
+    },
+    {
+      "tool": "git_blame_symbol",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'git_blame_symbol': symbol, project_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): symbol, project_path\", \"missing_fields\": [\"symbol\", \"project_path\"], \"required_fields\": [\"symbol\", \"project_path\"], \"accepted_fields\": [\"project_path\", \"symbol\"], \"payload_example\": {\"symbol\": \"<symbol>\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_a"
+    },
+    {
+      "tool": "import_graph",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'import_graph': project_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): project_path\", \"missing_fields\": [\"project_path\"], \"required_fields\": [\"project_path\"], \"accepted_fields\": [\"project_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_per"
+    },
+    {
+      "tool": "inspect_project_runtime",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'inspect_project_runtime': project_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): project_path\", \"missing_fields\": [\"project_path\"], \"required_fields\": [\"project_path\"], \"accepted_fields\": [\"project_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\electron-app\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fie"
+    },
+    {
+      "tool": "inspect_project_usage",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'inspect_project_usage': project_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): project_path\", \"missing_fields\": [\"project_path\"], \"required_fields\": [\"project_path\"], \"accepted_fields\": [\"project_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \""
+    },
+    {
+      "tool": "invoke_app_function",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "kill_process",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "launch_electron_with_cdp",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "list_cdp_targets",
+      "tier": "T4",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": false, \"error\": \"CDP target list unavailable on port 9223: <urlopen error [WinError 10061] No connection could be made because the target machine actively refused it>\", \"error_name\": \"CDP_UNREACHABLE\", \"cdp_port\": 9223, \"diagnostic_hint\": \"R28: distinguish runtime_absent vs ui_inaccessible. Call desktop_window_list — if NO matching app window → runtime_absent (call launch_electron_with_cdp). If window exists → ui_inaccessible (wrong port or CDP flag missing).\", \"ca_next_action\": \"check_de"
+    },
+    {
+      "tool": "list_projects",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"projects\": [{\"project_path\": \"C:\\\\Users\\\\ADMIN\\\\AppData\\\\Local\\\\Temp\\\\project_orchestrator_test_ah3nyi1q\", \"session_count\": 1, \"latest\": \"2026-06-13T09:13:03\", \"slot\": \"[Ab]\"}, {\"project_path\": \"C:\\\\Users\\\\ADMIN\\\\AppData\\\\Local\\\\Temp\\\\project_orchestrator_test_9607wl86\", \"session_count\": 1, \"latest\": \"2026-06-13T08:15:52\", \"slot\": \"[Ac]\"}, {\"project_path\": \"C:\\\\Users\\\\ADMIN\\\\AppData\\\\Local\\\\Temp\\\\project_orchestrator_test_ygyr4wnk\", \"session_count\": 1, \"latest\": \"2026-06-13T08:14:49\", \"slot\": "
+    },
+    {
+      "tool": "list_sessions",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"sessions\": [{\"session_id\": \"untitled-session-06-13-00-47\", \"session_title\": \"Untitled Session 06/13 00:47\", \"mode\": \"T1\", \"status\": \"active\", \"coverage\": \"A-only\", \"started_at\": \"2026-06-13T00:47:58\", \"ended_at\": null, \"counts\": {\"cache\": 10, \"execute\": 7, \"native_edit\": 3, \"read\": 32, \"validate\": 3, \"workflow\": 5, \"write\": 4, \"write_fix\": 1}, \"total_events\": 65}, {\"session_id\": \"technical-debt-scan-06120027\", \"session_title\": \"Technical debt scan\", \"mode\": \"T1\", \"status\": \"closed\""
+    },
+    {
+      "tool": "list_structure",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"result\": \"/\\n├── examples/\\n│   ├── api/\\n│   ├── reports/\\n│   ├── tooling/\\n│   ├── _extract.js\\n│   ├── CORE_RULE.txt\\n│   ├── mcp_175_tool_rag.html\\n│   ├── mcp_175_tool_rag_verify.png\\n│   ├── PROJECT_CONTEXT.md\\n│   ├── PROJECT_MAP.md\\n│   ├── SLIM_RULE.txt\\n│   └── SLIM_RULE_INLINE.txt\\n├── orchestrator/\\n│   ├── core/\\n│   ├── council/\\n│   ├── storage/\\n│   ├── tools/\\n│   └── __init__.py\\n├── release_gate_182/\\n│   ├── baseline_before_fix.json\\n│   └── report_viewer.html\\"
+    },
+    {
+      "tool": "log_native",
+      "tier": "T3",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "log_native_event",
+      "tier": "T3",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "manage_agent",
+      "tier": "T3",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"agents\": [\"clau\", \"codo\", \"clin\", \"copi\", \"opencode\", \"comc\", \"hermes\"], \"registry_path\": \"D:\\\\0. TRIEN\\\\1. DATA\\\\DATA\\\\5. VIBE APP\\\\1. APP\\\\8. ToolA\\\\project-orchestrator\\\\agents_registry.json\"}"
+    },
+    {
+      "tool": "mcp_surface_diff",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"project_path\": \"D:\\\\0. TRIEN\\\\1. DATA\\\\DATA\\\\5. VIBE APP\\\\1. APP\\\\8. ToolA\\\\project-orchestrator\", \"counts\": {\"tool_map\": 180, \"schemas\": 180, \"phase_resolved\": 180, \"api_tools\": 180, \"client_tools\": null}, \"diff_counts\": {\"tool_map_minus_schema\": 0, \"schema_minus_tool_map\": 0, \"tool_map_minus_api\": 0, \"api_minus_tool_map\": 0}, \"drift_count\": 0, \"api_error\": null, \"api_source\": \"in_process_schema_equivalent\", \"surfaces_aligned\": true, \"client_comparison\": false, \"metadata_diagnosti"
+    },
+    {
+      "tool": "next_recommended_action",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"mode\": \"T1\", \"next_action\": \"Use INDEX refs to read exact ranges, then edit/test/cache-delta.\", \"next_recommended_action\": \"Use INDEX refs to read exact ranges, then edit/test/cache-delta.\", \"context\": {\"cache_status\": \"ok\", \"backup_status\": \"available\", \"has_bootstrap\": true}}"
+    },
+    {
+      "tool": "open_browser_page",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "open_session",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"session_id\": \"untitled-session-06-13-00-47\", \"session_title\": \"Untitled Session 06/13 00:47\", \"started_at\": \"2026-06-13T00:47:58\", \"resumed\": true, \"project_name\": \"project-orchestrator\", \"project_path\": \"D:\\\\0. TRIEN\\\\1. DATA\\\\DATA\\\\5. VIBE APP\\\\1. APP\\\\8. ToolA\", \"requested_project_path\": \"D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/project-orchestrator\", \"effective_project_path\": \"D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/project-orchestrator\", \"relative_base"
+    },
+    {
+      "tool": "optional_tool_probe",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'optional_tool_probe': tool_name\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'optional_tool_probe': tool_name\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"tools\": [\"/api/tools?name_contains=\", \""
+    },
+    {
+      "tool": "parse_log_section",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'parse_log_section': page_id, section_title\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id, section_title\", \"missing_fields\": [\"page_id\", \"section_title\"], \"required_fields\": [\"page_id\", \"section_title\"], \"accepted_fields\": [\"page_id\", \"section_title\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"section_title\": \"System Error Log\", \"d"
+    },
+    {
+      "tool": "path_quote_helper",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": false, \"project_path\": \"D:\\\\0. TRIEN\\\\1. DATA\\\\DATA\\\\5. VIBE APP\\\\1. APP\\\\8. ToolA\\\\project-orchestrator\", \"cwd\": \"D:\\\\0. TRIEN\\\\1. DATA\\\\DATA\\\\5. VIBE APP\\\\1. APP\\\\8. ToolA\\\\project-orchestrator\", \"safe_command\": \"\", \"command_executed\": \"\", \"uses_set_location\": false, \"quoting_strategy\": \"project_path_as_cwd\", \"shell\": \"powershell\", \"warnings\": [], \"bat_path_with_spaces_hint\": \"Use cmd /c \\\"\\\"D:\\\\path with spaces\\\\script.bat\\\"\\\" or PowerShell Start-Process -FilePath with a quoted Literal"
+    },
+    {
+      "tool": "port_owner_inspect",
+      "tier": "T4",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"port\": 8083, \"listening\": true, \"pid\": 32392, \"process_name\": \"pythonw3.12.exe\", \"ok\": true, \"schema_version\": \"v15.r18\"}"
+    },
+    {
+      "tool": "post_write_batch_verify",
+      "tier": "T2",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'post_write_batch_verify': project_path, changed_files\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): project_path, changed_files\", \"missing_fields\": [\"project_path\", \"changed_files\"], \"required_fields\": [\"project_path\", \"changed_files\"], \"accepted_fields\": [\"changed_files\", \"project_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\p"
+    },
+    {
+      "tool": "prepare_ca_session",
+      "tier": "T3",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "process_tree_inspect",
+      "tier": "T4",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": false, \"error\": \"root_pid or name_pattern required\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"schema_version\": \"v15.r18\", \"reason\": \"root_pid or name_pattern required\", \"hint\": \"Rebuild the payload using required_fields, accepted_fields, and payload_example.\", \"ca_next_action\": \"inspect_ca_guidance\", \"payload_example\": {\"root_pid\": 12345, \"name_pattern\": \"electron\", \"_note\": \"name_pattern is a case-insensitive substring, not regex. Returns ancestor + descendant tree.\"}, \"retry_sequence\": "
+    },
+    {
+      "tool": "progressive_matrix_check",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok_to_ship_static_matrix\": true, \"mode\": \"summary\", \"step_id\": \"\", \"selected_tool\": {}, \"checks\": {\"public_tool_count\": 180, \"workflow_docs\": {\"T1\": {\"exists\": true, \"step_markers\": 6, \"mentions_guardrail\": true}, \"T2\": {\"exists\": true, \"step_markers\": 5, \"mentions_guardrail\": true}, \"T3\": {\"exists\": true, \"step_markers\": 4, \"mentions_guardrail\": true}, \"T4\": {\"exists\": true, \"step_markers\": 5, \"mentions_guardrail\": true}}, \"schema\": {\"missing_schema_count\": 0, \"missing_phase_count\": 0, \"phase"
+    },
+    {
+      "tool": "project_map",
+      "tier": "T2",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'project_map': project_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): project_path\", \"missing_fields\": [\"project_path\"], \"required_fields\": [\"project_path\"], \"accepted_fields\": [\"project_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_perf"
+    },
+    {
+      "tool": "protected_tools_status",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"protected_tools\": [\"apply_after_dry_run\", \"assert_button_click_changes_state\", \"backup_project\", \"cancel_native_dialog\", \"cep_deploy\", \"cleanup_test_session\", \"click\", \"click_and_checkpoint_loop\", \"click_and_handle_folder_dialog\", \"click_selector\", \"close_session\", \"copy_file\", \"council_config_sync\", \"create_benchmark_request\", \"create_build_context\", \"create_folder\", \"create_folders\", \"create_pending_audit\", \"delete_file\", \"desktop_app_focus\", \"desktop_click\", \"desktop_send_text\","
+    },
+    {
+      "tool": "query_dom_candidates",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'query_dom_candidates': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\"], \"accepted_fields\": [\"page_id\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"filter\": \"textareas\", \"max_items\": 50, \"_accepted_filters_doc\": [\"all\", \"inputs\", \"buttons\", \"textareas\", \"links\", \""
+    },
+    {
+      "tool": "query_index",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'query_index': query_text\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'query_index': query_text\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"project_path\": \"D:/path/to/project\", \"file_pattern\": "
+    },
+    {
+      "tool": "query_selector",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'query_selector': page_id, selector\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id, selector\", \"missing_fields\": [\"page_id\", \"selector\"], \"required_fields\": [\"page_id\", \"selector\"], \"accepted_fields\": [\"page_id\", \"selector\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"selector\": \"#btnStep1\", \"_visibility_note\": \"Returns {exists, visi"
+    },
+    {
+      "tool": "read_all_logs",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'read_all_logs': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\"], \"accepted_fields\": [\"page_id\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"max_chars\": 30000, \"include_view_panels\": true, \"view_id_pattern\": \"^view-\"}, \"ca_next_action\": \"rebuild_payload_using_requ"
+    },
+    {
+      "tool": "read_console_errors",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'read_console_errors': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\"], \"accepted_fields\": [\"page_id\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"level\": \"error\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \""
+    },
+    {
+      "tool": "read_file_range",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"result\": \"1: \\\"\\\"\\\"\\n2: Project Orchestrator — aiohttp REST Server\\n3: Serves the HTML UI and exposes deterministic project tools and log streaming.\\n4: \\n5: Usage:\\n6:   python orchestrator_server.py          # HTTP mode (opens browser at localhost:8083)\\n7:   python orchestrator_server.py --mcp    # MCP stdio mode\\n8: \\\"\\\"\\\"\\n9: import asyncio\\n10: import copy\", \"file\": \"D:\\\\0. TRIEN\\\\1. DATA\\\\DATA\\\\5. VIBE APP\\\\1. APP\\\\8. ToolA\\\\project-orchestrator\\\\orchestrator_server.py\", \"pr"
+    },
+    {
+      "tool": "read_network_errors",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'read_network_errors': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\"], \"accepted_fields\": [\"page_id\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"_filter_note\": \"No filter/max_entries fields in current contract; returns all failed+4xx+5xx.\"}, \"ca_next_action\": \"r"
+    },
+    {
+      "tool": "read_page",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'read_page': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\"], \"accepted_fields\": [\"page_id\"], \"payload_example\": {\"page_id\": \"<page_id>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \"applied\": false}"
+    },
+    {
+      "tool": "read_skill",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": false, \"error\": \"name required (e.g. '18_runtime_dom_T4' or '18')\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"accepted_fields\": [\"name\", \"max_lines\"], \"schema_version\": \"v15.r18\", \"reason\": \"name required (e.g. '18_runtime_dom_T4' or '18')\", \"hint\": \"Rebuild the payload using required_fields, accepted_fields, and payload_example.\", \"ca_next_action\": \"inspect_ca_guidance\", \"payload_example\": {\"name\": \"18\", \"max_lines\": 400}, \"retry_sequence\": [{\"tool\": \"read_skill\", \"payload\": {\"<required_f"
+    },
+    {
+      "tool": "read_value",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'read_value': key\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'read_value': key\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"page_id\": \"cdp-...-0\", \"selector\": \"#systemLogArea\", \"encoding\": \"pla"
+    },
+    {
+      "tool": "record_ui_flow",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'record_ui_flow': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\"], \"accepted_fields\": [\"page_id\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"output_path\": \"D:/path/to/trace.zip\", \"_status\": \"EXPERIMENTAL: Playwright tracing stub. Use only when test fixture is set"
+    },
+    {
+      "tool": "refresh_project_map",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "regex_search",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'regex_search': query\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'regex_search': query\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"pattern\": \"<pattern>\", \"project_path\": \"<project_path>\", \"fil"
+    },
+    {
+      "tool": "rename_session",
+      "tier": "T3",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "replace_between_anchors",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "resolve_project_path",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'resolve_project_path': input_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): input_path\", \"missing_fields\": [\"input_path\"], \"required_fields\": [\"input_path\"], \"accepted_fields\": [\"input_path\"], \"payload_example\": {\"input_path\": \"<input_path>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": fals"
+    },
+    {
+      "tool": "restart_orchestrator_via_task",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "restart_server_via_bat_hint",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'restart_server_via_bat_hint': bat_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): bat_path\", \"missing_fields\": [\"bat_path\"], \"required_fields\": [\"bat_path\"], \"accepted_fields\": [\"bat_path\"], \"payload_example\": {\"bat_path\": \"D:/path/to/project/start_orchestrator.bat\", \"port\": 8083, \"_status\": \"HINT ONLY \\u2014 returns command string. Does "
+    },
+    {
+      "tool": "run_node_script",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "run_playwright_test",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'run_playwright_test': test_script_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): test_script_path\", \"missing_fields\": [\"test_script_path\"], \"required_fields\": [\"test_script_path\"], \"accepted_fields\": [\"test_script_path\"], \"payload_example\": {\"test_script_path\": \"<test_script_path>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_"
+    },
+    {
+      "tool": "run_project_command",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "run_project_test_script",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "run_ps1_script",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "run_script",
+      "tier": "T4",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "run_test_profile",
+      "tier": "T2",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'run_test_profile': project_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): project_path\", \"missing_fields\": [\"project_path\"], \"required_fields\": [\"project_path\"], \"accepted_fields\": [\"project_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write"
+    },
+    {
+      "tool": "sample_unc_paths_with_root_check",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'sample_unc_paths_with_root_check': paths\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): paths\", \"missing_fields\": [\"paths\"], \"required_fields\": [\"paths\"], \"accepted_fields\": [\"paths\"], \"payload_example\": {\"paths\": \"<paths>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \"applied\": false}"
+    },
+    {
+      "tool": "save_log_snapshot",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "screenshot_page",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'screenshot_page': path\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'screenshot_page': path\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"page_id\": \"<page_id>\", \"full_page\": false, \"save_path\": \""
+    },
+    {
+      "tool": "search_code",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"error\": \"Thiếu path — truyền 'path' hoặc 'project_path'\", \"ok\": false, \"error_name\": \"PROJECT_PATH_REQUIRED\", \"reason\": \"Thiếu path — truyền 'path' hoặc 'project_path'\", \"hint\": \"Set project_path to the absolute project root; use relative file_path/path inside it.\", \"ca_next_action\": \"set_project_path_root\", \"payload_example\": {\"project_path\": \"D:/path/to/project\"}, \"retry_sequence\": [], \"ca_guidance\": {\"phase\": \"T1\", \"phase_label\": \"Discover / Analyze / Read\", \"error_name\": \"PROJECT_PATH_REQU"
+    },
+    {
+      "tool": "semantic_search",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'semantic_search': query_text\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'semantic_search': query_text\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"query\": \"<query>\", \"project_path\": \"\", \"kwarg"
+    },
+    {
+      "tool": "server_lifecycle_status",
+      "tier": "T4",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": false, \"error\": \"port is required (positive integer)\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"accepted_fields\": [\"port\"], \"payload_example\": {\"port\": 9223}, \"ca_next_action\": \"call_inspect_project_runtime_first_if_unknown\", \"hint\": \"Port unknown? Call inspect_project_runtime(project_path) first — it returns the expected port for Electron/Node launchers. Then pass that port here.\", \"schema_version\": \"v15.r18\", \"reason\": \"port is required (positive integer)\", \"retry_sequence\": [{\"tool\": \""
+    },
+    {
+      "tool": "session_audit_summary",
+      "tier": "T3",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "set_workflow_mode",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "state",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'state': project_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): project_path\", \"missing_fields\": [\"project_path\"], \"required_fields\": [\"project_path\"], \"accepted_fields\": [\"project_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\""
+    },
+    {
+      "tool": "static_asset_cache_check",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'static_asset_cache_check': url\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): url\", \"missing_fields\": [\"url\"], \"required_fields\": [\"url\"], \"accepted_fields\": [\"url\"], \"payload_example\": {\"url\": \"http://localhost:3000/main.js\", \"_hint\": \"Compares HEAD ETag + GET hash. cache_stale=true \\u2192 consider hard-reload (Ctrl+F5) before assuming code "
+    },
+    {
+      "tool": "suggest_missing_capabilities",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"missing\": [{\"name\": \"yaml_parser\", \"available\": false, \"install\": \"pip install pyyaml\", \"benefit\": \"Structured YAML key-path cache.\"}], \"auto_install\": false}"
+    },
+    {
+      "tool": "sync_pending_audit",
+      "tier": "T3",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "tool_decision_hint",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": false, \"error\": \"task_description required (alias `task` also accepted)\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"accepted_fields\": [\"task_description\", \"task\", \"scope_hint\", \"risk_hint\"], \"accepted_aliases\": {\"task\": \"task_description\"}, \"schema_version\": \"v15.r18\", \"reason\": \"task_description required (alias `task` also accepted)\", \"hint\": \"Rebuild the payload using required_fields, accepted_fields, and payload_example.\", \"ca_next_action\": \"inspect_ca_guidance\", \"payload_example\": {\"pr"
+    },
+    {
+      "tool": "type_search",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Unsupported field(s) for 'type_search': file_pattern, type_name\", \"error_name\": \"UNSUPPORTED_FIELD\", \"reason\": \"Unsupported field(s) for 'type_search': file_pattern, type_name\", \"phase\": \"schema\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"ERROR\", \"retryable\": true, \"suggested_fallback\": \"READ_LIVE_SCHEMA\", \"hint\": \"Remove unsupported fields and retry with the documented schema.\", \"ca_next_action\": \"remove_unsupported_field\", \"payload_example\": {\"signature\": \"<signature>\", "
+    },
+    {
+      "tool": "ui_state_summary",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'ui_state_summary': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\"], \"accepted_fields\": [\"page_id\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"regions\": [{\"label\": \"Header\", \"selector\": \"#header\"}, {\"label\": \"Logs\", \"selector\": \"#systemLogArea\"}, {\"label\": \"Butto"
+    },
+    {
+      "tool": "validate",
+      "tier": "T2",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": false, \"checks\": [\"file\"], \"file\": {\"ok\": false, \"lang\": \"none\", \"file\": \"D:\\\\0. TRIEN\\\\1. DATA\\\\DATA\\\\5. VIBE APP\\\\1. APP\\\\8. ToolA\\\\project-orchestrator\", \"error\": \"[Errno 13] Permission denied: 'D:\\\\\\\\0. TRIEN\\\\\\\\1. DATA\\\\\\\\DATA\\\\\\\\5. VIBE APP\\\\\\\\1. APP\\\\\\\\8. ToolA\\\\\\\\project-orchestrator'\", \"error_name\": \"VALIDATION_FAILED\", \"type\": \"VALIDATION_ERROR\", \"severity\": \"error\", \"retryable\": false, \"reason\": \"syntax validation failed\", \"ca_next_action\": \"fix_syntax_before_retry\", \"write_per"
+    },
+    {
+      "tool": "validate_encoding",
+      "tier": "T2",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'validate_encoding': file_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): file_path\", \"missing_fields\": [\"file_path\"], \"required_fields\": [\"file_path\"], \"accepted_fields\": [\"file_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\project\", \"file_path\": \"relative\\\\file.py\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_acce"
+    },
+    {
+      "tool": "validate_file",
+      "tier": "T2",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'validate_file': file_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): file_path\", \"missing_fields\": [\"file_path\"], \"required_fields\": [\"file_path\"], \"accepted_fields\": [\"file_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\project\", \"file_path\": \"relative\\\\file.py\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted"
+    },
+    {
+      "tool": "validate_symbols",
+      "tier": "T2",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'validate_symbols': file_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): file_path\", \"missing_fields\": [\"file_path\"], \"required_fields\": [\"file_path\"], \"accepted_fields\": [\"file_path\"], \"payload_example\": {\"file_path\": \"relative\\\\file.py\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \"a"
+    },
+    {
+      "tool": "verify_active_electron_source",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'verify_active_electron_source': page_id\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id\", \"missing_fields\": [\"page_id\"], \"required_fields\": [\"page_id\"], \"accepted_fields\": [\"page_id\"], \"payload_example\": {\"page_id\": \"<page-id from list_cdp_targets>\", \"expected_path\": \"D:\\\\\\\\absolute\\\\\\\\path\\\\\\\\to\\\\\\\\Source\\\\\\\\ui\\\\\\\\index.html\", \"cdp_po"
+    },
+    {
+      "tool": "verify_get_footage_copy_completion",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'verify_get_footage_copy_completion': target_folder\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): target_folder\", \"missing_fields\": [\"target_folder\"], \"required_fields\": [\"target_folder\"], \"accepted_fields\": [\"target_folder\"], \"payload_example\": {\"target_folder\": \"<target_folder>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accept"
+    },
+    {
+      "tool": "wait_for_idle",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'wait_for_idle': signals\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): signals\", \"missing_fields\": [\"signals\"], \"required_fields\": [\"signals\"], \"accepted_fields\": [\"signals\"], \"payload_example\": {\"signals\": [{\"kind\": \"folder_growth_stable\", \"folder\": \"D:/path/to/output\", \"stable_seconds\": 3}], \"stable_seconds\": 20, \"timeout_seconds\": 900, \"ch"
+    },
+    {
+      "tool": "wait_for_selector",
+      "tier": "T4",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'wait_for_selector': page_id, selector\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): page_id, selector\", \"missing_fields\": [\"page_id\", \"selector\"], \"required_fields\": [\"page_id\", \"selector\"], \"accepted_fields\": [\"page_id\", \"selector\"], \"payload_example\": {\"page_id\": \"cdp-...-0\", \"selector\": \"#mainPanel\", \"timeout_ms\": 10000, \"_note\": \"Polls u"
+    },
+    {
+      "tool": "webfetch",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'webfetch': url\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): url\", \"missing_fields\": [\"url\"], \"required_fields\": [\"url\"], \"accepted_fields\": [\"url\"], \"payload_example\": {\"url\": \"<url>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \"applied\": false}"
+    },
+    {
+      "tool": "workflow_activate",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_activate': name\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name\", \"missing_fields\": [\"name\"], \"required_fields\": [\"name\"], \"accepted_fields\": [\"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_per"
+    },
+    {
+      "tool": "workflow_active_get",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"active\": false}"
+    },
+    {
+      "tool": "workflow_checkpoint",
+      "tier": "T3",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"checkpoint_id\": \"ck-1781317434749\", \"label\": \"unlabeled_checkpoint\", \"recorded_at\": \"2026-06-13T09:23:54\", \"expected_state\": \"\", \"evidence\": \"\", \"drift_detected\": false, \"checkpoint_self_healthy\": true, \"internal_probe_failures\": [], \"warnings\": [], \"warning_kinds_enum\": [\"SESSION_NOT_ACTIVE\", \"RECENT_TRANSPORT_POLICY_DRIFT\", \"WORKFLOW_PAUSED\", \"CHECKPOINT_INTERNAL_PROBE_FAILED\"], \"session_health\": {}, \"workflow_health\": null, \"ca_next_action\": \"checkpoint_clean_proceed_to_next_ste"
+    },
+    {
+      "tool": "workflow_create_from_ui",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_create_from_ui': name, body_md\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name, body_md\", \"missing_fields\": [\"name\", \"body_md\"], \"required_fields\": [\"name\", \"body_md\"], \"accepted_fields\": [\"body_md\", \"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"body_md\": \"# title\\n\\n## Step 1\\n### sub\\nbody\", \"scope\": \"global\""
+    },
+    {
+      "tool": "workflow_deactivate",
+      "tier": "T3",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"deactivated\": true, \"was_active\": null, \"hint\": \"Workflow mode off. [A] no longer injects workflow hints.\"}"
+    },
+    {
+      "tool": "workflow_draft_create",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_draft_create': name, body_md\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name, body_md\", \"missing_fields\": [\"name\", \"body_md\"], \"required_fields\": [\"name\", \"body_md\"], \"accepted_fields\": [\"body_md\", \"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"body_md\": \"# title\\n\\n## Step 1\\n### sub\\nbody\", \"ttl_sec\": 3600}, \""
+    },
+    {
+      "tool": "workflow_draft_get",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_draft_get': token\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): token\", \"missing_fields\": [\"token\"], \"required_fields\": [\"token\"], \"accepted_fields\": [\"token\"], \"payload_example\": {\"token\": \"<token-from-workflow_draft_create>\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_performed\": false, \"applie"
+    },
+    {
+      "tool": "workflow_get_current",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_get_current': name\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name\", \"missing_fields\": [\"name\"], \"required_fields\": [\"name\"], \"accepted_fields\": [\"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_"
+    },
+    {
+      "tool": "workflow_goto_step",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_goto_step': name, target_step\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name, target_step\", \"missing_fields\": [\"name\", \"target_step\"], \"required_fields\": [\"name\", \"target_step\"], \"accepted_fields\": [\"name\", \"target_step\"], \"payload_example\": {\"name\": \"rawcut_getfootage_sheet_v1\", \"target_step\": 10, \"reason\": \"V2 replay needs set"
+    },
+    {
+      "tool": "workflow_list",
+      "tier": "T1",
+      "result": "PASS",
+      "status": 200,
+      "body_preview": "{\"ok\": true, \"workflows\": [{\"name\": \"mcp175_save_md_tmp\", \"title\": \"MCP175 Save MD Tmp\", \"step_count\": 1, \"status\": \"idle\", \"current_step\": 0, \"source\": \"global\", \"path\": \"D:\\\\0. TRIEN\\\\1. DATA\\\\DATA\\\\5. VIBE APP\\\\1. APP\\\\8. ToolA\\\\project-orchestrator\\\\.ToolA_Skill\\\\workflows\\\\mcp175_save_md_tmp.md\"}, {\"name\": \"mcp175_ui_created_tmp\", \"title\": \"MCP175 UI Created Tmp\", \"step_count\": 2, \"status\": \"idle\", \"current_step\": 0, \"source\": \"global\", \"path\": \"D:\\\\0. TRIEN\\\\1. DATA\\\\DATA\\\\5. VIBE APP\\\\1. "
+    },
+    {
+      "tool": "workflow_read_md",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_read_md': name\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name\", \"missing_fields\": [\"name\"], \"required_fields\": [\"name\"], \"accepted_fields\": [\"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_perf"
+    },
+    {
+      "tool": "workflow_reset",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_reset': name\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name\", \"missing_fields\": [\"name\"], \"required_fields\": [\"name\"], \"accepted_fields\": [\"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_perfor"
+    },
+    {
+      "tool": "workflow_retry_step",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_retry_step': name\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name\", \"missing_fields\": [\"name\"], \"required_fields\": [\"name\"], \"accepted_fields\": [\"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_p"
+    },
+    {
+      "tool": "workflow_save_md",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_save_md': name, body_md\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name, body_md\", \"missing_fields\": [\"name\", \"body_md\"], \"required_fields\": [\"name\", \"body_md\"], \"accepted_fields\": [\"body_md\", \"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"body_md\": \"# title\\n\\n## Step 1\\n### sub\\nbody\", \"scope\": \"global\", \"over"
+    },
+    {
+      "tool": "workflow_skip_step",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_skip_step': name\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name\", \"missing_fields\": [\"name\"], \"required_fields\": [\"name\"], \"accepted_fields\": [\"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"reason\": \"manual review\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_"
+    },
+    {
+      "tool": "workflow_start",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_start': name\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name\", \"missing_fields\": [\"name\"], \"required_fields\": [\"name\"], \"accepted_fields\": [\"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_perfor"
+    },
+    {
+      "tool": "workflow_status",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_status': name\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name\", \"missing_fields\": [\"name\"], \"required_fields\": [\"name\"], \"accepted_fields\": [\"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca_next_action\": \"rebuild_payload_using_required_and_accepted_fields\", \"write_perfo"
+    },
+    {
+      "tool": "workflow_status_registry",
+      "tier": "T1",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_status_registry': project_path\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): project_path\", \"missing_fields\": [\"project_path\"], \"required_fields\": [\"project_path\"], \"accepted_fields\": [\"project_path\"], \"payload_example\": {\"project_path\": \"D:\\\\path\\\\to\\\\project\", \"_note\": \"Returns mode/cache_status/drift_warning + R28 stale_decision "
+    },
+    {
+      "tool": "workflow_submit_step",
+      "tier": "T3",
+      "result": "FAIL",
+      "status": 400,
+      "error": "HTTP 400: Bad Request",
+      "body_preview": "{\"ok\": false, \"error\": \"Missing required field(s) for 'workflow_submit_step': name\", \"error_name\": \"MISSING_REQUIRED_FIELD\", \"type\": \"SCHEMA_VIOLATION\", \"severity\": \"error\", \"retryable\": true, \"reason\": \"missing required field(s): name\", \"missing_fields\": [\"name\"], \"required_fields\": [\"name\"], \"accepted_fields\": [\"name\"], \"payload_example\": {\"name\": \"rawcut-getfootage-sheet\", \"step\": 3, \"status\": \"done\", \"evidence\": \"Clicked button, dialog appeared\", \"project_path\": \"D:\\\\path\\\\to\\\\project\"}, \"ca"
+    },
+    {
+      "tool": "write_fix",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "write_fix_html",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "write_new_file",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    },
+    {
+      "tool": "write_transaction",
+      "tier": "T2",
+      "result": "SKIP",
+      "reason": "PROTECTED+MUTATING — safety skip"
+    }
+  ]
+}

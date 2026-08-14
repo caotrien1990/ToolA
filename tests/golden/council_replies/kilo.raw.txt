@@ -1,0 +1,4 @@
+PROMPT_LINE_FOR_ECHO_SUBTRACTION
+{"type":"step_start","sessionID":"s2"}
+{"type":"tool_use","part":{"tool":"read"}}
+{"type":"text","part":{"text":"KILO_GOLDEN_OK"}}

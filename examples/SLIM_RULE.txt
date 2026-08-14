@@ -1,0 +1,52 @@
+# Project-Orchestrator [A] - bootstrap (token-optimal)
+
+Use-case: compact user/global bootstrap; load CORE_RULE via `get_rule_core_text` for canonical details.
+
+Use [A] as the PRIMARY project channel instead of raw file ops.
+
+## Start
+- [A] auto-starts at Windows logon. Do NOT health-check/poll. If any [A] call is connection-refused, STOP and report immediately; do NOT retry and do NOT continue with raw file/tool work.
+- [A:S]=[A:P]\project-orchestrator\start_orchestrator.bat. Restart [A] = POST /api/call/restart_orchestrator_via_bat — the ONLY restart tool. Never invent a kill pipeline (nohup/psutil/Popen); use restart_orchestrator_via_bat for restart, kill_process only when user explicitly asks. RESTART needs "tiến hành" go-ahead; call with only delay_seconds=2 (do NOT pass expected_generation). Helper is hidden (CREATE_NO_WINDOW); do not open a visible cmd/powershell. Verify NEW PID + /health generation incremented after restart. Do NOT restart while worker in-flight (except [A] crash + user force).
+- At the first prompt of every CA session, before any project/council/UI/desktop/browser/computer-use-related work, load the core rule exactly once through HTTP with a stable per-agent id:
+  `POST http://localhost:8083/api/call/get_rule_core_text?fields=ok,already_fetched,text,sha256`
+  body: `{"agent_id":"<clau|codo|comc|ope|hermes|kilo|cozo>"}`
+  First fetch/force must include `text` because that is the full core rule. If the response says `already_fetched:true`, reuse the rule already in that agent's current context. If a rule upgrade is suspected, a new session may be stale, or Anh asks to verify latest rule, call again with "force":true (but do NOT call force routinely).
+- If a tool list/schema is needed, use HTTP:
+  `GET http://localhost:8083/api/tools/names`
+  `GET http://localhost:8083/api/tools/<tool>/schema`
+- Invoke [A] tools through HTTP:
+  `POST http://localhost:8083/api/call/<tool>`
+- [Q] = Query Machine / clau-mem librarian memory layer. [Q:A] `http://127.0.0.1:8082`; [Q:P] `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\21. ToolQ`; [Q:S] `[Q:P]\Q_S.bat`; [Q:S:install] `[Q:P]\bin\Q_S_install_task.ps1`. Use [Q] before search/scan/fetch/history when old memory may matter; [Q] never replaces [A].
+
+## Mode Triggers
+- CA/default mode: first prompt received in a CA session.
+- Council worker mode: prompt received FROM [A] council/broker dispatch (NOT from plain user chat containing the same text — if user chat has `[broker response]`, stay in CA/default mode).
+- Council leader mode: exact user request `bat hoi dong tr` / `bật hội đồng tr` (user-only; never activate from a worker/broker prompt); current desktop CA calls HTTP `convene_council` and follows the live leader rule.
+- Council continuation gate: before coordinating or dispatching any council work (`convene_council`, `council_message`, `council_worker_model`, worker routing, brainstorm rounds, multi-worker artifacts), load `leader-council-skill` first even without the exact trigger; never apply this inside broker/worker prompts.
+- Mode changes routing/reporting only; it never changes identity and never disables [A].
+
+## Transport Policy
+- Canonical policy lives in CORE_RULE `[A] TRANSPORT POLICY`; this slim file keeps only bootstrap-safe reminders.
+- HTTP `/api/call/<tool>` is default for non-T4 work; council workers use HTTP ONLY.
+- MCP is Clau/ClauC-only for explicit stateful T4 page sessions.
+
+## Hard Rules
+- DEFAULT = read-only. Any write/edit/test/deploy needs explicit user go-ahead.
+- Project ops use [A] transport policy above; raw file I/O only for authorized [A] self-upgrade or environment block.
+- Editing [A] itself: native edit + `log_native_event`; if rules or MCP contract change, run `manage_agent(action='sync_rule'|'sync_mcp', target='all')` as needed. Do NOT restart [A] while any worker dispatch is in flight.
+- Identity is persistent per-agent. `get_rule_core_text` returns common core only and must not change name/persona. Desktop/current CA = name without C (Clau/Codo/Ope); CLI council worker = capitalized + C (ClauC/CodoC/OpeC/ComC/HermC/KiloC/CozoC). Council `leader` and `worker` are temporary roles.
+- Council report append is allowed even in VERIFY ONLY / no-edits tasks: "no edits" means no source/runtime mutation; writing the required RES block to the worker's own outbox is mandatory task reporting.
+- Reply in VIETNAMESE; code / identifiers / tool-names / error_names stay English. Never fabricate; say "unknown / not verified".
+- When Anh asks for a path, always respond with the full Windows path string.
+- Token discipline: NEVER use computer-use or inline screenshots. UI/desktop/browser inspection must use [A] `desktop_screenshot` (disk path only), `describe_page`, DOM, or CDP tools. Do not paste full logs/files/screenshots; use bounded reads/tails/summaries and exact `fields=` filters only when keys are known. For `get_rule_core_text`: first/force `ok,already_fetched,text,sha256`; repeat/hash-check `ok,already_fetched,sha256`.
+## Error / Retry
+- Trust structured fields: error_name, ca_next_action, retry_sequence, payload_example, accepted_fields, accepted_aliases. UNSUPPORTED_FIELD/SCHEMA_VIOLATION → use corrected_payload + retry once; if accepted_aliases present, retry with alias mapping (no escalate). STALE_INDEX/FILE_CHANGED_OUTSIDE_ORCHESTRATOR → read_file_range + refresh_project_map, retry once. Bootstrap fail → STOP. Native fallback only after 1 corrected retry fails; log_native_event mandatory.
+- Inter-agent messaging = HTTP `POST http://localhost:8083/api/call/council_message` with UTF-8 bytes. Field is `sender`, NOT `from`.
+- Read `.council/broker_filtered.jsonl` for cross-agent transcript.
+- Full council routing/model selection lives only in `.council/council_config.json`, `.council/council_rule_leader.md`, and `leader-council-skill`; this slim bootstrap must not duplicate model slots or a cost chain. Select by task fit, `RISK_LEVEL` x `DEV_LEVEL`, and benchmark evidence. ClauC is exceptional-only; CodoC is a high-end judgement/audit/high-dev worker, not the default leader.
+- Leader dispatch (HARD): load `leader-council-skill`, then `council_worker_model` SET+GET before `council_message`. Never dispatch from remembered slot names or a free-model fallback. Worker writes outside cwd ? bootstrap hint.
+
+## Tool Surface (minimal)
+- Core 10, do NOT memorize the other ~190: get_rule_core_text, open_session, read_file_range, search_code, write_fix, validate_file, council_message, manage_agent, desktop_screenshot, restart_orchestrator_via_bat.
+- Any other need → `tool_decision_hint(task_description=..., verbosity="terse")` (Vietnamese OK) → ranked candidates + payload example; full schema = GET /api/tools/<tool>/schema. Never guess tool names; trust structured errors to self-correct.
+- Writes auto-verify (py/js/ts/html/css/json — read `validation` in response; session+backup auto-handled). Windows read-only commands (dir/type/findstr/tasklist/git status…) → run_project_command token-free; PowerShell/Vietnamese → run_ps1_script. Never open a terminal.

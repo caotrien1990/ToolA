@@ -1,0 +1,212 @@
+{
+  "version": "3.2-route-measurement-20260725",
+  "_doc": "SINGLE SOURCE OF TRUTH for council config. Route by task fit and benchmark evidence, not by a cost chain. Edit here, then run council_config_sync when derived council docs change. Known CLIs keep built-in argv branches; optional argv overrides remain supported.",
+  "agents": {
+    "clau": {
+      "label": "ClauC",
+      "bridge": "clau",
+      "enabled": true,
+      "can_write_A": true,
+      "role": "Judgement and scoped bug-fix on existing code with a narrow evidence pack. Master dev only when the same issue has failed council retry more than 2 times. MCP only for explicit T4/runtime/DOM/CDP/browser stateful work. Not for broad scan/read/context gathering or new-code creation.",
+      "provider": "claude",
+      "model": "claude-opus-4-8",
+      "caps": {
+        "broker": true,
+        "context": false,
+        "enabled": true
+      },
+      "cli_channel": "claude --print --model claude-opus-4-8 -p \"<prompt>\"  [diagnostic only; dispatch via council_message; log .council\\log_clau.txt]"
+    },
+    "codo": {
+      "label": "CodoC",
+      "bridge": "codo",
+      "enabled": true,
+      "can_write_A": true,
+      "role": "High-end council worker fixed to GPT-5.6 Sol: judgement, independent audit, high-difficulty development, code building, plan drafting, and final conflict resolution. CodoC is not the default leader and is not for broad evidence scans.",
+      "provider": "codex",
+      "model": "gpt-5.6-sol",
+      "caps": {
+        "broker": true,
+        "context": false,
+        "enabled": true
+      },
+      "cli_channel": "codex exec --ephemeral --model gpt-5.6-sol -c model_reasoning_effort=\"xhigh\" --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check \"<prompt>\"  [uses the active user CODEX_HOME/config; dispatch via council_message; log .council\\log_codo.txt]"
+    },
+    "kilo": {
+      "label": "KiloC",
+      "bridge": "kilo",
+      "enabled": true,
+      "can_write_A": false,
+      "role": "Most stable basic harness observed. Default cost-effective route: ltnai/minimax-m3 for routine implementation reasoning, backend operational design, recovery, lease/fencing and bounded code work. Qwen for secondary logic review. DeepSeek only for narrow scans, not sole long-horizon design. Kimi K3 default-off; GPT-5.6 Sol unavailable in curated list.",
+      "provider": "ltnai",
+      "model": "ltnai/glm-5.2",
+      "caps": {
+        "broker": true,
+        "context": false,
+        "enabled": true
+      },
+      "cli_channel": "kilo run \"<prompt>\" --model ltnai/glm-5.2 --format json --dangerously-skip-permissions  [diagnostic only; dispatch via council_message; log .council\\log_kilo.txt; cwd set by subprocess not --dir]"
+    },
+    "pic": {
+      "label": "PiC",
+      "bridge": "pic",
+      "enabled": true,
+      "can_write_A": false,
+      "role": "Benchmark-calibrated multi-model Pi harness. Primary: qwen3.7-max for complex logic/conflict/durable design. DeepSeek V4 Pro for cheap adversarial bug/edge scans. MiniMax M3 for alternate brainstorm/frontend review. GPT-5.6 Sol is available but expensive. Kimi K3 is DEFAULT-OFF after Round 0 transport failure.",
+      "provider": "ltnai",
+      "model": "deepseek-v4-pro",
+      "caps": {
+        "broker": true,
+        "context": false,
+        "enabled": true
+      },
+      "cli_channel": "pi --print --no-session --approve --provider <provider> --model <model> --thinking high \"<prompt>\"  [diagnostic only; dispatch via council_message; log .council\\log_pic.txt]",
+      "argv": [
+        "pi",
+        "--print",
+        "--no-session",
+        "--approve",
+        "--provider",
+        "{provider}",
+        "--model",
+        "{model}",
+        "--thinking",
+        "high",
+        "{prompt}"
+      ]
+    },
+    "ope": {
+      "label": "OpeC",
+      "bridge": "ope",
+      "enabled": true,
+      "can_write_A": false,
+      "role": "Benchmark-calibrated OpenCode harness. Primary: openai-compatible/qwen3.7-max for operational, migration and observability review. DeepSeek V4 Pro for bounded evidence/bug scans. MiniMax M3 for cheap alternate review. Kimi K3 and GPT-5.6 Sol are not default routes.",
+      "provider": "opencode-zen",
+      "model": "opencode/deepseek-v4-flash-free",
+      "caps": {
+        "broker": true,
+        "context": false,
+        "enabled": true
+      },
+      "cli_channel": "opencode run \"<prompt>\" --model <model> --thinking --dangerously-skip-permissions  [diagnostic only; dispatch via council_message; log .council\\log_ope.txt]"
+    },
+    "hermes": {
+      "label": "HermC",
+      "bridge": "hermes",
+      "enabled": true,
+      "can_write_A": false,
+      "role": "Benchmark-calibrated Hermes harness. Use MiniMax M3 for bounded alternate failure-mode/frontend review; Qwen for secondary logic review; DeepSeek for evidence/bug scans. Harness has higher integration fragility. Kimi K3 is DEFAULT-OFF after HTTP 400; GPT-5.6 Sol unavailable in curated list.",
+      "provider": "ltnai",
+      "model": "deepseek-v4-pro",
+      "caps": {
+        "broker": true,
+        "context": false,
+        "enabled": true
+      },
+      "cli_channel": "hermes chat -q \"<prompt>\" --yolo -t web,file [-m <model>] [--provider <prov>] [diagnostic only; dispatch via council_message; log .council\\log_hermes.txt]"
+    },
+    "gro": {
+      "label": "GroC",
+      "bridge": "gro",
+      "enabled": true,
+      "can_write_A": false,
+      "role": "Grok CLI worker on LTNAI provider model xAI-grok-4.6-build. Grok-native reasoning plus loaded design/bugs-scan/code skills. Dispatch via council_message.",
+      "provider": "ltnai",
+      "model": "xAI-grok-4.6-build",
+      "caps": {
+        "broker": true,
+        "context": false,
+        "enabled": true
+      },
+      "cli_channel": "C:\\Users\\ADMIN\\.grok\\bin\\grok.exe -p \"<prompt>\" -m xAI-grok-4.6-build --yolo  [diagnostic only; dispatch via council_message; log .council\\log_gro.txt]",
+      "argv": [
+        "C:\\Users\\ADMIN\\.grok\\bin\\grok.exe",
+        "-p",
+        "{prompt}",
+        "-m",
+        "{model}",
+        "--yolo"
+      ]
+    }
+  },
+  "roster_order": [
+    "clau",
+    "ope",
+    "codo",
+    "kilo",
+    "pic",
+    "hermes",
+    "gro"
+  ],
+  "messaging_to_enum": [
+    "ope",
+    "codo",
+    "pic",
+    "hermes",
+    "clau",
+    "kilo",
+    "gro",
+    "user"
+  ],
+  "coordination_rule": "The user-triggered desktop/current CA that loads leader-council-skill is the temporary leader; no CA identity is hard-coded as leader. Classify RISK_LEVEL and DEV_LEVEL before routing. Low-risk/low-dev may use KiloC+MiniMax for routine work or PiC+DeepSeek for bounded read-only scans. Mid-risk requires an independent reviewer. High-risk work requires PiC+Qwen design, CodoC independent high-end audit/judgement/high-dev, and OpeC+Qwen operational review as applicable; DeepSeek/MiniMax are never sole authority. CodoC is a worker route, not leader by default. No cost chain.",
+  "parallelism_rule": "The current leader CA may dispatch independent tasks in parallel when output ownership is disjoint. Serialize overlapping writes. RISK_LEVEL and DEV_LEVEL set the verification floor; high-risk shards require independent high-end review regardless of dev difficulty.",
+  "mission": "Route by task fit plus RISK_LEVEL x DEV_LEVEL. Low/low: routine bounded route. Mid risk: independent reviewer. High risk: PiC+Qwen design, CodoC independent audit/judgement/high-dev, OpeC+Qwen operational review; cheap models evidence-only. CodoC is a worker, ClauC exceptional-only, no cost chain.",
+  "guardrail_harness_rule": "The current CA reading leader-council-skill is leader. Classify RISK_LEVEL and DEV_LEVEL before exact harness+model routing. High-risk work cannot use DeepSeek/MiniMax as sole authority. CodoC is the high-end judgement/audit/high-dev worker, not a hard-coded leader.",
+  "task_routing": {
+    "complex_logic / conflict_analysis / architecture / durable_design": "PiC + qwen3.7-max primary design. KiloC + minimax-m3 cross-checks recovery. CodoC + gpt-5.6-sol provides high-end judgement or resolves high-risk conflicts.",
+    "routine_implementation / backend_operations / recovery / bounded_code": "KiloC + ltnai/minimax-m3 default cost-effective route; verify long-horizon gaps when risk is high.",
+    "bug_scan / edge_cases / adversarial_review / test_gaps": "PiC + deepseek-v4-pro primary cheap adversarial scanner. OpeC/HermC + DeepSeek may take bounded independent evidence shards. KiloC+DeepSeek is last scan fallback, never sole design authority.",
+    "migration / observability / operational_review": "OpeC + openai-compatible/qwen3.7-max secondary reviewer.",
+    "brainstorm / frontend_ui / alternate_failure_review": "PiC + minimax-m3 or HermC + minimax-m3; HermC remains secondary due harness fragility.",
+    "code_builder / plan_drafter / final_conflict": "CodoC + gpt-5.6-sol for difficult code building, plan drafting, judgement and final conflict resolution; worker route, not default leader; avoid broad scans.",
+    "kimi_k3": "DEFAULT_OFF_BENCHMARK_FAILED for PiC/HermC/OpeC/KiloC until transport/provider repair and fresh Round 0 PASS.",
+    "gpt_5_6_on_switchable_harness": "PiC only is currently verified; HermC/OpeC/KiloC unavailable until curated lists and Round 0 pass.",
+    "T4_runtime_DOM_browser": "ClauC only when explicit stateful T4/MCP is required; exceptional route outside normal routing order.",
+    "independent_audit / high_dev / judgement": "CodoC + gpt-5.6-sol for evidence-based independent audit, high-difficulty development and high-stakes judgement.",
+    "risk_low / dev_low": "KiloC+MiniMax for routine bounded implementation; PiC+DeepSeek for read-only adversarial scan; leader/[A] verifies reversible output.",
+    "risk_mid / dev_low_mid": "PiC+Qwen when logic changes; KiloC+MiniMax implementation; at least one independent reviewer, normally OpeC+Qwen for operations.",
+    "risk_mid / dev_high": "PiC+Qwen design + CodoC high-dev/judgement; OpeC+Qwen operations review; cross-verify before merge.",
+    "risk_high / any_dev": "PiC+Qwen design, CodoC independent high-end audit/judgement/high-dev, OpeC+Qwen operational review; explicit human/mission gate, rollback and failure tests; DeepSeek/MiniMax evidence-only."
+  },
+  "worker_routing_spec": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\17. Council_Tr\\context_pool_specs\\WORKER_ROUTING_SPEC_v3.md",
+  "stale_memory_corrections": [
+    "Pre-benchmark model-only mission routing is obsolete as default; route by harness+model.",
+    "Kimi K3 is DEFAULT_OFF_BENCHMARK_FAILED on PiC/HermC/OpeC/KiloC.",
+    "Old GLM 5.2, Kimi K2.7, Mimo V2.5 and DeepSeek Flash defaults are historical and not current leader defaults.",
+    "CodoC fixed model is gpt-5.6-sol, not gpt-5.5.",
+    "Same-model workers are not interchangeable; benchmark quality and harness reliability differ.",
+    "Cost-chain routing is obsolete; route by task fit and benchmark evidence.",
+    "CodoC is a high-end worker for judgement, independent audit and high-difficulty development; it is not the default leader.",
+    "ClauC is excluded from normal routing order and used only for explicit exceptional T4/scoped work.",
+    "The benchmark used one correctness-sensitive idempotency case; low/mid/high risk routing is conservative policy, not independently benchmarked risk-tier evidence."
+  ],
+  "measurement_policy": {
+    "schema_version": 1,
+    "measurement_log": ".council/route_measurements.jsonl",
+    "scorecard_json": ".council/route_scorecard.json",
+    "scorecard_markdown": ".council/route_scorecard.md",
+    "tool": "council_route_scorecard",
+    "min_homogeneous_samples": 5,
+    "required_prompt_fields": [
+      "TASK_ID",
+      "OBJECTIVE_CLASS",
+      "RISK_LEVEL",
+      "DEV_LEVEL",
+      "LOAD_BUDGET_SOURCE",
+      "INDEPENDENT_QUESTIONS",
+      "FILES_SUBSYSTEMS",
+      "EXPECTED_TOOL_CALLS",
+      "EXPECTED_WRITES",
+      "DEPENDENCY_DEPTH",
+      "EXPECTED_END_MARKER"
+    ],
+    "separate_outcomes": [
+      "transport_ok",
+      "artifact_valid",
+      "tests_reported",
+      "quality_verified"
+    ],
+    "capacity_rule": "numeric capacity remains unknown/not verified until sufficient homogeneous samples and controlled capacity estimation",
+    "promotion_rule": "promote/demote only from homogeneous scorecard evidence; mid/high risk requires independent review"
+  }
+}

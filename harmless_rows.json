@@ -1,0 +1,194 @@
+[
+{
+"tool": "alias_contract_test",
+"field": "project_path"
+},
+{
+"tool": "alias_contract_test",
+"field": "verbosity"
+},
+{
+"tool": "assert_target_idle",
+"field": "verbosity"
+},
+{
+"tool": "bootstrap_session",
+"field": "verbosity"
+},
+{
+"tool": "cdp_attach_target",
+"field": "title"
+},
+{
+"tool": "cdp_attach_target",
+"field": "title_pattern"
+},
+{
+"tool": "check_window_visibility",
+"field": "project_path"
+},
+{
+"tool": "check_window_visibility",
+"field": "verbosity"
+},
+{
+"tool": "click_selector",
+"field": "verbosity"
+},
+{
+"tool": "create_folder",
+"field": "project_path"
+},
+{
+"tool": "create_folders",
+"field": "project_path"
+},
+{
+"tool": "desktop_screenshot",
+"field": "label"
+},
+{
+"tool": "desktop_screenshot",
+"field": "project_path"
+},
+{
+"tool": "desktop_screenshot",
+"field": "verbosity"
+},
+{
+"tool": "desktop_window_list",
+"field": "project_path"
+},
+{
+"tool": "desktop_window_list",
+"field": "verbosity"
+},
+{
+"tool": "dom_state_diff",
+"field": "verbosity"
+},
+{
+"tool": "electron_devtools_log",
+"field": "page_id"
+},
+{
+"tool": "electron_devtools_log",
+"field": "project_path"
+},
+{
+"tool": "extract_log_section",
+"field": "project_path"
+},
+{
+"tool": "extract_log_section",
+"field": "verbosity"
+},
+{
+"tool": "fill_value",
+"field": "verbosity"
+},
+{
+"tool": "folder_dialog_snapshot",
+"field": "project_path"
+},
+{
+"tool": "get_token_meter",
+"field": "project_path"
+},
+{
+"tool": "invoke_app_function",
+"field": "verbosity"
+},
+{
+"tool": "launch_electron_with_cdp",
+"field": "verbosity"
+},
+{
+"tool": "list_cdp_targets",
+"field": "project_path"
+},
+{
+"tool": "list_cdp_targets",
+"field": "verbosity"
+},
+{
+"tool": "list_projects",
+"field": "project_path"
+},
+{
+"tool": "optional_tool_probe",
+"field": "project_path"
+},
+{
+"tool": "parse_log_section",
+"field": "project_path"
+},
+{
+"tool": "process_tree_inspect",
+"field": "filter"
+},
+{
+"tool": "process_tree_inspect",
+"field": "project_path"
+},
+{
+"tool": "process_tree_inspect",
+"field": "verbosity"
+},
+{
+"tool": "read_console_errors",
+"field": "project_path"
+},
+{
+"tool": "read_console_errors",
+"field": "verbosity"
+},
+{
+"tool": "read_network_errors",
+"field": "project_path"
+},
+{
+"tool": "read_network_errors",
+"field": "verbosity"
+},
+{
+"tool": "read_skill",
+"field": "project_path"
+},
+{
+"tool": "screenshot_page",
+"field": "project_path"
+},
+{
+"tool": "screenshot_page",
+"field": "verbosity"
+},
+{
+"tool": "server_lifecycle_status",
+"field": "project_path"
+},
+{
+"tool": "tool_decision_hint",
+"field": "hint"
+},
+{
+"tool": "tool_decision_hint",
+"field": "idea"
+},
+{
+"tool": "tool_decision_hint",
+"field": "project_path"
+},
+{
+"tool": "tool_decision_hint",
+"field": "prompt"
+},
+{
+"tool": "tool_decision_hint",
+"field": "scope"
+},
+{
+"tool": "wait_for_idle",
+"field": "verbosity"
+}
+]

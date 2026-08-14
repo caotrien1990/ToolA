@@ -1,0 +1,4 @@
+interface:
+  display_name: "Leader Council Skill"
+  short_description: "Leader-mode Q and council guardrails"
+  default_prompt: "Use Leader Council Skill to convene council safely."

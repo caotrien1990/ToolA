@@ -1,0 +1,228 @@
+history.\n\nYou are HermC5, equal peer worker for project-orchestrator
+MCP-parity Round 1.\nRequired staged full paths:\n- prompt_file: D:\0. TRIEN\1.
+DATA\DATA\5. VIBE APP\1. APP\8.
+ToolA\project-orchestrator\.council\tmp_hermc5_mcp_parity\DATA\PROMPT.md\n-
+context_file: D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8.
+ToolA\project-orchestrator\.council\tmp_hermc5_mcp_parity\DATA\CONTEXT.json\n-
+research_file: none\n- own_previous_plan: none\n- peer_plan_1: none\n-
+peer_plan_2: none\n- official_output_path: D:\0. TRIEN\1. DATA\DATA\5. VIBE
+APP\1. APP\8.
+ToolA\project-orchestrator\.council\tmp_hermc5_mcp_parity\HERMC5_MCP_PARITY_R1.
+md\n\nTask (self-contained real-test — produce evidence, not theory):\n1) Read
+context_file (full path above) with your file tools.\n2) Inventory
+tools/toolsets you actually have in THIS CLI session:\n   - List every tool
+name you can call (or groups/toolsets if too many).\n   - Explicitly answer: do
+you have any MCP tools (mcp__* / project-orchestrator / toolq MCP)? YES or NO
+with evidence.\n3) Via terminal ONLY (curl or python urllib), probe:\n   a) GET
+http://127.0.0.1:8083/health  → report ok + generation\n   b) GET
+http://127.0.0.1:8082/health  → report ok + service\n   c) GET
+http://127.0.0.1:8083/api/tools/names → report tool count if reachable\n4)
+Attempt (once) to call an MCP tool if present; if absent, state ABSENT (do not
+fake success).\n5) Compare yourself to the desktop_herm facts in
+CONTEXT.json:\n   - What desktop has that you lack\n   - What you can still
+reach via HTTP terminal substitute\n6) Write official_output_path as Markdown
+with sections:\n   ## Worker identity\n   ## Tool inventory\n   ## MCP
+presence\n   ## HTTP probes (raw evidence snippets)\n   ## Desktop vs HermC CLI
+gap\n   ## Verdict (PARITY / PARTIAL / NO_MCP)\n   ## Evidence paths\nInclude
+generation string from /health.\nRound rule: Round 1 has no peer scoring.\nEnd
+marker (must be last line of file AND final reply):
+END_HERMC5_R1_MCP_PARITY\n\nConstraints:\n- Do not modify project-orchestrator
+source, Herm config, or uninstall MCP.\n- dry_run only / read-only probes.\n-
+Never invent tool results. Unknown = unknown / not verified.\n- Vietnamese or
+English OK; keep tool names English.
+Output only the answer to BROKER TASK.
+=== OUTPUT CONTRACT (HARD) ===
+Do NOT echo, quote, or restate this prompt. Do NOT paste long output into chat.
+Write your FULL report/answer to this EXACT file path using the [A]
+write_new_file tool (create it):
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8.
+ToolA\project-orchestrator\.council\worker_output\20260715_101239_hermes_e6c9d6
+33.md
+If you cannot write outside your cwd, bootstrap [A] and use [A] write tools.
+Then reply in chat with ONLY: 'DONE D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1.
+APP\8.
+ToolA\project-orchestrator\.council\worker_output\20260715_101239_hermes_e6c9d6
+33.md' followed by a <=3 line TLDR. Nothing else. If the whole answer is
+trivially short (<=10 lines), you may reply inline concisely WITHOUT echoing
+this prompt and skip the file.
+  ┊ 📖 read      CONTEXT.json  0.9s
+  ┊ 💻 $         echo "=== A:8083 health ===" + 8 commands  0.3s
+  ┊ 📖 read      PROMPT.md  0.5s
+  ┊ ✍️  write     D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\.council\tmp_hermc5_mcp_parity\HERMC5_MCP_PARITY_R1.md  0.7s
+  ┊ review diff
+a/.council\tmp_hermc5_mcp_parity\HERMC5_MCP_PARITY_R1.md → b/.council\tmp_hermc5_mcp_parity\HERMC5_MCP_PARITY_R1.md
+@@ -0,0 +1,123 @@
++# HERMC5 MCP-PARITY ROUND 1 REPORT
++
++## Worker identity
++
++- **Agent**: HermC5 (Hermes CLI broker worker, C-suffix = CLI)
++- **Model**: glm-5.2
++- **Provider**: ltnai (custom)
++- **Slot**: HermC5
++- **Surface**: Hermes CLI one-shot (`hermes chat -q ... --yolo -t web,file,terminal,skills,session_search`)
++- **Session type**: Broker one-shot, no previous context
++
++## Tool inventory
++
++Tools actually callable in THIS CLI session (10 total, all Hermes-native):
++
++| # | Tool name | Purpose |
++|---|-----------|---------|
++| 1 | `read_file` | Read text files with line numbers |
++| 2 | `write_file` | Write content to file (full replace) |
++| 3 | `patch` | Targeted find-and-replace edits in files |
++| 4 | `search_files` | Ripgrep-backed content/file search |
++| 5 | `terminal` | Execute shell commands (git-bash/MSYS) |
++| 6 | `process` | Manage background processes |
++| 7 | `session_search` | FTS5 search over past session DB |
++| 8 | `skill_view` | Load skill content + linked files |
++| 9 | `skills_list` | List available skills |
++| 10 | `skill_manage` | Create/patch/edit/delete skills |
++
++**Toolsets enabled (broker argv)**: `web, file, terminal, skills, session_search` — per CONTEXT.json SOT. No `mcp` toolset in argv.
++
++## MCP presence
++
++**NO.**
++
++Evidence:
++1. The 10 callable tools listed above contain **zero** `mcp__*` prefixed tools.
++2. CONTEXT.json line 25: `"mcp_in_toolsets": false`
++3. CONTEXT.json line 26: `"HermC CLI is deliberately not given MCP toolset in broker argv; desktop Herm loads mcp_servers from config.yaml"`
++4. Broker argv toolsets (CONTEXT.json line 24): `web,file,terminal,skills,session_search` — no `mcp` listed.
++5. No `mcp__project_orchestrator__*` or `mcp__toolq__*` tools are callable.
++
++**MCP tool call attempt**: ABSENT — no MCP tools exist in this session's tool surface. No call attempted because no MCP tool is present. No success fabricated.
++
++## HTTP probes (raw evidence snippets)
++
++### a) [A] /health — http://127.0.0.1:8083/health
++
++```json
++{"ok": true, "service": "project-orchestrator", "port": 8083, "generation": "42e4b04c0f76", "started_at": 1784082155.3098185, "bind_host": "localhost", "queue_depth": 1, "p95_ms": 0, "auto_token_inject": false, "mutation_token_required": true}
++```
++
++- **ok**: true
++- **generation**: `42e4b04c0f76`
++- Matches CONTEXT.json `A_generation` field exactly.
++
++### b) [Q] /health — http://127.0.0.1:8082/health
++
++```json
++{"ok": true, "service": "clm-librarian-api", "port": 8082, "db": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\21. ToolQ\\librarian.db", "source_sha256": "216d8779599572185deb01484516068f271332b050b41fc60bb1f1cfa2c58813", "runtime_source_sha256": "216d8779599572185deb01484516068f271332b050b41fc60bb1f1cfa2c58813", "log_event_failures": 0}
++```
++
++- **ok**: true
++- **service**: clm-librarian-api
++- Source SHA256 matches runtime SHA256 (no drift).
++
++### c) [A] /api/tools/names — http://127.0.0.1:8083/api/tools/names
++
++```json
++{"ok": true, "count": 206, "tools": [{"name": "acceptance_dashboard", ...}, ...]}
++```
++
++- **ok**: true
++- **count**: 206
++- Matches CONTEXT.json `A_tool_count_http` field exactly (206).
++- Full tool list retrieved includes T1–T4 tools: get_rule_core_text, council_message, write_fix, write_new_file, read_file_range, search_code, desktop_screenshot, restart_orchestrator_via_bat, manage_agent, etc.
++
++## Desktop vs HermC CLI gap
++
+… omitted 45 diff line(s) across 1 additional file(s)/section(s)
+  ┊ ✍️  write     D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\.council\worker_output\20260715_101239_hermes_e6c9d633.md  0.7s
+  ┊ review diff
+a/.council\worker_output\20260715_101239_hermes_e6c9d633.md → b/.council\worker_output\20260715_101239_hermes_e6c9d633.md
+@@ -0,0 +1,123 @@
++# HERMC5 MCP-PARITY ROUND 1 REPORT
++
++## Worker identity
++
++- **Agent**: HermC5 (Hermes CLI broker worker, C-suffix = CLI)
++- **Model**: glm-5.2
++- **Provider**: ltnai (custom)
++- **Slot**: HermC5
++- **Surface**: Hermes CLI one-shot (`hermes chat -q ... --yolo -t web,file,terminal,skills,session_search`)
++- **Session type**: Broker one-shot, no previous context
++
++## Tool inventory
++
++Tools actually callable in THIS CLI session (10 total, all Hermes-native):
++
++| # | Tool name | Purpose |
++|---|-----------|---------|
++| 1 | `read_file` | Read text files with line numbers |
++| 2 | `write_file` | Write content to file (full replace) |
++| 3 | `patch` | Targeted find-and-replace edits in files |
++| 4 | `search_files` | Ripgrep-backed content/file search |
++| 5 | `terminal` | Execute shell commands (git-bash/MSYS) |
++| 6 | `process` | Manage background processes |
++| 7 | `session_search` | FTS5 search over past session DB |
++| 8 | `skill_view` | Load skill content + linked files |
++| 9 | `skills_list` | List available skills |
++| 10 | `skill_manage` | Create/patch/edit/delete skills |
++
++**Toolsets enabled (broker argv)**: `web, file, terminal, skills, session_search` — per CONTEXT.json SOT. No `mcp` toolset in argv.
++
++## MCP presence
++
++**NO.**
++
++Evidence:
++1. The 10 callable tools listed above contain **zero** `mcp__*` prefixed tools.
++2. CONTEXT.json line 25: `"mcp_in_toolsets": false`
++3. CONTEXT.json line 26: `"HermC CLI is deliberately not given MCP toolset in broker argv; desktop Herm loads mcp_servers from config.yaml"`
++4. Broker argv toolsets (CONTEXT.json line 24): `web,file,terminal,skills,session_search` — no `mcp` listed.
++5. No `mcp__project_orchestrator__*` or `mcp__toolq__*` tools are callable.
++
++**MCP tool call attempt**: ABSENT — no MCP tools exist in this session's tool surface. No call attempted because no MCP tool is present. No success fabricated.
++
++## HTTP probes (raw evidence snippets)
++
++### a) [A] /health — http://127.0.0.1:8083/health
++
++```json
++{"ok": true, "service": "project-orchestrator", "port": 8083, "generation": "42e4b04c0f76", "started_at": 1784082155.3098185, "bind_host": "localhost", "queue_depth": 1, "p95_ms": 0, "auto_token_inject": false, "mutation_token_required": true}
++```
++
++- **ok**: true
++- **generation**: `42e4b04c0f76`
++- Matches CONTEXT.json `A_generation` field exactly.
++
++### b) [Q] /health — http://127.0.0.1:8082/health
++
++```json
++{"ok": true, "service": "clm-librarian-api", "port": 8082, "db": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\21. ToolQ\\librarian.db", "source_sha256": "216d8779599572185deb01484516068f271332b050b41fc60bb1f1cfa2c58813", "runtime_source_sha256": "216d8779599572185deb01484516068f271332b050b41fc60bb1f1cfa2c58813", "log_event_failures": 0}
++```
++
++- **ok**: true
++- **service**: clm-librarian-api
++- Source SHA256 matches runtime SHA256 (no drift).
++
++### c) [A] /api/tools/names — http://127.0.0.1:8083/api/tools/names
++
++```json
++{"ok": true, "count": 206, "tools": [{"name": "acceptance_dashboard", ...}, ...]}
++```
++
++- **ok**: true
++- **count**: 206
++- Matches CONTEXT.json `A_tool_count_http` field exactly (206).
++- Full tool list retrieved includes T1–T4 tools: get_rule_core_text, council_message, write_fix, write_new_file, read_file_range, search_code, desktop_screenshot, restart_orchestrator_via_bat, manage_agent, etc.
++
++## Desktop vs HermC CLI gap
++
+… omitted 45 diff line(s) across 1 additional file(s)/section(s)
+BothBoth files written successfully. Now I reply with the DONE message and TLDR.
+ ─  ⚕ Hermes  ─────────────────────────────────────────────────────────────────
+     DONE D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8.
+     ToolA\project-orchestrator\.council\worker_output\20260715_101239_herm
+     es_e6c9d633.md
+     TLDR: Verdict=PARTIAL. HermC5 has zero MCP tools (10 Hermes-native
+     tools only; broker argv excludes mcp toolset). Both [A] (:8083,
+     gen=42e4b04c0f76, 206 tools) and [Q] (:8082, clm-librarian-api)
+     confirmed live via curl — full functional parity via HTTP substitute
+     but no native MCP tool-surface.
+     END_HERMC5_R1_MCP_PARITY
+  hermes --resume 20260715_101241_a935ce

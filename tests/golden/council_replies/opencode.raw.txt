@@ -1,0 +1,4 @@
+PROMPT_LINE_FOR_ECHO_SUBTRACTION
+{"type":"step_start","sessionID":"s1"}
+{"type":"text","part":{"text":"OPENCODE_GOLDEN_OK"}}
+{"type":"step_finish","sessionID":"s1"}

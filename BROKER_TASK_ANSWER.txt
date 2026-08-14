@@ -1,0 +1,6 @@
+# BROKER TASK: HermC Research Answer
+Memory-first pattern: Check memory (<10ms) before search (500ms+), fallback on miss. RAG pre-filter: Use MMR/diversity scores to cut 60% irrelevant chunks. Shared memory: Use Redis/atomic ops; no file locks.
+MCP-HTTP: Use circuit breakers (1s→2s→4s backoff). Rule enforcement: Add exit conditions to prevent loops. Timeout: 30s max per tool, 3 retries.
+Anti-patterns: 1) Over-preflight adds 30-50% latency—validate selectively. 2) Stale memory: TTL 1hr dynamic/24hr static. 3) Context pollution: Limit to 10 turns.
+4) Recursive loops: Max depth 3. 5) Prompt bloat: <300 tokens for workers.
+Sources: cook.openai.com, langchain docs, arxiv.org/pdf/2308.08155, spec.modelcontextprotocol.io, crewai.com/how-to/handling-llm-errors

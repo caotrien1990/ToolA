@@ -1,0 +1,5409 @@
+{
+  "total_tools": 210,
+  "source_counts": {
+    "tool_map": 210,
+    "schema": 210,
+    "tier_lists": 73,
+    "tools_v15_functions_reference_only": 83,
+    "inventory_reference_only": 219,
+    "canonical_total": 210
+  },
+  "source_policy": "canonical public tools = TOOL_MAP ∪ TOOL_SCHEMAS ∪ TOOL_PHASE lists; inventory/tools_v15 helper names are reference-only",
+  "summary": {
+    "full_pass": 178,
+    "missing_ktrsk": 32,
+    "missing_ktrsh": 0,
+    "missing_ktrb": 0,
+    "missing_ktrin": 0
+  },
+  "results": [
+    {
+      "name": "acceptance_dashboard",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "21_tool_matrix"
+      ],
+      "description": "V15 R29 T1: SINGLE-CALL acceptance dashboard. Aggregates matrix + alias_contract_test + (optional) i",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi acceptance_dashboard với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi acceptance_dashboard بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "alias_contract_test",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "07_error_schema_hints"
+      ],
+      "description": "V15 R20/R21 T1: regression smoke for the alias contract. Default = in-process _normalize_body() prob",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi alias_contract_test với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi alias_contract_test بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "apply_after_dry_run",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "02_mode_control",
+        "05_write_pipeline",
+        "13_apply_after_dry_run",
+        "SKILLS.md_router"
+      ],
+      "description": "Apply an exact previously previewed dry-run payload by dry_run_id; rejects stale target files and ex",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi apply_after_dry_run với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi apply_after_dry_run với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "architecture_audit_compact",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R20 T1: 4-layer (KtrB/KtrSK/KtrSH/KtrI) compact audit digest. Combines matrix audit + alias drif",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi architecture_audit_compact với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi architecture_audit_compact بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "architecture_context_pack",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "Build a graph-first readonly context pack without auto-reindexing.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi architecture_context_pack với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi architecture_context_pack بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool architecture_context_pack không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "assert_button_click_changes_state",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T4 test: before/after diff.",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra assert_button_click_changes_state với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool assert_button_click_changes_state không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "assert_console_no_error",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T4 test: assert console.error count == 0.",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra assert_console_no_error với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool assert_console_no_error không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "assert_target_idle",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "26_workflow_ingestion"
+      ],
+      "description": "V15 R35 / R38 / R44 T1: universal completion-signal gate. Returns `outcome` ∈ {idle, copy_in_progres",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi assert_target_idle với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi assert_target_idle بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "assert_text_visible",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T4 test: wait for text visible.",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra assert_text_visible với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool assert_text_visible không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "ast_query",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "15_search_code_intel"
+      ],
+      "description": "V15 R8 B.1: Python AST preset patterns: async_function, class_inheriting, try_bare_except, function_",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi ast_query với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi ast_query بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "audit_tool_matrix",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "07_error_schema_hints",
+        "21_tool_matrix",
+        "rule_skill_changer",
+        "SKILLS.md_router"
+      ],
+      "description": "V15 R13 — Cross-check TOOL_MAP/schemas/skills/router/tool surface reference; reports drift + writes ",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra audit_tool_matrix trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "backup_project",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "04_tool_tiers",
+        "05_write_pipeline",
+        "12_native_audit"
+      ],
+      "description": "Create a timestamped zip backup and backup manifest.",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi backup_project với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi backup_project với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "backup_status",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "Read Orchestrator backup manifest status.",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi backup_status với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi backup_status với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "begin_task",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "Start a new authoritative user-task epoch. Hosts call this once for every real user prompt before mo",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra begin_task trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool begin_task không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "bootstrap_session",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "SKILLS.md_router"
+      ],
+      "description": "V15 R42 T1: first-call macro per session. Returns a compact overview: health, active_workflow, key_t",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi bootstrap_session với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi bootstrap_session بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "bundle_version_check",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "11_repo_vs_runtime",
+        "16_server_lifecycle"
+      ],
+      "description": "T4c: extract build/version marker from HTML.",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra bundle_version_check với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "ca_policy_metrics",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "12_native_audit"
+      ],
+      "description": "T3 READ: aggregate Matrix bypass counters from sessions.db (forbidden_native/allowed_native/via_a/un",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra ca_policy_metrics trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "cache_delta",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "02_mode_control",
+        "05_write_pipeline",
+        "09_testing_validation",
+        "13_apply_after_dry_run"
+      ],
+      "description": "Compare the filesystem against INDEX for added, modified, and deleted files.",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi cache_delta với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi cache_delta với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "cache_status",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "16_server_lifecycle"
+      ],
+      "description": "Check project cache status and the latest INDEX.json update time.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi cache_status với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi cache_status بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "cancel_native_dialog",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "18_runtime_dom_T4",
+        "22_electron_automation",
+        "SKILLS.md_router"
+      ],
+      "description": "V15 R27 T4: close any open native dialog by clicking Cancel/Close button. Fallback to WM_CLOSE.",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra cancel_native_dialog với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "cancel_pending_restart",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "16_server_lifecycle"
+      ],
+      "description": "V15 R14 T4c: kill the detached restart_helper.cmd if it has not yet killed the orchestrator. Useful ",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra cancel_pending_restart với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "capability_status",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "Report parser/indexing capabilities and missing optional libraries.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi capability_status với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi capability_status بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "cbm_council_context",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T1 read-only: bounded advisory graph context pack for council dispatch (Step 21). Leader embeds the ",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi cbm_council_context với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi cbm_council_context بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool cbm_council_context không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "cbm_dead_code",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T1 read-only: conservative dead-code candidates (functions/methods with zero inbound call edges). En",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi cbm_dead_code với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi cbm_dead_code بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool cbm_dead_code không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "cbm_edges_query",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "CAN-053 T1 read-only: browse/filter raw CBM graph edges with a cursor. Filters: kind (calls|imports_",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi cbm_edges_query với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi cbm_edges_query بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool cbm_edges_query không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "cbm_get_architecture",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T1 read-only: bounded module-level architecture overview citing exact files — module inventory with ",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi cbm_get_architecture với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi cbm_get_architecture بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool cbm_get_architecture không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "cbm_graph_status",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T1 read-only: report graph freshness, node/edge/file counts, last index run, stale file count, WAL s",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi cbm_graph_status với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi cbm_graph_status بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool cbm_graph_status không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "cbm_incremental_index",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T1 read-only-on-source: incremental graph update — SHA-256 detect_changes (added/modified/deleted/re",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi cbm_incremental_index với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi cbm_incremental_index بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool cbm_incremental_index không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "cbm_index",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T1 read-only: index project scope into the CBM graph DB (nodes/edges/FTS5). Incremental by content_h",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi cbm_index với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi cbm_index بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool cbm_index không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "cbm_nodes_query",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "CAN-053 T1 read-only: browse/filter raw CBM graph nodes with a cursor. Filters: kind (module|class|f",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi cbm_nodes_query với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi cbm_nodes_query بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool cbm_nodes_query không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "cbm_template_query",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T1 read-only: named graph queries without Cypher. template=callers|callees|imports|imported_by|orpha",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi cbm_template_query với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi cbm_template_query بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool cbm_template_query không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "cbm_trace_path",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T1 read-only: bounded graph traversal (BFS) from a start node. direction=out|in|both, depth<=5, node",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi cbm_trace_path với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi cbm_trace_path بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool cbm_trace_path không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "cdp_attach_target",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "22_electron_automation"
+      ],
+      "description": "V15 R15 P2.6 / R44 T4a: attach Playwright to existing CDP target. V15 R16 A.1: auto-fallback to brow",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra cdp_attach_target với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "cep_deploy",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "06_token_auth",
+        "21_tool_matrix"
+      ],
+      "description": "R81 T2 (protected): mirror a CEP extension repo→LIVE with manifest gate + per-file backup + hash ver",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi cep_deploy với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi cep_deploy với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "cep_extension_status",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "R81 T1: CEP extension readiness — repo↔LIVE (%APPDATA%/Adobe/CEP/extensions/<live_name>) per-file ha",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi cep_extension_status với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi cep_extension_status بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "cep_manifest_validate",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "R81 T1: validate a CEP CSXS/manifest.xml — XML well-formed + ExtensionBundleId + each Extension Main",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi cep_manifest_validate với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi cep_manifest_validate بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "check_server_path",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R42 / R45 T1: probe path accessibility — UNC share, HTTP(s) HEAD, local file/folder. Mode auto-d",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi check_server_path với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi check_server_path بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "check_window_visibility",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "18_runtime_dom_T4",
+        "21_tool_matrix"
+      ],
+      "description": "V15 R15 P2.9 T4d: pre-action visibility check for desktop automation. Returns {visible, rect, minimi",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra check_window_visibility với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "checkpoint_loop_dom_state",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "07_error_schema_hints"
+      ],
+      "description": "V15 R16.9 / R16.10 T4: server-side polling loop. R16.10: accepts `baseline_id` (from prior dom_state",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra checkpoint_loop_dom_state với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "classify_ca_action",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "12_native_audit"
+      ],
+      "description": "T1 READ: classify tool/action against .council/CA_TOOL_POLICY_MATRIX.json (CSLt A-first). Returns ta",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi classify_ca_action với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi classify_ca_action بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "classify_get_footage_outcome",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R34 T1: post-action classifier. Reads log + folder_stats, classifies outcome ∈ {success, folder_",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi classify_get_footage_outcome với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi classify_get_footage_outcome بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "cleanup_test_session",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "18_runtime_dom_T4"
+      ],
+      "description": "V15 R16.6 T2 (+R43 P0 #6A): 1-call test wrap-up. Close CDP page (if page_id), taskkill listed proces",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi cleanup_test_session với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi cleanup_test_session với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "click",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "02_mode_control",
+        "11_repo_vs_runtime",
+        "16_server_lifecycle",
+        "17_session_audit",
+        "18_runtime_dom_T4",
+        "22_electron_automation",
+        "26_workflow_ingestion"
+      ],
+      "description": "T4b: click selector (EXECUTE-gated).",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra click với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "click_and_checkpoint_loop",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "07_error_schema_hints",
+        "18_runtime_dom_T4"
+      ],
+      "description": "V15 R16.10 T4: atomic click + checkpoint loop. Snapshots watch_selector state BEFORE click (correct ",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra click_and_checkpoint_loop với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "click_and_handle_folder_dialog",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "07_error_schema_hints"
+      ],
+      "description": "V15 R31 T4: GENERIC atomic click → folder picker → paste path → verify. Baseline visible windows, cl",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra click_and_handle_folder_dialog với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "click_selector",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "07_error_schema_hints"
+      ],
+      "description": "V15 R16.9 T4: alias of click() that snapshots target element state BEFORE + AFTER click — returns en",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra click_selector với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "close_session",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "03_path_session",
+        "04_tool_tiers",
+        "14_token_jwt_redesign",
+        "17_session_audit"
+      ],
+      "description": "Close the active CA session after log_native(native=[...]) has been recorded.",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra close_session trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "compare_dom_snapshot",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "18_runtime_dom_T4"
+      ],
+      "description": "T4a: unified diff of selector text between two pages.",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra compare_dom_snapshot với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "convene_council",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "leader-council-skill",
+        "rule_skill_changer"
+      ],
+      "description": "Call this when activating the council (trigger: bat hoi dong Tr). Before any council coordination/di",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi convene_council với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi convene_council بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "copy_file",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "R81 T2 (protected): copy ONE file src→dst (absolute or relative via project_path) with audit — backs",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi copy_file với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi copy_file với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "council_config_diff",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "rule_skill_changer"
+      ],
+      "description": "T1 READ-ONLY: report drift between the SOT .council/council_config.json and derived rule docs (CORE_",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi council_config_diff với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi council_config_diff بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "council_config_sync",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "rule_skill_changer",
+        "update-rule-skill-all-ca"
+      ],
+      "description": "T2 WRITE (clauC/codoC only): propagate the SOT .council/council_config.json to derived rule docs (re",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi council_config_sync với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi council_config_sync với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "council_tracker",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "READ/COLLECT council live logs. Runs the council tracker collector and returns the path to the counc",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi council_tracker với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi council_tracker بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool council_tracker không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "create_benchmark_request",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "Create BENCHMARK_REQUEST.md from idea only. Does not accept description.",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi create_benchmark_request với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi create_benchmark_request với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "create_build_context",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "Create BUILD_CONTEXT.md from idea and approved_inputs only. Does not accept name.",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi create_build_context với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi create_build_context với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "create_folder",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R65 T2 file-artifact mutation: create a directory. Idempotent mkdir; an existing directory is SU",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi create_folder với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi create_folder với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "create_folders",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R65 T2 file-artifact mutation: batch create_folder. Pass a flat array of string paths. Requires ",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi create_folders với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi create_folders với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "create_pending_audit",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "04_tool_tiers",
+        "12_native_audit",
+        "17_session_audit"
+      ],
+      "description": "Store a pending native fallback audit entry for later sync.",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra create_pending_audit trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "declare_mission",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "07_error_schema_hints",
+        "17_session_audit"
+      ],
+      "description": "V15 R18 Phase B / R22 T1: curate skill + tool subset for the active session. R22 verbosity ∈ {full|t",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi declare_mission với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi declare_mission بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "delete_file",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "05_write_pipeline",
+        "06_token_auth",
+        "08_command_windows"
+      ],
+      "description": "Delete one file at the requested path. This is permanent.",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi delete_file với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi delete_file với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "describe_page",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "18_runtime_dom_T4"
+      ],
+      "description": "V15 R16.6 T1: DOM structure map — lists all titled sections + view-* panels in 1 call. R18: auto_art",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi describe_page với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi describe_page بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "desktop_app_focus",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "18_runtime_dom_T4",
+        "21_tool_matrix"
+      ],
+      "description": "V15 R57: CDP-first focus with flexible target matching, optional navigation wait, and controlled Win",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra desktop_app_focus với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "desktop_click",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "07_error_schema_hints",
+        "18_runtime_dom_T4",
+        "22_electron_automation",
+        "SKILLS.md_router"
+      ],
+      "description": "V15 R59: CDP-first click with mouseMoved hover-arm, mouseDown/Up dispatch, and DOM-level synthetic .",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra desktop_click với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "desktop_screenshot",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "07_error_schema_hints"
+      ],
+      "description": "T4d: PIL.ImageGrab. Default captures ALL monitors (virtual desktop); monitor=N (1-based) captures on",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra desktop_screenshot với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "desktop_send_text",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "V15 R92 T4d: focus a desktop window and send short text via clipboard paste, optionally submitting w",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra desktop_send_text với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool desktop_send_text không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "desktop_window_list",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "07_error_schema_hints",
+        "18_runtime_dom_T4"
+      ],
+      "description": "V15 R8 B.5 T4d: enumerate visible top-level windows.",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra desktop_window_list với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "desktop_window_state",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R58 T4d: Win32 ShowWindow primitive for window state changes (maximize/restore/minimize/normal/h",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra desktop_window_state với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "detect_stale_server",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "16_server_lifecycle"
+      ],
+      "description": "T4c: inspect localhost:<port> ownership and optional bundle version drift. This contract accepts por",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra detect_stale_server với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "dom_state_diff",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "18_runtime_dom_T4",
+        "21_tool_matrix",
+        "22_electron_automation"
+      ],
+      "description": "V15 R16 A.4 T1: snapshot DOM element state (disabled/bg/color/className/visible/text) and compare ac",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi dom_state_diff với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi dom_state_diff بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "electron_devtools_log",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "04_tool_tiers"
+      ],
+      "description": "⚠️ DEPRECATED R41 — DO NOT USE. Use `list_cdp_targets` for CDP target enumeration, `read_console_err",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra electron_devtools_log với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "ensure_single_electron_instance",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "17_session_audit",
+        "22_electron_automation"
+      ],
+      "description": "V15 R16.9 T4: pre-launch hygiene — kill any existing electron.exe + free CDP port BEFORE launching a",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra ensure_single_electron_instance với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "evaluate_js",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "18_runtime_dom_T4",
+        "22_electron_automation"
+      ],
+      "description": "T4b: evaluate JS expression in page (EXECUTE-gated). V15 R16.3: timeout_ms protects against infinite",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra evaluate_js với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "extract_log_section",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "18_runtime_dom_T4",
+        "21_tool_matrix",
+        "22_electron_automation"
+      ],
+      "description": "V15 R16.7 A.5 T1: find DOM section by title text → traverse to closest area_class ancestor → extract",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi extract_log_section với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi extract_log_section بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "fetch_sheet_csv_summary",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R49/R53/R55 T1 v3 workflow primitive: fetch Google Sheets CSV → parse → classify into UNC/HTTP/l",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi fetch_sheet_csv_summary với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi fetch_sheet_csv_summary بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "fill",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "02_mode_control",
+        "07_error_schema_hints",
+        "17_session_audit",
+        "18_runtime_dom_T4",
+        "22_electron_automation",
+        "verify-new-function"
+      ],
+      "description": "T4b: fill input (EXECUTE-gated).",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra fill với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "fill_folder_dialog",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "07_error_schema_hints",
+        "18_runtime_dom_T4",
+        "22_electron_automation",
+        "SKILLS.md_router"
+      ],
+      "description": "V15 R27.1 / R31 T4: control Windows native folder dialog with owner_pid/parent_hwnd/exclude_titles/l",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra fill_folder_dialog với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "fill_value",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "07_error_schema_hints",
+        "18_runtime_dom_T4",
+        "22_electron_automation",
+        "26_workflow_ingestion"
+      ],
+      "description": "V15 R16.2 A.6 T2: transport-safe DOM fill. encoding=plain uses Playwright .fill(); encoding=base64 d",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi fill_value với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi fill_value với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "find_callers",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "15_search_code_intel"
+      ],
+      "description": "V15 R8 B.1: deprecated alias of search_code(mode=callers).",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi find_callers với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi find_callers بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "find_definition_and_usage",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "15_search_code_intel"
+      ],
+      "description": "V15 R8 B.1: deprecated alias of search_code - use search_code with query=<symbol> for definition loo",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi find_definition_and_usage với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi find_definition_and_usage بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "find_symbol",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "04_tool_tiers",
+        "05_write_pipeline",
+        "07_error_schema_hints",
+        "08_command_windows",
+        "11_repo_vs_runtime",
+        "15_search_code_intel",
+        "16_server_lifecycle",
+        "17_session_audit"
+      ],
+      "description": "Find function, class, or variable definitions and return file:line targets for follow-up reads.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi find_symbol với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi find_symbol بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "folder_dialog_snapshot",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "07_error_schema_hints",
+        "SKILLS.md_router"
+      ],
+      "description": "V15 R31 T1: read-only discovery of open folder/file dialog candidates. Use BEFORE fill_folder_dialog",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi folder_dialog_snapshot với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi folder_dialog_snapshot بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "folder_diff",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "22_electron_automation"
+      ],
+      "description": "V15 R27 T1: compare top-level contents of 2 folders. compare_by ∈ name|name+size|name+sha (sha=slow ",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi folder_diff với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi folder_diff بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "folder_exists",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "22_electron_automation"
+      ],
+      "description": "V15 R27 T1: minimal folder existence + type probe.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi folder_exists với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi folder_exists بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "folder_stats",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "22_electron_automation"
+      ],
+      "description": "V15 R27 T1 (R64-C): folder stats (file_count, dir_count, total_bytes, latest_mtime, top_extensions).",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi folder_stats với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi folder_stats بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "generate_project_map",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "05_write_pipeline",
+        "07_error_schema_hints",
+        "15_search_code_intel"
+      ],
+      "description": "Generate the project cache, INDEX.json, and PROJECT_MAP.md while skipping junk, secret, and generate",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi generate_project_map với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi generate_project_map với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "get_file_symbols",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "15_search_code_intel"
+      ],
+      "description": "List all functions, classes, and variables defined in one file.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi get_file_symbols với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi get_file_symbols بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "get_folder_size",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "03_path_session"
+      ],
+      "description": "Count files and bytes under folder_path. Use folder_path, not project_path.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi get_folder_size với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi get_folder_size بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "get_project_summary",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "04_tool_tiers",
+        "15_search_code_intel"
+      ],
+      "description": "Return a quick INDEX overview: groups, hotspots, and entry points.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi get_project_summary với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi get_project_summary بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "get_rule_core_text",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "01_bootstrap_health",
+        "21_tool_matrix"
+      ],
+      "description": "Return rendered CORE_RULE text + runtime metadata. HTTP bootstrap; pass stable agent_id.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi get_rule_core_text với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi get_rule_core_text بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "get_session_events",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "03_path_session",
+        "04_tool_tiers",
+        "12_native_audit",
+        "17_session_audit"
+      ],
+      "description": "Read paginated session events. Prefer session_id; project_path resolves only the active session.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi get_session_events với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi get_session_events بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "get_skill_state",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "07_error_schema_hints"
+      ],
+      "description": "V15 R8 B.7 / R22: skills available in .ToolA_Skill/. R22 verbosity supports full, terse, and ref. te",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi get_skill_state với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi get_skill_state بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "get_task_checkpoint",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "Return the current compact active-task checkpoint for host reinsertion after tool batches or compact",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi get_task_checkpoint với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi get_task_checkpoint بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool get_task_checkpoint không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "get_token_meter",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "07_error_schema_hints"
+      ],
+      "description": "V15 R8 B.7 / R33: session byte estimate. Pass project_path (preferred) OR session_id; returns approx",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi get_token_meter với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi get_token_meter بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "get_usage_stats",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "17_session_audit"
+      ],
+      "description": "Read APP_SESSION_LOG.jsonl, SQLite session events, and optional HTTP log stats.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi get_usage_stats với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi get_usage_stats بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "get_validation_queue",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R8 B.7: pending dry_run_ids.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi get_validation_queue với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi get_validation_queue بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "git_blame_symbol",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "15_search_code_intel"
+      ],
+      "description": "V15 R8 B.1: git log -L for symbol's definition lines.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi git_blame_symbol với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi git_blame_symbol بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "hermes_host_gate_check",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "12_native_audit"
+      ],
+      "description": "T1 READ: Hermes/peer host gate for project vs outside-project native ops (CSLt axis 3).",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi hermes_host_gate_check với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi hermes_host_gate_check بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "import_graph",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "15_search_code_intel"
+      ],
+      "description": "V15 R8 B.1: scan import/require edges across project.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi import_graph với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi import_graph بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "inspect_project_runtime",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "21_tool_matrix",
+        "22_electron_automation"
+      ],
+      "description": "V15 R16 A.3 T1: pre-flight introspection. Detects launcher_type (electron-bat|electron-npm-script|no",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi inspect_project_runtime với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi inspect_project_runtime بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "inspect_project_usage",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "03_path_session",
+        "05_write_pipeline",
+        "22_electron_automation"
+      ],
+      "description": "V15 R27 T1: workflow-level project profile beyond inspect_project_runtime. Returns primary_ui_fields",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi inspect_project_usage với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi inspect_project_usage بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "invoke_app_function",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "07_error_schema_hints",
+        "18_runtime_dom_T4",
+        "22_electron_automation",
+        "26_workflow_ingestion"
+      ],
+      "description": "V15 R27 T4: structured invoke of a top-level page function. Wraps evaluate_js with arg serialization",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra invoke_app_function với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "kill_process",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "06_token_auth",
+        "22_electron_automation"
+      ],
+      "description": "Terminate process by pid or process_name. Protected T2 cleanup tool for runtime/test environments.",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi kill_process với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi kill_process với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "launch_electron_with_cdp",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "18_runtime_dom_T4",
+        "21_tool_matrix",
+        "22_electron_automation"
+      ],
+      "description": "V15 R16 A.2 T4: one-shot Electron launch + CDP attach. Detects launcher, injects --remote-debugging-",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra launch_electron_with_cdp với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "leader_bootstrap",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "P3b-2 T1: one-call leader bootstrap with council roster, worker models, active missions, and best-ef",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi leader_bootstrap với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi leader_bootstrap بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool leader_bootstrap không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "list_cdp_targets",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "18_runtime_dom_T4"
+      ],
+      "description": "T4 read-only: query Chromium DevTools Protocol targets through [A] without leaving the orchestrator ",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra list_cdp_targets với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "list_projects",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "03_path_session",
+        "07_error_schema_hints"
+      ],
+      "description": "V15 R8 B.7: registered [Ab..Az] projects from sessions DB.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi list_projects với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi list_projects بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "list_sessions",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "03_path_session",
+        "04_tool_tiers"
+      ],
+      "description": "List recent sessions for a project without events.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi list_sessions với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi list_sessions بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "list_structure",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "04_tool_tiers",
+        "15_search_code_intel"
+      ],
+      "description": "Return a project folder tree without reading file contents. Prefer project_path; path remains a lega",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi list_structure với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi list_structure بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "log_native",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "End-of-session native fallback log. Use native=[], not entries.",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra log_native trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "log_native_event",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "04_tool_tiers",
+        "05_write_pipeline",
+        "06_token_auth",
+        "07_error_schema_hints",
+        "08_command_windows",
+        "12_native_audit",
+        "14_token_jwt_redesign",
+        "17_session_audit",
+        "broker-worker-bootstrap",
+        "rule_skill_changer"
+      ],
+      "description": "Log one native fallback action immediately after using a native tool.",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra log_native_event trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "manage_agent",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix",
+        "rule_skill_changer",
+        "update-rule-skill-all-ca"
+      ],
+      "description": "R86 T3: central multi-agent config manager. actions: register (upsert agent into agents_registry.jso",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra manage_agent trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "mcp_surface_diff",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "R90 T1: compare [A] backend tool surfaces (TOOL_MAP, TOOL_SCHEMAS, /api/tools) and optionally caller",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi mcp_surface_diff với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi mcp_surface_diff بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "mission_create",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "leader-council-skill",
+        "verify-new-function"
+      ],
+      "description": "P3b-2 T3: create a durable mission and idempotent tasks in .orchestrator_cache/missions.db. Each tas",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra mission_create trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "mission_dispatch",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "leader-council-skill"
+      ],
+      "description": "P3b-2 T3: verify/set worker model, build mission wrapper, write dispatch outbox/ledger, and send via",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra mission_dispatch trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "mission_gate",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "P3b-2 T3: approve/reject a human-gated task. approve -> pending; reject -> skipped; appends human_ga",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra mission_gate trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool mission_gate không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "mission_next",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "P3b-2 T1: return the next dependency-ready pending task for a mission, or null.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi mission_next với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi mission_next بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool mission_next không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "mission_report",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "P3b-2 T3: heartbeat or final report for a mission task with attempt-token validation and artifact-fi",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra mission_report trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool mission_report không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "mission_status",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "leader-council-skill"
+      ],
+      "description": "P3b-2 T1: compact mission/task status. verbosity=full includes progress_ledger tail 50.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi mission_status với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi mission_status بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "next_recommended_action",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "17_session_audit"
+      ],
+      "description": "Return the next deterministic workflow action.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi next_recommended_action với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi next_recommended_action بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "normalize_ca_registration",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T3 WRITE: normalize agents_registry.json — mode=A default + transport_policy (http_only for CLI C-su",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra normalize_ca_registration trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool normalize_ca_registration không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "open_browser_page",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "04_tool_tiers",
+        "11_repo_vs_runtime",
+        "18_runtime_dom_T4"
+      ],
+      "description": "V15 R8 B.3 / R44 T4a: launch Chromium, return page_id. R44: optional project_path pins page state so",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra open_browser_page với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "open_session",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "03_path_session",
+        "04_tool_tiers",
+        "05_write_pipeline",
+        "06_token_auth",
+        "07_error_schema_hints",
+        "17_session_audit",
+        "21_tool_matrix",
+        "26_workflow_ingestion",
+        "broker-worker-bootstrap",
+        "leader-council-skill"
+      ],
+      "description": "Open or resume the active CA session for a project.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi open_session với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi open_session بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "optional_tool_probe",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "07_error_schema_hints"
+      ],
+      "description": "Check optional helper tools or endpoints without mutating state or fetching raw tokens.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi optional_tool_probe với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi optional_tool_probe بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "parse_log_section",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R42 T1: extract_log_section + base64 decode + nested JSON parse. For each line tries to decode *",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi parse_log_section với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi parse_log_section بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "path_quote_helper",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "03_path_session",
+        "08_command_windows"
+      ],
+      "description": "Generate a Windows-safe run_project_command wrapper for subfolders or paths with spaces. Does not ex",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi path_quote_helper với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi path_quote_helper بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "port_owner_inspect",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "01_bootstrap_health",
+        "16_server_lifecycle"
+      ],
+      "description": "T4c: light: PID + name only.",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra port_owner_inspect với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "post_write_batch_verify",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "05_write_pipeline",
+        "09_testing_validation"
+      ],
+      "description": "Run the standard non-mutating post-write verification bundle for changed files.",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi post_write_batch_verify với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi post_write_batch_verify với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "prepare_ca_session",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "04_tool_tiers",
+        "17_session_audit",
+        "21_tool_matrix"
+      ],
+      "description": "Create a one-paste CA bootstrap prompt for T1/T2 workflows. V15 R13: minimal dedup-safe session prom",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra prepare_ca_session trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "process_tree_inspect",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "T4d: psutil process tree from root_pid or name_pattern. name_pattern is a case-insensitive substring",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra process_tree_inspect với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "progressive_matrix_check",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R13: read-only certification snapshot for progressive-disclosure workflow docs, schema phase met",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi progressive_matrix_check với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi progressive_matrix_check بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "project_context_pack",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "CAN-053 T1: one-call compact project profile (component roots, languages, groups, hotspots, entrypoi",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi project_context_pack với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi project_context_pack بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool project_context_pack không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "project_map",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "04_tool_tiers"
+      ],
+      "description": "V15 R8: Unified project_map dispatcher. mode=status|generate|refresh|delta. Replaces generate_projec",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi project_map với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi project_map với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "protected_tools_status",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "Return mutation-token protection status without exposing the raw token.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi protected_tools_status với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi protected_tools_status بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "query_dom_candidates",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "18_runtime_dom_T4"
+      ],
+      "description": "V15 R16.6 T1: deprecated alias of search_code(mode=dom_candidates). Enumerate DOM input/button/texta",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi query_dom_candidates với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi query_dom_candidates بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "query_index",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "07_error_schema_hints",
+        "15_search_code_intel"
+      ],
+      "description": "Filter indexed files by group, complexity, LOC, fnmatch pattern, and optional text query.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi query_index với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi query_index بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "query_selector",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "18_runtime_dom_T4"
+      ],
+      "description": "T4a: existence + visibility + bbox.",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra query_selector với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "read_all_logs",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "18_runtime_dom_T4"
+      ],
+      "description": "V15 R16.4 T1: batch read multiple log panels in one call (default: System Error Log + User Error & H",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi read_all_logs với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi read_all_logs بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "read_console_errors",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "11_repo_vs_runtime",
+        "18_runtime_dom_T4",
+        "21_tool_matrix",
+        "22_electron_automation"
+      ],
+      "description": "T4a: console messages (default level=error).",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra read_console_errors với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "read_context_batch",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "Read multiple file ranges or structural scopes under one deterministic token budget.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi read_context_batch với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi read_context_batch بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool read_context_batch không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "read_file_range",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "04_tool_tiers",
+        "05_write_pipeline",
+        "07_error_schema_hints",
+        "08_command_windows",
+        "11_repo_vs_runtime",
+        "13_apply_after_dry_run",
+        "15_search_code_intel"
+      ],
+      "description": "Adaptive pure read for a range or structural scope with bounded output and ranked next_ranges.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi read_file_range với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi read_file_range بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "read_network_errors",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "11_repo_vs_runtime",
+        "18_runtime_dom_T4"
+      ],
+      "description": "T4a: failed/4xx/5xx requests.",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra read_network_errors với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "read_page",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "11_repo_vs_runtime",
+        "18_runtime_dom_T4"
+      ],
+      "description": "T4a: text content of selector (max 5KB).",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra read_page với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "read_skill",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "07_error_schema_hints",
+        "17_session_audit",
+        "rule_skill_changer"
+      ],
+      "description": "V15 R16.9 / R22 T1: read skill body by short name. Resolves <orchestrator>/.ToolA_Skill/skills/<name",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi read_skill với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi read_skill بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "read_value",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "18_runtime_dom_T4"
+      ],
+      "description": "V15 R16.3 T1: symmetric counterpart to fill_value. Reads element.value (or textContent fallback) wit",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi read_value với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi read_value بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "record_session_audit_checkpoint",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "CAN-053 T3 (protected): persist an audit checkpoint event into the session ledger — the mutating hal",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra record_session_audit_checkpoint trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool record_session_audit_checkpoint không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "record_ui_flow",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "09_testing_validation"
+      ],
+      "description": "T4 test: Playwright tracing stub. Use output_path for the intended trace path.",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra record_ui_flow với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "refresh_project_map",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "05_write_pipeline",
+        "07_error_schema_hints",
+        "15_search_code_intel",
+        "16_server_lifecycle"
+      ],
+      "description": "Delete the old cache and rescan the project to rebuild INDEX.json.",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi refresh_project_map với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi refresh_project_map với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "regex_search",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "15_search_code_intel"
+      ],
+      "description": "V15 R8 B.1: deprecated alias of search_code(mode='regex'). flags: i|m|s.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi regex_search với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi regex_search بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "rename_session",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "17_session_audit"
+      ],
+      "description": "Rename the active session. Closed sessions cannot be renamed.",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra rename_session trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "replace_between_anchors",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R43 P1 #3-B T2: anchor-based file patch. Resolves text anchors (start_anchor/end_anchor as subst",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi replace_between_anchors với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi replace_between_anchors với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "resolve_candidate_paths",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "CAN-053 T1: batch existence check for up to 50 candidate paths with fuzzy suggestions from INDEX — o",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi resolve_candidate_paths với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi resolve_candidate_paths بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool resolve_candidate_paths không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "resolve_project_path",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "03_path_session",
+        "07_error_schema_hints"
+      ],
+      "description": "Resolve any Windows file/folder path into project_path plus file_path/folder_path metadata.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi resolve_project_path với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi resolve_project_path بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "restart_orchestrator_via_task",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "06_token_auth",
+        "16_server_lifecycle",
+        "21_tool_matrix",
+        "leader-council-skill"
+      ],
+      "description": "Legacy T4c High-IL Task Scheduler restart helper. Do not use for normal [A] self-upgrades; current c",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra restart_orchestrator_via_task với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "restart_server_via_bat_hint",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "16_server_lifecycle"
+      ],
+      "description": "T4c: structured [A:S] restart hint only; no execution. For authorized [A] self-upgrades, CA should r",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra restart_server_via_bat_hint với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "rule_drift_check",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T1 audit: detect DRIFT between rule files (CORE_RULE/SLIM_RULE/SLIM_RULE_INLINE) and live code (TOOL",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi rule_drift_check với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi rule_drift_check بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool rule_drift_check không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "run_node_script",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "06_token_auth",
+        "21_tool_matrix"
+      ],
+      "description": "V15 R50 T2 narrow wrapper for Node.js script-file execution. Hides runtime=node selection. Writes .j",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi run_node_script với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi run_node_script với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "run_playwright_test",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "07_error_schema_hints",
+        "09_testing_validation"
+      ],
+      "description": "V15 R8 B.6 / R37 T4: execute Node script with stdout/stderr capture. REQUIREMENT: test_script_path m",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra run_playwright_test với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "run_project_command",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "03_path_session",
+        "04_tool_tiers",
+        "06_token_auth",
+        "07_error_schema_hints",
+        "08_command_windows",
+        "09_testing_validation",
+        "22_electron_automation",
+        "SKILLS.md_router"
+      ],
+      "description": "Run a bounded project command. Supports keep_alive for GUI/long-running processes. Mutating commands",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi run_project_command với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi run_project_command với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "run_project_test_script",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "06_token_auth",
+        "21_tool_matrix"
+      ],
+      "description": "V15 R43 P1 #5 T2: save script as artifact in .orchestrator_cache/test_scripts/ and execute. Avoids e",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi run_project_test_script với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi run_project_test_script với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "run_ps1_script",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "06_token_auth",
+        "21_tool_matrix"
+      ],
+      "description": "V15 R50 T2 narrow wrapper for PowerShell script-file execution. Hides runtime=powershell selection. ",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi run_ps1_script với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi run_ps1_script với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "run_script",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "07_error_schema_hints",
+        "18_runtime_dom_T4"
+      ],
+      "description": "V15 R16.4 T4b: escape-free JS executor. Read JS expression from `script_path` (.js file) OR `script_",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra run_script với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "run_test_profile",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "09_testing_validation",
+        "10_coverage_report",
+        "26_workflow_ingestion",
+        "SKILLS.md_router"
+      ],
+      "description": "Run a known bounded test profile. Invalid profiles return the available profile list.",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi run_test_profile với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi run_test_profile với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "sample_unc_paths_with_root_check",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R49 T1 v3 workflow primitive: sample N UNC paths, probe each via Unicode-safe Path.exists(), if ",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi sample_unc_paths_with_root_check với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi sample_unc_paths_with_root_check بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "save_log_snapshot",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "07_error_schema_hints",
+        "17_session_audit",
+        "18_runtime_dom_T4",
+        "26_workflow_ingestion"
+      ],
+      "description": "V15 R17 P1 T2: write log content to <project>/.orchestrator_cache/artifacts/<round_id>/<slug>.txt an",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi save_log_snapshot với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi save_log_snapshot với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "screenshot_page",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "04_tool_tiers",
+        "11_repo_vs_runtime",
+        "18_runtime_dom_T4",
+        "19_image_mode"
+      ],
+      "description": "T4a: PNG screenshot to .orchestrator_cache/screenshots/.",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra screenshot_page với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "search_code",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "04_tool_tiers",
+        "05_write_pipeline",
+        "07_error_schema_hints",
+        "08_command_windows",
+        "11_repo_vs_runtime",
+        "15_search_code_intel",
+        "16_server_lifecycle",
+        "17_session_audit",
+        "leader-council-skill"
+      ],
+      "description": "Search the codebase with bounded max_results and max_context_lines. Prefer project_path; path remain",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi search_code với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi search_code بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "server_lifecycle_status",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "04_tool_tiers",
+        "11_repo_vs_runtime",
+        "16_server_lifecycle",
+        "18_runtime_dom_T4"
+      ],
+      "description": "V15 R8 B.4 T4c: psutil port owner + can_kill probe.",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra server_lifecycle_status với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "session_audit_summary",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "04_tool_tiers",
+        "10_coverage_report",
+        "12_native_audit",
+        "17_session_audit"
+      ],
+      "description": "V15 R8 B.2: aggregate session state {tools_used, mutations, errors, recovered_errors, open_errors, c",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra session_audit_summary trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "set_workflow_mode",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "Set workflow mode in WORKFLOW_STATE.json.",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi set_workflow_mode với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi set_workflow_mode với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "state",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "01_bootstrap_health",
+        "02_mode_control",
+        "11_repo_vs_runtime",
+        "13_apply_after_dry_run",
+        "14_token_jwt_redesign",
+        "17_session_audit",
+        "18_runtime_dom_T4",
+        "21_tool_matrix",
+        "22_electron_automation",
+        "26_workflow_ingestion",
+        "council-brainstorm-loop",
+        "council-console-loop",
+        "verify-new-function",
+        "SKILLS.md_router"
+      ],
+      "description": "V15 R8/R11: Unified state dispatcher. aspect=cache|workflow|recommendation|session|all. Replaces cac",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi state với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi state بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "static_asset_cache_check",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "11_repo_vs_runtime",
+        "16_server_lifecycle"
+      ],
+      "description": "T4c: HEAD + 2 GET hash compare.",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra static_asset_cache_check với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "suggest_missing_capabilities",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "Suggest optional parser libraries without installing them.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi suggest_missing_capabilities với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi suggest_missing_capabilities بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "sync_pending_audit",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "12_native_audit",
+        "17_session_audit"
+      ],
+      "description": "Sync pending native fallback audit entries into the active session log.",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra sync_pending_audit trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "tool_decision_hint",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "04_tool_tiers",
+        "07_error_schema_hints",
+        "11_repo_vs_runtime"
+      ],
+      "description": "V15 R8 B.2 / R22: returns recommended tier+tool+skill for task description. R22 verbosity ∈ {full|te",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi tool_decision_hint với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi tool_decision_hint بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "ui_state_summary",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "07_error_schema_hints",
+        "18_runtime_dom_T4"
+      ],
+      "description": "V15 R16.10 T1: structured TEXT-only state summary per UI region. NOT a screenshot (saves ~99% tokens",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi ui_state_summary với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi ui_state_summary بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "validate",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "02_mode_control",
+        "04_tool_tiers",
+        "05_write_pipeline",
+        "09_testing_validation",
+        "11_repo_vs_runtime",
+        "12_native_audit",
+        "13_apply_after_dry_run",
+        "14_token_jwt_redesign",
+        "broker-worker-bootstrap"
+      ],
+      "description": "V15 R8: Unified validate dispatcher. checks=['file','symbols','encoding'] — runs the selected sub-va",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi validate với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi validate với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "validate_encoding",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "09_testing_validation"
+      ],
+      "description": "Validate UTF-8, BOM, mojibake risk, and Vietnamese diacritic integrity after writes.",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi validate_encoding với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi validate_encoding với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "validate_file",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "02_mode_control",
+        "05_write_pipeline",
+        "09_testing_validation",
+        "SKILLS.md_router"
+      ],
+      "description": "Check syntax/validity after a write. Python uses py_compile; JS/TS use node --check.",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi validate_file với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi validate_file với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "validate_symbols",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "02_mode_control",
+        "05_write_pipeline",
+        "09_testing_validation"
+      ],
+      "description": "Post-write integration check: syntax plus function/class drift against INDEX.",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi validate_symbols với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi validate_symbols với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "verify_active_electron_source",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "18_runtime_dom_T4"
+      ],
+      "description": "V15 R41 T1: verify which file Electron CDP target is actually loaded from. Reads document.URL + wind",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi verify_active_electron_source với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi verify_active_electron_source بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "verify_get_footage_copy_completion",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R50 T1 v1/v2 causality verifier: walk evidence across folder filesystem + Rawcut tas-footage-err",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi verify_get_footage_copy_completion với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi verify_get_footage_copy_completion بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "wait_for_idle",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "V15 R42 T1: built-in polling loop wrapping assert_target_idle. Returns when outcome='idle' for stabl",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi wait_for_idle với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi wait_for_idle بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool wait_for_idle không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "wait_for_selector",
+      "phase": "T4",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "18_runtime_dom_T4"
+      ],
+      "description": "T4a: wait for visibility (timeout_ms).",
+      "test_cases": [
+        {
+          "name": "TC_RUNTIME",
+          "desc": "Kiểm tra wait_for_selector với runtime environment",
+          "workflow": "open_session → inspect_project_runtime → {name}",
+          "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "webfetch",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R44 T1: HTTP GET fetch URL content (re-introduced for getfootage_sheet_v3 Google Sheets CSV pull",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi webfetch với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi webfetch بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "workflow_activate",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R36 / R37 Y1 T3: User activates workflow GLOBALLY. project_path optional (state is global). [A] ",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra workflow_activate trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "workflow_active_get",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R36 / R37 Y1 T1: read active workflow state (global). UI polls this every 5s; CA hint stream use",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi workflow_active_get với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi workflow_active_get بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "workflow_checkpoint",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R51 T3 mid-flow drift gate: consolidate round accounting + session health + recent forbidden-tra",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra workflow_checkpoint trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "workflow_create_from_ui",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "26_workflow_ingestion"
+      ],
+      "description": "V15 R35 / R37 Y1 T3: save MD body. [A] does NOT transform. R37: workflows are GLOBAL only — written ",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra workflow_create_from_ui trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "workflow_deactivate",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R36 / R37 Y1 T3: stop workflow mode (UI Stop or CA). Global state cleared, MD preserved.",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra workflow_deactivate trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "workflow_draft_create",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R36 T3: push agent-authored draft MD into in-memory store, return token. UI editor opens `/ui/wo",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra workflow_draft_create trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "workflow_draft_get",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R36 T1: UI editor pulls draft by token (called when URL has `?draft=<token>`).",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi workflow_draft_get với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi workflow_draft_get بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "workflow_get_current",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "07_error_schema_hints",
+        "26_workflow_ingestion"
+      ],
+      "description": "V15 R35 / R37 Y1 T1: read current step body (idempotent). project_path optional.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi workflow_get_current với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi workflow_get_current بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "workflow_goto_step",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R42 T3: jump current_step to arbitrary target (forward + backward, no cycle limit). Logs jump_hi",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra workflow_goto_step trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "workflow_list",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "07_error_schema_hints",
+        "26_workflow_ingestion",
+        "SKILLS.md_router"
+      ],
+      "description": "V15 R35 T1: list `.md` workflows from project (`<project>/.orchestrator_cache/workflows/`) and globa",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi workflow_list với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi workflow_list بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "workflow_read_md",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R36 T1: read raw MD body for a workflow (project-first, global fallback). Used by agent edit-the",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi workflow_read_md với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi workflow_read_md بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "workflow_reset",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "26_workflow_ingestion"
+      ],
+      "description": "V15 R35 / R37 Y1 T3: reset workflow state back to step 1. Archives old state.",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra workflow_reset trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "workflow_retry_step",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "26_workflow_ingestion"
+      ],
+      "description": "V15 R35 / R37 Y1 T3: retry current step after fail/pause.",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra workflow_retry_step trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "workflow_save_md",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "V15 R36 / R37 Y1 T3: agent-friendly alias of workflow_create_from_ui. Always saves to GLOBAL workflo",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra workflow_save_md trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "workflow_skip_step",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "26_workflow_ingestion"
+      ],
+      "description": "V15 R35 / R37 Y1 T3: skip current step, advance to next.",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra workflow_skip_step trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "workflow_start",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "07_error_schema_hints",
+        "26_workflow_ingestion",
+        "SKILLS.md_router"
+      ],
+      "description": "V15 R35 / R37 Y1 T3: start workflow by name. Creates state file (current_step=1), returns step 1 bod",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra workflow_start trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "workflow_status",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "16_server_lifecycle",
+        "26_workflow_ingestion"
+      ],
+      "description": "V15 R35 / R37 Y1 T1: full workflow state (current_step, step statuses, timestamps, evidence).",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi workflow_status với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi workflow_status بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "workflow_status_registry",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "21_tool_matrix"
+      ],
+      "description": "R43.2 C2: T1 registry inspector — cache/drift/mode/backup state from .orchestrator_cache. Renamed to",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi workflow_status_registry với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi workflow_status_registry بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "workflow_submit_step",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "05_write_pipeline",
+        "07_error_schema_hints",
+        "26_workflow_ingestion",
+        "SKILLS.md_router"
+      ],
+      "description": "V15 R35 / R37 / R42 T3 / R77 / R92: submit step (done|fail). done→advance; fail→pause. R42: also acc",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra workflow_submit_step trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        }
+      ]
+    },
+    {
+      "name": "write_draft_abort",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "Discard a pending write draft without writing anything to the target file.",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra write_draft_abort trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool write_draft_abort không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "write_draft_patch",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "Fix ONLY a failed line range of a pending write draft (opened automatically when write_fix/write_new",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi write_draft_patch với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi write_draft_patch với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool write_draft_patch không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "write_draft_status",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "Inspect a pending write draft: remaining failed_parts with line-accurate errors and excerpts. Empty ",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra write_draft_status trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool write_draft_status không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "write_fix",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "00_skill_router",
+        "02_mode_control",
+        "04_tool_tiers",
+        "05_write_pipeline",
+        "06_token_auth",
+        "07_error_schema_hints",
+        "09_testing_validation",
+        "11_repo_vs_runtime",
+        "12_native_audit",
+        "13_apply_after_dry_run",
+        "14_token_jwt_redesign",
+        "17_session_audit",
+        "27_context_pool_write",
+        "broker-worker-bootstrap",
+        "SKILLS.md_router"
+      ],
+      "description": "Replace a line range in one file, create a .bak backup, and sync the cache after writing.",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi write_fix với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi write_fix với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "write_fix_html",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "05_write_pipeline",
+        "12_native_audit"
+      ],
+      "description": "Edit a range inside an .html file with base64, encoding_check, and diff_preview; performs delimiter ",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi write_fix_html với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi write_fix_html với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "write_new_file",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "05_write_pipeline",
+        "12_native_audit",
+        "13_apply_after_dry_run",
+        "27_context_pool_write",
+        "broker-worker-bootstrap",
+        "SKILLS.md_router"
+      ],
+      "description": "Create a new file. Supports dry_run preview, base64 UTF-8 strict, diff_preview, and apply_after_dry_",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi write_new_file với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi write_new_file với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "write_transaction",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "05_write_pipeline",
+        "06_token_auth",
+        "07_error_schema_hints",
+        "12_native_audit"
+      ],
+      "description": "V15 R8 B.2 (+R43 P1 #3-B): atomic multi-file write batch with rollback. R43 ops can be tool='write_f",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi write_transaction với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi write_transaction với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    }
+  ]
+}

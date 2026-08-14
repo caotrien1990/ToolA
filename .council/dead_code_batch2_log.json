@@ -1,0 +1,91 @@
+{
+    "batch":  2,
+    "scope":  "orchestrator_server.py _council_* strong-dead",
+    "method":  "in-place FileShare.ReadWrite via run_ps1_script (write_fix blocked: WinError5 atomic-rename on locked running-server file; FILE_CHANGED resolved via refresh_project_map)",
+    "backup":  "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\kilo\\kiloc5_orchestrator_server_bak.py",
+    "target_file":  "orchestrator_server.py",
+    "before_lines":  9143,
+    "after_lines":  9052,
+    "loc_removed":  91,
+    "removed_count":  8,
+    "removals":  [
+                     {
+                         "name":  "_council_codex_token",
+                         "range":  "5341-5354",
+                         "lines":  14,
+                         "refs":  0
+                     },
+                     {
+                         "name":  "_council_log_tail",
+                         "range":  "5129-5132",
+                         "lines":  4,
+                         "refs":  0
+                     },
+                     {
+                         "name":  "_council_run_json",
+                         "range":  "4689-4711",
+                         "lines":  23,
+                         "refs":  0
+                     },
+                     {
+                         "name":  "_council_clear_context",
+                         "range":  "3710-3720",
+                         "lines":  11,
+                         "refs":  0
+                     },
+                     {
+                         "name":  "_council_pre",
+                         "range":  "3137-3175(cluster)",
+                         "lines":  39,
+                         "refs":  0
+                     },
+                     {
+                         "name":  "_council_short",
+                         "range":  "3141-3146(in cluster)",
+                         "refs":  0
+                     },
+                     {
+                         "name":  "_council_percent",
+                         "range":  "3149-3153(in cluster)",
+                         "refs":  0
+                     },
+                     {
+                         "name":  "_council_reset_hours",
+                         "range":  "3156-3173(in cluster)",
+                         "refs":  0
+                     }
+                 ],
+    "kept_reasons":  [
+                         "_council_build_broker_context: comment ref orchestrator/graph/query.py:520 hints dynamic/auto-injected use",
+                         "_council_mark_paused,_council_local_retired_vscode_usage,_council_alive_agents: referenced by tests",
+                         "_scan_filtered: non-_council async (route-handler risk), out of batch2 scope"
+                     ],
+    "verification":  {
+                         "search":  "word-boundary regex across ALL files (*.py + *)",
+                         "call_refs":  0,
+                         "bare_refs":  0,
+                         "all_files":  true,
+                         "re_verified_after_file_change":  true
+                     },
+    "import_smoke":  "IMPORT_OK (exit 0)",
+    "targeted_tests":  "153 passed, 0 failed, 1 warning (pre-existing _council_queue_drain), 0 skipped",
+    "pytest_result":  {
+                          "passed":  370,
+                          "failed":  0,
+                          "errors":  0,
+                          "skipped":  1,
+                          "warnings":  1,
+                          "exit_code":  0,
+                          "duration_s":  47.3,
+                          "baseline_note":  "361/0/1 stated; +9 from test additions since baseline, NOT from batch2; 0 new failures"
+                      },
+    "cumulative":  {
+                       "batch1_functions":  3,
+                       "batch1_loc":  24,
+                       "batch2_functions":  8,
+                       "batch2_loc":  91,
+                       "total_functions":  11,
+                       "total_loc":  115
+                   },
+    "status":  "done"
+}

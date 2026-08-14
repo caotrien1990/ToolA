@@ -1,0 +1,9 @@
+Query: PROMPT_LINE_FOR_ECHO_SUBTRACTION
+PROMPT_LINE_FOR_ECHO_SUBTRACTION
+─  Reasoning  ─────────────────────────
+checked the representative sample
+───────────────────────────────────────
+─  ⚕ Hermes  ──────────────────────────
+HERMES_GOLDEN_OK
+───────────────────────────────────────
+Session: sample-session

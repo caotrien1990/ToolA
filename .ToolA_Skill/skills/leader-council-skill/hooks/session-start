@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# SessionStart hook for leader-council-skill (Lựa chọn A — drift-proof)
+# Force-injects the canonical leader rule, SKILL.md body, and references/ every session.
+# Pattern ported from superpowers/hooks/session-start (proven in zcode).
+# Fires on startup|resume|clear|compact → survives compaction.
+
+set -euo pipefail
+
+# Absolute paths (user-level skill — no CLAUDE_PLUGIN_ROOT available).
+SKILL_DIR="${LEADER_COUNCIL_SKILL_DIR:-C:/Users/ADMIN/.zcode/skills/leader-council-skill}"
+LEADER_RULE="${LEADER_COUNCIL_RULE_PATH:-D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/project-orchestrator/.council/council_rule_leader.md}"
+SKILL_MD="${SKILL_DIR}/SKILL.md"
+REF_DISPATCH="${SKILL_DIR}/references/dispatch-template.md"
+REF_QPROTO="${SKILL_DIR}/references/q-protocol.md"
+
+# Read skill body + references (fail-open: if a file is missing, skip it
+# rather than break the session start).
+leader_rule=""
+[ -f "$LEADER_RULE" ] && leader_rule=$(cat "$LEADER_RULE" 2>/dev/null || echo "")
+skill_body=""
+[ -f "$SKILL_MD" ] && skill_body=$(cat "$SKILL_MD" 2>/dev/null || echo "")
+ref_dispatch=""
+[ -f "$REF_DISPATCH" ] && ref_dispatch=$(cat "$REF_DISPATCH" 2>/dev/null || echo "")
+ref_qproto=""
+[ -f "$REF_QPROTO" ] && ref_qproto=$(cat "$REF_QPROTO" 2>/dev/null || echo "")
+
+# Escape string for JSON embedding (backslash, quotes, newline, CR, tab).
+escape_for_json() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
+
+leader_rule_escaped=$(escape_for_json "$leader_rule")
+skill_escaped=$(escape_for_json "$skill_body")
+dispatch_escaped=$(escape_for_json "$ref_dispatch")
+qproto_escaped=$(escape_for_json "$ref_qproto")
+
+# Wrap in EXTREMELY_IMPORTANT so the model treats it as hard context,
+# not a hint. This is the same wrapper superpowers uses (proven pattern).
+session_context="<EXTREMELY_IMPORTANT>\nYou are a council leader. The canonical council leader rule below has precedence over copied skill/reference content if they conflict. These are HARD rules — do NOT skip them. Read and obey BEFORE the first council_message dispatch.\n\n=== CANONICAL COUNCIL LEADER RULE (.council/council_rule_leader.md) ===\n${leader_rule_escaped}\n\n=== SKILL.md (leader-council-skill) ===\n${skill_escaped}\n\n=== references/dispatch-template.md (USE THIS TEMPLATE for every council_message) ===\n${dispatch_escaped}\n\n=== references/q-protocol.md (Q gate before dispatch) ===\n${qproto_escaped}\n</EXTREMELY_IMPORTANT>"
+
+# Emit JSON. zcode reads hookSpecificOutput.additionalContext (nested).
+printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": "%s"\n  }\n}\n' "$session_context"
+
+exit 0

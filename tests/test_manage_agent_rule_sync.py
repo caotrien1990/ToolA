@@ -1,0 +1,101 @@
+import hashlib
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+import code_tools
+
+
+class TestManageAgentMarkdownRuleSync(unittest.TestCase):
+    def setUp(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tempdir.cleanup)
+        self.rule_path = Path(self.tempdir.name) / "AGENTS.md"
+        self.agent = {
+            "id": "test-agent",
+            "rule_file": str(self.rule_path),
+            "rule_format": "markdown",
+            "rule_template": "slim",
+        }
+        self.source_sha = hashlib.sha256(b"canonical rule").hexdigest()
+        self.patches = [
+            mock.patch.object(code_tools, "_ma_rule_body", return_value="# Canonical rule\n\nUse [A]."),
+            mock.patch.object(
+                code_tools,
+                "_ma_rule_source_metadata",
+                return_value={
+                    "rule_source": "SLIM_RULE.txt",
+                    "rule_source_path": "test/SLIM_RULE.txt",
+                    "rule_source_sha256": self.source_sha,
+                },
+            ),
+        ]
+        for patcher in self.patches:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_dry_run_reports_hashes_and_bounded_diff_without_write(self):
+        self.rule_path.write_text("old\n" + ("x" * 5000), encoding="utf-8")
+        original = self.rule_path.read_text(encoding="utf-8")
+
+        with mock.patch.object(code_tools, "_atomic_write_text") as write, \
+                mock.patch.object(code_tools, "_ma_backup") as backup:
+            result = code_tools._ma_write_rule(self.agent, {}, dry_run=True)
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["dry_run"])
+        self.assertTrue(result["changed"])
+        self.assertEqual(result["current_hash"], code_tools._sha256_text(original))
+        self.assertEqual(len(result["expected_hash"]), 64)
+        self.assertLessEqual(len(result["diff_summary"]), code_tools._MA_RULE_DIFF_MAX_CHARS)
+        self.assertEqual(self.rule_path.read_text(encoding="utf-8"), original)
+        write.assert_not_called()
+        backup.assert_not_called()
+
+    def test_unchanged_apply_does_not_backup_or_rewrite(self):
+        preview = code_tools._ma_write_rule(self.agent, {}, dry_run=True)
+        expected = (
+            "# Canonical rule\n\nUse [A].\n\n"
+            f"<!-- [A] managed rule | mode=A | template=slim | rule_source_sha256={self.source_sha} | "
+            "owned by manage_agent sync_rule/set_mode - do not hand-edit -->\n"
+        )
+        self.assertEqual(preview["expected_hash"], code_tools._sha256_text(expected))
+        self.assertIn(f"rule_source_sha256={self.source_sha}", expected)
+        self.assertNotIn("generated=", expected)
+        self.rule_path.write_text(expected, encoding="utf-8")
+
+        with mock.patch.object(code_tools, "_atomic_write_text") as write, \
+                mock.patch.object(code_tools, "_ma_backup") as backup:
+            result = code_tools._ma_write_rule(self.agent, {}, dry_run=False)
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["changed"])
+        self.assertEqual(result["backup"], "")
+        self.assertEqual(result["current_hash"], result["expected_hash"])
+        self.assertEqual(result["diff_summary"], "")
+        write.assert_not_called()
+        backup.assert_not_called()
+
+    def test_readback_mismatch_restores_backup(self):
+        original = "original unmanaged rule\n"
+        self.rule_path.write_text(original, encoding="utf-8")
+
+        def corrupt_write(path, text, encoding="utf-8"):
+            Path(path).write_text("corrupt readback\n", encoding=encoding)
+            return "atomic_replace"
+
+        with mock.patch.object(code_tools, "_atomic_write_text", side_effect=corrupt_write) as write:
+            result = code_tools._ma_write_rule(self.agent, {}, dry_run=False)
+
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["changed"])
+        self.assertEqual(result["error"], "post-write readback mismatch; rolled back")
+        self.assertTrue(result["backup"])
+        self.assertTrue(Path(result["backup"]).is_file())
+        self.assertEqual(self.rule_path.read_text(encoding="utf-8"), original)
+        write.assert_called_once()
+
+
+if __name__ == "__main__":
+    unittest.main()

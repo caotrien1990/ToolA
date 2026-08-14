@@ -1,0 +1,57 @@
+# V15 R15 — Tool Matrix CI gate
+# Runs sync_tool_matrix.py --ci on push + PR.
+# Exit 1 if drift_count > 0 blocks the workflow → blocks merge.
+#
+# To enable: this file is auto-detected by GitHub when present in
+# .github/workflows/. No further setup needed once the repo is pushed.
+
+name: tool-matrix-ci
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  # Allow manual trigger from Actions tab
+  workflow_dispatch:
+
+jobs:
+  check-tool-matrix:
+    name: 4-layer sync audit
+    runs-on: windows-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Show python version
+        run: python --version
+
+      - name: Run sync_tool_matrix --ci
+        run: |
+          cd project-orchestrator
+          python scripts/sync_tool_matrix.py --ci
+        shell: pwsh
+
+      - name: Generate full report on failure
+        if: failure()
+        run: |
+          cd project-orchestrator
+          python scripts/sync_tool_matrix.py --check --output md > matrix_audit.md
+          echo "=== matrix_audit.md ==="
+          cat matrix_audit.md
+        shell: pwsh
+
+      - name: Upload audit report artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tool-matrix-audit
+          path: project-orchestrator/matrix_audit.md
+          retention-days: 7

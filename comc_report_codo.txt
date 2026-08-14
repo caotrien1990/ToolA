@@ -1,0 +1,41 @@
+KET QUA TEST 180 TOOL MCP - COM_C BAO CAO
+
+TONG QUAN:
+- Canonical tools trong TOOL_MAP/TOOL_SCHEMAS: 179
+- Tool late-registered qua orchestrator_server (council_message): 1
+- Tong cong: 180 tools
+
+KET QUA test_all_tools.py (4-Ktr: KtrB/KtrSK/KtrSH/KtrIn):
+- 179 tools checked, 171 FULL PASS (ca 4 Ktr)
+- 8 tools thieu KtrSK (khong skill nao de cap):
+  assert_button_click_changes_state, assert_console_no_error, assert_text_visible,
+  convene_council, council_config_diff, council_config_sync, desktop_send_text, wait_for_idle
+- KtrB: 179/179 PASS (full backend implementation)
+- KtrSH: 179/179 PASS (full schema coverage)
+- KtrIn: 179/179 PASS (full inventory coverage)
+
+KET QUA UNIT TEST SUITE (161 test cases, PASS 161/161, FAIL 0, SKIP 0):
+
+1. test_ca_first_upgrade_contract: 16/16 PASS
+2. test_code_tools_cache: 54/54 PASS
+3. test_orchestrator_errors: 4/4 PASS
+4. test_orchestrator_server_contract: 78/78 PASS
+   (coverage: council_message route, pause/play, broker, clear-session, tool inspector)
+5. test_orchestrator_storage: 0 tests (empty file)
+6. test_registry_pipeline: 3/3 PASS
+   (live_registry_has_zero_drift - xac nhan ca 180 tools khong co drift)
+7. test_release_gate_182: 3/3 PASS
+   (coverage matrix 182 IDs, baseline preserves views, report viewer UX)
+8. test_restart_orchestrator: 3/3 PASS
+
+TOOL 180 (council_message):
+- Dang ky qua orchestrator_server.py late-registration
+- Da duoc test trong test_registry_pipeline (validate_registry zero drift)
+- Da duoc test trong test_orchestrator_server_contract (message broker, capability gate, context fallback)
+
+BANG CHUNG/DUONG DAN LOG:
+- tool_test_results.json: project-orchestrator/tool_test_results.json
+- test chay tu: python test_all_tools.py + python -m unittest tests/ -v
+- fix_coverage_182.md: matrix day du 1..182
+
+KET LUAN: 180/180 tools da test, 161 unit tests pass, 0 fail, 0 skip. 8 tools thieu skill reference (non-blocking, KtrSK gap acknowledged).

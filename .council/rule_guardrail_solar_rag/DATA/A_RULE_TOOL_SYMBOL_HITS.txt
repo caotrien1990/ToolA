@@ -1,0 +1,500 @@
+﻿D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\clau:1:{"ok": true, "from": "comc", "to": "clau", "dispatched": true, "reply": "", "error_name": "", "note": "dispatched (non-blocking worker-to-worker); read .council/broker_filtered.jsonl for the reply"}
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\body[sender]:1:{"ok": true, "from": "comc", "to": "clau", "dispatched": true, "reply": "", "error_name": "", "note": "dispatched (non-blocking worker-to-worker); read .council/broker_filtered.jsonl for the reply"}
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\AGENT_BOOTSTRAP_PROMPT.md:80:Platform tools are not exempt from [0e]. After health OK, platform execution is allowed only as API transport to [A:API] via Invoke-RestMethod/approved wrapper. Platform file tools (`read_file`, `write_to_file`, `replace_in_file`, `search_files`, `list_files`) are forbidden for repo/project files. Do not bypass open_session, dry-run, validation, or audit. If no API transport is available, STOP and notify User. Bootstrap rule file read is the only pre-health native-read exception.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\AGENT_BOOTSTRAP_PROMPT.md:116:If path/action is inferable from User input, do not ask again; proceed within current mode constraints.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\AGENT_BOOTSTRAP_PROMPT.md:139:Do not infer token from tier label.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\AGENT_BOOTSTRAP_PROMPT.md:182:Success requires exit_code=0 and timed_out=false; never infer success from stdout text.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\AGENT_BOOTSTRAP_PROMPT.md:205:On UNSUPPORTED_FIELD/SCHEMA_VIOLATION, use corrected_payload if provided; otherwise rebuild from accepted_fields/payload_example; retry once.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\AGENT_BOOTSTRAP_PROMPT.md:211:Command Helper: [A:API]/api/command_helper if available; otherwise use documented wrapper from [PI:7], PowerShell wrappers, blocked Windows commands.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\AGENT_WORKFLOW.md:3:This workflow is mandatory for Cloud Agent (CA) sessions that work on this project.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\AGENT_WORKFLOW.md:11:- `WORKFLOW_T1.md` / `WORKFLOW_T2.md` / `WORKFLOW_T3.md` / `WORKFLOW_T4.md` — step-sized progressive workflow owners
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\AGENT_WORKFLOW.md:18:Workflow chooses the next step. The step chooses one allowed tool family. The chosen tool family loads only the matching schema. The schema loads only the matching hint. The hint routes only to the matching skill.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\AGENT_WORKFLOW.md:20:Use `progressive_matrix_check` for static alignment between workflow docs, schema phase metadata, and UI affordances. Treat that as design certification only; runtime behavior still requires the relevant T4 harness.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\AGENT_WORKFLOW.md:34:2. `get_project_summary(project_path)` — route from groups, hotspots, entrypoints, and context flags.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\AGENT_WORKFLOW.md:35:3. `workflow_status(project_path)` when workflow state exists.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\AGENT_WORKFLOW.md:42:1. Follow `WORKFLOW_T1.md` and load only the next step-sized hint/schema/skill.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\AGENT_WORKFLOW.md:67:4. Prove browser/server behavior with T4 runtime harnesses; do not certify it from the matrix alone.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\AGENT_WORKFLOW.md:84:2. Detect code language from extension, imports, parser data, and cache metadata.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc_report_codo.txt:5:- Tool late-registered qua orchestrator_server (council_message): 1
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc_report_codo.txt:10:- 8 tools thieu KtrSK (khong skill nao de cap):
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc_report_codo.txt:12:  convene_council, council_config_diff, council_config_sync, desktop_send_text, wait_for_idle
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc_report_codo.txt:20:2. test_code_tools_cache: 54/54 PASS
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc_report_codo.txt:22:4. test_orchestrator_server_contract: 78/78 PASS
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc_report_codo.txt:23:   (coverage: council_message route, pause/play, broker, clear-session, tool inspector)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc_report_codo.txt:31:TOOL 180 (council_message):
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc_report_codo.txt:32:- Dang ky qua orchestrator_server.py late-registration
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc_report_codo.txt:34:- Da duoc test trong test_orchestrator_server_contract (message broker, capability gate, context fallback)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc_report_codo.txt:41:KET LUAN: 180/180 tools da test, 161 unit tests pass, 0 fail, 0 skip. 8 tools thieu skill reference (non-blocking, KtrSK gap acknowledged).
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\agents_registry.json:3:  "mcp_args_server": "D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/project-orchestrator/orchestrator_server.py",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\agents_registry.json:78:      "provider": "commandcode",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\agents_registry.json:82:      "rule_file": "C:/Users/ADMIN/.commandcode/AGENTS.md",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\COUNCIL_TRACKER.py:22:    "broker_filtered.jsonl",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\COUNCIL_TRACKER.py:105:def check_commandcode_output():
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\COUNCIL_TRACKER.py:133:    snapshot; consumers (the [A] `council_tracker` tool / any CA) read it from the
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\COUNCIL_TRACKER.py:183:    bpath = os.path.join(COUNCIL_DIR, "broker_filtered.jsonl")
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\COUNCIL_TRACKER.py:198:            from_ = e.get("from", "?")
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\COUNCIL_TRACKER.py:204:            lines.append("  [%s] %s → %s  type=%s  ok=%s" % (ts_e, from_, to_, typ, ok))
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\COUNCIL_TRACKER.py:247:        os.path.join(COUNCIL_DIR, "broker_filtered.jsonl"),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\COUNCIL_TRACKER.py:294:    cc_files = check_commandcode_output()
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:13:- Self-reference: "Com" / "Anh" per `C:\Users\ADMIN\.commandcode\AGENTS.md` memory.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:14:- Mode: CA / brainstorm feedback worker. No council activation; no `convene_council`. No `bat hoi dong tr` was received from user.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:35:- No `[A]` source, rule, code, or skill was read.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:39:- `shell_command` `cmd /c "type <path>"`: OK — direct read from `D:\BR`.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:77:8. **HermC Q1 reject list missing.** Devine plan §1 has "Select one canonical CORE source from runtime-reader evidence, not by invented filename" — good — but does not name the rejected alternatives that HermC Q1 documented: symlink indirection (Windows fragile), content-addressed-only (kicks the can), Docker tag-to-digest (wrong use case), SLSA/in-toto (overkill), Git OID (git dependency). **Fix:** add a "Do Not Adopt" sub-bullet listing these 4 alternatives with one-line rationale each.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:85:12. **Cost discipline rule underweight.** Devine plan §"Immediate Next Step" says "create a concrete patch plan from Phase 0 and Phase 1 only, with one owner and one verifier per item" — correct — but does not surface the cost-cap rule (1 leader round + 2 worker rounds max; 3rd worker round = STOP + report to Anh, no silent re-cut). All 4 Round 5 plans converge on this. **Fix:** add a "Cost discipline" bullet in §"Immediate Next Step".
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:97:18. **`sender` field name not enforced in schema.** Devine plan §4 says broker must enforce `sender` not `from` — correct — but does not say the JSON Schema `task_envelope_v1.json` and `worker_reply_v1.json` must also enforce this. ComC2_Round5 §6.4 R6 reject: "`sender` field constraint not propagated to JSON Schema". **Fix:** add "(also enforced in JSON Schema artifact; field name is `sender`, not `from`)".
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:107:23. **`requires_audit_write_session` / `requires_page_session` tool schema labeling missing.** Devine plan §2 says "Tool schemas should move from generic `requires_session` to `requires_audit_write_session` or `requires_page_session`" — correct — but does not list which tools fall into which bucket. ComC2_Round5 §6.5: `write_new_file`, `write_fix`, `validate_file`, `cache_delta` → `requires_audit_write_session`; DOM/CDP/browser/Electron → `requires_page_session`. **Fix:** add the bucket list as Phase 1 deliverable.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:111:25. **`sync_rule` as single sync path underweight.** Devine plan §1 says "Generated/slim/bootstrap/council artifacts must include RULE-GEN-FROM etc." — correct — but does not name `manage_agent(action='sync_rule', target='all')` as the single regeneration path. ComC2_Round5 §6.1 #8, ClauC_Round5 §5.0 #6, comc1_Round5 §5.1.8, CodoC_Round5 §2 #4 (implied). **Fix:** add "Regeneration path: `manage_agent(action='sync_rule', target='all')`. Generated L1 files are protected from direct edits."
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:113:26. **Root shim 3-step cleanup missing.** Devine plan does not mention the root shim (`CLOSE_AS_LOGIC_DUPLICATE` → resolver verify → deprecate/remove). All 4 Round 5 plans document this. **Fix:** add to Phase 1 deliverables: "Root shim cleanup: (1) close as `CLOSE_AS_LOGIC_DUPLICATE`; (2) verify `read_skill(24_council_tr)` returns path matching `RULE-GEN-FROM` header AND registry entry, NOT shim path; (3) deprecate/remove shim after resolver evidence."
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:117:28. **Drift = sha mismatch OR path missing rule underweight.** Devine plan §1 implies drift detection via the loader but does not state the rule explicitly: drift = sha mismatch on registry entry OR canonical path missing from registry (not line count). ComC2_Round5 §6.1 #7, ClauC_Round5 §5.0 #5, comc1_Round5 §5.1.7, CodoC_Round5 §Rejected #10. **Fix:** add a 1-sentence rule.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:153:- **Finding #18:** `sender` field enforcement at schema layer (not just broker).
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:196:7. **No skills-first YAML migration.** The 4 plans defer. Devine plan §5 (Phase 5) defers. **Correct.**
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:213:2. **Expand the registry split-brain note** from "Known residual gap" to a 2-sentence procedure:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:217:   > Regeneration path: `manage_agent(action='sync_rule', target='all')`. Generated L1 files are protected from direct edits.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:220:   > Drift = sha mismatch on registry entry OR canonical path missing from registry. Line-count metric rejected.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:224:1. **Add `audit_log` rule line** (full text from ComC2_Round5 §6.5):
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:246:2. **Expand `sender` rule**:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:247:   > `sender` (NOT `from`) is enforced at BOTH broker boundary AND JSON Schema layer (`task_envelope_v1.json` + `worker_reply_v1.json`).
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:253:   > Worker reply requires 9 fields: `sender`, `task_id`, `verdict`, `evidence`, `changed_files`, `tests_run`, `residual_risk`, `artifact_path`, `fallback_used`. Optional: `next_action_suggested` (max 200 chars, ≤2 dòng).
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:268:   > Worker names from non-PID sources are REJECTED or NORMALIZED at the broker, not just labeled `verified=false`. `council_message` MUST use field `sender` (not `from`) — enforced at broker boundary AND in JSON Schema.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:281:   > Root shim cleanup: (1) close as `CLOSE_AS_LOGIC_DUPLICATE`; (2) verify `read_skill(24_council_tr)` returns path matching `RULE-GEN-FROM` header AND `canonical_registry.yaml[24_council_tr].path`, NOT shim path; (3) deprecate/remove shim after resolver evidence.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:284:   > Every canonical rule must specify: `who reads` / `enforcement boundary` / `violation detection`. Missing any → guidance, rejected from canonical.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:288:1. **Expand from 1 paragraph to ~5 bullets**:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:318:9. **Remove Qwen from model pool.** All 4 plans adopt. **Keep.**
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:353:- **Broker envelope + reply schema:** 80% (missing `task_id` nuance, sender dual-layer enforcement, threshold behavior, field count).
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\comc2_feedback_devineplan.md:381:- **No [A] source, rule, code, or skill was read or written.**
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\hermes:1:{"ok": true, "from": "comc", "to": "hermes", "dispatched": true, "reply": "", "error_name": "", "note": "dispatched (non-blocking worker-to-worker); read .council/broker_filtered.jsonl for the reply"}
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\fix_coverage_182.md:181:| 177 | Backlog restore_from_backup enhancement tracked | BACKLOG |
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\codo:1:{"ok": true, "from": "comc", "to": "codo", "dispatched": true, "reply": "", "error_name": "", "note": "dispatched (non-blocking worker-to-worker); read .council/broker_filtered.jsonl for the reply"}
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:19:from datetime import datetime, timedelta
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:20:from pathlib import Path
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:24:from rule_core import get_rule_core, get_rule_core_runtime_paths
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:28:# CAN-042: single canonical SKIP_DIRS source = surgical_mapper.SKIP_DIRS. code_tools
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:29:# and orchestrator_server alias it so all three modules share one value (previously
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:30:# orchestrator_server held a divergent 11-entry subset).
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:68:    # V15 R13: get_rule_core_text kept for backward compat (existing UI "Get Core Rule" button
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:70:    # session prompt via prepare_ca_session — CORE_RULE.txt is the agent's GLOBAL rule
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:72:    "get_rule_core_text",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:77:    "workflow_status", "workflow_status_registry", "next_recommended_action", "capability_status",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:81:    "cep_manifest_validate", "cep_extension_status", "convene_council",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:82:    "council_config_diff", "council_tracker",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:90:    "create_build_context", "set_workflow_mode", "apply_after_dry_run",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:94:    # Council SOT: writes derived rule docs from council_config.json
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:107:    "set_workflow_mode",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:109:    # update_workflow_state are INTERNAL functions (not in TOOL_MAP, not callable via
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:115:    # These were missing from protected set → metadata mismatch surfaced in audit.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:129:# Token gate (X-Orchestrator-Token) is DECOUPLED from mutating/session semantics.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:131:# orchestrator_server._MUTATING_TOOLS). But ONLY these genuinely destructive /
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:178:    "set_workflow_mode": "audit",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:239:    # to the next strategy (e.g. _resolve_project_from_page_id).
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:343:                notes.append("project root found from parent markers")
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:351:                notes.append("project root found from parent markers")
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:641:def _workflow_state_path(project_path: str) -> Path:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:662:#   - session:             session/workflow lifecycle (not started/active/found)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:870:    check = _encoding_check_from_text(text, encoding)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:875:def _encoding_check_from_text(text: str, encoding_used: str = "plain") -> dict:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:890:def _encoding_check_from_file(path: Path, encoding_used: str = "utf-8") -> dict:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:894:        check = _encoding_check_from_text(text, encoding_used)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:913:def _unified_diff_preview(before: str, after: str, fromfile: str, tofile: str, limit: int = 120) -> dict:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:917:        fromfile=fromfile,
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:949:        "expires_at": datetime.fromtimestamp(expires_at).isoformat(timespec="seconds"),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:963:                            # V15 R34: Rawcut-specific workflow profiles (each maps to a .workflow.json file)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1012:			"description": "Read exactly one line range from a file. Use this after find_symbol to fetch only the necessary content.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1075:					"expected_hash": {"type": "string", "default": "", "description": "R43 P0 #3-A: pass new_hash from previous write_fix response to bypass FILE_CHANGED guardrail in sequential same-file writes. Backend verifies disk hash matches before allowing bypass."},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1170:{"type": "function", "function": {"name": "get_rule_core_text", "description": "Return the rendered CORE_RULE text plus runtime path metadata and a content hash. HTTP bootstrap is canonical; pass a stable agent_id so per-agent cache does not collide.", "parameters": {"type": "object", "properties": {"agent_id": {"type": "string", "default": "", "description": "Stable agent id such as clau, codo, comc, ope, hermes, clin, or copi."}, "force": {"type": "boolean", "default": False, "description": "Force re-read when explicitly upgrading or verifying rules; otherwise omit."}}}}},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1171:    {"type": "function", "function": {"name": "audit_tool_matrix", "description": "V15 R13 / R22 — Cross-check TOOL_MAP / TOOL_SCHEMAS / TOOL_PHASES against skill SKILL.md trigger.tool, SKILLS.md router, harness *.md, and .ToolA_Skill/references/tool_surface_current.md. Returns drift list + summary + matrix_log_path. Auto-invoked by prepare_ca_session and open_session. R22 verbosity ∈ {full|terse|ref}: terse caps drift/alias_drift arrays at 3 + drops coverage/inventory_classification (~1500 tokens saved). Drift safety: auto-force full when drift_count>0 or progressive_gap_count>0.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string", "default": ""}, "include_coverage": {"type": "boolean", "default": False, "description": "Include per-tool coverage map (heavier response)"}, "verbosity": {"type": "string", "enum": ["full", "terse", "ref"], "default": "full", "description": "R22: terse caps arrays + drops coverage; ref drops all arrays."}}, "required": []}}},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1172:    {"type": "function", "function": {"name": "prepare_ca_session", "description": "Create one-paste CA bootstrap prompt for T1/T2 workflows. V15 R13: returns a MINIMAL session prompt (SESSION+task only); CORE_RULE lives in the agent's global rule.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "mode": {"type": "string", "default": "T1"}, "idea": {"type": "string", "default": ""}}, "required": ["project_path"]}}},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1173:    {"type": "function", "function": {"name": "set_workflow_mode", "description": "Set workflow mode in WORKFLOW_STATE.json.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "mode": {"type": "string"}, "idea": {"type": "string", "default": ""}}, "required": ["project_path", "mode"]}}},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1174:    {"type": "function", "function": {"name": "workflow_status_registry", "description": "R43.2 C2: T1 registry inspector — cache/drift/mode/backup state from .orchestrator_cache state file. Renamed from workflow_status to disambiguate from R35 MD workflow runner.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}}, "required": ["project_path"]}}},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1175:    # R43.2 C3: removed dead schemas for `create_session_bootstrap` + `update_workflow_state`
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1177:    {"type": "function", "function": {"name": "next_recommended_action", "description": "Return next deterministic workflow action.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}}, "required": ["project_path"]}}},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1185:	{"type": "function", "function": {"name": "backup_project", "description": "Create timestamped zip backup and manifest.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "backup_dir": {"type": "string"}, "force": {"type": "boolean", "default": False, "description": "Overwrite a backup from the same day"}, "keep_last_n": {"type": "integer", "default": 2, "description": "Maximum number of zip backups to keep"}, "timeout": {"type": "integer", "default": 120}}, "required": ["project_path"]}}},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1218:	{"type": "function", "function": {"name": "create_build_context", "description": "Create BUILD_CONTEXT.md from user-approved inputs only.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "idea": {"type": "string", "default": ""}, "approved_inputs": {"type": "string", "default": ""}}, "required": ["project_path"]}}},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1220:	{"type": "function", "function": {"name": "query_index", "description": "Filter files from INDEX by group, complexity, LOC, fnmatch pattern, and optional text query. V15 R11: auto_refresh=true (default) silently refreshes INDEX inline when drift detected; response sets auto_refreshed=true so CA knows. Set auto_refresh=false to receive STALE_INDEX error instead. file_pattern uses fnmatch against both the file name and the full relative path (e.g. '*.py', '*service*', '*autocutter*', 'src/*.ts').", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "query": {"type": "string", "default": ""}, "group": {"type": "string"}, "min_complexity": {"type": "integer"}, "min_loc": {"type": "integer"}, "file_pattern": {"type": "string", "description": "fnmatch pattern matched against basename or full relative path"}, "max_results": {"type": "integer", "default": 50}, "auto_refresh": {"type": "boolean", "default": True, "description": "When true and INDEX is stale, refresh inline then query."}}, "required": ["project_path"]}}},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1221:	{"type": "function", "function": {"name": "get_usage_stats", "description": "Read APP_SESSION_LOG.jsonl and SQLite session events. Set include_http_log=True to add stats from orchestrator.log (HTTP traffic, 4xx/5xx errors, flood polling).", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "last_n": {"type": "integer", "default": 200}, "include_http_log": {"type": "boolean", "default": True, "description": "Include HTTP access log stats from orchestrator.log"}}, "required": ["project_path"]}}},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1232:	{"type": "function", "function": {"name": "open_session", "description": "Open or resume the active session for a project. R22 verbosity ∈ {full|terse|ref}: terse compresses matrix_audit to 3 counts + drops path_resolution_note/progressive_gaps_hint/resolved_from/project_path_confirmed/root_exists (~400 tokens saved). Drift safety: auto-force full when drift_present or progressive_gap_count>0.", "parameters": {"type": "object", "properties": {"session_title": {"type": "string", "default": "", "description": "Session title (if empty -> 'Untitled Session {time}')"}, "project_path": {"type": "string", "default": ".", "description": "Project root (default '.')"}, "mode": {"type": "string", "default": "T1"}, "verbosity": {"type": "string", "enum": ["full", "terse", "ref"], "default": "full", "description": "R22: terse compresses metadata; drift auto-forces full."}}}}},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1233:	{"type": "function", "function": {"name": "close_session", "description": "Close the active session after log_native(native=[...]) has been called. V15 R64-D: now accepts either project_path (primary session lookup) OR session_id (direct lookup for sub-sessions like [Ac]/[Ad] opened mid-workflow). At least one of the two MUST be provided.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string", "default": "", "description": "Project root of the session to close. Use for the primary [Ab] session."}, "session_id": {"type": "string", "default": "", "description": "V15 R64-D: direct session_id lookup. Use when you opened multiple sessions (e.g. [Ac], [Ad] sub-sessions) and need to close a specific one without re-deriving its project_path. Pulled from open_session's response."}}}}},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1236:	{"type": "function", "function": {"name": "log_native_event", "description": "Record one native action in the session immediately when native is used instead of an [A] Rule C tool. Call inline right after the action.", "parameters": {"type": "object", "properties": {"action_type": {"type": "string", "description": "read|write|execute|validate|cache|backup|workflow"}, "tool_name": {"type": "string", "description": "Name of the native tool/command used, e.g. 'Edit', 'Bash', 'Read'"}, "target": {"type": "string", "default": ""}, "duration_ms": {"type": "integer", "default": 0}, "status": {"type": "string", "default": "ok", "description": "ok|error|warn"}, "reason": {"type": "string", "default": ""}, "instead_of": {"type": "string", "default": ""}, "failed_payload": {"type": "object", "default": {}}, "failed_error": {"type": "string", "default": ""}, "native_command": {"type": "string", "default": ""}, "scope": {"type": "string", "default": ""}, "risk": {"type": "string", "default": ""}, "transport": {"type": "string", "default": "native", "description": "R81: 'native' (true bypass of [A]) | 'via_a' (work done THROUGH an [A] tool e.g. write_new_file/run_project_test_script — logged for traceability, tagged via_A, NOT counted as a native fallback)."}, "project_path": {"type": "string", "default": ""}}, "required": ["action_type", "tool_name"]}}},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1240:	{"type": "function", "function": {"name": "get_session_events", "description": "Paginated events for one session. Pass session_id, or project_path to auto-resolve the active session.", "parameters": {"type": "object", "properties": {"session_id": {"type": "string", "default": ""}, "project_path": {"type": "string", "default": "", "description": "Auto-resolve the active session from project_path when session_id is empty"}, "limit": {"type": "integer", "default": 50}, "offset": {"type": "integer", "default": 0}}}}},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1280:        fn["description"] = "Read one bounded line range from a file. Supports max_lines with a backend cap."
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1303:        fn["description"] = "Create BENCHMARK_REQUEST.md from idea only. Does not accept description."
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1305:        fn["description"] = "Create BUILD_CONTEXT.md from idea and approved_inputs only. Does not accept name."
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1316:    "read_file_range": "Read one bounded line range from a file. Supports max_lines with a backend cap.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1327:    "get_rule_core_text": "Return rendered CORE_RULE text + runtime metadata. HTTP bootstrap; pass stable agent_id.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1328:    "audit_tool_matrix": "V15 R13 — Cross-check TOOL_MAP/schemas/skills/router/tool surface reference; reports drift + writes matrix_log.jsonl. Auto-invoked on session open/prepare.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1329:    "prepare_ca_session": "Create a one-paste CA bootstrap prompt for T1/T2 workflows. V15 R13: minimal dedup-safe session prompt.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1330:    "set_workflow_mode": "Set workflow mode in WORKFLOW_STATE.json.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1331:    "workflow_status_registry": "R43.2 C2: T1 registry inspector — cache/drift/mode/backup state from .orchestrator_cache. Renamed to disambiguate from MD workflow runner.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1333:    "update_workflow_state": "Update WORKFLOW_STATE.json.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1334:    "next_recommended_action": "Return the next deterministic workflow action.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1346:    "create_benchmark_request": "Create BENCHMARK_REQUEST.md from idea only. Does not accept description.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1347:    "create_build_context": "Create BUILD_CONTEXT.md from idea and approved_inputs only. Does not accept name.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1405:    "action_type": "read | write | execute | validate | cache | backup | workflow.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1426:    "confirm_hash": "Optional payload_hash from the dry-run response.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1429:    "session_id": "Session identifier from list_sessions.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1439:    "include_http_log": "Include HTTP access log stats from orchestrator.log.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1457:# (execute_script, create_session_bootstrap, update_workflow_state, update_file_cache)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1464:         "file_path": {"type": "string", "description": "Relative path inside project_path (e.g. 'code_tools.py')"},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1478:    {"type": "function", "function": {"name": "state", "description": "V15 R8/R11: Unified state dispatcher. aspect=cache|workflow|recommendation|session|all. Replaces cache_status/workflow_status/next_recommended_action when aggregated read is needed. R11 added 'session' aspect = recent events summary.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1481:         "aspect": {"type": "string", "enum": ["cache", "workflow", "recommendation", "session", "all"], "default": "all"},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1483:    {"type": "function", "function": {"name": "council_tracker", "description": "READ/COLLECT council live logs. Runs the council tracker collector and returns the path to the council_live.txt snapshot (broker dispatches + full prompts, raw ComC ARGV/output, council_events, latest replies). Call this FIRST when investigating council/broker/worker-dispatch/prompt/reply issues instead of hand-scraping .council. Auto-open is disabled (open_file is a no-op); archive behavior is kept (old snapshot zipped to archives/, fresh one written). save_output=false skips collection and just reads the current snapshot.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1492:TOOL_PHASES["council_tracker"] = "T1"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1496:TOOL_PHASES["audit_tool_matrix"] = "T3"  # V15 R13 audit category
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1503:from orchestrator.tools.read import read_file_range, list_structure
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1504:from orchestrator.tools.search import search_code, find_symbol
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1654:from orchestrator.tools.write import write_fix, write_new_file, apply_after_dry_run, delete_file
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1657:# Decouples script Python from orchestrator's own venv. Orchestrator may run on
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1783:                age_hours = (datetime.now() - datetime.fromisoformat(str(last_updated))).total_seconds() / 3600
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1819:    """V15 R14.1 — Line-level dedup: strip lines from `core_text` that already
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1822:    Use case (TH1): User pastes session prompt + CORE_RULE.txt into a fresh CA
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1826:    duplicate lines from CORE_RULE so the merged paste has no repeated text.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1831:    - Empty lines and pure dividers (═════ ... ═════) are kept in CORE_RULE
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1876:    - TH1: CA1 has NO global rule → User pastes this output (header + CORE_RULE)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1877:      directly at session start. CA1 learns workflow from CORE_RULE and the
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1878:      project anchor from the session header.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1879:    - TH2: CA2 ALREADY has CORE_RULE as global rule → User typically does NOT
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1886:        <CORE_RULE.txt with header-overlapping lines stripped line-by-line>
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1892:    - CORE_RULE-only sections (MODE, SAFETY, SKILL ROUTING, ERROR/RETRY,
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1914:        "- Active bootstrap rules may be loaded from the prompt. Rule loading is not native fallback.\n"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1916:        "- First [A] action: HTTP POST [A:API]/api/call/get_rule_core_text once. Do not call open_session except for explicit Clau/ClauC stateful T4 MCP work.\n"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1928:        "- New tools R16: inspect_project_runtime, launch_electron_with_cdp, dom_state_diff, extract_log_section, fill_value(encoding=base64). See skill 18 Recipe A-E.\n"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1929:        "- Failure triage in skill 18: button state does not change → check CDP attach. lost backslashes in fill → fill_value(encoding=base64). CSP unsafe-eval = warning (ignore default).\n"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1942:    core_text = get_rule_core()
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1964:def _default_workflow_state(project_path: str, mode: str, idea: str = "") -> dict:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:1999:async def update_workflow_state(project_path: str, mode: str = None, idea: str = "", **updates) -> str:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2010:        # merge-on-write instead; the workflow state is a single coherent document so
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2012:        path = _workflow_state_path(str(root))
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2017:            state = _default_workflow_state(str(root), mode or "T1", idea)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2025:        return {"ok": True, "workflow_state_path": str(path), "state": state}
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2077:        state = _default_workflow_state(str(root), mode, idea)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2078:        state_path = _workflow_state_path(str(root))
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2093:            _m = _audit_tool_matrix_sync(str(root))
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2103:            "workflow_state_path": str(state_path),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2112:            result["matrix_hint"] = "Drift detected — call audit_tool_matrix(include_coverage=true) or open Matrix Log panel."
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2133:def _rule_core_agent_key(agent_id: str = "") -> str:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2137:async def get_rule_core_text(agent_id: str = "", force: bool = False) -> str:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2138:    """R102-B once-guard: full CORE_RULE on first fetch per agent/TTL; repeated calls return a
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2142:        rendered = get_rule_core()
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2144:        key = _rule_core_agent_key(agent_id)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2153:                "hint": "CORE_RULE already returned for this agent within TTL; reuse the cached rule text in context. Pass force=true (or a distinct agent_id) to re-fetch.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2155:        runtime_paths = get_rule_core_runtime_paths()
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2168:def _audit_tool_matrix_sync(project_path: str = "") -> dict:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2170:    skill SKILL.md trigger.tool, SKILLS.md router, harness *.md test cases,
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2171:    and .ToolA_Skill/references/tool_surface_current.md to detect drift after tool add/remove.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2175:          ok, generated_at, summary: {code_tools, skill_tools, drift_count, ok_count},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2176:          drift: [{type, tool|skill|file, detail, severity}],
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2177:          coverage: {tool_name: {in_code, in_skills, in_router, in_inventory, tier}},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2182:    skill_root = path_runtime.ORCHESTRATOR_DIR / ".ToolA_Skill"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2183:    if not skill_root.exists():
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2184:        return {"ok": False, "error": "skill_root_missing", "path": str(skill_root)}
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2186:    code_tools_set = set(TOOL_MAP.keys())
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2195:    skills_md = skill_root / "SKILLS.md"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2197:    if skills_md.exists():
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2198:        for line in skills_md.read_text(encoding="utf-8", errors="ignore").splitlines():
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2199:            # Match: "- topic → NN_skill_name" rows
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2202:                router_topics.append({"topic": m.group(1).strip(), "skill": m.group(2)})
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2204:    # ---- Per-skill SKILL.md trigger.tool / trigger.task_pattern ----
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2205:    skill_tools = {}  # tool_name -> [skill_folder]
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2206:    skill_folders = []
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2207:    skills_dir = skill_root / "skills"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2208:    if skills_dir.exists():
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2209:        for skill_dir in sorted(skills_dir.iterdir()):
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2210:            if not skill_dir.is_dir():
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2212:            skill_md = skill_dir / "SKILL.md"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2213:            if not skill_md.exists():
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2215:            skill_folders.append(skill_dir.name)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2216:            txt = skill_md.read_text(encoding="utf-8", errors="ignore")
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2219:            # Avoids false positives from descriptive strings like "any protected T2/T3 tool".
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2220:            _known = code_tools_set | schema_names
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2229:                        skill_tools.setdefault(tn, []).append(skill_dir.name)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2232:    inventory_md = path_runtime.ORCHESTRATOR_DIR / ".ToolA_Skill" / "references" / "tool_surface_current.md"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2241:    for tool in sorted(code_tools_set | schema_names | set(skill_tools.keys())):
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2244:            "in_code": tool in code_tools_set,
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2246:            "in_skills": tool in skill_tools,
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2249:            "skill_refs": skill_tools.get(tool, []),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2258:        if cov["in_skills"] and not cov["in_code"]:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2259:            drift.append({"type": "skill_ref_missing_tool", "tool": tool, "skill_refs": cov["skill_refs"],
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2264:                          "detail": "Code tool not listed in .ToolA_Skill/references/tool_surface_current.md"})
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2267:    harness_dir = skill_root / "harness"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2284:                        "file": str(f.relative_to(skill_root)),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2291:    # Scan skill docs + bootstrap for legacy field mentions that have R19 aliases.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2292:    # R20: severity escalates to "medium" when the file is a CA-frequently-read skill
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2297:        srv = _sys.modules.get("orchestrator_server") or _sys.modules.get("__main__")
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2301:            scan_roots.append(path_runtime.ORCHESTRATOR_DIR / ".ToolA_Skill" / "skills")
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2310:        # R20: skills CA reads most often → escalate severity if mentions found here
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2315:            if any(f"/skills/{p}" in fn for p in _HOT_SKILL_PREFIXES):
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2394:                        # R28: skip file-path references like `tool_surface_current.md`
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2409:                for skill_md in root.rglob("SKILL.md"):
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2410:                    alias_drift.extend(_scan_file(skill_md, arg_aliases, retired_terms))
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2420:        from path_runtime import resolve_ui_html as _resolve_ui_html
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2444:    inventory_active = sorted(t for t in inventory_tools if t in code_tools_set)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2446:    inventory_extra_raw = sorted(t for t in inventory_tools if t not in code_tools_set and t not in _retired_terms)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2467:        "runtime_functions", "scanned_js_files", "skill_tools",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2485:            # Backtick-captured noise from inventory prose (e.g. `true`, `id` in JSON example)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2493:        elif "_" in tl and len(tl.split("_")) >= 3 and tl not in code_tools_set:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2500:        "code_tools": len(code_tools_set),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2502:        "skill_tools": len(skill_tools),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2503:        "skill_folders": len(skill_folders),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2516:        "ok_count": len(code_tools_set) - len(drift),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2535:    # (skill 00/07/17/18/20/22 that CA reads frequently)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2571:async def audit_tool_matrix(project_path: str = "", include_coverage: bool = False,
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2574:    TOOL_PHASES against skill SKILL.md, SKILLS.md router, harness, inventory.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2576:    Use after adding/removing a tool, or after large skill/workflow edits.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2586:        result = _audit_tool_matrix_sync(project_path)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2608:async def set_workflow_mode(project_path: str, mode: str, idea: str = "") -> str:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2609:    return await update_workflow_state(project_path, mode=mode, idea=idea)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2612:async def workflow_status_registry(project_path: str) -> str:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2613:    """V15 R43.2 C2 fix: renamed from workflow_status to avoid name collision with
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2614:    the R35 MD workflow version (line ~8112). Previously the second def silently
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2616:    Now distinctly callable as `workflow_status_registry` for cache/drift/mode/backup
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2617:    state of project-registry (.orchestrator_cache state file), separate from
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2618:    R35 MD-driven workflow runner (`workflow_status`).
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2622:        path = _workflow_state_path(str(root))
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2624:            state = _default_workflow_state(str(root), "T1")
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2656:                "_skill_ref": "skill 16 server_lifecycle R28 decision table",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2663:        result = {"ok": True, "state": state, "workflow_state_path": str(path)}
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2677:            reason="permission denied while reading workflow state file",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2685:    state_path = _workflow_state_path(str(root))
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2686:    state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else _default_workflow_state(str(root), "T1")
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2695:        action = "Create BENCHMARK_REQUEST.md from the user idea."
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2697:        action = "Create BUILD_CONTEXT.md from user-approved inputs."
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2718:    With include set, aggregates additional fields from protected_tools_status /
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2787:            created = datetime.fromisoformat(str(item.get("created_at", "")))
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2828:                        "reason": f"Backup already exists from today ({today}). Use force=True to override.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2943:    """Guard symbol/index tools from operating on stale INDEX."""
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:2969:    drift block from caller responses to save ~0.3 KB / call and reduce noise.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:3003:    # TOKEN_REQUIRED (mirrors orchestrator_server._MUTATING_TOOLS) + per-tool
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:3034:        "protection_source": "token=code_tools.TOKEN_REQUIRED_TOOLS; mutating/session=code_tools.PROTECTED_TOOL_NAMES (decoupled)",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:3040:    """T1 — audit DRIFT between the RULE files (examples/CORE_RULE.txt, SLIM_RULE.txt,
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:3041:    SLIM_RULE_INLINE.txt) and the live code (TOOL_MAP + enforcement sets + council
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:3060:    rule_files = ["examples/CORE_RULE.txt", "examples/SLIM_RULE.txt", "examples/SLIM_RULE_INLINE.txt"]
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:3075:            "sha256", "force", "provider", "model", "action", "sender", "timeout_sec",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:3079:            # surface, NOT code_tools.TOOL_MAP, so do not flag them as missing.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:3141:            orch = (here / "orchestrator_server.py").read_text(encoding="utf-8")
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:3221:        "read_skill": "read_skill EXISTS (R16.9, by short name)",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:3249:                "ca_next_action": "call_tool_with_schema_from_api_tools",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:3317:    # V15 R66: accept timeout_ms (CA habit from T4 tools) and convert to seconds.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:3405:    # bypass the guard. Detect the PowerShell wrapper from `command` itself
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4105:    # Resolve core source dir from the live Orchestrator layout when the caller points at the app root.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4107:    if profile in {"unittest", "pytest", "py_compile_core"} and not (core_root / "code_tools.py").exists():
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4117:    # unittest: auto-discover test directory (fixes "Ran 0 tests" from bare `python -m unittest`)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4141:                ca_next_action="choose_supported_profile_from_schema",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4181:                ca_next_action="choose_supported_profile_from_schema",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4193:        "code_tools.py", "surgical_mapper.py", "orchestrator_server.py",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4230:            return sorted(dict.fromkeys(py_files))
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4249:    # V15 R35: workflow-based test profiles — delegate to workflow_start (MD dispenser).
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4250:    # Returns first step body; CA continues with workflow_submit_step on each step done.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4253:            wf_raw = await workflow_start(name=profile, project_path=str(root))
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4258:                "delegated_to": "workflow_start",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4259:                "workflow_response": wf,
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4261:                    "do_first_step_then_workflow_submit_step_done_repeat_until_workflow_complete"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4264:                    f"Profile '{profile}' is a workflow-based test. First step body is in "
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4265:                    f"`workflow_response.step`. Execute it, then call "
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4266:                    f"`workflow_submit_step(name='{profile}', step=N, status='done', evidence=...)` "
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4267:                    f"to advance. On fail → workflow_paused; STOP and report User."
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4272:                f"workflow profile load failed: {exc}",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4275:                ca_next_action="create_workflow_md_in_workflows_dir_or_global_or_via_workflow_create_from_ui",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4276:                hint=f"Place {profile}.md in <project>/.orchestrator_cache/workflows/ or <[A]>/.ToolA_Skill/workflows/",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4293:            ca_next_action="choose_supported_profile_from_schema",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4367:- CA creates `BUILD_CONTEXT.md` only from user-approved inputs.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4381:This file is created from user-approved inputs only.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4393:- Build only from this context and user-approved files/paths.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4490:    from datetime import datetime as _dt, timedelta as _td
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4506:            gap = _dt.fromisoformat(entry["ts"]) - _dt.fromisoformat(current[-1]["ts"])
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4525:            age_h = (now - _dt.fromisoformat(ts_start)).total_seconds() / 3600
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4544:from contextlib import contextmanager as _contextmanager
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4640:    "prepare_ca_session":      ("🧭", "workflow", "🔧"),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4641:    "set_workflow_mode":       ("🧭", "workflow", "🔧"),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4642:    "workflow_status":         ("🧭", "workflow", "👁️"),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4643:    "workflow_status_registry": ("🧭", "workflow", "👁️"),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4644:    "next_recommended_action": ("🧭", "workflow", "🔧"),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4645:    "open_session":            ("🧭", "workflow", "🔧"),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4646:    "close_session":           ("🧭", "workflow", "🔧"),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4647:    "log_native_event":        ("🔗", "workflow", "🔧"),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4648:    "log_native":              ("🔗", "workflow", "🔧"),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4649:    "create_pending_audit":    ("🔗", "workflow", "🔧"),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4650:    "sync_pending_audit":      ("🔗", "workflow", "🔧"),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4656:    tool_icon, _, _ = TOOL_ACTION_MAP.get(tool_name, ("🔧", "workflow", "🔧"))
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4657:    _, action_type, target_icon = TOOL_ACTION_MAP.get(tool_name, ("🔧", "workflow", "🔧"))
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4672:        return datetime.fromisoformat(str(started_at)).date() == datetime.now().date()
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4678:    """Close active sessions from previous local days so CA Log follows today."""
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4737:        _, action_type, target_icon = TOOL_ACTION_MAP.get(tool_name, ("🔧", "workflow", "🔧"))
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4738:        # Infer target from body — handle list (command), str (path/query), or fallback
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4921:        last_write_at = datetime.fromtimestamp(last_mtime).isoformat(timespec="seconds") if last_mtime else ""
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:4943:            "has_workflow_state": (cache_dir / "WORKFLOW_STATE.json").exists(),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:5081:    # Fallback: aggregate from SQLite session events for THIS project
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:5139:    # ── HTTP access stats from orchestrator.log ──
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:5145:                from collections import Counter
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:5197:    from collections import defaultdict
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:5228:        "recent_writes": list(dict.fromkeys(recent_writes))[-10:],
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:5261:# ─── V15 R27 — Folder interaction suite (testgf workflow) ─────────────────────
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:5392:        from datetime import datetime as _dt
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:5393:        latest_mtime_iso = (_dt.fromtimestamp(latest_mtime).isoformat(timespec="seconds")
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:5398:        # Pattern hit live during rawcut_getfootage_sheet_v0 step 25: workflow
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:5619:            from datetime import datetime as _dt
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:5620:            launched_after_dt = _dt.fromisoformat(launched_after_ts)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:5665:            from datetime import datetime as _dt
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:5666:            ct = _dt.fromtimestamp(meta["create_time"])
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6068:             "args_hint": {"hwnd": button_hwnd or "<from button_hwnd_found>", "force_win32": True},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6152:            from datetime import datetime as _dt
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6153:            launched_after_dt = _dt.fromisoformat(launched_after_ts)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6178:                from datetime import datetime as _dt
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6179:                if _dt.fromtimestamp(ct) < launched_after_dt:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6211:        "other_windows": other_windows[:5],  # R32: separated from candidates
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6371:    Generic T4 workflow — not app-specific. Use for any Electron/web app that opens
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6406:    # Phase 2: snapshot baseline windows + resolve owner_pid from owner_title
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6407:    from datetime import datetime as _dt
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6613:                "out — retry with the correct owner_pid from that list. If empty, the click did "
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6691:    """V15 R41 T1: verify which file Electron CDP target is ACTUALLY loaded from.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6698:      page_id: CDP target ID (from list_cdp_targets)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6741:        from urllib.parse import unquote
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6769:            "file OR rebuild dist from Source/."
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6850:    # BOM-less .ps1, which silently strips Vietnamese diacritics from
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6945:                "ca_next_action": "do_not_retry_same_way__verify_path_from_user_session_or_localize",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6975:# ─── V15 R42 NEW TOOLS: bootstrap_session, check_server_path, wait_for_idle, parse_log_section, workflow_goto_step ─────
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6982:      - active_workflow (via workflow_active_get)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6985:      - active_skills_index (paths to skill MD)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6996:    # Active workflow (best-effort)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:6999:        active_wf = _json_bs.loads(await workflow_active_get(project_path=project_path))
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7001:        active_wf = {"active": False, "error": "workflow_active_get_unavailable"}
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7024:        {"name": "audit_tool_matrix", "tier": "T1", "required": ["project_path"]},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7055:        {"name": "workflow_list", "tier": "T1", "required": []},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7056:        {"name": "workflow_start", "tier": "T3", "required": ["name"]},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7057:        {"name": "workflow_get_current", "tier": "T1", "required": ["name"]},
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7058:        {"name": "workflow_submit_step", "tier": "T3", "required": ["name", "step"],
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7060:        {"name": "workflow_goto_step", "tier": "T3", "required": ["name", "target_step"],
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7062:        {"name": "workflow_status", "tier": "T1", "required": ["name"],
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7072:        "🚨 fill_value base64 (R42): backend decode via browser atob(value). Node.js encoder ĐÚNG: Buffer.from(text,'utf8').toString('base64'). KHÔNG dùng btoa(unescape(encodeURIComponent(...))) — JS browser-only, không chạy trong Node. Nếu vẫn fail và switch sang encoding='plain' → PHẢI note rõ trong reply cho User (encoding affects fidelity).",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7079:        "Workflow: workflow_start → workflow_get_current → workflow_submit_step. Submit sequential OR pass step_range=[a,b] cho batch.",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7085:        "audit_tool_matrix": "GET /api/call/audit_tool_matrix — full schema + drift audit",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7089:        "workflow_list": "POST /api/call/workflow_list — list workflow MDs",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7092:    # Active skills via skill_router file scan (cheap)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7093:    active_skills_index = []
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7095:        from pathlib import Path as _PathBs
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7096:        skill_root = _PathBs(__file__).parent / ".ToolA_Skill" / "skills"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7097:        if skill_root.exists():
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7098:            for d in sorted(skill_root.iterdir()):
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7100:                    active_skills_index.append({"name": d.name, "path": str(d / "SKILL.md")})
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7107:        "active_workflow": active_wf,
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7111:        "active_skills_index": active_skills_index,
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7229:    Re-introduces the historic `webfetch` tool used by getfootage workflow v3
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7308:# ─── V15 R49 — High-level workflow primitives ────────────────────────────────
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7309:# These primitives encapsulate multi-step intents that workflows (esp. v3) used
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7345:# trim trailing header noise from extracted UNC paths. Pattern observed
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7375:    # from match start to last `\\` or `/` separator so we keep complete path.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7413:# "mojibake from upstream CP corruption". This helper flags the suspicion
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7455:    from datetime import datetime as _dt_fs
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7579:                # Skip header-polluted rows (already excluded from data analysis)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7600:        # R53 — distinct from path-suffix STT match; counts WHOLE rows
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7613:        # field names changed from first_3_data_rows / last_3_data_rows to
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7644:    """V15 R49 T1: high-level v3 primitive — sample N UNC paths from input,
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7647:    "path stale" from "server down".
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7650:      paths: list of candidate UNC paths (from fetch_sheet_csv_summary or other)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7695:    # Picking strategy: respect input order but try to pick from at least 2
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7720:        # "real Vietnamese path" (non_ascii=true, mojibake=false) from
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7742:                # auth-context-mismatch from a genuinely down server.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7832:        # R85: distinguish UNC auth/session-context failure from server-down.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7836:        # reachable from the user's own session. Do NOT report server_down.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7844:            ca_next = "verify_from_user_logon_session__A_process_credentials_differ__not_server_down"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7920:# ─── V15 R50 — Causality verifier (Item 5 from 5-axis report) ────────────────
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7924:# truly happened. Specific to Rawcut getfootage workflow but generic in shape:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7950:      baseline_file_count: file count from pre-copy folder_stats (default 0).
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7951:      baseline_total_bytes: total_bytes from pre-copy folder_stats (default 0).
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:7972:    from datetime import datetime as _dt_v
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8029:                        since_dt = _dt_v.fromisoformat(since_iso.replace("Z", "+00:00"))
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8041:                                ts = _dt_v.fromisoformat(
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8084:    # can include accumulation from prior runs. When they don't agree, walk
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8086:    # than guessing from counts.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8105:            # Log side: extract filenames from FILE_COPIED / FILE_COPIED_REUSED lines.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8164:                    "files_only_in_folder = accumulated from prior runs OR copied "
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8166:                    "files_only_in_log = log claims copy but file missing from folder "
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8175:        ca_next = "verify_log_path_or_run_workflow_first"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8184:        ca_next = "advance_workflow_step_done"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8187:        ca_next = "advance_workflow_step_done_note_warnings"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8235:# ─── V15 R50 — Narrow transport wrappers (Item 2 from 5-axis report) ─────────
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8295:# Item 5 from the 5-axis report (Observability / completion gate): instead of
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8301:#   - Workflow state (paused/complete/current step) when workflow_name given
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8305:async def workflow_checkpoint(
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8310:    workflow_name: str = "",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8317:    and (optional) workflow state into a single snapshot.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8324:      workflow_name: optional — when set, include workflow_get_current data
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8328:              workflow_health (if workflow_name), ca_next_action,
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8331:    from datetime import datetime as _dt_ck
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8334:    workflow_health: dict | None = None
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8370:    # — Recent policy / drift evidence from session events —
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8371:    # R52 — get_session_events also lives in code_tools.py, direct call.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8421:    if workflow_name:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8423:            wf_raw = await workflow_get_current(name=workflow_name, project_path=project_path)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8425:            workflow_health = {
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8426:                "name": workflow_name,
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8434:            if workflow_health.get("paused"):
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8439:                        f"Workflow {workflow_name} paused: "
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8440:                        f"{workflow_health.get('pause_reason') or 'unknown reason'}. "
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8441:                        "Resume via workflow_retry_step / workflow_skip_step before continuing."
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8445:            workflow_health = {"name": workflow_name, "probe_error": str(exc)}
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8446:            internal_probe_failures.append({"layer": "workflow_get_current", "error": str(exc)})
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8450:                "detail": f"workflow_get_current probe failed: {exc}",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8451:                "layer": "workflow_get_current",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8491:        "workflow_health": workflow_health,
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8493:        "primitive": "R51/R52 workflow_checkpoint — mid-flow drift gate (session + policy + workflow + self-health consolidated)",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8504:    exceeded. Saves CA from manual 60-iteration loops (~180 API calls → 1 call).
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8566:            "advance_workflow_step" if final_outcome == "idle"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8666:async def workflow_goto_step(name: str, target_step: int, reason: str = "",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8681:        return _json_error(f"workflow MD not found: {name}",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8686:        return _json_error("workflow not started — call workflow_start first",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8694:            f"target_step {target_step} not in workflow (valid: {valid_numbers})",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8698:    from_step = state.get("current_step", 0)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8699:    direction = "forward" if target_step > from_step else ("backward" if target_step < from_step else "noop")
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8701:        "from": from_step,
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8722:        "from_step": from_step,
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8728:        "ca_next_action": "execute_target_step_then_workflow_submit_step",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8732:# ─── V15 R35: MD workflow stateful dispenser + universal completion-signal gate ─────
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8739:    """R35 / R55: convert workflow display name to filesystem-safe slug.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8741:    CA habit `workflow_get_current(name='foo.md')` doesn't slug to `foomd`
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8756:    """R37 Y1: workflow files are GLOBAL only — tránh phân mảnh, mọi project share workflow.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8760:        global_dir = Path(__file__).parent / ".ToolA_Skill" / "workflows"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8767:    """Return workflow run-state directory scoped to project_path.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8773:    base = Path(__file__).parent / ".ToolA_Skill" / "workflow_state"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8791:    """R35 / R55: locate workflow MD by name (slug or raw).
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8831:    """R35: parse MD into {workflow_title, steps:[{number, body, title_blocks:[{title, context}], completion_signals:[...]}]}.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8833:    Convention: `# <title>` = workflow title, `## Step N` = step boundary,
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8837:    workflow_status to skip inferring rules from code.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8884:            # strip completion_signal + require_artifact tags from context (kept separately)
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8888:        # extract completion_signals from full step body
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8903:    return {"workflow_title": wf_title, "steps": steps, "known_rules": known_rules}
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8924:    from datetime import datetime as _dt
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8927:async def workflow_list(project_path: str = "") -> str:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8928:    """V15 R35 T1: list `.md` workflows from project + global sources.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8956:                    "title": parsed.get("workflow_title") or slug,
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8967:        "workflows": list(found.values()),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8970:        "ca_next_action": "call_workflow_start_or_workflow_get_current_with_name",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8975:    """R35: build CA-facing step response from parsed MD + state."""
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8983:        "workflow_title": parsed.get("workflow_title"),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8991:            "do_step_then_workflow_submit_step_with_status_done"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8993:                "workflow_complete_close_session" if state.get("complete") else
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:8994:                "step_not_found_inspect_workflow_md_or_call_workflow_reset"
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9002:async def workflow_start(name: str, project_path: str = "") -> str:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9003:    """V15 R35 / R37 Y1 T3: start workflow by name. Initializes state, returns step 1 body.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9008:        return _json_error(f"workflow MD not found: {name}",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9012:                           ca_next_action="call_workflow_list_to_see_available")
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9018:        return _json_error(f"workflow MD read failed: {exc}",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9022:        "workflow": slug,
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9023:        "title": parsed.get("workflow_title"),
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9040:    """V15 R44 — Best-effort summary aggregator for workflow_get_current.
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9044:    workflows that load prior runs (e.g. getfootage_sheet_v3 reading v1/v2).
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9108:async def workflow_get_current(name: str, project_path: str = "") -> str:
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9112:    outcome/file_count/total_bytes/error_summary extracted from completed
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9113:    step evidence — consumed by workflows (e.g. getfootage_sheet_v3) that
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9118:        return _json_error(f"workflow MD not found: {name}",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9123:        return _json_error(f"workflow not started: {name}",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9125:                           ca_next_action="call_workflow_start_first",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9144:async def workflow_submit_step(name: str, step: int = 0, status: str = "done",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9161:        return _json_error(f"workflow MD not found: {name}",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9166:        return _json_error("workflow not started",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9168:                           ca_next_action="call_workflow_start_first")
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9170:        return _json_error("workflow already complete",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9172:                           ca_next_action="call_workflow_reset_or_choose_another")
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9176:        return _json_error("workflow state current_step is not an integer",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9185:                            ca_next_action="call_workflow_get_current_to_resync")
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9208:                suggestion=f"Use step_range=[{cur}, {r_end}] OR workflow_goto_step(target_step={r_start}) first",
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\code_tools.py:9209:                alternative_tool="workflow_goto_step",

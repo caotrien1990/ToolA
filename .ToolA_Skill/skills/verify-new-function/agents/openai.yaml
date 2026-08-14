@@ -1,0 +1,4 @@
+interface:
+  display_name: "Verify_new_function"
+  short_description: "Verify a new function"
+  default_prompt: "Use $verify-new-function when Anh says 'chạy skill verify' / 'chay skill verify' after building a new function."

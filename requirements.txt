@@ -1,0 +1,23 @@
+zeromcp
+mcp>=1.28.1
+magika
+click>=8.3.3
+pillow>=12.3.0
+aiohttp
+aiofiles
+pyperclip
+pytest
+pyyaml
+tree-sitter==0.25.2
+tree-sitter-javascript==0.25.0
+tree-sitter-typescript==0.23.2
+# R3: dependencies that were installed in venv312 but missing here — the file
+# must reproduce the real runtime (CONTEXT_A_ARCHITECT.md §2 finding).
+psutil
+pywin32; sys_platform == 'win32'
+playwright
+jsonschema
+pydantic
+pydantic-settings
+vulture>=2.16
+ruff>=0.16,<0.17

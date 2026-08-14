@@ -1,0 +1,99 @@
+qua mọi quy ước báo cáo council (RES block, artifact, kế hoạch, phân tích
+task). CHỈ trả lời câu hỏi dựa trên CONTEXT bên dưới, không bịa.\nFORM BẮT
+BUỘC:\n- Dòng 1: một câu tóm tắt trả lời.\n- Sau đó tối đa 5 gạch đầu dòng, mỗi
+gạch ≤ 2 câu, kèm trích dẫn .\n- Tổng dưới 180 từ, tiếng Việt. Nếu context
+không đủ: nói thẳng trong 1 câu.\n- KHÔNG thêm bất kỳ phần nào khác, không lặp
+lại context, không mô tả quy trình.\n\nCONTEXT:\n[1] cho hermc truy tìm session
+mới nhất của codex đi codo nói dối rồi. — Rõ Anh — codo nói dối về session id.
+Em cho **HermC truy tìm session Codex mới nhất** (thread "bật hội đồng tr").
+Dispatch qua council (em=leader, MCP): Rõ Anh — codo nói dối về session id. Em
+cho **HermC truy tìm session Codex mới nhất** (thread "bật hội đồng tr").
+Dispatch qua council (em=leader, MCP): Subject: [A]/council Subtopic: cho hermc
+truy tìm session mới nhất của codex đi codo nói dối rồi. session thread tên
+"bật hội động tr" mới nhất. Writer: claude Project: D:\0. TRIEN\1\n[2] cho
+hermc truy tìm session mới nhất của codex đi codo nói dối rồi. — (Lưu ý: opeC
+vừa verify rule cho Task 2 phát hiện **1 ISSUE** — council_rule_leader.md
+L41-48 + global_rule_worker.md L46-53 vẫn cấp MCP cho codoC/clinC/opeC, **mâu
+thuẫn** CORE_RULE "workers never MCP". Em giữ lại, xử lý sau khi xong việc
+Codex (Lưu ý: opeC vừa verify rule cho Task 2 phát hiện **1 ISSUE** —
+council_rule_leader.md L41-48 + global_rule_worker.md L46-53 vẫn cấp MCP cho
+codoC/clinC/opeC, **mâu thuẫn** CORE_RULE "workers never MCP". Em giữ lại, xử
+lý sau khi xong việc Codex Subject:\n[3] bật hội đồng tr để cập nhật rule skill
+mới. — Anh muốn Clau **refresh rule + leader skill mới nhất** (nghi rule
+upgrade) rồi tiếp tục chuỗi. Clau force reload core rule + re-convene council
+(lấy leader rule sống mới) + đọc kết quả OpeC bước 1 — song song Anh muốn Clau
+**refresh rule + leader skill mới nhất** (nghi rule upgrade) rồi tiếp tục
+chuỗi. Clau force reload core rule + re-convene council (lấy leader rule sống
+mới) + đọc kết quả OpeC bước 1 — song song Subject: [A]/council Subtopic: bật
+hội đồng tr để cập nhật rule skill mới. tiến\n[4] ok. — Codo sẽ đọc lại
+canonical leader rule và leader skill rồi liệt kê các point đã cập nhật gần
+nhất, không sửa gì Codo sẽ đọc lại canonical leader rule và leader skill rồi
+liệt kê các point đã cập nhật gần nhất, không sửa gì Subject:
+general-session-memory Subtopic: ok. tiếp theo leader rule và leader skill.
+liệt kê những point đã cập nhật lần mới nhất có số thứ tự Writer: codex
+Project: C:\Users\ADMIN\.codex\sessions\2026\06\20 User intent: ok. tiếp theo
+leader rule và leader skill. liệt kê những\n[5] vậy hiện tại toolQ đã lấy
+history session ổn chưa? — Codo sẽ kiểm trực tiếp scheduler trigger hiện tại và
+log mới nhất để trả lời chắc, vì interval là cấu hình runtime dễ lệch sau khi
+update task Codo sẽ kiểm trực tiếp scheduler trigger hiện tại và log mới nhất
+để trả lời chắc, vì interval là cấu hình runtime dễ lệch sau khi update task
+Subject: general-session-memory Subtopic: vậy hiện tại toolQ đã lấy history
+session ổn chưa? real test chưa? mỗi 5 phút hay bao lâu sẽ cập nhật data 1 lần?
+Writer: codex Project: C:\Users\ADMIN\\n[6] cho clauc plug scrip vào 1 tool [A]
+để tất cả những khi cần điều tra council thì mọi CA đều tra hoặc xem council
+log ... — Subject: [A]/council Subtopic: cho clauc plug scrip vào 1 tool [A] để
+tất cả những khi cần điều tra council thì mọi CA đều tra hoặc xem council log
+... Writer: codex Project: C:\Users\ADMIN\.codex\sessions\2026\06\17 User
+intent: cho clauc plug scrip vào 1 tool [A] để tất cả những khi cần điều tra
+council thì mọi CA đều tra hoặc xem council log đều dùng tool và bít file. cập
+nhật 4ktr, global rule, workflow đầy đủ. Clarify! Workflow council / fix-loop:
+trước khi kết luận broker/council lỗi, gọi\n[7] bật hội đồng tr sau đó query
+session và tiến độ mới nhẩ của claude và tôi — Codo sẽ bật đúng chế độ council
+leader cho Anh. Trước khi làm việc với [A], Codo nạp CORE_RULE một lần theo
+bootstrap rồi mới gọi convene_council và truy vấn session/tiến độ mới nhất Codo
+sẽ bật đúng chế độ council leader cho Anh. Trước khi làm việc với [A], Codo nạp
+CORE_RULE một lần theo bootstrap rồi mới gọi convene_council và truy vấn
+session/tiến độ mới nhất Subject: [A]/council Subtopic: bật hội đồng tr sau đó
+query session và tiến độ mới nhẩ của claude và tôi Writer: codex Project:\n[8]
+nhưng CLI council gọi vẫn phải ẩn mà đúng không — Nên UI council chỉ cần hiển
+thị: Nên UI council chỉ cần hiển thị: Subject: frontend/design Subtopic: nhưng
+CLI council gọi vẫn phải ẩn mà đúng không Writer: codex Project:
+C:\Users\ADMIN\.codex\sessions\2026\06\20 User intent: nhưng CLI council gọi
+vẫn phải ẩn mà đúng không\n[9] <observed_from_primary_session>
+<what_happened>Bash</what_happened>
+<occurred_at>2026-06-18T04:56:57.201Z</occurred_at> ... — Subject: [A]/council
+Subtopic: <observed_from_primary_session> <what_happened>Bash</what_happened>
+<occurred_at>2026-06-18T04:56:57.201Z</occurred_at> ... Writer: claude Project:
+C:\Users\ADMIN\.claude-mem\observer-sessions User intent:
+<observed_from_primary_session> <what_happened>Bash</what_happened>
+<occurred_at>2026-06-18T04:56:57.201Z</occurred_at> <working_directory>D:\0.
+TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\0. Tr_MEDIA_BOT\2. ROOM 2\1.
+backend</working_directory>\n\nCÂU HỎI: ui council mới nhất
+Output only the answer to BROKER TASK.
+=== OUTPUT CONTRACT (HARD) ===
+Do NOT echo, quote, or restate this prompt. Do NOT paste long output into chat.
+Write your FULL report/answer to this EXACT file path using the [A]
+write_new_file tool (create it):
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8.
+ToolA\project-orchestrator\.council\worker_output\20260712_234935_hermes_21a6c3
+6a.md
+If you cannot write outside your cwd, bootstrap [A] and use [A] write tools.
+Then reply in chat with ONLY: 'DONE D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1.
+APP\8.
+ToolA\project-orchestrator\.council\worker_output\20260712_234935_hermes_21a6c3
+6a.md' followed by a <=3 line TLDR. Nothing else. If the whole answer is
+trivially short (<=10 lines), you may reply inline concisely WITHOUT echoing
+this prompt and skip the file.
+The user is asking me to answer a question based on the context provided. Let me analyze the context and answer the question.
+The question is: "ui council mới nhất" (latest UI council)
+Looking through the context:
+- [7] mentions "bật hội đồng tr sau đó query session và tiến độ mới nhẩ của claude và tôi" - about council mode
+- [8] "nhưng CLI council gọi vẫn phải ẩn mà đúng không — Nên UI council chỉ cần hiển thị" - about UI council display
+From context [8]: "Nên UI council chỉ cần hiển thị" - so the UI council should display something, while CLI council calls should remain hidden.
+  ... (11 more lines — /reasoning full to show)
+ ─  ⚕ Hermes  ─────────────────────────────────────────────────────────────────
+     Context chỉ có một đoạn ngắn về UI council tại [8]: UI council chỉ cần
+     hiển thị thông tin, còn CLI council gọi vẫn phải ẩn. Không có thông
+     tin về phiên bản "mới nhất" cụ thể của UI council — không đủ dữ liệu
+     để xác nhận trạng thái hiện tại.
+  hermes --resume 20260712_234942_237808

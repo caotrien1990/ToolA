@@ -1,0 +1,48 @@
+# R3 S10 — full test-suite CI gate (ADR_R3_ARCHITECTURE.md §D6)
+# Complements tool-matrix-ci.yml: compile every entry module, then run the full
+# pytest contract suite. A red suite blocks merge — "green before extraction"
+# is the R3 invariant that keeps the strangler refactor safe.
+
+name: test-suite-ci
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:
+
+jobs:
+  pytest-contract-suite:
+    name: py_compile + pytest
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install runtime dependencies
+        run: |
+          cd project-orchestrator
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+        shell: pwsh
+
+      - name: Compile entry modules
+        run: |
+          cd project-orchestrator
+          python -m py_compile code_tools.py orchestrator_server.py tools_v15.py surgical_mapper.py restart_orchestrator.py
+        shell: pwsh
+
+      - name: Run pytest suite
+        run: |
+          cd project-orchestrator
+          $env:PYTHONPATH = (Get-Location).Path
+          python -m pytest tests -q
+        shell: pwsh

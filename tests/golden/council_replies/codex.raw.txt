@@ -1,0 +1,3 @@
+PROMPT_LINE_FOR_ECHO_SUBTRACTION
+{"type":"thread.started","thread_id":"abc"}
+{"type":"item.completed","item":{"type":"agent_message","text":"CODEX_GOLDEN_OK"}}

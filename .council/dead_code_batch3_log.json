@@ -1,0 +1,194 @@
+﻿{
+    "batch":  3,
+    "worker":  "KILOC5_3B2D",
+    "status":  "done",
+    "completed_at":  "2026-07-08T16:02:02+07:00",
+    "target_files":  [
+                         "code_tools.py",
+                         "orchestrator_server.py"
+                     ],
+    "cumulative_before":  11,
+    "max_this_round":  15,
+    "candidate_pool":  {
+                           "conf_ge_0_7":  26,
+                           "conf_0_3_public_handlers":  69,
+                           "total_two_files":  95,
+                           "source":  "cbm_dead_code limit=200 (cached; line numbers stale vs live def lines)"
+                       },
+    "method":  "refresh_project_map; 2-pass search_code word-boundary per candidate [A: (async def|def) NAME( -\u003e def lines; B: \\bNAME\\b -\u003e all occ]; dead iff every occurrence is a def line; external refs classified call/bare-ref (block) vs comment/docstring (non-block); test refs -\u003e skip",
+    "cbm_blind_spots":  [
+                            "asyncio.to_thread(_f) / asyncio.run(_f())",
+                            "threading.Thread(target=_f)",
+                            "sort(key=_f) / max(key=_f)",
+                            "module-level _X=_f()",
+                            "late-binding srv._f() \u0026 hasattr(srv,_f) (mcp_stdio/dashboard)",
+                            "HTTP dispatch-gate calls for public tools"
+                        ],
+    "removals":  [
+                     {
+                         "name":  "_ensure_fresh_index",
+                         "qualified_name":  "code_tools._ensure_fresh_index",
+                         "file":  "code_tools.py",
+                         "def_range":  "2516-2536",
+                         "removed_range":  "2515-2537",
+                         "loc_removed":  23,
+                         "method":  "run_ps1_script in-place FileShare.ReadWrite (write_fix returned HTTP 500 empty body -\u003e sanctioned fallback, logged)",
+                         "refs":  0,
+                         "reason":  "0 call + 0 bare-ref; 0 textual occurrences outside own def (search_code word-boundary, all files)",
+                         "verify":  "post-removal search_code count=0"
+                     }
+                 ],
+    "kept_conf_ge_0_7":  [
+                             {
+                                 "name":  "_backup",
+                                 "file":  "code_tools.py",
+                                 "blocking_ref":  "CALL asyncio.to_thread(_backup) @L2455"
+                             },
+                             {
+                                 "name":  "_detect_unittest_cmd",
+                                 "file":  "code_tools.py",
+                                 "blocking_ref":  "CALL _aio.to_thread(_detect_unittest_cmd) @L3647"
+                             },
+                             {
+                                 "name":  "_project_python_files",
+                                 "file":  "code_tools.py",
+                                 "blocking_ref":  "CALL asyncio.to_thread(_project_python_files) @L3752"
+                             },
+                             {
+                                 "name":  "_probe",
+                                 "file":  "code_tools.py",
+                                 "blocking_ref":  "BARE_REF Thread(target=_probe)@L5247 + CALLs@L5869,5885 (2 defs)"
+                             },
+                             {
+                                 "name":  "_check",
+                                 "file":  "code_tools.py",
+                                 "blocking_ref":  "CALL asyncio.to_thread(_check)@L8488 (also tools_v15.py own _check@5896)"
+                             },
+                             {
+                                 "name":  "_v15_schema",
+                                 "file":  "code_tools.py",
+                                 "blocking_ref":  "CALL _v15_schema(...)@L11146"
+                             },
+                             {
+                                 "name":  "_run_loop",
+                                 "file":  "orchestrator_server.py",
+                                 "blocking_ref":  "BARE_REF Thread(target=_run_loop)@L96"
+                             },
+                             {
+                                 "name":  "_council_active_from_config",
+                                 "file":  "orchestrator_server.py",
+                                 "blocking_ref":  "CALL module-level _COUNCIL_AGENTS=...@L1951"
+                             },
+                             {
+                                 "name":  "_council_dashboard_agents",
+                                 "file":  "orchestrator_server.py",
+                                 "blocking_ref":  "late-binding srv._council_dashboard_agents()+hasattr @dashboard.py L11,14,26,1152"
+                             },
+                             {
+                                 "name":  "_council_caps_from_config",
+                                 "file":  "orchestrator_server.py",
+                                 "blocking_ref":  "CALL module-level@L2027"
+                             },
+                             {
+                                 "name":  "_council_default_models_from_config",
+                                 "file":  "orchestrator_server.py",
+                                 "blocking_ref":  "CALL module-level@L2070"
+                             },
+                             {
+                                 "name":  "_ts",
+                                 "file":  "orchestrator_server.py",
+                                 "blocking_ref":  "BARE_REF max(key=_ts)@L2744"
+                             },
+                             {
+                                 "name":  "_council_cleanup_broker_session",
+                                 "file":  "orchestrator_server.py",
+                                 "blocking_ref":  "BARE_REF Thread(target=)@L3959 + TEST test_orchestrator_server_contract.py:640"
+                             },
+                             {
+                                 "name":  "_pump",
+                                 "file":  "orchestrator_server.py",
+                                 "blocking_ref":  "BARE_REF Thread(target=_pump)@L4104"
+                             },
+                             {
+                                 "name":  "_council_run_agent",
+                                 "file":  "orchestrator_server.py",
+                                 "blocking_ref":  "CALL asyncio.to_thread@L2583 + 14 TEST refs (dispatch_gate+contract)"
+                             },
+                             {
+                                 "name":  "_council_purge_old",
+                                 "file":  "orchestrator_server.py",
+                                 "blocking_ref":  "CALL asyncio.to_thread@L5957"
+                             },
+                             {
+                                 "name":  "_mtime",
+                                 "file":  "orchestrator_server.py",
+                                 "blocking_ref":  "BARE_REF dirs.sort(key=_mtime)@L4489"
+                             },
+                             {
+                                 "name":  "_council_clear_session_runtime",
+                                 "file":  "orchestrator_server.py",
+                                 "blocking_ref":  "CALL asyncio.to_thread@L5789 + TEST contract:578"
+                             },
+                             {
+                                 "name":  "_council_export_public_broker",
+                                 "file":  "orchestrator_server.py",
+                                 "blocking_ref":  "CALL asyncio.to_thread@L5894"
+                             },
+                             {
+                                 "name":  "_council_state_payload",
+                                 "file":  "orchestrator_server.py",
+                                 "blocking_ref":  "CALL asyncio.to_thread@L5646"
+                             },
+                             {
+                                 "name":  "_council_activity_payload",
+                                 "file":  "orchestrator_server.py",
+                                 "blocking_ref":  "CALL asyncio.to_thread@L5659 (comment@L5520 non-blocking)"
+                             },
+                             {
+                                 "name":  "_fire",
+                                 "file":  "orchestrator_server.py",
+                                 "blocking_ref":  "CALL asyncio.to_thread(_fire)@L6172,6593 + mcp_stdio.py:422 (2 defs)"
+                             },
+                             {
+                                 "name":  "_do_scan",
+                                 "file":  "orchestrator_server.py",
+                                 "blocking_ref":  "CALL asyncio.to_thread@L8330"
+                             },
+                             {
+                                 "name":  "_run_server",
+                                 "file":  "orchestrator_server.py",
+                                 "blocking_ref":  "CALL asyncio.run(_run_server())@L9051 (main entry)"
+                             }
+                         ],
+    "kept_conf_0_3":  "69 public tool handlers (run_ps1_script, prepare_ca_session, get_rule_core_text, convene_council, workflow_*, ...) invoked via HTTP dispatch gate -\u003e all alive",
+    "fp_test_breaking":  0,
+    "gates":  {
+                  "import_smoke":  "IMPORT_OK exit 0 (code_tools, orchestrator_server, orchestrator.server.mcp_stdio)",
+                  "targeted_tests":  "272 passed, 1 skipped, 0 failed, 1 pre-existing warning (_council_queue_drain)",
+                  "full_pytest":  "370 passed, 1 skipped, 0 failed, 1 pre-existing warning (fresh basetemp, 33.9s)",
+                  "baseline":  "370/0/1skip",
+                  "new_failures":  0
+              },
+    "cumulative":  {
+                       "batch1_functions":  3,
+                       "batch1_loc":  24,
+                       "batch2_functions":  8,
+                       "batch2_loc":  91,
+                       "batch3_functions":  1,
+                       "batch3_loc":  23,
+                       "total_functions":  12,
+                       "total_loc":  138
+                   },
+    "safe_supply_verdict":  {
+                                "target_ge_30_honestly_reachable":  false,
+                                "cumulative_achieved":  12,
+                                "gap_to_30":  18,
+                                "reason":  "conf\u003e=0.7 honest supply in these 2 files exhausted: only 1 of 26 strong-dead; cbm 0-inbound-call-edge signal misses indirect/dynamic refs so 25/26 are live. conf=0.3 (69) are public dispatch-gate handlers, all alive.",
+                                "confidence_tier_needed":  "NOT a confidence-tier problem. A STRONGER static analysis resolving asyncio.to_thread/Thread-target/sort-key/module-level/late-binding/dispatch-gate patterns is required. No lower cbm tier yields dead code here."
+                            },
+    "files_mutated":  [
+                          "code_tools.py",
+                          ".council\\dead_code_batch3_log.json",
+                          "D:\\BR\\Working\\AQ_exec_20260708\\RES_KILOC5_3B2D.md"
+                      ]
+}

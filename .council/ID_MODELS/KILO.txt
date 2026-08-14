@@ -1,0 +1,10 @@
+KILO
+
+ID model:
+ltnai/glm-5.2
+
+ID model:
+ltnai/deepseek-v4-pro
+
+ID model:
+ltnai/kimi-k2.7-code

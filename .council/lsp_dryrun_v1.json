@@ -1,0 +1,108 @@
+{
+  "generated_at": 1783477086,
+  "generated_at_iso": "2026-07-08T09:18:06",
+  "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+  "tool": "orchestrator.graph.lsp_resolver.resolve_benchmark (logic replicated, read-only via _get_ro_conn)",
+  "read_only": true,
+  "rw_connection_used": false,
+  "apply_called": false,
+  "total_candidate_edges": 31245,
+  "joinable_candidates": 5981,
+  "orphaned_candidates": 25264,
+  "orphan_note": "Entire 0.3-confidence bucket (25264 edges) is NOT joinable: source/target node ids missing from nodes table, so _load_candidates drops them. LSP cannot process until node-join repair / re-index.",
+  "aggregate_verdicts": {"confirmed": 1923, "refuted": 368, "unresolved": 3690},
+  "checked": 2291,
+  "fp_rate_of_checked": 0.1606,
+  "resolution_gain": 0.3215,
+  "fp_rate_caveat": "Most 'refuted' are import-alias artifacts (jedi resolves to canonical def in another module while indexed edge points at the local import binding), not true false positives. Apply only promotes 'confirmed', so refuted noise does not cause wrong promotions.",
+  "buckets": {
+    "0.9+": {
+      "existing_confidence": 0.9,
+      "total": 5190,
+      "joinable": 5190,
+      "confirmed": 1824,
+      "refuted": 237,
+      "unresolved": 3129,
+      "expected_apply_count": 1824,
+      "checked": 2061,
+      "fp_rate_of_checked": 0.1150,
+      "resolution_gain": 0.3514,
+      "spot_check_verdict": "20/20 plausible (call_text callee matches tgt_name; target is same-module definition at sensible line)"
+    },
+    "0.8-0.9": {
+      "total": 0,
+      "note": "No 0.8 confidence tier exists in the graph (ast extractor emits only 0.9 inferred / 0.7 dynamic / 0.3 low). Bucket empty."
+    },
+    "<0.8": {
+      "total": 26055,
+      "joinable_total": 791,
+      "orphaned_total": 25264,
+      "subbucket_0.7": {"total": 791, "joinable": 791, "confirmed": 99, "refuted": 131, "unresolved": 561, "checked": 230, "fp_rate_of_checked": 0.5696, "resolution_gain": 0.1252},
+      "subbucket_0.3": {"total": 25264, "joinable": 0, "orphaned": 25264, "note": "unprocessable until node repair"}
+    }
+  },
+  "by_existing_confidence_raw": {
+    "0.9": {"confirmed": 1824, "refuted": 237, "unresolved": 3129},
+    "0.7": {"confirmed": 99, "refuted": 131, "unresolved": 561}
+  },
+  "errors": [
+    "script_failed:orchestrator/tools/read.py: FileNotFoundError (source file absent on disk; stale edge)",
+    "script_failed:orchestrator/tools/write.py: FileNotFoundError (source file absent on disk; stale edge)"
+  ],
+  "elapsed_ms": 53875.0,
+  "samples": {
+    "confirmed_0.9_n20": [
+      {"erid": 55775, "src": "orchestrator/core/registry.py:54 register_tool", "call_text": "raise RegistryDriftError(...)", "target": "registry.RegistryDriftError @L17", "verdict": "plausible"},
+      {"erid": 55777, "src": "orchestrator/core/registry.py:56 register_tool", "call_text": "raise RegistryDriftError(...)", "target": "registry.RegistryDriftError @L17", "verdict": "plausible"},
+      {"erid": 55779, "src": "orchestrator/core/registry.py:58 register_tool", "call_text": "raise RegistryDriftError(...)", "target": "registry.RegistryDriftError @L17", "verdict": "plausible"},
+      {"erid": 55781, "src": "orchestrator/core/registry.py:62 register_tool", "call_text": "raise RegistryDriftError(...)", "target": "registry.RegistryDriftError @L17", "verdict": "plausible"},
+      {"erid": 55810, "src": "orchestrator/council/dashboard.py:21 render_council_dashboard", "call_text": "srv = _server_module()", "target": "dashboard._server_module @L1", "verdict": "plausible"},
+      {"erid": 56019, "src": "orchestrator/graph/lsp_resolver.py:99 resolve_benchmark", "call_text": "conn = _get_ro_conn(project_path)", "target": "lsp_resolver._get_ro_conn @L32", "verdict": "plausible"},
+      {"erid": 56020, "src": "orchestrator/graph/lsp_resolver.py:101 resolve_benchmark", "call_text": "cands = _load_candidates(conn, sample)", "target": "lsp_resolver._load_candidates @L48", "verdict": "plausible"},
+      {"erid": 56037, "src": "orchestrator/graph/lsp_resolver.py:135 resolve_benchmark", "call_text": "col = _callee_column(...)", "target": "lsp_resolver._callee_column @L68", "verdict": "plausible"},
+      {"erid": 56057, "src": "orchestrator/graph/lsp_resolver.py:207 resolve_apply", "call_text": "conn = _get_rw_conn(project_path)", "target": "lsp_resolver._get_rw_conn @L40", "verdict": "plausible"},
+      {"erid": 56058, "src": "orchestrator/graph/lsp_resolver.py:209 resolve_apply", "call_text": "cands = _load_candidates(conn, sample)", "target": "lsp_resolver._load_candidates @L48", "verdict": "plausible"},
+      {"erid": 56075, "src": "orchestrator/graph/lsp_resolver.py:245 resolve_apply", "call_text": "col = _callee_column(...)", "target": "lsp_resolver._callee_column @L68", "verdict": "plausible"},
+      {"erid": 56368, "src": "orchestrator/graph/status.py:100 graph_status", "call_text": "payload[\"stale_files\"] = _stale_count(conn, project_path)", "target": "status._stale_count @L18", "verdict": "plausible"},
+      {"erid": 56394, "src": "orchestrator/graph/store.py:42 init_db", "call_text": "conn = get_db(project_path)", "target": "store.get_db @L16", "verdict": "plausible"},
+      {"erid": 56397, "src": "orchestrator/graph/store.py:51 integrity_check", "call_text": "conn = get_db(project_path, readonly=True)", "target": "store.get_db @L16", "verdict": "plausible"},
+      {"erid": 56400, "src": "orchestrator/graph/store.py:60 reset_db", "call_text": "conn = get_db(project_path)", "target": "store.get_db @L16", "verdict": "plausible"},
+      {"erid": 56411, "src": "orchestrator/graph/store.py:103 stale_files", "call_text": "existing = file_hash(conn, c[\"path\"])", "target": "store.file_hash @L94", "verdict": "plausible"},
+      {"erid": 56799, "src": "orchestrator/graph/extractors/python.py:98 _emit_module_node", "call_text": "nid = _node_id(self.file_path, \"module\", self.module, 1)", "target": "python._node_id @L30", "verdict": "plausible"},
+      {"erid": 56804, "src": "orchestrator/graph/extractors/python.py:110 _emit_function", "call_text": "qname = _qualified_name(self.module, class_prefix, node.name)", "target": "python._qualified_name @L34", "verdict": "plausible"},
+      {"erid": 56805, "src": "orchestrator/graph/extractors/python.py:111 _emit_function", "call_text": "nid = _node_id(self.file_path, kind, qname, node.lineno)", "target": "python._node_id @L30", "verdict": "plausible"},
+      {"erid": 56809, "src": "orchestrator/graph/extractors/python.py:117 _emit_function", "call_text": "_signature(node)", "target": "python._signature @L47", "verdict": "plausible"}
+    ],
+    "confirmed_0.7_n5": [
+      {"erid": 56865, "src": "python.py:261 visit_FunctionDef", "call_text": "nid = self._emit_function(node)", "target": "python._Extractor._emit_function @L107", "verdict": "plausible"},
+      {"erid": 56870, "src": "python.py:269 visit_ClassDef", "call_text": "nid = self._emit_class(node)", "target": "python._Extractor._emit_class @L137", "verdict": "plausible"},
+      {"erid": 56877, "src": "python.py:277 visit_Import", "call_text": "self._emit_imports(node)", "target": "python._Extractor._emit_imports @L181", "verdict": "plausible"},
+      {"erid": 56879, "src": "python.py:280 visit_ImportFrom", "call_text": "self._emit_imports(node)", "target": "python._Extractor._emit_imports @L181", "verdict": "plausible"},
+      {"erid": 56881, "src": "python.py:283 visit_Call", "call_text": "self._emit_call(node)", "target": "python._Extractor._emit_call @L219", "verdict": "plausible"}
+    ],
+    "refuted_n5": [
+      {"erid": 55730, "src": "errors.py:28 __init__", "call_text": "super().__init__(message or self.error_name)", "target_indexed": "errors.__init__ @L27", "jedi_resolved": "parent class __init__", "verdict": "suspect-indexed (import/super alias; edge not wrong, points at local binding)"},
+      {"erid": 56003, "src": "lsp_resolver.py:33 _get_ro_conn", "call_text": "path = graph_db_path(project_path)", "target_indexed": "lsp_resolver.graph_db_path @L27 (import)", "jedi_resolved": "config.graph_db_path (canonical def)", "verdict": "suspect-indexed (import alias; canonical def differs)"},
+      {"erid": 56006, "src": "lsp_resolver.py:42 _get_rw_conn", "call_text": "path = graph_db_path(project_path)", "target_indexed": "lsp_resolver.graph_db_path @L27 (import)", "jedi_resolved": "config.graph_db_path (canonical def)", "verdict": "suspect-indexed (import alias)"},
+      {"erid": 56023, "src": "lsp_resolver.py:105 resolve_benchmark", "call_text": "by_conf: dict = defaultdict(lambda: ...)", "target_indexed": "lsp_resolver.defaultdict @L25 (import)", "jedi_resolved": "collections.defaultdict", "verdict": "suspect-indexed (import alias)"},
+      {"erid": 56025, "src": "lsp_resolver.py:108 resolve_benchmark", "call_text": "by_file: dict = defaultdict(list)", "target_indexed": "lsp_resolver.defaultdict @L25 (import)", "jedi_resolved": "collections.defaultdict", "verdict": "suspect-indexed (import alias)"}
+    ]
+  },
+  "benchmark_plan_0.8_to_0.9": {
+    "bucket_status": "EMPTY - no 0.8 confidence tier exists in graph",
+    "plan": "Not applicable until ast extractor emits a 0.8 tier. If a future extractor change introduces 0.8 edges, run resolve_benchmark over that bucket with sample=full, then manual ground-truth audit of confirmed set before any apply widen."
+  },
+  "benchmark_plan_lt_0.8_widen": {
+    "subbucket_0.7": {
+      "sample_size": "full 791 (already covered in this dry-run)",
+      "verification_method": "Manual ground-truth audit of the 99 confirmed 0.7 edges: read each call site + target def, confirm semantic correctness. jedi self-agreement is weak here (resolution_gain 12.5%, FP 56.9% mostly import-alias), so do NOT promote 0.7 on jedi verdict alone.",
+      "pre_apply_gate": "Require >=80% of audited confirmed-0.7 to be semantically correct before any widen. Re-classify refuted as import-alias vs true-miss before counting FP."
+    },
+    "subbucket_0.3": {
+      "blocker": "25264 edges orphaned (no node join) - unprocessable by LSP",
+      "pre_step": "Run cbm_incremental_index or node-join repair so 0.3 edges gain src_file/tgt_file metadata.",
+      "sample_size": "After repair, bounded 300-500 first (_DEFAULT_SAMPLE) due to volume, then scale if gain is adequate.",
+      "verification_method": "Manual ground-truth audit of a 50-confirmed sample; expect high unresolved rate (dynamic/low-confidence calls)."
+    }
+  }
+}

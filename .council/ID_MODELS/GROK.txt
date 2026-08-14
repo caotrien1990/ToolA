@@ -1,0 +1,4 @@
+GROK
+
+ID model:
+xAI-grok-4.6-build

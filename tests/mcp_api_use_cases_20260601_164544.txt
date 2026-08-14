@@ -1,0 +1,14 @@
+MCP/API use-case audit: FAIL
+Started: 2026-06-01T16:44:30
+Finished: 2026-06-01T16:45:44
+Total tools: 179
+Passed tools: 178
+Failed tools: 1
+By mode: {"dry_run": 3, "guard_or_precondition": 50, "real_read_or_inspect": 124, "real_sandbox_mutation": 2}
+By MCP classification: {"   ": 1, "expected_error": 84, "ok": 86, "ok_count_result": 5, "ok_negative_result": 2, "ok_status_result": 1}
+By API classification: {"expected_error": 99, "ok": 73, "ok_count_result": 5, "ok_negative_result": 1, "ok_status_result": 1}
+Sandbox: C:\Users\ADMIN\Downloads\TESTA\sandbox\usecase_20260601_164430
+JSON report: D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\tests\mcp_api_use_cases_20260601_164544.json
+
+Failures:
+{"tool": "refresh_project_map", "ok": false, "phase": "T2", "protected": true, "mutating": true, "mode": "guard_or_precondition", "payload": {"project_path": "C:\\Users\\ADMIN\\Downloads\\TESTA\\sandbox\\usecase_20260601_164430\\project"}, "mcp": {"ok": false, "classification": "   ", "result_ok": null, "error_name": "", "sample": {}}, "api": {"ok": true, "classification": "expected_error", "http_status": 403, "result_ok": false, "error_name": "MUTATION_TOKEN_REQUIRED", "sample": {"ok": false, "error_name": "MUTATION_TOKEN_REQUIRED", "phase": "policy", "ca_next_action": "fetch_token_from_get_api_token_and_retry_with_x_orchestrator_token_header", "error": "Mutation token required for this tool"}}}

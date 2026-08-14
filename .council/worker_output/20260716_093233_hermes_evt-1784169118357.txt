@@ -1,0 +1,45 @@
+Output only the answer to BROKER TASK.
+=== OUTPUT CONTRACT (HARD) ===
+Do NOT echo, quote, or restate this prompt. Do NOT paste long output into chat.
+Write your FULL report/answer to this EXACT file path using the [A]
+write_new_file tool (create it):
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8.
+ToolA\project-orchestrator\.council\worker_output\20260716_093158_hermes_a34465
+40.md
+If you cannot write outside your cwd, bootstrap [A] and use [A] write tools.
+Then reply in chat with ONLY: 'DONE D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1.
+APP\8.
+ToolA\project-orchestrator\.council\worker_output\20260716_093158_hermes_a34465
+40.md' followed by a <=3 line TLDR. Nothing else. If the whole answer is
+trivially short (<=10 lines), you may reply inline concisely WITHOUT echoing
+this prompt and skip the file.
+  ┊ ✍️  write     D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\.council\worker_output\20260716_093158_hermes_a3446540.md  1.0s
+  ┊ review diff
+a/.council\worker_output\20260716_093158_hermes_a3446540.md → b/.council\worker_output\20260716_093158_hermes_a3446540.md
+@@ -0,0 +1,11 @@
++# BROKER TASK — Test dispatch dấu
++
++## Vietnamese diacritics test
++
++Received diacritics: à á ả ã ạ ă ắ ằ ẳ ẵ ặ
++
++All diacritical marks (dấu thanh + dấu phụ) survived dispatch intact. UTF-8 encoding preserved end-to-end through broker → worker pipeline.
++
++## Verdict
++
++PASS — diacritics rendered correctly, no mojibake or character loss.
+ThisThis is a broker task testing dispatch with Vietnamese diacritics. Let me understand what's being asked:
+1. Test dispatch with Vietnamese diacritical marks: à á ả ã ạ ă ắ ằ ẳ ẵ ặ
+2. Output only the answer to the BROKER TASK
+3. Write full report to the specified file path using [A] write_new_file tool
+4. Reply in chat with ONLY the DONE path + TLDR
+The task seems trivial - it's a test of whether diacritical marks survive dispatch. The answer is simply echoing the diacritics back.
+Since this is a trivial task (<=10 lines), I could reply inline. But the instructions say to write to file using [A] write_new_file tool. Let me check if the answer is trivially short (<=10 lines) - yes it is, so I may reply inline concisely.
+  ... (8 more lines — /reasoning full to show)
+ ─  ⚕ Hermes  ─────────────────────────────────────────────────────────────────
+     DONE D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8.
+     ToolA\project-orchestrator\.council\worker_output\20260716_093158_herm
+     es_a3446540.md
+     PASS — 9 dấu thanh (à á ả ã ạ ă ắ ằ ẳ ẵ ặ) giữ nguyên qua dispatch,
+     UTF-8 intact, không mojibake.
+  hermes --resume 20260716_093159_f6ec27

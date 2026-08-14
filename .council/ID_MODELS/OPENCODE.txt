@@ -1,0 +1,19 @@
+OPENCODE
+
+ID model:
+opencode/deepseek-v4-flash-free
+
+ID model:
+opencode/nemotron-3-ultra-free
+
+ID model:
+opencode/mimo-v2.5-free
+
+ID model:
+openai-compatible/glm-5.2
+
+ID model:
+openai-compatible/deepseek-v4-pro
+
+ID model:
+openai-compatible/kimi-k2.7-code

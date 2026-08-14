@@ -1,0 +1,48 @@
+Output only the answer to BROKER TASK.
+=== OUTPUT CONTRACT (HARD) ===
+Do NOT echo, quote, or restate this prompt. Do NOT paste long output into chat.
+Write your FULL report/answer to this EXACT file path using the [A]
+write_new_file tool (create it):
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8.
+ToolA\project-orchestrator\.council\worker_output\20260716_093426_hermes_4c3abe
+ba.md
+If you cannot write outside your cwd, bootstrap [A] and use [A] write tools.
+Then reply in chat with ONLY: 'DONE D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1.
+APP\8.
+ToolA\project-orchestrator\.council\worker_output\20260716_093426_hermes_4c3abe
+ba.md' followed by a <=3 line TLDR. Nothing else. If the whole answer is
+trivially short (<=10 lines), you may reply inline concisely WITHOUT echoing
+this prompt and skip the file.
+  ┊ ✍️  write     D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\.council\worker_output\20260716_093426_hermes_4c3abeba.md  0.9s
+  ┊ review diff
+a/.council\worker_output\20260716_093426_hermes_4c3abeba.md → b/.council\worker_output\20260716_093426_hermes_4c3abeba.md
+@@ -0,0 +1,15 @@
++# BROKER TASK — Xác nhận hoàn thành task kiểm tra
++
++## Trạng thái: KHÔNG THỂ XÁC NHẬN (not verified)
++
++Không có thông tin về task kiểm tra cụ thể nào được thực hiện — không có task_id, không có mô tả scope, không có evidence (log, output, test result) để xác minh.
++
++Theo nguyên tắc CSLt (Correctness đứng đầu): không thể xác nhận "đã hoàn thành" khi không có bằng chứng thực tế. "unknown / not verified" là câu trả lời trung thực.
++
++## Yêu cầu để xác nhận
++Cần cung cấp:
++1. Task ID / mô tả task kiểm tra cụ thể
++2. Output/log thực tế từ lần chạy kiểm tra
++3. Scope kiểm tra (file/module/feature nào)
++
++END_HERMES_R1_CONFIRM
+TheThe user is sending a broker task asking me to confirm completion of a "task kiểm tra" (inspection/check task). This looks like a council broker-worker task. The prompt says "Output only the answer to BROKER TASK" and has a hard output contract.
+Let me think about what's happening here. This appears to be a council worker dispatch where I'm being asked to confirm completion of an inspection task. The task itself is vague - "Xác nhận: Đã hoàn thành task kiểm tra" (Confirm: Completed the inspection task).
+I need to write my full report to the specified file path using the [A] write_new_file tool, then reply with only 'DONE <path>' followed by a <=3 line TLDR.
+But wait - I should be careful. This is asking me to confirm completion of a task. But what task? There's no actual task described beyond "confirm: completed the inspection task." This seems like it could be a trivial confirmation task.
+Let me think about the CORE_RULE. The bootstrap says I should POST to [A:API]/api/call/get_rule_core_text and bootstrap_session. But this is a broker-worker task context.
+  ... (37 more lines — /reasoning full to show)
+ ─  ⚕ Hermes  ─────────────────────────────────────────────────────────────────
+     DONE D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8.
+     ToolA\project-orchestrator\.council\worker_output\20260716_093426_herm
+     es_4c3abeba.md
+     TLDR: Không thể xác nhận "đã hoàn thành task kiểm tra" vì không có
+     task_id, scope, hay evidence cụ thể. Cần cung cấp task ID + output
+     thực tế để xác minh.
+  hermes --resume 20260716_093427_1585fb
