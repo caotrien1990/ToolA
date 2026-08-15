@@ -25,8 +25,28 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from orchestrator.graph import dto as dto_mod
 from orchestrator.graph.indexer import index_project
 from orchestrator.graph.dto import DTO_VERSION, normalize_graph_dto
+
+
+class _GraphEnabledCase(unittest.TestCase):
+    """Base for cases that need an ENABLED graph regardless of import order.
+
+    config binds GRAPH_ENABLED once at import time, so the env write above only
+    wins when this file is the first graph importer in the process. Under a
+    whole-suite run test_cbm_graph_enabled_canary can import config with
+    GRAPH_ENABLED=0 first and every assertion here would then be checking a
+    disabled graph. Pinning the already-imported constant makes these cases
+    order-independent.
+    """
+
+    def setUp(self):
+        self._dto_flag = dto_mod.GRAPH_ENABLED
+        dto_mod.GRAPH_ENABLED = True
+
+    def tearDown(self):
+        dto_mod.GRAPH_ENABLED = self._dto_flag
 
 FIX_MOD = '''import os
 
@@ -45,10 +65,11 @@ class Widget:
 '''
 
 
-class TestCbmGraphV1Dto(unittest.TestCase):
+class TestCbmGraphV1Dto(_GraphEnabledCase):
     """DTO envelope shape and content contract."""
 
     def setUp(self):
+        super().setUp()
         self.tempdir = Path(tempfile.mkdtemp(prefix="dto_v1_"))
         (self.tempdir / "mod.py").write_text(FIX_MOD, encoding="utf-8")
         self.proj = str(self.tempdir).replace("\\", "/")
@@ -56,6 +77,7 @@ class TestCbmGraphV1Dto(unittest.TestCase):
 
     def tearDown(self):
         shutil.rmtree(self.tempdir, ignore_errors=True)
+        super().tearDown()
 
     def test_envelope_version_and_top_level_keys(self):
         """The envelope MUST carry dto='cbm.graph/v1' and the three required keys."""
@@ -219,7 +241,7 @@ class TestCbmGraphV1DtoDisabled(unittest.TestCase):
             dto_mod.GRAPH_ENABLED = original
 
 
-class TestReadonlyGetDbSideEffectFree(unittest.TestCase):
+class TestReadonlyGetDbSideEffectFree(_GraphEnabledCase):
     """CDP1-R02: get_db(readonly=True) MUST NOT create the parent directory.
 
     WHY: a "read-only" call must be side-effect-free.  Before the fix the
@@ -231,12 +253,14 @@ class TestReadonlyGetDbSideEffectFree(unittest.TestCase):
     """
 
     def setUp(self):
+        super().setUp()
         self.tempdir = Path(tempfile.mkdtemp(prefix="dto_ro_noside_"))
         # Point at a project root that does NOT contain .orchestrator_cache.
         self.proj = str(self.tempdir / "no_such_project").replace("\\", "/")
 
     def tearDown(self):
         shutil.rmtree(self.tempdir, ignore_errors=True)
+        super().tearDown()
 
     def _tree_snapshot(self) -> set:
         """Snapshot every dir/file under tempdir so we can detect changes."""

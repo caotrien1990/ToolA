@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 
+from . import cycle_point as _cycle_point
 from . import indexer as _indexer
 from . import status as _status
 from . import query as _query
@@ -379,6 +380,28 @@ async def cbm_incremental_index(project_path: str = "", scope: str = "full",
         return _err("cbm_incremental_index", e)
 
 
+async def cbm_cycle_point(project_path: str = "", **aliases) -> str:
+    """T1: dependency cycles + levelization + geometric-mean quality signal. Fail-open."""
+    if not project_path:
+        return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
+                            "error": "project_path required"}, ensure_ascii=False)
+    project_path, path_err = _clean_project_path(project_path)
+    if path_err:
+        return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
+                            "error": path_err}, ensure_ascii=False)
+    # Same F-01 guard as cbm_graph_status: a nonexistent root is a caller bug and
+    # must not be reported as a valid-but-unindexed project.
+    if not os.path.isdir(project_path):
+        return _json.dumps({"ok": False, "error_name": "INVALID_PROJECT_PATH",
+                            "error": f"project_path is not an existing directory: {project_path}"},
+                           ensure_ascii=False)
+    try:
+        result = await asyncio.to_thread(_cycle_point.compute_cycle_point, project_path)
+        return _ok(result)
+    except Exception as e:
+        return _err("cbm_cycle_point", e)
+
+
 async def cbm_council_context(project_path: str = "", name: str = "",
                               depth: int = 2, file_path: str = "",
                               **aliases) -> str:
@@ -405,4 +428,4 @@ async def cbm_council_context(project_path: str = "", name: str = "",
 
 __all__ = ["cbm_index", "cbm_graph_status", "cbm_trace_path",
            "cbm_template_query", "cbm_get_architecture", "cbm_dead_code",
-           "cbm_incremental_index", "cbm_council_context"]
+           "cbm_incremental_index", "cbm_council_context", "cbm_cycle_point"]

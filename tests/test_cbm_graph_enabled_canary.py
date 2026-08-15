@@ -26,10 +26,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-# Force GRAPH_ENABLED=0 BEFORE any graph module import. The config module
-# reads the env at import time; we must ensure the flag is off.
+# Force GRAPH_ENABLED=0 BEFORE any graph module import, for the case where this
+# file runs first in its own process.
 os.environ["GRAPH_ENABLED"] = "0"
 
+from orchestrator.graph import dto as dto_mod  # noqa: E402
+from orchestrator.graph import query as query_mod  # noqa: E402
 from orchestrator.graph.query import (  # noqa: E402
     graph_find_symbol, cbm_trace_path, template_query,
     cbm_get_architecture, dead_code_candidates, council_graph_context,
@@ -38,7 +40,28 @@ from orchestrator.graph.dto import normalize_graph_dto  # noqa: E402
 
 
 class TestGraphEnabledOffCanary(unittest.TestCase):
-    """GRAPH_ENABLED=0: every graph tool returns the safe degraded payload."""
+    """GRAPH_ENABLED=0: every graph tool returns the safe degraded payload.
+
+    The env var above only wins when this file is the first graph importer in
+    the process. Under a whole-suite run another test module (e.g.
+    test_cbm_graph_dto) imports orchestrator.graph.config with GRAPH_ENABLED=1
+    first, config binds the flag once at import time, and every later
+    os.environ write is ignored — the canary then silently asserted against an
+    ENABLED graph and failed. setUp/tearDown pin the already-imported module
+    constants instead, which is the same technique test_cbm_graph_dto already
+    uses for its disabled-mode cases, so the canary now tests the flag rather
+    than the import order.
+    """
+
+    def setUp(self):
+        self._query_flag = query_mod.GRAPH_ENABLED
+        self._dto_flag = dto_mod.GRAPH_ENABLED
+        query_mod.GRAPH_ENABLED = False
+        dto_mod.GRAPH_ENABLED = False
+
+    def tearDown(self):
+        query_mod.GRAPH_ENABLED = self._query_flag
+        dto_mod.GRAPH_ENABLED = self._dto_flag
 
     def test_graph_find_symbol_disabled(self):
         result = graph_find_symbol("D:/nonexistent", "anything")

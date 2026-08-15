@@ -14297,6 +14297,7 @@ try:
         ruff_fix as _ruff_fix_handler,
         cbm_incremental_index as _cbm_incremental_index_handler,
         cbm_council_context as _cbm_council_context_handler,
+        cbm_cycle_point as _cbm_cycle_point_handler,
     )
     from orchestrator.core.registry import register_tool as _register_cbm_p1
 
@@ -14432,6 +14433,26 @@ try:
                     "name": {"type": "string", "description": "Optional symbol name; omitted = file_path or changed-files mode."},
                     "file_path": {"type": "string", "description": "Optional file path (relative to project root); when name is empty, returns all symbols in the file + direct callers. Takes precedence over changed-files mode."},
                     "depth": {"type": "integer", "description": "Impact BFS depth for symbol mode (clamped to 5). Default: 2."},
+                },
+                "required": ["project_path"],
+            },
+        },
+    )
+
+    _register_cbm_p1(
+        name="cbm_cycle_point",
+        handler=_cbm_cycle_point_handler,
+        phase="T1",
+        tool_map=TOOL_MAP,
+        tool_schemas=TOOL_SCHEMAS,
+        tool_phases=TOOL_PHASES,
+        phase_labels=PHASE_LABELS,
+        schema={
+            "description": "T1 read-only: architectural health of the file dependency graph — circular dependencies (iterative Tarjan SCC), Lakos levelization with upward-violation count (Kahn over the SCC-collapsed DAG), longest dependency chain, and a geometric-mean quality_signal over five root causes (modularity via Newman Q, acyclicity, depth, equality via Gini, redundancy via dead symbols). Reads the existing graph.db — no re-scan. equality and redundancy are documented proxies (see metric_notes in the payload) because the extractor stores no per-function cyclomatic complexity and no body hash. Fail-open: GRAPH_ENABLED=0 or a missing DB returns a payload with the reason.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_path": {"type": "string", "description": "Absolute project root holding .orchestrator_cache/graph.db (index it first via cbm_index or cbm_incremental_index)."},
                 },
                 "required": ["project_path"],
             },
