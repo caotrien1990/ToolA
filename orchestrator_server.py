@@ -2389,12 +2389,24 @@ def _normalize_body(tool_name: str, body: dict) -> tuple[dict, list]:
         if not body.get('mode'):
             body['mode'] = 'regex' if is_regex else 'text'
         applied.append('is_regex->mode')
+    # A15 (2026-08-16): a BOOLEAN `regex` is a FLAG, not a field name — its VALUE
+    # selects the mode. Consume it here (pop) so it never reaches the alias loop
+    # (`regex`->`query`) and so `regex: false` correctly yields mode='text'
+    # instead of being misread as "enable regex" (the old presence-only test
+    # blew up with REGEX_INPUT_BUDGET_EXCEEDED / REGEX_INVALID on literal input).
+    # A STRING `regex` is left in place: it is a field-name alias for `query`,
+    # handled by the presence block + alias loop below.
+    if tool_name == 'search_code' and isinstance(body.get('regex'), bool):
+        regex_flag = body.pop('regex')
+        if not body.get('mode'):
+            body['mode'] = 'regex' if regex_flag else 'text'
+        applied.append('regex(bool)->mode')
     # Agent-enablement (2026-08-08): a 'pattern'/'regex' caller-supplied field
-    # semantically implies a regex search. The original code injected
-    # literal_search=False (rejected by S4 as UNSUPPORTED_FIELD because it is
-    # not in the registry properties). The registry-blessed way to express the
-    # intent is mode='regex' — the search implementation already honors it.
-    # Only set when caller did not supply an explicit mode.
+    # (a STRING field-name alias for `query`) semantically implies a regex
+    # search. The original code injected literal_search=False (rejected by S4 as
+    # UNSUPPORTED_FIELD). The registry-blessed way is mode='regex'. Only set when
+    # caller did not supply an explicit mode. A boolean `regex` was already
+    # consumed above, so `regex` here can only be a string field-name alias.
     if tool_name == 'search_code' and not body.get('mode'):
         if 'pattern' in body or 'regex' in body:
             body['mode'] = 'regex'
@@ -3189,16 +3201,38 @@ def _requires_session(tool_name: str) -> bool:
     return tool_name in _MUTATING_TOOLS and tool_name not in _NO_SESSION_REQUIRED
 
 
+_EXAMPLE_PATH_KEYS = {
+    "project_path", "file_path", "path", "folder_path", "script_path", "target",
+}
+
+
 def _normalize_example_paths(payload: dict) -> dict:
-    cleaned = {}
-    for key, value in (payload or {}).items():
-        if isinstance(value, str) and key in {"project_path", "file_path", "path", "folder_path", "script_path", "target"}:
-            if value.startswith("D:/"):
+    """Make an example payload safe to copy verbatim.
+
+    A18 (2026-08-16) FAIL-LOUD (7-RULE #7): a Windows example path is written
+    with backslashes, so a missing escape in the source literal turns `\\t`/`\\f`
+    into a REAL control character. [A] tells a failing caller to rebuild its
+    request from `payload_example`, so the caller then sends a path that this
+    same server rejects with INVALID_PATH_CONTROL_CHAR — [A] handing out an
+    example it will refuse.
+
+    Recurses into nested dicts and lists: batch tools carry their paths inside
+    an array of request objects (e.g. read_context_batch `requests[0].file_path`),
+    and a top-level-only sweep silently missed every one of them.
+    """
+    def clean(key, value):
+        if isinstance(value, dict):
+            return {k: clean(k, v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [clean(key, v) for v in value]
+        if isinstance(value, str) and key in _EXAMPLE_PATH_KEYS:
+            if value.startswith("D:/") or value.startswith("relative/"):
                 value = value.replace("/", "\\")
-            elif value.startswith("relative/"):
-                value = value.replace("/", "\\")
-        cleaned[key] = value
-    return cleaned
+            if any(ch < " " for ch in value):
+                value = "".join(ch for ch in value if ch >= " ")
+        return value
+
+    return {key: clean(key, value) for key, value in (payload or {}).items()}
 
 
 def _schema_for_tool(tool_name: str) -> dict:
@@ -3225,9 +3259,9 @@ def _generated_payload_example(tool_name: str, fn_schema: dict) -> dict:
         if "const" in spec:
             return copy.deepcopy(spec["const"])
         if field == "project_path":
-            return r"D:\path	o\project"
+            return r"D:\path\to\project"
         if field in {"file_path", "path"}:
-            return r"relativeile.py"
+            return r"relative\file.py"
         kind = spec.get("type")
         if kind == "boolean":
             return False
@@ -3288,7 +3322,11 @@ def _payload_example_for_tool(tool_name: str, fn_schema: dict) -> dict:
     """
     override = _PAYLOAD_EXAMPLE_OVERRIDES.get(tool_name)
     if override is not None:
-        return copy.deepcopy(override)
+        # A18: curated overrides bypassed the path sanitiser entirely, so a bad
+        # literal here reached the caller untouched. Route them through the same
+        # guard — a hand-written example is no more trustworthy than a generated
+        # one, and this is the only exit both paths share.
+        return _normalize_example_paths(copy.deepcopy(override))
     example=_generated_payload_example(tool_name,fn_schema)
     if tool_name != "workflow_draft_get": example.pop("token",None)
     return example
@@ -13232,6 +13270,24 @@ accepted_fields=sorted(accepted_fields),
             _result["canonical_replacements"] = _compat_meta.get("canonical_replacements", {})
             _result["compatibility_applied"] = _compat_meta.get("compatibility_applied", False)
             _result["removal_version"] = _compat_meta.get("removal_version", _SEARCH_COMPAT_REMOVAL_VERSION)
+        # A15 (2026-08-16) FAIL-LOUD (7-RULE #7): when normalization silently
+        # decided an internal `mode` from a boolean flag (regex/is_regex) the
+        # caller must be told — otherwise a `regex: false` that got downgraded to
+        # text (or vice-versa) is invisible. Surface only the mode-affecting
+        # normalizations to keep the payload small.
+        #
+        # A17 (2026-08-16): also surface DROPPED fields. A caller-supplied field
+        # that loses to an existing canonical key (e.g. regex_search receiving
+        # both `pattern` and `regex`) was only written to the server log, so the
+        # caller never learned its input was discarded. Silently ignoring input
+        # is the same 7-RULE #7 violation as silently rewriting it.
+        if _aliases_applied and isinstance(_result, dict):
+            _mode_norm = [
+                a for a in _aliases_applied
+                if 'mode' in a or 'dropped' in a
+            ]
+            if _mode_norm:
+                _result.setdefault("normalization_applied", _mode_norm)
         # with ensure_ascii=False so CA sees raw UTF-8 text.
         try:
             _result = _r101_filter(_result, _R101_FIELDS.get())

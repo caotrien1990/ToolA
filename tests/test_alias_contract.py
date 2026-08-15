@@ -197,6 +197,58 @@ class TestNormalizeBodyAliases(unittest.TestCase):
         self.assertNotIn("is_regex", norm)
         self.assertIn("is_regex->mode", applied)
 
+    def test_search_code_is_regex_false_maps_to_text(self):
+        """A15: is_regex boolean must honour its VALUE, not mere presence."""
+        body = {"query": "foo", "is_regex": False}
+        norm, applied = srv._normalize_body("search_code", dict(body))
+        self.assertEqual(norm.get("mode"), "text")
+        self.assertNotIn("is_regex", norm)
+
+    def test_search_code_regex_bool_true_maps_to_regex(self):
+        """A15: a BOOLEAN `regex` flag with value True selects mode='regex'."""
+        body = {"query": "foo", "regex": True}
+        norm, applied = srv._normalize_body("search_code", dict(body))
+        self.assertEqual(norm.get("mode"), "regex")
+        self.assertNotIn("regex", norm)
+        self.assertTrue(any("regex(bool)->mode" in a for a in applied))
+
+    def test_search_code_regex_bool_false_maps_to_text(self):
+        """A15 regression: `regex: false` MUST yield mode='text', not regex.
+
+        Root cause: the old presence-only branch (`if 'regex' in body`) set
+        mode='regex' regardless of the value, so `regex: false` was misread as
+        "enable regex". Combined with the `regex->query` alias dropping the bool
+        AFTER the mode was flipped, a literal query blew up with
+        REGEX_INPUT_BUDGET_EXCEEDED / REGEX_INVALID and no UNSUPPORTED_FIELD.
+        """
+        body = {"query": "cbm_cycle_point", "regex": False}
+        norm, applied = srv._normalize_body("search_code", dict(body))
+        self.assertEqual(norm.get("mode"), "text",
+                         "regex:false must select text mode, not regex")
+        self.assertNotIn("regex", norm, "boolean regex flag must be consumed")
+        self.assertEqual(norm.get("query"), "cbm_cycle_point",
+                         "query must be preserved untouched")
+        self.assertTrue(any("regex(bool)->mode" in a for a in applied),
+                        f"applied audit must record regex(bool)->mode; got {applied}")
+
+    def test_search_code_regex_bool_false_with_backslash_path_no_regex_error(self):
+        """A15: a Windows-path literal query with regex:false must not be
+        treated as a regex (which would raise 'bad escape \\p')."""
+        body = {"query": r"D:\path\to\project", "regex": False}
+        norm, applied = srv._normalize_body("search_code", dict(body))
+        self.assertEqual(norm.get("mode"), "text")
+        self.assertEqual(norm.get("query"), r"D:\path\to\project")
+
+    def test_search_code_regex_string_is_field_name_alias(self):
+        """A15: a STRING `regex` keeps its field-name-alias meaning (regex->query)
+        and implies mode='regex' (presence-only, unchanged legacy behavior)."""
+        body = {"regex": r"def foo\("}
+        norm, applied = srv._normalize_body("search_code", dict(body))
+        self.assertEqual(norm.get("query"), r"def foo\(",
+                         "string regex must be renamed to canonical query")
+        self.assertNotIn("regex", norm)
+        self.assertEqual(norm.get("mode"), "regex")
+
     def test_search_code_pattern_alias_does_not_inject_literal_search(self):
         """search_code: pattern->query must NOT inject literal_search (2026-08-08).
 
@@ -263,6 +315,23 @@ class TestNormalizeBodyAliases(unittest.TestCase):
         norm, applied = srv._normalize_body("regex_search", dict(body))
         self.assertEqual(norm["pattern"], "canonical")
         self.assertNotIn("query", norm)
+
+    def test_boolean_flag_aliases_respect_value_not_presence(self):
+        """A15 contract: any boolean-semantic flag folded into `mode` for
+        search_code must honour BOTH true and false.
+
+        The 251/251 alias-name contract passed while A15 was live because it
+        only checked that field NAMES were renamed, never that a boolean VALUE
+        was respected. This asserts the true/false pair for each mode flag so a
+        future presence-only regression is caught.
+        """
+        for flag in ("is_regex", "regex"):
+            norm_t, _ = srv._normalize_body("search_code", {"query": "x", flag: True})
+            self.assertEqual(norm_t.get("mode"), "regex",
+                             f"search_code {flag}=True must select regex mode")
+            norm_f, _ = srv._normalize_body("search_code", {"query": "x", flag: False})
+            self.assertEqual(norm_f.get("mode"), "text",
+                             f"search_code {flag}=False must select text mode")
 
     def test_non_dict_body_passthrough(self):
         norm, applied = srv._normalize_body("read_file_range", "not a dict")
@@ -411,6 +480,108 @@ class TestLiveAliasContractTest(unittest.TestCase):
             harmless_tests.get("passed"), harmless_tests.get("tested"),
             f"Not all harmless-ignore tests passed: {harmless_tests.get('failed', 0)} failed",
         )
+
+
+# ── A17: dropping caller input must be reported, not just logged ─────────────
+
+class TestDroppedFieldIsReported(unittest.TestCase):
+    """A17 contract: when an alias loses to an existing canonical key its value
+    is discarded. That discard must appear in the `applied` list so the
+    dispatcher can surface it to the caller (7-RULE #7 fail loud).
+
+    Regression guard for the A15 sibling defect: `regex_search` accepts both
+    `pattern` and `regex` (an alias of `pattern`), so `{"pattern": X, "regex":
+    Y}` throws Y away. Before A17 that happened in silence.
+    """
+
+    def test_regex_search_reports_dropped_alias(self):
+        for value in (False, True, "other"):
+            with self.subTest(value=value):
+                norm, applied = srv._normalize_body(
+                    "regex_search", {"pattern": "foo", "regex": value}
+                )
+                self.assertEqual(norm.get("pattern"), "foo")
+                self.assertNotIn("regex", norm, "losing alias must be removed")
+                self.assertTrue(
+                    any("dropped" in a for a in applied),
+                    f"dropping `regex`={value!r} must be recorded, got {applied}",
+                )
+
+    def test_no_drop_reported_when_nothing_dropped(self):
+        """Guard against the opposite failure: reporting a drop that never
+        happened would train callers to ignore the field."""
+        _, applied = srv._normalize_body("regex_search", {"pattern": "foo"})
+        self.assertFalse([a for a in applied if "dropped" in a], applied)
+
+    def test_search_code_boolean_regex_is_not_a_drop(self):
+        """A boolean `regex` on search_code is consumed as a mode flag (A15),
+        which is a rewrite, not a discard — it must not be labelled dropped."""
+        _, applied = srv._normalize_body(
+            "search_code", {"query": "x", "regex": False}
+        )
+        self.assertTrue(any("mode" in a for a in applied), applied)
+        self.assertFalse([a for a in applied if "dropped" in a], applied)
+
+
+class _StubRequest:
+    """Minimal stand-in for an aiohttp request, enough for the in-process
+    dispatcher. `text`/`read` matter: without them the body parse silently
+    falls back and the call is rejected before normalization ever runs."""
+
+    remote = "127.0.0.1"
+
+    def __init__(self, tool, body):
+        self.headers = {}
+        self.match_info = {"tool_name": tool}
+        self.query = {}
+        self.rel_url = type("_U", (), {"query": {}})()
+        self.method = "POST"
+        self.path = "/api/call/" + tool
+        self._body = body
+
+    async def json(self):
+        return self._body
+
+    async def text(self):
+        return json.dumps(self._body)
+
+    async def read(self):
+        return json.dumps(self._body).encode()
+
+
+class TestDroppedFieldReachesCaller(unittest.IsolatedAsyncioTestCase):
+    """A17 end-to-end: the `applied` list is built in _normalize_body but only
+    the DISPATCHER decides what the caller sees. Asserting on _normalize_body
+    alone passes even with the surfacing removed, so this drives the real
+    dispatcher and asserts on the serialized response body.
+    """
+
+    async def _call(self, body):
+        resp = await srv._dispatch_tool_call_request(
+            _StubRequest("regex_search", dict(body))
+        )
+        return json.loads(resp.body)
+
+    async def test_dropped_alias_is_surfaced_in_response(self):
+        data = await self._call({
+            "pattern": "needle", "regex": False,
+            "project_path": ".", "max_results": 1,
+        })
+        surfaced = data.get("normalization_applied")
+        self.assertIsNotNone(
+            surfaced,
+            "caller must be told `regex` was discarded; got keys "
+            f"{sorted(data)}",
+        )
+        self.assertTrue(any("dropped" in a for a in surfaced), surfaced)
+
+    async def test_clean_call_has_no_normalization_field(self):
+        """The field must stay absent when nothing was rewritten or dropped —
+        a field that is always present carries no signal."""
+        data = await self._call({
+            "pattern": "needle", "project_path": ".", "max_results": 1,
+        })
+        self.assertIsNone(data.get("normalization_applied"))
 
 
 if __name__ == "__main__":

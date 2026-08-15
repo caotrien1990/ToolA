@@ -237,7 +237,10 @@ class TestSearchRegexBudget(unittest.IsolatedAsyncioTestCase):
                 ))
         self.assertEqual(payload["error_name"], "REGEX_SEARCH_TIMEOUT")
         self.assertIsNotNone(observed_timeout)
-        self.assertLessEqual(observed_timeout, 0.05)
+        # Float arithmetic on the absolute deadline can overshoot the requested
+        # budget by a few ULPs (observed 0.05000000000291038 vs 0.05), so compare
+        # with a tolerance instead of an exact upper bound.
+        self.assertLessEqual(observed_timeout, 0.05 + 1e-6)
         self.assertLess(time.monotonic() - started, 0.20)
 
     async def test_within_bucket_regex_follower_keeps_own_absolute_budget(self) -> None:
