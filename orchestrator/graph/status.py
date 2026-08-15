@@ -8,7 +8,7 @@ import os
 import sqlite3
 import time
 
-from .config import GRAPH_ENABLED, CBM_USE_TREE_SITTER
+from .config import graph_enabled, CBM_USE_TREE_SITTER
 from . import store as _store
 
 EXTRACTOR_VERSION = "ast-p0-v1"
@@ -45,7 +45,7 @@ def graph_status(project_path: str) -> dict:
     """
     t0 = time.monotonic()
     payload = {
-        "enabled": GRAPH_ENABLED,
+        "enabled": graph_enabled(),
         "db_present": False,
         "integrity": "unknown",
         "nodes": 0, "edges": 0, "files": 0,
@@ -57,7 +57,7 @@ def graph_status(project_path: str) -> dict:
         "elapsed_ms": 0,
         "error": None,
     }
-    if not GRAPH_ENABLED:
+    if not graph_enabled():
         payload["elapsed_ms"] = round((time.monotonic() - t0) * 1000, 1)
         return payload
 

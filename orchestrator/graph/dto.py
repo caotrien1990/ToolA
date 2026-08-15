@@ -26,7 +26,7 @@ Edge endpoint convention (source_symbol / target_symbol):
 """
 import time
 
-from .config import GRAPH_ENABLED
+from .config import graph_enabled
 from . import store as _store
 from .status import graph_status, EXTRACTOR_VERSION
 
@@ -93,18 +93,18 @@ def normalize_graph_dto(project_path: str, *, include_disabled: bool = True) -> 
             "commit_or_mtime": "",
             "extractor_version": EXTRACTOR_VERSION,
             "counts": {"symbols": 0, "edges": 0, "files": 0},
-            "graph_enabled": GRAPH_ENABLED,
+            "graph_enabled": graph_enabled(),
             "elapsed_ms": 0,
             "error": None,
         },
     }
 
-    if not GRAPH_ENABLED and not include_disabled:
+    if not graph_enabled() and not include_disabled:
         envelope["provenance"]["elapsed_ms"] = round(
             (time.monotonic() - t0) * 1000, 1)
         return envelope
 
-    if not GRAPH_ENABLED:
+    if not graph_enabled():
         # Graph disabled: return empty envelope with provenance marker.
         envelope["provenance"]["error"] = "GRAPH_ENABLED=0"
         envelope["provenance"]["elapsed_ms"] = round(

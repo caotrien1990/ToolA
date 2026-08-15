@@ -26,12 +26,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-# Force GRAPH_ENABLED=0 BEFORE any graph module import, for the case where this
-# file runs first in its own process.
-os.environ["GRAPH_ENABLED"] = "0"
-
-from orchestrator.graph import dto as dto_mod  # noqa: E402
-from orchestrator.graph import query as query_mod  # noqa: E402
 from orchestrator.graph.query import (  # noqa: E402
     graph_find_symbol, cbm_trace_path, template_query,
     cbm_get_architecture, dead_code_candidates, council_graph_context,
@@ -42,26 +36,24 @@ from orchestrator.graph.dto import normalize_graph_dto  # noqa: E402
 class TestGraphEnabledOffCanary(unittest.TestCase):
     """GRAPH_ENABLED=0: every graph tool returns the safe degraded payload.
 
-    The env var above only wins when this file is the first graph importer in
-    the process. Under a whole-suite run another test module (e.g.
-    test_cbm_graph_dto) imports orchestrator.graph.config with GRAPH_ENABLED=1
-    first, config binds the flag once at import time, and every later
-    os.environ write is ignored — the canary then silently asserted against an
-    ENABLED graph and failed. setUp/tearDown pin the already-imported module
-    constants instead, which is the same technique test_cbm_graph_dto already
-    uses for its disabled-mode cases, so the canary now tests the flag rather
-    than the import order.
+    A13 fix (2026-08-16): the graph layer now reads GRAPH_ENABLED live from the
+    environment at call time (orchestrator.graph.config.graph_enabled), so the
+    flag is no longer frozen at import. This canary therefore drives the flag
+    per-test via os.environ (set 0 in setUp, restore in tearDown) instead of
+    poisoning the shared process env at import or monkeypatching a frozen module
+    constant. The env write is scoped to each test, so import order no longer
+    changes what any other test module observes.
     """
 
     def setUp(self):
-        self._query_flag = query_mod.GRAPH_ENABLED
-        self._dto_flag = dto_mod.GRAPH_ENABLED
-        query_mod.GRAPH_ENABLED = False
-        dto_mod.GRAPH_ENABLED = False
+        self._saved = os.environ.get("GRAPH_ENABLED")
+        os.environ["GRAPH_ENABLED"] = "0"
 
     def tearDown(self):
-        query_mod.GRAPH_ENABLED = self._query_flag
-        dto_mod.GRAPH_ENABLED = self._dto_flag
+        if self._saved is None:
+            os.environ.pop("GRAPH_ENABLED", None)
+        else:
+            os.environ["GRAPH_ENABLED"] = self._saved
 
     def test_graph_find_symbol_disabled(self):
         result = graph_find_symbol("D:/nonexistent", "anything")

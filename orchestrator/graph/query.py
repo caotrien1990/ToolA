@@ -16,7 +16,7 @@ from collections import deque
 from typing import Optional
 
 from .config import (
-    GRAPH_ENABLED, GRAPH_CONTEXT_MAX_FILES, GRAPH_CONTEXT_MAX_SYMBOLS,
+    graph_enabled, GRAPH_CONTEXT_MAX_FILES, GRAPH_CONTEXT_MAX_SYMBOLS,
     GRAPH_CONTEXT_TIMEOUT_S, COUNCIL_CONTEXT_MAX_FILES, COUNCIL_CONTEXT_MAX_SYMBOLS,
     CBM_AUTO_REINDEX_MAX_STALE,
 )
@@ -91,9 +91,9 @@ def graph_find_symbol(project_path: str, query: str, *, limit: int = 50) -> dict
 
     Fail-open: returns {enabled, results, error} — never raises.
     """
-    payload = {"enabled": GRAPH_ENABLED, "results": [], "error": None, "elapsed_ms": 0}
+    payload = {"enabled": graph_enabled(), "results": [], "error": None, "elapsed_ms": 0}
     t0 = time.monotonic()
-    if not GRAPH_ENABLED:
+    if not graph_enabled():
         payload["elapsed_ms"] = round((time.monotonic() - t0) * 1000, 1)
         return payload
     try:
@@ -134,13 +134,13 @@ def cbm_trace_path(project_path: str, start_node_id: str, *,
     Cycle-safe via a visited set.
     """
     payload = {
-        "enabled": GRAPH_ENABLED, "start": start_node_id, "direction": direction,
+        "enabled": graph_enabled(), "start": start_node_id, "direction": direction,
         "depth": depth, "edges": [], "nodes_seen": 0, "files_seen": 0,
         "symbols_seen": 0, "truncated": False, "truncation_reason": None,
         "elapsed_ms": 0, "error": None,
     }
     t0 = time.monotonic()
-    if not GRAPH_ENABLED:
+    if not graph_enabled():
         payload["elapsed_ms"] = round((time.monotonic() - t0) * 1000, 1)
         return payload
 
@@ -254,7 +254,7 @@ def find_symbol_as_search_response(name: str, project_path: str, *,
     emitted results and tag the response with truncation metadata so the
     caller can detect an 849KB-style blowup and stay bounded.
     """
-    if not GRAPH_ENABLED:
+    if not graph_enabled():
         return None
     import json
     # P2-SYM-03: definition-shaped kinds for include='def'. 'module' nodes are
@@ -354,13 +354,13 @@ def template_query(project_path: str, template: str, *, name: str = "",
     Unsupported template -> clear error listing the supported set.
     """
     t0 = time.monotonic()
-    payload = {"enabled": GRAPH_ENABLED, "template": template, "results": [],
+    payload = {"enabled": graph_enabled(), "template": template, "results": [],
                "count": 0, "total_count": 0, "truncated": False, "error": None, "elapsed_ms": 0}
     if template not in TEMPLATES:
         payload["error"] = (f"unsupported_template: {template!r}; "
                             f"supported: {', '.join(TEMPLATES)}")
         return payload
-    if not GRAPH_ENABLED:
+    if not graph_enabled():
         return payload
     limit = max(1, min(int(limit or 50), 500)); offset = max(0, int(offset or 0))
     try:
@@ -480,9 +480,9 @@ def template_query(project_path: str, template: str, *, name: str = "",
 def nodes_query(project_path: str, *, kind: str = "", name_prefix: str = "",
                 file_contains: str = "", limit: int = 100, offset: int = 0) -> dict:
     """Filter/browse raw graph nodes with a cursor. Fail-open."""
-    payload = {"enabled": GRAPH_ENABLED, "results": [], "count": 0, "total": 0,
+    payload = {"enabled": graph_enabled(), "results": [], "count": 0, "total": 0,
                "limit": limit, "offset": offset, "next_offset": None, "error": None}
-    if not GRAPH_ENABLED:
+    if not graph_enabled():
         return payload
     limit = max(1, min(int(limit or 100), 500))
     offset = max(0, int(offset or 0))
@@ -515,9 +515,9 @@ def nodes_query(project_path: str, *, kind: str = "", name_prefix: str = "",
 def edges_query(project_path: str, *, kind: str = "", source_contains: str = "",
                 target_contains: str = "", limit: int = 100, offset: int = 0) -> dict:
     """Filter/browse raw graph edges with a cursor. Fail-open."""
-    payload = {"enabled": GRAPH_ENABLED, "results": [], "count": 0, "total": 0,
+    payload = {"enabled": graph_enabled(), "results": [], "count": 0, "total": 0,
                "limit": limit, "offset": offset, "next_offset": None, "error": None}
-    if not GRAPH_ENABLED:
+    if not graph_enabled():
         return payload
     limit = max(1, min(int(limit or 100), 500))
     offset = max(0, int(offset or 0))
@@ -567,11 +567,11 @@ def cbm_get_architecture(project_path: str, *,
     files_seen/symbols_seen/elapsed_ms when any bound is hit.
     """
     t0 = time.monotonic()
-    payload = {"enabled": GRAPH_ENABLED, "modules": [], "entry_points": [],
+    payload = {"enabled": graph_enabled(), "modules": [], "entry_points": [],
                "files_seen": 0, "symbols_seen": 0, "truncated": False,
                "truncation_reason": None, "error": None, "elapsed_ms": 0,
                "auto_reindex": None}
-    if not GRAPH_ENABLED:
+    if not graph_enabled():
         return payload
     try:
         # Hybrid auto-reindex: refresh graph only if a file actually changed.
@@ -646,11 +646,11 @@ def dead_code_candidates(project_path: str, *, limit: int = 50) -> dict:
     its own (plan rollback note).
     """
     t0 = time.monotonic()
-    payload = {"enabled": GRAPH_ENABLED, "candidates": [], "count": 0,
+    payload = {"enabled": graph_enabled(), "candidates": [], "count": 0,
                "error": None, "elapsed_ms": 0,
                "disclaimer": "advisory only — dynamic/external callers are invisible; "
                              "never delete code from this list without manual verify"}
-    if not GRAPH_ENABLED:
+    if not graph_enabled():
         return payload
     limit = max(1, min(int(limit or 50), 200))
     try:
@@ -721,7 +721,7 @@ def council_graph_context(project_path: str, *, name: str = "",
                "budget": {"max_files": COUNCIL_CONTEXT_MAX_FILES,
                           "max_symbols": COUNCIL_CONTEXT_MAX_SYMBOLS},
                "elapsed_ms": 0}
-    if not GRAPH_ENABLED:
+    if not graph_enabled():
         payload["graph_degraded_reason"] = "GRAPH_ENABLED=0"
         return payload
     try:

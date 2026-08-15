@@ -28,7 +28,7 @@ from __future__ import annotations
 import time
 from collections import deque
 
-from .config import GRAPH_ENABLED
+from .config import graph_enabled
 from . import store as _store
 
 # Newman Q is bounded to [-0.5, 1.0]; rescale that range onto [0,1].
@@ -415,7 +415,7 @@ def compute_cycle_point(project_path: str) -> dict:
     """
     t0 = time.monotonic()
     payload: dict = {
-        "enabled": GRAPH_ENABLED,
+        "enabled": graph_enabled(),
         "cycles": [], "cycle_count": 0, "largest_cycle": 0,
         "levels": {}, "max_level": 0, "max_depth": 0, "upward_violations": 0,
         "quality_signal": None, "root_causes": {}, "raw": {},
@@ -423,7 +423,7 @@ def compute_cycle_point(project_path: str) -> dict:
         "files_analyzed": 0, "edges_analyzed": 0,
         "error": None, "elapsed_ms": 0,
     }
-    if not GRAPH_ENABLED:
+    if not graph_enabled():
         payload["elapsed_ms"] = round((time.monotonic() - t0) * 1000, 1)
         return payload
 

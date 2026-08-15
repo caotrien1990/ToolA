@@ -33,20 +33,23 @@ from orchestrator.graph.dto import DTO_VERSION, normalize_graph_dto
 class _GraphEnabledCase(unittest.TestCase):
     """Base for cases that need an ENABLED graph regardless of import order.
 
-    config binds GRAPH_ENABLED once at import time, so the env write above only
-    wins when this file is the first graph importer in the process. Under a
-    whole-suite run test_cbm_graph_enabled_canary can import config with
-    GRAPH_ENABLED=0 first and every assertion here would then be checking a
-    disabled graph. Pinning the already-imported constant makes these cases
-    order-independent.
+    A13 fix (2026-08-16): the graph layer reads GRAPH_ENABLED live from the
+    environment (orchestrator.graph.config.graph_enabled), so isolation is
+    achieved by driving os.environ per-test rather than pinning a frozen module
+    constant. setUp forces the flag ON for the duration of each case and
+    tearDown restores the previous value, so import order can no longer make
+    these assertions run against a disabled graph.
     """
 
     def setUp(self):
-        self._dto_flag = dto_mod.GRAPH_ENABLED
-        dto_mod.GRAPH_ENABLED = True
+        self._saved = os.environ.get("GRAPH_ENABLED")
+        os.environ["GRAPH_ENABLED"] = "1"
 
     def tearDown(self):
-        dto_mod.GRAPH_ENABLED = self._dto_flag
+        if self._saved is None:
+            os.environ.pop("GRAPH_ENABLED", None)
+        else:
+            os.environ["GRAPH_ENABLED"] = self._saved
 
 FIX_MOD = '''import os
 
@@ -210,12 +213,12 @@ class TestCbmGraphV1DtoDisabled(unittest.TestCase):
     """GRAPH_ENABLED=0 must return a valid but empty envelope (never raise)."""
 
     def test_disabled_returns_empty_envelope(self):
-        # We need to test with GRAPH_ENABLED=0. Since the config module reads
-        # the env at import time, we patch the imported constant directly.
+        # A13 fix: the DTO reads GRAPH_ENABLED live from the env at call time,
+        # so we drive the flag OFF via os.environ (scoped to this test).
         import orchestrator.graph.dto as dto_mod
-        original = dto_mod.GRAPH_ENABLED
+        original = os.environ.get("GRAPH_ENABLED")
         try:
-            dto_mod.GRAPH_ENABLED = False
+            os.environ["GRAPH_ENABLED"] = "0"
             env = dto_mod.normalize_graph_dto("D:/nonexistent")
             self.assertEqual(env["dto"], "cbm.graph/v1")
             self.assertEqual(env["symbols"], [])
@@ -223,13 +226,16 @@ class TestCbmGraphV1DtoDisabled(unittest.TestCase):
             self.assertEqual(env["provenance"]["error"], "GRAPH_ENABLED=0")
             self.assertFalse(env["provenance"]["graph_enabled"])
         finally:
-            dto_mod.GRAPH_ENABLED = original
+            if original is None:
+                os.environ.pop("GRAPH_ENABLED", None)
+            else:
+                os.environ["GRAPH_ENABLED"] = original
 
     def test_disabled_include_disabled_false(self):
         import orchestrator.graph.dto as dto_mod
-        original = dto_mod.GRAPH_ENABLED
+        original = os.environ.get("GRAPH_ENABLED")
         try:
-            dto_mod.GRAPH_ENABLED = False
+            os.environ["GRAPH_ENABLED"] = "0"
             env = dto_mod.normalize_graph_dto("D:/nonexistent",
                                                include_disabled=False)
             self.assertEqual(env["dto"], "cbm.graph/v1")
@@ -238,7 +244,10 @@ class TestCbmGraphV1DtoDisabled(unittest.TestCase):
             # include_disabled=False: no error marker, just empty
             self.assertIsNone(env["provenance"]["error"])
         finally:
-            dto_mod.GRAPH_ENABLED = original
+            if original is None:
+                os.environ.pop("GRAPH_ENABLED", None)
+            else:
+                os.environ["GRAPH_ENABLED"] = original
 
 
 class TestReadonlyGetDbSideEffectFree(_GraphEnabledCase):

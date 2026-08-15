@@ -143,6 +143,131 @@ class BusySnapshotPublisher:
         return bool(self._thread and self._thread.is_alive())
 
 
+# --- A08: boot reaper for orphaned busy-snapshot temp files ---
+# publish_once() writes "<name>.tmp.<pid>.<tid>.<hex>" then os.replace()s it onto
+# the real snapshot. A hard kill (the restart pipeline SIGKILLs the old PID)
+# between create and replace orphans the temp. There is no in-process cleanup for
+# a dead writer, so temps accumulate across restarts. This reaper runs once at
+# boot and removes ONLY temps whose writer PID is dead.
+_SNAPSHOT_TMP_RE = re.compile(r"\.tmp\.(?P<pid>\d+)\.\d+\.[0-9a-fA-F]+$")
+
+# PID-reuse defense: Windows recycles PIDs aggressively, so "PID is dead" alone is
+# not enough — a temp could belong to a *live* writer whose PID we misread, or a
+# just-created temp mid-replace. We therefore also require the file to be older
+# than this floor before deleting. A real orphan is only ever growing older; a
+# live writer replaces its temp within one publish interval (0.5s), so a minute
+# is comfortably conservative.
+_SNAPSHOT_TMP_MIN_AGE_S = 60.0
+
+
+def _snapshot_pid_alive(pid: int) -> bool:
+    """Return True if *pid* is a live process. Uncertain => True (never reap a
+    possibly-live writer's temp). Mirrors orchestrator_server._pid_alive so the
+    reaper does not depend on the (forbidden) search_snapshots helper."""
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return True
+    if pid <= 0:
+        return True
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            # PROCESS_QUERY_LIMITED_INFORMATION
+            handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+            if handle:
+                ctypes.windll.kernel32.CloseHandle(handle)
+                return True
+            return False
+        except Exception:
+            return True  # uncertain -> assume alive, never falsely clear a live run
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists but not ours
+    except OSError:
+        return True
+
+
+def reap_orphan_busy_snapshots(
+    snapshot_path: str | Path,
+    *,
+    now: float | None = None,
+    min_age_s: float = _SNAPSHOT_TMP_MIN_AGE_S,
+    pid_alive: Callable[[int], bool] = _snapshot_pid_alive,
+) -> dict:
+    """Remove orphaned "<name>.tmp.<pid>.*" busy-snapshot temp files at boot.
+
+    A temp is reaped only when its embedded writer PID is dead AND the file is at
+    least *min_age_s* old (PID-reuse defense). Never touches the current process's
+    temps. Fail-loud (7-RULE #7): returns a structured summary of what was reaped
+    vs. kept and why, so the outcome is observable via log + /health rather than a
+    silent sweep.
+    """
+    snapshot_path = Path(snapshot_path)
+    directory = snapshot_path.parent
+    prefix = snapshot_path.name + ".tmp."
+    now = time.time() if now is None else now
+    current_pid = os.getpid()
+    reaped: list[str] = []
+    kept_alive: list[str] = []
+    kept_young: list[str] = []
+    errors: list[str] = []
+
+    try:
+        entries = list(directory.iterdir())
+    except OSError as exc:
+        return {
+            "scanned": 0, "reaped": [], "reaped_count": 0,
+            "kept_alive": [], "kept_young": [], "errors": [f"scandir: {exc}"],
+        }
+
+    scanned = 0
+    for entry in entries:
+        name = entry.name
+        if not name.startswith(prefix):
+            continue
+        match = _SNAPSHOT_TMP_RE.search(name)
+        if not match:
+            continue
+        scanned += 1
+        pid = int(match.group("pid"))
+        if pid == current_pid:
+            kept_alive.append(name)  # our own in-flight temp
+            continue
+        if pid_alive(pid):
+            kept_alive.append(name)
+            continue
+        try:
+            age_s = max(0.0, now - entry.stat().st_mtime)
+        except OSError as exc:
+            errors.append(f"{name}: stat {exc}")
+            continue
+        if age_s < min_age_s:
+            kept_young.append(name)  # dead PID but too fresh -> PID-reuse guard
+            continue
+        try:
+            entry.unlink()
+            reaped.append(name)
+        except FileNotFoundError:
+            reaped.append(name)  # someone else removed it; still gone
+        except OSError as exc:
+            errors.append(f"{name}: unlink {exc}")
+
+    return {
+        "scanned": scanned,
+        "reaped": reaped,
+        "reaped_count": len(reaped),
+        "kept_alive": kept_alive,
+        "kept_young": kept_young,
+        "errors": errors,
+    }
+
+
 class RestartProtocolError(ValueError):
     def __init__(self, error_name: str, status: int = 400) -> None:
         super().__init__(error_name)

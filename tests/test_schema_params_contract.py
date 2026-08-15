@@ -136,15 +136,17 @@ class TestAliasCanonicalAndLegacyCollision(unittest.TestCase):
     """
 
     # (tool, legacy_alias_source) pairs allowed to also be declared properties.
-    # 2026-07-11: +3 pairs from the schema-drift fix — find_symbol.name /
-    # find_callers.symbol / regex_search.pattern are DELIBERATE dual spellings:
-    # the descriptor documents both fields so workers reading /api/tools can
-    # send either, and _normalize_body folds them into canonical `query`.
+    # 2026-08-16 (A15): the search-alias canonical flipped to name/symbol/pattern
+    # (see orchestrator_server._ARG_ALIASES + registry_data.py, where `query` is a
+    # declared property described as "Alias for name/symbol/pattern"). `query` is
+    # now the DELIBERATE dual-spelling: it is both an alias source (folded to the
+    # canonical) AND a documented schema property so workers reading /api/tools can
+    # send either. The collision moved from name/symbol/pattern onto `query`.
     KNOWN_LEGACY_COLLISIONS = {
         ("write_new_file", "content"),
-        ("find_symbol", "name"),
-        ("find_callers", "symbol"),
-        ("regex_search", "pattern"),
+        ("find_symbol", "query"),
+        ("find_callers", "query"),
+        ("regex_search", "query"),
     }
 
     def test_alias_canonical_targets_exist_in_properties(self):

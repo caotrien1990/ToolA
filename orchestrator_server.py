@@ -91,7 +91,9 @@ from orchestrator.server.fair_admission import (
     reset_admission_identity,
     set_admission_identity,
 )
-from orchestrator.lifecycle.restart_protocol import BusySnapshotPublisher, DEFAULT_CONTROL_URL
+from orchestrator.lifecycle.restart_protocol import (
+    BusySnapshotPublisher, DEFAULT_CONTROL_URL, reap_orphan_busy_snapshots,
+)
 from orchestrator.lifecycle.request_orchestrator_restart import controller_health
 # ─── Paths & config ───────────────────────────────────────────────────────────
 
@@ -124,6 +126,9 @@ SERVER_STARTUP_RECOVERY: dict = {
 RESTART_BUSY_SNAPSHOT = _HERE / ".orchestrator_cache" / "restart_busy_snapshot.json"
 RESTART_CONTROL_URL = os.environ.get("ORCHESTRATOR_RESTART_CONTROL_URL", DEFAULT_CONTROL_URL)
 _RESTART_SNAPSHOT_PUBLISHER: BusySnapshotPublisher | None = None
+# A08: last boot-time reaper summary for orphaned busy-snapshot temp files,
+# surfaced via /health (fail-loud observability, 7-RULE #7).
+_RESTART_SNAPSHOT_REAP: dict = {}
 _RESTART_REQUEST_ID = ""
 
 
@@ -10927,7 +10932,23 @@ def _restart_busy_snapshot_state() -> dict:
 
 
 def _start_restart_snapshot_publisher() -> BusySnapshotPublisher:
-    global _RESTART_SNAPSHOT_PUBLISHER
+    global _RESTART_SNAPSHOT_PUBLISHER, _RESTART_SNAPSHOT_REAP
+    # A08: reap orphaned "<name>.tmp.<pid>.*" temps left by hard-killed writers
+    # BEFORE the publisher starts producing new ones. Fail-loud: record + log the
+    # summary so a silent leak can never hide (7-RULE #7).
+    try:
+        _RESTART_SNAPSHOT_REAP = reap_orphan_busy_snapshots(RESTART_BUSY_SNAPSHOT)
+        if _RESTART_SNAPSHOT_REAP.get("reaped_count") or _RESTART_SNAPSHOT_REAP.get("errors"):
+            logger.info(
+                "restart busy-snapshot reaper: reaped=%d kept_alive=%d kept_young=%d errors=%s",
+                _RESTART_SNAPSHOT_REAP.get("reaped_count", 0),
+                len(_RESTART_SNAPSHOT_REAP.get("kept_alive", [])),
+                len(_RESTART_SNAPSHOT_REAP.get("kept_young", [])),
+                _RESTART_SNAPSHOT_REAP.get("errors", []),
+            )
+    except Exception as exc:  # never block boot on a cleanup failure
+        _RESTART_SNAPSHOT_REAP = {"error": f"{type(exc).__name__}: {exc}"}
+        logger.warning("restart busy-snapshot reaper failed: %s", exc)
     publisher = BusySnapshotPublisher(RESTART_BUSY_SNAPSHOT, _restart_busy_snapshot_state)
     publisher.start()
     _RESTART_SNAPSHOT_PUBLISHER = publisher
@@ -11896,6 +11917,7 @@ async def handle_health(request):
         "restart_busy_snapshot_alive": bool(
             _RESTART_SNAPSHOT_PUBLISHER and _RESTART_SNAPSHOT_PUBLISHER.alive
         ),
+        "restart_busy_snapshot_reap": json_safe(_RESTART_SNAPSHOT_REAP),
         "base_url_hint": _base,
         "bind_host": os.environ.get("ORCHESTRATOR_HOST", "localhost"),
         "environment_note": "Set ORCHESTRATOR_BASE_URL env var to override default base URL",

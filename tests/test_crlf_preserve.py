@@ -20,6 +20,7 @@ for _p in (str(_ROOT),):
         sys.path.insert(0, _p)
 
 from orchestrator.tools.write import write_fix, write_new_file  # noqa: E402
+from code_tools import generate_project_map  # noqa: E402
 
 
 def run(coro):
@@ -37,6 +38,14 @@ class CRLFCase(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory(prefix="a_crlf_")
         self.dir = Path(self._tmp.name)
+        # Initialise the temp dir as a real project so write_fix/write_new_file get
+        # an explicit, valid project_path (a .orchestrator_cache/INDEX.json) and
+        # NEVER climb parents of %TEMP% to infer a root (that path reaches HOME).
+        # A seed file must exist BEFORE generate_project_map so an INDEX.json is
+        # actually written (an empty dir produces no INDEX, and the write guard
+        # then rejects with 'INDEX not found').
+        (self.dir / "_seed.py").write_text("seed = 1\n", encoding="utf-8")
+        run(generate_project_map(str(self.dir)))
 
     def tearDown(self):
         self._tmp.cleanup()
@@ -44,7 +53,7 @@ class CRLFCase(unittest.TestCase):
     def test_write_fix_preserves_crlf_on_bat(self):
         fp = self.dir / "script.bat"
         fp.write_bytes(b"@echo off\r\necho old\r\nexit /b 0\r\n")  # CRLF
-        res = run(write_fix(str(fp), 2, 2, "echo new\n"))          # LF new_content
+        res = run(write_fix(str(fp), 2, 2, "echo new\n", project_path=str(self.dir)))
         self.assertTrue(res.get("ok"), res)
         crlf, lone = eols(fp)
         self.assertGreater(crlf, 0)
@@ -54,16 +63,19 @@ class CRLFCase(unittest.TestCase):
     def test_write_new_file_forces_crlf_for_batch(self):
         for ext in ("bat", "cmd", "ps1"):
             fp = self.dir / f"new.{ext}"
-            res = run(write_new_file(str(fp), "line1\nline2\n"))   # LF payload
+            res = run(write_new_file(str(fp), "line1\nline2\n", project_path=str(self.dir)))
             self.assertTrue(res.get("ok"), res)
             crlf, lone = eols(fp)
             self.assertGreater(crlf, 0, ext)
             self.assertEqual(lone, 0, ext)                         # all CRLF
 
     def test_lf_python_stays_lf(self):
+        # project_path is passed EXPLICITLY: never let the tool infer the root by
+        # climbing parents of a %TEMP% path (that reaches HOME, where a junk
+        # marker can hijack root inference and hang the write pipeline).
         fp = self.dir / "m.py"
         fp.write_bytes(b"x = 1\ny = 2\n")                          # LF
-        res = run(write_fix(str(fp), 1, 1, "x = 99\n"))
+        res = run(write_fix(str(fp), 1, 1, "x = 99\n", project_path=str(self.dir)))
         self.assertTrue(res.get("ok"), res)
         crlf, lone = eols(fp)
         self.assertEqual(crlf, 0)                                  # stays LF (no regression)
@@ -71,7 +83,7 @@ class CRLFCase(unittest.TestCase):
 
     def test_new_py_stays_lf(self):
         fp = self.dir / "n.py"
-        res = run(write_new_file(str(fp), "a = 1\nb = 2\n"))       # LF payload, .py
+        res = run(write_new_file(str(fp), "a = 1\nb = 2\n", project_path=str(self.dir)))  # LF payload, .py
         self.assertTrue(res.get("ok"), res)
         crlf, _lone = eols(fp)
         self.assertEqual(crlf, 0)                                  # .py NOT forced to CRLF

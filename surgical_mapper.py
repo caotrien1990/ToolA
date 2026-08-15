@@ -136,23 +136,57 @@ def _write_index_atomic(project_root: Path, index: dict) -> None:
     search_snapshots._atomic_write(index_path, payload)
 
 
+def _publish_snapshot_deadline_seconds() -> float:
+    """Wall-clock budget for ONE write-path snapshot publication.
+
+    Mirrors code_tools._query_index_deadline_seconds (env-tunable, same
+    parse/clamp shape). This guards the WRITE path: update_file_cache ->
+    _publish_search_snapshot -> publish_snapshot, which walks/verifies the
+    project's snapshot store. Without a deadline a mislocated or pathologically
+    large store (e.g. a 4.3 GB junk store that a bad root inference points at)
+    makes _load_manifest re-hash every blob forever and hangs the whole write.
+
+    Default is deliberately GENEROUS (180s): this is a real-repo write path and
+    a legitimate first-publish / full-walk on a large repo can take tens of
+    seconds. The deadline is ONLY a hang-stop, never a throttle on valid work —
+    it must be far above any healthy publish, small enough to fail loud instead
+    of blocking indefinitely. Tune via ORCHESTRATOR_SNAPSHOT_PUBLISH_DEADLINE_SEC.
+    """
+    try:
+        return max(5.0, float(os.environ.get("ORCHESTRATOR_SNAPSHOT_PUBLISH_DEADLINE_SEC", "180") or 180))
+    except Exception:
+        return 180.0
+
+
 def _publish_search_snapshot(project_root: Path, index: dict, changed_paths: dict | None = None) -> str:
+    # Each attempt gets its OWN fresh budget window (a wall-clock deadline
+    # computed at call time), so the authoritative full-walk fallback below is
+    # NOT starved by whatever the fast path already spent. Sharing one deadline
+    # would mean a fast path that burned the budget then re-enters _publish(None)
+    # with an already-expired deadline and fails instantly — defeating the
+    # self-heal. Separate windows keep both attempts individually bounded.
     def _publish(cp):
+        deadline_at = time.monotonic() + _publish_snapshot_deadline_seconds()
         return search_snapshots.publish_snapshot(
             project_root,
             include_file=_should_scan_file,
             skip_dir=should_skip_dir,
             index=index,
             changed_paths=cp,
+            deadline_at=deadline_at,
         )
     try:
         snapshot_id = _publish(changed_paths)
     except search_snapshots.SnapshotDeadlineExceeded:
+        # Fail loud (7-RULE #7): a deadline hit on the write path means the
+        # snapshot store is unhealthy (e.g. mislocated/oversized) — never silently
+        # fall through to a full walk, which would just hit the same wall again.
         raise
     except Exception:
         # The walk-avoidance fast path is only valid when the prior snapshot is compatible
         # with `index` (same file set/filter). If it is not, the validators raised before
         # commit — fall back to an authoritative full walk (self-healing, never mis-publishes).
+        # Deadline exceptions are handled above and must NOT reach here.
         if changed_paths is None:
             raise
         snapshot_id = _publish(None)

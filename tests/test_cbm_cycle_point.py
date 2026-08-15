@@ -209,15 +209,20 @@ class TestFailOpen(unittest.TestCase):
     """A disabled graph or a missing DB reports the reason instead of raising."""
 
     def test_disabled_graph_returns_payload(self):
-        original = cp.GRAPH_ENABLED
-        cp.GRAPH_ENABLED = False
+        # A13 fix: cycle_point reads GRAPH_ENABLED live from the env at call
+        # time, so drive the flag OFF via os.environ (scoped to this test).
+        original = os.environ.get("GRAPH_ENABLED")
+        os.environ["GRAPH_ENABLED"] = "0"
         try:
             out = cp.compute_cycle_point("D:/does/not/matter")
             self.assertFalse(out["enabled"])
             self.assertIsNone(out["quality_signal"])
             self.assertEqual(out["cycle_count"], 0)
         finally:
-            cp.GRAPH_ENABLED = original
+            if original is None:
+                os.environ.pop("GRAPH_ENABLED", None)
+            else:
+                os.environ["GRAPH_ENABLED"] = original
 
     def test_missing_db_reports_error_without_raising(self):
         empty = Path(tempfile.mkdtemp(prefix="cycle_point_empty_"))

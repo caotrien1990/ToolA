@@ -183,9 +183,30 @@ def find_project_root(file_path: str) -> str | None:
     if not file_path or not str(file_path).strip() or is_unc_path_like(file_path):
         return None
     path = Path(file_path).resolve()
+    # campaign-1608: never treat the user HOME dir, an ancestor of HOME, or a
+    # filesystem/drive root as a project root. A stray marker there (e.g. a junk
+    # .orchestrator_cache / package.json in C:\Users\<user>) would otherwise
+    # hijack root inference for tempfile paths (they live under HOME via %TEMP%),
+    # pointing writes at a mislocated unbounded snapshot store and hanging the
+    # write pipeline. Return None so the caller's resolve chain falls through.
+    # (kept byte-for-byte in sync with code_tools.find_project_root.)
+    try:
+        _home = Path.home().resolve()
+    except Exception:
+        _home = None
     for parent in [path] + list(path.parents):
         if not parent.exists():
             continue
+        if parent == parent.parent:  # filesystem/drive root (e.g. C:\ or D:\)
+            continue
+        if _home is not None:
+            if parent == _home:
+                continue
+            try:
+                _home.relative_to(parent)  # parent is an ancestor of HOME
+                continue
+            except ValueError:
+                pass
         if (
             (parent / ".orchestrator_cache").exists()
             or (parent / "package.json").exists()

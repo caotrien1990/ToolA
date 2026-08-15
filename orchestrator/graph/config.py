@@ -8,8 +8,19 @@ import os
 
 # --- Master switch ---
 # GRAPH_ENABLED=false keeps every existing [A] search flow unchanged.
-# Read once at import; rollback = restart orchestrator (or set env=0 before import).
-GRAPH_ENABLED = os.environ.get("GRAPH_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
+# A13 fix (2026-08-16): read the env LIVE, never freeze a bool at import.
+# Freezing broke test isolation — whichever module imported config first
+# (e.g. the GRAPH_ENABLED=0 canary) pinned the flag process-wide, so later
+# modules that set GRAPH_ENABLED=1 before import silently ran disabled.
+
+
+def graph_enabled() -> bool:
+    """Return the live GRAPH_ENABLED flag (re-read from the environment).
+
+    Callers MUST call this (or read the module attribute, which PEP 562 routes
+    here) at request time rather than snapshotting a bool at import time.
+    """
+    return os.environ.get("GRAPH_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
 
 # --- Per-tool graph participation ---
 # A tool opts out even when GRAPH_ENABLED is true via GRAPH_USE_<TOOL>=0.
@@ -18,7 +29,7 @@ _DEFAULT_USE_GRAPH = True
 
 def use_graph_for(tool_name: str) -> bool:
     """Return whether a tool may use graph context."""
-    if not GRAPH_ENABLED:
+    if not graph_enabled():
         return False
     env_key = "GRAPH_USE_" + tool_name.upper()
     val = os.environ.get(env_key, "").strip().lower()
@@ -91,10 +102,18 @@ def graph_db_path(project_path: str) -> str:
 
 
 __all__ = [
-    "GRAPH_ENABLED", "use_graph_for",
+    "GRAPH_ENABLED", "graph_enabled", "use_graph_for",
     "GRAPH_CONTEXT_MAX_FILES", "GRAPH_CONTEXT_MAX_SYMBOLS", "GRAPH_CONTEXT_TIMEOUT_S",
     "COUNCIL_CONTEXT_MAX_FILES", "COUNCIL_CONTEXT_MAX_SYMBOLS", "CBM_AUTO_REINDEX_MAX_STALE",
     "INDEX_TIME_BUDGET_CORE_S", "INDEX_TIME_BUDGET_FULL_S", "INDEX_MIN_NODES", "INDEX_MIN_EDGES",
     "CBM_EXACT", "CBM_UNIQUE", "CBM_SAME_MODULE", "CBM_SUFFIX_LOW", "CBM_SUFFIX_HIGH",
     "CBM_LABEL_TO_NUMERIC", "CBM_USE_TREE_SITTER", "CBM_EXTRACT_JS", "graph_db_path",
 ]
+
+
+def __getattr__(name):
+    # PEP 562 back-compat (A13 fix): resolve a lingering ``config.GRAPH_ENABLED``
+    # attribute read to the LIVE env value, never a frozen import-time snapshot.
+    if name == "GRAPH_ENABLED":
+        return graph_enabled()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

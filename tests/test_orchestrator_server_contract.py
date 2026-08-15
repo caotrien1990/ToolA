@@ -173,9 +173,10 @@ class TestOrchestratorServerContract(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(body['project_path'], 'C:/repo')
-        # 2026-07-10 schema-drift fix: canonical field for find_symbol is now
-        # `query` (was `name`); `symbol`/`name` stay accepted as aliases.
-        self.assertEqual(body['query'], 'cache_delta')
+        # Registry-authoritative canonical for find_symbol is `name` (required=['name'];
+        # registry_data.py declares `query` as "Alias for name"). `_ARG_ALIASES`
+        # folds symbol/query/symbol_name/q -> name. Assert the canonical `name`.
+        self.assertEqual(body['name'], 'cache_delta')
         self.assertIn('symbol', aliases[0])
 
     def test_query_index_accepts_query_without_schema_error(self):
@@ -204,7 +205,11 @@ class TestOrchestratorServerContract(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(body['query'], r'def\s+session')
-        self.assertFalse(body['literal_search'])
+        # 2026-08-16 (A15/TT-A-03): the pattern alias no longer injects
+        # literal_search=False (S4 rejected it as UNSUPPORTED_FIELD). The
+        # registry-blessed signal is mode='regex' - see orchestrator_server.py
+        # _normalize_body ~L2404-2413.
+        self.assertEqual(body['mode'], 'regex')
 
     def test_search_code_is_regex_legacy_field_sets_mode(self):
         body, aliases = orchestrator_server._normalize_body(
@@ -994,7 +999,7 @@ process.stdout.write(JSON.stringify(snapshots));
                 root = Path(tmp)
                 (root / '.council').mkdir()
                 orchestrator_server._HERE = root
-                orchestrator_server._council_run_agent = lambda agent, prompt, timeout_sec=180, mode="broker", project_path="", request_id="", runtime_key="", provider_override="", model_override="": (
+                orchestrator_server._council_run_agent = lambda agent, prompt, timeout_sec=180, mode="broker", project_path="", request_id="", runtime_key="", provider_override="", model_override="", model_resolution=None, risk_level="unknown", dev_level="unknown", *_a, **_k: (
                     seen_prompts.append(prompt) or {
                     "ok": True,
                     "returncode": 0,
@@ -3758,7 +3763,7 @@ class TestCouncilUiOrdering(unittest.IsolatedAsyncioTestCase):
         saved_drain = orchestrator_server._COUNCIL_AGENT_QUEUE_DRAINING.get(agent)
         orchestrator_server._COUNCIL_AGENT_QUEUES.pop(agent, None)
 
-        def _stub_run(target, prompt, timeout_sec, mode, project_path, request_id, runtime_key="", provider_override="", model_override=""):
+        def _stub_run(target, prompt, timeout_sec, mode, project_path, request_id, runtime_key="", provider_override="", model_override="", model_resolution=None, risk_level="unknown", dev_level="unknown", *_a, **_k):
             return {'ok': True, 'returncode': 0, 'reply': 'OK',
                     'raw_preview': '', 'reasoning': ''}
 

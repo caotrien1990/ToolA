@@ -26,6 +26,7 @@ for p in (str(_ROOT),):
 from orchestrator.tools.write import (write_draft_abort, write_draft_patch,  # noqa: E402
                                       write_draft_status, write_fix, write_new_file)
 from orchestrator.tools.write import draft as draft_mod                       # noqa: E402
+from code_tools import generate_project_map                                    # noqa: E402
 
 
 def run(coro):
@@ -36,6 +37,14 @@ class DraftLoopCase(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory(prefix="a_draft_test_")
         self.dir = Path(self._tmp.name)
+        # Initialise the temp dir as a real project so the writes below get an
+        # explicit, valid project_path and NEVER climb parents of %TEMP% to infer
+        # a root (that path reaches HOME, where a junk marker can hijack it).
+        # A seed file must exist BEFORE generate_project_map so an INDEX.json is
+        # actually written (an empty dir produces no INDEX, and the write guard
+        # then rejects with 'INDEX not found').
+        (self.dir / "_seed.py").write_text("seed = 1\n", encoding="utf-8")
+        run(generate_project_map(str(self.dir)))
         with draft_mod._LOCK:
             draft_mod._DRAFTS.clear()
 
@@ -49,9 +58,12 @@ class DraftLoopCase(unittest.TestCase):
 
     # ── contract 1: unlimited size straight-through ─────────────────────────
     def test_huge_write_lands_in_one_call(self):
+        # project_path is passed EXPLICITLY so the tool never infers the root by
+        # climbing parents of a %TEMP% path (which reaches HOME, where a stray
+        # junk marker can hijack inference and hang the snapshot publish).
         fp = self._mkfile("big.py", "x = 0\n")
         body = "\n".join(f"def f_{i}():\n    return {i}\n" for i in range(2500))
-        res = run(write_fix(str(fp), 1, 1, body))
+        res = run(write_fix(str(fp), 1, 1, body, project_path=str(self.dir)))
         self.assertTrue(res.get("ok"), res)
         self.assertGreaterEqual(res.get("new_lines_count", 0), 5000)
 
@@ -60,7 +72,7 @@ class DraftLoopCase(unittest.TestCase):
         fp = self._mkfile("mod.py", "a = 1\nb = 2\nc = 3\n")
         original = fp.read_text(encoding="utf-8")
         bad = "def broken(:\n    pass\n\ngood = 1\n"
-        res = run(write_fix(str(fp), 2, 2, bad))
+        res = run(write_fix(str(fp), 2, 2, bad, project_path=str(self.dir)))
         self.assertFalse(res.get("ok"))
         self.assertTrue(res.get("draft"))
         self.assertTrue(res.get("draft_id"))
@@ -94,7 +106,7 @@ class DraftLoopCase(unittest.TestCase):
 
     def test_write_new_file_draft_flow(self):
         target = self.dir / "cfg.json"
-        res = run(write_new_file(str(target), '{"a": 1,\n "b": ,\n "c": 3}\n'))
+        res = run(write_new_file(str(target), '{"a": 1,\n "b": ,\n "c": 3}\n', project_path=str(self.dir)))
         self.assertFalse(res.get("ok"))
         self.assertTrue(res.get("draft_id"), res)
         self.assertFalse(target.exists())
@@ -108,7 +120,7 @@ class DraftLoopCase(unittest.TestCase):
     # ── contract 4: stale target refuses to ship ────────────────────────────
     def test_stale_target_blocks_ship(self):
         fp = self._mkfile("stale.py", "v = 1\n")
-        res = run(write_fix(str(fp), 1, 1, "def broken(:\n"))
+        res = run(write_fix(str(fp), 1, 1, "def broken(:\n", project_path=str(self.dir)))
         draft_id = res["draft_id"]
         fp.write_text("v = 999  # changed outside\n", encoding="utf-8")
         blocked = run(write_draft_patch(draft_id, 1, 1, "def fixed():\n    return 1\n"))
@@ -120,7 +132,7 @@ class DraftLoopCase(unittest.TestCase):
     # ── contract 5: abort + status listing ──────────────────────────────────
     def test_abort_and_listing(self):
         fp = self._mkfile("ab.py", "z = 1\n")
-        res = run(write_fix(str(fp), 1, 1, "def broken(:\n"))
+        res = run(write_fix(str(fp), 1, 1, "def broken(:\n", project_path=str(self.dir)))
         listing = run(write_draft_status(""))
         self.assertEqual(listing["count"], 1)
         out = run(write_draft_abort(res["draft_id"]))
@@ -134,7 +146,7 @@ class DraftLoopCase(unittest.TestCase):
         # JSON deep-validate runs in layer 1/2; a syntactically-plausible but
         # invalid payload must still open a draft rather than a bare error.
         target = self.dir / "deep.json"
-        res = run(write_new_file(str(target), '{"x": [1, 2,\n]}\nEXTRA'))
+        res = run(write_new_file(str(target), '{"x": [1, 2,\n]}\nEXTRA', project_path=str(self.dir)))
         self.assertFalse(res.get("ok"))
         self.assertTrue(res.get("draft_id"), res)
 

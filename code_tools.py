@@ -390,9 +390,30 @@ def find_project_root(file_path: str) -> str | None:
     if _is_unc_path_like(file_path):
         return None
     path = Path(file_path).resolve()
+    # V15 R56+ (campaign-1608): never treat the user HOME dir, any ancestor of
+    # HOME, or a filesystem/drive root as a project root. A stray marker there
+    # (e.g. a junk .orchestrator_cache / package.json sitting in C:\Users\<user>)
+    # would otherwise hijack root inference for tempfile-based paths — which live
+    # under HOME via %TEMP% — pointing writes at a mislocated, unbounded snapshot
+    # store and hanging the write pipeline. Returning None lets the caller's
+    # resolve chain fall through to its next strategy (the documented R56 intent).
+    try:
+        _home = Path.home().resolve()
+    except Exception:
+        _home = None
     for parent in [path] + list(path.parents):
         if not parent.exists():
             continue
+        if parent == parent.parent:  # filesystem/drive root (e.g. C:\ or D:\)
+            continue
+        if _home is not None:
+            if parent == _home:
+                continue
+            try:
+                _home.relative_to(parent)  # parent is an ancestor of HOME
+                continue
+            except ValueError:
+                pass
         if (parent / ".orchestrator_cache").exists() or (parent / "package.json").exists() or (parent / "requirements.txt").exists() or (parent / ".git").exists():
             return str(parent)
     return None
@@ -645,6 +666,11 @@ def _update_cache_after_write(file_path: str, project_root: str | None = None) -
                     except Exception:
                         pass
         return True
+    except search_snapshots.SnapshotDeadlineExceeded:
+        # Fail loud (7-RULE #7): a snapshot deadline means the write path hit an
+        # unhealthy/oversized snapshot store (the exact hang this budget guards).
+        # Never mask it as a mere cache_synced=False — surface it to the caller.
+        raise
     except Exception:
         return False
 
@@ -10484,6 +10510,22 @@ class _HTMLTagStackParser(HTMLParser):
         return [{"tag": tag, "opened_line": line} for tag, line in self.stack]
 
 
+def _console_python() -> str:
+    """Resolve python.exe (CONSOLE subsystem) from sys.executable.
+
+    campaign-1608 (A19/B8 layer 2): [A] runs as a service via pythonw.exe, a GUI
+    subsystem binary with NO console and NO stdout handle. A console child such
+    as ruff cannot pipe output back to a GUI parent: the run returns rc=1
+    (findings DO exist) but stdout AND stderr both come back EMPTY. A caller
+    that only inspects the text then concludes "no findings" and reports the
+    file clean. Resolving python.exe from the same Scripts dir restores capture.
+
+    Mirrors orchestrator/graph/extractors/vulture_ruff.py:_console_python, which
+    already solved this locally; keep the two in sync until one is promoted to a
+    shared helper.
+    """
+    console = Path(sys.executable).with_name("python.exe")
+    return str(console) if console.is_file() else sys.executable
 def _py_error_ruff_hint(error_msg: str) -> tuple[bool, list[str], str]:
     """Map Ruff diagnostics to safe-fix preview guidance without applying fixes."""
     supported_rules = ("F401", "F841", "E711", "E712", "E731", "E401", "E402", "F541", "RUF100")
@@ -10564,13 +10606,31 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                 except Exception:
                     pass
             try:
-                r = subprocess.run(["ruff", "check", str(fp), "--select", "F401,F841,E711,E712,E731,E401,E402,F541,RUF100,I", "--output-format", "concise"], capture_output=True, text=True, timeout=10)
+                # campaign-1608 (A19/B8): invoke ruff as a MODULE of a CONSOLE
+                # interpreter. Two separate defects live here, both of which made
+                # validate_file report every python file as clean:
+                #   1) a bare "ruff" name resolves off PATH; the [A] service does
+                #      not necessarily have the venv Scripts dir on its PATH, so it
+                #      raised FileNotFoundError -> swallowed by the except below.
+                #   2) sys.executable is pythonw.exe when [A] runs as a service. A
+                #      GUI-subsystem parent has no stdout handle, so the console
+                #      child returns rc=1 (findings exist) with stdout AND stderr
+                #      EMPTY. Measured live, not inferred. pytest never reproduces
+                #      this because pytest runs under python.exe.
+                # _console_python() fixes (2); "-m ruff" fixes (1).
+                r = subprocess.run([_console_python(), "-m", "ruff", "check", str(fp), "--select", "F401,F841,E711,E712,E731,E401,E402,F541,RUF100,I", "--output-format", "concise"], capture_output=True, text=True, timeout=10)
                 if r.returncode == 1:
                     err = (r.stdout or "").strip() or (r.stderr or "").strip()
+                    if not err:
+                        # Fail loud (7-RULE #7). rc=1 means ruff DID find something;
+                        # empty text means we lost it in transit. Saying nothing here
+                        # is what let defect (2) hide behind a green "clean" result.
+                        return {"ok": True, "lang": "python", "file": str(fp), "lint_skipped_reason": "ruff exited 1 (findings exist) but produced no output on stdout/stderr - lint result is UNKNOWN, not clean", "ruff_fix_applicable": False, "ruff_rules_matched": [], "ruff_fix_hint": ""}
                     applicable, matched_rules, hint_text = _py_error_ruff_hint(err)
                     return {"ok": True, "lang": "python", "file": str(fp), "lint_warning": err, "ruff_fix_applicable": applicable, "ruff_rules_matched": matched_rules, "ruff_fix_hint": hint_text}
-            except (FileNotFoundError, subprocess.TimeoutExpired):
-                pass
+            except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+                # Also fail loud: a missing or hung linter is not a clean file.
+                return {"ok": True, "lang": "python", "file": str(fp), "lint_skipped_reason": f"ruff could not run ({type(exc).__name__}) - lint result is UNKNOWN, not clean", "ruff_fix_applicable": False, "ruff_rules_matched": [], "ruff_fix_hint": ""}
             return {"ok": True, "lang": "python", "file": str(fp)}
         elif lang == "js":
             try:
