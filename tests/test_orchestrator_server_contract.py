@@ -126,24 +126,16 @@ def _swap_sessions_db(tmp_db_path):
     try:
         yield Path(tmp_db_path)
     finally:
-        # 1) Drop the read-local connection held by this thread, if any.
-        read_local = getattr(store_module, "_SESSION_READ_LOCAL", None)
-        if read_local is not None:
-            conn = getattr(read_local, "conn", None)
-            if conn is not None:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
-                read_local.conn = None
-                read_local.db_path = None
-        # 2) Shut down the process-global SessionWriter so its drain-loop
-        #    connection is closed before the temp dir is removed.
+        # 1) Release every process-global sessions.db handle (writer drain-loop
+        #    conn, this thread's read-local conn, and read conns cached on dead
+        #    asyncio.to_thread worker threads via gc) so the temp dir is
+        #    removable on Windows. store.close_writer() owns the private-name
+        #    dance so this helper no longer has to.
         try:
-            store_module._shutdown_session_writer()
+            store_module.close_writer()
         except Exception:
             pass
-        # 3) Restore the previous path and re-sync so subsequent tests start
+        # 2) Restore the previous path and re-sync so subsequent tests start
         #    against the original sessions.db.
         code_tools._SESSIONS_DB = old_db
         code_tools._sync_session_db_alias()

@@ -135,12 +135,7 @@ class SessionAuditHardeningTests(unittest.TestCase):
         session_store._run_session_write("test seed sessions", _seed_sessions)
 
     def tearDown(self):
-        read_conn = getattr(session_store._SESSION_READ_LOCAL, "conn", None)
-        if read_conn is not None:
-            read_conn.close()
-            session_store._SESSION_READ_LOCAL.conn = None
-            session_store._SESSION_READ_LOCAL.db_path = None
-        session_store._shutdown_session_writer()
+        session_store.close_writer()
         code_tools._SESSIONS_DB = self.old_db
         code_tools._sync_session_db_alias()
         self.temp_dir.cleanup()

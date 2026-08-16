@@ -202,5 +202,96 @@ class QuotaIdentityTests(unittest.TestCase):
         self.assertEqual(first, second); self.assertTrue(first.startswith("principal:"))
 
 
+def _clean_orch_env():
+    kept = {k: v for k, v in os.environ.items() if not k.startswith("ORCH_")}
+    return mock.patch.dict(os.environ, kept, clear=True)
+
+
+class LaneQuotaDefaultTests(unittest.TestCase):
+    """Per-lane default quota contract (guards council_provider serialization)."""
+
+    def test_lane_default_quotas_are_declared_per_lane(self):
+        manager = FairAdmissionManager()
+        lanes_under_test = (
+            "read_io", "search", "command", "test", "git", "backup",
+            "council_provider")
+        with _clean_orch_env():
+            observed = {
+                lane: manager.quota(lane, "agent:owner")
+                for lane in lanes_under_test}
+        # Dict-equality: adding a lane without a quota decision fails here.
+        self.assertEqual(observed, {
+            "read_io": 2, "search": 2, "command": 1, "test": 1,
+            "git": 1, "backup": 1, "council_provider": 8})
+
+    def test_council_provider_default_matches_lane_and_launcher_sources(self):
+        from orchestrator.server.executor_lanes import _LANE_DEFAULTS
+        from orchestrator.lifecycle.high_il_launch import HIGH_IL_ENV
+        manager = FairAdmissionManager()
+        with _clean_orch_env():
+            self.assertEqual(
+                manager.quota("council_provider", "agent:owner"), 8)
+        self.assertEqual(_LANE_DEFAULTS["council_provider"][0], 8)
+        self.assertEqual(
+            int(HIGH_IL_ENV["ORCH_FAIR_COUNCIL_PROVIDER_QUOTA"]), 8)
+
+    def test_unknown_lane_falls_back_to_one(self):
+        manager = FairAdmissionManager()
+        with _clean_orch_env():
+            self.assertEqual(manager.quota("no_such_lane", "agent:owner"), 1)
+
+    def test_env_override_still_wins_for_council_provider(self):
+        manager = FairAdmissionManager()
+        override = {"ORCH_FAIR_COUNCIL_PROVIDER_QUOTA": "3"}
+        with _clean_orch_env(), mock.patch.dict(os.environ, override):
+            self.assertEqual(
+                manager.quota("council_provider", "agent:owner"), 3)
+
+    def test_anonymous_clamp_still_applies_to_council_provider(self):
+        manager = FairAdmissionManager()
+        env = {
+            "ORCH_FAIR_COUNCIL_PROVIDER_QUOTA": "8",
+            "ORCH_FAIR_ANONYMOUS_QUOTA": "2"}
+        with _clean_orch_env(), mock.patch.dict(os.environ, env):
+            self.assertEqual(
+                manager.quota("council_provider", "agent:owner"), 8)
+            self.assertEqual(
+                manager.quota("council_provider", "anonymous:localhost"), 2)
+
+
+class CouncilProviderConcurrencyTests(unittest.IsolatedAsyncioTestCase):
+    """N>1 council_provider acquisitions must be genuinely simultaneous."""
+
+    async def test_default_council_provider_admits_many_concurrent(self):
+        manager = FairAdmissionManager()
+        with _clean_orch_env():
+            n = 6  # < 8 default quota and < 32 default global cap
+            barrier = asyncio.Event()
+            peak = 0
+            active = 0
+            lock = asyncio.Lock()
+
+            async def work():
+                nonlocal peak, active
+                permit = await manager.acquire(
+                    "council_provider",
+                    deadline=time.monotonic() + 1,
+                    principal="agent:leader")
+                async with lock:
+                    active += 1
+                    peak = max(peak, active)
+                    if active >= n:
+                        barrier.set()
+                await asyncio.wait_for(barrier.wait(), timeout=1)
+                async with lock:
+                    active -= 1
+                permit.release()
+
+            await asyncio.gather(*(work() for _ in range(n)))
+        # If council_provider were serialized (quota 1) the barrier would
+        # never reach n and asyncio.wait_for would raise before this line.
+        self.assertEqual(peak, n)
+
+
 if __name__ == "__main__":
     unittest.main()

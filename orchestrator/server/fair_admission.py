@@ -15,6 +15,12 @@ def _enabled(name,default=True):
 def _env_int(name,default):
     try:return max(1,int(os.environ.get(name,default)))
     except (TypeError,ValueError):return default
+# Per-lane default fair quotas (per-principal caps; unlisted lanes default to 1).
+# council_provider MUST stay in sync with two other files:
+#   executor_lanes._LANE_DEFAULTS['council_provider'][0]
+#   lifecycle/high_il_launch.HIGH_IL_ENV['ORCH_FAIR_COUNCIL_PROVIDER_QUOTA']
+_LANE_QUOTA_DEFAULTS={'read_io':2,'search':2,'command':1,'test':1,
+                      'git':1,'backup':1,'council_provider':8}
 
 class FairAdmissionError(RuntimeError):
     error_name='FAIR_ADMISSION_REJECTED';rejection_reason='principal_quota';http_status=429
@@ -49,7 +55,7 @@ class FairAdmissionManager:
         self.lock=threading.RLock();self.principals={};self.permits={};self.global_admitted=0;self.high_watermark=0
         self.rejections={'principal_quota':0,'waiter_limit':0,'global_cap':0};self.closed=False
     def quota(self,lane,principal):
-        default=2 if lane in {'read_io','search'} else 1
+        default=_LANE_QUOTA_DEFAULTS.get(lane,1)
         quota=_env_int(f'ORCH_FAIR_{lane.upper()}_QUOTA',default)
         if principal.startswith('anonymous:'):
             anonymous_default=_env_int('ORCH_FAIR_ANONYMOUS_QUOTA',8)

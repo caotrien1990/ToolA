@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import base64
+import gc
 import hashlib
 import json
 import logging
@@ -650,6 +651,40 @@ def _shutdown_session_writer() -> None:
             writer.close(timeout=5.0)
         except Exception:
             logger.exception("SessionWriter shutdown failed")
+
+
+def close_writer() -> None:
+    """Release every process-global sessions.db handle for a clean teardown.
+
+    Public teardown helper so tests (and any caller swapping ``_SESSIONS_DB`` to
+    a temp path) do not have to reach for the private ``_shutdown_session_writer``
+    name or know the read-connection internals. It:
+
+    1. Closes the SessionWriter drain-loop connection.
+    2. Closes the read connection cached in this thread's ``_SESSION_READ_LOCAL``.
+    3. Forces a ``gc.collect()`` so read connections cached on dead
+       ``asyncio.to_thread`` worker threads (whose thread-locals are only released
+       on GC) are finalized too.
+
+    Step 3 matters on Windows: without it, an open sqlite handle on a now-dead
+    worker thread blocks ``shutil.rmtree`` of a TemporaryDirectory with
+    WinError 32 even after the writer and the main-thread read conn are closed.
+    """
+    _shutdown_session_writer()
+    read_local = globals().get("_SESSION_READ_LOCAL")
+    if read_local is not None:
+        conn = getattr(read_local, "conn", None)
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            read_local.conn = None
+            read_local.db_path = None
+    # Read connections cached on dead asyncio.to_thread worker threads live in
+    # per-thread copies of _SESSION_READ_LOCAL that this thread cannot reach;
+    # only garbage collection finalizes them and releases the OS file handle.
+    gc.collect()
 
 
 def _get_session_writer() -> SessionWriter:
