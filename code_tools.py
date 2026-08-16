@@ -10612,6 +10612,33 @@ def _console_python() -> str:
     """
     console = Path(sys.executable).with_name("python.exe")
     return str(console) if console.is_file() else sys.executable
+# campaign-1608 (A51 / ANSI): shared CSI-escape stripper. Single call site for
+# every validate_file language branch AND _py_error_ruff_hint, so the strip path
+# is exercised by one code path, not copy-pasted per branch (a copy-pasted regex
+# let a mutant survive earlier in this campaign; one helper makes every caller
+# die together under the same test).
+#
+# The pattern deliberately matches the FULL CSI grammar, not just the SGR colour
+# subset that live node/esbuild output happens to emit today (surveyed with
+# FORCE_COLOR=1: only \x1b[90m / \x1b[39m / \x1b[4m; no OSC \x1b]...\x07). Two
+# reasons, both measured rather than assumed:
+#   1. It is identical to _COUNCIL_ANSI_RE (orchestrator_server.py), which has
+#      been stripping council logs for far longer. Two strippers in one repo
+#      disagreeing on what an escape IS is exactly the two-sources-of-truth shape
+#      this campaign keeps finding -- so they agree by construction.
+#   2. Widening costs nothing here: the private-mode/erase forms it adds
+#      (\x1b[?25l, \x1b[?1049h, \x1b[2K) carry no text, and the broad pattern was
+#      verified NOT to touch any diagnostic content -- filenames, line:col,
+#      esbuild's UTF-8 box-drawing carets (U+2502 / U+2575), ruff rule codes.
+# The narrow SGR-only form leaks \x1b[?25l and \x1b[?1049h straight into `error`.
+_ANSI_CSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+
+
+def _strip_ansi(text) -> str:
+    """Remove ANSI CSI escapes (colour, cursor, erase); leave all text intact."""
+    return _ANSI_CSI_RE.sub("", str(text or ""))
+
+
 def _py_error_ruff_hint(error_msg: str) -> tuple[bool, list[str], str]:
     """Map Ruff diagnostics to safe-fix preview guidance without applying fixes."""
     # campaign-1608 (A51): strip ANSI SGR escapes before matching (layer 2 /
@@ -10620,7 +10647,7 @@ def _py_error_ruff_hint(error_msg: str) -> tuple[bool, list[str], str]:
     # (?<![A-Z0-9]) lookbehind and suppresses EVERY match -- both the loop below
     # and the I\d{3} isort branch. Layer 1 passes "--color never" so the ruff we
     # spawn never colours; this guards any future/foreign call site that forgets.
-    text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", str(error_msg or ""))
+    text = _strip_ansi(error_msg)
     supported_rules = ("F401", "F841", "E711", "E712", "E731", "E401", "E402", "F541", "RUF100")
     matched = [rule for rule in supported_rules if re.search(rf"(?<![A-Z0-9]){rule}(?![A-Z0-9])", text, re.IGNORECASE)]
     if re.search(r"(?<![A-Z0-9])I\d{3}(?![A-Z0-9])", text, re.IGNORECASE):
@@ -10745,7 +10772,7 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                 )
                 if r.returncode == 0:
                     return {"ok": True, "lang": "js", "file": str(fp)}
-                return {"ok": False, "lang": "js", "file": str(fp), "error": r.stderr.strip()}
+                return {"ok": False, "lang": "js", "file": str(fp), "error": _strip_ansi(r.stderr.strip())}
             except FileNotFoundError:
                 return {"ok": False, "lang": "js", "file": str(fp), "error": "node not found in PATH"}
             except Exception as exc:
@@ -10784,7 +10811,7 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                     pass
                 if r.returncode == 0:
                     return {"ok": True, "lang": "esbuild", "file": str(fp)}
-                err = (r.stderr or "").strip() or (r.stdout or "").strip() or "esbuild parse failed"
+                err = _strip_ansi((r.stderr or "").strip() or (r.stdout or "").strip()) or "esbuild parse failed"
                 return {"ok": False, "lang": "esbuild", "file": str(fp), "error": err}
             except FileNotFoundError:
                 return {"ok": False, "lang": "esbuild", "file": str(fp), "error": "esbuild not found in PATH"}
@@ -10822,7 +10849,7 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                     r = subprocess.run(["node", "--check", tmp_path], capture_output=True, text=True, timeout=10)
                     os.unlink(tmp_path)
                     if r.returncode != 0:
-                        return {"ok": False, "lang": "html", "file": str(fp), "error": f"script[{i}] syntax error: {r.stderr.strip()}"}
+                        return {"ok": False, "lang": "html", "file": str(fp), "error": f"script[{i}] syntax error: {_strip_ansi(r.stderr.strip())}"}
                 except FileNotFoundError:
                     return {"ok": False, "lang": "html", "file": str(fp), "error": "node not found in PATH - cannot validate <script> blocks"}
                 except Exception as exc:
@@ -10862,7 +10889,7 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                         pass
                 if r.returncode == 0:
                     return {"ok": True, "lang": "vue", "file": str(fp)}
-                err = (r.stderr or "").strip() or (r.stdout or "").strip() or "Vue script parse failed"
+                err = _strip_ansi((r.stderr or "").strip() or (r.stdout or "").strip()) or "Vue script parse failed"
                 return {"ok": False, "lang": "vue", "file": str(fp), "error": err}
             except FileNotFoundError:
                 return {"ok": False, "lang": "vue", "file": str(fp), "error": "esbuild not found in PATH"}

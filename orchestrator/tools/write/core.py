@@ -798,6 +798,161 @@ def _boot_sweep_xroot_files(max_rows: int = 200) -> list[Path]:
     return files
 
 
+# campaign-1608 (A02): the boot sweep's write-ahead ledger. Both names live in
+# .orchestrator_cache, which surgical_mapper._reindex_from_disk WIPES on every
+# periodic full refresh (A30: once per _SNAPSHOT_FULL_REFRESH_EVERY writes) and
+# on generate_project_map. Neither name is in PRESERVED_CACHE_FILES, and that is
+# DELIBERATE and LOAD-BEARING -- they must share one fate:
+#   both wiped  -> ledger empty AND marker gone -> next boot re-seeds from the
+#                  index and re-discovers every legacy .bak. Correct, just pays
+#                  the O(index) seed again (rare: only after a full refresh).
+#   ledger wiped, marker KEPT -> seed never re-runs, so a pending .bak written
+#                  before the refresh is ORPHANED and never restored. DATA LOSS.
+# So: never add the marker to PRESERVED_CACHE_FILES without adding the ledger,
+# and never add the ledger without the marker. test_a02_a30_interaction.py pins
+# both directions -- see that file before touching PRESERVED_CACHE_FILES.
+_WRITE_BACKUP_LEDGER_NAME = "write_backups.jsonl"
+_WRITE_BACKUP_SEED_MARKER = ".write_backups.seeded"
+
+
+def _write_backup_ledger_path() -> Path:
+    return Path(__file__).resolve().parents[3] / ".orchestrator_cache" / _WRITE_BACKUP_LEDGER_NAME
+
+
+def _write_backup_seed_marker_path() -> Path:
+    return Path(__file__).resolve().parents[3] / ".orchestrator_cache" / _WRITE_BACKUP_SEED_MARKER
+
+
+def _record_write_backup(target: Path, bak: Path) -> None:
+    """WAL: record a .bak creation at write time.
+
+    This is what makes boot recovery O(number of backups) instead of
+    O(every indexed file). It is written as an *intent* (before the .bak is
+    physically created) so a crash mid-write still leaves a recoverable pointer
+    -- strictly more complete than the old "walk the index and probe siblings"
+    scan, which could only find backups that happened to sit next to an already
+    indexed file.
+
+    Best-effort by design: a ledger append must never make the real file write
+    fail. A failure is logged LOUDLY (not swallowed) so the gap is visible; the
+    backup is still recoverable via the explicit-roots index path.
+    """
+    try:
+        import json
+        led = _write_backup_ledger_path()
+        led.parent.mkdir(parents=True, exist_ok=True)
+        row = json.dumps(
+            {
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "target": str(target),
+                "bak": str(bak),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        with led.open("a", encoding="utf-8") as fh:
+            fh.write(row + "\n")
+    except Exception:
+        _logger.warning(
+            "write_backup ledger append FAILED for %s (recovery falls back to index path)",
+            target,
+            exc_info=True,
+        )
+
+
+def _boot_sweep_ledger_candidates() -> tuple[dict[str, Path], list[dict]]:
+    """Discover boot-recovery candidates from the write-backup WAL.
+
+    Returns (candidates_by_normcase, ledger_errors). A corrupt/unreadable
+    ledger is reported (fail loud) -- never silently treated as "nothing to do",
+    because that would turn "could not read the recovery journal" into a false
+    "clean" and lose data.
+    """
+    candidates: dict[str, Path] = {}
+    errors: list[dict] = []
+    led = _write_backup_ledger_path()
+    try:
+        if not led.exists():
+            return candidates, errors
+        lines = led.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception as exc:
+        errors.append({
+            "ledger": str(led),
+            "error": f"{type(exc).__name__}: {exc}",
+            "stage": "read",
+        })
+        _logger.warning("boot_write_sweep ledger unreadable %s: %s", led, exc)
+        return candidates, errors
+    import json
+    corrupt = 0
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            data = json.loads(line)
+            target = str(data.get("target") or "")
+            if not target:
+                continue
+            fp = _boot_sweep_abs_path(target)
+            candidates[os.path.normcase(str(fp))] = fp
+        except Exception:
+            corrupt += 1
+    if corrupt:
+        errors.append({
+            "ledger": str(led),
+            "error": f"{corrupt} corrupt ledger line(s)",
+            "stage": "parse",
+        })
+        _logger.warning("boot_write_sweep ledger had %d corrupt line(s) in %s", corrupt, led)
+    return candidates, errors
+
+
+def _boot_sweep_seed_from_index(
+    stop_event: threading.Event | None,
+    deadline_monotonic: float | None,
+) -> dict:
+    """One-time migration: fold legacy (pre-WAL) backups into the candidate set.
+
+    Runs the legacy O(indexed) discovery exactly ONCE (marker-gated by the
+    caller) so any backup created before the WAL existed is still recovered.
+    Bounded by the same stop_event/deadline as the rest of the sweep and
+    reports `aborted` honestly so the caller never marks the seed complete on a
+    partial pass.
+    """
+    candidates: dict[str, Path] = {}
+    root_errors: list[dict] = []
+    roots = _boot_sweep_project_roots(None)
+    aborted = False
+    for root in roots:
+        if _boot_sweep_abort_reason(stop_event, deadline_monotonic):
+            aborted = True
+            break
+        try:
+            index_files = _boot_sweep_index_files(root)
+        except Exception as exc:
+            root_errors.append({
+                "root": str(root),
+                "error": f"{type(exc).__name__}: {exc}",
+                "stage": "index_files",
+            })
+            _logger.warning("boot_write_sweep seed skipped unreadable root %s: %s", root, exc)
+            continue
+        for fp in index_files:
+            if _boot_sweep_abort_reason(stop_event, deadline_monotonic):
+                aborted = True
+                break
+            candidates[os.path.normcase(str(fp))] = fp
+        if aborted:
+            break
+    return {
+        "candidates": candidates,
+        "root_errors": root_errors,
+        "roots": roots,
+        "aborted": aborted,
+    }
+
+
 def _boot_sweep_abort_reason(
     stop_event: threading.Event | None,
     deadline_monotonic: float | None,
@@ -835,34 +990,67 @@ def _boot_sweep_scan(
             "abort_reason": abort_reason,
             "scan_complete": False,
         }
-    roots = _boot_sweep_project_roots(project_roots)
-    roots_done = time.perf_counter()
     candidates: dict[str, Path] = {}
     root_errors: list[dict] = []
-    for root in roots:
-        abort_reason = _boot_sweep_abort_reason(stop_event, deadline_monotonic)
-        if abort_reason:
-            break
+    roots: list[Path] = []
+    # A02: the production boot (project_roots is None) discovers candidates from
+    # the write-backup WAL -> O(backups written), not O(every indexed file). An
+    # explicit project_roots (tests + any deliberate targeted sweep) keeps the
+    # legacy index walk so its semantics are byte-for-byte preserved.
+    use_ledger = project_roots is None
+    seeded_now = False
+    if use_ledger:
+        ledger_candidates, ledger_errors = _boot_sweep_ledger_candidates()
+        candidates.update(ledger_candidates)
+        root_errors.extend(ledger_errors)
+        # One-time migration: on the first boot after this fix ships, fold any
+        # legacy pre-WAL backup into the candidate set so nothing written before
+        # the ledger existed is orphaned. Marker-gated -> paid at most once.
+        seed_marker = _write_backup_seed_marker_path()
+        seed_marker_present = False
         try:
-            index_files = _boot_sweep_index_files(root)
-        except Exception as exc:
-            # A22: one unreadable/permission-denied root (e.g. a stale junk temp
-            # dir with broken ACLs) must NOT collapse the whole sweep. Record it
-            # loudly and keep sweeping the remaining roots.
-            root_errors.append({
-                "root": str(root),
-                "error": f"{type(exc).__name__}: {exc}",
-                "stage": "index_files",
-            })
-            _logger.warning("boot_write_sweep skipped unreadable root %s: %s", root, exc)
-            continue
-        for fp in index_files:
+            seed_marker_present = seed_marker.exists()
+        except Exception:
+            seed_marker_present = False
+        if not seed_marker_present and not abort_reason:
+            seed = _boot_sweep_seed_from_index(stop_event, deadline_monotonic)
+            candidates.update(seed["candidates"])
+            root_errors.extend(seed["root_errors"])
+            roots = seed["roots"]
+            if seed["aborted"]:
+                abort_reason = (
+                    _boot_sweep_abort_reason(stop_event, deadline_monotonic)
+                    or "stop_requested"
+                )
+            else:
+                seeded_now = True
+    else:
+        roots = _boot_sweep_project_roots(project_roots)
+        for root in roots:
             abort_reason = _boot_sweep_abort_reason(stop_event, deadline_monotonic)
             if abort_reason:
                 break
-            candidates[os.path.normcase(str(fp))] = fp
-        if abort_reason:
-            break
+            try:
+                index_files = _boot_sweep_index_files(root)
+            except Exception as exc:
+                # A22: one unreadable/permission-denied root (e.g. a stale junk temp
+                # dir with broken ACLs) must NOT collapse the whole sweep. Record it
+                # loudly and keep sweeping the remaining roots.
+                root_errors.append({
+                    "root": str(root),
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "stage": "index_files",
+                })
+                _logger.warning("boot_write_sweep skipped unreadable root %s: %s", root, exc)
+                continue
+            for fp in index_files:
+                abort_reason = _boot_sweep_abort_reason(stop_event, deadline_monotonic)
+                if abort_reason:
+                    break
+                candidates[os.path.normcase(str(fp))] = fp
+            if abort_reason:
+                break
+    roots_done = time.perf_counter()
     if not abort_reason:
         for fp in _boot_sweep_xroot_files():
             abort_reason = _boot_sweep_abort_reason(stop_event, deadline_monotonic)
@@ -872,6 +1060,7 @@ def _boot_sweep_scan(
     indexes_done = time.perf_counter()
 
     pending: list[tuple[Path, Path]] = []
+    existing_baks: list[tuple[Path, Path]] = []
     if not abort_reason:
         for fp in candidates.values():
             abort_reason = _boot_sweep_abort_reason(stop_event, deadline_monotonic)
@@ -883,12 +1072,37 @@ def _boot_sweep_scan(
                 # only touch the target/stat metadata for the rare backup candidate.
                 if not bak.exists() or not fp.exists():
                     continue
+                existing_baks.append((fp, bak))
                 if bak.stat().st_mtime <= fp.stat().st_mtime:
                     continue
                 pending.append((fp, bak))
             except Exception:
                 pass
     finished = time.perf_counter()
+
+    # After a COMPLETE seed pass: persist the legacy backups we actually found
+    # into the WAL so future boots never re-walk the index, then drop the marker.
+    # Only when the seed ran to completion -- a partial/aborted seed must retry
+    # next boot (fail loud, never mark done on incomplete work).
+    if use_ledger and seeded_now and not abort_reason:
+        try:
+            # Record every target that still HAS a sibling .bak (not just the
+            # ones pending right now): the legacy scan re-evaluated mtime every
+            # boot, so a .bak that is currently stale could still become the
+            # newest copy after a later edit. The WAL must carry the same set.
+            for fp, bak in existing_baks:
+                _record_write_backup(fp, bak)
+        finally:
+            try:
+                marker = _write_backup_seed_marker_path()
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                marker.write_text(
+                    time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    encoding="utf-8",
+                )
+            except Exception:
+                _logger.warning("boot_write_sweep could not write seed marker", exc_info=True)
+
     return {
         "root_count": len(roots),
         "candidate_count": len(candidates),
@@ -903,6 +1117,8 @@ def _boot_sweep_scan(
         "scan_complete": not bool(abort_reason),
         "root_errors": root_errors,
         "root_error_count": len(root_errors),
+        "discovery": "ledger" if use_ledger else "index",
+        "seeded": seeded_now,
     }
 
 
@@ -1228,6 +1444,11 @@ skip_symbol_check :bool =False )->str :
         if guard_error:
             return guard_error
         backup_path =fp .with_suffix (fp .suffix +'.bak')
+        # A02 WAL: journal the backup BEFORE it exists on disk, so boot recovery
+        # can find it in O(backups) instead of walking every indexed file. Intent
+        # ordering (record -> write) means even a crash between the two lines
+        # leaves a recoverable pointer.
+        _record_write_backup (fp ,backup_path )
         ct._atomic_write_text (backup_path ,built ["original"],encoding ='utf-8')
         write_mode =ct._atomic_write_text (fp ,built ["proposed"],encoding ='utf-8')
         return {
