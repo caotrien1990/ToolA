@@ -115,7 +115,18 @@ class BusySnapshotPublisher:
                 with temporary.open("w", encoding="utf-8") as stream:
                     json.dump(payload, stream, separators=(",", ":"), sort_keys=True)
                     stream.flush()
-                    os.fsync(stream.fileno())
+                # A41/PH-2: NO fsync here. This snapshot is ephemeral — a lost write
+                # is simply re-published on the next 0.5s cycle — so the reader needs
+                # atomicity (a torn/partial read must never happen), NOT crash-
+                # durability. os.replace() already gives atomic publish; fsync only
+                # buys crash-survival that has no meaning for data regenerated twice a
+                # second. On the slow repo drive (D) an fsync costs 300ms idle and
+                # >1.3s under concurrent disk load, so it — not lock contention —
+                # dominated the publisher's cycle time and let captured_at age past the
+                # restart guard's staleness deadline. Dropping it keeps every cycle
+                # sub-2ms. Matches existing ephemeral/atomic-write precedent in the
+                # repo (fileops.common.atomic_write_bytes, storage.fs.atomic_write_text)
+                # while durable writers (session logs, the restart secret) keep fsync.
                 os.replace(temporary, self.path)
             finally:
                 try:

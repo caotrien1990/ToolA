@@ -78,11 +78,22 @@ _SESSION_WRITE_WEDGE_MULTIPLIER = max(
     2.0, float(os.environ.get("ORCH_SESSION_WRITE_WEDGE_MULTIPLIER", "6"))
 )
 _SESSION_DB_INITIALIZED_PATHS: set[str] = set()
+# campaign-1608 (A38): serialize in-process migration so two threads never run
+# the DDL against a fresh DB at once (the A27 race), independent of whoever calls
+# _init_session_db (tests, code_tools, or _get_session_writer under its own lock).
+_SESSION_INIT_LOCK = threading.Lock()
 # campaign-1608 (A27): the WAL switch ignores busy_timeout, so it needs its own
 # small retry budget. Short on purpose -- the winner of the race enables WAL for
 # everyone, so a loser has nothing left to wait for.
 _WAL_SWITCH_ATTEMPTS = 4
 _WAL_SWITCH_RETRY_MS = 20
+# campaign-1608 (A38): the migration DDL carries only PRAGMA busy_timeout, which
+# cannot outlast a SECOND process (A28: MCP is a distinct [A] process writing the
+# same sessions.db) holding the write lock longer than that budget. Retry the
+# whole migration a bounded number of times, mirroring the A27 _enable_wal loop,
+# then fail LOUD -- the schema is mandatory and, unlike WAL, cannot degrade.
+# _SESSION_DB_RETRY_BASE_MS/_SESSION_DB_RETRY_MAX_MS above bound the backoff.
+_SESSION_MIGRATION_ATTEMPTS = 6
 
 
 class SessionStoreContentionError(RuntimeError):
@@ -720,6 +731,10 @@ def _configure_sessions_connection(conn: sqlite3.Connection, busy_timeout_ms: in
 
 _SESSION_READ_LOCAL = threading.local()
 _SESSION_WRITER_SWAP_LOCK = threading.Lock()
+# campaign-1608 (A38): the process-wide writer is created LAZILY on first DB use
+# by _get_session_writer, not at import. Declared here so ``globals().get`` and
+# the ``global`` rebind in _get_session_writer both see a defined name.
+_SESSION_WRITER: SessionWriter | None = None
 
 
 def _shutdown_session_writer() -> None:
@@ -850,18 +865,14 @@ def _run_session_write(
     )
 
 
-def _init_session_db():
-    """Run idempotent migrations before a writer opens the target database."""
-    existing_writer = globals().get("_SESSION_WRITER")
-    if (
-        existing_writer is not None
-        and existing_writer.db_path == Path(_SESSIONS_DB)
-        and not existing_writer._closing.is_set()
-    ):
-        return
-    _SESSIONS_DB.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(_SESSIONS_DB))
-    _configure_sessions_connection(conn, _SESSION_DB_BUSY_TIMEOUT_MS)
+def _apply_session_schema(conn: sqlite3.Connection) -> None:
+    """Run every idempotent migration statement against ``conn`` and COMMIT.
+
+    campaign-1608 (A38): split out of ``_init_session_db`` so the whole schema
+    pass can be RETRIED on a lock-contended connection. Every statement here is
+    idempotent (``CREATE ... IF NOT EXISTS`` / ``ALTER`` guarded on duplicate
+    column), so re-running a partially applied migration is safe.
+    """
     try:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
@@ -1053,15 +1064,82 @@ def _init_session_db():
             "ON write_operations(project_path, file_path, updated_at DESC)"
         )
         conn.commit()
-        _SESSION_DB_INITIALIZED_PATHS.add(
-            os.path.normcase(os.path.abspath(str(_SESSIONS_DB)))
+    except BaseException:
+        if conn.in_transaction:
+            try:
+                conn.rollback()
+            except Exception:
+                logger.exception("session schema rollback failed")
+        raise
+
+
+def _init_session_db():
+    """Run idempotent migrations before a writer opens the target database.
+
+    Lazy + idempotent + thread-safe (A38):
+
+    * No longer runs at import time. The module-level call was an import-time
+      side effect: merely ``import``-ing this module (a test, a script, or a
+      SECOND [A] process -- A28 confirmed MCP is one) touched sessions.db, and
+      the migration DDL below carries only ``PRAGMA busy_timeout``. A second
+      process holding the write lock past that budget made the *import itself*
+      raise ``sqlite3.OperationalError: database is locked`` (repro: line ~866).
+    * ``_get_session_writer`` already calls this lazily under
+      ``_SESSION_WRITER_SWAP_LOCK`` before creating the writer, so every runtime
+      DB access still initializes the schema on first use -- behavior for
+      existing callers is unchanged.
+    * Serialized by ``_SESSION_INIT_LOCK`` so two threads never run the DDL on a
+      fresh DB at once (the A27 in-process race), and short-circuited by
+      ``_SESSION_DB_INITIALIZED_PATHS`` so repeat calls are O(1).
+    * The whole schema pass is retried on lock contention (A28: a second process
+      can hold the write lock), mirroring the A27 ``_enable_wal`` loop, then
+      fails LOUD -- the schema is mandatory and, unlike WAL, cannot degrade.
+    """
+    existing_writer = globals().get("_SESSION_WRITER")
+    if (
+        existing_writer is not None
+        and existing_writer.db_path == Path(_SESSIONS_DB)
+        and not existing_writer._closing.is_set()
+    ):
+        return
+    db_key = os.path.normcase(os.path.abspath(str(_SESSIONS_DB)))
+    if db_key in _SESSION_DB_INITIALIZED_PATHS:
+        return
+    with _SESSION_INIT_LOCK:
+        # Re-check under the lock: another thread may have finished the migration
+        # while we waited, so we neither redo the DDL nor re-enter the retry loop.
+        if db_key in _SESSION_DB_INITIALIZED_PATHS:
+            return
+        _SESSIONS_DB.parent.mkdir(parents=True, exist_ok=True)
+        last_exc: sqlite3.OperationalError | None = None
+        for attempt in range(_SESSION_MIGRATION_ATTEMPTS):
+            conn = sqlite3.connect(str(_SESSIONS_DB))
+            try:
+                _configure_sessions_connection(conn, _SESSION_DB_BUSY_TIMEOUT_MS)
+                _apply_session_schema(conn)
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc).lower() and "busy" not in str(exc).lower():
+                    raise
+                last_exc = exc
+                delay_ms = min(
+                    _SESSION_DB_RETRY_MAX_MS,
+                    _SESSION_DB_RETRY_BASE_MS * (2 ** attempt),
+                )
+                time.sleep(delay_ms / 1000.0)
+                continue
+            else:
+                _SESSION_DB_INITIALIZED_PATHS.add(db_key)
+                return
+            finally:
+                conn.close()
+        # Exhausted the retry budget under a still-held lock. The schema is
+        # mandatory, so surface it LOUD instead of leaving a half-checked DB.
+        raise SessionStoreContentionError(
+            f"session schema migration could not acquire the database lock after "
+            f"{_SESSION_MIGRATION_ATTEMPTS} attempts: {last_exc}"
         )
-    finally:
-        conn.close()
 
 
-_init_session_db()
-_SESSION_WRITER = SessionWriter(_SESSIONS_DB)
 atexit.register(_shutdown_session_writer)
 
 
