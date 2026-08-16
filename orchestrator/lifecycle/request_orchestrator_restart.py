@@ -143,7 +143,11 @@ def controller_health(url: str, timeout: float = 1.0, opener: Callable[..., obje
 
 
 def main(argv: list[str] | None = None) -> int:
-    """[A:S] Path A: signed POST to :8085. Exit 0 verified, 2 skip, 3 guard, 1 failed."""
+    """[A:S] Path A: signed POST to :8085.
+
+    Exit 0 verified, 2 skip, 3 guard (genuine block, do NOT force), 4 guard
+    (stale-snapshot-only, retryable — [A:S] retries Path A once), 1 failed.
+    """
     import argparse
     from pathlib import Path
 
@@ -205,6 +209,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     error_name = str(result.get("error_name") or "")
     if error_name == "RESTART_GUARD_BLOCKED":
+        # A39/PH-4: a block whose ONLY reason is a stale busy-snapshot *reading*
+        # (nothing actually busy) is self-clearing — the next read gets a fresh
+        # snapshot. Distinguish it with rc=4 so [A:S] can retry Path A ONCE instead
+        # of hard-stopping at FAIL_GUARD. A genuine block (worker in flight, council
+        # slot active, etc.) keeps rc=3 = "do not force". The distinction is derived
+        # from the response fields, never from string-matching in the .bat.
+        from .restart_guard import is_retryable_stale_block
+        reasons = result.get("reasons")
+        if isinstance(reasons, list) and is_retryable_stale_block(reasons):
+            print("[RETRY] RESTART_GUARD_BLOCKED stale-snapshot only; retryable")
+            return 4
         print("[LOI] RESTART_GUARD_BLOCKED")
         return 3
     if result.get("ok") and (error_name == "RESTART_VERIFIED" or result.get("new_pid")):

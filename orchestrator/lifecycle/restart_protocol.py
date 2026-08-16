@@ -101,6 +101,12 @@ class BusySnapshotPublisher:
         with self._publish_lock:
             payload = dict(self.snapshot())
             payload["captured_at"] = time.time()
+            # A39/PH-5: liveness of THIS publisher is NOT stamped here. A dead
+            # publisher thread cannot stamp its own death, and the process pid stays
+            # alive after the thread dies — a pid stamp on a frozen snapshot fails
+            # OPEN. The restart guard instead samples the publisher THREAD's live
+            # is_alive() from the lock-free /livez channel; see
+            # restart_control_service._snapshot_publisher_alive.
             self.path.parent.mkdir(parents=True, exist_ok=True)
             temporary = self.path.with_name(
                 f"{self.path.name}.tmp.{os.getpid()}.{threading.get_ident()}.{secrets.token_hex(4)}"

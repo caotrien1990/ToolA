@@ -140,6 +140,19 @@ def _liveness_payload() -> dict:
         "generation": SERVER_GENERATION,
         "started_at": SERVER_STARTED_AT,
         "livez_protocol": LIVEZ_PROTOCOL,
+        # A39/PH-5: LIVE thread-liveness of the busy-snapshot publisher, served on
+        # the lock-free /livez channel so the out-of-process restart guard can tell
+        # "publisher thread blocked but alive" (captured_at frozen, but .alive True
+        # -> a transient burst, safe to suppress the stale block) apart from
+        # "publisher thread DEAD" (captured_at frozen FOREVER -> must block). This
+        # MUST be sourced here rather than stamped into the snapshot: a dead thread
+        # cannot stamp its own death. It MUST NOT be read from /health, which calls
+        # executor_lane_status()/_LANES_LOCK — the very lock a busy handler holds
+        # during the block — and would hang in exactly the window that matters.
+        # Thread.is_alive() takes no lock, so this stays responsive during a block.
+        "restart_busy_snapshot_alive": bool(
+            _RESTART_SNAPSHOT_PUBLISHER and _RESTART_SNAPSHOT_PUBLISHER.alive
+        ),
     }
 
 
@@ -3773,6 +3786,46 @@ def _r101_filter(payload, fields):
             "ignored; the result is NOT empty because of them. Check spelling "
             "(e.g. 'results' not 'result') or omit fields= to see every key.")
     return out
+
+
+def _session_contention_error_payload(tool_name: str, exc: BaseException,
+                                      body: dict | None = None):
+    """A40: build the retryable error body for a session-store contention that
+    escaped a tool as an exception (tools_v15 durable writers reach the
+    dispatcher's generic ``except`` instead of translating it themselves).
+
+    Delegates the type check + contract to the single shared classifier in
+    code_tools (``_session_contention_fields``) so there is exactly one place
+    that decides "this is a retryable stall" -- adding a fourth durable tool
+    needs no change here. Returns ``None`` for any non-contention exception so
+    the caller keeps its default non-retryable handling.
+    """
+    classify = getattr(ct, "_session_contention_fields", None)
+    if classify is None:
+        return None
+    try:
+        fields = classify(exc)
+    except Exception:
+        return None
+    if fields is None:
+        return None
+    result = {
+        "ok": False,
+        "error": str(exc),
+        "error_name": fields["error_name"],
+        "reason": str(exc),
+        "retryable": fields["retryable"],
+        "ca_next_action": fields["ca_next_action"],
+        "hint": fields["hint"],
+    }
+    result["ca_guidance"] = _ca_guidance(
+        tool_name, str(exc), body if isinstance(body, dict) else {},
+        result["error_name"])
+    try:
+        result["phase"] = ct._phase_for_error_name(result["error_name"])
+    except Exception:
+        pass
+    return result
 
 
 def _error_response(tool_name: str, error: str, status: int, headers: dict,
@@ -13637,6 +13690,20 @@ accepted_fields=sorted(accepted_fields),
     except Exception as exc:
         _error_msg = str(exc)
         await _write_ledger_finish_async(_op_id, {}, "error")  # BK34: crash => not_committed off-loop
+        # A40: tools_v15 durable-write tools (record_error_resolution,
+        # record_session_audit_checkpoint) let a transient
+        # SessionStoreContentionError propagate to this generic handler instead
+        # of catching it, so without this it would collapse into a
+        # non-retryable INTERNAL_ERROR/TOOL_ERROR -- the same "don't retry a
+        # retryable stall" bug A40 fixes in code_tools' _json_error. Reuse the
+        # ONE shared classifier (ct._session_contention_fields) rather than
+        # duplicating the mapping, so a fourth durable caller can't drift.
+        _contention = _session_contention_error_payload(tool_name, exc, body)
+        if _contention is not None:
+            logger.warning(
+                "Tool '%s' hit session-store contention: %s", tool_name, exc)
+            _result = _r101_filter(_contention, _R101_FIELDS.get())
+            return web.json_response(_result, status=503, headers=cors)
         _result = {
             "ok": False,
             "error": str(exc),

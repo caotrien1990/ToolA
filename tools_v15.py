@@ -7272,13 +7272,24 @@ async def restart_orchestrator_via_bat(
                 "detail": type(exc).__name__,
             }, ensure_ascii=False)
         if not decision.allowed:
-            return _json.dumps({
+            from orchestrator.lifecycle.restart_guard import is_retryable_stale_block
+            # A39: a block whose ONLY reason is a stale busy-snapshot *reading*
+            # (nothing actually busy) is a transient false alarm — the freshest
+            # snapshot is trustworthy on a retry. Tell the CA the truth: call
+            # again. The old contract said "reload guard state after clearing the
+            # condition" for a condition that did not exist.
+            retryable = is_retryable_stale_block(decision.reasons)
+            response = {
                 "ok": False,
                 "error_name": "RESTART_GUARD_BLOCKED",
                 "reasons": list(decision.reasons),
                 "blocking_guards": [dict(g) for g in decision.blocking_guards],
                 "mechanism": "pre_bat_guard",
-            }, ensure_ascii=False)
+                "retryable": retryable,
+            }
+            if retryable:
+                response["ca_next_action"] = "retry_restart_call"
+            return _json.dumps(response, ensure_ascii=False)
 
     bat_path = root / "start_orchestrator.bat"
     if not bat_path.exists():

@@ -52,7 +52,7 @@ class RestartInfrastructureFixTests(unittest.TestCase):
         self.assertFalse(decision.allowed)
         self.assertEqual(decision.blocking_guards[0]["name"], "BUSY_SNAPSHOT_MISSING")
         self.assertEqual(set(decision.blocking_guards[0]),
-                         {"name", "held_by", "is_stale", "how_to_clear"})
+                         {"name", "held_by", "is_stale", "retryable", "how_to_clear"})
 
     def test_force_drain_closes_stale_dispatch(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -321,7 +321,7 @@ class RestartInfrastructureFixTests(unittest.TestCase):
             self.assertIn("COUNCIL_SLOT_ACTIVE", names)
             for guard in result["blocking_guards"]:
                 self.assertEqual(
-                    set(guard), {"name", "held_by", "is_stale", "how_to_clear"},
+                    set(guard), {"name", "held_by", "is_stale", "retryable", "how_to_clear"},
                     f"blocking_guards item missing required shape: {guard}",
                 )
             popen.assert_not_called()

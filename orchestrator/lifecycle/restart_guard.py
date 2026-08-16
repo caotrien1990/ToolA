@@ -40,25 +40,57 @@ class GuardDecision:
     blocking_guards: tuple[dict[str, object], ...] = ()
 
 
+# Blocking reasons that describe a stale/unreadable *reading* of guard state
+# rather than a live busy condition. Re-reading (i.e. calling again) is the
+# correct response to these: there is no condition for the caller to clear.
+_STALE_READING_REASONS = frozenset({
+    "BUSY_SNAPSHOT_MISSING", "BUSY_SNAPSHOT_INVALID", "BUSY_SNAPSHOT_STALE",
+    "BUSY_SNAPSHOT_GENERATION_INVALID", "BUSY_SNAPSHOT_GENERATION_MISMATCH",
+    "COUNCIL_STATE_INVALID", "COUNCIL_PID_UNVERIFIED", "BROKER_STATE_INVALID",
+    "BROKER_PARSE_FAILED", "BROKER_DISPATCH_UNMATCHED",
+})
+
+# The single reason that is *purely* a stale reading with no live-busy component:
+# the snapshot on disk was merely old at read time. A83/A39: a snapshot 4s old is
+# only a problem if the publisher is dead; when it is the ONLY blocking reason the
+# freshest reading is trustworthy on a retry, so the block is a transient false
+# alarm and the actionable next step is to call again — NOT to "clear a condition".
+_RETRYABLE_STALE_ONLY_REASON = "BUSY_SNAPSHOT_STALE"
+
+
+def is_retryable_stale_block(reasons: Iterable[str]) -> bool:
+    """True when the ONLY blocking reason is a stale busy-snapshot *reading*.
+
+    In that case nothing is actually busy (no council slot, no in-flight worker,
+    no genuine ORCHESTRATOR_BUSY) — the guard merely read a snapshot whose
+    captured_at was old at that instant. The reading is refreshed every publish
+    interval, so the correct CA action is to retry the identical call, not to
+    "clear a condition" that does not exist. Any additional blocking reason means
+    there is real state to resolve, so this returns False.
+    """
+    seen = {r for r in reasons if r}
+    return seen == {_RETRYABLE_STALE_ONLY_REASON}
+
+
 def describe_blocking_guards(reasons: Iterable[str]) -> tuple[dict[str, object], ...]:
     """Return stable, actionable metadata for every blocking guard reason."""
-    stale = {
-        "BUSY_SNAPSHOT_MISSING", "BUSY_SNAPSHOT_INVALID", "BUSY_SNAPSHOT_STALE",
-        "BUSY_SNAPSHOT_GENERATION_INVALID", "BUSY_SNAPSHOT_GENERATION_MISMATCH",
-        "COUNCIL_STATE_INVALID", "COUNCIL_PID_UNVERIFIED", "BROKER_STATE_INVALID",
-        "BROKER_PARSE_FAILED", "BROKER_DISPATCH_UNMATCHED",
-    }
+    stale = _STALE_READING_REASONS
     clearing = {
         "ORCHESTRATOR_BUSY": "wait for in-flight work to drain",
         "IN_FLIGHT_WORKERS_ACTIVE": "wait for active workers to finish, or force with explicit allow_force",
         "COUNCIL_SLOT_ACTIVE": "wait for the council worker or force-drain a stale slot",
         "COUNCIL_PID_ALIVE": "wait for or stop the live council worker",
         "BROKER_DISPATCH_UNMATCHED": "force-drain stale unmatched broker dispatches",
+        # A39: the snapshot reading was old at read time, not a live busy state.
+        # There is no condition to clear; retry the identical restart call.
+        "BUSY_SNAPSHOT_STALE": "retry: the busy-snapshot reading was stale, not a live busy condition — call the restart again",
     }
     return tuple({
         "name": name,
         "held_by": "restart guard state",
         "is_stale": name in stale,
+        # A39: stale *readings* are cleared by re-reading (retry), so advertise it.
+        "retryable": name in stale,
         "how_to_clear": clearing.get(name, "reload guard state after clearing the condition"),
     } for name in dict.fromkeys(reasons))
 
@@ -161,7 +193,23 @@ def evaluate_restart_guard(
     expected_request_id: str = "",
     allow_force: bool = False,
     dispatch_stale_seconds: float = 600.0,
+    snapshot_publisher_alive: bool | None = None,
 ) -> GuardDecision:
+    """Evaluate whether a restart is safe from a single busy-snapshot reading.
+
+    snapshot_publisher_alive (A39): liveness of the snapshot publisher, proven by
+    the caller (build_guard re-reads and checks captured_at progress). A snapshot
+    that is merely OLD is only dangerous if the publisher is DEAD — a live-but-
+    lagging publisher (blocked on a request-handler lock, or GIL-starved by a
+    CPU-bound burst) publishes an accurate reading again as soon as the burst ends,
+    so its transient staleness must not wedge a restart. Therefore:
+      * True  -> the publisher is proven alive; a stale-by-age reading is a
+                 transient burst and BUSY_SNAPSHOT_STALE is suppressed.
+      * False/None -> liveness NOT proven; keep the fail-closed staleness block.
+    This is a liveness test, not a larger deadline: it never depends on how old the
+    reading is, so it cannot be defeated by load the way raising the age threshold
+    would be (the A33/L-x trap: a fixed deadline on a load-scaled quantity).
+    """
     reasons: list[str] = []
     if not isinstance(busy_snapshot, Mapping):
         reasons.append("BUSY_SNAPSHOT_MISSING")
@@ -170,7 +218,10 @@ def evaluate_restart_guard(
         if not isinstance(captured_at, (int, float)):
             reasons.append("BUSY_SNAPSHOT_INVALID")
         elif captured_at > now or now - float(captured_at) > snapshot_max_age_seconds:
-            reasons.append("BUSY_SNAPSHOT_STALE")
+            # Old reading. Only block when the publisher is NOT proven alive; a
+            # proven-alive publisher makes staleness a harmless transient burst.
+            if snapshot_publisher_alive is not True:
+                reasons.append("BUSY_SNAPSHOT_STALE")
         matching_restart_request = bool(
             expected_request_id
             and busy_snapshot.get("restart_request_id") == expected_request_id

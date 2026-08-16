@@ -923,6 +923,7 @@ _R49_PHASE_MAP = {
     "UNC_ACCESS_FROM_ORCHESTRATOR_PROCESS": "environment",
     "UNC_AUTH_CONTEXT_MISMATCH": "environment",
     # retryable_transport
+    "SESSION_STORE_CONTENTION": "retryable_transport",
     "STALE_INDEX": "retryable_transport",
     "FILE_CHANGED_OUTSIDE_ORCHESTRATOR": "retryable_transport",
     "CDP_UNREACHABLE_AFTER_LAUNCH": "retryable_transport",
@@ -958,7 +959,53 @@ def _phase_for_error_name(name: str) -> str:
     return _R49_PHASE_MAP.get(name, "runtime")
 
 
-def _json_error(message: str, **extra) -> str:
+def _session_contention_fields(exc: BaseException):
+    """A40: single source of truth for translating a transient session-store
+    write contention into a retryable, machine-actionable error contract.
+
+    ``SessionStoreContentionError`` is raised by ``SessionWriter.submit`` for
+    EVERY durable write once the write-queue watchdog declares the writer
+    STALLED or WEDGED (or the queue budget is exceeded). It is transient: a
+    plain retry once the queue drains actually commits. But it reaches most
+    tool handlers through a generic ``except Exception`` that funnels into
+    ``_json_error(str(e))`` -- which drops the exception type and defaults to
+    ``retryable=False`` / ``INTERNAL_ERROR``. That tells CA a retryable
+    condition is a permanent internal error, so it gives up and the write is
+    silently lost. Centralizing the translation here (instead of copy-pasting
+    an ``except SessionStoreContentionError`` into each tool) is what keeps a
+    fourth caller from being missed the way A40 itself was created.
+
+    Returns the contract fields for a contention exception, or ``None`` for
+    anything else so callers keep their default (non-retryable) verdict -- the
+    translation must never widen to swallow a genuine defect.
+    """
+    if not isinstance(exc, _session_store_module.SessionStoreContentionError):
+        return None
+    return {
+        "error_name": "SESSION_STORE_CONTENTION",
+        "retryable": True,
+        # Generic-but-accurate: the write did not commit and a short backoff +
+        # retry is the correct move for ANY session-store-touching tool, not a
+        # close_session-specific instruction.
+        "ca_next_action": "retry_after_short_backoff",
+        "hint": ("The session write queue was temporarily busy; the write did "
+                 "not commit. Retry after a short backoff."),
+    }
+
+
+def _json_error(message, **extra) -> str:
+    # A40: when handed the original exception (``_json_error(e)`` rather than
+    # ``_json_error(str(e))``), recognize a transient session-store contention
+    # at the source and stamp the retryable contract before it collapses into
+    # the generic INTERNAL_ERROR default below. Passing a string keeps the old
+    # behavior verbatim, so this is a no-op for every existing non-exception
+    # caller. Explicit fields supplied by the caller always win (setdefault).
+    if isinstance(message, BaseException):
+        _contention = _session_contention_fields(message)
+        if _contention is not None:
+            for _k, _v in _contention.items():
+                extra.setdefault(_k, _v)
+        message = str(message)
     msg = str(message or "unexpected internal error")
     data = {"ok": False, "error": msg}
     data.update(extra)
@@ -11607,7 +11654,7 @@ async def open_session(session_title: str = "", project_path: str = ".", mode: s
             pass
         return json.dumps(resp, ensure_ascii=False)
     except Exception as e:
-        return _json_error(str(e))
+        return _json_error(e)
 
 
 async def close_session(project_path: str = "", session_id: str = "",
@@ -11810,7 +11857,7 @@ async def close_session(project_path: str = "", session_id: str = "",
             hint="The session write queue was busy; the session is still active. Retry.",
         )
     except Exception as e:
-        return _json_error(str(e))
+        return _json_error(e)
 
 
 async def rename_session(project_path: str, new_title: str,
@@ -11861,7 +11908,7 @@ async def rename_session(project_path: str, new_title: str,
             )
         return json.dumps({"ok": True, "session_id": _sid, "new_title": new_title}, ensure_ascii=False)
     except Exception as e:
-        return _json_error(str(e))
+        return _json_error(e)
 
 
 async def log_native_event(action_type: str = "", tool_name: str = "", target: str = "",
@@ -12065,7 +12112,7 @@ async def log_native_event(action_type: str = "", tool_name: str = "", target: s
                 f"(raw fs/spawn used because [A] was unavailable).")
         return json.dumps(out, ensure_ascii=False)
     except Exception as e:
-        return _json_error(str(e))
+        return _json_error(e)
 
 
 async def create_pending_audit(project_path: str, action_type: str, tool_name: str,
@@ -12115,7 +12162,7 @@ async def create_pending_audit(project_path: str, action_type: str, tool_name: s
             "ca_next_action": "sync_pending_audit_when_api_available",
         }, ensure_ascii=False)
     except Exception as e:
-        return _json_error(str(e))
+        return _json_error(e)
 
 
 async def sync_pending_audit(project_path: str, pending_audit_id: str = "", limit: int = 50,
@@ -12308,7 +12355,7 @@ async def sync_pending_audit(project_path: str, pending_audit_id: str = "", limi
             "ca_next_action": "continue_session_audit" if not failed else "review_failed_pending_audit",
         }, ensure_ascii=False)
     except Exception as e:
-        return _json_error(str(e))
+        return _json_error(e)
 
 
 async def list_sessions(project_path: str = "", limit: int = 10,
@@ -12362,7 +12409,7 @@ async def list_sessions(project_path: str = "", limit: int = 10,
             "total": len(result),
         }, ensure_ascii=False)
     except Exception as e:
-        return _json_error(str(e))
+        return _json_error(e)
 
 
 async def clear_closed_sessions(project_path: str) -> str:
@@ -12396,7 +12443,7 @@ async def clear_closed_sessions(project_path: str) -> str:
             "deleted_events": deleted_events,
         }, ensure_ascii=False)
     except Exception as e:
-        return _json_error(str(e))
+        return _json_error(e)
 
 
 async def get_session_events(session_id: str = "", limit: int = 50, offset: int = 0,
@@ -12479,7 +12526,7 @@ async def get_session_events(session_id: str = "", limit: int = 50, offset: int 
                            "total": total, "offset": offset, "limit": limit
                            }, ensure_ascii=False)
     except Exception as e:
-        return _json_error(str(e))
+        return _json_error(e)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

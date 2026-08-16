@@ -46,6 +46,11 @@ echo [*] Instance cu PID_BEFORE=!PID_BEFORE!
 REM KHONG Disable/Stop ToolA_RestartControl. Path A can :8085 song.
 
 REM ================================ Path A: signed POST :8085 via CLI ================================
+REM A39: GUARD_RETRY bounds the rc=4 (stale-snapshot-only) retry to EXACTLY ONE extra
+REM Path A attempt. rc=4 = the block's only reason was a stale busy-snapshot reading
+REM (self-clearing: nothing is actually busy). rc=3 stays a hard stop (real worker).
+set "GUARD_RETRY=0"
+:PATH_A
 echo [*] Path A: request_orchestrator_restart.py -^> 127.0.0.1:8085 ...
 pushd "%~dp0"
 "!CLI_PYW!" -m orchestrator.lifecycle.request_orchestrator_restart --timeout 90
@@ -54,6 +59,15 @@ popd
 if "!CLI_RC!"=="0" (
     echo [OK] Path A CLI verified. Chung minh livez + PID.
     goto PROVE_LIVE
+)
+if "!CLI_RC!"=="4" (
+    if "!GUARD_RETRY!"=="0" (
+        set "GUARD_RETRY=1"
+        echo [*] Path A rc=4 stale-snapshot-only ^(retryable^); retry Path A mot lan...
+        goto PATH_A
+    )
+    echo [LOI] Path A rc=4 van block sau 1 retry; coi nhu guard block. Khong ForceRestart.
+    goto FAIL_GUARD
 )
 if "!CLI_RC!"=="3" (
     echo [LOI] Path A RESTART_GUARD_BLOCKED. Khong fall-through ForceRestart.

@@ -382,9 +382,106 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
+def _snapshot_captured_at(snap: object) -> float | None:
+    if not isinstance(snap, Mapping):
+        return None
+    value = snap.get("captured_at")
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def _refresh_busy_snapshot(
+    snapshot_path: Path, first: Mapping[str, object] | None,
+    *, settle: float = 0.6, sleep: Callable[[float], None] | None = None,
+    read_json: Callable[[Path], object] | None = None,
+) -> Mapping[str, object] | None:
+    """Return the FRESHEST readable busy-snapshot for the guard to JUDGE ON.
+
+    A39 / PH-1: when *first* is stale-by-age, the publisher may have written a
+    newer, more accurate reading since. Re-read once and return whichever reading
+    has the greater captured_at — the guard MUST judge the CONTENT of the freshest
+    reading (busy, executor_in_flight, generation), not merely learn that a fresher
+    one exists and then trust the old content. Returning a bool (the previous bug)
+    suppressed "this content is too old" and then judged the too-old content anyway,
+    letting a restart through while read #2 showed workers in flight.
+
+    Never returns something older than *first*: if the re-read is unreadable or not
+    newer, *first* is kept. Side-effect-free apart from the single settle sleep.
+    """
+    _sleep = sleep if sleep is not None else time.sleep
+    _read = read_json if read_json is not None else _read_json
+    _sleep(max(0.0, settle))
+    try:
+        second = _read(snapshot_path)
+    except Exception:
+        return first
+    before = _snapshot_captured_at(first)
+    after = _snapshot_captured_at(second)
+    if after is None:
+        return first
+    if before is None or after > before:
+        return second if isinstance(second, Mapping) else first
+    return first
+
+
+def _probe_livez(url: str, timeout: float = 1.0,
+                 opener: Callable[..., object] = urllib.request.urlopen) -> Mapping[str, object] | None:
+    """Fetch the lock-free /livez payload, or None if unreachable/unparseable."""
+    try:
+        with opener(url, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return None
+    return payload if isinstance(payload, Mapping) else None
+
+
+def _snapshot_publisher_alive(
+    snapshot: Mapping[str, object] | None,
+    expected_generation: str,
+    livez: Mapping[str, object] | None,
+) -> bool:
+    """A39: is the busy-snapshot PUBLISHER THREAD live and current?
+
+    Two-condition decision (mirrors reap_orphan_busy_snapshots' PID-reuse defense):
+    suppress the stale-by-age block ONLY when BOTH hold, else fail closed.
+
+      1. LIVE thread-liveness: /livez.restart_busy_snapshot_alive is True. This is
+         sourced from the running process (Thread.is_alive(), lock-free) — NOT
+         stamped into the snapshot, because a dead publisher thread cannot stamp its
+         own death (PH-5: process pid stays alive forever after the thread dies, so
+         a pid check fails OPEN on a frozen snapshot). /livez is used, not /health,
+         because /health takes _LANES_LOCK — the exact lock a busy handler holds
+         during the block PH-2 targets — and would hang in that very window.
+      2. GENERATION match: the LIVE process generation (from the same /livez we just
+         trusted for liveness) equals the generation we are authorising a restart
+         for. Without this, a NEW generation's healthy publisher could vouch for an
+         OLD generation's frozen snapshot. Also closes PH-6: a signal sourced from
+         the real process on :8084 cannot be spoofed by a stranger holding a
+         recycled pid — there is no pid in this decision at all.
+
+    Why this survives an ongoing lock-block (does not regress PH-2): the publisher
+    thread stuck on _publish_lock is still is_alive()==True, and /livez never touches
+    that lock, so restart_busy_snapshot_alive stays True throughout the block.
+    Why it blocks a dead thread (fixes PH-5): a dead thread flips is_alive() to
+    False permanently, so restart_busy_snapshot_alive is False and the stale block
+    stands.
+    """
+    if not isinstance(snapshot, Mapping):
+        return False
+    if not isinstance(livez, Mapping):
+        return False
+    if livez.get("restart_busy_snapshot_alive") is not True:
+        return False
+    live_generation = livez.get("generation")
+    if not isinstance(live_generation, str) or not live_generation:
+        return False
+    # Trust the live signal only for the generation it actually describes.
+    return live_generation == expected_generation
+
+
 def build_guard(root: Path, expected_generation: str, expected_request_id: str = "",
                 max_age: float = 3.0, allow_force: bool = False,
-                dispatch_stale_seconds: float = 600.0) -> Callable[[], GuardDecision]:
+                dispatch_stale_seconds: float = 600.0,
+                livez_url: str = "http://127.0.0.1:8084/livez") -> Callable[[], GuardDecision]:
     snapshot_path = root / ".orchestrator_cache" / "restart_busy_snapshot.json"
     slots_path = root / ".council" / "runtime_state.json"
     broker_path = root / ".council" / "broker_filtered.jsonl"
@@ -394,6 +491,26 @@ def build_guard(root: Path, expected_generation: str, expected_request_id: str =
             snapshot = _read_json(snapshot_path)
         except Exception:
             snapshot = None
+        # A39: when the reading is stale by age, re-read once and JUDGE ON THE
+        # FRESHEST reading (PH-1) — a lagging publisher may already have written a
+        # newer, accurate reading (idle OR busy). Liveness for suppressing the
+        # stale-by-age block is the busy-snapshot publisher THREAD being live AND
+        # current, sampled from the lock-free /livez channel (PH-5): a thread that
+        # is blocked-but-alive keeps its snapshot suppressible, a DEAD thread (whose
+        # captured_at is frozen forever while the process pid stays alive) does not.
+        # Only re-read/probe when the first reading is actually stale so the common
+        # fresh path stays fast.
+        publisher_alive: bool | None = None
+        if isinstance(snapshot, dict):
+            captured_at = snapshot.get("captured_at")
+            if isinstance(captured_at, (int, float)) and (
+                time.time() - float(captured_at) > max_age
+            ):
+                snapshot = _refresh_busy_snapshot(snapshot_path, snapshot)
+                livez = _probe_livez(livez_url)
+                publisher_alive = _snapshot_publisher_alive(
+                    snapshot, expected_generation, livez
+                )
         try:
             if not slots_path.exists():
                 raise FileNotFoundError(slots_path)
@@ -421,6 +538,7 @@ def build_guard(root: Path, expected_generation: str, expected_request_id: str =
             expected_request_id=expected_request_id,
             allow_force=allow_force,
             dispatch_stale_seconds=dispatch_stale_seconds,
+            snapshot_publisher_alive=publisher_alive,
         )
 
     return guard
@@ -722,7 +840,7 @@ def main() -> int:
     controller = RestartController(
         scheduler=scheduler,
         guard=lambda request: build_guard(
-            root, request.expected_generation, request.request_id
+            root, request.expected_generation, request.request_id, livez_url=livez_url
         )(),
         current_identity=lambda: _fetch_identity(livez_url),
         prove_stopped=lambda old: _wait_stopped(old, livez_url),
@@ -736,7 +854,7 @@ def main() -> int:
             secret_path=secret_path,
             current_generation=lambda: _fetch_identity(livez_url).generation,
             reload_guards=lambda: build_guard(
-                root, _fetch_identity(livez_url).generation
+                root, _fetch_identity(livez_url).generation, livez_url=livez_url
             )(),
             port=args.port,
         )
