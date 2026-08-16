@@ -126,5 +126,109 @@ class TestAuditToolMatrixPersistFlag(unittest.TestCase):
                          f"persist flag must be forwarded; got {captured}")
 
 
+class TestAuditScopeDeclaration(unittest.TestCase):
+    """A06: audit_tool_matrix compares the in-memory TOOL_MAP/TOOL_SCHEMAS against
+    .md files only — it never parses .py source on disk. Therefore drift_count=0
+    means "runtime is internally consistent", NOT "disk matches the running
+    runtime". The output must SAY SO, so nobody reads drift_count=0 as a
+    disk-vs-runtime guarantee it was never able to make.
+
+    We pin the behaviour (the declaration is present and correct), not the exact
+    wording. Because this is an honesty guarantee, it must survive the terse/ref
+    verbosity compaction, so it is checked through the public async tool at every
+    verbosity level.
+    """
+
+    def _call(self, verbosity: str) -> dict:
+        return json.loads(asyncio.run(code_tools.audit_tool_matrix(
+            project_path="", verbosity=verbosity,
+        )))
+
+    def test_full_declares_runtime_only_scope(self) -> None:
+        result = self._call("full")
+        self.assertEqual(result.get("scope"), "runtime_only",
+                         "audit must declare its scope as runtime_only")
+        note = str(result.get("scope_note") or "").lower()
+        self.assertTrue(note, "a scope_note explaining the limitation is required")
+        # The note must warn that this is not a disk-vs-runtime guarantee and
+        # that a restart is what proves disk == runtime.
+        self.assertIn("disk", note)
+        self.assertIn("restart", note)
+
+    def test_scope_survives_terse_and_ref(self) -> None:
+        for verbosity in ("terse", "ref"):
+            with self.subTest(verbosity=verbosity):
+                result = self._call(verbosity)
+                self.assertEqual(result.get("scope"), "runtime_only",
+                                 f"scope must not be stripped in {verbosity} mode")
+                self.assertTrue(str(result.get("scope_note") or ""),
+                                f"scope_note must survive {verbosity} mode")
+
+    def test_verbosity_compaction_never_strips_scope(self) -> None:
+        """The scope declaration is an honesty guarantee; it must be present even
+        when drift_count==0 (the exact case where a reader most trusts the tool).
+        The live audit always carries a doc drift, so its _drift_override forces
+        full verbosity and the terse/ref strip branch never runs against it. Pin
+        the compaction layer directly instead: a matrix payload passed through
+        _apply_verbosity in ref/terse mode must keep scope + scope_note."""
+        import tools_v15 as _v15
+        for mode in ("terse", "ref"):
+            with self.subTest(mode=mode):
+                payload = {
+                    "ok": True,
+                    "scope": "runtime_only",
+                    "scope_note": "explains disk vs runtime and restart",
+                    "drift": [{"x": 1}],
+                    "alias_drift": [],
+                    "coverage": {"a": 1},
+                    "inventory_classification": {"b": 2},
+                    "summary": {"drift_count": 0},
+                }
+                out = _v15._apply_verbosity(dict(payload), mode, "matrix_audit")
+                self.assertEqual(out.get("scope"), "runtime_only",
+                                 f"{mode} compaction must not strip scope")
+                self.assertTrue(out.get("scope_note"),
+                                f"{mode} compaction must not strip scope_note")
+
+
+class TestPersistedRecordCarriesScope(unittest.TestCase):
+    """A06, second reader. The tests above pin the scope declaration on the
+    LIVE return value. But the record appended to matrix_log.jsonl is read back
+    by /api/matrix_log as `history[]` and rendered by the Matrix Log panel — a
+    reader who never sees that return value at all.
+
+    A stored row saying `drift_count: 0` with no scope beside it is exactly the
+    misreading A06 is about, and it is worse on disk than in a response: the row
+    outlives the runtime that produced it. So the honesty note has to be in the
+    record, not only in the reply.
+    """
+
+    def _last_record(self) -> dict:
+        result = code_tools._audit_tool_matrix_sync("", persist=True)
+        path = result["matrix_log_path"]
+        with open(path, encoding="utf-8") as fh:
+            return json.loads(fh.read().strip().split("\n")[-1])
+
+    def test_persisted_record_declares_runtime_only_scope(self) -> None:
+        record = self._last_record()
+        self.assertEqual(
+            record.get("scope"), "runtime_only",
+            "a stored drift_count must not be readable as a disk-vs-runtime claim")
+
+    def test_persisted_record_identifies_its_runtime(self) -> None:
+        """Two rows can disagree purely because a restart happened between them.
+        Without a runtime marker that reads as drift appearing from nowhere."""
+        record = self._last_record()
+        self.assertIsInstance(record.get("pid"), int)
+        self.assertGreater(record["pid"], 0)
+
+    def test_persisted_record_still_carries_the_audit_result(self) -> None:
+        # Guard against 'fixing' the honesty note by hollowing out the record.
+        record = self._last_record()
+        self.assertIn("summary", record)
+        self.assertIn("drift_count", record["summary"])
+        self.assertIn("ts", record)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -358,6 +358,197 @@ def test_watchdog_stall_is_transient_and_writer_recovers(tmp_path: Path) -> None
         writer.close()
 
 
+def test_slow_but_progressing_writer_is_not_killed_by_a_short_budget(
+    tmp_path: Path,
+) -> None:
+    # A33 core property: a writer that is merely SLOW (disk busy) but still making
+    # progress must commit, even when the caller passed a small busy budget. The
+    # old code turned timeout_ms into a wall-clock deadline on the caller's wait,
+    # so a callback slower than the budget raised SessionStoreContentionError even
+    # though the writer was healthy -- measured as p50 860ms commits under pure
+    # disk-I/O saturation against a 93ms uncontended baseline, on a SEPARATE db
+    # with no lock contention. This pins the fix without generating real disk load.
+    _db_path, writer = _writer(tmp_path, batch_window_ms=1)
+    try:
+        def slow_but_progressing(conn):
+            # Far longer than the tiny busy budget below; the old deadline would
+            # have fired at ~budget while this callback is still progressing.
+            time.sleep(0.4)
+            return conn.execute(
+                "INSERT INTO records(value) VALUES ('slow-progress')"
+            ).lastrowid
+
+        started = time.monotonic()
+        event_id = writer.submit(
+            "slow-progress", slow_but_progressing, durable=True, timeout_ms=50
+        )
+        elapsed = time.monotonic() - started
+        # It waited for the real commit rather than aborting at the 50ms budget.
+        assert event_id == 1
+        assert elapsed >= 0.4
+        assert not writer.failed
+    finally:
+        writer.close()
+
+
+def test_in_flight_durable_waiter_aborts_only_when_writer_truly_fails(
+    tmp_path: Path,
+) -> None:
+    # A33: "slow" must not abort a waiter, but genuinely STUCK/dead must. An
+    # in-flight durable waiter has no wall-clock deadline any more, so it aborts
+    # only when the watchdog has declared the writer FAILED (it died and could not
+    # be restarted) -- the one state in which its future will never be set.
+    _db_path, writer = _writer(
+        tmp_path, batch_window_ms=1, watchdog_interval=0.01, stall_seconds=10
+    )
+    entered = threading.Event()
+    release = threading.Event()
+
+    def wedge(_conn):
+        entered.set()
+        # Hold the drain loop so the submitted item's future is never resolved.
+        assert release.wait(timeout=5)
+
+    error: list[BaseException] = []
+    result: list[object] = []
+
+    def submit_wedged() -> None:
+        try:
+            result.append(writer.submit("wedged", wedge, durable=True))
+        except BaseException as exc:  # noqa: BLE001 - capturing for assertion
+            error.append(exc)
+
+    thread = threading.Thread(target=submit_wedged)
+    thread.start()
+    try:
+        assert entered.wait(timeout=2)
+        # Simulate the terminal state the watchdog reaches for a dead,
+        # non-restartable writer. The in-flight waiter must now give up.
+        writer._mark_failed("simulated dead writer")
+        thread.join(timeout=3)
+        assert not thread.is_alive()
+        assert not result
+        assert len(error) == 1
+        assert isinstance(error[0], store.SessionStoreContentionError)
+        assert "SessionWriter failed" in str(error[0])
+    finally:
+        release.set()
+        thread.join(timeout=3)
+        writer.close()
+
+
+def test_a_wedged_but_living_writer_still_releases_its_waiters(
+    tmp_path: Path,
+) -> None:
+    """A33 boundary. Removing the caller-side deadline fixed "slow is not stuck"
+    but left the opposite hole: a thread wedged INSIDE write_fn stays alive, so
+    the watchdog only ever marked it STALLED -- and STALLED does not release an
+    in-flight waiter. Measured before this guard: the waiter was still blocked
+    after 20s with failed=False, i.e. forever.
+
+    This pins the property, not the mechanism: a durable submit against a writer
+    that makes no progress must TERMINATE. It deliberately does not assert how
+    long that takes or which flag flips, only that the caller gets an answer.
+    """
+    _db_path, writer = _writer(
+        tmp_path, watchdog_interval=0.02, stall_seconds=0.2, wedge_multiplier=2.0
+    )
+    entered = threading.Event()
+    release = threading.Event()
+
+    def wedge(_conn):
+        entered.set()
+        assert release.wait(timeout=30)
+
+    outcome: list[object] = []
+
+    def submit_wedged() -> None:
+        try:
+            outcome.append(("ok", writer.submit("wedged", wedge, durable=True)))
+        except BaseException as exc:  # noqa: BLE001 - capturing for assertion
+            outcome.append(("raised", exc))
+
+    thread = threading.Thread(target=submit_wedged)
+    thread.start()
+    try:
+        assert entered.wait(timeout=5)
+        # No _mark_failed() call here -- unlike the test above, nothing simulates
+        # the terminal state. The writer thread is genuinely alive and stuck, and
+        # the system must reach a verdict on its own.
+        thread.join(timeout=10)
+        assert not thread.is_alive(), (
+            "a durable waiter blocked forever on a wedged writer: this is the "
+            "regression the caller-side deadline used to hide"
+        )
+        assert outcome and outcome[0][0] == "raised"
+        assert isinstance(outcome[0][1], store.SessionStoreContentionError)
+    finally:
+        release.set()
+        thread.join(timeout=5)
+        writer.close()
+
+
+def test_a_wedge_verdict_is_retracted_once_the_writer_commits_again(
+    tmp_path: Path,
+) -> None:
+    """The cost of the guard above must not be a writer that dies permanently
+    the first time the disk hiccups. A wedge verdict is an INFERENCE from
+    silence; a completed commit is direct evidence it was wrong, so it has to be
+    retractable -- while a real terminal failure stays terminal.
+    """
+    _db_path, writer = _writer(
+        tmp_path, watchdog_interval=0.02, stall_seconds=0.2, wedge_multiplier=2.0
+    )
+    entered = threading.Event()
+    release = threading.Event()
+
+    def wedge(_conn):
+        entered.set()
+        assert release.wait(timeout=30)
+
+    thread = threading.Thread(
+        target=lambda: writer.submit("wedged", wedge, durable=False)
+    )
+    thread.start()
+    try:
+        assert entered.wait(timeout=5)
+        deadline = time.monotonic() + 10
+        while not writer.failed and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert writer.failed, "the watchdog never reached a wedge verdict"
+
+        # While wedged, new durable work is refused as RETRYABLE contention --
+        # not the terminal RuntimeError, which would tell callers to give up on a
+        # writer that is about to come back.
+        with pytest.raises(store.SessionStoreContentionError):
+            writer.submit("rejected", lambda conn: None, durable=True)
+
+        # The stuck batch finally drains: direct evidence the verdict was wrong.
+        release.set()
+        thread.join(timeout=5)
+        deadline = time.monotonic() + 10
+        while writer.failed and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert not writer.failed, "a commit must retract a wedge verdict"
+
+        assert writer.submit(
+            "recovered",
+            lambda conn: conn.execute(
+                "INSERT INTO records (value) VALUES ('after-wedge')"
+            ),
+            durable=True,
+        ) is not None
+
+        # A terminal failure is a different claim and survives further progress.
+        writer._mark_failed("writer restart failed: simulated")
+        writer._clear_stalled()
+        assert writer.failed, "progress must not resurrect a terminal failure"
+    finally:
+        release.set()
+        thread.join(timeout=5)
+        writer.close()
+
+
 def test_legacy_connection_is_read_only_and_cannot_block_writer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -460,6 +460,22 @@ def default_transport_policy(agent_id: str, record: dict | None = None) -> str:
     return agent_transport_policy(agent_id, record)
 
 
+def load_agents_registry_file(path) -> dict:
+    """A31: single BOM-safe decode point for agents_registry.json.
+
+    Three code paths read this file (code_tools._load_agents_registry,
+    open_session_policy_payload, tools_v15.normalize_ca_registration). Only this
+    one used utf-8-sig before; the other two used utf-8, so a UTF-8 BOM made
+    json.loads raise "Unexpected UTF-8 BOM". Decoding with utf-8-sig strips a BOM
+    if present and is a no-op otherwise.
+
+    This helper RAISES on a missing/corrupt file. Callers keep their own
+    existence check and error policy (fail-safe vs fail-loud) on top of it — the
+    decode is unified, the caller error contracts are deliberately NOT.
+    """
+    return json.loads(Path(path).read_text(encoding="utf-8-sig"))
+
+
 def normalize_agent_record(agent_id: str, record: dict) -> dict:
     """Ensure mode=A and machine-checkable agent runtime transport fields."""
     rec = dict(record or {})
@@ -823,7 +839,7 @@ def open_session_policy_payload(agent_id: str = "", project_path: str = "") -> d
     m = load_matrix()
     registry_record: dict[str, Any] = {}
     if agent_id and _AGENT_REGISTRY_PATH.is_file():
-        registry = json.loads(_AGENT_REGISTRY_PATH.read_text(encoding="utf-8-sig"))
+        registry = load_agents_registry_file(_AGENT_REGISTRY_PATH)
         registry_record = (registry.get("agents") or {}).get(agent_id.lower()) or {}
     runtime_policy = agent_transport_policy(agent_id, registry_record)
     return {

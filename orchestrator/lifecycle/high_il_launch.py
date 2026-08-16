@@ -148,10 +148,19 @@ def start_probe(log: Path) -> None:
 
 
 def launch_server(root: Path, pyw: Path) -> int:
+    # A37: this is the genuine user launch path (start_orchestrator.bat ->
+    # Task Scheduler -> here). Here the server is the SOLE opener of the /council
+    # tab, so opt it in explicitly. The server now defaults to NOT opening the tab
+    # (so test/CI subprocess spawns don't pop a real browser window); this flag is
+    # what restores the tab for the real user. The inline ps1 fallback opens the
+    # tab itself and deliberately does NOT set this, to avoid a double tab.
+    env = dict(os.environ)
+    env["ORCHESTRATOR_OPEN_COUNCIL_TAB"] = "1"
     kwargs: dict = {
         "args": [str(pyw), str(root / "orchestrator_server.py")],
         "cwd": str(root),
         "check": False,
+        "env": env,
     }
     if os.name == "nt":
         kwargs["creationflags"] = child_creationflags(0)

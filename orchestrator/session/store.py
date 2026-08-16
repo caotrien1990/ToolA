@@ -67,6 +67,16 @@ _SESSION_WRITE_BATCH_WINDOW_MS = max(
 _SESSION_WRITE_STALL_SECONDS = max(
     1.0, float(os.environ.get("ORCH_SESSION_WRITE_STALL_SECONDS", "5"))
 )
+# A33: how many consecutive stall_seconds windows a batch may make no observable
+# progress before the writer is declared FAILED rather than merely STALLED.
+# A durable waiter has no wall-clock deadline (see SessionWriter.submit), so
+# STALLED alone would leave it blocked forever on a wedged-but-alive thread --
+# the state Python cannot kill. This bounds "forever" without reintroducing a
+# deadline that fires on a writer that is merely slow: the clock only advances
+# while the SAME batch is stuck, and any commit resets it.
+_SESSION_WRITE_WEDGE_MULTIPLIER = max(
+    2.0, float(os.environ.get("ORCH_SESSION_WRITE_WEDGE_MULTIPLIER", "6"))
+)
 _SESSION_DB_INITIALIZED_PATHS: set[str] = set()
 # campaign-1608 (A27): the WAL switch ignores busy_timeout, so it needs its own
 # small retry budget. Short on purpose -- the winner of the race enables WAL for
@@ -80,17 +90,21 @@ class SessionStoreContentionError(RuntimeError):
 
 
 class _WriteItem:
+    # ``busy_timeout_ms`` is the SQLite lock-wait budget (PRAGMA busy_timeout) for
+    # this item -- NOT a wall-clock deadline for how long the caller may wait. A33
+    # removed the wall-clock deadline: a slow-but-progressing writer (disk busy)
+    # must not be treated as a failed one. See SessionWriter.submit for why.
     __slots__ = (
-        "operation", "write_fn", "durable", "future", "deadline",
+        "operation", "write_fn", "durable", "future", "busy_timeout_ms",
         "cancelled", "completed", "enqueued_at",
     )
 
-    def __init__(self, operation, write_fn, durable: bool, deadline: float | None):
+    def __init__(self, operation, write_fn, durable: bool, busy_timeout_ms: int):
         self.operation = str(operation)
         self.write_fn = write_fn
         self.durable = bool(durable)
         self.future = Future() if durable else None
-        self.deadline = deadline
+        self.busy_timeout_ms = max(1, int(busy_timeout_ms))
         self.cancelled = threading.Event()
         self.completed = False
         self.enqueued_at = time.monotonic()
@@ -116,6 +130,7 @@ class SessionWriter:
         checkpoint_every_batches: int = 64,
         watchdog_interval: float = 0.1,
         stall_seconds: float = _SESSION_WRITE_STALL_SECONDS,
+        wedge_multiplier: float = _SESSION_WRITE_WEDGE_MULTIPLIER,
         auto_start: bool = True,
     ):
         self.db_path = Path(db_path)
@@ -126,6 +141,7 @@ class SessionWriter:
         self.checkpoint_every_batches = max(1, int(checkpoint_every_batches))
         self.watchdog_interval = max(0.01, float(watchdog_interval))
         self.stall_seconds = max(0.1, float(stall_seconds))
+        self.wedge_seconds = self.stall_seconds * max(2.0, float(wedge_multiplier))
         self._queue = queue.Queue(maxsize=self.capacity)
         self._lifecycle_lock = threading.Lock()
         self._metrics_lock = threading.Lock()
@@ -139,6 +155,10 @@ class SessionWriter:
         self._last_progress_at = time.monotonic()
         self._failed_reason = ""
         self._stalled_reason = ""
+        # True only while _failed_reason came from a wedge verdict, which a later
+        # commit disproves. Terminal failures (restart impossible, shutdown
+        # timeout) leave this False and are never cleared by progress.
+        self._failed_is_wedge = False
         self._batch_count = 0
         self._enqueued_total = 0
         self._committed_total = 0
@@ -215,12 +235,13 @@ class SessionWriter:
                 )
                 self._watchdog.start()
 
-    def _mark_failed(self, reason: str) -> None:
+    def _mark_failed(self, reason: str, *, wedge: bool = False) -> None:
         reason = str(reason or "unknown writer failure")[:500]
         should_log = False
         with self._metrics_lock:
             if not self._failed_reason:
                 self._failed_reason = reason
+                self._failed_is_wedge = bool(wedge)
                 should_log = True
         if should_log:
             logger.error("SessionWriter FAILED: %s", reason)
@@ -238,6 +259,12 @@ class SessionWriter:
     def _clear_stalled(self) -> None:
         with self._metrics_lock:
             self._stalled_reason = ""
+            # A commit is direct evidence the wedge verdict was wrong, so retract
+            # it. A terminal failure is not retracted -- nothing about finishing
+            # one batch says a dead-and-unrestartable writer came back.
+            if self._failed_is_wedge:
+                self._failed_reason = ""
+                self._failed_is_wedge = False
 
     def _restart_dead_writer(self) -> bool:
         with self._lifecycle_lock:
@@ -253,6 +280,7 @@ class SessionWriter:
             with self._metrics_lock:
                 self._restart_count += 1
                 self._failed_reason = ""
+                self._failed_is_wedge = False
             logger.warning("SessionWriter watchdog restarted a dead writer thread")
             return True
 
@@ -264,9 +292,26 @@ class SessionWriter:
                     self._mark_failed("writer thread died and restart was unavailable")
                 continue
             active_since = self._active_batch_since
-            if active_since and time.monotonic() - active_since > self.stall_seconds:
-                # Python cannot safely kill a live thread. Starting a second one would
-                # violate single-writer ownership, so fail loud instead.
+            if not active_since:
+                continue
+            stuck_for = time.monotonic() - active_since
+            if stuck_for > self.wedge_seconds:
+                # A33: the batch is not slow, it is WEDGED. Python cannot kill a
+                # live thread and a second writer would break single-writer
+                # ownership, so the only honest move is to declare the writer
+                # failed. This is what unblocks in-flight durable waiters, which
+                # carry no wall-clock deadline of their own -- without it a
+                # thread stuck inside one write_fn blocks every caller forever.
+                self._mark_failed(
+                    f"writer batch made no observable progress for "
+                    f"{stuck_for:.2f}s (> {self.wedge_seconds:.2f}s); "
+                    "treating the writer as wedged",
+                    wedge=True,
+                )
+            elif stuck_for > self.stall_seconds:
+                # Still plausibly just slow: reject NEW durable submits but let
+                # in-flight waiters ride it out, since a stall clears the moment
+                # the batch commits.
                 self._mark_stalled(
                     f"writer batch made no observable progress for more than "
                     f"{self.stall_seconds:.2f}s"
@@ -282,13 +327,33 @@ class SessionWriter:
     ):
         if self._closing.is_set():
             raise RuntimeError("SessionWriter is closing")
-        if self._failed_reason:
+        if self._failed_reason and not self._failed_is_wedge:
+            # Terminal: the writer is gone and no retry can help.
             if durable:
                 raise RuntimeError(f"SessionWriter failed: {self._failed_reason}")
             with self._metrics_lock:
                 self._dropped_count += 1
             logger.warning(
                 "dropping fire-and-forget session write %r: writer failed: %s",
+                operation, self._failed_reason,
+            )
+            return None
+        if self._failed_reason and self._failed_is_wedge:
+            # A33: a wedge verdict releases WAITERS (see the durable wait loop),
+            # but the thread is still alive and may yet drain its batch. New work
+            # must not be admitted onto a queue nobody is serving -- yet the
+            # verdict is an inference from silence, so this is retryable
+            # contention, not the terminal RuntimeError above. Keeping the two
+            # distinct is what lets _clear_stalled retract the wedge on the next
+            # commit instead of leaving the writer dead for the process lifetime.
+            if durable:
+                raise SessionStoreContentionError(
+                    f"SessionWriter appears wedged: {self._failed_reason}"
+                )
+            with self._metrics_lock:
+                self._dropped_count += 1
+            logger.warning(
+                "dropping fire-and-forget session write %r: writer wedged: %s",
                 operation, self._failed_reason,
             )
             return None
@@ -312,18 +377,21 @@ class SessionWriter:
             logger.warning("dropping fire-and-forget session write %r: writer dead", operation)
             return None
 
-        budget_ms = max(1, int(timeout_ms or self.busy_timeout_ms))
-        deadline = time.monotonic() + budget_ms / 1000.0 if durable else None
-        item = _WriteItem(operation, write_fn, durable, deadline)
+        # busy_ms bounds two SQLite-level waits only: how long a full queue may
+        # block before backpressure, and (later) PRAGMA busy_timeout for lock
+        # contention. It is deliberately NOT a wall-clock ceiling on the caller's
+        # wait for COMMIT -- see the durable wait loop below for why.
+        busy_ms = max(1, int(timeout_ms or self.busy_timeout_ms))
+        item = _WriteItem(operation, write_fn, durable, busy_ms)
         try:
             if durable:
-                self._queue.put(item, timeout=budget_ms / 1000.0)
+                self._queue.put(item, timeout=busy_ms / 1000.0)
             else:
                 self._queue.put_nowait(item)
         except queue.Full as exc:
             if durable:
                 raise SessionStoreContentionError(
-                    f"{operation} exceeded session write queue budget ({budget_ms}ms)"
+                    f"{operation} exceeded session write queue budget ({busy_ms}ms)"
                 ) from exc
             with self._metrics_lock:
                 self._dropped_count += 1
@@ -339,16 +407,34 @@ class SessionWriter:
         if not durable:
             return None
 
-        remaining = max(0.0, deadline - time.monotonic())
-        try:
-            # Small grace lets the writer publish the SQLite busy error instead of
-            # racing the caller-side Future timeout at the exact budget boundary.
-            return item.future.result(timeout=remaining + 0.1)
-        except FutureTimeoutError as exc:
-            item.cancelled.set()
-            raise SessionStoreContentionError(
-                f"{operation} exceeded session writer budget ({budget_ms}ms)"
-            ) from exc
+        # A33: wait for COMMIT with NO caller-side wall-clock deadline. The old
+        # code raised SessionStoreContentionError once a single item waited longer
+        # than busy_ms (default 750ms). That measured the wrong thing: under pure
+        # disk-I/O saturation (a SEPARATE db, no lock contention) a healthy writer
+        # committing normally still took p50 860ms vs a 93ms uncontended baseline,
+        # so the deadline killed a slow-but-progressing writer -- exactly the
+        # parallel-test condition where every worker has its own db but shares the
+        # disk's fsync/WAL bandwidth. "Slow" is not "stuck".
+        #
+        # True non-progress (a wedged writer thread) is detected by the watchdog
+        # via _active_batch_since/stall_seconds, which sets _stalled_reason and
+        # rejects NEW durable submits at the top of this method. An already
+        # in-flight waiter instead rides out a transient stall and still succeeds
+        # if the writer eventually progresses; it aborts only when the watchdog
+        # has declared the writer FAILED (it died and could not be restarted), at
+        # which point no thread will ever set this future.
+        poll = min(0.25, max(0.02, self.watchdog_interval * 2))
+        while True:
+            try:
+                return item.future.result(timeout=poll)
+            except FutureTimeoutError:
+                pass
+            if self._failed_reason:
+                item.cancelled.set()
+                raise SessionStoreContentionError(
+                    f"{operation} aborted: SessionWriter failed and can no longer "
+                    f"commit ({self._failed_reason})"
+                )
 
     def _take_batch(self) -> list[_WriteItem]:
         try:
@@ -415,16 +501,16 @@ class SessionWriter:
                 item.future.set_exception(error)
 
     def _process_batch(self, conn: sqlite3.Connection, batch: list[_WriteItem]) -> bool:
-        now = time.monotonic()
         active = []
         for item in batch:
-            if item.cancelled.is_set() or (
-                item.deadline is not None and item.deadline <= now
-            ):
+            # A33: only a caller that has given up (writer FAILED, future
+            # abandoned) is cancelled. There is no wall-clock deadline any more,
+            # so a slow disk never expires a queued item before it is attempted.
+            if item.cancelled.is_set():
                 self._finish_item(
                     item,
                     error=SessionStoreContentionError(
-                        f"{item.operation} expired before SQLite transaction"
+                        f"{item.operation} aborted before SQLite transaction"
                     ),
                 )
             else:
@@ -432,12 +518,10 @@ class SessionWriter:
         if not active:
             return True
 
-        deadlines = [item.deadline for item in active if item.deadline is not None]
-        timeout_ms = self.busy_timeout_ms
-        if deadlines:
-            timeout_ms = max(
-                1, min(int((deadline - time.monotonic()) * 1000) for deadline in deadlines)
-            )
+        # PRAGMA busy_timeout bounds SQLite lock-wait only (real cross-process
+        # contention), not the caller's total wait. Use the smallest per-item
+        # lock-wait budget in the batch so an explicit small budget still applies.
+        timeout_ms = max(1, min(item.busy_timeout_ms for item in active))
         conn.execute(f"PRAGMA busy_timeout={timeout_ms}")
         outcomes: dict[_WriteItem, tuple[object, BaseException | None]] = {}
         try:
@@ -447,11 +531,9 @@ class SessionWriter:
                 conn.execute(f"SAVEPOINT {savepoint}")
                 try:
                     result = item.write_fn(conn)
-                    if item.cancelled.is_set() or (
-                        item.deadline is not None and item.deadline <= time.monotonic()
-                    ):
+                    if item.cancelled.is_set():
                         raise SessionStoreContentionError(
-                            f"{item.operation} exceeded session writer budget"
+                            f"{item.operation} aborted mid-transaction (writer failed)"
                         )
                 except BaseException as exc:
                     cleanup_error = None
@@ -521,13 +603,9 @@ class SessionWriter:
                 except BaseException as exc:
                     logger.exception("SessionWriter drain batch failed; loop will continue")
                     for item in batch:
-                        budget_ms = self.busy_timeout_ms
-                        if item.deadline is not None:
-                            budget_ms = max(
-                                1, int((item.deadline - item.enqueued_at) * 1000)
-                            )
                         self._finish_item(
-                            item, error=self._normalized_error(item, exc, budget_ms)
+                            item,
+                            error=self._normalized_error(item, exc, item.busy_timeout_ms),
                         )
                     if conn is not None:
                         try:
@@ -1536,6 +1614,20 @@ def _log_session_event(session_id: str, tool_name: str, body: dict, result: dict
         return _run_session_write(
             "session event persistence", _persist_event, durable=durable
         )
+    except SessionStoreContentionError:
+        # A20/A33: a contention/backpressure failure is INFRASTRUCTURE, not a
+        # missing/committed event. Swallowing it to None silently poisoned every
+        # downstream reader -- audit_reconciliation_report saw {None,2,4,5} for a
+        # set that should have been {1,2,4,5}, i.e. corrupt data with no trace of
+        # its cause. Re-raise so the caller (durable outbox retry, or a loud tool
+        # error) handles it instead of persisting a false event_id. None is
+        # reserved below for a genuine persistence bug (e.g. a dropped table).
+        logger.warning(
+            "session event persistence hit store contention for session=%r "
+            "tool=%r audit_id=%r; propagating instead of returning a null event_id",
+            session_id, tool_name, audit_id,
+        )
+        raise
     except Exception:
         logger.exception(
             "session event persistence failed for session=%r tool=%r audit_id=%r",

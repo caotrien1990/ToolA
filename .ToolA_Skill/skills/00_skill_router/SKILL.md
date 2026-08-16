@@ -29,7 +29,7 @@ CA pain report R42: 17% calls failed UNSUPPORTED_FIELD vì không biết schema.
 - `active_workflow` (User-activated workflow if any)
 - `key_tools_compact` (~35 tool with required fields + alias hints + notes)
 - `common_pitfalls` (lessons R29-R41 distilled)
-- `active_skills_index` (skill MD paths)
+- `active_skills_index` (skill names)
 - `see_also_macros` (audit_tool_matrix, acceptance_dashboard, per-tool inspector endpoint URLs)
 
 Saves ~5-10 schema queries per session. Read once → biết tool nào accept project_path, field aliases, token requirements, workflow state.

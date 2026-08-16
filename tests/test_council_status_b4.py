@@ -111,8 +111,13 @@ class TestAckAndLedger(_StatusTmpBase):
     """Dispatch acks + durable ledger (B4 contracts from P2 fan-out)."""
 
     def _stub_slow_run(self):
+        # Signature MUST mirror the real _council_run_agent (12 params). The queue
+        # drain calls it positionally with model_resolution/risk_level/dev_level;
+        # a short stub raised TypeError inside the executor thread, so the sleep +
+        # reply below never ran and the ack-path tests passed for the wrong reason.
         def _run(agent, prompt, timeout_sec=180, mode="broker", project_path="",
-                 request_id="", runtime_key="", provider_override="", model_override=""):
+                 request_id="", runtime_key="", provider_override="", model_override="",
+                 model_resolution=None, risk_level="unknown", dev_level="unknown"):
             time.sleep(2.0)
             return {"ok": True, "returncode": 0, "reply": f"reply-from-{agent}"}
 
@@ -146,6 +151,28 @@ class TestAckAndLedger(_StatusTmpBase):
         self.assertEqual(match[0].get("request_id"), ack.get("request_id"))
         self.assertEqual(match[0].get("target"), "ope")
 
+    async def test_stub_worker_actually_runs_dispatch_reaches_done(self):
+        # P17 (L-a guard): the ack-path tests above stay GREEN whether or not the
+        # worker body ever runs, because the ack returns before dispatch. A stub
+        # whose signature does not match the real _council_run_agent raises
+        # TypeError INSIDE the executor thread; the drain then records the slot as
+        # `stuck`, not `done`. This test drives the full drain and pins `done`, so
+        # a future arity drift is caught by BEHAVIOR (terminal state), not by the
+        # silent ack. Proven: broken 9-arg stub -> stuck; correct stub -> done.
+        self._stub_slow_run()
+        ack = json.loads(await orchestrator_server.council_message_async(
+            sender="clau", to="ope", text="B4 worker-reachability probe"))
+        did = ack["dispatch_id"]
+        state = None
+        for _ in range(80):
+            await asyncio.sleep(0.1)
+            status = json.loads(await orchestrator_server.council_status(dispatch_id=did))
+            state = status.get("state")
+            if state in ("done", "stuck"):
+                break
+        self.assertEqual(state, "done",
+                         "worker body never completed — stub arity likely drifted "
+                         "from _council_run_agent (TypeError swallowed in executor)")
 
     async def test_handoff_failure_is_terminal_rejected_not_dispatching(self):
         # WHY: pre-ack ledger writes made a failed relay look accepted forever.

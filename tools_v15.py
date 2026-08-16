@@ -1523,6 +1523,91 @@ def _wt_rank_lexical(task_expanded: str, top_k: int = 3) -> list:
     return scored[:top_k]
 
 
+def _a07_should_defer(raw_task: str, rule: dict, lex_ranked: list) -> bool:
+    """A07 stage-1/stage-2 boundary: a broad decision rule that fired on a
+    SINGLE standalone query word must not shadow a tool whose multi-segment
+    name the query spells out (e.g. `audit` alone winning over
+    `audit_tool_matrix` for the query "audit tool matrix").
+
+    Defer to the lexical ranker only when the ranker's top-1 tool is named
+    MORE SPECIFICALLY by the query than the winning rule is:
+
+      hits    = distinct RAW query words matching the winning rule's regex
+      overlap = distinct RAW query words that are underscore segments of the
+                lexical top-1 tool name
+      defer  <=> overlap > hits
+
+    Both sides are counted over the SAME word set, so this is a like-for-like
+    comparison of evidence, and it is scale-free: neither side can be inflated
+    by the user simply writing a longer sentence.
+
+    An absolute `hits == 1` gate cannot express that. It reads a query's LENGTH
+    as rule confidence: "audit tool matrix" scores hits=1 (defers, correct) but
+    "audit tool matrix for this session" scores hits=2 on the very same rule
+    -- the extra word `session` matches the same broad session regex -- so the
+    guard refuses and the original A07 bug returns verbatim on the longer
+    phrasing. `overlap > hits` keeps deferring there (3 > 2) because the query
+    still spells out `audit_tool_matrix` more completely than it hits the rule.
+
+    RAW (not the VN-expanded text) is deliberate on the overlap side: VN
+    expansion injects tool-vocabulary the user never typed, which would
+    inflate the overlap and mis-fire on queries like "open a work session".
+
+    Genuinely thick rule matches are unaffected -- they raise `hits` on the
+    same scale: "session audit handoff" and "close session summary" both reach
+    hits=3 against overlap=2 and stay with stage 1, as does the bare "audit"
+    (1 vs 1: a tie is not evidence of a better match, so the rule keeps it).
+    """
+    words = {w for w in re.findall(r"[a-z0-9_]+", raw_task or "") if w}
+    hits = sum(1 for w in words if re.search(rule["re"], w))
+    if not hits or not lex_ranked:
+        return False
+    top_name = lex_ranked[0][1]
+    return len(words & set(top_name.split("_"))) > hits
+
+
+def _a07_named_tool_alternate(raw_task: str, lex_ranked: list, shown: str) -> list:
+    """A07, second reader. `_a07_should_defer` only rescues the case where ONE
+    rule fired; when two or more fire, `_matched[1:3]` fills `alternates` with
+    rule siblings and the escape hatch never runs -- so a tool the query names
+    outright can vanish from the answer entirely.
+
+    "audit tool matrix and log the session" is that case: `audit` and `log` are
+    two genuine intents, so keeping the session bundle primary is correct, but
+    `audit_tool_matrix` -- three of whose three name segments the user typed --
+    appeared in neither the primary nor the alternates. Deferring would be
+    wrong there; staying silent about the named tool is also wrong.
+
+    Returns at most one entry: the lexical top-1, only when the RAW query names
+    at least 2 of its segments and it is not already visible in `shown`.
+    """
+    if not lex_ranked:
+        return []
+    words = {w for w in re.findall(r"[a-z0-9_]+", raw_task or "") if w}
+    name = lex_ranked[0][1]
+    if len(words & set(name.split("_"))) < 2 or name in (shown or ""):
+        return []
+    return _a07_alternates(lex_ranked[:1], exclude="", limit=1)
+
+
+def _a07_alternates(lex_ranked: list, exclude: str, limit: int = 2) -> list:
+    """A07 escape hatch: even a correct stage-1 primary must surface a second
+    option. When the rule-based `_matched[1:3]` slice is empty (only one rule
+    fired), fill `alternates` from the lexical ranker so the caller always has
+    a fallback. Tools already named in the primary recommendation are skipped."""
+    ex = str(exclude or "")
+    out = []
+    for _score, name, fn, tier in lex_ranked:
+        if name in ex:
+            continue
+        why = re.sub(r"\s+", " ", str(fn.get("description") or ""))[:120]
+        out.append({"tool": name, "tier": tier,
+                    "why": why or "lexical rank over live TOOL_SCHEMAS"})
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _wt_q_z2_refs(task: str) -> list:
     """Ask [Q] Z2 (compact) for memory about which tool fits — fail-open, 3s.
     Returns [] when [Q] is down/slow/empty so the local rank stands alone."""
@@ -1631,10 +1716,34 @@ async def tool_decision_hint(task_description: str = "", scope_hint: str = "",
                 if _key not in _seen_tools:
                     _seen_tools.add(_key)
                     _matched.append(rule)
+    # A07: compute the lexical rank once — it feeds three decisions: the
+    # stage-1/stage-2 defer check, the always-present escape hatch, and stage 2
+    # itself. Ranker is pure/read-only so computing it eagerly is cheap.
+    _lex_ranked = _wt_rank_lexical(task_expanded, top_k=3)
+    # A07: a broad rule that fired on a single query word must not shadow a
+    # tool whose multi-segment name the query spells out. When that happens,
+    # drop stage 1 entirely and let the lexical ranker answer.
+    if _matched and _a07_should_defer(task, _matched[0], _lex_ranked):
+        _matched = []
     if _matched:
         rule = _matched[0]
         validation = _validate_tools_in_rec(rule["tool"])
         examples = _examples_for(validation["present"])
+        # A07 escape hatch: prefer distinct sibling rules; if only one rule
+        # fired the slice is empty, so fall back to lexical candidates so the
+        # caller always sees a second option.
+        _alternates = [{"tool": r["tool"], "tier": r["tier"], "why": r["why"]}
+                       for r in _matched[1:3]]
+        if not _alternates:
+            _alternates = _a07_alternates(_lex_ranked, exclude=rule["tool"])
+        else:
+            # Two+ rules fired, so the slice above is non-empty and the hatch
+            # did not run. A tool the query names outright must still be
+            # reachable -- see _a07_named_tool_alternate.
+            _shown = rule["tool"] + " " + " ".join(
+                str(a.get("tool") or "") for a in _alternates)
+            _alternates = _alternates + _a07_named_tool_alternate(
+                task, _lex_ranked, _shown)
         resp = {
             "recommended_tier": rule["tier"],
             "recommended_tool": rule["tool"],
@@ -1650,8 +1759,7 @@ async def tool_decision_hint(task_description: str = "", scope_hint: str = "",
             # R16.10: paste-ready payload schemas per recommended tool
             "payload_example_per_tool": examples,
             "payload_example_lookup_hint": "Each key = tool name; value = working payload. Adjust placeholders before calling.",
-            "alternates": [{"tool": r["tool"], "tier": r["tier"], "why": r["why"]}
-                           for r in _matched[1:3]],
+            "alternates": _alternates,
         }
         resp["suggestion"] = {
             "tool": (validation["present"][0] if validation.get("present")
@@ -1664,7 +1772,7 @@ async def tool_decision_hint(task_description: str = "", scope_hint: str = "",
         return _ok(_apply_verbosity(resp, verbosity, "decision_hint"))
     # (VN-aware) instead of the old flat 0.4 find_symbol/search_code default,
     # and enrich with [Q] Z2 memory refs (fail-open).
-    ranked = _wt_rank_lexical(task_expanded, top_k=3)
+    ranked = _lex_ranked
     q_refs = _wt_q_z2_refs(task_description or task)
     if ranked:
         q_text = " ".join(_wt_vn_fold(str(h.get("snippet") or "")) for h in q_refs)
@@ -8918,14 +9026,19 @@ async def hermes_host_gate_check(
 async def normalize_ca_registration(dry_run: bool = True) -> str:
     """T3: set mode=A + transport_policy machine-checkable on all agents_registry.json rows."""
     try:
-        import json
         from pathlib import Path
-        from orchestrator.core.ca_policy_matrix import normalize_registry
+        from orchestrator.core.ca_policy_matrix import (
+            normalize_registry,
+            load_agents_registry_file,
+        )
         from code_tools import _AGENTS_REGISTRY_PATH, _atomic_write_json
         path = Path(_AGENTS_REGISTRY_PATH)
         if not path.exists():
             return _err(f"registry not found: {path}", error_name="FILE_NOT_FOUND")
-        reg = json.loads(path.read_text(encoding="utf-8"))
+        # A31: BOM-safe decode. Fail-loud is intentional and REQUIRED here — this
+        # is a read-modify-write path; a fail-safe {} on corrupt input would
+        # normalize an empty registry and overwrite every agent.
+        reg = load_agents_registry_file(path)
         new_reg, changes = normalize_registry(reg)
         if dry_run:
             return _ok({

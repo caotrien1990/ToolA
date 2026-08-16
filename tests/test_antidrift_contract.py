@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import unittest
 
 import code_tools
@@ -19,11 +20,49 @@ class AntiDriftAliasTests(unittest.TestCase):
 
 class BoundedDiscoveryTests(unittest.TestCase):
     def test_unfiltered_catalog_is_bounded(self):
+        # A36: this test used to assert `returned_count <= 30` and the exact
+        # string "filter_or_bootstrap_session". Both were stale, and the number
+        # was borrowed from the wrong knob: 30 is _TOOL_CATALOG_DEFAULT_LIMIT,
+        # which only caps the FALLBACK branch taken when CURATED_CORE_TOOLS is
+        # empty. The unfiltered default returns the curated set itself, so the
+        # count tracks how many tools are curated (34 today) and is unrelated to
+        # that limit. Pin the property the test is named after -- discovery is
+        # bounded and materially smaller than the catalog -- not a number that
+        # changes every time someone curates one more tool.
         payload = srv._tool_names_payload()
         self.assertTrue(payload["bounded"])
-        self.assertLessEqual(payload["returned_count"], 30)
+        self.assertTrue(payload["curated"])
         self.assertGreater(payload["total_available"], payload["returned_count"])
-        self.assertEqual(payload["ca_next_action"], "filter_or_bootstrap_session")
+        # Materially smaller: a "bounded" catalog that returned 240 of 246 would
+        # satisfy the assertion above while defeating the purpose.
+        self.assertLess(payload["returned_count"], payload["total_available"] // 2)
+        self.assertIn("bootstrap_session", payload["ca_next_action"])
+
+    def test_bounded_and_curated_flags_describe_the_actual_payload(self):
+        # Sabotage found both of these: hardcoding `bounded: True`, and letting
+        # `curated: True` ride along with a plain alphabetical slice, both passed
+        # the test above. A flag that can disagree with the list it describes is
+        # worse than no flag -- the caller trusts it instead of counting.
+        # Both directions. Checking only the default call cannot catch a
+        # hardcoded `True`, because True is the right answer there -- the
+        # mutation and the truth coincide. `limit=250` is the documented way to
+        # ask for everything, and it is the one call where bounded must be False.
+        for kwargs in ({}, {"limit": 250}):
+            with self.subTest(call=kwargs or "default"):
+                payload = srv._tool_names_payload(**kwargs)
+                self.assertEqual(
+                    payload["bounded"],
+                    payload["returned_count"] < payload["total_available"],
+                    "`bounded` must be derived from the counts, not asserted")
+                self.assertEqual(payload["returned_count"], len(payload["tools"]))
+        payload = srv._tool_names_payload()
+
+        from orchestrator.core.registry_data import CURATED_CORE_TOOLS
+        if payload["curated"]:
+            names = {item["name"] for item in payload["tools"]}
+            self.assertTrue(
+                names <= set(CURATED_CORE_TOOLS),
+                "`curated: true` must mean the tools ARE the curated set")
 
     def test_filtered_catalog_returns_matches(self):
         payload = srv._tool_names_payload(name_contains="bootstrap_session")
@@ -59,6 +98,58 @@ class BootstrapContractTests(unittest.TestCase):
             if item.get("function", {}).get("name") == "bootstrap_session"
         )
         self.assertIn("owner_claim_id", schema["parameters"]["required"])
+
+    def test_bootstrap_skills_index_carries_no_filesystem_paths(self):
+        # A34: active_skills_index must identify skills by name only. Embedding an
+        # absolute SKILL.md path makes the payload size depend on where the repo
+        # lives on disk (JSON escapes every backslash), which is not a property
+        # bootstrap should carry. Pin the behaviour: no entry may leak a path.
+        payload = json.loads(asyncio.run(code_tools.bootstrap_session(
+            "", session_id="host-1", agent_id="hermes",
+            owner_claim_id="antidrift-host-1-0123456789abcdef0123456789abcdef",
+        )))
+        index = payload["active_skills_index"]
+        self.assertGreater(len(index), 0)
+        blob = json.dumps(index, ensure_ascii=False)
+        self.assertNotIn("SKILL.md", blob)
+        self.assertNotIn("/", blob)
+        self.assertNotIn("\\", blob)
+        # The one content consumer (ruleset_sha256) reads only the name, so a
+        # name must still be recoverable from every entry.
+        for entry in index:
+            name = entry["name"] if isinstance(entry, dict) else entry
+            self.assertTrue(name)
+
+    def test_bootstrap_absolute_path_budget_is_pinned(self):
+        # A34, second source. The test above pins one CONTAINER; the defect is a
+        # property of the WHOLE payload -- its size must not depend on where the
+        # repo sits on disk. Closing active_skills_index left exactly one leak:
+        # rule.core_rule_path (96 chars here, and every backslash is JSON-escaped
+        # to two). Pinning it at the payload level means a path re-entering under
+        # ANY new key fails here, not just inside the skills list.
+        #
+        # This is a budget, not a ban: core_rule_path is an existing part of the
+        # rule contract and removing it is a separate decision. What must not
+        # happen silently is the budget growing again.
+        payload = json.loads(asyncio.run(code_tools.bootstrap_session(
+            "", session_id="host-1", agent_id="hermes",
+            owner_claim_id="antidrift-host-1-0123456789abcdef0123456789abcdef",
+        )))
+
+        def leaves(obj, path=""):
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    yield from leaves(v, f"{path}.{k}")
+            elif isinstance(obj, list):
+                for i, v in enumerate(obj):
+                    yield from leaves(v, f"{path}[{i}]")
+            elif isinstance(obj, str) and re.match(r"^[A-Za-z]:[\\/]", obj):
+                yield path, obj
+
+        found = {p for p, _ in leaves(payload)}
+        self.assertEqual(
+            found, {".rule.core_rule_path"},
+            f"absolute paths in bootstrap payload changed: {sorted(found)}")
 
     def test_bootstrap_preserves_explicit_session_scope(self):
         payload = json.loads(asyncio.run(code_tools.bootstrap_session(

@@ -3757,7 +3757,22 @@ def _r101_filter(payload, fields):
     if not fields or not isinstance(payload, dict):
         return payload
     keep = set(fields) | _R101_ALWAYS_KEEP
-    return {k: v for k, v in payload.items() if k in keep}
+    out = {k: v for k, v in payload.items() if k in keep}
+    # A23-P2: name the keys we could not honour. Without this a typo in
+    # `fields=` is indistinguishable from an empty result -- `fields=result`
+    # instead of `results` returned a bare envelope and read as "the tool
+    # found nothing". Same contract as A17 (dropped body field) and A09
+    # (ignored query param): report the drop, keep serving what was
+    # understood. Exclude _R101_ALWAYS_KEEP: those are force-kept by the
+    # filter, so their absence on a success payload is not a caller mistake.
+    unknown = sorted(set(fields) - set(payload) - _R101_ALWAYS_KEEP)
+    if unknown:
+        out["fields_unknown"] = unknown
+        out["fields_unknown_hint"] = (
+            "These fields= keys are not in this tool's response and were "
+            "ignored; the result is NOT empty because of them. Check spelling "
+            "(e.g. 'results' not 'result') or omit fields= to see every key.")
+    return out
 
 
 def _error_response(tool_name: str, error: str, status: int, headers: dict,
@@ -15311,6 +15326,38 @@ async def _run_boot_recovery() -> dict:
     return result
 
 
+COUNCIL_TAB_ENV = "ORCHESTRATOR_OPEN_COUNCIL_TAB"
+
+
+def _should_open_council_tab() -> bool:
+    """A37: decide whether startup may pop the /council browser tab.
+
+    OPT-IN by design. Returns True only when the launcher explicitly set
+    ORCHESTRATOR_OPEN_COUNCIL_TAB=1. Any other value, or the var being absent,
+    means "do not open".
+
+    Why opt-in and not opt-out: the server is not only started by the real user
+    via start_orchestrator.bat. It is also spawned as a plain subprocess by
+    tests and CI — e.g. tests/test_task_epoch_cross_process.py runs a REAL
+    server with subprocess.Popen([PYTHON, orchestrator_server.py]) on a random
+    free port. With the old unconditional webbrowser.open() that child popped a
+    real browser tab (http://localhost:<random>/council) onto the user's desktop;
+    when the test tore the server down the tab turned into a dead page and looked
+    like agent drift. If a NEW spawn site is added later and its author forgets
+    about the browser, opt-in makes the safe outcome (no tab) the default; an
+    opt-out design would instead punish that forgetfulness with a surprise tab.
+    """
+    return os.environ.get(COUNCIL_TAB_ENV) == "1"
+
+
+def _maybe_open_council_tab() -> bool:
+    """Open the /council tab iff opted in. Returns whether it opened."""
+    if not _should_open_council_tab():
+        return False
+    webbrowser.open(f"http://localhost:{PORT}/council")
+    return True
+
+
 async def _run_server():
     global SERVER_READY, SERVER_STOPPING, SERVER_STARTUP_PHASE
     default_executor_workers = max(
@@ -15370,7 +15417,7 @@ async def _run_server():
         CORE_RULE_FILE,
         path_runtime.ORCHESTRATOR_DIR / 'start_orchestrator.bat',
     )
-    webbrowser.open(f"http://localhost:{PORT}/council")
+    _maybe_open_council_tab()
     try:
         await asyncio.Event().wait()
     except (KeyboardInterrupt, asyncio.CancelledError):

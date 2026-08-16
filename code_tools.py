@@ -2615,6 +2615,15 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
     record = {
         "ts": datetime.now().isoformat(timespec="seconds"),
         "project_path": project_path,
+        # A06: the persisted record is read back by /api/matrix_log (history[])
+        # and rendered by the Matrix Log panel, i.e. by a reader who never sees
+        # the live return value. Carry the same scope declaration, or a stored
+        # `drift_count: 0` reads as a disk-vs-runtime guarantee the audit was
+        # never able to make. `pid` disambiguates which runtime produced the
+        # line: two rows can disagree simply because a restart happened between
+        # them, and without it that looks like drift appearing from nowhere.
+        "scope": "runtime_only",
+        "pid": os.getpid(),
         "summary": summary,
         "drift": drift,
     }
@@ -2643,6 +2652,19 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
     return {
         "ok": True,
         "generated_at": record["ts"],
+        # A06: declare the audit's blind spot. This function cross-references the
+        # in-memory TOOL_MAP / TOOL_SCHEMAS / TOOL_PHASES against .md files only;
+        # it never parses .py source on disk. So drift_count=0 means the running
+        # runtime is internally consistent, NOT that the code on disk matches the
+        # runtime. If a committed tool has not been loaded, this audit still
+        # reports drift 0. Proving disk == runtime requires a restart.
+        "scope": "runtime_only",
+        "scope_note": (
+            "Compares in-memory TOOL_MAP/TOOL_SCHEMAS against .md docs only; does "
+            "not parse .py source on disk. drift_count=0 means runtime is "
+            "internally consistent, not that disk matches the running runtime. To "
+            "prove disk == runtime, restart the orchestrator."
+        ),
         "summary": summary,
         "drift": drift,
         "alias_drift": alias_drift,  # R19: informational, not failing
@@ -6849,7 +6871,7 @@ async def bootstrap_session(project_path: str = "", session_id: str = "",
       - active_workflow (via workflow_active_get)
       - key_tools_compact (~30 frequently-used tools with required + alias hints)
       - common_pitfalls (R41 lessons distilled)
-      - active_skills_index (paths to skill MD)
+      - active_skills_index (skill names)
       - see_also_macros (other 1-shot discovery endpoints)
     """
     import json as _json_bs
@@ -7064,7 +7086,7 @@ async def bootstrap_session(project_path: str = "", session_id: str = "",
         if skill_root.exists():
             for d in sorted(skill_root.iterdir()):
                 if d.is_dir() and (d / "SKILL.md").exists():
-                    active_skills_index.append({"name": d.name, "path": str(d / "SKILL.md")})
+                    active_skills_index.append({"name": d.name})
     except Exception:
         pass
 
@@ -11773,6 +11795,20 @@ async def close_session(project_path: str = "", session_id: str = "",
                 ca_next_action="list_sessions",
             )
         return json.dumps(_closed, ensure_ascii=False)
+    except _session_store_module.SessionStoreContentionError as e:
+        # A33: _log_session_event now propagates contention instead of returning
+        # None, which is right -- but it reaches CA through this generic handler,
+        # and _json_error defaults to retryable=False. Telling CA "not retryable"
+        # about a transient write-queue stall makes it give up, leaving the
+        # session stuck 'active' forever (the UPDATE never ran). Contention is
+        # the one error here that a plain retry actually fixes.
+        return _json_error(
+            str(e),
+            error_name="SESSION_STORE_CONTENTION",
+            retryable=True,
+            ca_next_action="retry_close_session_after_short_backoff",
+            hint="The session write queue was busy; the session is still active. Retry.",
+        )
     except Exception as e:
         return _json_error(str(e))
 
@@ -12983,9 +13019,13 @@ def _ma_rule_inline(template: str) -> str:
 
 
 def _load_agents_registry() -> dict:
+    # A31: decode via the shared BOM-safe helper (utf-8-sig). The fail-safe
+    # try/except is kept HERE deliberately — this reader must never raise into
+    # manage_agent; callers rely on the empty-but-safe {"agents": {}} shape.
     try:
         if _AGENTS_REGISTRY_PATH.exists():
-            return json.loads(_AGENTS_REGISTRY_PATH.read_text(encoding="utf-8"))
+            from orchestrator.core.ca_policy_matrix import load_agents_registry_file
+            return load_agents_registry_file(_AGENTS_REGISTRY_PATH)
     except Exception:
         pass
     return {"agents": {}}

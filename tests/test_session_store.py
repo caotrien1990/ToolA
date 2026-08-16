@@ -481,9 +481,12 @@ def test_record_error_resolution_rejects_invalid_and_cross_scope_references(
         ).fetchone() == (0,)
 
 
-def test_session_event_lock_wait_is_bounded_and_recovers(
-    session_db: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+def test_session_event_lock_wait_is_bounded_and_propagates_contention(
+    session_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # A20/A33: a bounded SQLite lock-wait that still cannot commit is INFRASTRUCTURE
+    # failure. It must surface as SessionStoreContentionError, never be swallowed to
+    # a null event_id -- a null id silently corrupts every downstream audit reader.
     blocker = sqlite3.connect(session_db, isolation_level=None)
     blocker.execute("BEGIN IMMEDIATE")
     original = store._run_session_write
@@ -493,8 +496,8 @@ def test_session_event_lock_wait_is_bounded_and_recovers(
 
     monkeypatch.setattr(store, "_run_session_write", short_budget)
     started = time.monotonic()
-    with caplog.at_level("ERROR", logger="orchestrator.session.store"):
-        blocked = _log_test_event("session-locked", "audit-locked")
+    with pytest.raises(store.SessionStoreContentionError, match="busy budget"):
+        _log_test_event("session-locked", "audit-locked")
     elapsed = time.monotonic() - started
     blocker.rollback()
     blocker.close()
@@ -503,11 +506,37 @@ def test_session_event_lock_wait_is_bounded_and_recovers(
     with sqlite3.connect(session_db) as conn:
         rows = conn.execute("SELECT audit_id FROM events ORDER BY id").fetchall()
 
-    assert blocked is None
     assert elapsed < 1.0
-    assert "exceeded SQLite busy budget" in caplog.text
     assert recovered is not None
     assert rows == [("audit-recovered",)]
+
+
+def test_log_session_event_propagates_contention_instead_of_returning_none(
+    session_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A20/A33 property (deterministic, no disk load): the ONE failure mode that
+    # must never collapse to a null event_id is store contention. A null id here
+    # silently poisoned audit_reconciliation_report ({None,2,4,5} for {1,2,4,5}).
+    def boom(*_args, **_kwargs):
+        raise store.SessionStoreContentionError("simulated writer contention")
+
+    monkeypatch.setattr(store, "_run_session_write", boom)
+    with pytest.raises(store.SessionStoreContentionError, match="simulated writer contention"):
+        _log_test_event("session-contended", "audit-contended")
+
+
+def test_log_session_event_still_returns_none_on_genuine_persistence_bug(
+    session_db: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    # The None path is reserved for a real persistence defect (e.g. a dropped
+    # table), which must stay non-fatal and loud -- NOT for infrastructure
+    # contention. This is the boundary that keeps the two failure modes distinct.
+    with sqlite3.connect(session_db) as conn:
+        conn.execute("DROP TABLE events")
+    with caplog.at_level("ERROR", logger="orchestrator.session.store"):
+        event_id = _log_test_event("session-nodefect")
+    assert event_id is None
+    assert "session event persistence failed" in caplog.text
 
 
 def test_session_write_rolls_back_whole_callback_on_failure(session_db: Path) -> None:
