@@ -973,7 +973,65 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         "bounded": True,
         "snapshot_id": producer_payload["snapshot_id"],
     }
+    # A03: search_code serves an immutable published snapshot that is NOT reconciled
+    # against disk for files changed OUTSIDE [A] (native edit / git checkout / IDE).
+    # A 0-hit over a stale snapshot is therefore INCONCLUSIVE ("khong ket luan duoc"),
+    # not "not found" -- silently degrading here is what let a real committed symbol be
+    # declared a phantom. The drift probe hashes every indexed file (O(repo)), so it is
+    # paid ONLY on count==0 (the exact defect case); the hot count>0 path is untouched.
+    #
+    # A03b: ask cache_delta DIRECTLY rather than via _index_drift(). That helper
+    # collapses five different situations into a bare None -- no project_path, inside
+    # the 30s post-refresh NOISE-SUPPRESSION window, cache_delta raised, cache_delta
+    # returned ok:false, and genuinely-clean -- and only the last one means clean.
+    # Measured: an external edit 1s after generate_project_map gave
+    # _index_drift -> None while cache_delta reported modified:['target.py'], so
+    # search_code certified a clean index over an edit it could see. The suppress
+    # window exists to cut response noise; it was never a staleness measurement, and
+    # it must not be allowed to answer as one. Three states, never two:
+    #   stale_index=True   -- measured, drift found
+    #   stale_index=False  -- measured, clean
+    #   stale_index=None   -- NOT measured; inconclusive + stale_index_reason says why
+    if not results:
+        drift_root = project_path or str(snapshot_root)
+        stale_reason = ""
+        delta = None
+        try:
+            import code_tools
+            if not drift_root:
+                stale_reason = "no_project_path"
+            else:
+                raw_delta = json.loads(await code_tools.cache_delta(drift_root))
+                if not isinstance(raw_delta, dict) or not raw_delta.get("ok"):
+                    stale_reason = "delta_unavailable"
+                    response["stale_index_error"] = str(
+                        (raw_delta or {}).get("error")
+                        or "cache_delta returned ok:false")
+                else:
+                    delta = raw_delta
+        except Exception as exc:
+            # Fail loud: a broken staleness probe must NOT be reported as a clean index.
+            stale_reason = "probe_failed"
+            response["stale_index_error"] = str(exc)
+        if delta is None:
+            response["stale_index"] = None
+            response["stale_index_reason"] = stale_reason or "probe_failed"
+            response["inconclusive"] = True
+            response["ca_next_action"] = "refresh_or_narrow"
+        else:
+            stale_count = (len(delta.get("added") or [])
+                           + len(delta.get("modified") or [])
+                           + len(delta.get("deleted") or []))
+            if stale_count:
+                response["stale_index"] = True
+                response["stale_files_count"] = stale_count
+                response["stale_index_reason"] = "drift_detected"
+                response["inconclusive"] = True
+                response["ca_next_action"] = "refresh_or_narrow"
+            else:
+                response["stale_index"] = False
     if not results and mode == "text" and len(query.split()) > 1:
-        response["tip"] = "0 hits for text multi-word query. Try regex OR-split or search_code(mode='symbol')."
-        response["ca_next_action"] = "retry_with_regex_or_symbol_mode"
+        response.setdefault("tip", "0 hits for text multi-word query. Try regex "
+                                   "OR-split or search_code(mode='symbol').")
+        response.setdefault("ca_next_action", "retry_with_regex_or_symbol_mode")
     return json.dumps(response, ensure_ascii=False)
