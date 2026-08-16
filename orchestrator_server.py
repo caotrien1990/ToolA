@@ -3202,6 +3202,20 @@ def _retry_sequence(tool_name: str, error_name: str, body: dict | None) -> list[
             {"action": "back off ~250-1000ms; the session write queue was busy and the write did not commit"},
             {"tool": tool_name, "payload": body, "note": "retry the identical payload once the queue drains"},
         ]
+    if error_name == "REGEX_SEARCH_TIMEOUT":
+        # A04 (same shape as the A40 SESSION_STORE_CONTENTION hole): the payload
+        # said retryable=True but this mapper had no branch, so it fell through to
+        # return [] -- "retryable" next to zero machine-readable steps. search_code
+        # now embeds its own richer retry_sequence, so the dispatcher setdefault
+        # keeps that; this branch is the fallback for any path that DOESN'T, so it
+        # must never hand back []. A blind re-send of the identical regex would just
+        # time out again, so the first step degrades to literal text mode.
+        text_retry = {**body, "mode": "text"}
+        return [
+            {"tool": tool_name, "payload": text_retry,
+             "note": "regex hit the wall-clock deadline; retry as a literal text search (no backtracking)"},
+            {"action": "or keep mode='regex' but narrow file_pattern / raise regex_deadline_seconds (<= 10s) for a well-behaved pattern"},
+        ]
     return []
 
 

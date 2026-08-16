@@ -289,6 +289,16 @@ _MUTATION_SCOPE_MAP = {
     "kill_process": "process", "launch_electron_with_cdp": "process",
     "ensure_single_electron_instance": "process", "cleanup_test_session": "process",
     "run_project_command": "process", "restart_orchestrator_via_task": "process",
+    # campaign-1608 (A11-b): restart_orchestrator_via_bat was the ONLY entry in the
+    # gate set (PROTECTED | TOKEN_REQUIRED, 60 tools) with no scope, so /api/tools
+    # reported mutation_scope='none' -- "read-only" -- for the tool that kills and
+    # relaunches the whole daemon. Its sibling restart_orchestrator_via_task was
+    # already 'process'; the two differ only in launcher (bat vs schtasks).
+    # It slipped through because it is registered from orchestrator_server.py while
+    # this map lives here, so a plain `import code_tools` cannot see it in TOOL_MAP
+    # -- which is also why rule_drift_check's coverage loop (`if name not in
+    # tool_keys: continue`) skipped it instead of flagging it.
+    "restart_orchestrator_via_bat": "process",
     # CAN-011: arbitrary-script runners were missing a scope despite being mutating +
     # token-required (run shell/Node code) — surfaced "none" in /api/tools.
     "run_ps1_script": "process", "run_node_script": "process",

@@ -576,6 +576,79 @@ async def find_symbol(name: str = "", path: str = "", project_path: str = "",
     return json.dumps(response, ensure_ascii=False)
 
 
+# A04: the REGEX_SEARCH_TIMEOUT payload used to carry ONLY {error, error_name,
+# retryable, bounded, ca_next_action} -- it told the caller "retryable: true,
+# narrow_or_simplify_regex" but handed back NOTHING to retry with: the original
+# query was dropped, there was no corrected_payload/payload_example, and
+# _retry_sequence had no branch so it fell through to [] (the exact A40 hole:
+# retryable=True next to zero machine-readable steps). Two code paths raise this
+# same error_name -- the asyncio.TimeoutError branch and the RegexSearchTimeout
+# sub-branch of the generic handler -- so, per the A40 lesson, BOTH must emit the
+# identical actionable shape. This single builder is that shape; a divergence
+# between the two paths can't recur if neither hand-builds the dict.
+#
+# Bounded (token discipline): the echoed query is truncated with an explicit
+# marker; the caller still holds its own original query, so corrected_payload
+# only needs to signal the SHAPE change (mode='text'). regex_deadline_seconds is
+# a REAL parameter clamped to [MIN, MAX]=[0.05, 10.0]s -- suggesting a larger one
+# is NOT inventing a field. Per campaign lesson L-x the number itself is left
+# untouched here; widening a load-scaled deadline just moves the threshold.
+_TIMEOUT_QUERY_ECHO_MAX = 200
+
+
+def _regex_timeout_query_echo(query: str) -> str:
+    q = query or ""
+    if len(q) > _TIMEOUT_QUERY_ECHO_MAX:
+        return q[:_TIMEOUT_QUERY_ECHO_MAX] + f"...<truncated {len(q) - _TIMEOUT_QUERY_ECHO_MAX} chars>"
+    return q
+
+
+def _regex_timeout_payload(query: str, effective_regex_deadline: float | None,
+                           path: str, project_path: str, file_pattern: str) -> dict:
+    from orchestrator import search_regex_worker as _rw
+    q_echo = _regex_timeout_query_echo(query)
+    if effective_regex_deadline is not None:
+        deadline_txt = f"{effective_regex_deadline:.3f}"
+        wider = round(min(effective_regex_deadline * 2.0, _rw.MAX_DEADLINE_SECONDS), 3)
+    else:
+        deadline_txt = "default"
+        wider = _rw.MAX_DEADLINE_SECONDS
+    loc = project_path or path
+    loc_key = "project_path" if project_path else "path"
+    corrected: dict = {"query": q_echo, "mode": "text"}
+    if loc:
+        corrected[loc_key] = loc
+    if file_pattern and file_pattern != "*":
+        corrected["file_pattern"] = file_pattern
+    payload_example: dict = {"query": q_echo, "mode": "regex", "regex_deadline_seconds": wider}
+    if loc:
+        payload_example[loc_key] = loc
+    if file_pattern and file_pattern != "*":
+        payload_example["file_pattern"] = file_pattern
+    return {
+        "ok": False,
+        "error": f"regex search exceeded hard deadline of {deadline_txt}s",
+        "error_name": "REGEX_SEARCH_TIMEOUT",
+        "retryable": True,
+        "bounded": True,
+        "query": q_echo,
+        "corrected_payload": corrected,
+        "payload_example": payload_example,
+        "retry_sequence": [
+            {"tool": "search_code", "payload": corrected,
+             "note": "fall back to literal text mode -- no backtracking, no wall-clock blowup"},
+            {"tool": "search_code", "payload": payload_example,
+             "note": f"or keep regex but narrow file_pattern; a larger explicit "
+                     f"regex_deadline_seconds (<= {_rw.MAX_DEADLINE_SECONDS}s) only "
+                     f"helps a genuinely well-behaved pattern"},
+        ],
+        "hint": "Regex hit the wall-clock deadline (catastrophic backtracking or too "
+                "much input). Resend with mode='text' for a literal search, and/or add "
+                "a file_pattern to shrink the input.",
+        "ca_next_action": "narrow_or_simplify_regex",
+    }
+
+
 async def search_code(query: str = "", path: str = "", project_path: str = "",
                       file_pattern: str = "*", literal_search: bool = True,
                       mode: str = "text", query_encoding: str = "plain",
@@ -923,14 +996,10 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         else:  # pragma: no cover - loop either returns or raises
             raise search_snapshots.SnapshotUnavailable("snapshot changed during pin")
     except asyncio.TimeoutError:
-        return json.dumps({
-            "ok": False,
-            "error": f"regex search exceeded hard deadline of {effective_regex_deadline:.3f}s",
-            "error_name": "REGEX_SEARCH_TIMEOUT",
-            "retryable": True,
-            "bounded": True,
-            "ca_next_action": "narrow_or_simplify_regex",
-        }, ensure_ascii=False)
+        return json.dumps(
+            _regex_timeout_payload(query, effective_regex_deadline, path, project_path, file_pattern),
+            ensure_ascii=False,
+        )
     except Exception as exc:
         if regex_worker is not None and isinstance(exc, regex_worker.RegexSearchInvalid):
             return json.dumps({
@@ -943,6 +1012,17 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                 "ca_next_action": "resend_with_mode_text_or_escaped_regex",
                 "bounded": True,
             }, ensure_ascii=False)
+        # A04: RegexSearchTimeout raised from the worker carries the SAME
+        # error_name ("REGEX_SEARCH_TIMEOUT") as the asyncio.TimeoutError branch
+        # above. If it fell through to the generic RegexSearchError handler it
+        # would emit the OLD degenerate shape -- two paths, one error_name,
+        # divergent contracts (exactly A40 defect 2). Route it to the one shared
+        # builder so the caller always gets query + corrected_payload + retry_sequence.
+        if regex_worker is not None and isinstance(exc, regex_worker.RegexSearchTimeout):
+            return json.dumps(
+                _regex_timeout_payload(query, effective_regex_deadline, path, project_path, file_pattern),
+                ensure_ascii=False,
+            )
         if regex_worker is not None and isinstance(exc, regex_worker.RegexSearchError):
             retryable = isinstance(
                 exc,
