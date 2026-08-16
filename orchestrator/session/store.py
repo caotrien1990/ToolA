@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import atexit
 import base64
+import hashlib
 import json
 import logging
 import os
 import queue
 import re
+import secrets
 import sqlite3
 import threading
 import time
@@ -65,6 +67,11 @@ _SESSION_WRITE_STALL_SECONDS = max(
     1.0, float(os.environ.get("ORCH_SESSION_WRITE_STALL_SECONDS", "5"))
 )
 _SESSION_DB_INITIALIZED_PATHS: set[str] = set()
+# campaign-1608 (A27): the WAL switch ignores busy_timeout, so it needs its own
+# small retry budget. Short on purpose -- the winner of the race enables WAL for
+# everyone, so a loser has nothing left to wait for.
+_WAL_SWITCH_ATTEMPTS = 4
+_WAL_SWITCH_RETRY_MS = 20
 
 
 class SessionStoreContentionError(RuntimeError):
@@ -578,10 +585,52 @@ class SessionWriter:
         return not alive
 
 
+def _enable_wal(conn: sqlite3.Connection) -> bool:
+    """Switch one connection to WAL, tolerating a contended switch.
+
+    campaign-1608 (A27). ``PRAGMA journal_mode=WAL`` takes an EXCLUSIVE lock on
+    the database, and SQLite does NOT apply ``busy_timeout`` to it -- the switch
+    fails instantly with "database is locked" instead of waiting. Raising the
+    busy budget therefore buys nothing. Two threads entering ``_init_session_db``
+    on a fresh sessions.db (open_session calls it per request, and the early-out
+    only fires once a live writer exists) made the loser die with a bare
+    ``INTERNAL_ERROR: database is locked``, which no contention guard in this
+    module wraps because it happens off the serialized writer path.
+
+    Retry briefly, then give up: the FIRST connection to win the race already
+    put the database into WAL, and journal mode is a persistent database
+    property, so a loser that gives up still ends up on a WAL database. Returns
+    whether this connection observed WAL, for callers that want to log it.
+    """
+    last_exc: sqlite3.OperationalError | None = None
+    for attempt in range(_WAL_SWITCH_ATTEMPTS):
+        try:
+            mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+            return bool(mode) and str(mode[0]).lower() == "wal"
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower() and "busy" not in str(exc).lower():
+                raise
+            last_exc = exc
+            time.sleep(_WAL_SWITCH_RETRY_MS / 1000.0 * (attempt + 1))
+    try:
+        current = conn.execute("PRAGMA journal_mode").fetchone()
+    except sqlite3.OperationalError:
+        current = None
+    already_wal = bool(current) and str(current[0]).lower() == "wal"
+    if not already_wal:
+        # Not fatal -- a rollback-journal database still works, just with less
+        # read/write concurrency. Say so instead of failing the caller's request.
+        logger.warning(
+            "sessions.db stayed on journal_mode=%s; WAL switch contended (%s)",
+            (current[0] if current else "unknown"), last_exc,
+        )
+    return already_wal
+
+
 def _configure_sessions_connection(conn: sqlite3.Connection, busy_timeout_ms: int) -> None:
     timeout_ms = max(1, int(busy_timeout_ms))
     conn.execute(f"PRAGMA busy_timeout={timeout_ms}")
-    conn.execute("PRAGMA journal_mode=WAL")
+    _enable_wal(conn)
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA cache_size=-16000")
     conn.execute("PRAGMA mmap_size=268435456")
@@ -833,10 +882,11 @@ def _init_session_db():
                 updated_at  TEXT
             )
         """)
-        try:
-            conn.execute("PRAGMA journal_mode=WAL")
-        except Exception:
-            pass
+        # campaign-1608 (A27): redundant with _configure_sessions_connection above,
+        # kept because older databases reached this point without it. Routed through
+        # the shared helper so a contended switch retries and logs instead of being
+        # swallowed by a bare `except: pass`.
+        _enable_wal(conn)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS pending_audits (
                 pending_audit_id TEXT PRIMARY KEY,
@@ -1059,6 +1109,39 @@ def _get_active_session_id(project_path: str, agent_id: str | None = None) -> st
     return evidence["session_id"] if evidence else None
 
 
+def _session_id_agent_component(agent_id: str) -> str:
+    """Return a collision-free, readable id component for one agent.
+
+    campaign-1608 (A26). The old code was a bare slug: lowercase, replace every
+    non-[a-z0-9] run with "-", truncate to 16. That is lossy, and the loss is
+    not hypothetical -- 'agent/a ..' and 'agent\\a ..' both collapse to
+    "agent-a", so two DIFFERENT agents minted the SAME session_id and the second
+    INSERT died on the primary key.
+
+    Keep the slug for humans (operators grep these ids in logs) but append a
+    short digest of the RAW agent_id, so distinct agents can never collide no
+    matter how the slug mangles them. Deterministic: the same agent always maps
+    to the same component, which is what resume relies on.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "-", (agent_id or "").lower()).strip("-")[:16].strip("-")
+    digest = hashlib.blake2s((agent_id or "").encode("utf-8"), digest_size=4).hexdigest()
+    return f"{slug}-{digest}" if slug else digest
+
+
+def _session_id_unique_tail() -> str:
+    """Return the uniqueness suffix for a freshly minted session_id.
+
+    campaign-1608 (A26). This used to be datetime.now().strftime("%m%d%H%M%S%f").
+    On Windows datetime.now() has a ~1ms resolution, so %f is zero-padding, not
+    a real microsecond count: 2000 samples taken back-to-back produced only 4
+    distinct values, one of them 741 times. Two agents opening inside the same
+    millisecond therefore agreed on the entire suffix.
+
+    Serializing the writes does not fix this -- the id is minted by US, before
+    it reaches the writer thread -- so the suffix must carry its own entropy
+    rather than borrow it from the clock.
+    """
+    return secrets.token_hex(6)
 def _open_or_resume_session(project_path: str, session_title: str, mode: str,
                             agent_id: str | None = None) -> tuple[dict, bool]:
     """Atomically return an active session in scope, creating it if absent."""
@@ -1095,11 +1178,10 @@ def _open_or_resume_session(project_path: str, session_title: str, mode: str,
                 "started_at": existing[2],
             }, False
 
-        sid = re.sub(r'[^a-z0-9]+', '-', session_title.lower()).strip('-')[:40]
+        sid = re.sub(r"[^a-z0-9]+", "-", session_title.lower()).strip("-")[:40]
         if agent_id:
-            agent_slug = re.sub(r'[^a-z0-9]+', '-', agent_id.lower()).strip('-')[:16]
-            sid = f"{sid}-{agent_slug}"
-        sid = f"{sid}-{datetime.now().strftime('%m%d%H%M%S%f')}"
+            sid = f"{sid}-{_session_id_agent_component(agent_id)}"
+        sid = f"{sid}-{_session_id_unique_tail()}"
         conn.execute(
             """INSERT INTO sessions
                (session_id, session_title, project_path, mode, status,
