@@ -10290,8 +10290,8 @@ _register_tool(
                 "timeout_sec": {"type": "integer", "default": 3600, "description": "Worker run timeout"},
                 "provider": {"type": "string", "description": "Optional per-dispatch provider override"},
                 "model": {"type": "string", "description": "Optional per-dispatch model override"},
-                "fallback_policy": {"type": "string", "enum": ["none", "explicit"], "default": "none"},
-                "allowed_fallbacks": {"type": "array", "items": {"type": "string"}, "default": []},
+                "fallback_policy": {"type": "string", "enum": ["none", "explicit"], "default": "none", "description": "What to do when the requested model is not in the agent's valid set. 'none' fails with REQUESTED_MODEL_UNAVAILABLE; 'explicit' may substitute the first entry of allowed_fallbacks that is valid. Ignored (treated as 'none') when risk_level or dev_level is high/critical."},
+                "allowed_fallbacks": {"type": "array", "items": {"type": "string"}, "default": [], "description": "Ordered candidate models the caller pre-approves as substitutes. Only consulted when fallback_policy is 'explicit'; the first valid candidate wins and the ack carries an EXPLICIT_MODEL_FALLBACK warning."},
                 "queue_wait_timeout_sec": {"type": "integer", "default": 0, "description": "Max queue wait; 0 = follow timeout_sec"},
                 "request_id": {"type": "string", "description": "Optional caller correlation id (echoed in the ack + stamped on the broker message event); auto-generated when empty"},
             },
@@ -10742,7 +10742,18 @@ def _council_provider_for_model(agent: str, model: str) -> str:
             return "claude"
         return ""
     if agent == "codo":
+        # B2 (2026-08-16): this set only listed the openai/-prefixed spellings, but
+        # every other source of truth is unprefixed -- .council/ID_MODELS/GPT.txt
+        # ("gpt-5.6-sol"), council_config.json (codo.model = "gpt-5.6-sol") and the
+        # green contract test test_codo_broker_command_uses_ephemeral_exec, which
+        # asserts the codex CLI receives `--model gpt-5.6-sol`. _council_agent_command
+        # passes the model through verbatim, so the prefixed form is not a wire
+        # string for codo at all; it was the odd one out. Accepting BOTH keeps any
+        # caller that learned the prefixed spelling working (the code fallback
+        # _COUNCIL_DEFAULT_MODELS_FALLBACK still carries "openai/gpt-5.6-sol") while
+        # making the configured default resolve instead of returning "".
         if model in {
+            "gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.6-terra",
             "openai/gpt-5.6-sol", "openai/gpt-5.6-luna", "openai/gpt-5.6-terra",
         }:
             return "codex"

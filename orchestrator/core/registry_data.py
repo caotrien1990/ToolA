@@ -1373,10 +1373,10 @@ V15_NEW_TOOL_SPECS = (
 AUDIT_RECONCILIATION_SCHEMA = {
     "description": "C1 T1 READ-ONLY reconciliation of unresolved errors. Classification is expected, recovered, still_open, or infrastructure; infrastructure remains a cause category while disposition is recovered or still_open. Strong evidence yields an explicit record_error_resolution suggestion; this tool never writes or auto-closes.",
     "parameters": {"type": "object", "properties": {
-        "project_path": {"type": "string", "default": ""},
-        "target_session_id": {"type": "string", "default": ""},
+        "project_path": {"type": "string", "default": "", "description": "Project root to reconcile. Empty resolves from the caller's session."},
+        "target_session_id": {"type": "string", "default": "", "description": "Session whose unresolved errors are reconciled. Empty means the caller's own session."},
         "session_id": {"type": "string", "default": "", "description": "Legacy target-session alias."},
-        "agent_id": {"type": "string", "default": ""}}, "required": []}}
+        "agent_id": {"type": "string", "default": "", "description": "Restrict the report to errors raised by this agent. Empty means all agents."}}, "required": []}}
 
 
 

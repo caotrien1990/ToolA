@@ -1,29 +1,40 @@
 # Pi CLI model catalog (provider=ltnai)
 # Selector equals the configured unprefixed wire model ID.
+#
+# B2 (2026-08-16): the entries below used to carry a vendor prefix
+# (deepseek/deepseek-v4-pro, openai/gpt-5.6-sol, ...) which contradicted the
+# line above, contradicted .council/council_config.json (pic.model =
+# "deepseek-v4-pro") and contradicted the green contract test
+# test_pic_command_uses_pi_catalog_model, which asserts the command carries
+# `--model deepseek-v4-pro`. Since _council_agent_command passes the model
+# string through verbatim, the catalog is what the validation gate compares
+# against, so the prefixed spelling made pic's own configured default fail
+# validation (resolution_status "unavailable" / REQUESTED_MODEL_UNAVAILABLE).
+# Unprefixing restores the documented rule WITHOUT changing any wire string.
 
 ID model:
-openai/gpt-5.6-sol
+gpt-5.6-sol
 
 ID model:
-openai/gpt-5.6-terra
+gpt-5.6-terra
 
 ID model:
-openai/gpt-5.6-luna
+gpt-5.6-luna
 
 ID model:
-alibaba/qwen3.8-max
+qwen3.8-max
 
 ID model:
-xiaomi/mimo-v2.5-pro
+mimo-v2.5-pro
 
 ID model:
-deepseek/deepseek-v4-pro
+deepseek-v4-pro
 
 ID model:
-deepseek/deepseek-v4-flash-0731
+deepseek-v4-flash-0731
 
 ID model:
-moonshotai/kimi-k3
+kimi-k3
 
 ID model:
-minimax/minimax-m3
+minimax-m3

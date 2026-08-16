@@ -1154,7 +1154,20 @@ process.stdout.write(JSON.stringify(snapshots));
         )
         self.assertIn('gpt-5.6-sol', orchestrator_server._council_valid_models('codo'))
         effective = orchestrator_server._council_effective_model('codo')
-        self.assertEqual(effective, {'provider': 'codex', 'model': 'gpt-5.6-sol'})
+        # B2: assert the COMPATIBILITY PROPERTY, not the old two-key dict shape.
+        # _council_effective_model is documented as a "deprecated compatibility
+        # view" over CouncilModelResolution.as_dict(), which deliberately carries
+        # the full resolution (requested_*/resolved_*/observed_*/status/warnings)
+        # alongside the legacy provider+model keys. Every production caller reads
+        # it via .get("model") / .get("provider") (orchestrator_server.py:4633,
+        # :10009 and orchestrator/council/dashboard.py:33), so an exact-equality
+        # assertion pinned a shape nothing depends on and turned a deliberate
+        # widening into a false red -- the same A19/A21 trap of testing the
+        # mechanism instead of the property. What must hold: the legacy keys still
+        # exist and still carry codo's resolved codex/gpt-5.6-sol.
+        self.assertEqual(effective.get('provider'), 'codex')
+        self.assertEqual(effective.get('model'), 'gpt-5.6-sol')
+        self.assertEqual(effective.get('resolution_status'), 'unverified')
 
     def test_codo_executable_prefers_dedicated_ltnai_launcher(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -24,8 +24,8 @@
     "model": "agent/claude-sonnet-5"
   },
   "pic": {
-    "provider": "agent247",
-    "model": "agent/claude-sonnet-5"
+    "provider": "ltnai",
+    "model": "deepseek-v4-pro"
   },
   "gro": {
     "provider": "ltnai",
