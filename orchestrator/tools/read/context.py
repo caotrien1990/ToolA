@@ -41,7 +41,7 @@ async def read_file_range(
         include_next_ranges: bool = True, content_hash: str = "",
         force_refresh: bool = False) -> str:
     """Read a line range or structural scope without mutating derived project state."""
-    from .fs import _missing_file_response, _seed_read_token
+    from .fs import _missing_file_response, _seed_read_token_detailed
 
     try:
         fp = fo.resolve_project_file(project_path, file_path)
@@ -109,14 +109,68 @@ async def read_file_range(
         total = len(doc.lines)
         stat_after = fp.stat()
         reseeded = False
+        reseed_detail: dict = {}
         if doc.stable or force_reseed:
             if force_reseed:
                 import logging
                 logging.getLogger("[A]").warning(
                     "force_reseed=true file_path=%s caller=read_file_range", str(fp))
-            reseeded = _seed_read_token(
+            reseeded, reseed_detail = _seed_read_token_detailed(
                 fp, project_path, doc.text, stat_after, force_reseed,
                 precomputed_hash=doc.content_hash)
+        # P11 (campaign-1608) FAIL-LOUD: an EXPLICIT force_reseed that could not
+        # seed the token must not return ok:true — that is the silent dead loop
+        # where write_fix keeps failing FILE_CHANGED_OUTSIDE_ORCHESTRATOR and its
+        # own recovery hint (force_reseed) reports success.
+        # P11b: say WHICH of the three failures happened. The first cut printed
+        # the no-root message unconditionally, so a token-store failure was
+        # reported as "no project_path was supplied" while telling the caller to
+        # supply the project_path it had already supplied — P11's dead loop
+        # rebuilt one layer up, except here the caller believes the diagnosis.
+        if force_reseed and not reseeded:
+            reason = reseed_detail.get("reason") or "no_project_root"
+            if reason == "no_project_root":
+                error = ("force_reseed could not seed the write-freshness token: "
+                         "no project_path was supplied and no project root could "
+                         "be inferred from the file_path.")
+                hint = ("Pass project_path (the project root that owns this file) "
+                        "together with file_path and force_reseed=true. The token "
+                        "is keyed by (project_root, rel_path); without a resolvable "
+                        "root there is nothing to key it to.")
+                next_action = "retry_read_file_range_with_project_path"
+            elif reason == "outside_root":
+                error = ("force_reseed could not seed the write-freshness token: "
+                         "the file is not inside the project root that was resolved "
+                         f"({reseed_detail.get('root') or '?'}).")
+                hint = ("Pass the project_path that actually contains this file. "
+                        "The token is keyed by (project_root, rel_path), so a file "
+                        "outside the root has no key.")
+                next_action = "retry_read_file_range_with_correct_project_path"
+            else:
+                error = ("force_reseed resolved the project root but the read-token "
+                         "store refused the write: "
+                         f"{reseed_detail.get('error') or 'unknown'}.")
+                hint = ("This is NOT a missing project_path — the root resolved "
+                        "fine. Retrying the same call will fail the same way. "
+                        "Check the session store (sessions.db locked / disk full / "
+                        "schema mismatch) before retrying.")
+                next_action = "inspect_session_store"
+            return {
+                "ok": False,
+                "error": error,
+                "error_name": "RESEED_FAILED",
+                "reseed_failure_reason": reason,
+                "reseed_error": reseed_detail.get("error", ""),
+                "file": str(fp),
+                "project_path": str(Path(project_path).resolve()) if project_path else None,
+                "read_token_seeded": False,
+                "content_hash": doc.content_hash,
+                "total_lines": total,
+                "hint": hint,
+                "ca_next_action": next_action,
+                "retryable": reason != "upsert_failed",
+                "derived_state_touched": False,
+            }
 
         requested_scope = (scope or "range").lower()
         if requested_scope == "file_summary":

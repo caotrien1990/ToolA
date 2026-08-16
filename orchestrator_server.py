@@ -1243,6 +1243,9 @@ _ARG_ALIASES.setdefault('write_fix_html', {}).update({'replacement': 'new_conten
 # of returning 400 UNSUPPORTED_FIELD. Reduces CA retry overhead from R8 audit.
 _TASK_EPOCH_STATE = ct._ACTIVE_TASK_EPOCHS
 _DUPLICATE_FAILURE_STATE: dict = {}
+# P12 (campaign-1608): fingerprint -> first_seen wall-clock, so a replayed
+# DUPLICATE_RETRY_BLOCKED verdict can disclose cached:true + how stale it is.
+_DUPLICATE_FIRST_SEEN: dict = {}
 # Compatibility alias retained for the anti-drift contract surface.
 _ANTI_DRIFT_CALL_STATE = _DUPLICATE_FAILURE_STATE
 _DETERMINISTIC_RETRY_CACHE = _DUPLICATE_FAILURE_STATE
@@ -1264,10 +1267,17 @@ def _duplicate_retry_guard(agent_id: str, tool_name: str, body: dict, error_name
         _DUPLICATE_FAILURE_STATE.clear()  # bounded memory; counter reset is acceptable
     normalized = {k: v for k, v in sorted(body.items()) if k not in ("project_path",)}
     fp = f"{agent_id}|{tool_name}|{_hl.md5(str(normalized).encode()).hexdigest()}|{error_name}"
+    now = time.time()
     count = _DUPLICATE_FAILURE_STATE.get(fp, 0) + 1
     _DUPLICATE_FAILURE_STATE[fp] = count
     if count <= 1:
+        # P12 (campaign-1608): stamp when this exact verdict was first produced so
+        # a later replayed (cached) block can disclose how stale it is.
+        if len(_DUPLICATE_FIRST_SEEN) > 4096:
+            _DUPLICATE_FIRST_SEEN.clear()
+        _DUPLICATE_FIRST_SEEN[fp] = now
         return None  # first occurrence — record only
+    first_seen = _DUPLICATE_FIRST_SEEN.get(fp, now)
     return {
         "ok": False,
         "error_name": "DUPLICATE_RETRY_BLOCKED",
@@ -1275,6 +1285,12 @@ def _duplicate_retry_guard(agent_id: str, tool_name: str, body: dict, error_name
         "reason": f"Identical payload already failed with {error_name}. Apply corrected_payload or stop.",
         "fingerprint": fp,
         "retry_count": count,
+        # P12 (campaign-1608): this verdict is REPLAYED from dedup state, not a
+        # fresh re-evaluation of external conditions. Disclose it so a CA can tell
+        # "still wrong" apart from "not re-run" after it changed something.
+        "cached": True,
+        "first_seen_at": first_seen,
+        "seconds_since_first_seen": round(now - first_seen, 3),
     }
 
 
@@ -13339,6 +13355,17 @@ accepted_fields=sorted(accepted_fields),
                     _result.setdefault("operation_id", _op_id)
                     _result.setdefault("write_status_url",
                                        f"/api/write_status?operation_id={_op_id}")
+                    # P12 (campaign-1608): the operation_id is DETERMINISTIC, so an
+                    # identical retry maps onto the same ledger entry and returns the
+                    # same id. Surface the attempt count so a stable id is not
+                    # misread as a stale cached object: operation_replayed=true means
+                    # "you have sent this exact payload before", which lets a CA tell
+                    # a genuine re-run apart from an unchanged id after it reseeded.
+                    _led = _WRITE_LEDGER.get(_op_id)
+                    if isinstance(_led, dict):
+                        _attempts = int(_led.get("attempts") or 1)
+                        _result.setdefault("operation_attempts", _attempts)
+                        _result.setdefault("operation_replayed", _attempts > 1)
             _json_body = json.dumps(_result, ensure_ascii=False)
             _json_body = _shape_tool_response_text(tool_name, _json_body)
             return web.Response(text=_json_body, content_type="application/json",

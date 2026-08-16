@@ -112,24 +112,62 @@ def _same_stat(before, after) -> bool:
     return before.st_mtime == after.st_mtime and before.st_size == after.st_size
 
 
-def _seed_read_token(fp: Path, project_path: str | None, text: str, stat_after,
-                     force_reseed: bool, precomputed_hash: str = "") -> bool:
-    """Seed the write-freshness token without touching INDEX or PROJECT_MAP."""
-    if not project_path:
-        return False
+def _seed_read_token_detailed(fp: Path, project_path: str | None, text: str,
+                              stat_after, force_reseed: bool,
+                              precomputed_hash: str = "") -> tuple[bool, dict]:
+    """Seed the write-freshness token, and say WHY when it does not.
+
+    P11 (campaign-1608): the token is keyed by (project_root, rel_path). When the
+    caller omits project_path (e.g. read_file_range invoked through the `path`
+    alias with an absolute file_path), infer the root from the absolute file_path
+    via code_tools.find_project_root so a force_reseed is not a silent no-op. The
+    caller (read_file_range) turns a failed force_reseed into a loud RESEED_FAILED
+    rather than returning ok:true without a token.
+
+    P11b: a reseed can fail three distinct ways, and P11's first cut printed the
+    no-root message for all of them. Measured with a VALID project_path and a
+    raising _read_token_upsert: "no project_path was supplied", plus a hint
+    telling the caller to pass the project_path it had already passed. That is
+    P11's own dead loop one layer up -- the difference is that here the caller
+    BELIEVES the diagnosis. Return the reason so the caller can say the true one:
+
+      no_project_root -- no project_path and none inferable (the P11 case)
+      outside_root    -- the file does not live under the root that was resolved
+      upsert_failed   -- root fine, the token store itself refused
+    """
     try:
         import code_tools as ct
 
-        root = Path(project_path).resolve()
-        rel = str(fp.relative_to(root)).replace("\\", "/")
+        root_str = project_path or ct.find_project_root(str(fp))
+        if not root_str:
+            return False, {"reason": "no_project_root", "error": ""}
+        root = Path(root_str).resolve()
+        try:
+            rel = str(fp.relative_to(root)).replace("\\", "/")
+        except ValueError as exc:
+            return False, {"reason": "outside_root", "error": f"{type(exc).__name__}: {exc}",
+                           "root": str(root)}
         digest = precomputed_hash or hashlib.sha256(
             text.encode("utf-8", errors="replace")).hexdigest()
-        return bool(ct._read_token_upsert(
+        seeded = bool(ct._read_token_upsert(
             str(root), rel, digest, stat_after.st_mtime, stat_after.st_size))
+        if seeded:
+            return True, {}
+        # Not an exception -- the store simply declined. Still not a success.
+        return False, {"reason": "upsert_failed", "error": "_read_token_upsert returned falsy",
+                       "root": str(root)}
     except Exception as exc:
         logging.getLogger(__name__).warning(
             "read_file_range reseed failed for %s: %s", fp, exc)
-        return False
+        return False, {"reason": "upsert_failed", "error": f"{type(exc).__name__}: {exc}"}
+
+
+def _seed_read_token(fp: Path, project_path: str | None, text: str, stat_after,
+                     force_reseed: bool, precomputed_hash: str = "") -> bool:
+    """Back-compat bool wrapper over :func:`_seed_read_token_detailed`."""
+    return _seed_read_token_detailed(
+        fp, project_path, text, stat_after, force_reseed,
+        precomputed_hash=precomputed_hash)[0]
 
 
 def _missing_file_response(fp: Path, file_path: str, project_path: str | None) -> str:
