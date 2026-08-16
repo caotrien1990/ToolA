@@ -108,8 +108,17 @@ def graph_find_symbol(project_path: str, query: str, *, limit: int = 50) -> dict
                 safe = query.replace('"', '""')
                 fts = _store.fts_search_symbols(conn, f'"{safe}"', limit=limit)
                 if not fts:
-                    # bare token fallback
-                    fts = _store.fts_search_symbols(conn, query, limit=limit)
+                    # Widen: same quoted phrase, plus a prefix match on its last
+                    # token, so `routes_read` also finds `routes_readonly`.
+                    # This fallback used to pass `query` RAW into MATCH, which
+                    # made FTS5 parse the user's term as query syntax: any dot
+                    # (`start_orchestrator.bat`), paren, or empty string raised
+                    # `fts5: syntax error`, and `a-b` / `col:val` were read as
+                    # COLUMN references ("no such column: b"). The whole graph
+                    # channel then returned `error` for an ordinary lookup.
+                    # Keep the quotes — they are what makes the term data
+                    # instead of syntax.
+                    fts = _store.fts_search_symbols(conn, f'"{safe}"*', limit=limit)
                 payload["results"] = fts
         finally:
             conn.close()

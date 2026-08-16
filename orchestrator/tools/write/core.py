@@ -691,14 +691,26 @@ _BOOT_SWEEP_SKIP_DIR_NAMES = frozenset({
 
 
 def _boot_sweep_root_usable(path: Path) -> bool:
-    """Skip missing trees and heavy virtualenv/node caches from session history."""
+    """Skip missing trees, unreadable roots, and heavy virtualenv/node caches."""
     try:
         if not path.exists() or not path.is_dir():
             return False
     except Exception:
         return False
     skip = {name.lower() for name in _BOOT_SWEEP_SKIP_DIR_NAMES}
-    return not any(part.lower() in skip for part in path.parts)
+    if any(part.lower() in skip for part in path.parts):
+        return False
+    # A22 layer 2: exists()/is_dir() is not enough. A root can pass both yet be
+    # unreadable (permission denied, dead network share, damaged ACL) and then
+    # explode later when the sweep stats INDEX.json under it. os.access(R_OK) is
+    # unreliable on Windows (returns True for read-denied dirs), so probe an
+    # actual directory read instead: if we cannot list it, reject it here.
+    try:
+        with os.scandir(path) as it:
+            next(it, None)
+    except Exception:
+        return False
+    return True
 
 
 def _boot_sweep_project_roots(extra_roots: list[str] | None = None) -> list[Path]:

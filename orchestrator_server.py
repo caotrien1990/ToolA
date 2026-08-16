@@ -12171,6 +12171,14 @@ async def handle_config(request):
 
 # ─── Code Intelligence endpoints ─────────────────────────────────────────────
 
+# A09: the only query params /api/tools/names actually honours. `phase` is the
+# documented alias of `tier`. Anything else is surfaced via ignored_query_params
+# rather than silently swallowed.
+_TOOL_NAMES_KNOWN_QUERY_PARAMS = frozenset({
+    "tier", "phase", "name_contains", "category", "limit",
+})
+
+
 async def handle_tools_names(request):
     """V15 R16.9 — Ultra-compact /api/tools/names endpoint.
 
@@ -12187,8 +12195,35 @@ async def handle_tools_names(request):
         limit = int(request.query.get("limit") or 0)
     except (TypeError, ValueError):
         limit = 0
+    payload = _tool_names_payload(tier_filter, name_contains, category, limit)
+    # A09: this GET used to swallow unknown query params (curated/all/bounded/…)
+    # silently, so `?curated=0` and `?bogus=1` were indistinguishable from the
+    # baseline. Mirror the A17 precedent (surface what was dropped, don't swallow)
+    # and the POST UNSUPPORTED_FIELD contract: report ignored params instead of
+    # pretending they took effect. Only emitted when non-empty so a clean call
+    # carries no false signal.
+    # set(): request.query is a multidict, so `?curated=0&curated=1` yields the
+    # key twice. Report each unknown param once.
+    ignored = sorted({
+        k for k in request.query.keys()
+        if k not in _TOOL_NAMES_KNOWN_QUERY_PARAMS
+    })
+    if ignored:
+        # copy before mutating: _tool_names_payload is shared with the MCP
+        # discovery path (orchestrator/server/mcp_stdio.py) and the parity
+        # script, so an HTTP-only field must never leak into a payload another
+        # caller holds -- today it returns a fresh dict, but that is its
+        # implementation detail, not a contract this handler may rely on.
+        payload = dict(payload)
+        payload["ignored_query_params"] = ignored
+        payload["ignored_query_params_hint"] = (
+            "These query params are not supported by /api/tools/names and were "
+            "ignored. Supported: " + ", ".join(sorted(_TOOL_NAMES_KNOWN_QUERY_PARAMS))
+            + ". The unfiltered default is the curated core; pass limit=250 for the "
+            "full catalog."
+        )
     return web.json_response(
-        _tool_names_payload(tier_filter, name_contains, category, limit),
+        payload,
         headers=_cors(request.headers.get('Origin'), extra={"Cache-Control": "no-store, max-age=0"}),
     )
 
