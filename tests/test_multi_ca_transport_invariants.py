@@ -1,6 +1,5 @@
 """Regression coverage for multi-CA transport and ledger invariants."""
 
-import copy
 import json
 import sqlite3
 import tempfile
@@ -141,11 +140,10 @@ class TestMultiCATransportInvariants(unittest.IsolatedAsyncioTestCase):
 
         The task-epoch gate in orchestrator_server (`if _task_meta and
         _task_epoch_raw is not None`) resolves `_task_meta` from
-        `_task_checkpoint_load` (SQLite `task_checkpoints` table), NOT from the
-        write-only `_TASK_EPOCH_STATE` / `_ACTIVE_TASK_EPOCHS` cache. Seeding the
-        cache leaves `_task_meta == {}`, so the gate is skipped and a stale epoch
-        passes. We must write the authoritative row instead, via the same
-        commit-ordered updater production code uses.
+        `_task_checkpoint_load` (SQLite `task_checkpoints` table), which is the
+        sole store of task checkpoints. We must write that authoritative row via
+        the same commit-ordered updater production code uses; nothing else the
+        gate reads is populated by any in-memory shortcut.
         """
         def _updater(_previous):
             return (
@@ -173,9 +171,6 @@ class TestMultiCATransportInvariants(unittest.IsolatedAsyncioTestCase):
         canonical_sid = "canonical-" + uuid.uuid4().hex
         legacy_sid = "legacy-" + uuid.uuid4().hex
         old_db = None
-        # `_task_metadata` mirrors each loaded checkpoint into this write-only
-        # cache; snapshot/restore it so seeding never leaks into sibling tests.
-        old_state = copy.deepcopy(orchestrator_server._TASK_EPOCH_STATE)
         code_tools.TOOL_MAP[tool_name] = probe
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             old_db = self._use_temp_sessions_db(tmp)
@@ -214,8 +209,6 @@ class TestMultiCATransportInvariants(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(calls, ["called", "called"])
             finally:
                 self._restore_sessions_db(old_db)
-                orchestrator_server._TASK_EPOCH_STATE.clear()
-                orchestrator_server._TASK_EPOCH_STATE.update(old_state)
                 code_tools.TOOL_MAP.pop(tool_name, None)
 
     async def test_mutation_event_uses_session_captured_at_admission(self):

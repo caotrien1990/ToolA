@@ -6880,7 +6880,6 @@ async def begin_task(session_id: str, prompt: str, agent_id: str = "", max_chars
     try: checkpoint, response, wrote = await asyncio.to_thread(_task_checkpoint_update, session_key, update)
     except TaskCheckpointStorageError as exc:
         return _json_error(str(exc), error_name=exc.error_name, retryable=False, ca_next_action="repair_task_checkpoint_storage_then_retry")
-    if wrote: _ACTIVE_TASK_EPOCHS[session_key] = dict(checkpoint)
     return response
 
 
@@ -6894,7 +6893,6 @@ async def get_task_checkpoint(session_id: str) -> str:
     if not checkpoint:
         return _json_error("No active task checkpoint", error_name="TASK_CHECKPOINT_MISSING",
                            ca_next_action="call_begin_task")
-    _ACTIVE_TASK_EPOCHS[session_key] = dict(checkpoint)
     public = {k: v for k, v in checkpoint.items()
               if k not in {"owner_capability_sha256", "owner_identity_id", "owner_claim_sha256",
                            "owner_claim_status", "owner_claim_expires_at"}}
@@ -6904,8 +6902,6 @@ async def get_task_checkpoint(session_id: str) -> str:
                               for agent, subtask in public["subtasks"].items()}
     return json.dumps({**public, "ok": True}, ensure_ascii=False)
 
-
-_ACTIVE_TASK_EPOCHS: dict = {}
 
 # ─── V15 R42 NEW TOOLS: bootstrap_session, check_server_path, wait_for_idle, parse_log_section, workflow_goto_step ─────
 
@@ -6998,7 +6994,6 @@ async def bootstrap_session(project_path: str = "", session_id: str = "",
                            ca_next_action="repair_task_checkpoint_storage_then_retry")
     if claim_error: return claim_error
     checkpoint = checkpoint or {}
-    if wrote_claim: _ACTIVE_TASK_EPOCHS[session_key] = dict(checkpoint)
     # Health (cheap)
     health = {
         "service": "project-orchestrator",
@@ -10609,9 +10604,16 @@ def _console_python() -> str:
     return str(console) if console.is_file() else sys.executable
 def _py_error_ruff_hint(error_msg: str) -> tuple[bool, list[str], str]:
     """Map Ruff diagnostics to safe-fix preview guidance without applying fixes."""
+    # campaign-1608 (A51): strip ANSI SGR escapes before matching (layer 2 /
+    # defence in depth). Rule detection is case-insensitive, so an escape's
+    # trailing letter (every SGR ends in one, e.g. \x1b[31m) satisfies the
+    # (?<![A-Z0-9]) lookbehind and suppresses EVERY match -- both the loop below
+    # and the I\d{3} isort branch. Layer 1 passes "--color never" so the ruff we
+    # spawn never colours; this guards any future/foreign call site that forgets.
+    text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", str(error_msg or ""))
     supported_rules = ("F401", "F841", "E711", "E712", "E731", "E401", "E402", "F541", "RUF100")
-    matched = [rule for rule in supported_rules if re.search(rf"(?<![A-Z0-9]){rule}(?![A-Z0-9])", str(error_msg or ""), re.IGNORECASE)]
-    if re.search(r"(?<![A-Z0-9])I\d{3}(?![A-Z0-9])", str(error_msg or ""), re.IGNORECASE):
+    matched = [rule for rule in supported_rules if re.search(rf"(?<![A-Z0-9]){rule}(?![A-Z0-9])", text, re.IGNORECASE)]
+    if re.search(r"(?<![A-Z0-9])I\d{3}(?![A-Z0-9])", text, re.IGNORECASE):
         matched.append("I")
     matched = list(dict.fromkeys(matched))
     if not matched:
@@ -10699,7 +10701,19 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                 #      EMPTY. Measured live, not inferred. pytest never reproduces
                 #      this because pytest runs under python.exe.
                 # _console_python() fixes (2); "-m ruff" fixes (1).
-                r = subprocess.run([_console_python(), "-m", "ruff", "check", str(fp), "--select", "F401,F841,E711,E712,E731,E401,E402,F541,RUF100,I", "--output-format", "concise"], capture_output=True, text=True, timeout=10)
+                # campaign-1608 (A51): "--color never". A caller carrying
+                # FORCE_COLOR (the harness sets =3; so does most CI) makes ruff
+                # wrap output in ANSI SGR escapes even into a pipe. Every SGR ends
+                # in a letter (\x1b[31m), and _py_error_ruff_hint matches rules
+                # case-insensitively, so that trailing 'm' satisfies the negative
+                # lookbehind and NO rule ever matches -- ruff_rules_matched goes []
+                # and ruff_fix_applicable goes false while lint_warning still lists
+                # every finding: a silent slide toward "clean". --color never wins
+                # over FORCE_COLOR; NO_COLOR does not (proven in graph/tools.py's
+                # _RUFF_FIX_OVERRIDES), so the flag -- not an env scrub -- is the
+                # authoritative fix and matches the house idiom. Parser also strips
+                # ANSI now (layer 2) in case a future call site forgets this flag.
+                r = subprocess.run([_console_python(), "-m", "ruff", "check", str(fp), "--select", "F401,F841,E711,E712,E731,E401,E402,F541,RUF100,I", "--output-format", "concise", "--color", "never"], capture_output=True, text=True, timeout=10)
                 if r.returncode == 1:
                     err = (r.stdout or "").strip() or (r.stderr or "").strip()
                     if not err:

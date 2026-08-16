@@ -1272,7 +1272,6 @@ _ARG_ALIASES.setdefault('write_fix_html', {}).update({'replacement': 'new_conten
 # V15 R19 — Harmless-ignore registry: fields CA commonly passes by habit but
 # the target tool doesn't need. Silently dropped in _normalize_body() instead
 # of returning 400 UNSUPPORTED_FIELD. Reduces CA retry overhead from R8 audit.
-_TASK_EPOCH_STATE = ct._ACTIVE_TASK_EPOCHS
 _DUPLICATE_FAILURE_STATE: dict = {}
 # P12 (campaign-1608): fingerprint -> first_seen wall-clock, so a replayed
 # DUPLICATE_RETRY_BLOCKED verdict can disclose cached:true + how stale it is.
@@ -1589,8 +1588,6 @@ def _task_metadata(session_id: str = "", agent_id: str = "") -> dict:
     if not session_id:
         return {}
     current = ct._task_checkpoint_load(str(session_id)) or {}
-    if current:
-        _TASK_EPOCH_STATE[str(session_id)] = dict(current)
     if agent_id:
         current = (current.get("subtasks") or {}).get(str(agent_id)) or current
     return {k: current[k] for k in ("task_epoch", "prompt_hash") if k in current}
@@ -1601,8 +1598,6 @@ def _task_checkpoint_for_identity(session_id: str, agent_id: str) -> dict:
     if not session_id or not agent_id:
         return {}
     current = ct._task_checkpoint_load(str(session_id)) or {}
-    if current:
-        _TASK_EPOCH_STATE[str(session_id)] = dict(current)
     if str(current.get("agent_id") or "") == str(agent_id):
         return current
     subtask = (current.get("subtasks") or {}).get(str(agent_id)) or {}

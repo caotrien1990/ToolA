@@ -32,12 +32,10 @@ import tools_v15
 def _issued_checkpoint(session_key: str, checkpoint: dict):
     """Seed a checkpoint where the dispatcher actually reads it.
 
-    `_TASK_EPOCH_STATE` is a cache, not the source of truth:
-    `_task_checkpoint_for_identity` calls `_task_checkpoint_load` (SQLite) and
-    OVERWRITES the dict entry with whatever the DB says. Seeding only the dict
-    therefore yields `issued = {}` and a 403 SESSION_OWNERSHIP_REQUIRED long
-    before the branch the test is aiming at -- so the two tests using it were
-    red for a reason unrelated to what they assert.
+    `_task_checkpoint_for_identity` calls `_task_checkpoint_load` (SQLite), the
+    sole source of truth for task checkpoints. Seeding anything else yields
+    `issued = {}` and a 403 SESSION_OWNERSHIP_REQUIRED long before the branch
+    the test is aiming at, so the seed must land in SQLite.
 
     Writing to SQLite means isolating the DB, or the seed lands in the real
     .orchestrator_cache/sessions.db. `store._SESSIONS_DB` alone is not enough:
@@ -48,17 +46,12 @@ def _issued_checkpoint(session_key: str, checkpoint: dict):
 
     tmpdir = Path(tempfile.mkdtemp(prefix="ckpt_"))
     db = tmpdir / "sessions.db"
-    saved_state = dict(orchestrator_server._TASK_EPOCH_STATE)
     with mock.patch.object(code_tools, "_SESSIONS_DB", db), \
             mock.patch.object(_store, "_SESSIONS_DB", db):
         code_tools._sync_session_db_alias()
         _store._init_session_db()
         _store._task_checkpoint_save(session_key, checkpoint)
-        try:
-            yield
-        finally:
-            orchestrator_server._TASK_EPOCH_STATE.clear()
-            orchestrator_server._TASK_EPOCH_STATE.update(saved_state)
+        yield
     code_tools._sync_session_db_alias()
     shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -3504,9 +3497,7 @@ class TestMetadataConsistency(unittest.IsolatedAsyncioTestCase):
         name = 'record_error_resolution'
         handler = mock.AsyncMock(return_value=json.dumps({'ok': True}))
         original = code_tools.TOOL_MAP[name]
-        saved = dict(orchestrator_server._TASK_EPOCH_STATE)
         code_tools.TOOL_MAP[name] = handler
-        orchestrator_server._TASK_EPOCH_STATE.pop('spoofed-host', None)
         try:
             request = make_mocked_request(
                 'POST', '/api/call/' + name,
@@ -3520,8 +3511,6 @@ class TestMetadataConsistency(unittest.IsolatedAsyncioTestCase):
             response = await orchestrator_server._dispatch_tool_call_request(request)
         finally:
             code_tools.TOOL_MAP[name] = original
-            orchestrator_server._TASK_EPOCH_STATE.clear()
-            orchestrator_server._TASK_EPOCH_STATE.update(saved)
         self.assertEqual(response.status, 403)
         self.assertEqual(json.loads(response.text)['error_name'], 'SESSION_OWNERSHIP_REQUIRED')
         handler.assert_not_awaited()

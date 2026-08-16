@@ -10,9 +10,7 @@ import orchestrator_server as srv
 
 class TaskEpochGuardTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        srv._TASK_EPOCH_STATE.clear()
         srv._DUPLICATE_FAILURE_STATE.clear()
-        ct._ACTIVE_TASK_EPOCHS.clear()
         # CAN-054: checkpoints persist in SQLite across runs now — purge the
         # fixed test session keys so epoch assertions stay deterministic.
         try:
@@ -126,7 +124,6 @@ class TaskEpochGuardTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_mutating_call_requires_epoch_when_checkpoint_exists(self):
         current = await self._begin_root("session-b", "current task", "ope")
-        srv._TASK_EPOCH_STATE["session-b"] = dict(ct._ACTIVE_TASK_EPOCHS["session-b"])
         response = await srv.dispatch_tool_call(
             "write_new_file", {"session_id": "session-b", "project_path": "D:/tmp",
                                "file_path": "a.txt", "content": "x"}, transport="mcp"
@@ -145,7 +142,6 @@ class TaskEpochGuardTests(unittest.IsolatedAsyncioTestCase):
             session_id="session-a", prompt="worker task", agent_id="ope",
             delegation_capability=delegated["delegation_capability"],
         ))
-        srv._TASK_EPOCH_STATE["session-a"] = dict(ct._ACTIVE_TASK_EPOCHS["session-a"])
         self.assertNotEqual(root["prompt_hash"], subtask["prompt_hash"])
         response = await srv.dispatch_tool_call(
             "workflow_list", {"session_id": "session-a", "task_epoch": subtask["task_epoch"],
@@ -162,7 +158,7 @@ class TaskEpochGuardTests(unittest.IsolatedAsyncioTestCase):
         ))
 
         self.assertEqual(attack["error_name"], "TASK_OWNER_REQUIRED")
-        self.assertNotIn("session-a", ct._ACTIVE_TASK_EPOCHS)
+        self.assertIsNone(ct._task_checkpoint_load("session-a"))
 
     async def test_existing_root_rejects_agent_mismatch_even_with_owner_capability(self):
         root = await self._begin_root("session-a", "root task", "hermes")
@@ -173,7 +169,7 @@ class TaskEpochGuardTests(unittest.IsolatedAsyncioTestCase):
         ))
 
         self.assertEqual(attack["error_name"], "TASK_OWNER_MISMATCH")
-        self.assertEqual(ct._ACTIVE_TASK_EPOCHS["session-a"]["agent_id"], "hermes")
+        self.assertEqual(ct._task_checkpoint_load("session-a")["agent_id"], "hermes")
 
     async def test_same_agent_cannot_renew_without_owner_capability(self):
         root = await self._begin_root("session-a", "root task", "hermes")
@@ -184,7 +180,7 @@ class TaskEpochGuardTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("owner_capability", root)
         self.assertEqual(unauthenticated["error_name"], "TASK_OWNER_MISMATCH")
-        self.assertEqual(ct._ACTIVE_TASK_EPOCHS["session-a"]["task_epoch"], 1)
+        self.assertEqual(ct._task_checkpoint_load("session-a")["task_epoch"], 1)
 
     async def test_first_claim_cannot_issue_delegation(self):
         result = json.loads(await ct.begin_task(
@@ -193,7 +189,7 @@ class TaskEpochGuardTests(unittest.IsolatedAsyncioTestCase):
         ))
 
         self.assertEqual(result["error_name"], "TASK_OWNER_REQUIRED")
-        self.assertNotIn("session-a", ct._ACTIVE_TASK_EPOCHS)
+        self.assertIsNone(ct._task_checkpoint_load("session-a"))
 
     async def test_checkpoint_read_redacts_authority_internals(self):
         root = await self._begin_root("session-a", "root", "hermes")
@@ -224,14 +220,14 @@ class TaskEpochGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first["owner_capability"], repeated["owner_capability"])
         self.assertTrue(repeated["owner_claim_recovered"])
         self.assertEqual(attacker["error_name"], "OWNER_CLAIM_ID_REQUIRED")
-        self.assertEqual(ct._ACTIVE_TASK_EPOCHS["session-a"]["agent_id"], "hermes")
+        self.assertEqual(ct._task_checkpoint_load("session-a")["agent_id"], "hermes")
 
     async def test_lost_bootstrap_response_retry_same_claim_recovers_capability(self):
         claim_id = "lost-response-0123456789abcdef0123456789abcdef"
         first = json.loads(await ct.bootstrap_session(
             session_id="session-a", agent_id="hermes", owner_claim_id=claim_id,
         ))
-        stored_commitment = ct._ACTIVE_TASK_EPOCHS["session-a"]["owner_capability_sha256"]
+        stored_commitment = ct._task_checkpoint_load("session-a")["owner_capability_sha256"]
         recovered = json.loads(await ct.bootstrap_session(
             session_id="session-a", agent_id="hermes", owner_claim_id=claim_id,
         ))
@@ -266,7 +262,7 @@ class TaskEpochGuardTests(unittest.IsolatedAsyncioTestCase):
         ))
 
         self.assertEqual(competing["error_name"], "TASK_OWNER_MISMATCH")
-        self.assertEqual(ct._ACTIVE_TASK_EPOCHS["session-a"]["task_epoch"], 1)
+        self.assertEqual(ct._task_checkpoint_load("session-a")["task_epoch"], 1)
         self.assertIn("owner_capability", root)
 
     async def test_expired_pending_claim_allows_new_claim(self):
@@ -314,39 +310,39 @@ class TaskEpochGuardTests(unittest.IsolatedAsyncioTestCase):
         ))
 
         self.assertEqual(missing["error_name"], "OWNER_CLAIM_ID_REQUIRED")
-        self.assertNotIn("session-a", ct._ACTIVE_TASK_EPOCHS)
         self.assertIsNone(ct._task_checkpoint_load("session-a"))
 
     async def test_wrong_claim_is_rejected_without_mutating_checkpoint(self):
         claim_id = "right-claim-0123456789abcdef0123456789abcdef"
         await ct.bootstrap_session(session_id="session-a", agent_id="hermes", owner_claim_id=claim_id)
-        before = dict(ct._ACTIVE_TASK_EPOCHS["session-a"])
+        before = dict(ct._task_checkpoint_load("session-a"))
         rejected = json.loads(await ct.bootstrap_session(
             session_id="session-a", agent_id="hermes",
             owner_claim_id="wrong-claim-0123456789abcdef0123456789abcdef",
         ))
         self.assertEqual(rejected["error_name"], "TASK_OWNER_MISMATCH")
-        self.assertEqual(ct._ACTIVE_TASK_EPOCHS["session-a"], before)
+        self.assertEqual(ct._task_checkpoint_load("session-a"), before)
         self.assertNotIn(claim_id, json.dumps(rejected))
 
     async def test_capability_is_bound_to_its_session(self):
         owner_a = await self._begin_root("session-a", "root a", "hermes")
         await self._begin_root("session-b", "root b", "hermes")
-        before_b = dict(ct._ACTIVE_TASK_EPOCHS["session-b"])
+        before_b = dict(ct._task_checkpoint_load("session-b"))
         rejected = json.loads(await ct.begin_task(
             session_id="session-b", prompt="cross-session", agent_id="hermes",
             owner_capability=owner_a["owner_capability"],
         ))
         self.assertEqual(rejected["error_name"], "TASK_OWNER_MISMATCH")
-        self.assertEqual(ct._ACTIVE_TASK_EPOCHS["session-b"], before_b)
+        self.assertEqual(ct._task_checkpoint_load("session-b"), before_b)
 
     async def test_tampered_capability_commitment_fails_closed(self):
         claim_id = "tamper-check-0123456789abcdef0123456789abcdef"
         first = json.loads(await ct.bootstrap_session(
             session_id="session-a", agent_id="hermes", owner_claim_id=claim_id,
         ))
-        ct._ACTIVE_TASK_EPOCHS["session-a"]["owner_capability_sha256"] = "0" * 64
-        ct._task_checkpoint_save("session-a", ct._ACTIVE_TASK_EPOCHS["session-a"])
+        tampered = ct._task_checkpoint_load("session-a")
+        tampered["owner_capability_sha256"] = "0" * 64
+        ct._task_checkpoint_save("session-a", tampered)
         recovered = json.loads(await ct.bootstrap_session(
             session_id="session-a", agent_id="hermes", owner_claim_id=claim_id,
         ))
@@ -394,7 +390,6 @@ class TaskEpochGuardTests(unittest.IsolatedAsyncioTestCase):
             ).hexdigest(),
             "owner_claim_status": "committed",
         }
-        ct._ACTIVE_TASK_EPOCHS["session-a"] = dict(checkpoint)
         ct._task_checkpoint_save("session-a", checkpoint)
 
         readable = json.loads(await ct.bootstrap_session(
@@ -410,16 +405,10 @@ class TaskEpochGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(renewed["task_epoch"], 4)
 
     async def test_mcp_bridge_does_not_mint_mutation_token(self):
-        old_epoch = dict(srv._TASK_EPOCH_STATE)
-        srv._TASK_EPOCH_STATE.clear()
-        try:
-            response = await srv.dispatch_tool_call(
-                "delete_file", {"project_path": "D:/tmp", "file_path": "missing.txt"},
-                transport="mcp",
-            )
-        finally:
-            srv._TASK_EPOCH_STATE.clear()
-            srv._TASK_EPOCH_STATE.update(old_epoch)
+        response = await srv.dispatch_tool_call(
+            "delete_file", {"project_path": "D:/tmp", "file_path": "missing.txt"},
+            transport="mcp",
+        )
         payload = json.loads(response.text)
         self.assertNotEqual(payload.get("error_name"), "MUTATION_TOKEN_REQUIRED")
         self.assertNotEqual(payload.get("error_name"), "STALE_TASK_EPOCH")

@@ -20,14 +20,10 @@ class S2ContractTests(unittest.IsolatedAsyncioTestCase):
         ct._SESSIONS_DB = Path(self.tempdir.name) / "sessions.db"
         ct._sync_session_db_alias()
         ct._init_session_db()
-        ct._ACTIVE_TASK_EPOCHS.clear()
-        srv._TASK_EPOCH_STATE.clear()
 
     async def asyncTearDown(self):
         ct._SESSIONS_DB = self.old_db
         ct._sync_session_db_alias()
-        ct._ACTIVE_TASK_EPOCHS.clear()
-        srv._TASK_EPOCH_STATE.clear()
         self.tempdir.cleanup()
 
     async def begin(self, session_id, prompt, max_chars=2000):
@@ -75,7 +71,6 @@ class S2ContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["prompt_hash"], ct._task_prompt_hash(canonical))
         self.assertNotEqual(result["prompt_hash"], ct._task_prompt_hash(corrupted))
         self.assertNotEqual(result["prompt_hash"], ct._task_prompt_hash(result["active_task"]))
-        srv._TASK_EPOCH_STATE["hash"] = dict(ct._ACTIVE_TASK_EPOCHS["hash"])
         headers = {
             "X-Session-Id": "hash",
             "X-Task-Epoch": str(result["task_epoch"]),

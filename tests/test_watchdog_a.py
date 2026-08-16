@@ -153,18 +153,86 @@ class TestWatchdogDecisionLoop(unittest.TestCase):
 
     def test_livez_ok_short_circuits_restart_even_when_down(self):
         """Classification 'down' but livez_ok True must never reach the restart
-        channel: liveness is proven, so main exits 0 on the first sample."""
+        channel: liveness is proven, so main exits 0 on the FIRST sample and
+        stops probing/sleeping. The early return at line ~149 is what makes it
+        stop early; the final gate would also decline the restart, so only the
+        probe/sleep call counts prove the short-circuit actually fired."""
         busy = self._busy_health()
         samples = [("down", "v1", "livez_alive;health_down", busy, True)] * watchdog_a.FAILURE_THRESHOLD
         with tempfile.TemporaryDirectory() as tempdir:
             state_path, log_path = self._paths(tempdir)
             with mock.patch.object(watchdog_a, "STATE", state_path), \
                  mock.patch.object(watchdog_a, "LOG", log_path), \
-                 mock.patch.object(watchdog_a, "probe", side_effect=samples), \
-                 mock.patch.object(watchdog_a.time, "sleep"), \
+                 mock.patch.object(watchdog_a, "probe", mock.Mock(side_effect=samples)) as probe_mock, \
+                 mock.patch.object(watchdog_a.time, "sleep") as sleep_mock, \
                  mock.patch.object(watchdog_a, "log"), \
                  mock.patch.object(watchdog_a.subprocess, "run") as run:
                 rc = watchdog_a.main()
+        self.assertEqual(rc, 0)
+        run.assert_not_called()
+        # Short-circuit: the loop must exit on the first sample, not grind
+        # through all FAILURE_THRESHOLD attempts (which would probe 3x + sleep 2x).
+        self.assertEqual(probe_mock.call_count, 1)
+        sleep_mock.assert_not_called()
+
+    def test_generation_change_resets_inactivity(self):
+        """When [A] restarts mid-loop the generation flips to a new value. The
+        reset branch (line ~123) must wipe accrued inactivity so the watchdog
+        does NOT restart the freshly-restarted daemon on the old instance's
+        stalled samples. Health dict (and thus fingerprint) is held constant so
+        that ONLY the generation-reset branch can wipe the accrual."""
+        busy = self._busy_health()
+        # Seed as stalled at generation "v1"; tuple generation then flips to "v2"
+        # on the 2nd/3rd samples while the health dict stays identical.
+        samples = [
+            ("down", "v1", "livez_down;health_down", busy, False),
+            ("down", "v2", "livez_down;health_down", busy, False),
+            ("down", "v2", "livez_down;health_down", busy, False),
+        ]
+        self.assertEqual(len(samples), watchdog_a.FAILURE_THRESHOLD)
+        with tempfile.TemporaryDirectory() as tempdir:
+            state_path, log_path = self._paths(tempdir)
+            with mock.patch.object(watchdog_a, "STATE", state_path), \
+                 mock.patch.object(watchdog_a, "LOG", log_path):
+                seed_fp = watchdog_a._progress_fingerprint(busy)
+                Path(state_path).write_text(json.dumps({
+                    "generation": "v1",
+                    "last_fp": seed_fp,
+                    "last_progress_at": time.time() - 10_000,
+                    "inactive_samples": 0,
+                }), encoding="utf-8")
+                with mock.patch.object(watchdog_a, "probe", side_effect=samples), \
+                     mock.patch.object(watchdog_a.time, "sleep"), \
+                     mock.patch.object(watchdog_a, "log"), \
+                     mock.patch.object(watchdog_a.subprocess, "run") as run:
+                    rc = watchdog_a.main()
+        self.assertEqual(rc, 0)
+        run.assert_not_called()
+
+    def test_idle_executor_with_stale_progress_does_not_restart(self):
+        """An idle executor (active=0, queued=0) that has not 'progressed' for a
+        long time must NOT be treated as stalled: there is simply no work. The
+        `busy` guard (line ~128) is what prevents the false restart. Seed a
+        matching fingerprint + ancient last_progress_at so `progressed` is False;
+        only the busy conjunct keeps `inactive` from accruing."""
+        idle = _health(lanes=[{"active": 0, "queued": 0, "capacity": 4}])
+        samples = [("down", "v1", "livez_down;health_down", idle, False)] * watchdog_a.FAILURE_THRESHOLD
+        with tempfile.TemporaryDirectory() as tempdir:
+            state_path, log_path = self._paths(tempdir)
+            with mock.patch.object(watchdog_a, "STATE", state_path), \
+                 mock.patch.object(watchdog_a, "LOG", log_path):
+                seed_fp = watchdog_a._progress_fingerprint(idle)
+                Path(state_path).write_text(json.dumps({
+                    "generation": "v1",
+                    "last_fp": seed_fp,
+                    "last_progress_at": time.time() - 10_000,
+                    "inactive_samples": 0,
+                }), encoding="utf-8")
+                with mock.patch.object(watchdog_a, "probe", side_effect=samples), \
+                     mock.patch.object(watchdog_a.time, "sleep"), \
+                     mock.patch.object(watchdog_a, "log"), \
+                     mock.patch.object(watchdog_a.subprocess, "run") as run:
+                    rc = watchdog_a.main()
         self.assertEqual(rc, 0)
         run.assert_not_called()
 

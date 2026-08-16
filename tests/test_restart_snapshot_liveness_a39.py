@@ -38,6 +38,7 @@ These tests pin BEHAVIOUR, not implementation, and fail on the pre-fix code:
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import time
 import unittest
@@ -444,6 +445,59 @@ class CliHelperReturnCode(unittest.TestCase):
         rc = self._run_main({"ok": False, "error_name": "RESTART_GUARD_BLOCKED",
                              "reasons": ["COUNCIL_SLOT_ACTIVE", "COUNCIL_PID_ALIVE"]})
         self.assertEqual(rc, 3)
+
+
+class LivezPortIsConfigurable(unittest.TestCase):
+    """A39 follow-up: build_guard / main must resolve the /livez port from
+    ORCHESTRATOR_LIVEZ_PORT (default 8084) instead of a hardcoded 8084, so a
+    moved liveness port is probed correctly. tools_v15 relies on this because it
+    calls build_guard WITHOUT passing livez_url."""
+
+    def _root(self, tmp):
+        root = Path(tmp)
+        (root / ".council").mkdir()
+        cache = root / ".orchestrator_cache"
+        cache.mkdir()
+        (root / ".council" / "runtime_state.json").write_text(json.dumps({}), encoding="utf-8")
+        return root, cache / "restart_busy_snapshot.json"
+
+    def test_resolve_livez_url_uses_env_port(self):
+        with mock.patch.dict(os.environ, {"ORCHESTRATOR_LIVEZ_PORT": "19084"}):
+            self.assertEqual(
+                restart_control_service._resolve_livez_url(),
+                "http://127.0.0.1:19084/livez",
+            )
+
+    def test_resolve_livez_url_defaults_to_8084(self):
+        env = {k: v for k, v in os.environ.items() if k != "ORCHESTRATOR_LIVEZ_PORT"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            self.assertEqual(
+                restart_control_service._resolve_livez_url(),
+                "http://127.0.0.1:8084/livez",
+            )
+
+    def test_build_guard_probes_env_port_when_livez_url_omitted(self):
+        # This is the tools_v15 code path: build_guard(...) with no livez_url.
+        # A stale snapshot forces the /livez probe, so we can capture the URL the
+        # guard actually builds and assert it carries the non-default port.
+        seen = {}
+
+        def _capture(url, *a, **k):
+            seen["url"] = url
+            return _livez(True, "gen-a")
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.dict(os.environ, {"ORCHESTRATOR_LIVEZ_PORT": "19084"}):
+            root, snap_path = self._root(tmp)
+            snap_path.write_text(
+                json.dumps({"captured_at": time.time() - 10.0, "busy": False,
+                            "generation": "gen-a"}),
+                encoding="utf-8",
+            )
+            with mock.patch.object(restart_control_service.time, "sleep", lambda _s: None), \
+                    mock.patch.object(restart_control_service, "_probe_livez", _capture):
+                build_guard(root, "gen-a", max_age=3.0)()
+        self.assertEqual(seen.get("url"), "http://127.0.0.1:19084/livez")
 
 
 if __name__ == "__main__":

@@ -22,11 +22,11 @@ Two notes on how this was arbitrated, because the first diagnosis was wrong.
 
 1. The room's audit read the two line numbers and concluded 400. The existing
    contract test at ``test_orchestrator_server_contract.py`` actually fails at
-   **403 SESSION_OWNERSHIP_REQUIRED**, never reaching S4: it seeds
-   ``_TASK_EPOCH_STATE``, but ``_task_checkpoint_for_identity`` reads SQLite via
-   ``_task_checkpoint_load`` and *overwrites* that dict from the (empty) DB. So
-   the 400 was a plausible-but-unproven claim standing on a red test that is red
-   for an unrelated reason.
+   **403 SESSION_OWNERSHIP_REQUIRED**, never reaching S4: it seeded an in-memory
+   cache, but ``_task_checkpoint_for_identity`` reads SQLite via
+   ``_task_checkpoint_load``, the sole store. So the 400 was a
+   plausible-but-unproven claim standing on a red test that is red for an
+   unrelated reason.
 2. Seeding the AUTHORITATIVE store (``store._task_checkpoint_save``) instead
    satisfies the 403 gate, the request reaches S4, and the 400 reproduces
    exactly. Both defects are real and independent; this file pins the S4 one,
@@ -93,8 +93,8 @@ class CallingContextRoundTripTests(unittest.IsolatedAsyncioTestCase):
         code_tools._sync_session_db_alias()
         store._init_session_db()
 
-        # The AUTHORITATIVE checkpoint store, not _TASK_EPOCH_STATE -- see the
-        # module docstring; seeding the in-memory dict alone stops at 403.
+        # The AUTHORITATIVE checkpoint store (SQLite) is the sole source of
+        # truth -- see the module docstring.
         store._task_checkpoint_save(_SESSION, {
             "agent_id": "Ope",
             "task_epoch": 4,
@@ -116,7 +116,6 @@ class CallingContextRoundTripTests(unittest.IsolatedAsyncioTestCase):
     def tearDown(self) -> None:
         code_tools.TOOL_MAP[_TOOL] = self._original
         orchestrator_server._DUPLICATE_FAILURE_STATE.clear()
-        orchestrator_server._TASK_EPOCH_STATE.pop(_SESSION, None)
         for patch in reversed(self._patches):
             patch.stop()
         code_tools._sync_session_db_alias()

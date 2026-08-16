@@ -499,10 +499,20 @@ def _snapshot_publisher_alive(
     return True
 
 
+def _resolve_livez_url() -> str:
+    # A39: the liveness port is configurable via ORCHESTRATOR_LIVEZ_PORT (default
+    # 8084). Resolve it the same way watchdog_a.py / orchestrator_server.py do so a
+    # moved port does not leave the restart controller probing a dead port.
+    port = int(os.environ.get("ORCHESTRATOR_LIVEZ_PORT", "8084"))
+    return f"http://127.0.0.1:{port}/livez"
+
+
 def build_guard(root: Path, expected_generation: str, expected_request_id: str = "",
                 max_age: float = 3.0, allow_force: bool = False,
                 dispatch_stale_seconds: float = 600.0,
-                livez_url: str = "http://127.0.0.1:8084/livez") -> Callable[[], GuardDecision]:
+                livez_url: str | None = None) -> Callable[[], GuardDecision]:
+    if livez_url is None:
+        livez_url = _resolve_livez_url()
     snapshot_path = root / ".orchestrator_cache" / "restart_busy_snapshot.json"
     slots_path = root / ".council" / "runtime_state.json"
     broker_path = root / ".council" / "broker_filtered.jsonl"
@@ -842,7 +852,7 @@ def main() -> int:
     secret_status = load_control_secret(secret_path)
     if not secret_status.usable or secret_status.secret is None:
         raise SystemExit("restart controller secret ACL is not usable")
-    livez_url = "http://127.0.0.1:8084/livez"
+    livez_url = _resolve_livez_url()
     health_url = "http://127.0.0.1:8083/health"
     console_python = Path(sys.executable)
     if console_python.stem.lower() == "pythonw":
