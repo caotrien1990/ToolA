@@ -6667,10 +6667,27 @@ def _council_worker_model(agent: str, default_provider: str = "", default_model:
                     return prov, model
                 entry = data.get(agent)
                 if isinstance(entry, dict):
-                    if str(entry.get("provider") or "").strip():
-                        prov = str(entry["provider"]).strip()
-                    if str(entry.get("model") or "").strip():
-                        model = str(entry["model"]).strip()
+                    # A31: the override file is UI/hand-editable and bypasses the write
+                    # tool's _council_validate_model_setting gate, so a garbage entry
+                    # (e.g. provider 'agent247' / model 'agent/...') would otherwise be
+                    # applied verbatim and silently destroy a working config default.
+                    # Validate the candidate the SAME way the write path does; on
+                    # rejection keep the incoming defaults instead of the garbage.
+                    # (PROVIDER_MODEL_MISMATCH is only a warning -> ok:True, so a valid
+                    # curated model is never discarded merely for a provider label.)
+                    cand_prov = str(entry.get("provider") or "").strip() or prov
+                    cand_model = str(entry.get("model") or "").strip() or model
+                    checked = _council_validate_model_setting(
+                        agent, cand_prov, cand_model)
+                    if checked.get("ok"):
+                        prov, model = cand_prov, cand_model
+                    else:
+                        logger.warning(
+                            "[council] worker_models.json override rejected for "
+                            "%s (%s: provider=%r model=%r); falling back to config "
+                            "default provider=%r model=%r",
+                            agent, checked.get("error_name", "INVALID"),
+                            cand_prov, cand_model, prov, model)
                 elif entry is not None:
                     logger.warning(f"[council] worker_models.json ignored for {agent}: entry is not an object")
     except Exception as exc:
@@ -10100,6 +10117,12 @@ async def handle_council_send_async(request):
     if not _council_worker_model_configured(target, str(body.get("model", "")).strip()):
         return web.json_response({"ok": False, "error_name": "WORKER_MODEL_NOT_SET", "agent": target,
                                   "ca_next_action": "council_worker_model set+get before dispatch"}, status=400, headers=cors)
+    # A32(a): resolve the model BEFORE the ack so an unavailable model fails loud here
+    # instead of being swallowed inside _bg (WORKER_MODEL_NOT_SET only tests non-emptiness).
+    _preack_error = _council_preack_resolution_error(
+        target, text, str(body.get("provider", "")).strip(), str(body.get("model", "")).strip())
+    if _preack_error:
+        return web.json_response(_preack_error, status=400, headers=cors)
     # Trusted internal relay: its caller records acceptance only after this ack.
     record_here = not (request.headers.get("X-Orchestrator-Token") == EXPECTED_TOKEN
                        and body.get("record_ledger") is False)
@@ -10109,13 +10132,20 @@ async def handle_council_send_async(request):
             return web.json_response(duplicate, status=409, headers=cors)
     async def _bg():
         try:
-            await _council_enqueue_or_run(
+            _result = await _council_enqueue_or_run(
                 target, sender, text, timeout_sec, "broker", "", queue=True,
                 queue_wait_timeout_sec=timeout_sec,
                 provider=str(body.get("provider", "")).strip(), model=str(body.get("model", "")).strip(),
                 request_id=_req_id)
+            # A32(b): the callee RETURNS terminal errors instead of raising, so the
+            # except below never saw them; inspect + persist a terminal record.
+            _council_record_async_result(
+                _req_id, sender, target, timeout_sec, _result)
         except Exception as exc:
-            logger.error("async council dispatch to %s from %s failed: %r", target, sender, exc, exc_info=True)
+            logger.error("async council dispatch to %s from %s failed: %r",
+                         target, sender, exc, exc_info=True)
+            _council_reject_dispatch(_req_id, sender, target, timeout_sec,
+                                     f"{type(exc).__name__}: {exc}")
     _t = asyncio.create_task(_bg())
     _COUNCIL_PENDING_TASKS.add(_t)
     _t.add_done_callback(_COUNCIL_PENDING_TASKS.discard)
@@ -10237,6 +10267,13 @@ async def council_message_async(sender="user", to=None, text=None, body_file=Non
         queue_wait = int(queue_wait_timeout_sec or 0) or wait_sec
     except (TypeError, ValueError):
         queue_wait = wait_sec
+    # A32(a): resolve BEFORE the ack (and before the accepted ledger row) so an
+    # unavailable model fails loud instead of vanishing inside _bg.
+    _preack_error = _council_preack_resolution_error(
+        target, text_val, str(provider or "").strip(), str(model or "").strip(),
+        fallback_policy, allowed_fallbacks)
+    if _preack_error:
+        return json.dumps(_preack_error, ensure_ascii=False)
     # P2 correlation id; active reuse is rejected before a second task is scheduled.
     _req_id = _council_sanitize_request_id(request_id) or f"run-{uuid.uuid4()}"
     duplicate = _council_accept_dispatch(_req_id, sender_val, target, queue_wait)
@@ -10245,15 +10282,20 @@ async def council_message_async(sender="user", to=None, text=None, body_file=Non
 
     async def _bg():
         try:
-            await _council_enqueue_or_run(
+            _result = await _council_enqueue_or_run(
                 target, sender_val, text_val, wait_sec, "broker", "",
                 queue=True, queue_wait_timeout_sec=queue_wait,
                 provider=str(provider or "").strip(), model=str(model or "").strip(),
                 request_id=_req_id, fallback_policy=fallback_policy,
                 allowed_fallbacks=allowed_fallbacks)
+            # A32(b): callee returns terminal errors instead of raising — record them.
+            _council_record_async_result(
+                _req_id, sender_val, target, queue_wait, _result)
         except Exception as exc:
             logger.error("async council dispatch (HTTP tool) to %s from %s failed: %r",
                          target, sender_val, exc, exc_info=True)
+            _council_reject_dispatch(_req_id, sender_val, target, queue_wait,
+                                     f"{type(exc).__name__}: {exc}")
 
     _task = asyncio.create_task(_bg())
     _COUNCIL_PENDING_TASKS.add(_task)
@@ -10400,6 +10442,44 @@ def _council_reject_dispatch(dispatch_id: str, sender: str, target: str,
     with _COUNCIL_DISPATCH_LEDGER_LOCK:
         _council_dispatch_record(dispatch_id, sender, target, dispatch_id,
                                  queue_wait_timeout_sec, state="rejected", error=error)
+
+
+def _council_preack_resolution_error(target: str, text: str, provider: str, model: str,
+                                     fallback_policy: str = "none",
+                                     allowed_fallbacks=None) -> dict | None:
+    """A32(a): resolve the model BEFORE an async ack. Return a real error dict when the
+    resolution is unavailable (so a caller never gets ok:true for work that can never
+    run), else None. _council_worker_model_configured only tests non-emptiness, so a
+    bad id like agent/bogus-model passes it; _council_resolve_model is the gate that
+    _council_enqueue_or_run already uses, run early enough to block the ack."""
+    metadata = _route_parse_dispatch_metadata(str(text or ""))
+    resolution = _council_resolve_model(
+        target, str(provider or "").strip(), str(model or "").strip(),
+        str(fallback_policy or "none"), allowed_fallbacks,
+        metadata.get("risk_level", "unknown"), metadata.get("dev_level", "unknown"))
+    if resolution.resolution_status == "unavailable":
+        return {"ok": False, "error_name": "COUNCIL_MODEL_UNAVAILABLE",
+                "error": "requested model is unavailable", "agent": target,
+                **resolution.as_dict()}
+    return None
+
+
+def _council_record_async_result(dispatch_id: str, sender: str, target: str,
+                                 queue_wait_timeout_sec: int, result) -> None:
+    """A32(b): the async _bg fan-out paths used to discard _council_enqueue_or_run's
+    return value. That function RETURNS (does not raise) on terminal statuses
+    (COUNCIL_MODEL_UNAVAILABLE / AGENT_BUSY / AGENT_QUEUE_FULL / QUEUE_WAIT_TIMEOUT), so
+    the wrapping `except Exception` caught nothing and the failure vanished: no log, no
+    ledger terminal row, forever-'dispatching' in council_status. Inspect the dict and
+    persist a terminal 'rejected' record so the drop is observable (state 'stuck')."""
+    if not isinstance(result, dict) or result.get("ok"):
+        return
+    error_name = str(result.get("error_name") or "ASYNC_DISPATCH_FAILED")
+    error = str(result.get("error") or error_name)
+    _council_reject_dispatch(dispatch_id, sender, target, queue_wait_timeout_sec,
+                             f"{error_name}: {error}")
+    logger.error("async council dispatch %s to %s from %s returned ok:false "
+                 "(%s): %s", dispatch_id, target, sender, error_name, error)
 
 
 def _council_dispatch_files(dispatch_id: str) -> dict:
@@ -10574,7 +10654,24 @@ def _council_dispatch_files(dispatch_id: str) -> dict:
                 ledger.get("state"), ledger.get("error") or "acceptance failed")
         else:
             out["state"] = "dispatching"
-            out["reason"] = "durable accepted (ledger), no runtime yet (restart-gap)"
+            # A32(c): do NOT attribute the gap to a restart without restart evidence
+            # (same invent-a-cause defect as A28-P3). A restart is proven only when the
+            # accepted record was written BEFORE this process booted; otherwise the
+            # runtime simply has not published yet (spawn grace) and there is no cause
+            # to name. Report gap_cause=None + a non-committal reason in that case.
+            _acc_mtime = None
+            try:
+                _acc_mtime = float(ledger.get("mtime") or 0.0) or None
+            except (TypeError, ValueError):
+                _acc_mtime = None
+            if _acc_mtime is not None and _acc_mtime < SERVER_STARTED_AT:
+                out["gap_cause"] = "restart"
+                out["reason"] = ("durable accepted (ledger) predates this boot, "
+                                 "no runtime yet (restart-gap)")
+            else:
+                out["gap_cause"] = None
+                out["reason"] = ("durable accepted (ledger), no runtime yet "
+                                 "(spawn grace)")
     elif has_message:
         # Broker message exists (the worker spawn log marker) but no runtime/reply yet.
         # Recent -> still dispatching; old beyond the monitor stall limit -> stuck (dispatch_state_lost).
@@ -10624,6 +10721,8 @@ def _council_derive_state(dispatch_id: str) -> dict:
         },
         "last_edit_ts": files.get("last_edit_ts"),
         "last_artifact_mtime": files.get("last_artifact_mtime"),
+        # A32(c): named only when there is evidence for the cause (restart), else None.
+        "gap_cause": files.get("gap_cause"),
     }
     if not files.get("has_evidence"):
         out["ok"] = False
@@ -11713,18 +11812,33 @@ async def handle_council_send(request):
     # fan-out / CLI workers): ?async=1 acks immediately with a request_id; the reply
     # lands in .council/broker_filtered.jsonl. Default stays sync (backward compat).
     if _council_bool_param(request.query.get("async") or request.query.get("async_dispatch"), False):
+        # A32(a): resolve the model BEFORE the ASYNC_DISPATCHED ack so an unavailable
+        # model fails loud here rather than vanishing inside _bg_send.
+        _preack_error = _council_preack_resolution_error(target, text, provider, model)
+        if _preack_error:
+            _pe_name = _preack_error["error_name"]
+            _pe_msg = _preack_error.get("error", "")
+            return web.Response(text=f"ERROR {_pe_name}: {_pe_msg}",
+                                status=400, headers=ptxt)
         _async_req_id = f"run-{uuid.uuid4()}"
+        _async_sender = sender[:40]
 
         async def _bg_send():
             try:
-                await _council_enqueue_or_run(
-                    target, sender[:40], text, timeout_sec, "broker", "",
+                _result = await _council_enqueue_or_run(
+                    target, _async_sender, text, timeout_sec, "broker", "",
                     queue=True, queue_wait_timeout_sec=timeout_sec,
                     provider=provider, model=model, request_id=_async_req_id,
                 )
+                # A32(b): callee returns terminal errors, not raises — record them.
+                _council_record_async_result(
+                    _async_req_id, _async_sender, target, timeout_sec, _result)
             except Exception as exc:
                 logger.error("async GET council dispatch to %s from %s failed: %r",
                              target, sender, exc, exc_info=True)
+                _council_reject_dispatch(
+                    _async_req_id, _async_sender, target, timeout_sec,
+                    f"{type(exc).__name__}: {exc}")
 
         _t_send = asyncio.create_task(_bg_send())
         _COUNCIL_PENDING_TASKS.add(_t_send)
