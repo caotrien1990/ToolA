@@ -4,6 +4,7 @@ import contextlib
 import hashlib
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -25,6 +26,41 @@ from aiohttp.test_utils import make_mocked_request
 import orchestrator_server
 import code_tools
 import tools_v15
+
+
+@contextlib.contextmanager
+def _issued_checkpoint(session_key: str, checkpoint: dict):
+    """Seed a checkpoint where the dispatcher actually reads it.
+
+    `_TASK_EPOCH_STATE` is a cache, not the source of truth:
+    `_task_checkpoint_for_identity` calls `_task_checkpoint_load` (SQLite) and
+    OVERWRITES the dict entry with whatever the DB says. Seeding only the dict
+    therefore yields `issued = {}` and a 403 SESSION_OWNERSHIP_REQUIRED long
+    before the branch the test is aiming at -- so the two tests using it were
+    red for a reason unrelated to what they assert.
+
+    Writing to SQLite means isolating the DB, or the seed lands in the real
+    .orchestrator_cache/sessions.db. `store._SESSIONS_DB` alone is not enough:
+    every entry point calls `code_tools._sync_session_db_alias()`, which copies
+    `code_tools._SESSIONS_DB` over it. Both must move together.
+    """
+    from orchestrator.session import store as _store
+
+    tmpdir = Path(tempfile.mkdtemp(prefix="ckpt_"))
+    db = tmpdir / "sessions.db"
+    saved_state = dict(orchestrator_server._TASK_EPOCH_STATE)
+    with mock.patch.object(code_tools, "_SESSIONS_DB", db), \
+            mock.patch.object(_store, "_SESSIONS_DB", db):
+        code_tools._sync_session_db_alias()
+        _store._init_session_db()
+        _store._task_checkpoint_save(session_key, checkpoint)
+        try:
+            yield
+        finally:
+            orchestrator_server._TASK_EPOCH_STATE.clear()
+            orchestrator_server._TASK_EPOCH_STATE.update(saved_state)
+    code_tools._sync_session_db_alias()
+    shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 async def _capture_mcp_open_session_call(agent_id: str, env_agent=None):
@@ -3425,32 +3461,29 @@ class TestMetadataConsistency(unittest.IsolatedAsyncioTestCase):
             })
             return json.dumps({"ok": True, "resolution_event_id": 42})
         original = code_tools.TOOL_MAP[name]
-        saved = dict(orchestrator_server._TASK_EPOCH_STATE)
         code_tools.TOOL_MAP[name] = handler
-        orchestrator_server._TASK_EPOCH_STATE['host-session'] = {
-            'agent_id': 'Ope', 'task_epoch': 4, 'prompt_hash': 'issued-hash',
-            'owner_capability_sha256': hashlib.sha256(b'issued-capability').hexdigest(),
-        }
         try:
-            request = make_mocked_request(
-                'POST', '/api/call/' + name,
-                headers={
-                    'X-Session-Id': 'host-session', 'X-Agent-Id': 'Ope',
-                    'X-Task-Epoch': '4', 'X-Prompt-Hash': 'issued-hash',
-                    'X-Task-Capability': 'issued-capability',
-                },
-                payload=_make_body_reader({
-                    'target_session_id': 'session-exact',
-                    'resolves_event_id': 7,
-                    'resolution_kind': 'recovered',
-                }),
-                match_info={'tool_name': name},
-            )
-            response = await orchestrator_server._dispatch_tool_call_request(request)
+            with _issued_checkpoint('host-session', {
+                'agent_id': 'Ope', 'task_epoch': 4, 'prompt_hash': 'issued-hash',
+                'owner_capability_sha256': hashlib.sha256(b'issued-capability').hexdigest(),
+            }):
+                request = make_mocked_request(
+                    'POST', '/api/call/' + name,
+                    headers={
+                        'X-Session-Id': 'host-session', 'X-Agent-Id': 'Ope',
+                        'X-Task-Epoch': '4', 'X-Prompt-Hash': 'issued-hash',
+                        'X-Task-Capability': 'issued-capability',
+                    },
+                    payload=_make_body_reader({
+                        'target_session_id': 'session-exact',
+                        'resolves_event_id': 7,
+                        'resolution_kind': 'recovered',
+                    }),
+                    match_info={'tool_name': name},
+                )
+                response = await orchestrator_server._dispatch_tool_call_request(request)
         finally:
             code_tools.TOOL_MAP[name] = original
-            orchestrator_server._TASK_EPOCH_STATE.clear()
-            orchestrator_server._TASK_EPOCH_STATE.update(saved)
         self.assertEqual(response.status, 200)
         self.assertEqual(json.loads(response.text)['resolution_event_id'], 42)
         self.assertEqual(calls, [{"target_session_id": "session-exact",
@@ -3492,33 +3525,31 @@ class TestMetadataConsistency(unittest.IsolatedAsyncioTestCase):
         name = 'record_error_resolution'
         handler = mock.AsyncMock(return_value=json.dumps({'ok': True}))
         original = code_tools.TOOL_MAP[name]
-        saved = dict(orchestrator_server._TASK_EPOCH_STATE)
         code_tools.TOOL_MAP[name] = handler
-        orchestrator_server._TASK_EPOCH_STATE['host-session'] = {
-            'agent_id': 'Ope', 'task_epoch': 4, 'prompt_hash': 'issued-hash',
-            'owner_capability_sha256': hashlib.sha256(b'issued-capability').hexdigest(),
-        }
         responses = []
         try:
-            for epoch, prompt_hash in (('3', 'issued-hash'), ('4', 'stale-hash')):
-                request = make_mocked_request(
-                    'POST', '/api/call/' + name,
-                    headers={
-                        'X-Session-Id': 'host-session', 'X-Agent-Id': 'Ope',
-                        'X-Task-Epoch': epoch, 'X-Prompt-Hash': prompt_hash,
-                        'X-Task-Capability': 'issued-capability',
-                    },
-                    payload=_make_body_reader({
-                        'target_session_id': 'host-session', 'resolves_event_id': 7,
-                        'resolution_kind': 'recovered',
-                    }),
-                    match_info={'tool_name': name},
-                )
-                responses.append(await orchestrator_server._dispatch_tool_call_request(request))
+            with _issued_checkpoint('host-session', {
+                'agent_id': 'Ope', 'task_epoch': 4, 'prompt_hash': 'issued-hash',
+                'owner_capability_sha256': hashlib.sha256(b'issued-capability').hexdigest(),
+            }):
+                for epoch, prompt_hash in (('3', 'issued-hash'), ('4', 'stale-hash')):
+                    request = make_mocked_request(
+                        'POST', '/api/call/' + name,
+                        headers={
+                            'X-Session-Id': 'host-session', 'X-Agent-Id': 'Ope',
+                            'X-Task-Epoch': epoch, 'X-Prompt-Hash': prompt_hash,
+                            'X-Task-Capability': 'issued-capability',
+                        },
+                        payload=_make_body_reader({
+                            'target_session_id': 'host-session', 'resolves_event_id': 7,
+                            'resolution_kind': 'recovered',
+                        }),
+                        match_info={'tool_name': name},
+                    )
+                    responses.append(
+                        await orchestrator_server._dispatch_tool_call_request(request))
         finally:
             code_tools.TOOL_MAP[name] = original
-            orchestrator_server._TASK_EPOCH_STATE.clear()
-            orchestrator_server._TASK_EPOCH_STATE.update(saved)
         self.assertEqual([response.status for response in responses], [409, 409])
         self.assertEqual(
             [json.loads(response.text)['error_name'] for response in responses],

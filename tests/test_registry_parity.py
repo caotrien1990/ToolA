@@ -96,6 +96,14 @@ class TestRegistryExamples(unittest.TestCase):
             params = _params(name)
             props = params.get("properties") or {}
             example = srv._payload_example_for_tool(name, srv._schema_for_tool(name))
+            # B6: tools whose schema has no properties get a schema_ref POINTER
+            # (not a payload) so the caller fetches the live schema instead of
+            # being told "no arguments". It is deliberately NOT a declared field;
+            # it must appear alone and must not be validated as one.
+            if "schema_ref" in example:
+                if set(example) != {"schema_ref"} or props:
+                    failures.append((name, "schema_ref", "sentinel_not_alone_or_props_present"))
+                continue
             extra = set(example) - set(props)
             missing = set(params.get("required") or []) - set(example)
             if extra or missing:

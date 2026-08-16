@@ -63,17 +63,93 @@ async def start_app(app: str = "", command: str = "", project_path: str = "",
         return _err(f"{type(exc).__name__}: {exc}", error_name="START_APP_ERROR")
 
 
-async def stop_app(pid: int = 0, process_name: str = "", force: bool = True, **_kw) -> str:
+async def stop_app(pid: int = 0, process_name: str = "", force: bool = True,
+                   include_children: bool = True, **_kw) -> str:
     """T2 MUTATING (process): stop an app started with start_app by PID or process
-    name. Reuses kill_process infra. Refuses when neither pid nor process_name is
-    given."""
+    name, INCLUDING its descendants. Reuses kill_process infra. Refuses when
+    neither pid nor process_name is given.
+
+    B5 live real-test (2026-08-16): start_app launches through `cmd /c <command>`,
+    so the `spawned_pid` it hands back is the cmd.exe wrapper, never the app. Plain
+    kill_process kills exactly that one PID -- measured: stop_app answered
+    ok:true / killed:[cmd.exe] while the server it was asked to stop kept serving
+    200 on its port. So the documented start_app -> stop_app pair silently failed
+    for EVERY app, and the false ok is worse than an error: a caller reading it
+    stops looking. Killing the descendants first (children before parent, so an
+    orphan cannot be re-parented away mid-sweep) is what makes the contract true.
+    """
     try:
         if not pid and not process_name:
             return _err("pid or process_name is required", error_name="MISSING_REQUIRED_FIELD",
-                        accepted_fields=["pid", "process_name", "force"],
+                        accepted_fields=["pid", "process_name", "force", "include_children"],
                         payload_example={"pid": 1234, "force": True})
         from orchestrator.session.process import kill_process as _kp
-        return await _kp(pid=int(pid or 0), process_name=process_name or "", force=bool(force))
+
+        descendants: list[int] = []
+        if include_children and pid:
+            try:
+                import psutil
+                descendants = [child.pid
+                               for child in psutil.Process(int(pid)).children(recursive=True)]
+                # Deepest first: kill leaves before their parents.
+                descendants.reverse()
+            except Exception:
+                descendants = []
+
+        children_result = []
+        for child_pid in descendants:
+            try:
+                children_result.append(json.loads(
+                    await _kp(pid=int(child_pid), process_name="", force=bool(force))))
+            except Exception as exc:
+                children_result.append({"ok": False, "pid": child_pid, "error": str(exc)})
+
+        parent = json.loads(
+            await _kp(pid=int(pid or 0), process_name=process_name or "", force=bool(force)))
+        if not children_result:
+            return json.dumps(parent, ensure_ascii=False)
+
+        # A PID that is already gone is the OUTCOME WE WANTED, not a failure. Killing
+        # a tree races with it: measured live, killing the python child made cmd.exe
+        # exit on its own, so the next kill in the sweep answered PROCESS_KILL_FAILED
+        # "PID not found" and the whole call reported ok:false even though the app was
+        # verifiably stopped (port closed). Counting that as a failure would train a
+        # caller to ignore ok, which is how the original silent-success bug survived.
+        def _split(entries):
+            real, vanished = [], []
+            for item in entries or []:
+                text = str((item or {}).get("error") or "")
+                (vanished if "not found" in text.lower() else real).append(item)
+            return real, vanished
+
+        killed = list(parent.get("killed") or [])
+        failed, vanished = _split(parent.get("failed"))
+        # kill_process reports a missing PID as a TOP-LEVEL error, not as a `failed`
+        # entry (psutil.NoSuchProcess escapes to its outer except), so both the
+        # parent and each child need this second shape handled -- the live run hit
+        # it on the parent, which is why `failed` alone was not enough.
+        for res in (parent, *children_result):
+            if res is not parent:
+                killed.extend(res.get("killed") or [])
+                child_failed, child_vanished = _split(res.get("failed"))
+                failed.extend(child_failed)
+                vanished.extend(child_vanished)
+            if not res.get("ok") and not (res.get("killed") or res.get("failed")):
+                entry = {"pid": res.get("pid"), "error": res.get("error") or "kill failed"}
+                (vanished if "not found" in str(entry["error"]).lower()
+                 else failed).append(entry)
+        parent.update({
+            "ok": bool(killed or vanished) and not failed,
+            "killed": killed, "failed": failed,
+            "killed_count": len(killed), "failed_count": len(failed),
+            "already_exited": vanished, "already_exited_count": len(vanished),
+            "children_killed": len(descendants),
+            "include_children": True,
+        })
+        if not failed:
+            parent["error_name"] = ""
+            parent.pop("error", None)
+        return json.dumps(parent, ensure_ascii=False)
     except Exception as exc:
         return _err(f"{type(exc).__name__}: {exc}", error_name="STOP_APP_ERROR")
 
@@ -184,10 +260,11 @@ UPGRADE_P5_SCHEMA_SPECS = [
       "keep_alive": {"type": "boolean", "default": True, "description": "Detach and keep running in background."}},
      []),
     ("stop_app",
-     "T2 MUTATING (process): stop an app by PID or process name. Reuses kill_process. Refuses when neither pid nor process_name is given. Mutating tool.",
+     "T2 MUTATING (process): stop an app by PID or process name, including its descendants. Reuses kill_process. Refuses when neither pid nor process_name is given. Mutating tool.",
      {"pid": {"type": "integer", "default": 0, "description": "Process PID to stop."},
       "process_name": {"type": "string", "default": "", "description": "Process name to stop (all matching)."},
-      "force": {"type": "boolean", "default": True, "description": "Force kill (vs graceful terminate)."}},
+      "force": {"type": "boolean", "default": True, "description": "Force kill (vs graceful terminate)."},
+      "include_children": {"type": "boolean", "default": True, "description": "Also kill descendants. Required for apps started by start_app, whose spawned_pid is the cmd.exe wrapper, not the app itself."}},
      []),
     ("http_check",
      "T2 READ/PROBE: bounded HTTP request against a url. Returns status, elapsed, content-type and a bounded body snippet. ok=false unless status matches expect_status and text_contains (when given) appears in the body.",
@@ -205,6 +282,13 @@ UPGRADE_P5_SCHEMA_SPECS = [
       "viewport_h": {"type": "integer", "default": 800, "description": "Viewport height."},
       "headless": {"type": "boolean", "default": True, "description": "Run headless (no visible window)."},
       "wait_for": {"type": "string", "default": "load", "enum": ["load", "domcontentloaded", "networkidle", "commit"], "description": "Navigation wait condition."},
-      "timeout_ms": {"type": "integer", "default": 20000, "description": "Navigation timeout (ms)."}},
+      "timeout_ms": {"type": "integer", "default": 20000, "description": "Navigation timeout (ms)."},
+      # B5 live real-test (2026-08-16): mutation_scope "process" makes the dispatcher
+      # resolve a project root, so a call with no project_path answers 400
+      # PROJECT_PATH_REQUIRED -- and the caller could not comply, because the field was
+      # not declared here and S4 then rejected it as UNSUPPORTED_FIELD. A dead-end
+      # recovery hint, the same shape as B1/P11b. open_browser_page, the tool this one
+      # wraps, declares project_path for exactly this reason.
+      "project_path": {"type": "string", "default": "", "description": "Project root for session/scope resolution (required by the process-scope gate)."}},
      ["url"]),
 ]

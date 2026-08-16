@@ -604,11 +604,16 @@ _NO_SESSION_REQUIRED = {
     # is a Win32 ShowWindow op on a window — no project. Same PROJECT_PATH_REQUIRED
     # catch-22 (surfaced in v6 Step 18). Exempt like desktop_app_focus.
     'desktop_window_state',
-    # V15 R96 (R2 fix): stop_app kills by pid/process_name (no project_path) and is
-    # already TOKEN-gated in code_tools (the correct gate for a process-kill with no
-    # project). Without the session exemption the schema has no project_path to satisfy
-    # the gate, producing the PROJECT_PATH_REQUIRED vs UNSUPPORTED_FIELD catch-22 that
-    # code_tools.py:13363-13366 already documented but never applied server-side.
+    # V15 R96 (R2 fix) + B5 (2026-08-16): stop_app kills by pid/process_name and has
+    # no project_path in its schema, so requiring a project session is a real catch-22
+    # (PROJECT_PATH_REQUIRED vs UNSUPPORTED_FIELD) -> keep the session exemption.
+    # NOTE: the original R96 claim that stop_app was "already TOKEN-gated in code_tools"
+    # was FALSE (the P5 registration block, incl. its token gate, was lost in the
+    # 0071641 squash). B5 restored it: start_app + stop_app are now in
+    # code_tools.PROTECTED_TOOL_NAMES and TOKEN_REQUIRED_TOOLS (they wrap
+    # run_project_command / kill_process in-process, which bypass the HTTP token gate).
+    # The session exemption below is the session gate only; the token gate is enforced
+    # in code_tools, so this exemption does NOT weaken the token requirement.
     'stop_app',
     # V15 R93: native dialog tools mutate global Win32 UI state, not project files.
     # Their schemas intentionally have no project_path, so requiring a project
@@ -3269,7 +3274,11 @@ def _generated_payload_example(tool_name: str, fn_schema: dict) -> dict:
     props = params.get("properties") or {}
     required = list(params.get("required") or [])
     if not props:
-        return {}
+        # B6: an empty {} reads like "this tool takes no arguments", which may be
+        # false (schema empty/unbuilt). Point the caller at the live schema
+        # endpoint via a NON-payload-shaped key: an HTTP verb+path cannot be
+        # mistaken for a literal request body echoed back as corrected_payload.
+        return {"schema_ref": f"GET /api/tools/{tool_name}/schema"}
 
     def sample(field: str, spec: dict):
         if spec.get("enum"):
@@ -3855,7 +3864,11 @@ def _council_active_from_config():
 
 
 _COUNCIL_AGENTS, _COUNCIL_AGENT_LABELS = _council_active_from_config()
-_COUNCIL_DASHBOARD_AGENT_ORDER = ("clau", "codo", "gro", "hermes", "ope", "kilo")
+# Dashboard render order. Must cover exactly set(_COUNCIL_AGENTS); aligned to
+# .council/council_config.json roster_order (the SOT) so adding an agent there
+# is the only edit needed. test_dashboard_order_and_payload_example_b3_b6.py
+# asserts the set equality and fails loudly if this drifts (B3: pic was missing).
+_COUNCIL_DASHBOARD_AGENT_ORDER = ("clau", "ope", "codo", "kilo", "pic", "hermes", "gro")
 
 
 def _council_dashboard_agents() -> tuple[str, ...]:
@@ -12440,6 +12453,11 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
         )
     except ct.TaskCheckpointStorageError as exc:
         return _task_checkpoint_storage_response(exc, cors)
+    # B1: bind BEFORE the branch. Only record_error_resolution takes the branch that
+    # assigns it, but the re-attach site after S4 runs for EVERY tool, so leaving it
+    # unbound raised UnboundLocalError on all 219 others -- the same trap the P11b
+    # `reseeded` initializer exists to prevent.
+    _validated_calling_context = None
     if tool_name == "record_error_resolution":
         # X-Session-Id alone is caller-controlled. Grant resolution authority only
         # after all host checkpoint fields match a server-issued checkpoint for the
@@ -12483,7 +12501,20 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
                 "applied": False,
                 "ca_next_action": "reload_active_task_checkpoint",
             }, status=409, headers=cors)
-        body["calling_context"] = {
+        # B1: the trusted identity must NOT be written into `body` here. S4 (below)
+        # validates `body` against the registry properties, and calling_context is
+        # deliberately absent from them -- the schema description states transport
+        # fields are excluded, and a contract test asserts it. Injecting it here made
+        # the dispatcher answer 400 UNSUPPORTED_FIELD naming a field the caller never
+        # sent, with ca_next_action "remove_unsupported_field" -- a hint the caller
+        # cannot act on, so the retry is identical and escalates to 409
+        # DUPLICATE_RETRY_BLOCKED. Every happy-path HTTP call was dead.
+        # Stash it across S4 instead (same pattern as _normalized_paths / _compat_meta
+        # below) and re-attach after the public payload has been accepted. The security
+        # property is unchanged and is what forces the stash: a caller-supplied
+        # calling_context is still seen by S4 as an unsupported field and rejected, so
+        # only this server-validated value can ever reach the handler.
+        _validated_calling_context = {
             "validated": True,
             "session_id": _hdr_sid,
             "agent_id": _task_agent_id,
@@ -12794,6 +12825,15 @@ accepted_fields=sorted(accepted_fields),
     _aliases_applied = _apply_alias_mode_default_post_s4(
         tool_name, body, _aliases_applied
     )
+
+    # B1: re-attach the server-validated identity now that S4 has accepted the
+    # public payload. Deliberately AFTER S4 and never before it -- see the stash
+    # site above. `_validated_calling_context` is bound only on the branch where
+    # every host checkpoint field matched a server-issued checkpoint, so a
+    # caller-supplied calling_context cannot reach the handler: S4 has already
+    # rejected the request as UNSUPPORTED_FIELD by the time this line runs.
+    if _validated_calling_context is not None:
+        body["calling_context"] = _validated_calling_context
 
     required_params = _required_field_names(tool_name)
     missing_required = [name for name in required_params if name not in body]

@@ -234,6 +234,11 @@ PROTECTED_TOOL_NAMES = {
     # CAN-011/R29 acceptance: process-scope + TOKEN_REQUIRED runners must also be
     # origin/session-protected (scope_process_but_not_protected was false drift).
     "run_ps1_script", "run_node_script",
+    # B5: P5 app-lifecycle wrappers. start_app -> run_project_command (arbitrary
+    # shell), stop_app -> kill_process, browser_smoke_test -> open_browser_page
+    # (spawns Chromium). In-process calls bypass the HTTP token gate, so these
+    # wrappers must be origin/session-protected like what they wrap.
+    "start_app", "stop_app", "browser_smoke_test",
 }
 
 # Token gate (X-Orchestrator-Token) is DECOUPLED from mutating/session semantics.
@@ -255,6 +260,9 @@ TOKEN_REQUIRED_TOOLS = {
     "cep_deploy",                     # mirrors to LIVE
     "restart_orchestrator_via_task",  # restarts [A]
     "restart_orchestrator_via_bat",   # restarts [A] via canonical [A:S] script
+    # B5: start_app wraps run_project_command (arbitrary shell) and stop_app wraps
+    # kill_process, both in-process (HTTP token gate bypassed) -> inherit the gate.
+    "start_app", "stop_app",
 }
 
 # V15 R28 — Risk-scope metadata (per-tool). Surfaces in /api/tools so CA can
@@ -297,6 +305,10 @@ _MUTATION_SCOPE_MAP = {
     "write_transaction": "file_artifact",  # atomic multi-file write
     "evaluate_js": "runtime_ui",            # executes JS in page
     "open_browser_page": "process",         # spawns Chromium
+    # B5: P5 process/shell wrappers mirror run_project_command / kill_process /
+    # open_browser_page. http_check is a stdlib HTTP probe -> no mutation scope.
+    "start_app": "process", "stop_app": "process",
+    "browser_smoke_test": "process",
     "desktop_app_focus": "runtime_ui",      # focuses window via CDP/Win32
     "desktop_window_state": "runtime_ui",   # Win32 ShowWindow state mutation
     "session_audit_summary": "audit",       # session aggregation read+mark
@@ -14116,6 +14128,39 @@ try:
 except Exception as _p4_exc:
     import logging as _logging_p4
     _logging_p4.warning(f"P4 soft-data tools not loaded: {_p4_exc}")
+
+# B5 (2026-08-16) - restore Phase 5 app-lifecycle / runtime-verification tools that
+# were live on 2026-08-07 (OPE_REALTEST_A_TOOLS_20260807) but lost their registration
+# block in the 0071641 squash snapshot. Source module tools_upgrade_p5.py: start_app /
+# stop_app / http_check / browser_smoke_test. Phase T2 for all four (the module
+# docstrings + schema descriptions declare T2, incl. "T2 READ/PROBE (CDP)" for
+# browser_smoke_test). Own try/except so a P5 import failure degrades ONLY P5.
+# SECURITY: gating lives in PROTECTED_TOOL_NAMES / TOKEN_REQUIRED_TOOLS /
+# _MUTATION_SCOPE_MAP above (start_app -> run_project_command, stop_app ->
+# kill_process are in-process calls that bypass the HTTP token gate, so the wrappers
+# inherit the gate of what they wrap; browser_smoke_test follows open_browser_page).
+try:
+    import tools_upgrade_p5 as _p5
+    _P5_FUNCS = {
+        "start_app": _p5.start_app,
+        "stop_app": _p5.stop_app,
+        "http_check": _p5.http_check,
+        "browser_smoke_test": _p5.browser_smoke_test,
+    }
+    TOOL_MAP.update(_P5_FUNCS)
+    TOOL_PHASES.update({_p5_name: "T2" for _p5_name in _P5_FUNCS})
+    _P5_SCHEMAS = [
+        {"type": "function", "function": {
+            "name": _p5_n, "description": _p5_d,
+            "parameters": {"type": "object", "properties": _p5_props,
+                           "required": _p5_req},
+        }}
+        for _p5_n, _p5_d, _p5_props, _p5_req in _p5.UPGRADE_P5_SCHEMA_SPECS
+    ]
+    TOOL_SCHEMAS = TOOL_SCHEMAS + _P5_SCHEMAS
+except Exception as _p5_exc:
+    import logging as _logging_p5
+    _logging_p5.warning(f"P5 app-lifecycle tools not loaded: {_p5_exc}")
 
 # V15 R47 (2026-08-12) - soft_data_reconcile as a native T1 read-only tool. Same engine
 # as scripts/soft_data_reconcile.py: cross-layer tool-surface overlap/bloat/conflict report
