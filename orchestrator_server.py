@@ -3181,6 +3181,19 @@ def _retry_sequence(tool_name: str, error_name: str, body: dict | None) -> list[
             {"action": "verify path/permissions per error detail"},
             {"action": "do not retry unchanged; report if persists"},
         ]
+    if error_name == "SESSION_STORE_CONTENTION":
+        # A40 leftover: the payload already said retryable=True and
+        # ca_next_action="retry_after_short_backoff", but this mapper had no
+        # branch, so the SAME payload also carried retry_sequence=[] -- two
+        # fields answering "should I retry?" with opposite answers, and the
+        # empty one is the machine-readable one CA follows. Measured before the
+        # fix: retryable=True next to retry_sequence=[].
+        # The write did NOT commit and the payload is unchanged-safe, so the
+        # correct sequence is literally "wait, then send the same call again".
+        return [
+            {"action": "back off ~250-1000ms; the session write queue was busy and the write did not commit"},
+            {"tool": tool_name, "payload": body, "note": "retry the identical payload once the queue drains"},
+        ]
     return []
 
 
@@ -3821,6 +3834,15 @@ def _session_contention_error_payload(tool_name: str, exc: BaseException,
     result["ca_guidance"] = _ca_guidance(
         tool_name, str(exc), body if isinstance(body, dict) else {},
         result["error_name"])
+    # A40 leftover: this hand-built payload skipped retry_sequence entirely,
+    # while the sibling path (a tool that RETURNS _json_error instead of
+    # raising) goes through the dispatcher's setdefault block and does carry it.
+    # Same error_name, same retryable=True, two different contracts depending
+    # on whether the tool caught its own exception -- so CA's retry behavior
+    # depended on an implementation detail of the handler. Measured before the
+    # fix: the raise path had NO retry_sequence key at all.
+    result["retry_sequence"] = _retry_sequence(
+        tool_name, result["error_name"], body if isinstance(body, dict) else {})
     try:
         result["phase"] = ct._phase_for_error_name(result["error_name"])
     except Exception:

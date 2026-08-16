@@ -73,8 +73,25 @@ def is_retryable_stale_block(reasons: Iterable[str]) -> bool:
 
 
 def describe_blocking_guards(reasons: Iterable[str]) -> tuple[dict[str, object], ...]:
-    """Return stable, actionable metadata for every blocking guard reason."""
+    """Return stable, actionable metadata for every blocking guard reason.
+
+    A39 leftover / "two sources of truth": `retryable` used to be `name in stale`,
+    i.e. a byte-for-byte duplicate of `is_stale` under a name that promises
+    something else. On a MIXED set like ["BUSY_SNAPSHOT_STALE",
+    "IN_FLIGHT_WORKERS_ACTIVE"] that produced `BUSY_SNAPSHOT_STALE.retryable=True`
+    sitting next to the caller's top-level `retryable=False` -- and a client that
+    trusted the per-guard flag would retry a block that is genuinely holding
+    (a live worker), which is the one thing the guard exists to prevent.
+
+    "Should I retry?" is a property of the WHOLE reason set, not of one reason, so
+    it is now answered by the same predicate the callers use
+    (`is_retryable_stale_block`). `is_stale` still carries the per-reason
+    information, so nothing is lost -- the duplicate is simply given its real
+    meaning instead of a misleading one.
+    """
     stale = _STALE_READING_REASONS
+    ordered = tuple(dict.fromkeys(reasons))
+    set_is_retryable = is_retryable_stale_block(ordered)
     clearing = {
         "ORCHESTRATOR_BUSY": "wait for in-flight work to drain",
         "IN_FLIGHT_WORKERS_ACTIVE": "wait for active workers to finish, or force with explicit allow_force",
@@ -89,10 +106,11 @@ def describe_blocking_guards(reasons: Iterable[str]) -> tuple[dict[str, object],
         "name": name,
         "held_by": "restart guard state",
         "is_stale": name in stale,
-        # A39: stale *readings* are cleared by re-reading (retry), so advertise it.
-        "retryable": name in stale,
+        # A39 leftover: agrees with the caller's top-level flag by construction.
+        # False as soon as ANY live-busy reason is present, even on the stale row.
+        "retryable": set_is_retryable,
         "how_to_clear": clearing.get(name, "reload guard state after clearing the condition"),
-    } for name in dict.fromkeys(reasons))
+    } for name in ordered)
 
 
 def _coerce_ts(value: object) -> float | None:

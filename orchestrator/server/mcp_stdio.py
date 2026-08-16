@@ -118,6 +118,37 @@ def _mcp_add_generation(text: str, generation) -> str:
     if not isinstance(payload, dict):
         return text
     if isinstance(generation, dict):
+        if generation.get("source") == "daemon":
+            # A43-P1: the daemon stamp is authoritative and MUST win.
+            # dispatch_tool_call (orchestrator_server.py) pre-stamps the payload
+            # with THIS (MCP) process's SERVER_GENERATION via setdefault, so by
+            # the time the wrapper runs ``generation`` already carries the MCP
+            # stamp. A plain setdefault here would leave that MCP stamp in place
+            # while ``generation_source`` proudly says "daemon" -- two adjacent
+            # fields telling two different stories, the wrong one asserting.
+            # So replace it, but only when the existing value is the MCP's own
+            # local stamp (the dispatch auto-stamp): a generation a tool set
+            # deliberately to something else is still respected.
+            daemon_gen = generation.get("generation")
+            local_gen = generation.get("local_generation")
+            # `daemon_gen` in the tuple: a payload that ALREADY carries the daemon
+            # stamp agrees with the probe, so it is a daemon stamp -- labelling it
+            # "tool_supplied" would be a second wrong label in the other direction.
+            if payload.get("generation") in (None, local_gen, daemon_gen):
+                payload["generation"] = daemon_gen
+                payload.setdefault("generation_source", "daemon")
+            else:
+                # A43-P1 follow-up: keeping a tool's deliberate value is right,
+                # but then `generation` is NOT the daemon's and saying "daemon"
+                # would rebuild the exact contradiction this fix removes -- the
+                # wrong field asserting. Name the situation instead, and expose
+                # the daemon stamp under its own key so nothing is hidden.
+                payload.setdefault("generation_source", "tool_supplied")
+                payload.setdefault("daemon_generation", daemon_gen)
+            # Always disclose which code actually executed the call, so a reader
+            # can tell "daemon is at gen X" apart from "MCP host is running Y".
+            payload.setdefault("mcp_generation", local_gen)
+            return json.dumps(payload, ensure_ascii=False)
         payload.setdefault("generation", generation.get("generation"))
         payload.setdefault("generation_source", generation.get("source"))
         if generation.get("probe_error"):

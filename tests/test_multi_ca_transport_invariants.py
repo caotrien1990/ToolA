@@ -30,6 +30,39 @@ class TestMultiCATransportInvariants(unittest.IsolatedAsyncioTestCase):
 
     @staticmethod
     @contextmanager
+    def _registered_tool_schema(tool_name, properties, required=None):
+        """Publish a registry schema for an ad-hoc probe tool.
+
+        S4 field validation derives `allowed_params` from the REGISTRY schema
+        (`_schema_for_tool` -> `ct.TOOL_SCHEMAS`), never from the raw handler
+        signature. A probe registered only in `TOOL_MAP` therefore has empty
+        `properties`, so every field it is called with (e.g. `project_path`)
+        trips UNSUPPORTED_FIELD before the handler runs. Registering the same
+        public contract a real tool would carry lets S4 accept the field and the
+        handler execute. Removed in teardown so the global registry stays clean.
+        """
+        schema = {
+            "type": "function",
+            "function": {
+                "name": tool_name,
+                "parameters": {
+                    "type": "object",
+                    "properties": dict(properties),
+                    "required": list(required or []),
+                },
+            },
+        }
+        code_tools.TOOL_SCHEMAS.append(schema)
+        try:
+            yield schema
+        finally:
+            try:
+                code_tools.TOOL_SCHEMAS.remove(schema)
+            except ValueError:
+                pass
+
+    @staticmethod
+    @contextmanager
     def _use_local_durable_writer(tmpdir):
         previous = orchestrator_server._DURABLE_AUDIT
         code_tools._sync_session_db_alias()
@@ -56,7 +89,9 @@ class TestMultiCATransportInvariants(unittest.IsolatedAsyncioTestCase):
         code_tools.TOOL_MAP[tool_name] = probe
         orchestrator_server._MUTATING_TOOLS.add(tool_name)
         orchestrator_server.AUTO_WRITE_MODE = False
-        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp, \
+                self._registered_tool_schema(
+                    tool_name, {"project_path": {"type": "string"}}):
             old_db = self._use_temp_sessions_db(tmp)
             try:
                 with self._use_local_durable_writer(tmp) as writer:
@@ -100,6 +135,33 @@ class TestMultiCATransportInvariants(unittest.IsolatedAsyncioTestCase):
                 orchestrator_server._MUTATING_TOOLS.discard(tool_name)
                 code_tools.TOOL_MAP.pop(tool_name, None)
 
+    @staticmethod
+    def _seed_task_checkpoint(session_id, task_epoch, prompt_hash):
+        """Seed the SQLite-authoritative checkpoint the epoch gate actually reads.
+
+        The task-epoch gate in orchestrator_server (`if _task_meta and
+        _task_epoch_raw is not None`) resolves `_task_meta` from
+        `_task_checkpoint_load` (SQLite `task_checkpoints` table), NOT from the
+        write-only `_TASK_EPOCH_STATE` / `_ACTIVE_TASK_EPOCHS` cache. Seeding the
+        cache leaves `_task_meta == {}`, so the gate is skipped and a stale epoch
+        passes. We must write the authoritative row instead, via the same
+        commit-ordered updater production code uses.
+        """
+        def _updater(_previous):
+            return (
+                {
+                    "session_key": str(session_id),
+                    "agent_id": "",
+                    "task_epoch": int(task_epoch),
+                    "prompt_hash": str(prompt_hash),
+                },
+                True,
+            )
+        _checkpoint, _result, wrote = code_tools._task_checkpoint_update(
+            str(session_id), _updater
+        )
+        assert wrote, f"failed to seed checkpoint for {session_id!r}"
+
     async def test_canonical_session_id_header_validates_epoch_and_stale_fails_loud(self):
         tool_name = "__multi_ca_epoch_probe_" + uuid.uuid4().hex
         calls = []
@@ -110,50 +172,51 @@ class TestMultiCATransportInvariants(unittest.IsolatedAsyncioTestCase):
 
         canonical_sid = "canonical-" + uuid.uuid4().hex
         legacy_sid = "legacy-" + uuid.uuid4().hex
+        old_db = None
+        # `_task_metadata` mirrors each loaded checkpoint into this write-only
+        # cache; snapshot/restore it so seeding never leaks into sibling tests.
         old_state = copy.deepcopy(orchestrator_server._TASK_EPOCH_STATE)
         code_tools.TOOL_MAP[tool_name] = probe
-        try:
-            orchestrator_server._TASK_EPOCH_STATE.clear()
-            orchestrator_server._TASK_EPOCH_STATE[canonical_sid] = {
-                "task_epoch": 12, "prompt_hash": "canonical-hash",
-            }
-            orchestrator_server._TASK_EPOCH_STATE[legacy_sid] = {
-                "task_epoch": 8, "prompt_hash": "legacy-hash",
-            }
-            canonical = await orchestrator_server.dispatch_tool_call(
-                tool_name, {}, transport="api",
-                request_meta={"headers": {
-                    "X-Session-Id": canonical_sid,
-                    "X-Task-Epoch": "12",
-                    "X-Prompt-Hash": "canonical-hash",
-                }},
-            )
-            legacy = await orchestrator_server.dispatch_tool_call(
-                tool_name, {}, transport="api",
-                request_meta={"headers": {
-                    "X-Task-Session-ID": legacy_sid,
-                    "X-Task-Epoch": "8",
-                    "X-Prompt-Hash": "legacy-hash",
-                }},
-            )
-            stale = await orchestrator_server.dispatch_tool_call(
-                tool_name, {}, transport="api",
-                request_meta={"headers": {
-                    "X-Session-Id": canonical_sid,
-                    "X-Task-Epoch": "11",
-                    "X-Prompt-Hash": "canonical-hash",
-                }},
-            )
-            self.assertTrue(json.loads(canonical.text).get("ok"))
-            self.assertTrue(json.loads(legacy.text).get("ok"))
-            stale_payload = json.loads(stale.text)
-            self.assertFalse(stale_payload.get("ok"), stale_payload)
-            self.assertTrue(stale_payload.get("error_name"), stale_payload)
-            self.assertEqual(calls, ["called", "called"])
-        finally:
-            orchestrator_server._TASK_EPOCH_STATE.clear()
-            orchestrator_server._TASK_EPOCH_STATE.update(old_state)
-            code_tools.TOOL_MAP.pop(tool_name, None)
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            old_db = self._use_temp_sessions_db(tmp)
+            try:
+                self._seed_task_checkpoint(canonical_sid, 12, "canonical-hash")
+                self._seed_task_checkpoint(legacy_sid, 8, "legacy-hash")
+                canonical = await orchestrator_server.dispatch_tool_call(
+                    tool_name, {}, transport="api",
+                    request_meta={"headers": {
+                        "X-Session-Id": canonical_sid,
+                        "X-Task-Epoch": "12",
+                        "X-Prompt-Hash": "canonical-hash",
+                    }},
+                )
+                legacy = await orchestrator_server.dispatch_tool_call(
+                    tool_name, {}, transport="api",
+                    request_meta={"headers": {
+                        "X-Task-Session-ID": legacy_sid,
+                        "X-Task-Epoch": "8",
+                        "X-Prompt-Hash": "legacy-hash",
+                    }},
+                )
+                stale = await orchestrator_server.dispatch_tool_call(
+                    tool_name, {}, transport="api",
+                    request_meta={"headers": {
+                        "X-Session-Id": canonical_sid,
+                        "X-Task-Epoch": "11",
+                        "X-Prompt-Hash": "canonical-hash",
+                    }},
+                )
+                self.assertTrue(json.loads(canonical.text).get("ok"))
+                self.assertTrue(json.loads(legacy.text).get("ok"))
+                stale_payload = json.loads(stale.text)
+                self.assertFalse(stale_payload.get("ok"), stale_payload)
+                self.assertTrue(stale_payload.get("error_name"), stale_payload)
+                self.assertEqual(calls, ["called", "called"])
+            finally:
+                self._restore_sessions_db(old_db)
+                orchestrator_server._TASK_EPOCH_STATE.clear()
+                orchestrator_server._TASK_EPOCH_STATE.update(old_state)
+                code_tools.TOOL_MAP.pop(tool_name, None)
 
     async def test_mutation_event_uses_session_captured_at_admission(self):
         tool_name = "__multi_ca_admission_probe_" + uuid.uuid4().hex
@@ -177,7 +240,9 @@ class TestMultiCATransportInvariants(unittest.IsolatedAsyncioTestCase):
         code_tools.TOOL_MAP[tool_name] = probe
         orchestrator_server._MUTATING_TOOLS.add(tool_name)
         orchestrator_server.AUTO_WRITE_MODE = False
-        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp, \
+                self._registered_tool_schema(
+                    tool_name, {"project_path": {"type": "string"}}):
             old_db = self._use_temp_sessions_db(tmp)
             try:
                 with self._use_local_durable_writer(tmp) as writer:
