@@ -1027,11 +1027,18 @@ def _pmap_lock(project_root) -> "_threading.RLock":
         return lk
 
 
-def generate_project_map(project_path: str) -> dict:
-    project_root = Path(project_path).resolve()
-    if not project_root.exists() or not project_root.is_dir():
-        raise FileNotFoundError(f"Project path not found: {project_path}")
+def _reindex_from_disk(project_root: Path) -> dict:
+    """Authoritative reconcile: rebuild the whole cache tree + INDEX from disk, so both
+    reflect the CURRENT on-disk content — including files changed/deleted OUTSIDE [A]'s
+    write pipeline (native edit / git checkout / IDE). Wiping the non-preserved cache
+    first is what reconciles external DELETES (build_index only retains entries whose
+    cache JSON still exists), while the re-scan re-captures external EDITS. Returns the
+    freshly built INDEX; does NOT touch markdown or the snapshot (callers own those).
 
+    This is O(repo) by nature — that is the intended cost of the periodic full refresh and
+    of generate_project_map, both of which delegate here so the two paths never drift.
+    Runs under the reentrant per-project lock (safe to nest inside generate_project_map)."""
+    project_root = Path(project_root).resolve()
     with _pmap_lock(project_root):
         cache_root = project_root / CACHE_DIR_NAME
         if cache_root.exists():
@@ -1055,7 +1062,16 @@ def generate_project_map(project_path: str) -> dict:
                 if _should_scan_file(fp):
                     write_file_cache(str(fp), str(project_root))
 
-        index = build_index(str(project_root))
+        return build_index(str(project_root))
+
+
+def generate_project_map(project_path: str) -> dict:
+    project_root = Path(project_path).resolve()
+    if not project_root.exists() or not project_root.is_dir():
+        raise FileNotFoundError(f"Project path not found: {project_path}")
+
+    with _pmap_lock(project_root):
+        index = _reindex_from_disk(project_root)
         _write_project_map_markdown(project_root, index)
         _write_project_context_markdown(project_root, index)
         snapshot_id = _publish_search_snapshot(project_root, index)
@@ -1129,15 +1145,25 @@ def update_file_cache(file_path: str, project_root: str) -> dict:
     # to a full rebuild inside update_index_incremental when the INDEX is missing/corrupt.
     removed = bool(metadata.get("skipped") or metadata.get("cache_removed"))
     index = update_index_incremental(resolved_root, metadata, removed=removed)
-    _write_project_map_markdown(resolved_root, index)
-    _write_project_context_markdown(resolved_root, index)
     # Snapshot: name the single changed file so publish_snapshot takes the walk-avoidance
     # fast path (O(changed), not O(repo)); periodically force a full walk to catch external
-    # edits. changed_paths falls back to a full walk automatically if the prior is stale.
+    # edits. A full walk re-captures the on-disk content of EVERY file, so it is only
+    # self-consistent when the INDEX also reflects disk. The incrementally-patched `index`
+    # above only knows about THIS write, so a full walk over it raised INDEX/content hash
+    # mismatch on an unrelated innocent write whenever any external edit existed anywhere in
+    # the repo — a latent crash the periodic refresh was meant to PREVENT, not cause (A30).
+    # Reconcile the INDEX from disk FIRST so the authoritative full walk agrees with the
+    # re-captured content by construction. (rel_for_snapshot is falsy only defensively;
+    # a full walk still needs a disk-consistent INDEX, so reconcile there too.)
     rel_for_snapshot = metadata.get("file")
-    changed_paths = None
-    if rel_for_snapshot and not _snapshot_needs_full_refresh(resolved_root):
+    full_refresh = bool(rel_for_snapshot) and _snapshot_needs_full_refresh(resolved_root)
+    if full_refresh or not rel_for_snapshot:
+        index = _reindex_from_disk(resolved_root)
+        changed_paths = None
+    else:
         changed_paths = {rel_for_snapshot: "removed" if removed else "modified"}
+    _write_project_map_markdown(resolved_root, index)
+    _write_project_context_markdown(resolved_root, index)
     metadata["snapshot_id"] = _publish_search_snapshot(resolved_root, index, changed_paths)
     return metadata
 
