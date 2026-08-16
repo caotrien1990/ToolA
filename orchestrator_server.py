@@ -153,6 +153,19 @@ def _liveness_payload() -> dict:
         "restart_busy_snapshot_alive": bool(
             _RESTART_SNAPSHOT_PUBLISHER and _RESTART_SNAPSHOT_PUBLISHER.alive
         ),
+        # A45: alive is necessary but NOT sufficient. A publisher whose os.replace
+        # is denied (Windows: a concurrent reader holding the target open) is alive
+        # and publishing nothing — captured_at freezes exactly as if the thread had
+        # died, while the field above still reads True and the guard suppresses the
+        # staleness block. Publishing the last cycle's OUTCOME lets the guard tell
+        # "blocked-but-alive, will catch up" (no error, the PH-2 case that must stay
+        # suppressible) from "alive but its writes are not landing" (a real frozen
+        # reading that must keep blocking). Counters lock only — never the publish
+        # lock — so this stays responsive during a block, same as `alive`.
+        "restart_busy_snapshot_publish": (
+            _RESTART_SNAPSHOT_PUBLISHER.publish_health()
+            if _RESTART_SNAPSHOT_PUBLISHER else {}
+        ),
     }
 
 

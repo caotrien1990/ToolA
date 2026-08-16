@@ -96,6 +96,13 @@ class BusySnapshotPublisher:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._publish_lock = threading.Lock()
+        # A45: publish outcome, read by /livez. `last_publish_ok` is the third
+        # state the A39 liveness channel was missing — see `start()`.
+        self._counters_lock = threading.Lock()
+        self.publish_ok = 0
+        self.publish_denied = 0
+        self.last_publish_ok = 0.0
+        self.last_publish_error = ""
 
     def publish_once(self) -> None:
         with self._publish_lock:
@@ -127,7 +134,41 @@ class BusySnapshotPublisher:
                 # sub-2ms. Matches existing ephemeral/atomic-write precedent in the
                 # repo (fileops.common.atomic_write_bytes, storage.fs.atomic_write_text)
                 # while durable writers (session logs, the restart secret) keep fsync.
-                os.replace(temporary, self.path)
+                #
+                # A45: os.replace is retried. On Windows a concurrent reader holding
+                # the target open makes os.replace raise PermissionError (WinError 5)
+                # — measured at 93.7% of attempts under tight-loop readers on this
+                # repo's D drive. A single denial freezes `captured_at` while the
+                # publisher THREAD stays alive, which is precisely the state A39's
+                # liveness suppression reads as "transient burst, safe to ignore the
+                # staleness block". Measured with the real thread running: age
+                # reached 7.9s against a 3.0s deadline with .alive still True. The
+                # retry ladder is the one storage/fs.py:atomic_write_text already
+                # uses for this exact error ("broker writes have raced 37 times"):
+                # 4 attempts, 25ms doubling, ~175ms worst case — well inside the
+                # 500ms cycle. Deliberately NO fallback to a direct in-place write
+                # here (fs.py has one): that would sacrifice atomicity, and a torn
+                # snapshot read is worse for the guard than a skipped cycle.
+                last_error: OSError | None = None
+                for attempt in range(4):
+                    try:
+                        os.replace(temporary, self.path)
+                        last_error = None
+                        break
+                    except OSError as exc:
+                        last_error = exc
+                        if attempt < 3:
+                            time.sleep(0.025 * (2**attempt))
+                with self._counters_lock:
+                    if last_error is None:
+                        self.publish_ok += 1
+                        self.last_publish_ok = payload["captured_at"]
+                        self.last_publish_error = ""
+                    else:
+                        self.publish_denied += 1
+                        self.last_publish_error = f"{type(last_error).__name__}: {last_error}"
+                if last_error is not None:
+                    raise last_error
             finally:
                 try:
                     temporary.unlink(missing_ok=True)
@@ -144,6 +185,12 @@ class BusySnapshotPublisher:
                 try:
                     self.publish_once()
                 except Exception:
+                    # Still swallowed ON PURPOSE: the publisher thread must survive a
+                    # failed cycle (a dead thread freezes captured_at forever, which
+                    # is strictly worse). A45 removes the SILENCE, not the survival —
+                    # publish_once() records the denial in the counters above, and
+                    # `publish_health` exposes it so a frozen-but-alive publisher can
+                    # no longer masquerade as a healthy one on the /livez channel.
                     pass
                 self._stop.wait(self.interval)
 
@@ -158,6 +205,33 @@ class BusySnapshotPublisher:
     @property
     def alive(self) -> bool:
         return bool(self._thread and self._thread.is_alive())
+
+    def publish_health(self) -> dict[str, object]:
+        """Publisher liveness AND publish success, for the lock-free /livez channel.
+
+        A45: `alive` alone answers the wrong question. A39/PH-5 uses thread liveness
+        to decide whether a stale-by-age snapshot is a harmless transient burst
+        (blocked-but-alive publisher, suppress the block) or a real hazard (dead
+        publisher, keep the block). That split assumes an alive thread is still
+        PUBLISHING — but a thread whose os.replace is being denied is alive and
+        publishing nothing, so `captured_at` freezes exactly as if it had died while
+        the guard reads "alive" and suppresses the block. Measured on the real
+        publisher thread: age 7.9s against a 3.0s deadline, .alive True throughout.
+
+        `last_publish_ok` closes that gap: it is stamped only by a replace that
+        actually landed, so a reader can tell "thread alive AND its last write
+        landed N seconds ago" from "thread alive but nothing has landed since".
+        Takes only the counters lock (never the publish lock), so it stays
+        responsive while a publish is in flight — same constraint as `alive`.
+        """
+        with self._counters_lock:
+            return {
+                "alive": self.alive,
+                "publish_ok": self.publish_ok,
+                "publish_denied": self.publish_denied,
+                "last_publish_ok": self.last_publish_ok,
+                "last_publish_error": self.last_publish_error,
+            }
 
 
 # --- A08: boot reaper for orphaned busy-snapshot temp files ---

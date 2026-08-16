@@ -474,8 +474,29 @@ def _snapshot_publisher_alive(
     live_generation = livez.get("generation")
     if not isinstance(live_generation, str) or not live_generation:
         return False
-    # Trust the live signal only for the generation it actually describes.
-    return live_generation == expected_generation
+    if live_generation != expected_generation:
+        # Trust the live signal only for the generation it actually describes.
+        return False
+    # 3. PUBLISHING, not merely alive (A45). Condition 1 asks whether the thread
+    #    exists; it cannot distinguish a thread blocked on the publish lock (which
+    #    WILL catch up — the PH-2 case this suppression exists for) from a thread
+    #    whose os.replace keeps being denied, which is alive, looping, and landing
+    #    nothing. Both freeze captured_at; only the first is safe to suppress.
+    #    Measured on the real publisher thread with 5 concurrent readers on the D
+    #    drive: age reached 7.9s against this function's 3.0s deadline with
+    #    restart_busy_snapshot_alive True for the whole run — the guard would have
+    #    authorised a restart on a 7.9s-old reading of "not busy".
+    #    A missing/blank publish block means an older generation that does not
+    #    report it: fall through to the pre-A45 answer rather than newly blocking a
+    #    restart on a payload shape, since that would be a fail-CLOSED regression on
+    #    a signal this function never required before.
+    publish = livez.get("restart_busy_snapshot_publish")
+    if isinstance(publish, Mapping) and publish:
+        if publish.get("last_publish_error"):
+            # The last cycle did not land. Whatever the thread's state, the file on
+            # disk is not being refreshed, so the stale reading is real.
+            return False
+    return True
 
 
 def build_guard(root: Path, expected_generation: str, expected_request_id: str = "",

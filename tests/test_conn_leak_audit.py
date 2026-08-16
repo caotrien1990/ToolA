@@ -22,6 +22,11 @@ Whitelist categories:
                   to 0 by CPython and released by ``sqlite3.Connection.__del__``
                   (no persistent leak; P1.18 baseline leak-free). Grandfathered
                   — new production code MUST use ``with`` / ``finally``.
+  POOL          — long-lived connection cached on a ``threading.local`` and
+                  reused across calls (a connection pool). It is intentionally
+                  not closed per-call; it is closed on DB-path rebind and by
+                  ``__del__`` at thread/interpreter shutdown — bounded by the
+                  worker-thread count, so no unbounded leak.
 
 Production set = ``code_tools.py`` + ``orchestrator_server.py`` +
 ``orchestrator/**.py``, excluding tests/ research/ BACKUP/ staging/ scripts/
@@ -73,20 +78,28 @@ WHITELIST: dict[tuple[str, str], tuple[int, str, str]] = {
     # ── releases conn on exception (no persistent leak). Grandfathered.   ──
     ("code_tools.py", "get_usage_stats"): (
         1, "CLOSE_IN_TRY", "close in try body; CPython refcount-safe on exception"),
-    ("code_tools.py", "rename_session"): (
-        1, "CLOSE_IN_TRY", "close in try body; CPython refcount-safe on exception"),
-    ("code_tools.py", "log_native_event"): (
-        1, "CLOSE_IN_TRY", "close in try body; CPython refcount-safe on exception"),
-    ("code_tools.py", "create_pending_audit"): (
-        1, "CLOSE_IN_TRY", "close in try body; CPython refcount-safe on exception"),
-    ("code_tools.py", "list_sessions"): (
-        1, "CLOSE_IN_TRY", "close in try body; CPython refcount-safe on exception"),
-    ("code_tools.py", "clear_closed_sessions"): (
-        1, "CLOSE_IN_TRY", "close in try body; CPython refcount-safe on exception"),
-    ("code_tools.py", "get_session_events"): (
-        1, "CLOSE_IN_TRY", "close in try body; CPython refcount-safe on exception"),
     ("orchestrator/session/logs.py", "log_native"): (
         1, "CLOSE_IN_TRY", "close in try body; CPython refcount-safe on exception"),
+    # ── FACTORY: returns conn; every caller closes it in a finally block ──
+    ("orchestrator/server/audit_writer.py", "_connect"): (
+        1, "FACTORY",
+        ("connection factory; returns conn; all 11 call sites "
+         "(_initialize_schema_once/_stage_transaction/etc.) close it in finally"),
+    ),
+    ("orchestrator/session/store.py", "_open_connection"): (
+        1, "FACTORY",
+        ("SessionWriter connection factory; returns conn; _drain_loop closes it "
+         "in the batch except-path and the outer finally on writer shutdown"),
+    ),
+    # ── POOL: thread-local cached read connection; bounded by the to_thread ──
+    # ── worker pool, reused across calls, closed on DB-path rebind and by   ──
+    # ── __del__ at thread/interpreter shutdown (no unbounded leak).         ──
+    ("orchestrator/session/store.py", "_session_read_connection"): (
+        1, "POOL",
+        ("thread-local query_only read connection; cached on threading.local, "
+         "reused per worker thread, closed on path change — a connection pool, "
+         "not a per-call leak"),
+    ),
 }
 
 

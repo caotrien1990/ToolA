@@ -84,6 +84,13 @@ _RUFF_FIX_OVERRIDES = (
     "--config", "lint.per-file-ignores = {}",
     "--config", "lint.ignore = []",
     "--config", "force-exclude = false",
+    # campaign-1608 (A24): force plain text. The daemon runs with FORCE_COLOR set
+    # (measured =3, inherited from the launching process, not User/Machine env),
+    # which makes ruff paint the diff with ANSI escapes even into a pipe. A diff
+    # this tool returns is machine-read (callers grep it for "-import os"), so the
+    # escapes turn a correct finding into an unparseable string. --color never
+    # wins over FORCE_COLOR; NO_COLOR does not.
+    "--color", "never",
 )
 def _graph_write_lock(project_path: str):
     """R50 (2026-08-12): serialize graph WRITES (cbm_index / cbm_incremental_index) per

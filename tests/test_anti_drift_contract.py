@@ -22,9 +22,17 @@ class AntiDriftContractTests(unittest.IsolatedAsyncioTestCase):
     def test_unfiltered_tool_catalog_is_bounded(self):
         payload = srv._tool_names_payload()
         self.assertTrue(payload["bounded"])
-        self.assertLessEqual(payload["returned_count"], 32)
+        # Anti-drift ceiling: the unfiltered default returns the curated core SOT
+        # (registry_data.CURATED_CORE_TOOLS), NOT the full ~246-tool catalog. The
+        # curated set is a hand-governed list currently at 34 entries; 40 leaves a
+        # small buffer for governed curation while staying far below total_available,
+        # so the guard still fails loudly if the full catalog is ever dumped.
+        self.assertLessEqual(payload["returned_count"], 40)
+        self.assertLess(payload["returned_count"] * 3, payload["total_available"])
         self.assertGreater(payload["total_available"], payload["returned_count"])
-        self.assertEqual(payload["ca_next_action"], "filter_or_bootstrap_session")
+        self.assertEqual(
+            payload["ca_next_action"], "filter_or_limit_250_or_bootstrap_session"
+        )
 
     def test_filtered_tool_catalog_returns_matches(self):
         payload = srv._tool_names_payload(name_contains="search_code")
