@@ -826,11 +826,25 @@ def _boot_sweep_scan(
     roots = _boot_sweep_project_roots(project_roots)
     roots_done = time.perf_counter()
     candidates: dict[str, Path] = {}
+    root_errors: list[dict] = []
     for root in roots:
         abort_reason = _boot_sweep_abort_reason(stop_event, deadline_monotonic)
         if abort_reason:
             break
-        for fp in _boot_sweep_index_files(root):
+        try:
+            index_files = _boot_sweep_index_files(root)
+        except Exception as exc:
+            # A22: one unreadable/permission-denied root (e.g. a stale junk temp
+            # dir with broken ACLs) must NOT collapse the whole sweep. Record it
+            # loudly and keep sweeping the remaining roots.
+            root_errors.append({
+                "root": str(root),
+                "error": f"{type(exc).__name__}: {exc}",
+                "stage": "index_files",
+            })
+            _logger.warning("boot_write_sweep skipped unreadable root %s: %s", root, exc)
+            continue
+        for fp in index_files:
             abort_reason = _boot_sweep_abort_reason(stop_event, deadline_monotonic)
             if abort_reason:
                 break
@@ -875,6 +889,8 @@ def _boot_sweep_scan(
         "aborted": bool(abort_reason),
         "abort_reason": abort_reason,
         "scan_complete": not bool(abort_reason),
+        "root_errors": root_errors,
+        "root_error_count": len(root_errors),
     }
 
 

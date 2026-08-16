@@ -9,14 +9,18 @@ import glob
 import json as _json
 import os
 import subprocess
-import sys
 import time
 
 from . import cycle_point as _cycle_point
 from . import indexer as _indexer
 from . import status as _status
 from . import query as _query
-from .extractors.vulture_ruff import _merge_dedup, scan_ruff, scan_vulture
+from .extractors.vulture_ruff import (
+    _console_python,
+    _merge_dedup,
+    scan_ruff,
+    scan_vulture,
+)
 
 
 def _ok(payload: dict) -> str:
@@ -45,7 +49,42 @@ def _clean_project_path(project_path: str) -> tuple[str, str | None]:
 
 _GRAPH_WRITE_LOCKS: dict = {}
 
-
+# campaign-1608 (A24): ruff resolves its config by walking up from the TARGET,
+# so linting a file inside a project silently adopts that project's lint settings.
+# This repo's own ruff.toml selects only E9/F63/F7, so ruff_fix on any file in it
+# returned exit_code 0 with an empty diff -- indistinguishable from "clean" -- for
+# a file with a real unused import. ruff_fix is the tool [A] hands a worker to
+# audit [A] itself, and validate_file's ruff_fix_hint promises these very rules are
+# fixable, so the two tools contradicted each other on the same file.
+#
+# A narrow `select` was only the first of five ways a config can suppress a rule.
+# Measured against each, with an explicit --select already in place:
+#
+#   narrow select    -> beaten by --select alone
+#   lint.ignore      -> beaten by --select alone
+#   exclude          -> beaten by --select alone (the target is named explicitly)
+#   per-file-ignores -> needs lint.per-file-ignores = {}
+#   lint.unfixable   -> needs lint.fixable = ["ALL"]; overriding unfixable to []
+#                       does NOT work, because ruff computes fixable minus
+#                       unfixable and the project already narrowed fixable.
+#
+# --isolated was the obvious stronger hammer and is deliberately NOT used. It
+# discards [lint.isort] too, so on a project declaring known-first-party for an
+# installed internal package, ruff_fix --isolated --fix rewrites correctly sorted
+# imports into the order that project calls wrong -- and then WRITES it. Losing a
+# finding is a missed hint; corrupting a correct file is damage. So: override what
+# to look for and what may be fixed, keep the project config for how to fix.
+#
+# Scope: the safe-fixable rules validate_file already advertises, nothing wider --
+# ruff_fix EDITS code, so a rule that lands here must be one we are willing to
+# apply unattended.
+_RUFF_FIX_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541,RUF100,I"
+_RUFF_FIX_OVERRIDES = (
+    "--config", 'lint.fixable = ["ALL"]',
+    "--config", "lint.per-file-ignores = {}",
+    "--config", "lint.ignore = []",
+    "--config", "force-exclude = false",
+)
 def _graph_write_lock(project_path: str):
     """R50 (2026-08-12): serialize graph WRITES (cbm_index / cbm_incremental_index) per
     project. Concurrent rebuilds contend on the single graph.db writer; under extreme load
@@ -264,7 +303,14 @@ async def ruff_fix(project_path: str = "", path: str = ".", apply: bool = False,
         return {file: (stat.st_size, stat.st_mtime_ns) for file in files for stat in [os.stat(file)]}
 
     before = _snapshot(target) if apply else None
-    command = [sys.executable, "-m", "ruff", "check", target, "--fix"]
+    # campaign-1608 (A24b): _console_python(), not sys.executable. Over HTTP the
+    # daemon runs pythonw.exe (GUI subsystem, no stdout handle), so ruff.exe has
+    # nothing to inherit: measured live as exit_code 1 with stdout, stderr AND
+    # diff all empty -- ruff found the error and the answer vanished. scan_ruff
+    # already resolves python.exe from the same directory; reuse that helper
+    # instead of a third copy.
+    command = [_console_python(), "-m", "ruff", "check", target, "--fix",
+               "--select", _RUFF_FIX_SELECT, *_RUFF_FIX_OVERRIDES]
     if not apply:
         command.append("--diff")
     if unsafe_fixes:
@@ -285,6 +331,13 @@ async def ruff_fix(project_path: str = "", path: str = ".", apply: bool = False,
         "stderr": completed.stderr or "",
         "exit_code": completed.returncode,
         "changed": changed,
+        # campaign-1608 (A24): say which rules produced this answer. Silently
+        # swapping the rule set is exactly how the old bug stayed invisible.
+        # Derived from the command actually run, not restated -- a hardcoded
+        # "isolated" here would keep claiming isolation after the flag drifted.
+        "config": "isolated" if "--isolated" in command else "project",
+        "select": (command[command.index("--select") + 1]
+                   if "--select" in command else "project-default"),
     })
 
 

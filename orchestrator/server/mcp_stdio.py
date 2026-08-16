@@ -23,22 +23,70 @@ _MCP_SERVER_GENERATION_SEEN: str | None = None
 _MCP_OWNER_CLAIMS: dict[tuple[str, str], str] = {}
 
 
-def _mcp_current_server_generation(srv) -> str | None:
-    """Read the live HTTP daemon generation stamp for MCP stale-session checks."""
+def _mcp_probe_generation(srv) -> dict:
+    """Ask the HTTP daemon for its generation stamp, and say whether we got one.
+
+    campaign-1608 (A28-P3). MCP and the HTTP daemon are two separate [A]
+    processes, each minting its own ``SERVER_GENERATION`` at import
+    (``orchestrator_server.py:111``). The staleness gate only means anything if
+    the stamp comes from the daemon. The previous version fell back to
+    ``srv.SERVER_GENERATION`` -- the MCP process's OWN stamp -- whenever the
+    probe raised, so the gate compared MCP against MCP and could never fire.
+    A detector that structurally cannot fire is worse than no detector: it reads
+    as "all clear".
+
+    So: on failure report ``generation=None`` (unknown is unknown) and name the
+    error. The local stamp is still returned, under ``local_generation``, because
+    it is real information -- just not an answer to "which daemon is this".
+
+    Deliberately not raising: MCP has to stay usable while the daemon is down.
+    The requirement is disclosure, not self-DoS.
+    """
     port = getattr(srv, "PORT", 8083)
     base_url = os.environ.get("ORCHESTRATOR_BASE_URL", f"http://localhost:{port}").rstrip("/")
+    local = getattr(srv, "SERVER_GENERATION", None)
+    local = str(local) if local is not None else None
     try:
         with urllib.request.urlopen(f"{base_url}/health", timeout=2) as resp:
             payload = json.loads(resp.read().decode("utf-8", errors="replace"))
         generation = payload.get("generation")
-        return str(generation) if generation is not None else None
-    except Exception:
-        generation = getattr(srv, "SERVER_GENERATION", None)
-        return str(generation) if generation is not None else None
+    except Exception as exc:
+        return {
+            "generation": None,
+            "source": "unreachable",
+            "probe_error": f"{type(exc).__name__}: {exc}",
+            "probe_url": f"{base_url}/health",
+            "local_generation": local,
+        }
+    if generation is None:
+        return {
+            "generation": None,
+            "source": "no_generation_field",
+            "probe_error": "daemon /health returned no 'generation' field",
+            "probe_url": f"{base_url}/health",
+            "local_generation": local,
+        }
+    return {
+        "generation": str(generation),
+        "source": "daemon",
+        "probe_error": "",
+        "probe_url": f"{base_url}/health",
+        "local_generation": local,
+    }
+
+
+def _mcp_current_server_generation(srv) -> str | None:
+    """Daemon generation stamp, or None when the daemon could not be reached."""
+    return _mcp_probe_generation(srv)["generation"]
 
 
 def _mcp_generation_gate(current_generation: str | None) -> dict | None:
-    """Remember first generation; return a stale-session error if it changes."""
+    """Remember first generation; return a stale-session error if it changes.
+
+    ``None`` means "could not determine" and must neither become the remembered
+    baseline nor be compared against it: recording it would make the next real
+    stamp look like a restart, and comparing it would mask one.
+    """
     global _MCP_SERVER_GENERATION_SEEN
     if current_generation is None:
         return None
@@ -56,17 +104,29 @@ def _mcp_generation_gate(current_generation: str | None) -> dict | None:
     return None
 
 
-def _mcp_add_generation(text: str, generation: str | None) -> str:
-    """Add generation to JSON-object MCP responses without changing other fields."""
+def _mcp_add_generation(text: str, generation) -> str:
+    """Add generation to JSON-object MCP responses without changing other fields.
+
+    ``generation`` is either a probe dict from ``_mcp_probe_generation`` or a
+    bare string (back-compat). When the probe failed, the response says so
+    explicitly instead of carrying a stamp that would be read as the daemon's.
+    """
     try:
         payload = json.loads(text)
     except Exception:
         return text
-    if isinstance(payload, dict):
-        payload.setdefault("generation", generation)
+    if not isinstance(payload, dict):
+        return text
+    if isinstance(generation, dict):
+        payload.setdefault("generation", generation.get("generation"))
+        payload.setdefault("generation_source", generation.get("source"))
+        if generation.get("probe_error"):
+            payload.setdefault("generation_probe_error", generation["probe_error"])
+        if generation.get("source") != "daemon":
+            payload.setdefault("mcp_generation", generation.get("local_generation"))
         return json.dumps(payload, ensure_ascii=False)
-    return text
-
+    payload.setdefault("generation", generation)
+    return json.dumps(payload, ensure_ascii=False)
 
 def _load_lessons(srv) -> list:
     """Load LESSONS_LOG.md rows (cached by mtime). Returns list of (keyword, fix)."""
@@ -231,11 +291,14 @@ def run_mcp_stdio() -> None:
             return str(body)
 
         def _mcp_guard_response(producer) -> str:
-            generation = _mcp_current_server_generation(srv)
-            stale = _mcp_generation_gate(generation)
+            # A28-P3: keep the whole probe result, not just the stamp. The
+            # gate still takes a bare generation (None = do not compare), but
+            # the response has to disclose where the stamp came from.
+            probe = _mcp_probe_generation(srv)
+            stale = _mcp_generation_gate(probe["generation"])
             if stale is not None:
                 return json.dumps(stale, ensure_ascii=False)
-            return _mcp_add_generation(producer(), generation)
+            return _mcp_add_generation(producer(), probe)
 
         def _mcp_call_text(name: str, payload: dict | None = None) -> str:
             return _mcp_guard_response(lambda: _mcp_response_text(
