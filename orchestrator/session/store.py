@@ -17,7 +17,7 @@ import threading
 import time
 from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from contextlib import contextmanager as _contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import path_runtime
@@ -94,6 +94,16 @@ _WAL_SWITCH_RETRY_MS = 20
 # then fail LOUD -- the schema is mandatory and, unlike WAL, cannot degrade.
 # _SESSION_DB_RETRY_BASE_MS/_SESSION_DB_RETRY_MAX_MS above bound the backoff.
 _SESSION_MIGRATION_ATTEMPTS = 6
+
+# campaign-1608 (A22): sessions.db retention. Keep only the N most-recent days;
+# older sessions and every child row that hangs off them are pruned. The default
+# is 10 days (user "Anh" chose this). The knob is read LIVE inside
+# prune_sessions_older_than -- NOT frozen here at import -- because A13 proved an
+# import-time snapshot silently ignores an env change made after the first import
+# (test isolation + a runtime `setx` both broke that way). This name only labels
+# the default; it is never the live value.
+_SESSION_RETENTION_DAYS_DEFAULT = 10
+_SESSION_RETENTION_DAYS_ENV = "ORCHESTRATOR_SESSION_RETENTION_DAYS"
 
 
 class SessionStoreContentionError(RuntimeError):
@@ -1140,6 +1150,225 @@ def _init_session_db():
         )
 
 
+# --------------------------------------------------------------------------- #
+# campaign-1608 (A22): sessions.db retention.
+# --------------------------------------------------------------------------- #
+def _session_retention_days() -> int:
+    """Return the LIVE retention window in days (re-read from the environment).
+
+    A13-style live read: the value is fetched from ``os.environ`` on every call,
+    never snapshotted at import. An unset / blank / non-integer / non-positive
+    value falls back to the 10-day default (the user-chosen window). Callers must
+    NOT cache this across calls.
+    """
+    raw = os.environ.get(_SESSION_RETENTION_DAYS_ENV, "")
+    try:
+        val = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return _SESSION_RETENTION_DAYS_DEFAULT
+    if val <= 0:
+        # A zero/negative window would mean "prune everything up to now", a foot-gun
+        # for a destructive op; treat it as "misconfigured" and use the safe default.
+        return _SESSION_RETENTION_DAYS_DEFAULT
+    return val
+
+
+def _retention_cutoffs(days: int) -> tuple[str, float]:
+    """Return ``(cutoff_iso, cutoff_epoch)`` for a retention window of ``days``.
+
+    THE central defence for the A22 REAL-vs-TEXT trap. sessions.db mixes two
+    timestamp encodings in the SAME database:
+
+      * TEXT ISO-8601 (``sessions.started_at``, ``events.created_at``,
+        ``read_tokens.updated_at``, ``task_checkpoints.updated_at``,
+        ``pending_audits.created_at``)
+      * REAL epoch seconds (``write_operations.started_at`` / ``updated_at``)
+
+    SQLite compares across storage classes by class rank (REAL < TEXT always),
+    so comparing a REAL epoch column against an ISO *string* silently matches
+    EVERY row -- a retention query written that way would wipe the whole
+    ``write_operations`` table. Every caller MUST take the epoch cutoff from this
+    helper for REAL columns and the ISO cutoff for TEXT columns; returning both
+    from one place makes the correct pairing the path of least resistance.
+    """
+    cutoff_dt = datetime.now() - timedelta(days=max(0, int(days)))
+    return cutoff_dt.isoformat(), cutoff_dt.timestamp()
+
+
+def prune_sessions_older_than(
+    days: int | None = None,
+    *,
+    prune_orphans: bool = False,
+    busy_timeout_ms: int = 30000,
+) -> dict:
+    """Delete sessions (and their child rows) older than the retention window.
+
+    Keeps only the most-recent ``days`` days. When ``days`` is None the LIVE
+    window from :func:`_session_retention_days` is used (env
+    ``ORCHESTRATOR_SESSION_RETENTION_DAYS``, default 10). The whole prune runs in
+    ONE transaction through the process-wide SessionWriter (``_run_session_write``)
+    so it inherits WAL, busy_timeout and the single-writer lock -- it never opens a
+    bare sqlite3 connection that would bypass those.
+
+    Cutoff-type correctness (A22 trap)
+    ----------------------------------
+    ``write_operations`` stores time as REAL epoch; every other timestamp column
+    is TEXT ISO. This function takes both cutoffs from :func:`_retention_cutoffs`
+    and applies the epoch cutoff to ``write_operations`` and the ISO cutoff to the
+    text columns. Comparing the REAL column against an ISO string would match all
+    rows (REAL < TEXT in SQLite's type ordering) and empty the table.
+
+    Manual cascade (no NEW orphans)
+    -------------------------------
+    Only ``events`` has a real FK to ``sessions`` and it does NOT declare
+    ON DELETE CASCADE, so the cascade is done by hand. For each session pruned by
+    age, the matching child rows are deleted FIRST (children before parent) via a
+    correlated subquery -- no ``IN (?, ?, ...)`` list, so there is no
+    SQLITE_MAX_VARIABLE_NUMBER limit and no partial-orphan window:
+      * events.session_id, pending_audits.session_id,
+        write_operations.session_id  -> sessions.session_id
+      * task_checkpoints.session_key -> sessions.session_id
+    ``read_tokens`` has NO session link (keyed by project_key, rel_path); it can
+    only be pruned by its own ``updated_at`` age, done below.
+
+    Independent age-based prune
+    ---------------------------
+    Two tables also accumulate rows not tied to a surviving session and are pruned
+    by their own timestamp regardless of session linkage:
+      * write_operations.updated_at (REAL epoch) < cutoff_epoch
+      * read_tokens.updated_at       (TEXT ISO)  < cutoff_iso
+
+    Pre-existing orphans (opt-in, default OFF)
+    ------------------------------------------
+    The DB already contains orphan rows created BEFORE this function existed
+    (measured 2026-08-17: ~2180 write_operations + ~1026 task_checkpoints whose
+    session no longer exists, plus write_operations with empty session_id). This
+    function does NOT touch those by default -- retention only removes rows made
+    stale by ITS OWN pruning, so a normal run is predictable. Pass
+    ``prune_orphans=True`` to additionally delete child rows whose session
+    reference is absent from ``sessions`` entirely; that is a separate, explicitly
+    toggled behaviour reported under ``orphans_*`` keys.
+
+    Sessions with a NULL/blank ``started_at`` are undatable and are always KEPT
+    (never pruned) rather than guessed at.
+
+    Returns a dict of per-table deleted-row counts plus the resolved
+    ``retention_days`` / ``cutoff_iso`` / ``cutoff_epoch`` so a caller can verify.
+    ``VACUUM`` is NOT performed here (it cannot run inside a transaction and would
+    hold a long exclusive lock); use :func:`vacuum_sessions_db` separately.
+    """
+    window = _session_retention_days() if days is None else max(0, int(days))
+    cutoff_iso, cutoff_epoch = _retention_cutoffs(window)
+
+    # Correlated-subquery predicate for "session pruned by age". Reused verbatim so
+    # child deletes and the final parent delete select EXACTLY the same session set.
+    _old_sessions_sql = (
+        "SELECT session_id FROM sessions "
+        "WHERE started_at IS NOT NULL AND started_at != '' AND started_at < ?"
+    )
+
+    def _prune(conn: sqlite3.Connection) -> dict:
+        stats: dict[str, int] = {}
+
+        # 1) Cascade: children of age-pruned sessions, deleted BEFORE the parent.
+        stats["events"] = conn.execute(
+            f"DELETE FROM events WHERE session_id IN ({_old_sessions_sql})",
+            (cutoff_iso,),
+        ).rowcount
+        stats["pending_audits"] = conn.execute(
+            f"DELETE FROM pending_audits WHERE session_id IN ({_old_sessions_sql})",
+            (cutoff_iso,),
+        ).rowcount
+        stats["task_checkpoints"] = conn.execute(
+            f"DELETE FROM task_checkpoints WHERE session_key IN ({_old_sessions_sql})",
+            (cutoff_iso,),
+        ).rowcount
+        wo_cascade = conn.execute(
+            "DELETE FROM write_operations "
+            "WHERE session_id IS NOT NULL AND session_id != '' "
+            f"AND session_id IN ({_old_sessions_sql})",
+            (cutoff_iso,),
+        ).rowcount
+
+        # 2) Independent age-based prune. write_operations uses the EPOCH cutoff
+        #    (REAL column) -- the A22 trap. read_tokens uses the ISO cutoff.
+        wo_by_age = conn.execute(
+            "DELETE FROM write_operations WHERE updated_at < ?",
+            (cutoff_epoch,),
+        ).rowcount
+        stats["write_operations"] = wo_cascade + wo_by_age
+        stats["read_tokens"] = conn.execute(
+            "DELETE FROM read_tokens "
+            "WHERE updated_at IS NOT NULL AND updated_at != '' AND updated_at < ?",
+            (cutoff_iso,),
+        ).rowcount
+
+        # 3) Parent last, now that no child references it.
+        stats["sessions"] = conn.execute(
+            "DELETE FROM sessions "
+            "WHERE started_at IS NOT NULL AND started_at != '' AND started_at < ?",
+            (cutoff_iso,),
+        ).rowcount
+
+        # 4) Optional, opt-in: pre-existing orphans (session gone from `sessions`).
+        if prune_orphans:
+            stats["orphans_events"] = conn.execute(
+                "DELETE FROM events WHERE session_id NOT IN "
+                "(SELECT session_id FROM sessions)"
+            ).rowcount
+            stats["orphans_pending_audits"] = conn.execute(
+                "DELETE FROM pending_audits "
+                "WHERE session_id IS NOT NULL AND session_id != '' "
+                "AND session_id NOT IN (SELECT session_id FROM sessions)"
+            ).rowcount
+            stats["orphans_write_operations"] = conn.execute(
+                "DELETE FROM write_operations "
+                "WHERE session_id IS NOT NULL AND session_id != '' "
+                "AND session_id NOT IN (SELECT session_id FROM sessions)"
+            ).rowcount
+            stats["orphans_task_checkpoints"] = conn.execute(
+                "DELETE FROM task_checkpoints WHERE session_key NOT IN "
+                "(SELECT session_id FROM sessions)"
+            ).rowcount
+
+        return stats
+
+    stats = _run_session_write(
+        "prune sessions older than retention window",
+        _prune,
+        busy_timeout_ms=busy_timeout_ms,
+    )
+    result = {
+        "retention_days": window,
+        "cutoff_iso": cutoff_iso,
+        "cutoff_epoch": cutoff_epoch,
+        "orphans_pruned": bool(prune_orphans),
+    }
+    result.update(stats)
+    return result
+
+
+def vacuum_sessions_db(*, busy_timeout_ms: int = 60000) -> dict:
+    """VACUUM sessions.db to reclaim space after a large prune (opt-in, separate).
+
+    VACUUM cannot run inside a transaction, so it CANNOT go through the writer's
+    BEGIN IMMEDIATE batch; it opens its own short-lived connection instead. It
+    takes an EXCLUSIVE lock and rewrites the whole file, so it is deliberately a
+    distinct, caller-invoked step -- never folded into
+    :func:`prune_sessions_older_than`. Best run when no writes are in flight.
+    """
+    _get_session_writer()  # ensure schema exists / path is initialized
+    timeout_ms = max(1, int(busy_timeout_ms))
+    conn = sqlite3.connect(str(_SESSIONS_DB), timeout=timeout_ms / 1000.0)
+    try:
+        conn.execute(f"PRAGMA busy_timeout={timeout_ms}")
+        conn.execute("VACUUM")
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
 atexit.register(_shutdown_session_writer)
 
 
@@ -1551,6 +1780,23 @@ def _task_checkpoint_load(session_key: str):
             raise
         raise TaskCheckpointStorageError(
             f"Failed to load task checkpoint: {exc}"
+        ) from exc
+
+
+def _task_checkpoint_load_with_meta(session_key: str):
+    """Read checkpoint payload and its durable updated_at timestamp."""
+    try:
+        row = _session_read_connection().execute(
+            "SELECT payload, updated_at FROM task_checkpoints WHERE session_key=?",
+            (str(session_key),),
+        ).fetchone()
+        checkpoint = _decode_task_checkpoint(str(session_key), row[0] if row else None)
+        return checkpoint, str(row[1] or "") if row else ""
+    except Exception as exc:
+        if isinstance(exc, TaskCheckpointStorageError):
+            raise
+        raise TaskCheckpointStorageError(
+            f"Failed to load task checkpoint metadata: {exc}"
         ) from exc
 
 
