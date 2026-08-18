@@ -13824,6 +13824,28 @@ accepted_fields=sorted(accepted_fields),
                         _attempts = int(_led.get("attempts") or 1)
                         _result.setdefault("operation_attempts", _attempts)
                         _result.setdefault("operation_replayed", _attempts > 1)
+                        # TA-4 fix (2026-08-18): a REPLAY that now reports
+                        # SYNTAX_ERROR_PRE_WRITE / FILE_CHANGED_OUTSIDE_ORCHESTRATOR
+                        # is a known false-alarm shape: the FIRST attempt already
+                        # shipped the write (server completed, client timed out),
+                        # so the deterministic retry recomputes the draft/AST
+                        # against the ALREADY-PATCHED file — the old line range no
+                        # longer matches and the tool cries "unmatched ')'" on code
+                        # that is in fact correct. Tell the caller so it verifies by
+                        # read instead of blindly re-patching (which would double-write).
+                        if (_attempts > 1 and _result.get("ok") is False
+                                and _result.get("error_name") in {
+                                    "SYNTAX_ERROR_PRE_WRITE",
+                                    "FILE_CHANGED_OUTSIDE_ORCHESTRATOR"}):
+                            _result.setdefault("likely_already_applied", True)
+                            _result.setdefault(
+                                "replay_hint",
+                                "This exact payload was sent before; the first "
+                                "attempt likely already wrote successfully (client "
+                                "timeout, server completed). VERIFY with "
+                                "read_file_range before retrying — do NOT blindly "
+                                "re-patch, that risks a double-write.")
+                            _result.setdefault("ca_next_action", "read_file_range")
             _json_body = json.dumps(_result, ensure_ascii=False)
             _json_body = _shape_tool_response_text(tool_name, _json_body)
             return web.Response(text=_json_body, content_type="application/json",
