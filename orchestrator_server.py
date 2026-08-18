@@ -109,6 +109,10 @@ PORT = int(os.environ.get("ORCHESTRATOR_PORT", "8083"))
 SERVICE_NAME = "project-orchestrator"
 SERVER_STARTED_AT = time.time()
 SERVER_GENERATION = uuid.uuid4().hex[:12]
+SERVER_GENERATION_FILE = Path(
+    os.environ.get("ORCHESTRATOR_GENERATION_FILE")
+    or (_HERE / ".orchestrator_cache" / "server_generation.json")
+)
 LIVEZ_PORT = int(os.environ.get("ORCHESTRATOR_LIVEZ_PORT", "8084"))
 LIVEZ_PROTOCOL = 1
 # Default ready preserves create_app() contract in tests/embedders. _run_server
@@ -750,17 +754,48 @@ def _persist_durable_session_event(record: AuditRecord) -> None:
         )
 
 
-_DURABLE_AUDIT = DurableAuditWriter(
-    _HERE / ".orchestrator_cache" / "durable_audit.db",
-    _persist_durable_session_event,
-    capacity=max(
-        1, int(os.environ.get("ORCHESTRATOR_DURABLE_AUDIT_CAPACITY", "4096"))
-    ),
-    batch_size=max(
-        1, int(os.environ.get("ORCHESTRATOR_DURABLE_AUDIT_BATCH_SIZE", "64"))
-    ),
-    auto_start=True,
-)
+def _durable_audit_db_path() -> Path:
+    """Keep the durable-audit outbox in the same process scope as sessions.db."""
+    explicit = str(os.environ.get("ORCHESTRATOR_DURABLE_AUDIT_DB") or "").strip()
+    if explicit:
+        return Path(explicit)
+    configured_sessions_db = str(os.environ.get("ORCHESTRATOR_SESSIONS_DB") or "").strip()
+    if configured_sessions_db:
+        return Path(configured_sessions_db).with_name("durable_audit.db")
+    return _HERE / ".orchestrator_cache" / "durable_audit.db"
+
+
+_DURABLE_AUDIT: DurableAuditWriter | None = None
+_DURABLE_AUDIT_LOCK = threading.Lock()
+
+
+def _get_durable_audit_writer(*, start: bool = False) -> DurableAuditWriter | None:
+    """Lazily create the durable writer for HTTP; MCP must never own a session DB."""
+    global _DURABLE_AUDIT
+    if "--mcp" in sys.argv:
+        return None
+    writer = _DURABLE_AUDIT
+    if writer is None:
+        with _DURABLE_AUDIT_LOCK:
+            writer = _DURABLE_AUDIT
+            if writer is None:
+                writer = DurableAuditWriter(
+                    _durable_audit_db_path(),
+                    _persist_durable_session_event,
+                    capacity=max(
+                        1, int(os.environ.get("ORCHESTRATOR_DURABLE_AUDIT_CAPACITY", "4096"))
+                    ),
+                    batch_size=max(
+                        1, int(os.environ.get("ORCHESTRATOR_DURABLE_AUDIT_BATCH_SIZE", "64"))
+                    ),
+                    auto_start=False,
+                )
+                _DURABLE_AUDIT = writer
+    if start and writer is not None:
+        start_method = getattr(writer, "start", None)
+        if callable(start_method):
+            start_method()
+    return writer
 _DURABLE_METRICS_CACHE_WRITER = None
 _DURABLE_METRICS_CACHE: dict = {}
 _DURABLE_METRICS_CACHE_AT = 0.0
@@ -784,7 +819,13 @@ async def _durable_metrics_for_health() -> tuple[dict, str | None]:
     """Keep SQLite work off the event loop and bound health latency."""
     global _DURABLE_METRICS_CACHE_WRITER, _DURABLE_METRICS_CACHE
     global _DURABLE_METRICS_CACHE_AT, _DURABLE_METRICS_FUTURE
-    writer = _DURABLE_AUDIT
+    writer = _get_durable_audit_writer(start=True)
+    if writer is None:
+        return (
+            {"worker_alive": False, "admission_open": False,
+             "metrics_stale": False, "metrics_age_ms": None},
+            "durable_audit_disabled_in_mcp",
+        )
     if (_DURABLE_METRICS_CACHE_WRITER is not writer
             and _DURABLE_METRICS_FUTURE is not None
             and not _DURABLE_METRICS_FUTURE.done()):
@@ -851,6 +892,7 @@ def _durable_audit_ok_from_metrics(metrics: dict, metrics_error: str | None) -> 
     data = metrics if isinstance(metrics, dict) else {}
     worker_alive = bool(data.get("worker_alive"))
     admission_open = bool(data.get("admission_open", False))
+    pending = max(0, int(data.get("pending") or 0))
     last_kind = str(data.get("last_error_kind") or "")
     last_error = data.get("last_error")
     fatal_kinds = {"storage", "schema", "runtime"}
@@ -863,6 +905,11 @@ def _durable_audit_ok_from_metrics(metrics: dict, metrics_error: str | None) -> 
     )
     if apply_timeout:
         return worker_alive and admission_open
+    # A transient sink failure is actionable while rows remain pending. Once
+    # the outbox is empty, a later successful drain proves recovery; do not
+    # keep health red because the historical sink error is still cached.
+    if last_kind == "sink" and pending == 0:
+        return metrics_error is None and admission_open and worker_alive
     return (
         metrics_error is None
         and not last_error
@@ -890,6 +937,9 @@ def _stage_durable_session_event(
     admitted_session_id: str = "",
 ):
     """Capture session identity now, then durably stage a replay-safe compact event."""
+    if "--mcp" in sys.argv:
+        # P2: MCP keeps T4 state local but never resolves session identity or opens a DB.
+        return None
     if tool_name in _SKIP_SESSION_LOG:
         return None
 
@@ -934,7 +984,10 @@ def _stage_durable_session_event(
         "status": str(status or "error"),
         "error_msg": str(error_msg or "")[:300],
     }
-    return _DURABLE_AUDIT.submit(
+    writer = _get_durable_audit_writer(start=True)
+    if writer is None:
+        raise RuntimeError("durable audit writer unavailable outside HTTP daemon")
+    return writer.submit(
         _durable_audit_id(audit_id),
         SESSION_EVENT_KIND,
         payload,
@@ -953,14 +1006,19 @@ async def _flush_post_call_accounting(timeout: float = 10.0) -> dict:
     """Drain durable audit first, then telemetry, within one total deadline."""
     deadline = time.monotonic() + max(0.0, float(timeout))
     durable_error = None
-    try:
-        durable_drained = await asyncio.to_thread(
-            _DURABLE_AUDIT.wait_until_idle,
-            max(0.0, deadline - time.monotonic()),
-        )
-    except Exception as exc:
-        durable_drained = False
-        durable_error = f"{type(exc).__name__}: {str(exc)[:240]}"
+    writer = _get_durable_audit_writer(start=True)
+    if writer is None:
+        durable_drained = True
+        durable_error = "durable_audit_disabled_in_mcp"
+    else:
+        try:
+            durable_drained = await asyncio.to_thread(
+                writer.wait_until_idle,
+                max(0.0, deadline - time.monotonic()),
+            )
+        except Exception as exc:
+            durable_drained = False
+            durable_error = f"{type(exc).__name__}: {str(exc)[:240]}"
     report = await asyncio.to_thread(
         _POST_CALL_ACCOUNTING.flush,
         max(0.0, deadline - time.monotonic()),
@@ -968,8 +1026,14 @@ async def _flush_post_call_accounting(timeout: float = 10.0) -> dict:
     report["durable_drained"] = bool(durable_drained)
     report["durable_error"] = durable_error
     try:
-        report["durable_audit"] = _DURABLE_AUDIT.metrics()
+        report["durable_audit"] = (
+            writer.metrics() if writer is not None
+            else {"worker_alive": False, "admission_open": False}
+        )
     except Exception as exc:
+        report["durable_audit"] = {
+            "metrics_error": f"{type(exc).__name__}: {str(exc)[:240]}"
+        }
         report["durable_audit"] = {
             "metrics_error": f"{type(exc).__name__}: {str(exc)[:240]}"
         }
@@ -977,21 +1041,27 @@ async def _flush_post_call_accounting(timeout: float = 10.0) -> dict:
 
 
 async def _post_call_accounting_startup(_app) -> None:
-    _durable_metrics_executor()
-    _DURABLE_AUDIT.start()
+    writer = _get_durable_audit_writer(start=True)
+    if writer is None:
+        logger.critical("Durable audit writer unavailable in HTTP startup")
+    if not _POST_CALL_ACCOUNTING.start():
+        logger.critical("Post-call accounting lane failed to start")
     if not _POST_CALL_ACCOUNTING.start():
         logger.critical("Post-call accounting lane failed to start")
 
 
 async def _durable_audit_cleanup(_app) -> None:
+    writer = _DURABLE_AUDIT
+    if writer is None:
+        return
     try:
-        drained = await asyncio.to_thread(_DURABLE_AUDIT.wait_until_idle, 10.0)
+        drained = await asyncio.to_thread(writer.wait_until_idle, 10.0)
     except Exception as exc:
         logger.critical("Durable audit cleanup failed: %s", exc)
         return
     if not drained:
         try:
-            metrics = _DURABLE_AUDIT.metrics()
+            metrics = writer.metrics()
         except Exception:
             metrics = {}
         logger.critical(
@@ -3422,6 +3492,8 @@ _TOOL_GOTCHAS: dict[str, list[str]] = {
         "start_line/end_line are 1-based and inclusive",
         "content_encoding='base64' required for multiline/JS/HTML/backslash content",
         "FILE_CHANGED_OUTSIDE_ORCHESTRATOR: read_file_range + force_reseed + retry; never refresh_project_map on [A:P]",
+        "SYNTAX_ERROR_PRE_WRITE or VALIDATION_FAILED_AUTO_REVERT: use draft_id/failed_parts and write_draft_patch; do not retry the original range blindly",
+        "A may auto-ship only after the draft is clean; it must not invent replacement content for ambiguous line drift",
     ],
     "write_fix_html": [
         "Uses internal preview and returns diff_preview; do not pass dry_run unless live schema adds it",
@@ -3551,7 +3623,8 @@ _TOOL_GOTCHAS: dict[str, list[str]] = {
     ],
     "dom_state_diff": [
         "Two-call pattern: (1) baseline snapshot without baseline_id → returns snapshot_id; (2) after action → call again with baseline_id → returns changes.",
-        "TTL 10 minutes — re-snapshot if stale.",
+        "TTL 10 minutes; baseline_id is tied to the live page/generation — re-snapshot after restart or page replacement.",
+        "page_id must be a live pg-... ID from ToolA; numeric PowerShell PID values are invalid caller data.",
         "Default fields: disabled/bg/color/className/visible/text. Add 'value'/'rect' explicitly for inputs/layout.",
     ],
     "extract_log_section": [
@@ -3564,10 +3637,26 @@ _TOOL_GOTCHAS: dict[str, list[str]] = {
         "Always dispatches input+change events; safe for React/Vue/Electron forms.",
         "Encode in CA: btoa(unescape(encodeURIComponent(text))) — preserves UTF-8.",
     ],
+    "bundle_version_check": [
+        "marker_regex must contain at least one capture group; the first non-empty capture is returned",
+        "VERSION_REGEX_CAPTURE_REQUIRED means correct the regex before retrying",
+    ],
+    "copy_file": [
+        "DST_EXISTS is a non-mutating safety guard",
+        "For a deliberate rerun, use a new destination or overwrite=true with backup_existing=true and verify sha256",
+    ],
+    "run_playwright_test": [
+        "Node-only runner: .js/.mjs/.cjs; Python fixtures belong to run_project_test_script(runtime=python)",
+        "MODULE_NOT_FOUND is infrastructure; install/use a pre-installed Playwright location or use internal browser T4",
+    ],
+    "write_draft_patch": [
+        "Only patch ranges from failed_parts in the draft; clean draft auto-ships through the original pipeline",
+        "The backend cannot infer corrected replacement content from ambiguous line drift",
+    ],
 }
 
 _TOOL_PROMPT_RULES: dict[str, str] = {
-    "write_fix": "Always read_file_range first; use content_encoding='base64' for any non-trivial content",
+    "write_fix": "Always read_file_range first; use base64 for non-trivial content; on SYNTAX_ERROR_PRE_WRITE use draft_id/failed_parts and never retry a stale range blindly",
     "write_fix_html": "Use base64; read current HTML before writing; review returned diff_preview",
     "write_new_file": "Use dry_run=true first; review diff_preview; then apply_after_dry_run",
     "run_project_command": "Windows only: cmd /c or PowerShell; use interactive/elevated only for GUI launches and verify with expected_port/process",
@@ -3596,9 +3685,13 @@ _TOOL_PROMPT_RULES: dict[str, str] = {
     "read_console_errors": "Default level=error ignores warnings; do NOT treat CSP unsafe-eval as test fail.",
     "inspect_project_runtime": "Call FIRST before any UI launch — tells you which recipe (Electron/Node/native) applies.",
     "launch_electron_with_cdp": "Replaces manual 3-step Electron launch. Returns page_id ready for click/fill_value/dom_state_diff.",
-    "dom_state_diff": "Two-call: baseline snapshot → action → diff against baseline_id. Use for button color/state change detection.",
+    "dom_state_diff": "Use a live pg-... page_id; fresh baseline after restart/page replacement; compare only within the same live generation",
     "extract_log_section": "Use for finding 'System Error Log' / 'Server Response' panels — locates by title text, extracts textarea content.",
     "fill_value": "Transport-safe DOM fill. encoding='base64' for UNC paths / UTF-8 / multi-line.",
+    "bundle_version_check": "marker_regex must include a capture group; retry only after correcting the regex",
+    "copy_file": "On DST_EXISTS, choose a new disposable destination or use overwrite=true with backup_existing=true once",
+    "run_playwright_test": "Node-only .js/.mjs/.cjs; preflight playwright dependency; Python uses run_project_test_script(runtime=python)",
+    "write_draft_patch": "Use only draft_id/failed_parts from a write failure; clean draft auto-ships, but A must not invent replacement content",
 }
 def _ca_guidance(tool_name: str, error: str = "", body: dict | None = None,
                  error_name: str | None = None) -> dict:
@@ -11206,6 +11299,32 @@ def _start_restart_snapshot_publisher() -> BusySnapshotPublisher:
     return publisher
 
 
+def _publish_server_generation() -> dict:
+    """Atomically publish the HTTP daemon generation for MCP to read without HTTP."""
+    if "--mcp" in sys.argv:
+        return {"ok": False, "skipped": "mcp_process"}
+    target = Path(SERVER_GENERATION_FILE)
+    tmp = target.with_name(f"{target.name}.tmp.{os.getpid()}")
+    payload = {
+        "generation": SERVER_GENERATION,
+        "pid": os.getpid(),
+        "port": PORT,
+        "published_at": time.time(),
+    }
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, target)
+        return {"ok": True, "path": str(target), **payload}
+    except Exception as exc:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        return {"ok": False, "path": str(target),
+                "error": f"{type(exc).__name__}: {exc}"}
+
+
 def _stop_restart_snapshot_publisher() -> None:
     global _RESTART_SNAPSHOT_PUBLISHER
     if _RESTART_SNAPSHOT_PUBLISHER is not None:
@@ -12830,8 +12949,35 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
                 **_task_meta,
                 "ca_next_action": "reload_active_task_checkpoint",
             }, status=409, headers=cors)
+    # A valid host task envelope is also owner activity. This keeps the
+    # diagnostic truthful for CAs that use ordinary ToolA calls and do not emit
+    # a separate owner_heartbeat request. The epoch/prompt checks above are the
+    # admission boundary; the helper re-checks root ownership atomically.
+    if (
+        _task_session_id
+        and _task_agent_id
+        and _task_meta
+        and _task_epoch_raw is not None
+        and _task_prompt_hash
+        and tool_name not in {"begin_task", "get_task_checkpoint", "owner_heartbeat"}
+    ):
+        try:
+            await asyncio.to_thread(
+                ct._record_authenticated_owner_activity,
+                _task_session_id,
+                _task_agent_id,
+                _task_epoch_raw,
+                _task_prompt_hash,
+                tool_name,
+            )
+        except ct.TaskCheckpointStorageError as exc:
+            return _task_checkpoint_storage_response(
+                exc,
+                cors,
+                write_performed=False,
+            )
 
-    # ── Mutating-tool gate: browser-origin allowlist + token check ──
+    # Mutating-tool gate: browser-origin allowlist + token check
     # run_project_command: skip token gate for declared read-only commands
     _is_readonly_rpc = False
     if tool_name == 'run_project_command' and isinstance(body, dict):
@@ -13006,7 +13152,7 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
     accepted_fields = allowed_params | _alias_sources
     unsupported = sorted(k for k in body.keys() if k not in allowed_params)
     if unsupported:
-        retry_scope = f"{_task_session_id or transport}:{_task_agent_id or 'legacy'}"
+        retry_scope = f"{_task_session_id or 'legacy'}:{_task_agent_id or 'legacy'}"
         # CAP R3: count truly-unknown fields per field (bounded cardinality)
         for _uf in unsupported:
             _compat_metric_unknown(tool_name, _uf)
@@ -14053,6 +14199,16 @@ def _tool_schema_payload(name: str) -> tuple[dict, int]:
     return {"ok": False, "error": f"No schema for '{name}'", "error_name": "SCHEMA_MISSING"}, 500
 
 
+def _mcp_is_stateful_t4_tool(tool_name: str) -> bool:
+    """Keep stateful T4/browser tools in MCP; route every other tool via HTTP."""
+    phases = getattr(ct, "TOOL_PHASES", {}) or {}
+    phase = phases.get(str(tool_name)) if isinstance(phases, dict) else None
+    if isinstance(phase, (list, tuple, set, frozenset)):
+        return any(str(item).strip().upper() == "T4" for item in phase)
+    return any(token.strip().upper() == "T4" for token in
+               str(phase or "").replace(",", "|").replace("/", "|").split("|"))
+
+
 async def dispatch_tool_call(tool_name: str, body: dict | None = None,
                              transport: str = "mcp",
                              request_meta: dict | None = None) -> web.StreamResponse:
@@ -14077,25 +14233,116 @@ async def dispatch_tool_call(tool_name: str, body: dict | None = None,
             for _alias in ("from", "frm", "from_agent"):
                 body.pop(_alias, None)
     headers = dict(request_meta.get("headers") or {})
-    if transport == "mcp" and tool_name not in ct.TOOL_MAP:
-        # Stale-MCP fix: proxy unknown tools to the live daemon, but forward only
-        # caller-owned authorization. The bridge must never mint mutation authority.
+    if (transport == "mcp"
+            and tool_name not in {"tool_names", "tool_schema"}
+            and not _mcp_is_stateful_t4_tool(tool_name)):
+        # Schema-invalid MCP payloads are deliberately kept local: this is a
+        # side-effect-free gate and therefore shares the duplicate-retry ledger
+        # with the direct HTTP dispatcher. Valid payloads take the proxy path
+        # below so their real handler runs in the live daemon.
+        _schema_props = ((_schema_for_tool(tool_name) or {}).get("parameters") or {}).get("properties") or {}
+        _schema_aliases = set(_ARG_ALIASES.get(tool_name, {}))
+        _schema_transport_fields = {"session_id", "task_epoch", "prompt_hash", "generation"}
+        _schema_bad_fields = [
+            key for key in body
+            if key not in _schema_props
+            and key not in _schema_aliases
+            and key not in _schema_transport_fields
+        ]
+        if _schema_bad_fields:
+            if body.get("project_path"):
+                headers.setdefault("X-Project-Path", str(body["project_path"]))
+            request = _InProcessToolRequest(tool_name, body, headers=headers)
+            return await _dispatch_tool_call_request(request, transport=transport)
+
+        # Keep the valid-payload happy path on the live HTTP daemon. Both a
+        # 2xx error envelope and urllib HTTPError use the same bridge helper,
+        # so the duplicate guard cannot be bypassed by HTTP status handling.
+        _proxy_base = os.environ.get(
+            "ORCHESTRATOR_BASE_URL", f"http://127.0.0.1:{PORT}"
+        ).rstrip("/")
+        _proxy_session = str(
+            headers.get("X-Session-Id")
+            or headers.get("X-Task-Session-ID")
+            or body.get("session_id")
+            or "legacy"
+        )
+        _proxy_agent = str(
+            headers.get("X-Agent-Id")
+            or headers.get("X-Council-Agent")
+            or body.get("agent_id")
+            or os.environ.get("COUNCIL_AGENT_ID")
+            or "legacy"
+        )
+        _proxy_identity = f"{_proxy_session}:{_proxy_agent}"
+
+        def _bridge_dedup(_payload: dict, _status: int) -> tuple[dict, int]:
+            if str(_payload.get("error_name") or "") not in _DETERMINISTIC_TOOLBODY_ERRORS:
+                return _payload, _status
+            _proxy_error_name = str(_payload["error_name"])
+            _proxy_dup = _duplicate_retry_guard(
+                _proxy_identity, tool_name, body, _proxy_error_name
+            )
+            if not _proxy_dup:
+                return _payload, _status
+            _payload["original_error_name"] = _proxy_error_name
+            _payload.update(_proxy_dup)
+            return _payload, 409
+
         try:
             import urllib.request as _ur
+            import urllib.error as _ue
             _pdata = json.dumps(body if isinstance(body, dict) else {}).encode("utf-8")
             _proxy_headers = {
                 "Content-Type": "application/json",
-                "Origin": "http://localhost:8083",
+                "Origin": _proxy_base,
             }
             if headers.get("X-Orchestrator-Token"):
                 _proxy_headers["X-Orchestrator-Token"] = headers["X-Orchestrator-Token"]
             _preq = _ur.Request(
-                f"http://localhost:8083/api/call/{tool_name}", data=_pdata,
+                f"{_proxy_base}/api/call/{tool_name}", data=_pdata,
                 headers=_proxy_headers)
-            _pres = await asyncio.to_thread(lambda: _ur.urlopen(_preq, timeout=6100).read())
-            return web.json_response(json.loads(_pres.decode("utf-8", "replace")))
-        except Exception:
-            pass  # fall through to normal dispatch (returns UNKNOWN_TOOL if truly absent)
+            _timeout = float(os.environ.get("MCP_PROXY_HTTP_TIMEOUT", "180"))
+            _pres = await asyncio.to_thread(
+                lambda: _ur.urlopen(_preq, timeout=_timeout).read()
+            )
+            _proxy_payload = json.loads(_pres.decode("utf-8", "replace"))
+            if not isinstance(_proxy_payload, dict):
+                _proxy_payload = {
+                    "ok": False,
+                    "error_name": "MCP_PROXY_INVALID_RESPONSE",
+                    "error": f"MCP HTTP proxy returned a non-object response for {tool_name}",
+                }
+            _proxy_payload, _proxy_status = _bridge_dedup(_proxy_payload, 200)
+            return web.json_response(_proxy_payload, status=_proxy_status)
+        except _ue.HTTPError as exc:
+            _raw = exc.read().decode("utf-8", "replace") if exc.fp else ""
+            try:
+                _error_payload = json.loads(_raw) if _raw else {}
+            except Exception:
+                _error_payload = {}
+            if not isinstance(_error_payload, dict):
+                _error_payload = {}
+            _error_payload.setdefault("ok", False)
+            _error_payload.setdefault("error_name", "MCP_PROXY_HTTP_ERROR")
+            _error_payload.setdefault(
+                "error", f"MCP HTTP proxy returned HTTP {exc.code} for {tool_name}"
+            )
+            _proxy_meta = _error_payload.setdefault("_mcp_proxy", {})
+            if isinstance(_proxy_meta, dict):
+                _proxy_meta.update({"tool": tool_name, "http_status": exc.code})
+            _error_payload, _proxy_status = _bridge_dedup(_error_payload, exc.code)
+            return web.json_response(_error_payload, status=_proxy_status)
+        except Exception as exc:
+            logger.error(
+                "MCP HTTP proxy failed for tool %s via %s: %s",
+                tool_name, _proxy_base, exc,
+            )
+            return web.json_response({
+                "ok": False,
+                "error_name": "MCP_PROXY_FAILED",
+                "error": f"MCP HTTP proxy failed for {tool_name}",
+            }, status=502)
     if body.get("project_path"):
         headers.setdefault("X-Project-Path", str(body.get("project_path")))
     request = _InProcessToolRequest(tool_name, body, headers=headers)
@@ -15437,6 +15684,37 @@ async def _run_boot_recovery() -> dict:
     return result
 
 
+async def _run_session_retention_prune() -> dict:
+    """A22: prune sessions.db to the retention window, OFF the startup path.
+
+    WHY here and not inside boot recovery: SERVER_STARTUP_DEGRADED was once tripped
+    by boot exceeding 30s, so nothing that touches the DB may block readiness. This
+    is scheduled with ``asyncio.create_task`` AFTER ``_run_boot_recovery`` has set
+    SERVER_READY=True, and the DELETE runs on the SessionWriter's own thread via
+    ``asyncio.to_thread`` -- the event loop is never blocked. Opt-in and fail-soft:
+    a prune error is logged, never raised, so a retention hiccup can never take the
+    server down. Set ORCHESTRATOR_SESSION_RETENTION_ON_BOOT=0 to skip entirely.
+
+    Chosen over the alternatives (a periodic cron: the repo has no maintenance
+    scheduler to hang it on; an [A] tool only: that leaves the DB to grow unbounded
+    unless someone remembers to call it). ``prune_sessions_older_than`` is also
+    exported so it can additionally be wired as an [A] tool later.
+    """
+    if os.environ.get("ORCHESTRATOR_SESSION_RETENTION_ON_BOOT", "1").strip().lower() in (
+        "0", "false", "no", "off"
+    ):
+        return {"skipped": "disabled"}
+    try:
+        from orchestrator.session import store as _session_store
+
+        stats = await asyncio.to_thread(_session_store.prune_sessions_older_than)
+        logger.info("session retention prune complete: %s", stats)
+        return stats
+    except Exception as exc:  # fail-soft: retention must never crash the server
+        logger.exception("session retention prune failed: %s", exc)
+        return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:240]}"}
+
+
 COUNCIL_TAB_ENV = "ORCHESTRATOR_OPEN_COUNCIL_TAB"
 
 
@@ -15491,6 +15769,9 @@ async def _run_server():
             _lock_res.get("holder_pid"), _lock_res.get("holder_port"),
         )
         raise SystemExit(3)
+    _generation_publish = _publish_server_generation()
+    if not _generation_publish.get("ok"):
+        logger.error("daemon generation publish failed: %s", _generation_publish)
     livez_server = _start_liveness_listener()
     _start_restart_snapshot_publisher()
     logger.info("Thread-isolated liveness: http://127.0.0.1:%s/livez", LIVEZ_PORT)
@@ -15520,6 +15801,9 @@ async def _run_server():
     except Exception:
         pass
     await _run_boot_recovery()
+    # A22: sessions.db retention runs AFTER boot recovery so it never counts toward
+    # the startup deadline; the task drives DELETEs on the writer thread off-loop.
+    _session_retention_task = asyncio.create_task(_run_session_retention_prune())
     logger.info(f"Orchestrator server: http://localhost:{PORT}")
     logger.info(
         "Runtime paths | app_root=%s | orchestrator_dir=%s | core_rule_path=%s | start_script=%s",
@@ -15541,6 +15825,7 @@ async def _run_server():
         background = await _cancel_and_await_background_tasks({
             "council_monitor": _council_monitor_task,
             "mission_reaper": _reaper_task,
+            "session_retention": _session_retention_task,
         }, timeout=max(0.0, float(os.environ.get("ORCH_BACKGROUND_DRAIN_TIMEOUT", "5"))))
         if not all(row.get("done") for row in background.values()):
             logger.error("background task shutdown incomplete: %s", background)

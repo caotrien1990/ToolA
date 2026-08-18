@@ -968,7 +968,7 @@ class DurableAuditWriter:
             # A later successful apply proves the writer is healthy.
             # apply_timeout is session-sink lag, not a sticky writer death.
             self._clear_last_error(kinds={"apply_timeout"})
-            self._clear_last_error(kinds={"sink"}, context=record.audit_id)
+            self._clear_last_error(kinds={"sink"})
         else:
             self._bump("lease_lost_total")
         with self._condition:
