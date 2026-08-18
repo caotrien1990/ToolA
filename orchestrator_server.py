@@ -1197,7 +1197,12 @@ _ARG_ALIASES = {
     # CAN-051: Playwright-style names CAs habitually use for the browser tool.
     'open_browser_page': {'wait_until': 'wait_for', 'timeout': 'timeout_ms'},
     'search_code':       {'pattern': 'query', 'regex': 'query', 'q': 'query',
-                           'file_path': 'path'},
+                           'file_path': 'path',
+                           # TA-7 fix (2026-08-18): file_glob/glob are the names CAs
+                           # reach for to filter by path; they used to be rejected as
+                           # UNSUPPORTED_FIELD at this validation layer. Map them onto
+                           # the canonical file_pattern so the filter actually applies.
+                           'file_glob': 'file_pattern', 'glob': 'file_pattern'},
     'find_symbol':       {'query': 'name', 'symbol': 'name', 'symbol_name': 'name',
                        'q': 'name',
                        'file_path': 'path'},
