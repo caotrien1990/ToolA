@@ -10,7 +10,7 @@ class DuplicateRetryGuardTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_second_identical_schema_failure_is_blocked(self):
         payload = {"unexpected_field": "x"}
-        first = await srv.dispatch_tool_call("workflow_list", payload, transport="mcp")
+        first = await srv.dispatch_tool_call("workflow_list", payload, transport="http")
         first_body = json.loads(first.text)
         self.assertEqual(first_body["error_name"], "UNSUPPORTED_FIELD")
 

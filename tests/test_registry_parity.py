@@ -70,14 +70,14 @@ class TestRegistryParity(unittest.TestCase):
 
 class TestRegistryFirstDispatch(unittest.IsolatedAsyncioTestCase):
     async def test_begin_task_rejects_project_path_and_remediation_omits_it(self):
-        response = await srv.dispatch_tool_call("begin_task", {"session_id": "s", "prompt": "p", "project_path": "x"}, transport="mcp")
+        response = await srv.dispatch_tool_call("begin_task", {"session_id": "s", "prompt": "p", "project_path": "x"}, transport="http")
         payload = json.loads(response.text)
         self.assertEqual(payload["error_name"], "UNSUPPORTED_FIELD")
         self.assertNotIn("project_path", payload["corrected_payload"])
         self.assertNotIn("project_path", payload["ca_guidance"]["payload_example"])
 
     async def test_private_skip_pre_write_check_is_rejected_publicly(self):
-        response = await srv.dispatch_tool_call("write_fix", {"file_path": "x.py", "start_line": 1, "end_line": 1, "new_content": "x=1", "skip_pre_write_check": True}, transport="mcp")
+        response = await srv.dispatch_tool_call("write_fix", {"file_path": "x.py", "start_line": 1, "end_line": 1, "new_content": "x=1", "skip_pre_write_check": True}, transport="http")
         payload = json.loads(response.text)
         self.assertEqual(payload["error_name"], "UNSUPPORTED_FIELD")
         self.assertIn("skip_pre_write_check", payload["unsupported_fields"])

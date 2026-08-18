@@ -1856,12 +1856,12 @@ process.stdout.write(JSON.stringify(snapshots));
                 scoped = await orchestrator_server.dispatch_tool_call(
                     tool_name,
                     {'project_path': 'C:/repo', 'agent_id': 'agent-b'},
-                    transport='mcp',
+                     transport='http',
                 )
                 legacy = await orchestrator_server.dispatch_tool_call(
                     tool_name,
                     {'project_path': 'C:/repo'},
-                    transport='mcp',
+                     transport='http',
                 )
 
             self.assertEqual(json.loads(scoped.text).get('error_name'), 'ACTIVE_SESSION_REQUIRED')
@@ -1911,7 +1911,7 @@ process.stdout.write(JSON.stringify(snapshots));
                 response = await orchestrator_server.dispatch_tool_call(
                     tool_name,
                     {'project_path': project},
-                    transport='mcp',
+                     transport='http',
                     request_meta={'headers': {'X-Council-Agent': 'agent-b'}},
                 )
 
@@ -1942,7 +1942,7 @@ process.stdout.write(JSON.stringify(snapshots));
                         'dry_run': True,
                         'backup_override': True,
                     },
-                    transport='mcp',
+                     transport='http',
                 )
 
             payload = json.loads(response.text)
@@ -1987,7 +1987,7 @@ process.stdout.write(JSON.stringify(snapshots));
                 response = await orchestrator_server.dispatch_tool_call(
                     tool_name,
                     {'project_path': project},
-                    transport='mcp',
+                     transport='http',
                     request_meta={'headers': {'X-Council-Agent': 'agent-b'}},
                 )
 
@@ -2057,7 +2057,7 @@ process.stdout.write(JSON.stringify(snapshots));
                 response = await orchestrator_server.dispatch_tool_call(
                     tool_name,
                     {'project_path': project, 'agent_id': 'agent-b'},
-                    transport='mcp',
+                     transport='http',
                 )
                 await orchestrator_server._flush_post_call_accounting(timeout=2.0)
                 self.assertTrue(writer.wait_until_idle(2.0))
@@ -2143,7 +2143,7 @@ process.stdout.write(JSON.stringify(snapshots));
                         'open_session',
                         {'session_title': 'Header identity', 'project_path': project,
                          'agent_id': 'agent-a'},
-                        transport='mcp',
+                     transport='http',
                         request_meta={'headers': {'X-Council-Agent': 'agent-b'}},
                     )
                 await orchestrator_server._flush_post_call_accounting(timeout=2.0)
@@ -2185,7 +2185,7 @@ process.stdout.write(JSON.stringify(snapshots));
                         'prepare_ca_session',
                         {'project_path': project, 'agent_id': 'agent-body',
                          'host_session_id': 'host-a'},
-                        transport='mcp',
+                     transport='http',
                         request_meta={'headers': {'X-Council-Agent': 'agent-header'}},
                     )
                 data = json.loads(response.text)
@@ -2291,7 +2291,7 @@ process.stdout.write(JSON.stringify(snapshots));
                     response = await orchestrator_server.dispatch_tool_call(
                         'open_session',
                         {'session_title': 'Environment identity', 'project_path': project},
-                        transport='mcp',
+                     transport='http',
                     )
                 await orchestrator_server._flush_post_call_accounting(timeout=2.0)
                 self.assertTrue(writer.wait_until_idle(2.0))
@@ -2344,7 +2344,7 @@ process.stdout.write(JSON.stringify(snapshots));
                 response = await orchestrator_server.dispatch_tool_call(
                     tool_name,
                     {'project_path': 'C:/repo', 'agent_id': 'agent-body'},
-                    transport='mcp',
+                     transport='http',
                     request_meta={'headers': {'X-Council-Agent': 'agent-header'}},
                 )
             self.assertTrue(json.loads(response.text)['ok'])
@@ -4185,8 +4185,11 @@ class TestAT139SemaphoreCancellation(unittest.IsolatedAsyncioTestCase):
         task.cancel()
         with self.assertRaises(asyncio.CancelledError):
             await task
-        self.assertEqual(orchestrator_server._TOOL_SEMS['command']._value,
-            orchestrator_server._TOOL_SEM_LIMITS['command'])
+        self.assertEqual(
+            orchestrator_server._TOOL_SEMS['command']._value,
+            int(os.environ.get(
+                "ORCH_SEM_COMMAND",
+                orchestrator_server._TOOL_SEM_LIMITS['command'])))
         self.assertEqual(orchestrator_server._SEMAPHORE_HOLDERS, {})
 
     async def test_semaphore_and_cancel_endpoints_have_documented_shapes(self):

@@ -99,6 +99,18 @@ class BootstrapContractTests(unittest.TestCase):
         )
         self.assertIn("owner_claim_id", schema["parameters"]["required"])
 
+        compact = {item["name"]: item for item in payload["key_tools_compact"]}
+        self.assertEqual(
+            compact["bootstrap_session"]["required"],
+            ["session_id", "agent_id", "owner_claim_id"],
+        )
+        self.assertEqual(
+            compact["begin_task"]["required"],
+            ["session_id", "prompt", "agent_id"],
+        )
+        self.assertIn("owner_capability", compact["begin_task"]["notes"])
+        self.assertTrue(any("STALE_INDEX" in item for item in payload["common_pitfalls"]))
+
     def test_bootstrap_skills_index_carries_no_filesystem_paths(self):
         # A34: active_skills_index must identify skills by name only. Embedding an
         # absolute SKILL.md path makes the payload size depend on where the repo

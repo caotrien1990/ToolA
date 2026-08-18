@@ -49,6 +49,26 @@ class DurableAuditHealthOkTests(unittest.TestCase):
         }
         self.assertFalse(srv._durable_audit_ok_from_metrics(metrics, None))
 
+    def test_recovered_sink_error_with_empty_outbox_is_ok(self) -> None:
+        metrics = {
+            "worker_alive": True,
+            "admission_open": True,
+            "pending": 0,
+            "last_error": "SessionStoreContentionError: database is locked",
+            "last_error_kind": "sink",
+        }
+        self.assertTrue(srv._durable_audit_ok_from_metrics(metrics, None))
+
+    def test_sink_error_with_pending_outbox_is_not_ok(self) -> None:
+        metrics = {
+            "worker_alive": True,
+            "admission_open": True,
+            "pending": 1,
+            "last_error": "SessionStoreContentionError: database is locked",
+            "last_error_kind": "sink",
+        }
+        self.assertFalse(srv._durable_audit_ok_from_metrics(metrics, None))
+
     def test_dead_worker_is_not_ok(self) -> None:
         metrics = {
             "worker_alive": False,

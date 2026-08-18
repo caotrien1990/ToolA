@@ -82,7 +82,7 @@ class TestSearchServerAdmission(unittest.IsolatedAsyncioTestCase):
                     orchestrator_server.dispatch_tool_call(
                         "search_code",
                         {"query": "same-query"},
-                        transport="mcp",
+                         transport="http",
                     )
                 )
                 for _ in range(caller_count)

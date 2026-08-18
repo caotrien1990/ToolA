@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
 import unittest
 
@@ -265,13 +266,17 @@ class ExecutorLaneTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row["queued"], 0)
 
     def test_default_lane_configuration_and_status_shape(self):
-        expected = {
+        baseline = {
             "read_io": 12,
             "command": 4,
             "test": 2,
             "git": 4,
             "backup": 1,
             "council_provider": 8,
+        }
+        expected = {
+            name: int(os.environ.get(f"ORCH_EXEC_{name.upper()}_WORKERS", str(workers)))
+            for name, workers in baseline.items()
         }
         rows = {row["name"]: row for row in executor_lane_status()}
         for name, workers in expected.items():

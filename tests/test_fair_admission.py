@@ -25,9 +25,9 @@ class FairAdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.env = mock.patch.dict(os.environ, {
             "ORCH_FAIR_ADMISSION_ENABLED": "1", "ORCH_GLOBAL_CAP_ENABLED": "1",
             "ORCH_FAIR_READ_IO_QUOTA": "2", "ORCH_FAIR_ANONYMOUS_QUOTA": "1",
+            "ORCH_FAIR_ANONYMOUS_READ_IO_QUOTA": "1",
             "ORCH_FAIR_MAX_WAITERS_PER_PRINCIPAL": "1", "ORCH_GLOBAL_CAP": "4"}, clear=False)
         self.env.start()
-
     async def asyncTearDown(self):
         self.env.stop()
         await shutdown_executor_lanes(drain_timeout=0)

@@ -246,7 +246,7 @@ class DurableAuditIntegrationTests(unittest.TestCase):
                     srv.dispatch_tool_call(
                         tool_name,
                         {},
-                        transport="mcp",
+                        transport="http",
                         request_meta={"headers": {"X-Operation-ID": "stage-failure-op"}},
                     )
                 )

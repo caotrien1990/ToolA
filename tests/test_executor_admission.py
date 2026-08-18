@@ -96,7 +96,7 @@ class ExecutorAdmissionTests(unittest.IsolatedAsyncioTestCase):
         async def overloaded_tool():
             raise ExecutorLaneQueueWaitExceeded("read_io", "queue budget exceeded", metrics)
         with mock.patch.dict(server.ct.TOOL_MAP, {"unit_lane_overload": overloaded_tool}, clear=False):
-            response = await server.dispatch_tool_call("unit_lane_overload", {}, transport="mcp")
+            response = await server.dispatch_tool_call("unit_lane_overload", {}, transport="http")
         payload = json.loads(response.text)
         self.assertEqual(response.status, 503)
         self.assertEqual(response.headers.get("Retry-After"), "1")
@@ -198,7 +198,7 @@ class BackupHttpAdmissionTests(unittest.IsolatedAsyncioTestCase):
             self._cleanup_locks.append(self._lock_key(self.root_a))
             for _ in range(num_calls):
                 tasks.append(asyncio.create_task(server.dispatch_tool_call(
-                    "backup_project", {"project_path": self.root_a}, transport="mcp")))
+                     "backup_project", {"project_path": self.root_a}, transport="http")))
             # Wait until the first holder is inside its lock, then give every
             # contender a scheduler chance to run.
             await self._async_wait(blocked_entered, timeout=5.0)
@@ -252,14 +252,14 @@ class BackupHttpAdmissionTests(unittest.IsolatedAsyncioTestCase):
             with mock.patch.dict(
                     server.ct.TOOL_MAP, {"backup_project": holder}, clear=False):
                 holder_task = asyncio.create_task(server.dispatch_tool_call(
-                    "backup_project", {"project_path": self.root_a}, transport="mcp"))
+                     "backup_project", {"project_path": self.root_a}, transport="http"))
                 await self._async_wait(holder_entered, timeout=5.0)
             with mock.patch.dict(
                     server.ct.TOOL_MAP, {"backup_project": targeted}, clear=False):
                 resp = await asyncio.wait_for(server.dispatch_tool_call(
                     "backup_project",
                     {"project_path": self.root_b, "target_paths": ["x"]},
-                    transport="mcp"), 5.0)
+                     transport="http"), 5.0)
             gate.set()
             holder_result = json.loads((await asyncio.wait_for(holder_task, 5.0)).text)
         self.assertTrue(entered_targeted.is_set(),

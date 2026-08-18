@@ -101,7 +101,7 @@ class TestPostCallAccountingIsolation(unittest.IsolatedAsyncioTestCase):
                     orchestrator_server.dispatch_tool_call(
                         tool_name,
                         {},
-                        transport="mcp",
+                         transport="http",
                         request_meta={"headers": {"X-Operation-ID": f"acct-{index:03d}"}},
                     )
                 )

@@ -336,7 +336,7 @@ class TestCanonicalPlusAliasHTTPPath(unittest.IsolatedAsyncioTestCase):
         resp = await srv.dispatch_tool_call(
             "find_symbol",
             {"name": "my_fn", "symbol": "my_fn", "project_path": "."},
-            transport="mcp",
+             transport="http",
         )
         body = json.loads(resp.text)
         self.assertNotEqual(
@@ -349,7 +349,7 @@ class TestCanonicalPlusAliasHTTPPath(unittest.IsolatedAsyncioTestCase):
         resp = await srv.dispatch_tool_call(
             "find_callers",
             {"symbol": "my_fn", "query": "my_fn", "project_path": "."},
-            transport="mcp",
+             transport="http",
         )
         body = json.loads(resp.text)
         self.assertNotEqual(
@@ -391,7 +391,7 @@ class TestFindCallersPageIdFallback(unittest.IsolatedAsyncioTestCase):
         resp = await srv.dispatch_tool_call(
             "find_callers",
             {"symbol": "my_fn", "page_id": "cdp-fake-0"},
-            transport="mcp",
+             transport="http",
         )
         body = json.loads(resp.text)
         # F2 regression assertion: page_id must NOT be rejected as unsupported.
@@ -413,7 +413,7 @@ class TestFindCallersPageIdFallback(unittest.IsolatedAsyncioTestCase):
         resp = await srv.dispatch_tool_call(
             "find_callers",
             {"symbol": "my_fn", "project_path": ".", "page_id": "cdp-fake-0"},
-            transport="mcp",
+             transport="http",
         )
         body = json.loads(resp.text)
         self.assertNotEqual(

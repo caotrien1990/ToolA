@@ -82,7 +82,7 @@ class TaskEpochGuardTests(unittest.IsolatedAsyncioTestCase):
         response = await srv.dispatch_tool_call(
             "workflow_list",
             {"session_id": "session-b", "task_epoch": current["task_epoch"] - 1},
-            transport="mcp",
+             transport="http",
         )
         payload = json.loads(response.text)
         self.assertEqual(payload["error_name"], "STALE_TASK_EPOCH")
@@ -94,7 +94,7 @@ class TaskEpochGuardTests(unittest.IsolatedAsyncioTestCase):
             "workflow_list",
             {"session_id": "session-c", "task_epoch": current["task_epoch"],
              "prompt_hash": "not-the-current-hash"},
-            transport="mcp",
+             transport="http",
         )
         payload = json.loads(response.text)
         self.assertEqual(payload["error_name"], "STALE_TASK_EPOCH")
@@ -105,7 +105,7 @@ class TaskEpochGuardTests(unittest.IsolatedAsyncioTestCase):
         response = await srv.dispatch_tool_call(
             "workflow_list",
             {"session_id": "session-c", "task_epoch": current["task_epoch"]},
-            transport="mcp",
+             transport="http",
         )
         payload = json.loads(response.text)
         self.assertEqual(payload["task_epoch"], current["task_epoch"])
@@ -114,7 +114,7 @@ class TaskEpochGuardTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_stale_server_generation_is_rejected(self):
         response = await srv.dispatch_tool_call(
-            "workflow_list", {"generation": "stale-generation"}, transport="mcp"
+            "workflow_list", {"generation": "stale-generation"}, transport="http"
         )
         payload = json.loads(response.text)
         self.assertEqual(payload["error_name"], "STALE_GENERATION")
@@ -126,7 +126,7 @@ class TaskEpochGuardTests(unittest.IsolatedAsyncioTestCase):
         current = await self._begin_root("session-b", "current task", "ope")
         response = await srv.dispatch_tool_call(
             "write_new_file", {"session_id": "session-b", "project_path": "D:/tmp",
-                               "file_path": "a.txt", "content": "x"}, transport="mcp"
+                               "file_path": "a.txt", "content": "x"}, transport="http"
         )
         payload = json.loads(response.text)
         self.assertEqual(payload["error_name"], "TASK_EPOCH_REQUIRED")
@@ -146,7 +146,7 @@ class TaskEpochGuardTests(unittest.IsolatedAsyncioTestCase):
         response = await srv.dispatch_tool_call(
             "workflow_list", {"session_id": "session-a", "task_epoch": subtask["task_epoch"],
                               "prompt_hash": subtask["prompt_hash"], "agent_id": "ope"},
-            transport="mcp",
+             transport="http",
         )
         payload = json.loads(response.text)
         self.assertNotEqual(payload.get("error_name"), "STALE_TASK_EPOCH")

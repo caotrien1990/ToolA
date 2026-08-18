@@ -104,4 +104,29 @@ class CommandTransportC2Tests(unittest.TestCase):
         launched_s = launched if isinstance(launched, str) else " ".join(str(x) for x in launched)
         self.assertIn("^>", launched_s)
 
+    def test_auto_does_not_treat_ps1_argument_as_script_file(self):
+        fake = FakeProcess(stdout="runner.ps1\n", stderr="")
+        with mock.patch.object(code_tools.subprocess, "Popen", return_value=fake) as popen:
+            result = json.loads(asyncio.run(code_tools.run_project_command(
+                str(self.project), "findstr /n /i pattern runner.ps1", shell_mode="auto",
+            )))
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["shell_mode_resolved"], "cmd")
+        launched = popen.call_args.args[0]
+        launched_s = launched if isinstance(launched, str) else " ".join(str(x) for x in launched)
+        self.assertIn("cmd", launched_s.lower())
+        self.assertNotIn("-File", launched_s)
+
+    def test_explicit_powershell_uses_command_for_ps1_argument(self):
+        fake = FakeProcess(stdout="runner.ps1\n", stderr="")
+        with mock.patch.object(code_tools.subprocess, "Popen", return_value=fake) as popen:
+            result = json.loads(asyncio.run(code_tools.run_project_command(
+                str(self.project), "findstr /n /i pattern runner.ps1", shell_mode="powershell",
+            )))
+        self.assertTrue(result["ok"], result)
+        launched = popen.call_args.args[0]
+        launched_s = launched if isinstance(launched, str) else " ".join(str(x) for x in launched)
+        self.assertIn("-Command", launched_s)
+        self.assertNotIn("-File", launched_s)
+
 if __name__ == "__main__": unittest.main()
