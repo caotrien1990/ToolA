@@ -226,6 +226,7 @@ PROTECTED_TOOL_NAMES = {
     "run_script", "launch_electron_with_cdp", "ensure_single_electron_instance",
     "cleanup_test_session", "desktop_click", "desktop_send_text",
     "assert_button_click_changes_state", "restart_orchestrator_via_task",
+    "restart_orchestrator_via_bat",
     "save_log_snapshot",
     # R81 CEP deploy tooling — file-mutating, require token + session
     "copy_file", "cep_deploy", "create_folder", "create_folders",
@@ -1308,7 +1309,7 @@ for schema in TOOL_SCHEMAS:
     if name == "write_new_file":
         fn["description"] = "Create a new file. Supports dry_run preview, base64 UTF-8 strict, diff_preview, and apply_after_dry_run."
     if name == "run_project_command":
-        fn["description"] = "Run a bounded project command. V15 R14: shell_mode=auto|cmd|powershell|exec|posix; command_encoding=plain|base64; keep_alive=true detaches GUI/long-running processes; optional expected_port/expected_process_name verify GUI/debug launch and return spawned_pid, launch_verified, port_probe, process_probe. Mutating commands require X-Orchestrator-Token."
+        fn["description"] = "Run a bounded project command. V15 R14: shell_mode=auto|cmd|powershell|exec|posix; command_encoding=plain|base64; keep_alive=true detaches GUI/long-running processes; optional expected_port/expected_process_name verify GUI/debug launch and return spawned_pid, launch_verified, port_probe, process_probe. JSON-encode backslashes before placing command in an outer JSON string. On Windows prefer direct search/read tools or script-file transport for fragile shell operators and findstr/dir reads. Auto routes only a standalone script.ps1 to PowerShell -File; findstr text script.ps1 remains a normal command. Mutating commands require X-Orchestrator-Token."
     if name == "run_test_profile":
         props["profile"]["enum"] = SUPPORTED_TEST_PROFILES
         fn["description"] = "Run a known test profile. If invalid, the error returns available profiles."
@@ -1354,7 +1355,7 @@ _ENGLISH_TOOL_DESCRIPTIONS = {
     "optional_tool_probe": "Check optional helper tools or endpoints without mutating state or fetching raw tokens.",
     "backup_project": "Create a timestamped zip backup and backup manifest.",
     "cache_delta": "Compare the filesystem against INDEX for added, modified, and deleted files.",
-    "run_project_command": "Run a bounded project command. Supports keep_alive for GUI/long-running processes. Mutating commands require X-Orchestrator-Token.",
+    "run_project_command": "Run a bounded project command. JSON-encode backslashes before transport; on Windows prefer direct search/read tools for file reads. Only a standalone .ps1 path uses PowerShell -File; a command such as findstr text script.ps1 remains a normal command. Supports keep_alive for GUI/long-running processes. Mutating commands require X-Orchestrator-Token.",
     "run_test_profile": "Run a known bounded test profile. Invalid profiles return the available profile list.",
     "create_benchmark_request": "Create BENCHMARK_REQUEST.md from idea only. Does not accept description.",
     "create_build_context": "Create BUILD_CONTEXT.md from idea and approved_inputs only. Does not accept name.",
@@ -2210,6 +2211,95 @@ def _matrix_audit_cache_key(project_path: str) -> str:
         return os.path.normcase(os.path.abspath(project_path or ""))
     except Exception:
         return str(project_path or "")
+
+
+def _drift_force_full_severities() -> set:
+    """Live-read the severity set that forces verbosity='full' on drift.
+
+    A13 pattern (see orchestrator/graph/config.py::graph_enabled): read the env
+    LIVE on every call, never freeze at import — freezing breaks test isolation.
+    Default {high, critical}. Override via ORCHESTRATOR_DRIFT_FORCE_SEVERITIES
+    (comma-separated, case-insensitive), e.g. "high,critical,medium".
+    """
+    raw = os.environ.get("ORCHESTRATOR_DRIFT_FORCE_SEVERITIES", "high,critical")
+    return {s.strip().lower() for s in raw.split(",") if s.strip()}
+
+
+def _drift_force_full_count() -> int:
+    """Live-read the drift-count threshold that forces 'full' regardless of
+    severity. Default 3. Override via ORCHESTRATOR_DRIFT_FORCE_FULL_COUNT."""
+    try:
+        return int(os.environ.get("ORCHESTRATOR_DRIFT_FORCE_FULL_COUNT", "3"))
+    except (TypeError, ValueError):
+        return 3
+
+
+def _drift_note_max_entries() -> int:
+    """Live-read the max entries kept in a compact matrix_drift_note. Default 5.
+    Override via ORCHESTRATOR_DRIFT_NOTE_MAX_ENTRIES."""
+    try:
+        return int(os.environ.get("ORCHESTRATOR_DRIFT_NOTE_MAX_ENTRIES", "5"))
+    except (TypeError, ValueError):
+        return 5
+
+
+def _open_session_drift_decision(resp: dict, mx, verbosity: str) -> str:
+    """V15 F4 (D4) — severity-aware drift verbosity policy for open_session.
+
+    Single source of truth shared by every open_session drift branch (replaces
+    the duplicated force-full snippets). Mutates ``resp`` in place and returns
+    the effective verbosity string.
+
+    Policy:
+      - high/critical severity (see ORCHESTRATOR_DRIFT_FORCE_SEVERITIES) OR
+        drift_count>=threshold (ORCHESTRATOR_DRIFT_FORCE_FULL_COUNT, default 3)
+        OR any progressive gap  -> legacy force-full: set resp['_drift_override']
+        and return 'full'. No matrix_drift_note (full payload already carries
+        drift detail).
+      - low/medium with count<threshold and no gap -> keep the worker-requested
+        verbosity, attach a compact resp['matrix_drift_note'] (<= max entries;
+        each {tool, severity, ca_next_action='run audit_tool_matrix'}). If the
+        worker already asked for 'full', add the note but no override text.
+      - drift_count==0 and no gap -> add nothing, return requested verbosity.
+
+    All thresholds are read LIVE (A13 pattern) so tests / env can retune them.
+
+    ``mx`` is the matrix-audit payload ({'drift': [...], ...}) or None; ``resp``
+    is the open_session response dict (carries progressive_gap_count).
+    """
+    drift = ((mx or {}).get("drift")) or []
+    gap = resp.get("progressive_gap_count", 0) or 0
+
+    severities = {str(d.get("severity", "")).strip().lower() for d in drift}
+    force_set = _drift_force_full_severities()
+    force_count = _drift_force_full_count()
+
+    critical_severity = bool(severities & force_set)
+    force_full = bool(critical_severity or len(drift) >= force_count or gap > 0)
+
+    if force_full:
+        if verbosity != "full":
+            resp["_drift_override"] = (
+                f"verbosity forced 'full': drift_count={len(drift)}, "
+                f"severities={sorted(severities) if severities else []}, "
+                f"progressive_gap_count={gap}"
+            )
+            return "full"
+        return verbosity
+
+    # Low/medium, count below threshold, no gap: keep requested verbosity and
+    # attach a compact note (only when there is drift to report).
+    if drift:
+        max_entries = _drift_note_max_entries()
+        resp["matrix_drift_note"] = [
+            {
+                "tool": d.get("tool"),
+                "severity": str(d.get("severity", "")).strip().lower(),
+                "ca_next_action": "run audit_tool_matrix",
+            }
+            for d in drift[:max_entries]
+        ]
+    return verbosity
 
 
 def _matrix_audit_open_session_summary(project_path: str):
@@ -3564,7 +3654,7 @@ async def rule_drift_check(project_path: str = "", checks: str = "") -> str:
             _add("agent_list", "info", f"could not read council_config.json: {_e}")
         rule_agents = set()
         for txt in rule_text.values():
-            for m in _re.finditer(r"\b(clau|codo|pic|ope|hermes|kilo|cozo)\b", txt):
+            for m in _re.finditer(r"\b(clau|codo|gro|pic|ope|hermes|kilo|cozo)\b", txt):
                 rule_agents.add(m.group(1))
         if cfg_agents:
             for a in sorted(rule_agents - cfg_agents):
@@ -3915,14 +4005,36 @@ async def run_project_command(
             accepted_shell_modes=["auto", "cmd", "powershell", "exec", "posix"],
         )
     raw_str = command if isinstance(command, str) else " ".join(str(x) for x in command)
+
+    def _standalone_ps1_path(value: object) -> str:
+        """Return a script path only when the whole command is that path.
+
+        A command such as ``findstr pattern runner.ps1`` is a normal shell
+        command, not a PowerShell ``-File`` invocation. The old suffix-only
+        heuristic misrouted that valid read command whenever its final
+        argument happened to be a ``.ps1`` file.
+        """
+        if not isinstance(value, str):
+            return ""
+        text = value.strip()
+        if not text:
+            return ""
+        if text.startswith('"') and text.endswith('"') and text.count('"') == 2:
+            text = text[1:-1].strip()
+        elif any(ch.isspace() for ch in text) or any(ch in text for ch in "\r\n&|<>;"):
+            return ""
+        return text if text.lower().endswith(".ps1") else ""
+
+    standalone_ps1_path = _standalone_ps1_path(command)
     # Resolve auto-mode
     resolved_mode = sm
     if sm == "auto":
         if _is_win:
             if isinstance(command, list):
                 resolved_mode = "exec"
-            # Detect .bat/.cmd target → cmd; .ps1 → powershell; else cmd (safer default for Windows builtins)
-            elif (head := str(command or "").strip().strip('"').lower()).endswith(".ps1") or head in {"powershell", "pwsh"}:
+            # A standalone .ps1 target → PowerShell; a command whose final
+            # argument is .ps1 remains cmd (safer default for Windows builtins).
+            elif standalone_ps1_path or str(command or "").strip().lower() in {"powershell", "pwsh"}:
                 resolved_mode = "powershell"
             else:
                 resolved_mode = "cmd"
@@ -4275,9 +4387,8 @@ async def run_project_command(
         shell_name = "cmd"
     elif resolved_mode == "powershell":
         if isinstance(command, str):
-            stripped = command.strip().strip('"')
-            if stripped.lower().endswith(".ps1"):
-                args = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", stripped]
+            if standalone_ps1_path:
+                args = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", standalone_ps1_path]
             else:
                 args = ["powershell", "-NoProfile", "-Command", command]
         else:
@@ -5268,6 +5379,11 @@ def _task_checkpoint_save(session_key: str, checkpoint: dict) -> bool:
 def _task_checkpoint_load(session_key: str):
     _sync_session_db_alias()
     return _session_store_module._task_checkpoint_load(session_key)
+
+
+def _task_checkpoint_load_with_meta(session_key: str):
+    _sync_session_db_alias()
+    return _session_store_module._task_checkpoint_load_with_meta(session_key)
 
 
 def _task_checkpoint_update(session_key: str, update_fn, busy_timeout_ms: int = 5000):
@@ -6761,6 +6877,7 @@ async def run_project_test_script(
 _TASK_EPOCH_LOCKS: dict[str, threading.Lock] = {}
 _TASK_EPOCH_LOCKS_GUARD = threading.Lock()
 _OWNER_CLAIM_TTL_SECONDS = max(30, int(os.environ.get("ORCHESTRATOR_OWNER_CLAIM_TTL_SECONDS", "300")))
+_OWNER_HEARTBEAT_TTL_SECONDS = max(15, int(os.environ.get("ORCHESTRATOR_OWNER_HEARTBEAT_TTL_SECONDS", "120")))
 
 
 def _task_epoch_lock(session_key: str) -> threading.Lock:
@@ -6875,13 +6992,18 @@ async def begin_task(session_id: str, prompt: str, agent_id: str = "", max_chars
                              "supersedes_prior_tasks": False, "ca_next_action": "deliver_delegation_capability_to_named_agent"})
             return replacement, json.dumps(response, ensure_ascii=False)
         checkpoint = {"ok": True, "session_id": session_key, "agent_id": incoming or root, "scope": "root",
-                      "task_epoch": int(replacement.get("task_epoch", 0)) + 1, "prompt_hash": _task_prompt_hash(normalized),
-                      "active_task": bounded, "prompt_encoding_repaired": repaired, "supersedes_prior_tasks": True,
-                      "ca_next_action": "proceed_with_active_task", "owner_capability_sha256": replacement.get("owner_capability_sha256"),
-                      "owner_identity_id": replacement.get("owner_identity_id"), "owner_claim_sha256": replacement.get("owner_claim_sha256"),
-                      "owner_claim_status": replacement.get("owner_claim_status") or "committed"}
+                       "task_epoch": int(replacement.get("task_epoch", 0)) + 1, "prompt_hash": _task_prompt_hash(normalized),
+                       "active_task": bounded, "prompt_encoding_repaired": repaired, "supersedes_prior_tasks": True,
+                       "ca_next_action": "proceed_with_active_task", "owner_capability_sha256": replacement.get("owner_capability_sha256"),
+                       "owner_identity_id": replacement.get("owner_identity_id"), "owner_claim_sha256": replacement.get("owner_claim_sha256"),
+                       "owner_claim_status": replacement.get("owner_claim_status") or "committed"}
+        for heartbeat_key in ("owner_last_heartbeat_at", "owner_last_heartbeat_at_iso",
+                              "owner_heartbeat_count", "owner_heartbeat_source"):
+            if heartbeat_key in replacement:
+                checkpoint[heartbeat_key] = replacement[heartbeat_key]
         if replacement.get("subtasks"): checkpoint["subtasks"] = replacement["subtasks"]
-        hidden = {"owner_capability_sha256", "owner_identity_id", "owner_claim_sha256", "owner_claim_status", "owner_claim_expires_at"}
+        hidden = {"owner_capability_sha256", "owner_identity_id", "owner_claim_sha256", "owner_claim_status", "owner_claim_expires_at",
+                 "owner_last_heartbeat_at", "owner_last_heartbeat_at_iso", "owner_heartbeat_count", "owner_heartbeat_source"}
         return checkpoint, json.dumps({k: v for k, v in checkpoint.items() if k not in hidden}, ensure_ascii=False)
     # Anh 2026-08-11 (Phase A on-loop audit): run the durable task checkpoint update
     # OFF the loop. _task_checkpoint_update goes through the SessionWriter and blocks
@@ -6893,24 +7015,385 @@ async def begin_task(session_id: str, prompt: str, agent_id: str = "", max_chars
     return response
 
 
-async def get_task_checkpoint(session_id: str) -> str:
+async def owner_heartbeat(session_id: str, agent_id: str, owner_capability: str,
+                          summary: str = "") -> str:
+    """Record authenticated owner liveness without exposing capability material."""
     session_key = (session_id or "default").strip() or "default"
+    incoming = (agent_id or "").strip()
+
+    def reject(message, name, **extra):
+        return None, _json_error(message, error_name=name, retryable=False, **extra)
+
+    def update(previous):
+        if not previous:
+            return reject("bootstrap_session must establish the server-owned task root first",
+                          "TASK_OWNER_REQUIRED",
+                          ca_next_action="call_bootstrap_session_then_begin_task")
+        root = str(previous.get("agent_id") or "")
+        if incoming != root:
+            return reject("only the committed root owner may send this heartbeat",
+                          "TASK_OWNER_MISMATCH", owner_agent_id=root,
+                          ca_next_action="use_the_root_owner_agent_id_and_capability")
+        status = str(previous.get("owner_claim_status") or "")
+        if status != "committed":
+            return reject("owner capability is not committed; confirm the owner claim first",
+                          "OWNER_CLAIM_NOT_COMMITTED",
+                          ca_next_action="call_begin_task_with_the_server_issued_owner_capability")
+        expected = str(previous.get("owner_capability_sha256") or "")
+        if not owner_capability or not expected or not secrets.compare_digest(
+                hashlib.sha256(str(owner_capability).encode("utf-8")).hexdigest(), expected):
+            return reject("valid root owner capability is required",
+                          "TASK_OWNER_MISMATCH", owner_agent_id=root,
+                          ca_next_action="use_server_issued_owner_capability")
+        now_ts = time.time()
+        heartbeat_at = datetime.fromtimestamp(now_ts).isoformat(timespec="seconds")
+        replacement = dict(previous)
+        replacement["owner_last_heartbeat_at"] = now_ts
+        replacement["owner_last_heartbeat_at_iso"] = heartbeat_at
+        replacement["owner_heartbeat_count"] = int(replacement.get("owner_heartbeat_count") or 0) + 1
+        replacement["owner_heartbeat_source"] = "owner_heartbeat"
+        response = {
+            "ok": True,
+            "session_id": session_key,
+            "agent_id": incoming,
+            "scope": "root",
+            "owner_liveness": "active",
+            "heartbeat_freshness": "fresh",
+            "heartbeat_at": heartbeat_at,
+            "heartbeat_ttl_seconds": _OWNER_HEARTBEAT_TTL_SECONDS,
+            "heartbeat_count": replacement["owner_heartbeat_count"],
+            "ca_next_action": "continue_and_heartbeat_before_ttl",
+        }
+        return replacement, json.dumps(response, ensure_ascii=False)
+
     try:
-        checkpoint = _task_checkpoint_load(session_key)
+        _checkpoint, response, _wrote = await asyncio.to_thread(
+            _task_checkpoint_update, session_key, update
+        )
     except TaskCheckpointStorageError as exc:
         return _json_error(str(exc), error_name=exc.error_name, retryable=False,
                            ca_next_action="repair_task_checkpoint_storage_then_retry")
+    return response
+
+
+def _record_authenticated_owner_activity(session_id: str, agent_id: str,
+                                          task_epoch, prompt_hash: str,
+                                          tool_name: str = "") -> dict:
+    """Record activity after the dispatcher validates a task envelope.
+
+    The dispatcher has already checked the epoch and prompt hash before calling
+    this helper. The checkpoint owner and committed claim are checked again
+    inside the atomic update so stale or delegated identities cannot touch the
+    root owner's liveness timestamp.
+    """
+    session_key = (session_id or "default").strip() or "default"
+    incoming = (agent_id or "").strip()
+
+    def update(previous):
+        if not previous:
+            return None, json.dumps({"recorded": False, "reason": "checkpoint_missing"})
+        if str(previous.get("agent_id") or "") != incoming:
+            return None, json.dumps({"recorded": False, "reason": "owner_identity_mismatch"})
+        if (str(previous.get("owner_claim_status") or "") != "committed"
+                or not previous.get("owner_capability_sha256")):
+            return None, json.dumps({"recorded": False, "reason": "owner_not_committed"})
+        try:
+            expected_epoch = int(previous.get("task_epoch", 0))
+            incoming_epoch = int(task_epoch)
+        except (TypeError, ValueError):
+            return None, json.dumps({"recorded": False, "reason": "task_epoch_invalid"})
+        if incoming_epoch != expected_epoch:
+            return None, json.dumps({"recorded": False, "reason": "task_epoch_mismatch"})
+        if str(prompt_hash or "") != str(previous.get("prompt_hash") or ""):
+            return None, json.dumps({"recorded": False, "reason": "prompt_hash_mismatch"})
+
+        now_ts = time.time()
+        heartbeat_at = datetime.fromtimestamp(now_ts).isoformat(timespec="seconds")
+        replacement = dict(previous)
+        replacement["owner_last_heartbeat_at"] = now_ts
+        replacement["owner_last_heartbeat_at_iso"] = heartbeat_at
+        replacement["owner_heartbeat_count"] = int(
+            replacement.get("owner_heartbeat_count") or 0
+        ) + 1
+        replacement["owner_heartbeat_source"] = "authenticated_task_activity"
+        response = {
+            "recorded": True,
+            "session_id": session_key,
+            "agent_id": incoming,
+            "tool_name": str(tool_name or ""),
+            "owner_liveness": "active",
+            "heartbeat_freshness": "fresh",
+            "heartbeat_at": heartbeat_at,
+            "heartbeat_ttl_seconds": _OWNER_HEARTBEAT_TTL_SECONDS,
+            "heartbeat_count": replacement["owner_heartbeat_count"],
+        }
+        return replacement, json.dumps(response, ensure_ascii=False)
+
+    _checkpoint, response, _wrote = _task_checkpoint_update(session_key, update)
+    try:
+        return json.loads(response)
+    except (TypeError, json.JSONDecodeError):
+        return {"recorded": False, "reason": "activity_result_invalid"}
+
+
+def _owner_status_from_checkpoint(checkpoint: dict, updated_at: str = "", now=None):
+    """Return safe owner liveness diagnostics without exposing opaque capabilities."""
+    point = dict(checkpoint or {})
+    now_ts = float(time.time() if now is None else now)
+    claim_status = str(point.get("owner_claim_status") or "")
+    owner_agent = str(point.get("agent_id") or "")
+    commitment_present = bool(point.get("owner_capability_sha256"))
+    expiry = None
+    try:
+        if point.get("owner_claim_expires_at") is not None:
+            expiry = float(point.get("owner_claim_expires_at"))
+    except (TypeError, ValueError):
+        expiry = None
+
+    checkpoint_age = None
+    if updated_at:
+        try:
+            stamp = datetime.fromisoformat(str(updated_at))
+            if stamp.tzinfo is not None:
+                stamp = stamp.replace(tzinfo=None)
+            checkpoint_age = max(0.0, (datetime.now() - stamp).total_seconds())
+        except (TypeError, ValueError, OverflowError):
+            checkpoint_age = None
+    heartbeat_at = None
+    try:
+        if point.get("owner_last_heartbeat_at") is not None:
+            heartbeat_at = float(point.get("owner_last_heartbeat_at"))
+    except (TypeError, ValueError):
+        heartbeat_at = None
+    heartbeat_seen = heartbeat_at is not None
+    activity_at = heartbeat_at
+    activity_iso = str(point.get("owner_last_heartbeat_at_iso") or "")
+    activity_source = (
+        str(point.get("owner_heartbeat_source") or "owner_heartbeat")
+        if heartbeat_seen else ""
+    )
+    if activity_at is None and updated_at:
+        try:
+            stamp = datetime.fromisoformat(str(updated_at))
+            if stamp.tzinfo is not None:
+                stamp = stamp.replace(tzinfo=None)
+            activity_at = stamp.timestamp()
+            activity_iso = str(updated_at)
+            activity_source = "authenticated_checkpoint_update"
+        except (TypeError, ValueError, OverflowError, OSError):
+            activity_at = None
+    activity_age = max(0.0, now_ts - activity_at) if activity_at is not None else None
+    heartbeat_ttl = float(_OWNER_HEARTBEAT_TTL_SECONDS)
+    if activity_age is None:
+        heartbeat_freshness = "unknown"
+    elif activity_age <= heartbeat_ttl:
+        heartbeat_freshness = "fresh"
+    else:
+        heartbeat_freshness = "stale"
+
+    if claim_status == "pending":
+        expired = expiry is not None and now_ts >= expiry
+        state = "expired" if expired else "pending"
+        orphan_suspected = True if expired else False
+        owner_liveness = "not_confirmed" if expired else "pending_not_committed"
+        stuck_suspected = True if expired else "unknown"
+        interpretation = (
+            "pending claim expired; no live owner was confirmed"
+            if expired else
+            "owner claim is pending confirmation; liveness is not proven"
+        )
+    elif commitment_present:
+        state = "committed"
+        orphan_suspected = "unknown"
+        if heartbeat_freshness == "fresh":
+            owner_liveness = "active"
+            stuck_suspected = False
+            interpretation = (
+                "owner is active: a fresh owner heartbeat or authenticated task "
+                "checkpoint was recorded within the heartbeat TTL"
+            )
+        elif heartbeat_freshness == "stale":
+            owner_liveness = "stale_suspected"
+            stuck_suspected = True
+            interpretation = (
+                "owner may be stuck, stopped, or disconnected: no authenticated "
+                "activity was recorded within the heartbeat TTL; do not reclaim automatically"
+            )
+        else:
+            owner_liveness = "unknown_without_heartbeat"
+            stuck_suspected = "unknown"
+            interpretation = (
+                "server-owned capability commitment exists, but no heartbeat or "
+                "authenticated activity timestamp is available"
+            )
+    elif owner_agent:
+        state = "unowned"
+        orphan_suspected = False
+        owner_liveness = "not_claimed"
+        stuck_suspected = "unknown"
+        interpretation = "owner label exists without a server capability commitment"
+    else:
+        state = "unowned"
+        orphan_suspected = False
+        owner_liveness = "not_claimed"
+        stuck_suspected = "unknown"
+        interpretation = "no server-owned owner claim is present"
+
+    result = {
+        "state": state,
+        "claim_status": claim_status or "none",
+        "owner_agent_id": owner_agent,
+        "capability_commitment_present": commitment_present,
+        "heartbeat_supported": True,
+        "heartbeat_seen": heartbeat_seen,
+        "heartbeat_ttl_seconds": _OWNER_HEARTBEAT_TTL_SECONDS,
+        "heartbeat_freshness": heartbeat_freshness,
+        "heartbeat_age_seconds": round(activity_age, 3) if activity_age is not None else None,
+        "last_heartbeat_at": activity_iso if heartbeat_seen else "",
+        "last_authenticated_activity_at": activity_iso,
+        "activity_source": activity_source or "none",
+        "owner_liveness": owner_liveness,
+        "stuck_suspected": stuck_suspected,
+        "checkpoint_freshness": (
+            "unknown" if checkpoint_age is None else
+            "fresh" if checkpoint_age <= _OWNER_CLAIM_TTL_SECONDS else
+            "aging" if checkpoint_age <= _OWNER_CLAIM_TTL_SECONDS * 2 else "stale"
+        ),
+        "stale_checkpoint_suspected": (
+            checkpoint_age is not None and checkpoint_age > _OWNER_CLAIM_TTL_SECONDS * 2
+        ),
+        "orphan_suspected": orphan_suspected,
+        "last_checkpoint_at": str(updated_at or ""),
+        "checkpoint_age_seconds": round(checkpoint_age, 3) if checkpoint_age is not None else None,
+        "interpretation": interpretation,
+    }
+    if state == "pending" and expiry is not None:
+        result["claim_expires_in_seconds"] = round(expiry - now_ts, 3)
+    return result
+
+def _session_activity_snapshot(session_key: str, now=None) -> dict:
+    """Return safe CA activity evidence from the durable session ledger."""
+    result = {
+        "observed": False,
+        "ca_liveness": "unknown",
+        "activity_freshness": "unknown",
+        "activity_source": "session_ledger",
+        "session_status": "missing",
+        "event_count": 0,
+        "last_activity_at": "",
+        "last_tool": "",
+        "activity_age_seconds": None,
+    }
+    try:
+        conn = sqlite3.connect(str(_SESSIONS_DB))
+        try:
+            session_row = conn.execute(
+                "SELECT status FROM sessions WHERE session_id=?",
+                (str(session_key),),
+            ).fetchone()
+            if not session_row:
+                return result
+            event_count = int(conn.execute(
+                "SELECT COUNT(*) FROM events WHERE session_id=?",
+                (str(session_key),),
+            ).fetchone()[0] or 0)
+            latest = conn.execute(
+                "SELECT tool_name, created_at FROM events "
+                "WHERE session_id=? ORDER BY id DESC LIMIT 1",
+                (str(session_key),),
+            ).fetchone()
+        finally:
+            conn.close()
+    except Exception:
+        return result
+
+    result["session_status"] = str(session_row[0] or "unknown")
+    result["event_count"] = event_count
+    if not latest:
+        result["ca_liveness"] = (
+            "active_without_events"
+            if result["session_status"] == "active" else result["session_status"]
+        )
+        return result
+
+    last_tool, last_activity_at = latest
+    result["observed"] = True
+    result["last_tool"] = str(last_tool or "")
+    result["last_activity_at"] = str(last_activity_at or "")
+    try:
+        stamp = datetime.fromisoformat(str(last_activity_at))
+        if stamp.tzinfo is not None:
+            stamp = stamp.replace(tzinfo=None)
+        now_dt = datetime.fromtimestamp(float(time.time() if now is None else now))
+        age = max(0.0, (now_dt - stamp).total_seconds())
+        result["activity_age_seconds"] = round(age, 3)
+        ttl = float(_OWNER_HEARTBEAT_TTL_SECONDS)
+        result["activity_freshness"] = "fresh" if age <= ttl else "stale"
+        if result["session_status"] == "active":
+            result["ca_liveness"] = "active" if age <= ttl else "stale_suspected"
+        else:
+            result["ca_liveness"] = result["session_status"]
+    except (TypeError, ValueError, OverflowError, OSError):
+        result["ca_liveness"] = "unknown"
+    return result
+
+
+async def get_task_checkpoint(session_id: str, include_owner_status: bool = False) -> str:
+    session_key = (session_id or "default").strip() or "default"
+    try:
+        checkpoint, updated_at = _task_checkpoint_load_with_meta(session_key)
+    except TaskCheckpointStorageError as exc:
+        return _json_error(str(exc), error_name=exc.error_name, retryable=False,
+                           ca_next_action="repair_task_checkpoint_storage_then_retry")
+    activity = None
+    if include_owner_status:
+        activity = await asyncio.to_thread(_session_activity_snapshot, session_key)
     if not checkpoint:
-        return _json_error("No active task checkpoint", error_name="TASK_CHECKPOINT_MISSING",
-                           ca_next_action="call_begin_task")
+        if not include_owner_status:
+            return _json_error("No active task checkpoint", error_name="TASK_CHECKPOINT_MISSING",
+                               ca_next_action="call_begin_task")
+        missing = json.loads(_json_error(
+            "No active task checkpoint; CA activity may still be present in the session ledger",
+            error_name="TASK_CHECKPOINT_MISSING",
+            ca_next_action="call_bootstrap_session_then_begin_task",
+        ))
+        ca_live = str(activity.get("ca_liveness") or "unknown")
+        missing["session_activity"] = activity
+        missing["owner_status"] = {
+            "state": "unowned",
+            "owner_liveness": "not_claimed",
+            "stuck_suspected": "unknown",
+            "orphan_suspected": False,
+            "capability_commitment_present": False,
+            "ca_activity": ca_live,
+            "ca_activity_observed": bool(activity.get("observed")),
+            "ca_activity_source": "session_ledger",
+            "interpretation": (
+                "CA activity is observed, but no server-owned owner claim exists; "
+                "owner liveness and stuck state cannot be attributed safely"
+                if activity.get("observed") else
+                "no owner claim or recent CA activity was observed for this session"
+            ),
+        }
+        return json.dumps(missing, ensure_ascii=False)
     public = {k: v for k, v in checkpoint.items()
               if k not in {"owner_capability_sha256", "owner_identity_id", "owner_claim_sha256",
-                           "owner_claim_status", "owner_claim_expires_at"}}
+                           "owner_claim_status", "owner_claim_expires_at",
+                           "owner_last_heartbeat_at", "owner_last_heartbeat_at_iso",
+                           "owner_heartbeat_count", "owner_heartbeat_source"}}
     if isinstance(public.get("subtasks"), dict):
         public["subtasks"] = {agent: {k: v for k, v in subtask.items()
                                       if k != "delegation_capability_sha256"}
                               for agent, subtask in public["subtasks"].items()}
-    return json.dumps({**public, "ok": True}, ensure_ascii=False)
+    response = {**public, "ok": True}
+    if include_owner_status:
+        owner_status = _owner_status_from_checkpoint(checkpoint, updated_at)
+        owner_status["ca_activity"] = str(activity.get("ca_liveness") or "unknown")
+        owner_status["ca_activity_observed"] = bool(activity.get("observed"))
+        owner_status["ca_activity_source"] = "session_ledger"
+        response["owner_status"] = owner_status
+        response["session_activity"] = activity
+    return json.dumps(response, ensure_ascii=False)
 
 
 # ─── V15 R42 NEW TOOLS: bootstrap_session, check_server_path, wait_for_idle, parse_log_section, workflow_goto_step ─────
@@ -7105,17 +7588,20 @@ async def bootstrap_session(project_path: str = "", session_id: str = "",
          "notes": "R38: returns current_step_body + step_manifest (no need to read MD)"},
         {"name": "check_server_path", "tier": "T1", "required": ["path"],
          "notes": "R42: probe UNC/HTTP/local accessibility"},
-        {"name": "bootstrap_session", "tier": "T1", "required": [],
-         "notes": "Canonical discovery entrypoint; call once per host session"},
-        {"name": "begin_task", "tier": "T3", "required": ["session_id", "prompt"],
-         "notes": "Call once for every real user prompt before model/tool work"},
+        {"name": "bootstrap_session", "tier": "T1", "required": ["session_id", "agent_id", "owner_claim_id"],
+         "notes": "Canonical discovery entrypoint; persist and reuse the same owner_claim_id until begin_task confirms ownership"},
+        {"name": "begin_task", "tier": "T3", "required": ["session_id", "prompt", "agent_id"],
+         "notes": "Call once per real user prompt; root owner requires server-issued owner_capability, and a pending claim also requires the original owner_claim_id"},
         {"name": "get_task_checkpoint", "tier": "T1", "required": ["session_id"],
          "notes": "Compact active-task anchor for tool batches and post-compaction restore"},
     ]
 
     common_pitfalls = [
-        "Bootstrap once; follow ca_next_action.",
-        "Call begin_task per real user prompt; preserve task metadata.",
+        "Bootstrap recipe: bootstrap_session(session_id, agent_id, owner_claim_id) → keep the original claim → begin_task(..., owner_capability[, owner_claim_id]).",
+        "JSON transport recipe: command is inside an outer JSON string; JSON-encode backslashes first (prefer Invoke-RestMethod + ConvertTo-Json).",
+        "Windows shell recipe: shell operators (|, &&, >) and findstr/dir for file reading are fragile; use the direct search/read tool or a script-file route instead of retrying the command.",
+        "PowerShell recipe: only a standalone script.ps1 is a -File invocation; findstr text script.ps1 is a normal command and must not be auto-routed to -File.",
+        "STALE_INDEX recipe: switch once to search_code(mode=literal) or read_file_range; do not retry the unchanged complex regex.",
         "Do not repeat deterministic failures.",
         "Use bounded, filtered discovery.",
         "Use script-file transport on Windows for multiline, regex, JSON, Unicode, or heavy quoting.",
@@ -11634,14 +12120,8 @@ async def open_session(session_title: str = "", project_path: str = ".", mode: s
                     "transport_policy": _transport_policy_payload(),
                 "cslt_policy": __import__("orchestrator.core.ca_policy_matrix", fromlist=["open_session_policy_payload"]).open_session_policy_payload(agent_id=agent_id, project_path=project_path),
                     }
-            # R22 Phase C — drift safety net: force `full` when critical signals present
-            _eff_verbosity = verbosity
-            if (resp.get("matrix_drift_present") or resp.get("progressive_gap_count", 0) > 0) and verbosity != "full":
-                resp["_drift_override"] = (
-                    f"verbosity forced 'full': drift={resp.get('matrix_drift_present')}, "
-                    f"progressive_gap={resp.get('progressive_gap_count')}"
-                )
-                _eff_verbosity = "full"
+            # V15 F4 (D4) — severity-aware drift verbosity (shared decision fn)
+            _eff_verbosity = _open_session_drift_decision(resp, _mx, verbosity)
             try:
                 import tools_v15 as _v15
                 resp = _v15._apply_verbosity(resp, _eff_verbosity, "session_open")
@@ -11690,14 +12170,8 @@ async def open_session(session_title: str = "", project_path: str = ".", mode: s
                 "transport_policy": _transport_policy_payload(),
                 "cslt_policy": __import__("orchestrator.core.ca_policy_matrix", fromlist=["open_session_policy_payload"]).open_session_policy_payload(agent_id=agent_id, project_path=project_path),
                 }
-        # R22 Phase C — drift safety net for new session path
-        _eff_verbosity = verbosity
-        if (resp.get("matrix_drift_present") or resp.get("progressive_gap_count", 0) > 0) and verbosity != "full":
-            resp["_drift_override"] = (
-                f"verbosity forced 'full': drift={resp.get('matrix_drift_present')}, "
-                f"progressive_gap={resp.get('progressive_gap_count')}"
-            )
-            _eff_verbosity = "full"
+        # V15 F4 (D4) — severity-aware drift verbosity (shared decision fn)
+        _eff_verbosity = _open_session_drift_decision(resp, _mx, verbosity)
         try:
             import tools_v15 as _v15
             resp = _v15._apply_verbosity(resp, _eff_verbosity, "session_open")

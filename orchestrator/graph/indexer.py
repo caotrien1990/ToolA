@@ -63,6 +63,9 @@ def _parallel_worker_count() -> int:
 def _parallel_index_enabled() -> bool:
     if os.environ.get("ORCHESTRATOR_PARALLEL_INDEX", "").lower() == "off":
         return False
+    # Pytest on Windows can expose a valid __main__.__file__ but is not spawn-safe.
+    if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in str(getattr(__main__, "__file__", "")).lower():
+        return False
     main_file = getattr(__main__, "__file__", "")
     return bool(main_file and not str(main_file).startswith("<"))
 

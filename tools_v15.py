@@ -1372,7 +1372,32 @@ async def record_session_audit_checkpoint(project_path: str = "", session_id: st
 
 
 _DECISION_RULES = [
-    # CAN-053 (codo P1): architecture/dependency/entrypoint/blast-radius intents
+     # R56 semantic routing: schema/gotcha-specific hints must precede broad rules
+     {"re": r"\b(bundle.?version|marker.?regex|capture.?group)\b",
+      "tier": "T4c", "tool": "bundle_version_check",
+      "skill": "16_server_lifecycle",
+      "why": "Use schema-guided capture-group validation before retry."},
+     {"re": r"\b(page.?id|baseline|dom.?state|stale.?baseline)\b",
+      "tier": "T4", "tool": "dom_state_diff / checkpoint_loop_dom_state",
+      "skill": "18_runtime_dom_T4",
+      "why": "Require live pg-* page IDs and a fresh baseline after restart/page replacement."},
+     {"re": r"\b(playwright|python.?fixture|node.?fixture|module.?not.?found)\b",
+      "tier": "T2 + T4", "tool": "run_playwright_test / run_project_test_script",
+      "skill": "09_testing_validation",
+      "why": "Match runner to fixture language and check the dependency preflight."},
+     {"re": r"\b(copy.?file|dst.?exists|overwrite|backup.?existing)\b",
+      "tier": "T2", "tool": "copy_file",
+      "skill": "05_write_pipeline",
+      "why": "Use a new destination or overwrite=true with backup_existing=true after DST_EXISTS."},
+     {"re": r"\b(draft.?patch|line.?drift|syntax.?pre.?write)\b",
+      "tier": "T2", "tool": "write_draft_patch",
+      "skill": "05_write_pipeline",
+      "why": "Use draft_id and deterministic replacement content; never retry a stale range blindly."},
+     {"re": r"\b(utf.?8|base64|btoa|powershell)\b",
+      "tier": "T2", "tool": "write_new_file / run_project_test_script",
+      "skill": "05_write_pipeline + 08_command_windows",
+      "why": "Encode UTF-8 explicitly; do not assume btoa exists in the host runtime."},
+     # CAN-053 (codo P1): architecture/dependency/entrypoint/blast-radius intents
     # must hit CBM graph tools BEFORE broad find/search rules shadow them.
     {"re": r"\b(architecture|kien.?truc|module.?dep\w*|dependenc\w+|phu.?thuoc|entry.?points?|blast.?radius|impact.?scope|data.?flow|component.?map|nam.*kien.?truc|so.?do.*(module|he.?thong))\b",
      "tier": "T1", "tool": "cbm_get_architecture / cbm_template_query / cbm_graph_status / cbm_trace_path",
@@ -5975,6 +6000,12 @@ async def open_browser_page(url: str, viewport_w: int = 1280, viewport_h: int = 
 
 
 async def _get_page(page_id: str):
+    if not isinstance(page_id, str) or not re.fullmatch(r"pg-[A-Za-z0-9][A-Za-z0-9_-]*", page_id):
+        return None, _err(
+            f"invalid page_id: {page_id!r}; expected a live pg-... ID",
+            error_name="PAGE_ID_INVALID",
+            ca_next_action="use_page_id_from_open_browser_page_or_cdp_attach_target",
+        )
     state = _BROWSER_PAGES.get(page_id)
     if not state:
         return None, _err(f"page_id not found: {page_id}", error_name="PAGE_NOT_FOUND")
@@ -6406,10 +6437,25 @@ async def bundle_version_check(html_url: str, marker_regex: str = r'(?:name="ver
     """V15 R8 B.4: extract build/version marker from served HTML."""
     import urllib.request
     try:
+        compiled = re.compile(marker_regex)
+    except (re.error, TypeError) as exc:
+        return _err(
+            f"invalid marker_regex: {exc}",
+            error_name="VERSION_REGEX_INVALID",
+            ca_next_action="provide_a_valid_regex_with_a_capture_group",
+        )
+    if compiled.groups < 1:
+        return _err(
+            "marker_regex must contain at least one capture group around the version value",
+            error_name="VERSION_REGEX_CAPTURE_REQUIRED",
+            ca_next_action="add_a_capture_group_to_marker_regex",
+        )
+    try:
         with urllib.request.urlopen(html_url, timeout=5) as r:
             text = r.read(50000).decode("utf-8", errors="ignore")
-        m = re.search(marker_regex, text)
-        version = (m.group(1) or m.group(2)) if m and (m.group(1) or m.group(2)) else None
+        m = compiled.search(text)
+        captures = m.groups() if m else ()
+        version = next((value for value in captures if value), None)
         return _ok({"url": html_url, "version_found": version, "matched": bool(m)})
     except Exception as exc:
         return _err(str(exc), error_name="VERSION_CHECK_FAILED", url=html_url)
@@ -8647,10 +8693,41 @@ async def process_tree_inspect(root_pid: int = 0, name_pattern: str = "",
 
 async def run_playwright_test(test_script_path: str, project_path: str = "",
                                 timeout_sec: int = 300) -> str:
-    """V15 R8 B.6: execute Node Playwright/CDP script, capture stdout/stderr/exit."""
+    """V15 R8 B.6: execute a Node Playwright/CDP script, with language and dependency preflight."""
     fp = Path(test_script_path)
     if not fp.exists():
         return _err(f"script not found: {test_script_path}", error_name="PATH_NOT_FOUND")
+    if fp.suffix.lower() not in {".js", ".mjs", ".cjs"}:
+        return _err(
+            f"run_playwright_test is Node-only; received {fp.suffix or 'no extension'}",
+            error_name="RUNNER_LANGUAGE_MISMATCH",
+            ca_next_action="use_run_project_test_script",
+            suggested_alternative_tool={
+                "tool": "run_project_test_script",
+                "reason": "Use runtime='python' for Python fixtures; run_playwright_test accepts Node scripts only.",
+            },
+        )
+    roots = [fp.parent]
+    if project_path:
+        roots.append(Path(project_path))
+    roots = list(dict.fromkeys(roots))
+    module_names = ("playwright", "playwright-core")
+    module_ready = any(
+        (root / "node_modules" / module_name).exists()
+        for root in roots
+        for module_name in module_names
+    )
+    if not module_ready:
+        return _err(
+            "Playwright module not found in the script/project dependency roots",
+            error_name="MODULE_NOT_FOUND",
+            ca_next_action="install_playwright_or_use_internal_browser",
+            suggested_alternative_tool={
+                "tool": "run_project_command",
+                "reason": "Install playwright in the test directory, or use ToolA's internal browser T4 path.",
+            },
+            module_roots_checked=[str(root) for root in roots[:8]],
+        )
     try:
         r = subprocess.run(
             ["node", str(fp)], capture_output=True, text=True,

@@ -138,6 +138,8 @@
       "mcp_file": "C:/Users/ADMIN/.zcode/cli/config.json",
       "skill_dir": "C:/Users/ADMIN/.zcode/skills",
       "mode": "A",
+      "council_eligible": false,
+      "council_ineligible_reason": "Registered CA (desktop, HTTP-only) but intentionally NOT a council worker: absent from .council/council_config.json agents/roster_order/messaging_to_enum, so it is never dispatched. User decision 2026-08-17 (campaign-1608 Q4b): keep registered so it can fetch CORE_RULE via get_rule_core_text, do not enrol in council.",
       "agent_transport_policy": "http_only",
       "transport_policy": "http_only",
       "governance": {
@@ -256,6 +258,36 @@
       "mcp_format": "toml",
       "mcp_key": "project-orchestrator",
       "skill_dir": "C:/Users/ADMIN/.grok/skills",
+      "skill_format": "folder",
+      "mode": "A",
+      "transport_policy": "a_first_mcp_t4_ok",
+      "governance": {
+        "north_star": "CSLt",
+        "acronym": "CSLt",
+        "order": [
+          "Correctness",
+          "Save token",
+          "Less context",
+          "Time fee"
+        ],
+        "a_first": true,
+        "http_only": false
+      }
+    },
+    "claultnai": {
+      "id": "claultnai",
+      "route_id": "claultnai",
+      "provider": "claude",
+      "display_name": "ClauLTN",
+      "legacy_worker_name": "ClauLTNC",
+      "persona": "Always refer to yourself as \"ClauLTN\" and address the user as \"Anh\".",
+      "rule_file": "C:/Users/ADMIN/.claude-ltnai/CLAUDE.md",
+      "rule_format": "markdown",
+      "rule_template": "slim",
+      "mcp_file": "C:/Users/ADMIN/.claude-ltnai/.claude.json",
+      "mcp_format": "json",
+      "mcp_key": "project-orchestrator",
+      "skill_dir": "C:/Users/ADMIN/.claude-ltnai/skills",
       "skill_format": "folder",
       "mode": "A",
       "transport_policy": "a_first_mcp_t4_ok",

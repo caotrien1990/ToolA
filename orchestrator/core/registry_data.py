@@ -650,7 +650,9 @@ EXTRA_TOOL_SCHEMAS = [
 
 {"type": "function", "function": {"name": "begin_task", "description": "Confirm or renew a server-owned task checkpoint. For two-phase root claim, send the same owner_claim_id and owner_capability returned by bootstrap_session; confirmation commits immutable ownership. Root owners issue named subtasks with delegate_agent_id; workers renew only with delegation_capability. Arbitrary agent_id never creates authority.", "parameters": {"type": "object", "properties": {"session_id": {"type": "string", "description": "Stable host conversation/session id"}, "prompt": {"type": "string", "description": "Newest real user request"}, "agent_id": {"type": "string", "default": "", "description": "Stable identity label; checked against server-owned capability state"}, "max_chars": {"type": "integer", "default": 2000, "description": "Maximum verbatim task chars in checkpoint"}, "owner_capability": {"type": "string", "default": "", "description": "Opaque capability returned by bootstrap_session; required for root begin_task/delegation"}, "owner_claim_id": {"type": "string", "default": "", "description": "Original caller-generated high-entropy claim id; required when confirming a two-phase owner claim"}, "delegation_capability": {"type": "string", "default": "", "description": "Opaque capability issued by the root for this exact subtask agent"}, "delegate_agent_id": {"type": "string", "default": "", "description": "Root-only: issue/replace an explicit delegation for this agent"}}, "required": ["session_id", "prompt", "agent_id"]}}},
 
-{"type": "function", "function": {"name": "get_task_checkpoint", "description": "Return the current compact active-task checkpoint for host reinsertion after tool batches or compaction.", "parameters": {"type": "object", "properties": {"session_id": {"type": "string", "description": "Stable host conversation/session id"}}, "required": ["session_id"]}}},
+{"type": "function", "function": {"name": "owner_heartbeat", "description": "Record authenticated liveness for a committed root owner. The server verifies the capability, stores a timestamp, and exposes only safe active/stale diagnostics; it never returns the capability or its hash.", "parameters": {"type": "object", "properties": {"session_id": {"type": "string", "description": "Stable host conversation/session id"}, "agent_id": {"type": "string", "description": "Committed root owner identity"}, "owner_capability": {"type": "string", "description": "Opaque capability returned by bootstrap_session and confirmed by begin_task"}, "summary": {"type": "string", "default": "", "description": "Optional short heartbeat note; do not include secrets"}}, "required": ["session_id", "agent_id", "owner_capability"]}}},
+
+{"type": "function", "function": {"name": "get_task_checkpoint", "description": "Return the current compact active-task checkpoint for host reinsertion after tool batches or compaction. When include_owner_status=true, add safe diagnostic state for the server-owned owner claim without returning capabilities or hashes.", "parameters": {"type": "object", "properties": {"session_id": {"type": "string", "description": "Stable host conversation/session id"}, "include_owner_status": {"type": "boolean", "default": False, "description": "Include safe owner claim state, checkpoint freshness, and liveness limits; never returns opaque capabilities or hashes."}}, "required": ["session_id"]}}},
 
 {"type": "function", "function": {"name": "get_rule_core_text", "description": "Return the rendered CORE_RULE text plus runtime path metadata and a content hash. HTTP bootstrap is canonical; pass a stable agent_id so per-agent cache does not collide.", "parameters": {"type": "object", "properties": {"agent_id": {"type": "string", "default": "", "description": "Stable agent id such as clau, codo, comc, ope, hermes, kilo, or cozo."}, "force": {"type": "boolean", "default": False, "description": "Force re-read when explicitly upgrading or verifying rules; otherwise omit."}}}}},
 
@@ -690,7 +692,7 @@ EXTRA_TOOL_SCHEMAS = [
 
         "name": "run_project_command",
 
-        "description": "Run bounded command in project cwd. V15 R14: shell wrapper plus optional background/keep_alive launch verification via expected_port / expected_process_name. CAN-053 readiness DSL: health_url + expect_status (+ readiness_protocol=http|tcp|cdp|process) verify service readiness over HTTP; CDP_UNREACHABLE is returned ONLY for cdp, dead TCP ports return PORT_UNREACHABLE, failed health probes return HEALTH_PROBE_FAILED; launcher-exited-but-health-ok returns ok_with_warning=true.",
+        "description": "Run bounded command in project cwd. V15 R14: shell wrapper plus optional background/keep_alive launch verification via expected_port / expected_process_name. JSON transport is a separate layer: encode backslashes before placing command in an outer JSON string. On Windows, shell operators and findstr/dir file reads are fragile; prefer direct search/read tools or script-file transport. Auto routes only a standalone script.ps1 to PowerShell -File; a command such as findstr text script.ps1 remains a normal command. CAN-053 readiness DSL: health_url + expect_status (+ readiness_protocol=http|tcp|cdp|process) verify service readiness over HTTP; CDP_UNREACHABLE is returned ONLY for cdp, dead TCP ports return PORT_UNREACHABLE, failed health probes return HEALTH_PROBE_FAILED; launcher-exited-but-health-ok returns ok_with_warning=true.",
 
         "parameters": {
 
@@ -706,7 +708,7 @@ EXTRA_TOOL_SCHEMAS = [
 
                 "timeout_ms": {"type": "integer", "default": 0, "description": "R66: optional max run time in MILLISECONDS; converted to seconds and overrides `timeout` when > 0. Provided so CA's T4-style timeout_ms habit no longer 400s."},
 
-                "shell_mode": {"type": "string", "enum": ["auto", "cmd", "powershell", "exec", "posix"], "default": "auto"},
+                "shell_mode": {"type": "string", "enum": ["auto", "cmd", "powershell", "exec", "posix"], "default": "auto", "description": "Windows auto selects PowerShell -File only for a standalone .ps1 path; commands that merely target a .ps1 file stay normal shell commands."},
 
                 "command_encoding": {"type": "string", "enum": ["plain", "base64"], "default": "plain"},
 
@@ -1294,6 +1296,8 @@ V15_NEW_TOOL_SPECS = (
 
     ('begin_task', 'begin_task'),
 
+    ('owner_heartbeat', 'owner_heartbeat'),
+
     ('get_task_checkpoint', 'get_task_checkpoint'),
 
     ('run_project_test_script', 'run_project_test_script'),
@@ -1532,7 +1536,7 @@ V15_TIERS = {
 
         # V15 R42
 
-        "bootstrap_session": "T1", "begin_task": "T3",
+        "bootstrap_session": "T1", "begin_task": "T3", "owner_heartbeat": "T3",
         "project_context_pack": "T1", "resolve_candidate_paths": "T1",
         "read_context_batch": "T1", "architecture_context_pack": "T1",
         "get_task_checkpoint": "T1", "check_server_path": "T1",
@@ -1911,11 +1915,11 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["url"]),
 
-    ('bundle_version_check', 'T4c: extract build/version marker from HTML.', {
+    ('bundle_version_check', 'T4c: extract a build/version marker from HTML. marker_regex must contain at least one capturing group around the version value; the default supports name="version" content="..." and ?v=... patterns.', {
 
             "html_url": {"type": "string"},
 
-            "marker_regex": {"type": "string"},
+            "marker_regex": {"type": "string", "default": r'(?:name="version" content="([^"]+)"|\?v=([^"&\s]+))', "description": "Regex with at least one capture group; the first non-empty capture is returned."},
 
         }, ["html_url"]),
 
@@ -1973,13 +1977,13 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, []),
 
-    ('dom_state_diff', 'V15 R16 A.4 T1: snapshot DOM element state (disabled/bg/color/className/visible/text) and compare across time. Two modes: (1) no baseline_id → returns snapshot_id cached 10min; (2) baseline_id set → returns {changed, changes:{field:{before,after}}}. Use for detecting UI state change after click.', {
+    ('dom_state_diff', 'V15 R16 A.4 T1: snapshot DOM element state (disabled/bg/color/className/visible/text) and compare across time. page_id must be a live pg-... ID. Two modes: no baseline_id returns a snapshot_id cached 10 minutes; baseline_id compares against that snapshot and must be recreated after restart or page replacement.', {
 
-            "page_id": {"type": "string", "description": "From cdp_attach_target or launch_electron_with_cdp"},
+            "page_id": {"type": "string", "pattern": "^pg-[A-Za-z0-9][A-Za-z0-9_-]*$", "description": "Only the pg-... page_id returned by cdp_attach_target/open_browser_page/launch_electron_with_cdp"},
 
             "selector": {"type": "string", "description": "CSS selector for the element to snapshot"},
 
-            "baseline_id": {"type": "string", "default": "", "description": "From a previous dom_state_diff call without this param"},
+            "baseline_id": {"type": "string", "default": "", "description": "From a previous dom_state_diff call without this param; TTL 10 minutes and invalid after restart/page replacement"},
 
             "snapshot_fields": {"type": "array", "default": ["disabled","bg","color","className","visible","text"], "description": "Optional subset: disabled|bg|color|className|visible|text|value|rect"},
 
@@ -2989,7 +2993,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["name_pattern"]),
 
-    ('run_playwright_test', "V15 R8 B.6 / R37 T4: execute Node script with stdout/stderr capture. REQUIREMENT: test_script_path must reside in a directory containing node_modules/playwright (or chromium subset). [A] does NOT bundle Playwright runtime — CA must `cd <test_dir> && npm install playwright` OR pass a script in a pre-installed location. On MODULE_NOT_FOUND for 'playwright', surface guidance to install before retry.", {
+    ('run_playwright_test', 'V15 R8 B.6: Node Playwright runner; .js/.mjs/.cjs only; requires Playwright dependency. Python uses run_project_test_script.', {
 
             "test_script_path": {"type": "string", "description": "Absolute path to Node test script. Parent dir must have node_modules/playwright installed (or use playwright/chromium-only)."},
 
@@ -3075,7 +3079,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["project_path"]),
 
-    ('copy_file', 'R81 T2 (protected): copy ONE file src→dst (absolute or relative via project_path) with audit — backs up existing dst, copies, verifies sha256. project_path resolves relative src/dst. For repo→LIVE use cep_deploy.', {
+    ('copy_file', 'R81 T2 (protected): copy ONE file src→dst (absolute or relative via project_path) with audit — backs up existing dst, copies, verifies sha256. If dst exists and overwrite=false, return DST_EXISTS and do not mutate. Safe rerun is a new destination, or overwrite=true with backup_existing=true. project_path resolves relative src/dst. For repo→LIVE use cep_deploy.', {
 
             "src": {"type": "string", "description": "Absolute path, or relative path resolved against project_path"},
 

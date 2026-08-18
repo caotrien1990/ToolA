@@ -660,6 +660,15 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
 
     search_started_at = time.monotonic()
 
+    # TA-7 fix (2026-08-18): file_glob is a natural name callers reach for; it used
+    # to fall into **aliases unmapped, so a file_glob="*.py" filter silently did
+    # nothing (or tripped UNSUPPORTED_FIELD under strict validation). Map the
+    # common file-filter aliases onto file_pattern when the caller left it default.
+    if (not file_pattern or file_pattern == "*"):
+        _fp_alias = aliases.get("file_glob") or aliases.get("glob") or aliases.get("pattern_file")
+        if _fp_alias:
+            file_pattern = str(_fp_alias)
+
     alias_pattern = aliases.get("pattern") or aliases.get("regex")
     alias_forced_regex = False
     if not query and alias_pattern:
