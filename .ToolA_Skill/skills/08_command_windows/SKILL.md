@@ -29,7 +29,7 @@ risk_level: medium
 |-------|--------|----------|
 | `shell_mode` | `auto` (default) | Windows → `cmd`; non-Windows → `exec` |
 |  | `cmd` | Wraps as `cmd /c "<raw>"`. Auto-escapes `%`→`%%`, plus `^ & | ( ) < >` outside double-quoted regions |
-|  | `powershell` | `powershell -NoProfile -Command "<raw>"`. If `command` ends in `.ps1` → `-File <path>` route |
+|  | `powershell` | `powershell -NoProfile -Command "<raw>"`. Only a standalone `.ps1` path → `-File <path>`; a command such as `findstr pattern script.ps1` stays a normal command |
 |  | `exec` | `shlex.split(posix=not _is_win)` — legacy argv mode |
 |  | `posix` | `shlex.split(posix=True)` — explicit Unix mode (don't use on Windows) |
 | `command_encoding` | `plain` (default) / `base64` | Decode via central `_decode_text_payload` before parsing; use when command has Unicode, embedded quotes, or newlines |
@@ -37,6 +37,16 @@ risk_level: medium
 Response now echoes `shell_mode_requested` + `shell_mode_resolved` so CA can verify routing.
 
 **Default rule:** Just pass `command="dir"` or `command="npm test"` — `auto` resolves to `cmd` on Windows, handles `%` and special chars for you. Reach for `.ps1 + -File` only when you genuinely need PowerShell semantics.
+
+### R12 transport and routing guard
+
+There are two parsers in this path: the outer JSON transport and the Windows shell. Encode the command as JSON before sending it; a Windows backslash inside a JSON string must be escaped, so prefer `Invoke-RestMethod` with `ConvertTo-Json` over hand-written curl JSON.
+
+For `shell_mode="auto"`, only a standalone `script.ps1` path means PowerShell `-File`. A command such as `findstr pattern script.ps1` is a normal command and must not be treated as a script-file invocation.
+
+When reading/searching files, prefer `search_code` or `read_file_range`. Do not spend retries on fragile `findstr`/`dir` pipelines, shell operators (`|`, `&&`, `>`), or Unix-style `/` path segments on Windows. On `STALE_INDEX`, switch once to `search_code(mode="literal")` or `read_file_range` with known lines.
+
+Bootstrap ownership is a two-step recipe: call `bootstrap_session(session_id, agent_id, owner_claim_id)`, retain the original claim, then call `begin_task` with the server-issued `owner_capability` and the original claim when the claim is still pending.
 
 ## V15 R16 — `node -e` 2-mode distinction
 
@@ -158,3 +168,10 @@ Pass `project_path` UTF-8 as JSON string (server handles). Inside command, refer
 - Test 5 (R12): `run_project_command(command="echo 100% done", shell_mode="auto")` on Windows → exit 0, stdout contains `100% done` (auto-escape worked)
 - Test 6 (R12): `run_project_command(command=<base64 of "echo xin chào">, command_encoding="base64")` → exit 0, UTF-8 stdout preserved
 - Test 7 (R12): `run_project_command(command="script.ps1", shell_mode="auto")` → resolved_mode="powershell", uses `-File` route
+
+## R56 caller-safety rules
+
+- PowerShell variable names are case-insensitive. `$PID`/`$pid` is the automatic read-only process-ID variable; never use it for a page identifier. Use `$pageId` or extract the string directly from the ToolA response.
+- A valid ToolA browser page identifier has the `pg-...` form. If a numeric process ID reaches a page tool, treat it as a caller/wrapper bug, not a missing page.
+- For non-trivial HTTP payloads, use the script-file route and UTF-8-safe JSON/base64 transport. `btoa()` is not guaranteed in PowerShell or the dispatch runtime; use the platform UTF-8 base64 helper instead.
+- Preserve ToolA's HTTP-only boundary: command-shell guidance helps transport a request to `/api/call/*`; it does not authorize native project filesystem edits.

@@ -86,3 +86,10 @@ Wrap scripts in an async IIFE:
 ```
 
 Do not use top-level `return` in script files.
+
+## R56 page and baseline lifecycle
+
+- Accept page IDs only from ToolA responses; the expected form is `pg-...`. Never reuse a PowerShell process ID or a stale numeric value.
+- `baseline_id` belongs to the live page/generation that created it. After an orchestrator restart, browser reconnect, or page replacement, call `dom_state_diff` without `baseline_id` to create a fresh snapshot.
+- `BASELINE_EXPIRED` is an expected safety response. Follow `re_snapshot_then_compare`; do not retry the expired ID.
+- For a state change proof: open/attach page → fresh baseline → action → diff; use `click_and_checkpoint_loop` when the atomic path is preferable.

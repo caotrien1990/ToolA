@@ -4,11 +4,11 @@ This file is created from user-approved inputs only.
 
 ## User Idea
 
-(not provided)
+r61
 
 ## Approved Inputs
 
-(none provided yet)
+r61
 
 ## CA Rules
 

@@ -196,3 +196,17 @@ When `hint` is vague or `ca_next_action` is empty:
 5. If fail → suggested_fallback
 6. If still fail → native fallback with log_native_event OR end ❓
 ```
+
+## R56 semantic gotchas
+
+| Error or symptom | Correct action |
+|---|---|
+| `VERSION_REGEX_CAPTURE_REQUIRED` / `VERSION_CHECK_FAILED` | Add at least one capture group to `marker_regex`; keep the capture group around the version value. |
+| `PAGE_ID_INVALID` | Stop; use the `pg-...` page_id returned by `open_browser_page` or `cdp_attach_target`. Do not substitute PowerShell's automatic `$PID`. |
+| `BASELINE_EXPIRED` | Restart/reconnect invalidates old runtime state; create a fresh `dom_state_diff` baseline before comparing. |
+| `DST_EXISTS` | Preserve the destination by using a new path, or retry once with `overwrite=true, backup_existing=true`; verify the destination hash. |
+| `SYNTAX_ERROR_PRE_WRITE` | Use the returned `draft_id/failed_parts`; patch only the failed draft range. A cannot infer replacement content from line drift. |
+| `RUNNER_LANGUAGE_MISMATCH` | Use `run_project_test_script(runtime=python)` for Python; `run_playwright_test` is Node-only. |
+| `MODULE_NOT_FOUND` from Playwright | Install/use a pre-installed Playwright location, or use ToolA's internal browser T4 path; do not classify as a test pass. |
+
+These are semantic recovery hints, not aliases. Keep the one-corrected-retry maximum; classify the outcome as `retry-pass`, `expected-negative`, `infrastructure`, or `code-defect-fixed`.

@@ -119,3 +119,9 @@ Each tracked separately; total = pass + fail + skip + untested. See skill 10 for
 - Test 3: rename function → validate_symbols flags `removed: [oldName]`
 - Test 4: write Vietnamese .md without BOM → validate_encoding ok=true; with BOM → flag
 - Test 5: run_test_profile unittest with 5 tests → 4 pass 1 skip → coverage classification correct
+
+## R56 runner preflight and result classification
+
+- `run_playwright_test` is a Node runner. Accept `.js`, `.mjs`, or `.cjs`; a Python fixture belongs to `run_project_test_script(runtime=python)`.
+- Before calling the runner, verify that the script directory or project root has `node_modules/playwright` (or an explicitly supported Chromium subset). Missing dependency is infrastructure, not pass.
+- A first-attempt payload correction that later succeeds is `retry-pass`, not plain `pass`. Keep `skip`, `untested`, `infrastructure`, and `code-defect-fixed` separate.

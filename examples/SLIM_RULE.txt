@@ -9,7 +9,7 @@ Use [A] as the PRIMARY project channel instead of raw file ops.
 - [A:S]=[A:P]\project-orchestrator\start_orchestrator.bat. Restart [A] = POST /api/call/restart_orchestrator_via_bat — the ONLY restart tool. Never invent a kill pipeline (nohup/psutil/Popen); use restart_orchestrator_via_bat for restart, kill_process only when user explicitly asks. RESTART needs "tiến hành" go-ahead; call with only delay_seconds=2 (do NOT pass expected_generation). Helper is hidden (CREATE_NO_WINDOW); do not open a visible cmd/powershell. Verify NEW PID + /health generation incremented after restart. Do NOT restart while worker in-flight (except [A] crash + user force).
 - At the first prompt of every CA session, before any project/council/UI/desktop/browser/computer-use-related work, load the core rule exactly once through HTTP with a stable per-agent id:
   `POST http://localhost:8083/api/call/get_rule_core_text?fields=ok,already_fetched,text,sha256`
-  body: `{"agent_id":"<clau|codo|comc|ope|hermes|kilo|cozo>"}`
+  body: `{"agent_id":"<clau|codo|gro|hermes|kilo|ope|pic>"}`
   First fetch/force must include `text` because that is the full core rule. If the response says `already_fetched:true`, reuse the rule already in that agent's current context. If a rule upgrade is suspected, a new session may be stale, or Anh asks to verify latest rule, call again with "force":true (but do NOT call force routinely).
 - If a tool list/schema is needed, use HTTP:
   `GET http://localhost:8083/api/tools/names`
@@ -34,7 +34,7 @@ Use [A] as the PRIMARY project channel instead of raw file ops.
 - DEFAULT = read-only. Any write/edit/test/deploy needs explicit user go-ahead.
 - Project ops use [A] transport policy above; raw file I/O only for authorized [A] self-upgrade or environment block.
 - Editing [A] itself: native edit + `log_native_event`; if rules or MCP contract change, run `manage_agent(action='sync_rule'|'sync_mcp', target='all')` as needed. Do NOT restart [A] while any worker dispatch is in flight.
-- Identity is persistent per-agent. `get_rule_core_text` returns common core only and must not change name/persona. Desktop/current CA = name without C (Clau/Codo/Ope); CLI council worker = capitalized + C (ClauC/CodoC/OpeC/ComC/HermC/KiloC/CozoC). Council `leader` and `worker` are temporary roles.
+- Identity is persistent per-agent. `get_rule_core_text` returns common core only and must not change name/persona. Desktop/current CA = name without C (Clau/Codo/Ope); CLI council worker = capitalized + C (ClauC/CodoC/OpeC/ComC/HermC/KiloC/GroC/PicC). Council `leader` and `worker` are temporary roles.
 - Council report append is allowed even in VERIFY ONLY / no-edits tasks: "no edits" means no source/runtime mutation; writing the required RES block to the worker's own outbox is mandatory task reporting.
 - Reply in VIETNAMESE; code / identifiers / tool-names / error_names stay English. Never fabricate; say "unknown / not verified".
 - When Anh asks for a path, always respond with the full Windows path string.

@@ -1,7 +1,7 @@
 # Project Map
 
 - Schema: 2
-- Generated: 2026-07-25T23:43:52
+- Generated: 2026-08-18T10:31:24
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\examples`
 - Files indexed: 3
 
@@ -14,9 +14,9 @@
 
 ## Hotspots
 
-- `CORE_RULE.txt`: complexity 20, 42 LOC, group `unknown`
+- `CORE_RULE.txt`: complexity 21, 42 LOC, group `unknown`
 - `SLIM_RULE.txt`: complexity 12, 45 LOC, group `unknown`
-- `SLIM_RULE_INLINE.txt`: complexity 7, 1 LOC, group `unknown`
+- `SLIM_RULE_INLINE.txt`: complexity 9, 1 LOC, group `unknown`
 
 ## Agent Usage
 

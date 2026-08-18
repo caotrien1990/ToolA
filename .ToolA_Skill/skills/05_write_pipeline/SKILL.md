@@ -178,3 +178,11 @@ Backend will auto-detect content_encoding (base64 if multiline/Unicode), auto-va
 - Test base64 round-trip with: .py, .js, .ts, .html, .css, .json, .md, .ps1, Vietnamese with diacritics
 - Test multi-file rollback by intentionally breaking 1 of 5 files
 - Test FILE_CHANGED guardrail by external `touch` between read and write
+
+## R56 real-use recovery contract
+
+- `write_fix` and `write_new_file` already open a draft on pre-write or post-write validation failure; the response carries `draft_id` and `failed_parts`.
+- For `SYNTAX_ERROR_PRE_WRITE` or line drift, do not retry the original line range blindly. Read the failed part and patch only the draft with `write_draft_patch`.
+- The backend may auto-ship only after the draft content is re-audited and clean. It must not invent replacement content or auto-patch an ambiguous line mapping.
+- For a rerun of `copy_file`, `DST_EXISTS` is a safety guard: use a new disposable destination, or explicitly retry once with `overwrite=true, backup_existing=true`.
+- For a host-generated UTF-8/base64 payload, use a UTF-8 encoder such as PowerShell `[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(...))`; do not assume browser-only `btoa()` exists in the dispatch runtime.
