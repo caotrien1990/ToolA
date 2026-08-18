@@ -1,20 +1,20 @@
 {
-  "total_tools": 210,
+  "total_tools": 226,
   "source_counts": {
-    "tool_map": 210,
-    "schema": 210,
-    "tier_lists": 73,
+    "tool_map": 225,
+    "schema": 226,
+    "tier_lists": 76,
     "tools_v15_functions_reference_only": 83,
-    "inventory_reference_only": 219,
-    "canonical_total": 210
+    "inventory_reference_only": 246,
+    "canonical_total": 226
   },
   "source_policy": "canonical public tools = TOOL_MAP ∪ TOOL_SCHEMAS ∪ TOOL_PHASE lists; inventory/tools_v15 helper names are reference-only",
   "summary": {
-    "full_pass": 178,
-    "missing_ktrsk": 32,
+    "full_pass": 183,
+    "missing_ktrsk": 43,
     "missing_ktrsh": 0,
-    "missing_ktrb": 0,
-    "missing_ktrin": 0
+    "missing_ktrb": 1,
+    "missing_ktrin": 1
   },
   "results": [
     {
@@ -361,23 +361,19 @@
       "name": "begin_task",
       "phase": "T3",
       "ktrb": "PASS",
-      "ktrsk": "MISSING",
+      "ktrsk": "PASS",
       "ktrsh": "PASS",
       "ktrin": "PASS",
-      "ktrsk_skills": [],
-      "description": "Start a new authoritative user-task epoch. Hosts call this once for every real user prompt before mo",
+      "ktrsk_skills": [
+        "08_command_windows"
+      ],
+      "description": "Confirm or renew a server-owned task checkpoint. For two-phase root claim, send the same owner_claim",
       "test_cases": [
         {
           "name": "TC_SESSION_LIFECYCLE",
           "desc": "Kiểm tra begin_task trong lifecycle session đầy đủ",
           "workflow": "open_session → {name} → close_session",
           "expected": "ok=True, session event được log"
-        },
-        {
-          "name": "TC_KTRSK_FAIL",
-          "desc": "Tool begin_task không được đề cập trong skill nào",
-          "workflow": "CA search skill để tìm cách dùng {name}",
-          "expected": "Không tìm thấy skill đề cập đến tool này"
         }
       ]
     },
@@ -390,9 +386,10 @@
       "ktrin": "PASS",
       "ktrsk_skills": [
         "00_skill_router",
+        "08_command_windows",
         "SKILLS.md_router"
       ],
-      "description": "V15 R42 T1: first-call macro per session. Returns a compact overview: health, active_workflow, key_t",
+      "description": "V15 R42 T1 plus mandatory two-phase owner claim. New ownership requires caller-generated high-entrop",
       "test_cases": [
         {
           "name": "TC_BASIC_READ",
@@ -409,6 +406,36 @@
       ]
     },
     {
+      "name": "browser_smoke_test",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T2 READ/PROBE (CDP): load a url in a headless Chromium (Playwright), report title + body text, and v",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi browser_smoke_test với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi browser_smoke_test với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool browser_smoke_test không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
       "name": "bundle_version_check",
       "phase": "T4",
       "ktrb": "PASS",
@@ -419,7 +446,7 @@
         "11_repo_vs_runtime",
         "16_server_lifecycle"
       ],
-      "description": "T4c: extract build/version marker from HTML.",
+      "description": "T4c: extract a build/version marker from HTML. marker_regex must contain at least one capturing grou",
       "test_cases": [
         {
           "name": "TC_RUNTIME",
@@ -603,6 +630,36 @@
       ]
     },
     {
+      "name": "cbm_cycle_point",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T1 read-only: architectural health of the file dependency graph — circular dependencies (iterative T",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi cbm_cycle_point với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi cbm_cycle_point بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool cbm_cycle_point không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
       "name": "cbm_dead_code",
       "phase": "T1",
       "ktrb": "PASS",
@@ -610,7 +667,7 @@
       "ktrsh": "PASS",
       "ktrin": "PASS",
       "ktrsk_skills": [],
-      "description": "T1 read-only: conservative dead-code candidates (functions/methods with zero inbound call edges). En",
+      "description": "T1 read-only: Ruff-powered full-project health scan (dead_code + bug_risk + perf + complexity + code",
       "test_cases": [
         {
           "name": "TC_BASIC_READ",
@@ -880,6 +937,7 @@
       "ktrsh": "PASS",
       "ktrin": "PASS",
       "ktrsk_skills": [
+        "07_error_schema_hints",
         "22_electron_automation"
       ],
       "description": "V15 R15 P2.6 / R44 T4a: attach Playwright to existing CDP target. V15 R16 A.1: auto-fallback to brow",
@@ -1119,6 +1177,30 @@
       ]
     },
     {
+      "name": "clear_closed_sessions",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "Delete all closed sessions and their events for a project; active session is preserved.",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra clear_closed_sessions trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool clear_closed_sessions không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
       "name": "click",
       "phase": "T4",
       "ktrb": "PASS",
@@ -1286,6 +1368,7 @@
       "ktrsh": "PASS",
       "ktrin": "PASS",
       "ktrsk_skills": [
+        "05_write_pipeline",
         "21_tool_matrix"
       ],
       "description": "R81 T2 (protected): copy ONE file src→dst (absolute or relative via project_path) with audit — backs",
@@ -1354,6 +1437,60 @@
           "desc": "Gọi council_config_sync với dry_run=False → validate_file",
           "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
           "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "council_route_scorecard",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "council-brainstorm-loop",
+        "council-console-loop",
+        "council-cron-jobs",
+        "leader-council-skill",
+        "SKILLS.md_router"
+      ],
+      "description": "T1 measurement scorecard for council harness+model routes. Groups evidence by objective/risk/dev and",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi council_route_scorecard với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi council_route_scorecard بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "council_status",
+      "phase": "?",
+      "ktrb": "MISSING",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T1 read-only deterministic dispatch-state query for one council dispatch id.",
+      "test_cases": [
+        {
+          "name": "TC_KTRB_FAIL",
+          "desc": "Tool council_status không có backend implementation",
+          "workflow": "Gọi trực tiếp {name} qua API",
+          "expected": "UNKNOWN_TOOL hoặc error"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool council_status không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
         }
       ]
     },
@@ -1754,6 +1891,7 @@
       "ktrin": "PASS",
       "ktrsk_skills": [
         "00_skill_router",
+        "07_error_schema_hints",
         "18_runtime_dom_T4",
         "21_tool_matrix",
         "22_electron_automation"
@@ -1894,6 +2032,36 @@
       ]
     },
     {
+      "name": "file_profile",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T1 READ-ONLY: type/size/encoding/line_count/binary-or-text/language of a file WITHOUT dumping its co",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi file_profile với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi file_profile بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool file_profile không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
       "name": "fill",
       "phase": "T4",
       "ktrb": "PASS",
@@ -1982,7 +2150,7 @@
       "ktrsk_skills": [
         "15_search_code_intel"
       ],
-      "description": "V15 R8 B.1: deprecated alias of search_code(mode=callers).",
+      "description": "V15 R8 B.1: deprecated alias of search_code(mode=callers). project_path optional when an active sess",
       "test_cases": [
         {
           "name": "TC_BASIC_READ",
@@ -2227,7 +2395,7 @@
       "ktrsk_skills": [
         "03_path_session"
       ],
-      "description": "Count files and bytes under folder_path. Use folder_path, not project_path.",
+      "description": "Count files and bytes under folder_path without blocking the API loop. Safe defaults exclude generat",
       "test_cases": [
         {
           "name": "TC_BASIC_READ",
@@ -2509,6 +2677,36 @@
           "desc": "Gọi hermes_host_gate_check بدون project_path (nếu required), kiểm tra error",
           "workflow": "{name} (không truyền project_path)",
           "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "http_check",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T2 READ/PROBE: bounded HTTP request against a url. Returns status, elapsed, content-type and a bound",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi http_check với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi http_check với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool http_check không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
         }
       ]
     },
@@ -2829,7 +3027,6 @@
       "ktrsk_skills": [
         "00_skill_router",
         "04_tool_tiers",
-        "05_write_pipeline",
         "06_token_auth",
         "07_error_schema_hints",
         "08_command_windows",
@@ -2857,6 +3054,7 @@
       "ktrsh": "PASS",
       "ktrin": "PASS",
       "ktrsk_skills": [
+        "05_write_pipeline",
         "21_tool_matrix",
         "rule_skill_changer",
         "update-rule-skill-all-ca"
@@ -3101,6 +3299,7 @@
       "ktrin": "PASS",
       "ktrsk_skills": [
         "04_tool_tiers",
+        "07_error_schema_hints",
         "11_repo_vs_runtime",
         "18_runtime_dom_T4"
       ],
@@ -3173,6 +3372,36 @@
           "desc": "Gọi optional_tool_probe بدون project_path (nếu required), kiểm tra error",
           "workflow": "{name} (không truyền project_path)",
           "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "owner_heartbeat",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "MISSING",
+      "ktrsk_skills": [],
+      "description": "Record authenticated liveness for a committed root owner. The server verifies the capability, stores",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra owner_heartbeat trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool owner_heartbeat không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        },
+        {
+          "name": "TC_KTRIN_FAIL",
+          "desc": "Tool owner_heartbeat không có trong tool reference",
+          "workflow": "audit_tool_matrix → kiểm tra coverage",
+          "expected": "reference coverage drift"
         }
       ]
     },
@@ -3502,6 +3731,36 @@
       ]
     },
     {
+      "name": "query_sqlite",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T1 READ-ONLY: inspect a SQLite DB (tables + columns) and run bounded SELECT/WITH/PRAGMA/EXPLAIN quer",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi query_sqlite với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi query_sqlite بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool query_sqlite không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
       "name": "read_all_logs",
       "phase": "T1",
       "ktrb": "PASS",
@@ -3525,6 +3784,36 @@
           "desc": "Gọi read_all_logs بدون project_path (nếu required), kiểm tra error",
           "workflow": "{name} (không truyền project_path)",
           "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        }
+      ]
+    },
+    {
+      "name": "read_chunks",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T1 READ-ONLY: bounded chunk read by line or byte; never returns the whole file by default.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi read_chunks với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi read_chunks بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool read_chunks không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
         }
       ]
     },
@@ -3713,6 +4002,30 @@
       ]
     },
     {
+      "name": "record_error_resolution",
+      "phase": "T3",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T3 protected audit write: append an explicit state transition for one exact error event. Requires tr",
+      "test_cases": [
+        {
+          "name": "TC_SESSION_LIFECYCLE",
+          "desc": "Kiểm tra record_error_resolution trong lifecycle session đầy đủ",
+          "workflow": "open_session → {name} → close_session",
+          "expected": "ok=True, session event được log"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool record_error_resolution không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
       "name": "record_session_audit_checkpoint",
       "phase": "T3",
       "ktrb": "PASS",
@@ -3769,7 +4082,7 @@
         "15_search_code_intel",
         "16_server_lifecycle"
       ],
-      "description": "Delete the old cache and rescan the project to rebuild INDEX.json.",
+      "description": "Delete the old cache and rescan the project to rebuild INDEX.json. Large repos can take 60-180s+ -- ",
       "test_cases": [
         {
           "name": "TC_DRY_RUN",
@@ -3958,6 +4271,34 @@
       ]
     },
     {
+      "name": "ruff_fix",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "05_write_pipeline",
+        "09_testing_validation",
+        "SKILLS.md_router"
+      ],
+      "description": "T2 Ruff auto-fix. Defaults to preview: returns Ruff unified diff and does not edit. Set apply=true t",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi ruff_fix với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi ruff_fix với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
       "name": "rule_drift_check",
       "phase": "T1",
       "ktrb": "PASS",
@@ -4025,7 +4366,7 @@
         "07_error_schema_hints",
         "09_testing_validation"
       ],
-      "description": "V15 R8 B.6 / R37 T4: execute Node script with stdout/stderr capture. REQUIREMENT: test_script_path m",
+      "description": "V15 R8 B.6: Node Playwright runner; .js/.mjs/.cjs only; requires Playwright dependency. Python uses ",
       "test_cases": [
         {
           "name": "TC_RUNTIME",
@@ -4052,7 +4393,7 @@
         "22_electron_automation",
         "SKILLS.md_router"
       ],
-      "description": "Run a bounded project command. Supports keep_alive for GUI/long-running processes. Mutating commands",
+      "description": "Run a bounded project command. JSON-encode backslashes before transport; on Windows prefer direct se",
       "test_cases": [
         {
           "name": "TC_DRY_RUN",
@@ -4077,9 +4418,11 @@
       "ktrin": "PASS",
       "ktrsk_skills": [
         "06_token_auth",
+        "07_error_schema_hints",
+        "09_testing_validation",
         "21_tool_matrix"
       ],
-      "description": "V15 R43 P1 #5 T2: save script as artifact in .orchestrator_cache/test_scripts/ and execute. Avoids e",
+      "description": "V15 R43 P1 #5 T2: script-file transport for node|python|powershell|sh. Python selects the first inte",
       "test_cases": [
         {
           "name": "TC_DRY_RUN",
@@ -4170,6 +4513,36 @@
           "desc": "Gọi run_test_profile với dry_run=False → validate_file",
           "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
           "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
+      "name": "sample_data_file",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T1 READ-ONLY: first/last/random N rows for CSV/TSV/JSONL/log/text files without full dump.",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi sample_data_file với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi sample_data_file بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool sample_data_file không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
         }
       ]
     },
@@ -4360,6 +4733,62 @@
       ]
     },
     {
+      "name": "soft_data_reconcile",
+      "phase": "T1",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T1 READ-ONLY: cross-layer tool-surface overlap/bloat/conflict report for [A] (schema/param + alias +",
+      "test_cases": [
+        {
+          "name": "TC_BASIC_READ",
+          "desc": "Gọi soft_data_reconcile với project_path hợp lệ, kiểm tra response ok=True",
+          "workflow": "open_session → generate_project_map → {name}",
+          "expected": "ok=True, có dữ liệu trả về"
+        },
+        {
+          "name": "TC_MISSING_PROJECT",
+          "desc": "Gọi soft_data_reconcile بدون project_path (nếu required), kiểm tra error",
+          "workflow": "{name} (không truyền project_path)",
+          "expected": "error_name=MISSING_REQUIRED_FIELD hoặc PATH_NOT_FOUND"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool soft_data_reconcile không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
+        }
+      ]
+    },
+    {
+      "name": "start_app",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "PASS",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [
+        "16_server_lifecycle"
+      ],
+      "description": "T2 MUTATING (process): launch an app as a detached background process and verify readiness. Reuses r",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi start_app với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi start_app với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        }
+      ]
+    },
+    {
       "name": "state",
       "phase": "T1",
       "ktrb": "PASS",
@@ -4370,6 +4799,7 @@
         "00_skill_router",
         "01_bootstrap_health",
         "02_mode_control",
+        "07_error_schema_hints",
         "11_repo_vs_runtime",
         "13_apply_after_dry_run",
         "14_token_jwt_redesign",
@@ -4380,6 +4810,8 @@
         "26_workflow_ingestion",
         "council-brainstorm-loop",
         "council-console-loop",
+        "git-governance",
+        "leader-council-skill",
         "verify-new-function",
         "SKILLS.md_router"
       ],
@@ -4417,6 +4849,36 @@
           "desc": "Kiểm tra static_asset_cache_check với runtime environment",
           "workflow": "open_session → inspect_project_runtime → {name}",
           "expected": "ok=True, có dữ liệu runtime"
+        }
+      ]
+    },
+    {
+      "name": "stop_app",
+      "phase": "T2",
+      "ktrb": "PASS",
+      "ktrsk": "MISSING",
+      "ktrsh": "PASS",
+      "ktrin": "PASS",
+      "ktrsk_skills": [],
+      "description": "T2 MUTATING (process): stop an app by PID or process name, including its descendants. Reuses kill_pr",
+      "test_cases": [
+        {
+          "name": "TC_DRY_RUN",
+          "desc": "Gọi stop_app với dry_run=True, kiểm tra không ghi file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=True)",
+          "expected": "ok=True, dry_run=True, có diff preview"
+        },
+        {
+          "name": "TC_WRITE_AND_VALIDATE",
+          "desc": "Gọi stop_app với dry_run=False → validate_file",
+          "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
+          "expected": "ok=True, validation ok, cache_synced=True"
+        },
+        {
+          "name": "TC_KTRSK_FAIL",
+          "desc": "Tool stop_app không được đề cập trong skill nào",
+          "workflow": "CA search skill để tìm cách dùng {name}",
+          "expected": "Không tìm thấy skill đề cập đến tool này"
         }
       ]
     },
@@ -5228,10 +5690,12 @@
       "name": "write_draft_patch",
       "phase": "T2",
       "ktrb": "PASS",
-      "ktrsk": "MISSING",
+      "ktrsk": "PASS",
       "ktrsh": "PASS",
       "ktrin": "PASS",
-      "ktrsk_skills": [],
+      "ktrsk_skills": [
+        "05_write_pipeline"
+      ],
       "description": "Fix ONLY a failed line range of a pending write draft (opened automatically when write_fix/write_new",
       "test_cases": [
         {
@@ -5245,12 +5709,6 @@
           "desc": "Gọi write_draft_patch với dry_run=False → validate_file",
           "workflow": "open_session → generate_project_map → {name}(dry_run=False) → validate_file",
           "expected": "ok=True, validation ok, cache_synced=True"
-        },
-        {
-          "name": "TC_KTRSK_FAIL",
-          "desc": "Tool write_draft_patch không được đề cập trong skill nào",
-          "workflow": "CA search skill để tìm cách dùng {name}",
-          "expected": "Không tìm thấy skill đề cập đến tool này"
         }
       ]
     },
