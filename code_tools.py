@@ -1143,14 +1143,38 @@ def _decode_text_payload(raw_content: str, content_encoding: str | None) -> tupl
     check["bytes_written"] = len(raw_bytes)
     return text, check, None
 
+def _mojibake_confirmed(text: str) -> bool:
+    """Confirm a marker hit is REAL mojibake, not text that merely mentions one.
+
+    _MOJIBAKE_MARKERS is a substring probe, so any file that *discusses* mojibake
+    matches itself — code_tools.py did, which made validate_encoding fail on this
+    very module and taught CAs to ignore the gate. Real mojibake is UTF-8 bytes
+    that were decoded as latin-1/CP-1252, so re-encoding to latin-1 and decoding
+    as UTF-8 recovers clean text; prose that merely contains the marker glyphs
+    either fails to round-trip or comes back unchanged. Verified against both:
+    a corrupted Vietnamese string recovers exactly, all four marker-mentioning
+    lines in this file do not.
+    """
+    if not text:
+        return False
+    try:
+        recovered = text.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return False
+    return recovered != text
+
 
 def _encoding_check_from_text(text: str, encoding_used: str = "plain") -> dict:
     suspicious = [marker for marker in _MOJIBAKE_MARKERS if marker in text]
+    # R81: markers alone are a hint, not a verdict — see _mojibake_confirmed.
+    confirmed = bool(suspicious) and _mojibake_confirmed(text)
     has_vietnamese = bool(_VIETNAMESE_DIACRITIC_RE.search(text))
     return {
         "encoding_used": encoding_used,
         "utf8_valid": True,
-        "mojibake_risk": bool(suspicious),
+        "mojibake_risk": confirmed,
+        "mojibake_markers_present": bool(suspicious),
+        "mojibake_confirmed": confirmed,
         "vietnamese_diacritic_check": {
             "has_vietnamese_diacritics": has_vietnamese,
             "status": "ok" if has_vietnamese or not text.strip() else "not_detected",
@@ -1665,24 +1689,164 @@ def _is_index_recently_refreshed(project_path: str) -> bool:
     return bool(last and (time.time() - last) < _DRIFT_SUPPRESS_WINDOW_SEC)
 
 
-async def generate_project_map(project_path: str) -> str:
+# ─── V15 R80: project-map staleness gate ─────────────────────────────────────
+# generate/refresh_project_map is O(repo) (60-180s+, up to ~10 min on very large
+# roots) and serialises on surgical_mapper._pmap_lock. With N CAs opening sessions
+# at once the SAME full rebuild is requested over and over — a thundering herd
+# that has already produced FILE_ACCESS_DENIED under stress (see the _pmap_lock
+# docstring). Knowing whether a rebuild is NEEDED costs ~2s (cache_delta is
+# hash-based and singleflight-coalesced per project); rebuilding blindly costs
+# 70-350x that. So: probe first, rebuild only on real drift. force=True always
+# rebuilds, which is the pre-R80 behaviour and the corrupt-cache escape hatch.
+_PROJECT_MAP_ARTIFACTS_NOTE = "INDEX.json + PROJECT_MAP.md + PROJECT_CONTEXT.md + search snapshot"
+
+
+def _project_map_artifacts_missing(project_path: str) -> list[str]:
+    """Stat-only check that every generate_project_map output is present.
+
+    A zero-drift INDEX alone is NOT enough to skip: generate_project_map also
+    writes PROJECT_MAP.md and PROJECT_CONTEXT.md and publishes a search
+    snapshot. Skipping while one of those is missing would leave the repair
+    prepare_ca_session performs today permanently undone.
+    """
+    missing: list[str] = []
     try:
-        result = await asyncio.to_thread(surgical_mapper.generate_project_map, project_path)
-        _mark_index_refreshed(project_path)
-        return json.dumps(result)
+        root = Path(project_path).resolve()
+        cache_dir = _project_cache_dir(str(root))
     except Exception as exc:
-        return json.dumps({"error": str(exc)})
+        return [f"unresolvable_project_path:{exc}"]
+    if not (cache_dir / "INDEX.json").exists():
+        missing.append("INDEX.json")
+    if not (root / "PROJECT_MAP.md").exists():
+        missing.append("PROJECT_MAP.md")
+    if not (root / "PROJECT_CONTEXT.md").exists():
+        missing.append("PROJECT_CONTEXT.md")
+    try:
+        if not search_snapshots.current_snapshot_id(root):
+            missing.append("search_snapshot")
+    except Exception:
+        missing.append("search_snapshot")
+    return missing
+
+
+def _orphan_cache_sidecars(project_path: str) -> list[str]:
+    """Per-file cache sidecars in .orchestrator_cache with no source file left.
+
+    A rebuild wipes the non-preserved cache tree, so these vanish on any real
+    generate_project_map. The staleness gate has to look for them explicitly:
+    cache_delta walks SOURCE files and reports zero drift while stale sidecars
+    still shadow modules deleted outside the write pipeline. Stat-only.
+    """
+    try:
+        root = Path(project_path).resolve()
+        cache_dir = _project_cache_dir(str(root))
+    except Exception:
+        return []
+    if not cache_dir.is_dir():
+        return []
+    orphans: list[str] = []
+    try:
+        for sidecar in cache_dir.rglob("*.json"):
+            rel = sidecar.relative_to(cache_dir).as_posix()
+            if surgical_mapper._cache_path_is_preserved(rel):
+                continue
+            source_rel = rel[: -len(".json")]
+            # _cache_path names sidecars "<source-rel-with-extension>.json", so a
+            # stripped name with no extension left is cache infrastructure
+            # (INDEX.json and friends), not a per-file sidecar.
+            if "." not in source_rel.rsplit("/", 1)[-1]:
+                continue
+            if not (root / source_rel).exists():
+                orphans.append(rel)
+    except Exception:
+        return orphans
+    return orphans
+
+
+async def _project_map_freshness(project_path: str) -> dict:
+    """Decide whether the full rebuild can be skipped. Never raises."""
+    missing = _project_map_artifacts_missing(project_path)
+    if missing:
+        return {"fresh": False, "reason": "artifacts_missing",
+                "missing_artifacts": missing, "total_changed": None}
+    try:
+        delta = json.loads(await cache_delta(project_path))
+    except Exception as exc:
+        # A probe failure must never block the rebuild it exists to avoid.
+        return {"fresh": False, "reason": "delta_probe_failed",
+                "probe_error": str(exc), "total_changed": None}
+    if not delta.get("ok"):
+        return {"fresh": False, "reason": "delta_probe_failed",
+                "probe_error": delta.get("error") or "cache_delta ok=false",
+                "total_changed": None}
+    total = int(delta.get("total_changed") or 0)
+    if total == 0:
+        # cache_delta only compares SOURCE files against the index; it is blind to
+        # junk INSIDE .orchestrator_cache. A full rebuild also wipes orphan
+        # sidecars (a *.json left behind by a file deleted outside the write
+        # pipeline), so zero source-drift alone must not authorise a skip.
+        orphans = _orphan_cache_sidecars(project_path)
+        if orphans:
+            return {"fresh": False, "reason": "orphan_cache_sidecars",
+                    "orphan_sidecars": orphans[:20],
+                    "orphan_sidecars_total": len(orphans),
+                    "total_changed": 0}
+    return {
+        "fresh": total == 0,
+        "reason": "cache_fresh" if total == 0 else "drift_detected",
+        "total_changed": total,
+        "added": len(delta.get("added") or []),
+        "modified": len(delta.get("modified") or []),
+        "deleted": len(delta.get("deleted") or []),
+        "cache_updated_at": delta.get("cache_updated_at") or "",
+    }
+
+
+def _project_map_skipped_payload(project_path: str, freshness: dict) -> dict:
+    """Same shape as summarize_index, so a skip is a drop-in for a rebuild."""
+    try:
+        summary = surgical_mapper.summarize_index(_load_index(project_path))
+    except Exception:
+        summary = {}
+    summary.update({
+        "ok": True,
+        "skipped": True,
+        "rebuilt": False,
+        "reason": "cache_fresh",
+        "total_changed": 0,
+        "cache_updated_at": freshness.get("cache_updated_at", ""),
+        "checked": _PROJECT_MAP_ARTIFACTS_NOTE,
+        "hint": "Index matches disk (hash-compared) and every artifact exists; "
+                "no rebuild needed. Pass force=true to rebuild anyway.",
+    })
+    return summary
+
+
+async def _project_map_build(project_path: str, force: bool, builder) -> str:
+    if not force:
+        freshness = await _project_map_freshness(project_path)
+        if freshness.get("fresh"):
+            _mark_index_refreshed(project_path)
+            return json.dumps(_project_map_skipped_payload(project_path, freshness),
+                              ensure_ascii=False)
+    try:
+        result = await asyncio.to_thread(builder, project_path)
+        _mark_index_refreshed(project_path)
+        if isinstance(result, dict):
+            result = {"ok": True, "skipped": False, "rebuilt": True, **result}
+        return json.dumps(result, ensure_ascii=False)
+    except Exception as exc:
+        return json.dumps({"ok": False, "error": str(exc)})
+
+
+async def generate_project_map(project_path: str, force: bool = False) -> str:
+    return await _project_map_build(project_path, force, surgical_mapper.generate_project_map)
 
 
 # ─── Tool 11: refresh_project_map ───────────────────────────────────────────────────
 
-async def refresh_project_map(project_path: str) -> str:
-    try:
-        result = await asyncio.to_thread(surgical_mapper.refresh_project_map, project_path)
-        _mark_index_refreshed(project_path)
-        return json.dumps(result)
-    except Exception as exc:
-        return json.dumps({"error": str(exc)})
+async def refresh_project_map(project_path: str, force: bool = False) -> str:
+    return await _project_map_build(project_path, force, surgical_mapper.refresh_project_map)
 
 
 # ─── Tool 12: update_file_cache ───────────────────────────────────────────────────
@@ -13068,32 +13232,43 @@ async def validate(file_path: str = "", project_path: str = "",
 
     checks: list of "file" | "symbols" | "encoding". Default ["file"].
     Aggregates results into one response; ok = all sub-checks ok.
+
+    R81: a failure names the sub-check that caused it. Previously the caller got
+    a bare ok=false and the ledger recorded error_name=NULL with an empty reason
+    ("Tool returned ok=false"), so neither the CA nor the audit row could tell
+    which of three checks had objected.
     """
     if checks is None or not checks:
         checks = ["file"]
     if isinstance(checks, str):
         checks = [checks]
     out: dict = {"ok": True, "checks": list(checks)}
+    failed: list[str] = []
+
+    def _record(name: str, sub: dict) -> None:
+        out[name] = sub
+        if not sub.get("ok", True):
+            out["ok"] = False
+            failed.append(name)
+
     if "file" in checks:
-        raw = await validate_file(file_path, lang=lang, project_path=project_path)
-        sub = json.loads(raw)
-        out["file"] = sub
-        if not sub.get("ok", True):
-            out["ok"] = False
+        _record("file", json.loads(await validate_file(file_path, lang=lang, project_path=project_path)))
     if "symbols" in checks:
-        raw = await validate_symbols(file_path, project_path=project_path)
-        sub = json.loads(raw)
-        out["symbols"] = sub
-        if not sub.get("ok", True):
-            out["ok"] = False
+        _record("symbols", json.loads(await validate_symbols(file_path, project_path=project_path)))
     if "encoding" in checks:
-        raw = await validate_encoding(file_path, project_path=project_path,
-                                       expected_encoding=expected_encoding,
-                                       language_hint=language_hint)
-        sub = json.loads(raw)
-        out["encoding"] = sub
-        if not sub.get("ok", True):
-            out["ok"] = False
+        _record("encoding", json.loads(await validate_encoding(
+            file_path, project_path=project_path,
+            expected_encoding=expected_encoding, language_hint=language_hint)))
+    if failed:
+        details = []
+        for name in failed:
+            sub = out.get(name) or {}
+            detail = sub.get("error") or sub.get("detail") or sub.get("reason") or ""
+            details.append(f"{name}: {detail}" if detail else name)
+        out["failed_checks"] = failed
+        out["error_name"] = "VALIDATION_FAILED"
+        out["error"] = "; ".join(details)
+        out["ca_next_action"] = f"inspect_{failed[0]}_check_result"
     return json.dumps(out, ensure_ascii=False)
 
 
@@ -13119,7 +13294,14 @@ async def project_map(project_path: str, mode: str = "status",
             "accepted_fields": ["status", "generate", "refresh", "delta"],
         })
     try:
-        raw = await fn(project_path)
+        # R80: generate/refresh accept force to bypass the staleness gate; status
+        # and delta do not take it. Previously `force` was accepted by the schema
+        # here and then silently dropped — a CA asking for a forced rebuild
+        # through this dispatcher never got one.
+        if m in ("generate", "refresh"):
+            raw = await fn(project_path, force=bool(force))
+        else:
+            raw = await fn(project_path)
         inner = json.loads(raw) if isinstance(raw, str) else raw
     except Exception as exc:
         return json.dumps({"ok": False, "mode": m, "error": str(exc),

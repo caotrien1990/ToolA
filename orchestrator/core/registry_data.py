@@ -527,7 +527,7 @@ BASE_TOOL_SCHEMAS = [
 
 			"name": "generate_project_map",
 
-			"description": "Build the project cache, INDEX.json, and PROJECT_MAP.md. Automatically skips venv, node_modules, cache, log, backup, archive, secret, and generated output folders.",
+			"description": "Build the project cache, INDEX.json, PROJECT_MAP.md, PROJECT_CONTEXT.md and the search snapshot. Automatically skips venv, node_modules, cache, log, backup, archive, secret, and generated output folders. R80 staleness gate: before rebuilding, the index is hash-compared against disk (~2s, coalesced across concurrent callers). If nothing drifted AND every artifact exists, the rebuild is SKIPPED and the response carries skipped=true, rebuilt=false, reason=\"cache_fresh\" plus the usual index summary — safe to call at session start without herding N agents into the same O(repo) rescan. Pass force=true to rebuild unconditionally (corrupt/suspect cache).",
 
 			"parameters": {
 
@@ -536,6 +536,8 @@ BASE_TOOL_SCHEMAS = [
 				"properties": {
 
 					"project_path": {"type": "string", "description": "Project folder path to scan"},
+
+					"force": {"type": "boolean", "default": False, "description": "Skip the staleness gate and rebuild even when the cache is fresh"},
 
 				},
 
@@ -555,7 +557,7 @@ BASE_TOOL_SCHEMAS = [
 
 			"name": "refresh_project_map",
 
-			"description": "Delete the old cache and rescan the entire project to rebuild INDEX.json. Large repos (10k+ files, big archive/cache trees) can take 60-180s+; set your client/tool-call timeout to >= 300s. The rescan finishes server-side even if the client call times out -- a follow-up read sees the completed INDEX, so do NOT lower the timeout and retry in a loop.",
+			"description": "Delete the old cache and rescan the entire project to rebuild INDEX.json. Large repos (10k+ files, big archive/cache trees) can take 60-180s+; set your client/tool-call timeout to >= 300s. The rescan finishes server-side even if the client call times out -- a follow-up read sees the completed INDEX, so do NOT lower the timeout and retry in a loop. R80 staleness gate: a hash-based drift probe (~2s) runs first and the expensive rescan is SKIPPED when the index already matches disk and all artifacts exist (skipped=true, rebuilt=false, reason=\"cache_fresh\"). Pass force=true to rescan unconditionally.",
 
 			"parameters": {
 
@@ -564,6 +566,8 @@ BASE_TOOL_SCHEMAS = [
 				"properties": {
 
 					"project_path": {"type": "string", "description": "Project folder path to rescan"},
+
+					"force": {"type": "boolean", "default": False, "description": "Skip the staleness gate and rescan even when the cache is fresh"},
 
 				},
 

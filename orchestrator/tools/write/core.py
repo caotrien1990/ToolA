@@ -555,6 +555,38 @@ def _restore_backup_and_reseed(fp: Path, backup_path: Path, project_path: str = 
         return _do()
 
 
+def _index_missing_error(fp: Path, project_path: str) -> dict | None:
+    """R83: the "INDEX not found" precondition, callable BEFORE the write branch.
+
+    The gate used to live only inside _write(), which runs after the dry_run branch
+    has already returned. So dry_run=true answered ok:true with a diff and a
+    dry_run_id, and the identical payload with dry_run=false came back ok:false
+    "INDEX not found" seconds later — the CA was handed a promise the real write
+    could not keep. Same precondition, checked on both paths; dry-run reports it as
+    a blocker instead of pretending the apply will succeed."""
+    import code_tools as ct
+    from orchestrator.fileops.xroot import is_outside_project_root
+
+    # Mirror _write_fix_guard_result's own preconditions exactly, or the dry-run
+    # refuses writes the real path would have allowed: a target outside the project
+    # root is governed by the xroot policy, not by this project's INDEX, and the
+    # guard bails on it before ever looking at INDEX.json. write_transaction
+    # pre-checks each part with an internal dry-run, so an over-eager gate here
+    # would break cross-root transactions that work fine.
+    if project_path and is_outside_project_root(fp, project_path):
+        return None
+    _root = project_path or ct.find_project_root(str(fp))
+    if not _root:
+        return None
+    if (ct._project_cache_dir(_root) / "INDEX.json").exists():
+        return None
+    return ct.json.loads(ct._json_error(
+        "INDEX not found. Call generate_project_map before writing.",
+        action_required="generate_project_map",
+        project_path=str(ct.Path(_root).resolve()),
+    ))
+
+
 def _write_fix_guard_result(fp: Path, project_path: str, file_path: str, expected_hash: str) -> tuple[bool, dict, bool]:
     import code_tools as ct
     from orchestrator.fileops.xroot import is_outside_project_root
@@ -1356,6 +1388,14 @@ skip_symbol_check :bool =False )->str :
     span =built ["span"]
     # DRY RUN: validate proposed, tra preview + diff, KHONG ghi file
     if dry_run :
+        # R83: a dry-run that cannot be applied must say so, not hand out a dry_run_id.
+        _idx_err =_index_missing_error (fp ,project_path )
+        if _idx_err :
+            _idx_err ["dry_run"]=True 
+            _idx_err ["ca_next_action"]="generate_project_map"
+            _idx_err ["hint"]=("Dry-run stopped at the same precondition the real write "
+            "enforces: no INDEX.json for this project. Run generate_project_map, then retry.")
+            return ct.json .dumps (_idx_err ,ensure_ascii =False )
         val_result =None 
         if fp .suffix .lower ()in _VALIDATE_EXTS :
             with ct.tempfile .NamedTemporaryFile (

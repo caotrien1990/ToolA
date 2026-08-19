@@ -1,3 +1,4 @@
+import functools
 import ast
 import fnmatch
 import hashlib
@@ -54,6 +55,13 @@ SKIP_DIRS = {
     # index and break regex/symbol search + cause INDEX/manifest scan-vs-walk drift: an
     # embedded venv, backup snapshots, staging clones, codex mission dirs, pytest temp.
     ".venv_bge_m3", "backups", "staging", ".codex", ".pytest_tmp",
+    # R82 2026-08-19: runtime/archival DATA trees. Measured on ToolQ: qsleep/runs
+    # (19953 files) + qsleep/queue (8289) + archive/ (13470) made generate_project_map
+    # scan 31608 files of which 31079 were .json runtime records and only 367 were .py
+    # source. At 18.7 ms/file that is ~591s of analyze alone — past every proxy cap, so
+    # INDEX.json never got written and write_fix stayed blocked behind "INDEX not found"
+    # forever. These names hold produced records, not source, on every project.
+    "runs", "queue", "_archive", "archive",
 }
 # SOT council lives in .council — searchable despite the generic dot-dir skip.
 DOT_DIRS_SEARCHABLE = {".council"}
@@ -167,9 +175,12 @@ def _publish_search_snapshot(project_root: Path, index: dict, changed_paths: dic
     # self-heal. Separate windows keep both attempts individually bounded.
     def _publish(cp):
         deadline_at = time.monotonic() + _publish_snapshot_deadline_seconds()
+        # R82: bind project_root so the snapshot walk applies the SAME data-JSON rule
+        # as the index scan. An unbound _should_scan_file would judge depth as unknown,
+        # keep deep data .json files, and reopen the INDEX/manifest set mismatch.
         return search_snapshots.publish_snapshot(
             project_root,
-            include_file=_should_scan_file,
+            include_file=functools.partial(_should_scan_file, project_root=project_root),
             skip_dir=should_skip_dir,
             index=index,
             changed_paths=cp,
@@ -255,13 +266,66 @@ def _is_generated_or_junk(file_path: Path) -> bool:
     return file_path.name.startswith(".") or _matches_any(file_path.name, SKIP_FILE_GLOBS)
 
 
-def _skip_reason(file_path: Path) -> str | None:
+# R82: .json/.jsonl earn their place in SUPPORTED_EXTENSIONS as CONFIG (package.json,
+# tsconfig.json, a schema next to the code that reads it). But the same extension is
+# also the default serialisation for produced records — job results, queue entries,
+# ledger rows — and a live repo accumulates those by the ten-thousand. Indexing them
+# buys nothing (they carry no symbols, no imports, nothing a CA searches for) and costs
+# the whole build: see the SKIP_DIRS note above. So a .json file is indexed when it is
+# a KNOWN config name, or a config-shaped name, or sits shallow in the tree; a deep
+# unknown .json is data. Config lives near the root by convention; nobody puts
+# tsconfig.json eight levels down inside a runs/ directory.
+DATA_JSON_MAX_DEPTH = 2
+CONFIG_JSON_NAMES = {
+    "package.json", "package-lock.json", "tsconfig.json", "jsconfig.json",
+    "composer.json", "manifest.json", "settings.json", "launch.json",
+    "tasks.json", "pyrightconfig.json", "renovate.json", "vercel.json",
+    ".eslintrc.json", ".prettierrc.json", "babel.config.json", "nest-cli.json",
+    "angular.json", "firebase.json", "app.json", "now.json", "jest.config.json",
+    "agents_registry.json", "council_config.json",
+}
+CONFIG_JSON_HINTS = ("config", "schema", "settings", "manifest", "registry", "rc")
+
+
+def _is_data_json(file_path: Path, depth: int | None = None) -> bool:
+    """True when a .json/.jsonl file is a produced RECORD rather than config.
+
+    depth = how many directories deep the file sits below the project root. It is
+    unknown when the caller only has an absolute path with no root to compare against
+    (e.g. the standalone validators), and in that case only the name is judged — the
+    conservative direction, since an unknown-depth config keeps being indexed."""
+    name = file_path.name.lower()
+    if file_path.suffix.lower() == ".jsonl":
+        return True  # line-delimited records; never a config format
+    if name in CONFIG_JSON_NAMES:
+        return False
+    if any(hint in name for hint in CONFIG_JSON_HINTS):
+        return False
+    if depth is None:
+        return False
+    return depth > DATA_JSON_MAX_DEPTH
+
+
+def _depth_below_root(file_path: Path, project_root: str | Path | None) -> int | None:
+    if not project_root:
+        return None
+    try:
+        return len(Path(file_path).resolve().relative_to(Path(project_root).resolve()).parts) - 1
+    except Exception:
+        return None
+
+
+def _skip_reason(file_path: Path, project_root: str | Path | None = None) -> str | None:
     if _is_secret_file(file_path):
         return "secret_like_filename"
     if _is_generated_or_junk(file_path):
         return "generated_archive_backup_or_internal_ai"
     if file_path.suffix.lower() not in SUPPORTED_EXTENSIONS:
         return "unsupported_extension"
+    if file_path.suffix.lower() in (".json", ".jsonl") and _is_data_json(
+        file_path, _depth_below_root(file_path, project_root)
+    ):
+        return "data_json_not_source"
     parts = {part.lower() for part in file_path.parts}
     for skip_dir in SKIP_DIRS:
         if skip_dir.lower() in parts:
@@ -647,7 +711,7 @@ def _cache_path(project_root: str, file_path: str) -> Path:
 
 
 def write_file_cache(file_path: str, project_root: str) -> dict:
-    if not _should_scan_file(Path(file_path)):
+    if not _should_scan_file(Path(file_path), project_root):
         return {
             "file": _rel_path(file_path, project_root),
             "skipped": True,
@@ -880,8 +944,8 @@ def update_index_incremental(project_root, cache_data: dict, *, removed: bool = 
     return index
 
 
-def _should_scan_file(file_path: Path) -> bool:
-    return _skip_reason(file_path) is None
+def _should_scan_file(file_path: Path, project_root: str | Path | None = None) -> bool:
+    return _skip_reason(file_path, project_root) is None
 
 
 def _write_project_map_markdown(project_root: Path, index: dict) -> None:
@@ -1041,26 +1105,52 @@ def _reindex_from_disk(project_root: Path) -> dict:
     project_root = Path(project_root).resolve()
     with _pmap_lock(project_root):
         cache_root = project_root / CACHE_DIR_NAME
-        if cache_root.exists():
-            for path in sorted(cache_root.rglob("*"), reverse=True):
-                rel = path.relative_to(cache_root).as_posix()
-                if _cache_path_is_preserved(rel):
-                    continue
-                if path.is_file():
-                    path.unlink()
-                elif path.is_dir():
-                    try:
-                        path.rmdir()
-                    except OSError:
-                        pass
 
+        # R84: SCAN FIRST, PRUNE AFTER — never wipe before the rebuild succeeds.
+        # The old order emptied the cache and only then started an O(repo) scan, so
+        # any failure in between (deadline, proxy cap, crash) left the project with
+        # LESS cache than it started with, and every retry destroyed a bit more while
+        # never reaching build_index. Observed on ToolQ: repeated generate attempts,
+        # sidecars on disk, INDEX.json never written, write_fix blocked indefinitely.
+        # Rewriting each sidecar in place and deleting only what the scan did not
+        # produce reconciles external deletes exactly as before, but a partial run now
+        # degrades to a stale cache instead of no cache.
+        written: set[str] = set()
         for root, dirs, files in os.walk(project_root):
             dirs[:] = [d for d in dirs if not should_skip_dir(d)]
 
             for fn in files:
                 fp = Path(root) / fn
-                if _should_scan_file(fp):
+                if _should_scan_file(fp, project_root):
                     write_file_cache(str(fp), str(project_root))
+                    try:
+                        written.add(_cache_path(str(project_root), str(fp))
+                                    .relative_to(cache_root).as_posix())
+                    except Exception:
+                        pass
+
+        if cache_root.exists():
+            for path in sorted(cache_root.rglob("*"), reverse=True):
+                rel = path.relative_to(cache_root).as_posix()
+                if _cache_path_is_preserved(rel) or rel in written:
+                    continue
+                if path.is_file():
+                    # Cache infrastructure (INDEX.json and friends) has no source
+                    # counterpart and is rewritten by build_index below; per-file
+                    # sidecars are named "<source-rel-with-extension>.json", so a
+                    # stripped name with no extension left is not a sidecar.
+                    stem = rel[: -len(".json")] if rel.endswith(".json") else rel
+                    if "." not in stem.rsplit("/", 1)[-1]:
+                        continue
+                    try:
+                        path.unlink()
+                    except OSError:
+                        pass
+                elif path.is_dir():
+                    try:
+                        path.rmdir()
+                    except OSError:
+                        pass
 
         return build_index(str(project_root))
 
@@ -1130,7 +1220,7 @@ def update_file_cache(file_path: str, project_root: str) -> dict:
     invalidates exactly that file's entry; the rebuilt INDEX drops entries for files
     whose cache was removed.
     """
-    if not Path(file_path).exists() or not _should_scan_file(Path(file_path)):
+    if not Path(file_path).exists() or not _should_scan_file(Path(file_path), project_root):
         removed = remove_file_cache(file_path, project_root)
         metadata = {
             "file": _rel_path(file_path, project_root),
