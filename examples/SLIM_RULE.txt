@@ -30,9 +30,16 @@ Use [A] as the PRIMARY project channel instead of raw file ops.
 - HTTP `/api/call/<tool>` is default for non-T4 work; council workers use HTTP ONLY.
 - MCP is Clau/ClauC-only for explicit stateful T4 page sessions.
 
+## Read Routing (measured 2026-08-19)
+- Native grep/glob/`git status`/`git diff`/plain read = ALLOWED for pure inspection, and is much faster ([A] git_status 1542ms vs 164ms; search_code 1199ms vs rg 229ms; regex_search hard-fails at its 5s deadline). Inspection mutates nothing → NO log_native_event owed.
+- Read-to-EDIT is different: `write_fix` needs the read_token only `read_file_range` seeds. Native read before a write → FILE_CHANGED_OUTSIDE_ORCHESTRATOR; recover with `read_file_range(force_reseed=true)`.
+- Use [A] `search_code` when you need INDEX semantics (symbols, callable refs, staleness) — rg has none.
+- Nothing is locked. `git_status` stays required: `git_commit` needs its `expected_staged_hash`.
+- Short form: native to LOOK, [A] to TOUCH.
+
 ## Hard Rules
 - DEFAULT = read-only. Any write/edit/test/deploy needs explicit user go-ahead.
-- Project ops use [A] transport policy above; raw file I/O only for authorized [A] self-upgrade or environment block.
+- Project ops use [A] transport policy above; raw file I/O only for pure inspection (see Read Routing), authorized [A] self-upgrade, or environment block.
 - Editing [A] itself: native edit + `log_native_event` — an AUTHORIZED path, not a bypass: the classifier maps a native write inside [A]'s own tree to `task_class=upgrade_orchestrator` / `native_policy=hybrid_upgrade_only`, so `log_native_event` returns `ok:true`/`audit_status:logged`. A `HOST_GATE_DENY`/`write_existing_file` answer means the target did not resolve inside [A] (e.g. several paths joined into one string) — pass ONE absolute path. Reading [A]'s own files is NOT relaxed: use [A] read tools. If rules or MCP contract change, run `manage_agent(action='sync_rule'|'sync_mcp', target='all')` as needed. Do NOT restart [A] while any worker dispatch is in flight.
 - Identity is persistent per-agent. `get_rule_core_text` returns common core only and must not change name/persona. Desktop/current CA = name without C (Clau/Codo/Ope); CLI council worker = capitalized + C (ClauC/CodoC/OpeC/ComC/HermC/KiloC/GroC/PicC). Council `leader` and `worker` are temporary roles.
 - Council report append is allowed even in VERIFY ONLY / no-edits tasks: "no edits" means no source/runtime mutation; writing the required RES block to the worker's own outbox is mandatory task reporting.
