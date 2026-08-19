@@ -28,9 +28,13 @@ import time
 
 from .config import graph_enabled
 from . import store as _store
+from .store import NON_SYMBOL_KINDS
 from .status import graph_status, EXTRACTOR_VERSION
 
 DTO_VERSION = "cbm.graph/v1"
+# W5: bind placeholders for the NON_SYMBOL_KINDS filter, so adding a kind to
+# that tuple widens the DTO filter automatically instead of silently leaking.
+_NON_SYMBOL_SQL = ",".join("?" * len(NON_SYMBOL_KINDS))
 
 
 def _safe_int(val, default: int = 0) -> int:
@@ -114,17 +118,28 @@ def normalize_graph_dto(project_path: str, *, include_disabled: bool = True) -> 
     try:
         conn = _store.get_db(project_path, readonly=True)
         try:
-            # Symbols: all non-external nodes.
+            # Symbols: every real node. NON_SYMBOL_KINDS rows are graph JOIN
+            # anchors, not symbols: `external` is an unresolved call target and
+            # `name_literal` (W5) is a string that happens to spell an
+            # identifier. Emitting them would inflate provenance.counts.symbols
+            # and hand consumers fake definitions with no body.
             rows = conn.execute(
                 "SELECT name, kind, file_path, start_line, end_line, "
-                "qualified_name FROM nodes WHERE kind != 'external' "
-                "ORDER BY file_path, start_line;"
+                f"qualified_name FROM nodes WHERE kind NOT IN ({_NON_SYMBOL_SQL}) "
+                "ORDER BY file_path, start_line;",
+                NON_SYMBOL_KINDS,
             ).fetchall()
             envelope["symbols"] = [_node_to_symbol(dict(r)) for r in rows]
 
             # Edges: resolve each endpoint's qualified_name via the nodes
             # table so the DTO emits semantic anchors, not raw internal IDs.
             # External targets (not in nodes) keep their raw "ext:" prefixed ID.
+            # An edge whose SOURCE is a NON_SYMBOL node is dropped: the v1
+            # contract says every endpoint is either a listed symbol or an
+            # "ext:" ref, and `dynamic_ref` edges start at a `name_literal`
+            # that the symbols filter above deliberately withholds. Keeping
+            # them would emit a dangling anchor. The dead-code detector reads
+            # `dynamic_ref` straight from the edges table, so nothing is lost.
             edge_rows = conn.execute(
                 "SELECT "
                 "COALESCE(s.qualified_name, e.source) AS source_symbol, "
@@ -134,7 +149,9 @@ def normalize_graph_dto(project_path: str, *, include_disabled: bool = True) -> 
                 "FROM edges e "
                 "LEFT JOIN nodes s ON s.id = e.source "
                 "LEFT JOIN nodes t ON t.id = e.target "
-                "ORDER BY source_symbol, target_symbol;"
+                f"WHERE s.kind IS NULL OR s.kind NOT IN ({_NON_SYMBOL_SQL}) "
+                "ORDER BY source_symbol, target_symbol;",
+                NON_SYMBOL_KINDS,
             ).fetchall()
             envelope["edges"] = [_edge_to_dto(dict(r)) for r in edge_rows]
 

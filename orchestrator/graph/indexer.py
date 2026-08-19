@@ -7,6 +7,7 @@ edge_count>1000, no source mutation, rerun parses 0 unchanged files.
 """
 from concurrent.futures import ProcessPoolExecutor
 import hashlib
+import json
 import __main__
 import os
 import sqlite3
@@ -15,7 +16,7 @@ from typing import Optional
 
 from .config import (
     INDEX_TIME_BUDGET_CORE_S, INDEX_TIME_BUDGET_FULL_S,
-    INDEX_MIN_NODES, INDEX_MIN_EDGES, CBM_EXTRACT_JS,
+    INDEX_MIN_NODES, INDEX_MIN_EDGES, CBM_EXTRACT_JS, CBM_SAME_MODULE,
 )
 from . import store as _store
 from .extractors.python import extract as _extract_python
@@ -209,6 +210,9 @@ def index_project(project_path: str, *, scope: str = "core",
         # otherwise they only appear after the first incremental_index run.
         dep_stats = _build_dependency_edges(conn)
         dep_edges = dep_stats["edges"]
+        # W5: same reasoning for dynamic (string-name) dispatch — the edges are
+        # cross-file, so only this stage can build them.
+        dyn_stats = _build_dynamic_ref_edges(conn)
         conn.commit()
         duration = round(time.monotonic() - t0, 2)
         # partial only when a stale file was actually skipped for budget —
@@ -231,6 +235,8 @@ def index_project(project_path: str, *, scope: str = "core",
             "nodes_new": total_nodes, "edges_new": total_edges,
             "dependency_edges": dep_edges,
             "dependency_stats": dep_stats,
+            "dynamic_ref_edges": dyn_stats["edges"],
+            "dynamic_ref_stats": dyn_stats,
             "errors": errors,
             "meets_gates": {
                 "duration": duration <= budget,
@@ -407,12 +413,22 @@ def _build_dependency_edges(conn) -> dict:
 
     added = 0
     by_mode = {"absolute": 0, "package_relative": 0}
+    by_scope = {"top_level": 0, "deferred": 0}
     unresolved = 0
     self_skipped = 0
 
+    # W5/G3: carry the extractor's deferred flag down to the FILE-level edge.
+    # The extractor records it on the `imports` edge (module -> import node),
+    # because only it can see the function stack. Every consumer that reasons
+    # about dependency cycles reads `imports_module` instead, and without the
+    # flag there a crash-on-import cycle and a mere technical-debt cycle look
+    # identical. Joining once here beats making each consumer re-derive it.
     for r in conn.execute(
-            "SELECT id, qualified_name, file_path, start_line "
-            "FROM nodes WHERE kind='import';"):
+            "SELECT n.id, n.qualified_name, n.file_path, n.start_line, "
+            "       COALESCE(json_extract(ie.metadata, '$.deferred'), 0) AS deferred "
+            "FROM nodes n "
+            "LEFT JOIN edges ie ON ie.target = n.id AND ie.kind = 'imports' "
+            "WHERE n.kind='import';"):
         qn = r["qualified_name"] or ""
         if not qn:
             continue
@@ -438,24 +454,115 @@ def _build_dependency_edges(conn) -> dict:
         if target_file == r["file_path"]:
             self_skipped += 1
             continue
+        deferred = bool(r["deferred"])
+        scope = "deferred" if deferred else "top_level"
         conn.execute(
             "INSERT INTO edges (source, target, kind, confidence, cbm_label, "
             "metadata, line, col, is_external) VALUES (?,?,?,?,?,?,?,?,0);",
             (r["id"], target_id, "imports_module",
              0.9 if mode == "absolute" else 0.8, "inferred",
-             '{"resolution": "%s"}' % mode, r["start_line"], None))
+             json.dumps({"resolution": mode, "deferred": deferred,
+                         "scope": scope}, ensure_ascii=False),
+             r["start_line"], None))
         added += 1
         by_mode[mode] += 1
+        by_scope[scope] += 1
 
     return {
         "edges": added,
         "by_resolution": by_mode,
+        "by_scope": by_scope,
         "unresolved_imports": unresolved,
         "self_imports_skipped": self_skipped,
         "ambiguous_modules": len(ambiguous),
         "modules_indexed": len(modules),
     }
 
+
+def _build_dynamic_ref_edges(conn) -> dict:
+    """Cross-file dynamic-dispatch edges from `name_literal` nodes (W5).
+
+    A registry that maps a NAME STRING to a callable -- ``TOOL_MAP`` in
+    code_tools.py is the canonical case, 225 entries built by ``eval()`` over a
+    table of name->expression -- leaves no call edge at all, so every tool it
+    routes to reads as dead code. Measured on [A] itself: 180 of the 225
+    TOOL_MAP entries were false-positive dead symbols.
+
+    The extractor records each identifier-shaped string literal as a
+    `name_literal` node because it only ever sees one file and the dispatch
+    target usually lives in another. This pass owns the cross-file view and
+    materialises the `dynamic_ref` edges, exactly like `_build_dependency_edges`
+    does for `import` nodes -> `imports_module`.
+
+    Resolution is FAN-OUT: a literal links to EVERY function/method definition
+    of that name. Preferring a single "best" definition was measured and
+    rejected -- the duplicates are real (an MCP thin wrapper and the
+    implementation it forwards to, e.g. `backup_project` in both mcp_stdio.py
+    and code_tools.py) and BOTH are live, so picking one would leave the other
+    falsely dead. Confidence is CBM_SAME_MODULE (0.7, label "dynamic"): it is
+    real evidence of life, but weaker than a static call.
+
+    Idempotent: the kind is rebuilt from scratch each call.
+    """
+    conn.execute("DELETE FROM edges WHERE kind='dynamic_ref';")
+
+    # name -> [(id, file_path, start_line, end_line)]. One scan, kept in memory:
+    # at [A] scale this is ~7.6k callables, far cheaper than a per-literal
+    # indexed lookup. The line span is needed for the self-mention test below.
+    defs: dict[str, list[tuple]] = {}
+    for r in conn.execute(
+            "SELECT id, name, file_path, start_line, end_line "
+            "FROM nodes WHERE kind IN ('function','method');"):
+        defs.setdefault(r["name"], []).append(
+            (r["id"], r["file_path"], r["start_line"] or 0,
+             r["end_line"] or r["start_line"] or 0))
+
+    added = 0
+    literals = 0
+    resolved = 0
+    unresolved = 0
+    self_skipped = 0
+    rows = conn.execute(
+        "SELECT id, name, file_path, start_line FROM nodes "
+        "WHERE kind='name_literal';").fetchall()
+    for r in rows:
+        literals += 1
+        targets = defs.get(r["name"])
+        if not targets:
+            unresolved += 1
+            continue
+        hit = False
+        lit_line = r["start_line"] or 0
+        for target_id, tgt_file, tgt_start, tgt_end in targets:
+            # Skip only a literal INSIDE the definition's own body -- a function
+            # naming itself (a log line, a recursion guard) proves nothing. A
+            # same-FILE literal outside that span is different: it is almost
+            # always the registry table, and code_tools.py registers its own
+            # handlers that way. Skipping the whole file was measured to leave
+            # 19 live callables reading as dead (rule_drift_check, git_log,
+            # memory_query, the council_cron_job_* family ...) because their
+            # only registration site sits in the same module.
+            if tgt_file == r["file_path"] and tgt_start <= lit_line <= tgt_end:
+                self_skipped += 1
+                continue
+            conn.execute(
+                "INSERT INTO edges (source, target, kind, confidence, cbm_label, "
+                "metadata, line, col, is_external) VALUES (?,?,?,?,?,?,?,?,0);",
+                (r["id"], target_id, "dynamic_ref", CBM_SAME_MODULE, "dynamic",
+                 '{"resolution": "name_literal"}', r["start_line"], None))
+            added += 1
+            hit = True
+        if hit:
+            resolved += 1
+
+    return {
+        "edges": added,
+        "literals": literals,
+        "literals_resolved": resolved,
+        "literals_unresolved": unresolved,
+        "self_mention_skipped": self_skipped,
+        "callable_names": len(defs),
+    }
 
 def incremental_index(project_path: str, *, project_root: Optional[str] = None,
                       scope: str = "full", exts: tuple[str, ...] = DEFAULT_EXTS) -> dict:
@@ -516,6 +623,7 @@ def incremental_index(project_path: str, *, project_root: Optional[str] = None,
             # so defer a smarter incremental-aware rebuild to Phase 4+ scale work.
             dep_stats = _build_dependency_edges(conn)
             dep_edges = dep_stats["edges"]
+            dyn_stats = _build_dynamic_ref_edges(conn)
             orphan_after = conn.execute(
                 "SELECT COUNT(*) FROM edges e LEFT JOIN nodes n ON e.target=n.id "
                 "WHERE n.id IS NULL AND e.target NOT LIKE 'ext:%';").fetchone()[0]
@@ -529,6 +637,8 @@ def incremental_index(project_path: str, *, project_root: Optional[str] = None,
                 "skipped": changes["unchanged"], "reindexed": len(reindex_paths),
                 "deleted": len(changes["deleted"]), "renamed": changes["renamed"],
                 "dependency_edges": dep_edges, "dependency_stats": dep_stats,
+                "dynamic_ref_edges": dyn_stats["edges"],
+                "dynamic_ref_stats": dyn_stats,
                 "orphan_after": orphan_after,
                 "errors": errors, "status": "completed", "fallback": False}
     except Exception as e:

@@ -79,6 +79,47 @@ CBM_LABEL_TO_NUMERIC = {
     "unknown": CBM_SUFFIX_LOW,
 }
 
+# --- W5: dynamic (string-name) dispatch ---
+# A registry that maps a NAME STRING to a callable ("search_code" -> the
+# function) leaves no call edge, so every tool it dispatches reads as dead. The
+# extractor records identifier-shaped string literals so the indexer can resolve
+# them across files, exactly like it already does for import nodes.
+# The length floor exists because 3-letter words ("get", "add", "run") are far
+# more often prose than a dispatch key; a name carrying an underscore is kept at
+# any length because snake_case is already strong evidence of an identifier.
+CBM_NAME_LITERAL_MIN_LEN = 6
+
+# --- the single definition of "this callable is alive" ---
+# A call edge below this confidence is a weak suffix guess, not evidence of
+# life. `dynamic_ref` edges are name-based dispatch resolved by the indexer and
+# ARE evidence: they are the only trace a string-keyed registry leaves.
+LIVE_CALL_CONFIDENCE = 0.7
+LIVE_REF_KINDS: tuple[str, ...] = ("calls", "dynamic_ref")
+
+# Correlated-subquery fragment shared by every dead/orphan detector. It was
+# copy-pasted in three places (cycle_point._dead_ratio, query.orphan_symbols,
+# query.dead_code_candidates) with the threshold hardcoded in two of them, so a
+# new edge kind silently reached only one of the three and the same symbol read
+# alive in one report and dead in another. Binds: (*LIVE_REF_KINDS, threshold).
+# The alias `n` must be the callable being tested.
+LIVE_REF_EXISTS_SQL = (
+    "EXISTS (SELECT 1 FROM edges e WHERE e.target = n.id "
+    "        AND e.kind IN (" + ",".join("?" * len(LIVE_REF_KINDS)) + ") "
+    "        AND e.confidence >= ?)"
+)
+LIVE_REF_BINDS: tuple = (*LIVE_REF_KINDS, LIVE_CALL_CONFIDENCE)
+# --- extractor identity ---
+# BUMP THIS whenever the extractor's OUTPUT changes: a new node kind, a new edge
+# kind, a changed id scheme, different metadata. `files.content_hash` alone only
+# answers "did the source change"; it cannot see that the SAME source now
+# extracts differently, so a shipped extractor upgrade left every unmodified
+# file frozen at the old shape (measured on [A] after W5 added `name_literal`:
+# a full reindex re-extracted 9 of 250 files and the other 241 kept stale
+# nodes). `stale_files` compares this too, so bumping it forces a re-extract.
+# Lives in config, not status.py, because indexer/store must read it and
+# status.py imports store.
+EXTRACTOR_VERSION = "ast-p0-v2-name-literal"
+
 # --- Tree-sitter opt-in (A5 - aspirational, optional) ---
 CBM_USE_TREE_SITTER = os.environ.get("CBM_USE_TREE_SITTER", "0").strip().lower() in ("1", "true", "yes", "on")
 
@@ -108,6 +149,8 @@ __all__ = [
     "INDEX_TIME_BUDGET_CORE_S", "INDEX_TIME_BUDGET_FULL_S", "INDEX_MIN_NODES", "INDEX_MIN_EDGES",
     "CBM_EXACT", "CBM_UNIQUE", "CBM_SAME_MODULE", "CBM_SUFFIX_LOW", "CBM_SUFFIX_HIGH",
     "CBM_LABEL_TO_NUMERIC", "CBM_USE_TREE_SITTER", "CBM_EXTRACT_JS", "graph_db_path",
+    "CBM_NAME_LITERAL_MIN_LEN", "EXTRACTOR_VERSION",
+    "LIVE_CALL_CONFIDENCE", "LIVE_REF_KINDS", "LIVE_REF_EXISTS_SQL", "LIVE_REF_BINDS",
 ]
 
 

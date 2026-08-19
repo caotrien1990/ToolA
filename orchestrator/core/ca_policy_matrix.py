@@ -231,6 +231,28 @@ _MUTATING_CLASSES_FOR_SELF_EDIT = frozenset({
 
 _MUTATING_ACTIONS_FOR_SELF_EDIT = frozenset({"write", "edit", "create", "delete", "patch"})
 
+# A shell tool maps to project_command by TOOL NAME (`Bash`, `run_ps1_script`),
+# and that mapping used to win outright — so the IDENTICAL self-edit answered
+# ok:true through `Edit` and HOST_GATE_DENY through `Bash`, decided purely by
+# which tool spelled the write. Measured on
+# orchestrator/graph/store.py: Edit/write -> upgrade_orchestrator, Bash/write ->
+# project_command / forbid. A command-runner class yields ONLY when the declared
+# action is itself a file mutation; running a real command inside [A] (action
+# "command"/"execute"/"test") stays project_command, and privileged classes
+# (orchestrator_lifecycle, council_dispatch, …) never yield at all.
+_COMMAND_CLASSES_FOR_SELF_EDIT = frozenset({"project_command", "project_test"})
+
+
+def _is_mutating_self_edit_action(action: str) -> bool:
+    """True when `action_type` names a file mutation in EITHER vocabulary.
+
+    Callers pass the action verb ("write") or the task_class ("write_existing_
+    file") interchangeably — the same overlap `_SELF_DECLARABLE_CLASSES` already
+    concedes — so both spellings must reach the self-edit branch.
+    """
+    return (action in _MUTATING_ACTIONS_FOR_SELF_EDIT
+            or action in _MUTATING_CLASSES_FOR_SELF_EDIT)
+
 
 def is_orchestrator_self_target(target: str) -> bool:
     """True when `target` lives inside [A]'s own source tree (_ROOT).
@@ -359,7 +381,9 @@ def classify_action(
         and is_orchestrator_self_target(target)
         and (
             task_class in _MUTATING_CLASSES_FOR_SELF_EDIT
-            or (not task_class and action in _MUTATING_ACTIONS_FOR_SELF_EDIT)
+            or (task_class in _COMMAND_CLASSES_FOR_SELF_EDIT
+                and _is_mutating_self_edit_action(action))
+            or (not task_class and _is_mutating_self_edit_action(action))
         )
     ):
         task_class = "upgrade_orchestrator"

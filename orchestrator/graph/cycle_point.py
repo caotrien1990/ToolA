@@ -28,7 +28,9 @@ from __future__ import annotations
 import time
 from collections import deque
 
-from .config import graph_enabled
+from .config import (
+    graph_enabled, LIVE_CALL_CONFIDENCE, LIVE_REF_EXISTS_SQL, LIVE_REF_BINDS,
+)
 from . import store as _store
 
 # Newman Q is bounded to [-0.5, 1.0]; rescale that range onto [0,1].
@@ -42,49 +44,90 @@ _DEPTH_MIDPOINT = 8.0
 # factor is clamped up to this before multiplying (sentrux uses the same floor).
 _GEO_FLOOR = 0.01
 
-# A call edge below this confidence is a weak suffix guess — not evidence that a
-# symbol is alive. Same threshold dead_code_candidates uses in query.py.
-_LIVE_CALL_CONFIDENCE = 0.7
+# The liveness predicate now has ONE definition, in config: threshold, edge
+# kinds and the SQL fragment together. Three detectors used to carry their own
+# copy and drifted. Local alias kept so existing readers of this name still work.
+_LIVE_CALL_CONFIDENCE = LIVE_CALL_CONFIDENCE
 
 
 # ── graph construction ────────────────────────────────────────────────────────
 
-def _build_file_graph(conn) -> tuple[set[str], dict[str, list[str]], int]:
+# Per file-pair, how many individual import LINES to keep as evidence. A pair
+# with 31 deferred imports (measured: tools_v15 -> code_tools on [A]) needs a
+# sample, not all 31, or the payload becomes a log dump.
+_MAX_EDGE_SAMPLES = 12
+
+
+def _build_file_graph(conn) -> tuple[set[str], dict[str, list[str]], int, dict]:
     """Read file→file dependency edges from the graph DB.
 
     `imports_module` is the only file-level edge kind the indexer emits: its
     source is an import node inside the importing file and its target is the
     imported module node, so both endpoints need a join back to `nodes` to
-    recover file paths. Self-edges and duplicates are dropped — a module
-    importing its own package says nothing about the dependency structure.
+    recover file paths. Self-edges are dropped — a module importing its own
+    package says nothing about the dependency structure.
 
-    Returns (nodes, adjacency, edge_count).
+    W5/G2+G3: the import statements behind each file-pair are now KEPT, not
+    collapsed by DISTINCT. Reporting "these 18 files form a cycle" without
+    saying which import lines hold it together forced the reader to grep by
+    hand, and hid the one distinction that decides urgency: an edge that is
+    entirely `deferred` (import inside a function body) is technical debt,
+    while a single top-level edge is a crash-on-import risk.
+
+    Grouped by LINE, not by edge row: `from x import a, b, c` emits one import
+    node per name, so the raw rows repeat the same line 3 times. The reader
+    wants the lines to go edit, so a line counts once no matter how many names
+    it binds.
+
+    Returns (nodes, adjacency, edge_count, edge_details). `edge_count` counts
+    distinct file PAIRS, unchanged, so `edges_analyzed` keeps its meaning.
+    `edge_details` maps (src, dst) -> dict with `deferred` (True only when
+    EVERY import line in the pair is deferred), counts, and a bounded sample.
     """
     rows = conn.execute(
-        "SELECT DISTINCT s.file_path AS src, t.file_path AS dst "
+        "SELECT s.file_path AS src, t.file_path AS dst, e.line AS line, "
+        "       MAX(COALESCE(json_extract(e.metadata, '$.deferred'), 0)) AS deferred "
         "FROM edges e "
         "JOIN nodes s ON s.id = e.source "
         "JOIN nodes t ON t.id = e.target "
         "WHERE e.kind = 'imports_module' AND e.is_external = 0 "
-        "  AND s.file_path <> t.file_path;"
+        "  AND s.file_path <> t.file_path "
+        "GROUP BY s.file_path, t.file_path, e.line "
+        "ORDER BY s.file_path, t.file_path, e.line;"
     ).fetchall()
 
     nodes: set[str] = set()
     adj: dict[str, list[str]] = {}
-    seen: set[tuple[str, str]] = set()
+    details: dict[tuple[str, str], dict] = {}
     for r in rows:
         src, dst = r["src"], r["dst"]
-        if not src or not dst or (src, dst) in seen:
+        if not src or not dst:
             continue
-        seen.add((src, dst))
-        nodes.add(src)
-        nodes.add(dst)
-        adj.setdefault(src, []).append(dst)
+        key = (src, dst)
+        d = details.get(key)
+        if d is None:
+            # First sighting of this pair: it is also a new adjacency entry.
+            d = {"total": 0, "deferred_count": 0, "top_level_count": 0,
+                 "samples": []}
+            details[key] = d
+            nodes.add(src)
+            nodes.add(dst)
+            adj.setdefault(src, []).append(dst)
+        deferred = bool(r["deferred"])
+        d["total"] += 1
+        d["deferred_count" if deferred else "top_level_count"] += 1
+        if len(d["samples"]) < _MAX_EDGE_SAMPLES:
+            d["samples"].append({"line": r["line"], "deferred": deferred})
+
+    # A pair counts as deferred only when NOTHING in it runs at import time.
+    for d in details.values():
+        d["deferred"] = d["top_level_count"] == 0
+        d["samples_truncated"] = d["total"] > len(d["samples"])
 
     # Deterministic neighbour order keeps SCC ids and levels stable across runs.
     for targets in adj.values():
         targets.sort()
-    return nodes, adj, len(seen)
+    return nodes, adj, len(details), details
 
 
 # ── 1. cycles: iterative Tarjan SCC ───────────────────────────────────────────
@@ -348,11 +391,15 @@ def _symbol_sizes(conn) -> list[float]:
 
 
 def _dead_ratio(conn) -> tuple[float, int, int]:
-    """Fraction of non-exported callables with no confident inbound call edge.
+    """Fraction of non-exported callables with no confident inbound reference.
 
     Mirrors the conservative filter in query.dead_code_candidates: exported and
     decorated symbols are excluded because a framework may invoke them, and weak
     suffix-matched call edges do not count as proof of life.
+
+    W5: `dynamic_ref` counts as proof of life. Without it a string-keyed
+    registry made its whole dispatch table read as dead -- measured on [A],
+    180 of the 225 code_tools.TOOL_MAP entries.
 
     Returns (ratio, dead_count, total_callables).
     """
@@ -364,9 +411,8 @@ def _dead_ratio(conn) -> tuple[float, int, int]:
     dead = conn.execute(
         "SELECT COUNT(*) FROM nodes n WHERE n.kind IN ('function','method') "
         "AND n.is_exported = 0 AND (n.decorators IS NULL OR n.decorators IN ('','[]')) "
-        "AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.target = n.id "
-        "                AND e.kind = 'calls' AND e.confidence >= ?);",
-        (_LIVE_CALL_CONFIDENCE,),
+        f"AND NOT {LIVE_REF_EXISTS_SQL};",
+        LIVE_REF_BINDS,
     ).fetchone()[0]
     return min(1.0, dead / total), dead, total
 
@@ -395,7 +441,54 @@ def root_cause_scores(
     return scores, product ** (1.0 / len(scores))
 
 
-# ── public entry point ────────────────────────────────────────────────────────
+# ── cycle evidence (W5/G2+G3) ─────────────────────────────────────────
+
+def _cycle_details(cycles: list[list[str]], details: dict) -> list[dict]:
+    """Attach the import statements that hold each SCC together (G2), and say
+    whether the SCC is a load-time hazard or only technical debt (G3).
+
+    An SCC's INTERNAL edges are the ones worth reporting: an edge leaving the
+    component cannot be part of the loop. `breakable_at_top_level` lists the
+    edges that execute at import time — those are the ones that can actually
+    raise ImportError, and therefore the ones to attack first. When a component
+    has none, the whole loop is deferred: real coupling, but it will not crash.
+    """
+    out = []
+    for cycle in cycles:
+        members = set(cycle)
+        edges, top_level = [], 0
+        for (src, dst), d in details.items():
+            if src in members and dst in members:
+                edges.append({
+                    "src": src, "dst": dst,
+                    "deferred": d["deferred"],
+                    "import_count": d["total"],
+                    "top_level_count": d["top_level_count"],
+                    "deferred_count": d["deferred_count"],
+                    "lines": d["samples"],
+                    "lines_truncated": d["samples_truncated"],
+                })
+                if not d["deferred"]:
+                    top_level += 1
+        edges.sort(key=lambda e: (e["deferred"], e["src"], e["dst"]))
+        out.append({
+            "files": cycle,
+            "size": len(cycle),
+            "edges": edges,
+            "edge_count": len(edges),
+            "top_level_edges": top_level,
+            "deferred_only": top_level == 0,
+            "severity": "deferred_debt" if top_level == 0 else "import_time_risk",
+            "breakable_at_top_level": [
+                {"src": e["src"], "dst": e["dst"], "lines": e["lines"]}
+                for e in edges if not e["deferred"]
+            ],
+        })
+    out.sort(key=lambda c: (-c["top_level_edges"], -c["size"]))
+    return out
+
+
+# ── public entry point ─────────────────────────────────────────────
 
 METRIC_NOTES = {
     "equality": "proxy: Gini over symbol line span — the extractor stores no "
@@ -403,6 +496,8 @@ METRIC_NOTES = {
     "redundancy": "partial: dead symbols only — no function body hashing, so "
                   "duplicate code is not counted",
     "scope": "file-level dependency graph built from imports_module edges",
+    "cycle_details": "per-cycle import evidence (G2) with deferred vs top_level "
+                     "scope (G3): a deferred-only cycle cannot raise ImportError",
 }
 
 
@@ -417,6 +512,9 @@ def compute_cycle_point(project_path: str) -> dict:
     payload: dict = {
         "enabled": graph_enabled(),
         "cycles": [], "cycle_count": 0, "largest_cycle": 0,
+        # G2/G3: `cycles` stays a list of file-name lists (the v1 shape every
+        # existing caller reads); the import evidence lands beside it.
+        "cycle_details": [], "import_time_cycles": 0, "deferred_only_cycles": 0,
         "levels": {}, "max_level": 0, "max_depth": 0, "upward_violations": 0,
         "quality_signal": None, "root_causes": {}, "raw": {},
         "metric_notes": METRIC_NOTES,
@@ -430,7 +528,7 @@ def compute_cycle_point(project_path: str) -> dict:
     try:
         conn = _store.get_db(project_path, readonly=True)
         try:
-            nodes, adj, edge_count = _build_file_graph(conn)
+            nodes, adj, edge_count, edge_details = _build_file_graph(conn)
             payload["files_analyzed"] = len(nodes)
             payload["edges_analyzed"] = edge_count
 
@@ -441,6 +539,11 @@ def compute_cycle_point(project_path: str) -> dict:
             payload["cycles"] = cycles
             payload["cycle_count"] = len(cycles)
             payload["largest_cycle"] = max((len(c) for c in cycles), default=0)
+            cdetails = _cycle_details(cycles, edge_details)
+            payload["cycle_details"] = cdetails
+            payload["deferred_only_cycles"] = sum(
+                1 for c in cdetails if c["deferred_only"])
+            payload["import_time_cycles"] = len(cdetails) - payload["deferred_only_cycles"]
             payload["levels"] = levels
             payload["max_level"] = max_level
             payload["max_depth"] = max_depth

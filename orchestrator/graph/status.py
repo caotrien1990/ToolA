@@ -8,10 +8,12 @@ import os
 import sqlite3
 import time
 
-from .config import graph_enabled, CBM_USE_TREE_SITTER
+from .config import graph_enabled, CBM_USE_TREE_SITTER, EXTRACTOR_VERSION
 from . import store as _store
 
-EXTRACTOR_VERSION = "ast-p0-v1"
+# EXTRACTOR_VERSION moved to config (W5): the indexer and store need it to
+# decide staleness, and they cannot import status.py (it imports store).
+# Re-exported here so `from .status import EXTRACTOR_VERSION` keeps working.
 
 
 def _stale_count(conn: sqlite3.Connection, project_root: str) -> int:

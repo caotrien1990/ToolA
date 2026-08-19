@@ -18,7 +18,7 @@ from typing import Optional
 from .config import (
     graph_enabled, GRAPH_CONTEXT_MAX_FILES, GRAPH_CONTEXT_MAX_SYMBOLS,
     GRAPH_CONTEXT_TIMEOUT_S, COUNCIL_CONTEXT_MAX_FILES, COUNCIL_CONTEXT_MAX_SYMBOLS,
-    CBM_AUTO_REINDEX_MAX_STALE,
+    CBM_AUTO_REINDEX_MAX_STALE, LIVE_REF_EXISTS_SQL, LIVE_REF_BINDS,
 )
 from . import store as _store
 from .indexer import incremental_index
@@ -441,12 +441,13 @@ def template_query(project_path: str, template: str, *, name: str = "",
                 # F004 fix (2026-07-11): low-confidence SUFFIX heuristic edges
                 # (0.3-0.7) no longer count as real inbound calls — they made
                 # genuinely-orphaned symbols invisible (undercount).
+                # W5: LIVE_REF_EXISTS_SQL is the one shared liveness predicate,
+                # so `dynamic_ref` (name-keyed dispatch) counts here too.
                 rows = conn.execute(
                     "SELECT n.* FROM nodes n WHERE n.kind IN ('function','method') "
-                    "AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.target=n.id "
-                    "                AND e.kind='calls' AND e.confidence >= 0.7) "
+                    f"AND NOT {LIVE_REF_EXISTS_SQL} "
                     "ORDER BY n.qualified_name, n.start_line "
-                    "LIMIT 50000;").fetchall()
+                    "LIMIT 50000;", LIVE_REF_BINDS).fetchall()
                 filtered = [r for r in rows
                             if not _is_entry_point(r["name"], r["decorators"])]
                 payload["total_count"] = len(filtered)
@@ -653,26 +654,35 @@ def dead_code_candidates(project_path: str, *, limit: int = 50) -> dict:
     remaining public symbols cap at LOW confidence because external/dynamic
     callers are invisible to the graph. Never a basis for source edits on
     its own (plan rollback note).
+
+    F017: `count` is the TRUE population, not the page size. It used to be
+    len(candidates[:limit]), so a project with 3796 dead symbols and the
+    default limit reported "count: 50" -- a number that looked like a finding
+    and was really the limit. `returned_count` is the page.
     """
     t0 = time.monotonic()
     payload = {"enabled": graph_enabled(), "candidates": [], "count": 0,
+               "returned_count": 0, "truncated": False, "limit_applied": 0,
                "error": None, "elapsed_ms": 0,
                "disclaimer": "advisory only — dynamic/external callers are invisible; "
                              "never delete code from this list without manual verify"}
     if not graph_enabled():
         return payload
     limit = max(1, min(int(limit or 50), 200))
+    payload["limit_applied"] = limit
     try:
         # F003 fix (2026-07-11): same staleness guard as cbm_get_architecture.
         payload["auto_reindex"] = _auto_reindex_if_stale(project_path)
         conn = _store.get_db(project_path, readonly=True)
         try:
             # F004 fix: ignore low-confidence heuristic call edges (< 0.7).
+            # W5: LIVE_REF_EXISTS_SQL also accepts `dynamic_ref`, so a
+            # string-keyed registry no longer buries its whole dispatch table
+            # in this list (measured: 180 of 225 code_tools.TOOL_MAP entries).
             rows = conn.execute(
                 "SELECT n.* FROM nodes n WHERE n.kind IN ('function','method') "
                 "AND n.is_exported = 0 "
-                "AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.target=n.id "
-                "                AND e.kind='calls' AND e.confidence >= 0.7);").fetchall()
+                f"AND NOT {LIVE_REF_EXISTS_SQL};", LIVE_REF_BINDS).fetchall()
             out = []
             for r in rows:
                 if _is_entry_point(r["name"], r["decorators"]):
@@ -686,7 +696,9 @@ def dead_code_candidates(project_path: str, *, limit: int = 50) -> dict:
                 out.append({**_node_brief(r), "confidence": conf, "reason": reason})
             out.sort(key=lambda c: (-c["confidence"], c["file_path"], c["start_line"]))
             payload["candidates"] = out[:limit]
-            payload["count"] = len(payload["candidates"])
+            payload["count"] = len(out)
+            payload["returned_count"] = len(payload["candidates"])
+            payload["truncated"] = len(out) > limit
         finally:
             conn.close()
     except Exception as e:

@@ -407,10 +407,19 @@ def _cbm_dead_code_dispatch(project_path: str, *, limit: int = 50,
         categories[cat]["count"] += 1
         if len(categories[cat]["candidates"]) < limit:
             categories[cat]["candidates"].append(c)
+    # F017: `count` used to be min(len(candidates), limit) -- the PAGE SIZE
+    # wearing the name of a finding. A project with 900 lint hits and the default
+    # limit answered "count: 50". It is now the true population; `returned_count`
+    # is the page. Field names match query.dead_code_candidates so both engines
+    # answer in the same shape. (categories[cat]["count"] was already a true
+    # total -- only its `candidates` list is paged.)
     out = {
         "enabled": True,
         "candidates": candidates[:limit],
-        "count": min(len(candidates), limit),
+        "count": len(candidates),
+        "returned_count": min(len(candidates), limit),
+        "truncated": len(candidates) > limit,
+        "limit_applied": limit,
         "categories": categories,
         "error": None,
         "elapsed_ms": round((time.monotonic() - t0) * 1000, 1),

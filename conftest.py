@@ -50,10 +50,35 @@ this only moves the DEFAULT they fall back to.
 It deliberately does NOT delete the temp DB afterwards: the OS reclaims the temp
 directory, and keeping the file lets a failing run be inspected. It also does not
 override an ORCHESTRATOR_SESSIONS_DB the caller set on purpose.
+
+--------------------------------------------------------------------------- #
+
+W5: honour `TemporaryDirectory(ignore_cleanup_errors=True)` on Windows.
+
+`ignore_cleanup_errors=True` does not do what its name promises. In CPython 3.12
+(`tempfile.py:895-933`) the `onexc` handler calls `_resetperms(path)` and only
+wraps that call in `except FileNotFoundError`. When `_resetperms` -> `os.chmod`
+itself raises `PermissionError` -- the exact WinError 5 you get while Windows is
+still holding a handle -- it propagates straight out of `cleanup()`, flag or no
+flag. Measured directly (mock `os.chmod`/`os.unlink` to raise WinError 5 on one
+file): `cleanup()` raises despite `ignore_cleanup_errors=True`.
+
+That turns a passing test into a red one in TEARDOWN. Measured on
+`test_task_epoch_cross_process`: every assertion passed, then teardown died on
+`durable_audit.db-shm`; the same test passes 3/3 in isolation, and only fails in
+a full run where the just-terminated server child has not yet released the WAL
+sidecar. ~40 test files use this same spawn-a-server-then-rmtree shape, so
+patching the one file that lost the race would just move the flake.
+
+The retry is what the OS actually needs (the handle IS released, a few hundred ms
+late) and the final swallow is what the caller already asked for. Tests that did
+NOT pass the flag keep raising, exactly as before -- this closes the gap between
+the flag and its behaviour, it does not widen it.
 """
 
 import os
 import tempfile
+import time
 from pathlib import Path
 
 # Precedence order matters: FORCE_COLOR beats NO_COLOR in ruff, so drop it.
@@ -72,3 +97,33 @@ def pytest_configure(config):  # noqa: ARG001 - pytest hook signature
     if not os.environ.get(_SESSIONS_DB_ENV):
         run_dir = Path(tempfile.mkdtemp(prefix="orch_pytest_sessions_"))
         os.environ[_SESSIONS_DB_ENV] = str(run_dir / "sessions.db")
+
+
+# --- W5: make ignore_cleanup_errors=True actually ignore cleanup errors -------
+
+# Windows releases a closed child's SQLite -shm/-wal handle asynchronously. Six
+# attempts over ~1.4s of backoff cleared it in every observed case; the swallow
+# afterwards is the documented meaning of the flag, not a new leniency.
+_CLEANUP_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.8)
+
+_orig_tmpdir_cleanup = tempfile.TemporaryDirectory.cleanup
+
+
+def _cleanup_retrying(self):
+    """Retry a Windows-blocked rmtree, then honour ignore_cleanup_errors."""
+    for delay in _CLEANUP_RETRY_DELAYS:
+        try:
+            return _orig_tmpdir_cleanup(self)
+        except OSError:
+            time.sleep(delay)
+    try:
+        return _orig_tmpdir_cleanup(self)
+    except OSError:
+        # getattr, not attribute access: the private name is a CPython detail.
+        if getattr(self, "_ignore_cleanup_errors", False):
+            return None
+        raise
+
+
+tempfile.TemporaryDirectory.cleanup = _cleanup_retrying
+

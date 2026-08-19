@@ -10,13 +10,19 @@ edge count for P0; calls already cover the primary cross-symbol usage signal.
 """
 import ast
 import hashlib
+import keyword
 import os
 from typing import Optional
 
 from ..config import (
     CBM_EXACT, CBM_UNIQUE, CBM_SAME_MODULE, CBM_SUFFIX_LOW, CBM_SUFFIX_HIGH,
-    CBM_LABEL_TO_NUMERIC, CBM_USE_TREE_SITTER,
+    CBM_LABEL_TO_NUMERIC, CBM_USE_TREE_SITTER, CBM_NAME_LITERAL_MIN_LEN,
 )
+
+# W5: words that are identifier-shaped but can never name a callable, so a
+# string literal spelling one of them is prose, not a dispatch key.
+_NAME_LITERAL_STOPWORDS = frozenset(keyword.kwlist) | frozenset(
+    getattr(keyword, "softkwlist", ()))
 
 # Reverse lookup: numeric -> display label (category only, not stored as truth).
 _NUMERIC_TO_LABEL = {v: k for k, v in CBM_LABEL_TO_NUMERIC.items()}
@@ -93,6 +99,15 @@ class _Extractor(ast.NodeVisitor):
         self._func_stack: list[str] = []
         # names listed in module __all__ (marks is_exported post-visit)
         self._exported: set[str] = set()
+        # W5: string literals in this file that spell an identifier. A registry
+        # that dispatches by name ("search_code" -> the function) leaves no call
+        # edge, so the callable reads as dead. The extractor sees one file at a
+        # time and cannot know which names are defined elsewhere, so it records
+        # the literal as a `name_literal` NODE and leaves resolution to the
+        # indexer, which owns the cross-file view — the same split already used
+        # for `import` nodes -> `imports_module` edges.
+        # Maps name -> first line seen (one node per name per file).
+        self._string_names: dict[str, int] = {}
 
     def _emit_module_node(self) -> None:
         nid = _node_id(self.file_path, "module", self.module, 1)
@@ -180,6 +195,14 @@ class _Extractor(ast.NodeVisitor):
 
     def _emit_imports(self, node: ast.Import | ast.ImportFrom) -> None:
         mod_id = _node_id(self.file_path, "module", self.module, 1)
+        # W5/G3: an import inside a function body is DEFERRED — it runs at call
+        # time, not at module load. That distinction is the whole difference
+        # between a cycle that crashes on import and one that is only technical
+        # debt, so it is recorded at extraction time rather than re-derived by
+        # every consumer from line ranges.
+        deferred = bool(self._func_stack)
+        edge_meta = {"deferred": deferred,
+                     "scope": "deferred" if deferred else "top_level"}
         if isinstance(node, ast.Import):
             for alias in node.names:
                 qname = alias.name
@@ -193,7 +216,7 @@ class _Extractor(ast.NodeVisitor):
                 self.edges.append({
                     "source": mod_id, "target": nid, "kind": "imports",
                     "confidence": CBM_EXACT, "cbm_label": _label_for(CBM_EXACT),
-                    "line": node.lineno,
+                    "line": node.lineno, "metadata": dict(edge_meta),
                 })
                 self._local_defs[alias.asname or alias.name] = nid
         else:  # ImportFrom
@@ -210,7 +233,7 @@ class _Extractor(ast.NodeVisitor):
                 self.edges.append({
                     "source": mod_id, "target": nid, "kind": "imports",
                     "confidence": CBM_EXACT, "cbm_label": _label_for(CBM_EXACT),
-                    "line": node.lineno,
+                    "line": node.lineno, "metadata": dict(edge_meta),
                 })
                 self._local_defs[alias.asname or alias.name] = nid
 
@@ -340,6 +363,19 @@ class _Extractor(ast.NodeVisitor):
         self._emit_call(node)
         self.generic_visit(node)
 
+    def visit_Constant(self, node: ast.Constant) -> None:
+        # W5: harvest identifier-shaped string literals. A dispatch registry
+        # ("search_code" -> the function) is invisible to the call graph, so
+        # every tool it routes to reads as dead code. Recorded as a node here
+        # and resolved cross-file by the indexer -- this file cannot know which
+        # names are defined elsewhere.
+        value = node.value
+        if (isinstance(value, str)
+                and value.isidentifier()
+                and value not in _NAME_LITERAL_STOPWORDS
+                and ("_" in value or len(value) >= CBM_NAME_LITERAL_MIN_LEN)):
+            self._string_names.setdefault(value, node.lineno)
+
     def visit_Assign(self, node: ast.Assign) -> None:
         # module-level variables become variable nodes
         if not self._func_stack and not self._class_stack:
@@ -440,6 +476,20 @@ def extract(source: str, *, file_path: str, project_root: str | None = None,
         for n in ex.nodes:
             if n.get("name") in ex._exported and n.get("kind") in ("function", "method", "class"):
                 n["is_exported"] = 1
+    # W5: one `name_literal` node per identifier-shaped string literal seen in
+    # this file. It is deliberately a NODE and not an edge: the target of a
+    # name-based dispatch usually lives in another file, and an extractor only
+    # ever sees one file. The indexer joins these against every function/method
+    # definition of the same name and materialises `dynamic_ref` edges — the
+    # exact split already used by `import` nodes -> `imports_module` edges.
+    for name, lineno in ex._string_names.items():
+        ex.nodes.append({
+            "id": _node_id(file_path, "name_literal", name, lineno),
+            "kind": "name_literal", "name": name,
+            "qualified_name": name, "file_path": file_path,
+            "language": "python", "start_line": lineno, "end_line": lineno,
+            "visibility": _visibility(name),
+        })
     # dedupe edges: identical (source, target, kind, line) rows collapse to one
     # (repeated same-name calls on one line produced dup rows — dup-edge fix)
     seen: set[tuple] = set()

@@ -9,7 +9,7 @@ import sqlite3
 import time
 from typing import Any, Iterable
 
-from .config import graph_db_path
+from .config import graph_db_path, EXTRACTOR_VERSION
 from . import schema as _schema
 
 
@@ -45,6 +45,12 @@ def get_db(project_path: str, *, readonly: bool = False) -> sqlite3.Connection:
         ).fetchone()
         if not exists:
             _schema.init_schema(conn)
+        else:
+            # An EXISTING db never re-runs init_schema, so a column added to the
+            # DDL would never reach it. Additive migrations are cheap (one
+            # PRAGMA table_info) and must run on every writable open, or the
+            # live 44 MB graph.db stays one schema behind the code forever.
+            _schema.migrate(conn)
     return conn
 
 
@@ -91,14 +97,16 @@ def upsert_file(conn: sqlite3.Connection, *, path: str, content_hash: str,
                 language: str, size: int, modified_at: int, node_count: int = 0,
                 errors: list | None = None) -> None:
     conn.execute(
-        "INSERT INTO files (path, content_hash, language, size, modified_at, indexed_at, node_count, errors) "
-        "VALUES (?,?,?,?,?,?,?,?) "
+        "INSERT INTO files (path, content_hash, language, size, modified_at, indexed_at, "
+        "node_count, errors, extractor_version) "
+        "VALUES (?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT(path) DO UPDATE SET "
         "content_hash=excluded.content_hash, language=excluded.language, size=excluded.size, "
         "modified_at=excluded.modified_at, indexed_at=excluded.indexed_at, "
-        "node_count=excluded.node_count, errors=excluded.errors;",
+        "node_count=excluded.node_count, errors=excluded.errors, "
+        "extractor_version=excluded.extractor_version;",
         (path, content_hash, language, size, modified_at, int(time.time() * 1000),
-         node_count, json.dumps(errors or [], ensure_ascii=False)),
+         node_count, json.dumps(errors or [], ensure_ascii=False), EXTRACTOR_VERSION),
     )
 
 
@@ -108,11 +116,28 @@ def file_hash(conn: sqlite3.Connection, path: str) -> str | None:
 
 
 def stale_files(conn: sqlite3.Connection, candidates: Iterable[dict]) -> list[dict]:
-    """Given [{path, content_hash}], return those whose hash differs or is absent."""
+    """Given [{path, content_hash}], return those needing re-extraction.
+
+    A file is stale when its content changed, when it was never indexed, OR
+    when it was indexed by a DIFFERENT extractor version. That last clause is
+    the fix for a real miss: `content_hash` answers "did the source change",
+    which says nothing about the same source now extracting into a new node or
+    edge kind. Shipping the W5 extractor left 241 of 250 [A] files frozen at
+    the pre-`name_literal` shape through a *full* reindex, because every hash
+    still matched. Bumping config.EXTRACTOR_VERSION now forces the re-extract.
+
+    One query instead of one per file: this runs over every candidate on every
+    index, and the per-file `file_hash()` round trip was the hot path.
+    """
+    known = {
+        r["path"]: (r["content_hash"], r["extractor_version"])
+        for r in conn.execute(
+            "SELECT path, content_hash, extractor_version FROM files;")
+    }
     stale = []
     for c in candidates:
-        existing = file_hash(conn, c["path"])
-        if existing != c["content_hash"]:
+        prev = known.get(c["path"])
+        if prev is None or prev[0] != c["content_hash"] or prev[1] != EXTRACTOR_VERSION:
             stale.append(c)
     return stale
 
@@ -164,6 +189,18 @@ BUILTIN_NOISE: frozenset[str] = frozenset({
 
 EXTERNAL_KIND = "external"
 _EXTERNAL_FILE = "<external>"
+NAME_LITERAL_KIND = "name_literal"
+
+# Node kinds that exist only as JOIN anchors for the graph and must never be
+# returned by a symbol lookup: `external` is an unresolved call target, and
+# `name_literal` (W5) is a string that happens to spell an identifier. Both
+# carry a `name` column, so without this filter both would shadow real defs in
+# find_symbol / FTS results and inflate the project-map DTO.
+NON_SYMBOL_KINDS: tuple[str, ...] = (EXTERNAL_KIND, NAME_LITERAL_KIND)
+# Bind placeholders for the tuple above, so adding a kind widens every
+# symbol-lookup filter instead of silently leaking the new kind through a
+# hardcoded "(?,?)".
+_NON_SYMBOL_SQL = ",".join("?" * len(NON_SYMBOL_KINDS))
 
 
 def _ext_target_name(target: str) -> "str | None":
@@ -263,22 +300,23 @@ def delete_nodes_for_file(conn: sqlite3.Connection, file_path: str) -> int:
 
 
 def find_nodes_by_name(conn: sqlite3.Connection, name: str, limit: int = 50) -> list[dict]:
-    # kind!='external': placeholder ext nodes are join targets, not searchable
-    # symbols — must not shadow real defs in graph_find_symbol name lookups.
+    # NON_SYMBOL_KINDS: ext placeholders and W5 name_literal rows are join
+    # targets, not searchable symbols - must not shadow real defs in
+    # graph_find_symbol name lookups.
     rows = conn.execute(
-        "SELECT * FROM nodes WHERE name=? AND kind!=? LIMIT ?;",
-        (name, EXTERNAL_KIND, limit),
+        f"SELECT * FROM nodes WHERE name=? AND kind NOT IN ({_NON_SYMBOL_SQL}) LIMIT ?;",
+        (name, *NON_SYMBOL_KINDS, limit),
     ).fetchall()
     return [dict(r) for r in rows]
 
 
 def fts_search_symbols(conn: sqlite3.Connection, query: str, limit: int = 50) -> list[dict]:
     """FTS5 MATCH over graph_symbols_fts. Returns matching nodes (excludes the
-    kind='external' placeholder nodes so they never shadow real symbols)."""
+    NON_SYMBOL_KINDS placeholder rows so they never shadow real symbols)."""
     rows = conn.execute(
         "SELECT n.* FROM graph_symbols_fts f JOIN nodes n ON n.rowid = f.rowid "
-        "WHERE graph_symbols_fts MATCH ? AND n.kind!=? LIMIT ?;",
-        (query, EXTERNAL_KIND, limit),
+        f"WHERE graph_symbols_fts MATCH ? AND n.kind NOT IN ({_NON_SYMBOL_SQL}) LIMIT ?;",
+        (query, *NON_SYMBOL_KINDS, limit),
     ).fetchall()
     return [dict(r) for r in rows]
 
