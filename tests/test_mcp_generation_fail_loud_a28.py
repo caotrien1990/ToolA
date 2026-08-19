@@ -25,6 +25,7 @@ when the daemon is down; the requirement is disclosure, not self-DoS.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import unittest
 import urllib.error
@@ -111,7 +112,35 @@ class GateTests(unittest.TestCase):
 
     tearDown = setUp
 
-    def test_gate_fires_when_the_daemon_generation_actually_changes(self):
+    def test_a_real_generation_change_is_detected_and_re_baselined(self):
+        # A28 pinned that the gate can SEE a genuine daemon restart -- the point
+        # of P3 was that the probe must not answer its own question. TA-5
+        # (2026-08-19) changed only what the gate DOES with that knowledge:
+        # latching MCP_STALE_RELOAD_REQUIRED for the rest of the client's life
+        # cost a whole session of MCP every time [A] restarted. The detection
+        # invariant A28 cares about is unchanged and still asserted here --
+        # the new baseline is the new daemon, which is only reachable if the
+        # change was actually observed. The fail-closed answer is now opt-in and
+        # is pinned in test_strict_mode_still_reports_the_restart below.
+        server = _FakeServer()
+        with _reachable("daemongen001"):
+            first = mcp_stdio._mcp_probe_generation(server)
+        self.assertIsNone(mcp_stdio._mcp_generation_gate(first["generation"]))
+        self.assertEqual(mcp_stdio._MCP_SERVER_GENERATION_SEEN, "daemongen001")
+
+        with _reachable("daemongen002"):
+            second = mcp_stdio._mcp_probe_generation(server)
+        self.assertIsNone(mcp_stdio._mcp_generation_gate(second["generation"]))
+        self.assertEqual(
+            mcp_stdio._MCP_SERVER_GENERATION_SEEN,
+            "daemongen002",
+            "the restart was not observed -- the baseline never moved",
+        )
+
+    def test_strict_mode_still_reports_the_restart(self):
+        # CLM_MCP_STRICT_GENERATION=1 restores the pre-TA-5 fail-closed answer.
+        # This is the assertion A28 originally made; it is kept verbatim behind
+        # the flag so the detector itself stays under test.
         server = _FakeServer()
         with _reachable("daemongen001"):
             first = mcp_stdio._mcp_probe_generation(server)
@@ -119,10 +148,18 @@ class GateTests(unittest.TestCase):
 
         with _reachable("daemongen002"):
             second = mcp_stdio._mcp_probe_generation(server)
-        stale = mcp_stdio._mcp_generation_gate(second["generation"])
+        with mock.patch.dict(os.environ, {"CLM_MCP_STRICT_GENERATION": "1"}):
+            stale = mcp_stdio._mcp_generation_gate(second["generation"])
 
         self.assertIsNotNone(stale)
         self.assertEqual(stale["error_name"], "MCP_STALE_RELOAD_REQUIRED")
+        self.assertEqual(stale["expected_generation"], "daemongen001")
+        self.assertEqual(stale["generation"], "daemongen002")
+        self.assertEqual(
+            mcp_stdio._MCP_SERVER_GENERATION_SEEN,
+            "daemongen001",
+            "strict mode must not re-baseline; it refuses instead",
+        )
 
     def test_an_unreachable_probe_never_becomes_the_remembered_baseline(self):
         # The bug's real teeth: if a fallback stamp is remembered first, the next

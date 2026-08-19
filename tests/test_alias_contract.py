@@ -72,7 +72,10 @@ class TestAliasCanonicalFieldsExist(unittest.TestCase):
         # so compact status callers retain registry-validated input.
         # Re-based 2026-08-11: +51 R44 result-cap synonym aliases (limit/max_results/
         # max_items/top_k folded per-tool) across 14 new + 4 existing aliased tools.
-        self.assertEqual(total, 205, f"Expected 205 aliases, got {total}")
+        # Re-based 2026-08-19: +2 TA-7 search_code (file_glob/glob -> file_pattern),
+        # added at the alias-registry layer because the S4 validator rejects unknown
+        # fields before the tool function is ever entered.
+        self.assertEqual(total, 207, f"Expected 207 aliases, got {total}")
 
     def test_alias_tool_count_is_42(self):
         # Re-based 2026-08-11: R44 result-cap family added 14 new aliased tools.

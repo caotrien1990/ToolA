@@ -21,8 +21,10 @@ end-to-end subprocess that reproduces the exact import order that used to drop 4
 tests and proves it now stays green. If the freeze regresses, both fail.
 """
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -98,13 +100,27 @@ class GraphEnabledLiveFlagA13(unittest.TestCase):
         # Do not inherit a poisoned GRAPH_ENABLED from the parent process.
         child_env = dict(os.environ)
         child_env.pop("GRAPH_ENABLED", None)
-        proc = subprocess.run(
-            [sys.executable, "-m", "pytest", *ordered,
-             "-p", "no:randomly", "-q",
-             "--basetemp=.orchestrator_cache/_a13_child_tmp"],
-            cwd=_PROJ_ROOT, env=child_env,
-            capture_output=True, text=True, timeout=600,
-        )
+        # 2026-08-19: the child basetemp used to be the FIXED in-repo path
+        # ``.orchestrator_cache/_a13_child_tmp``. pytest wipes its basetemp at
+        # startup, and this repo lives on a OneDrive-synced drive where the
+        # sync client can hold a handle on a directory it is uploading. One
+        # unlucky run left that exact directory unreadable (WinError 5 even for
+        # icacls), and from then on EVERY child run died with six
+        # PermissionErrors at fixture setup -- read as an A13 regression though
+        # the graph flag was fine. A per-run temp dir outside the synced tree
+        # removes the shared-state failure mode; nothing in this assertion
+        # needs the child's temp files to live in the repo.
+        child_tmp = tempfile.mkdtemp(prefix="a13_child_")
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-m", "pytest", *ordered,
+                 "-p", "no:randomly", "-q",
+                 f"--basetemp={child_tmp}"],
+                cwd=_PROJ_ROOT, env=child_env,
+                capture_output=True, text=True, timeout=600,
+            )
+        finally:
+            shutil.rmtree(child_tmp, ignore_errors=True)
         self.assertEqual(
             proc.returncode, 0,
             msg=("forced canary-first order must be green after the A13 fix.\n"

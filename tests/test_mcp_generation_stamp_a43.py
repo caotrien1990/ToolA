@@ -27,6 +27,7 @@ which is deliberately NOT a gate (it would false-positive on every call).
 from __future__ import annotations
 
 import json
+import os
 import sys
 import unittest
 import urllib.error
@@ -199,14 +200,40 @@ class GateFiresRightTests(unittest.TestCase):
 
     tearDown = setUp
 
-    def test_gate_fires_when_daemon_restarts(self):
+    def test_gate_observes_a_daemon_restart_and_moves_its_baseline(self):
+        # A43's invariant is the AXIS: the gate must react to a daemon-gen change
+        # (delta a) and stay silent on the permanent mcp-gen != daemon-gen skew
+        # (delta b, next test). TA-5 (2026-08-19) changed the reaction, not the
+        # axis: a restart now re-baselines and lets the call through instead of
+        # latching MCP_STALE_RELOAD_REQUIRED for the client's whole life. The
+        # baseline moving to the new daemon stamp is the observable proof that
+        # delta a was seen. The old fail-closed answer is pinned below.
         self.assertIsNone(mcp_stdio._mcp_generation_gate(DAEMON))
-        stale = mcp_stdio._mcp_generation_gate("daemongenCCCC")
+        self.assertIsNone(mcp_stdio._mcp_generation_gate("daemongenCCCC"))
+        self.assertEqual(
+            mcp_stdio._MCP_SERVER_GENERATION_SEEN,
+            "daemongenCCCC",
+            "delta a went unnoticed -- the baseline never moved",
+        )
+
+    def test_strict_mode_fires_on_a_daemon_restart(self):
+        # CLM_MCP_STRICT_GENERATION=1 = the pre-TA-5 fail-closed answer, kept
+        # verbatim so the daemon axis stays asserted with a hard signal too.
+        self.assertIsNone(mcp_stdio._mcp_generation_gate(DAEMON))
+        with mock.patch.dict(os.environ, {"CLM_MCP_STRICT_GENERATION": "1"}):
+            stale = mcp_stdio._mcp_generation_gate("daemongenCCCC")
 
         self.assertIsNotNone(stale)
         self.assertEqual(stale["error_name"], "MCP_STALE_RELOAD_REQUIRED")
         self.assertEqual(stale["expected_generation"], DAEMON)
         self.assertEqual(stale["generation"], "daemongenCCCC")
+
+    def test_strict_mode_stays_silent_on_the_two_process_skew(self):
+        # delta b must not fire even with the hard signal armed: the gate is fed
+        # probe["generation"] (daemon), never local_generation (MCP host).
+        with mock.patch.dict(os.environ, {"CLM_MCP_STRICT_GENERATION": "1"}):
+            self.assertIsNone(mcp_stdio._mcp_generation_gate(DAEMON))
+            self.assertIsNone(mcp_stdio._mcp_generation_gate(DAEMON))
 
     def test_gate_does_not_fire_on_a_stable_daemon(self):
         # Same daemon-gen probed twice: no restart, no cry-wolf -- even though
