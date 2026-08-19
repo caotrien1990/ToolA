@@ -3,7 +3,7 @@
 This file is generated for CA routing. Read it before opening source files.
 
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\orchestrator`
-- Generated: 2026-08-18T12:02:52
+- Generated: 2026-08-19T11:15:14
 - Files indexed: 6
 
 ## First Actions
@@ -26,14 +26,14 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 
 ## Groups
 
-- `source`: 6 files, 5618 LOC
+- `source`: 6 files, 5622 LOC
 
 ## Highest Value Files
 
 - `session/store.py` | group `source` | lang `python` | LOC 1704 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `search_snapshots.py` | group `source` | lang `python` | LOC 1003 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `tools/search.py` | group `source` | lang `python` | LOC 631 | weight 14: large_file: use symbols, search, or bounded ranges before full read
-- `core/registry_data.py` | group `source` | lang `python` | LOC 1616 | weight 10: large_file: use symbols, search, or bounded ranges before full read
+- `core/registry_data.py` | group `source` | lang `python` | LOC 1620 | weight 10: large_file: use symbols, search, or bounded ranges before full read
 - `server/accounting.py` | group `source` | lang `python` | LOC 299 | weight 8: symbol_routed: use function/class refs from INDEX first
 - `server/executor_lanes.py` | group `source` | lang `python` | LOC 365 | weight 8: symbol_routed: use function/class refs from INDEX first
 
@@ -47,7 +47,7 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 - `tools/search.py`: complexity 166, 631 LOC, group `source`
 - `server/accounting.py`: complexity 54, 299 LOC, group `source`
 - `server/executor_lanes.py`: complexity 39, 365 LOC, group `source`
-- `core/registry_data.py`: complexity 2, 1616 LOC, group `source`
+- `core/registry_data.py`: complexity 2, 1620 LOC, group `source`
 
 ## Deterministic Rules
 

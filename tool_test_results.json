@@ -5,7 +5,7 @@
     "schema": 226,
     "tier_lists": 76,
     "tools_v15_functions_reference_only": 83,
-    "inventory_reference_only": 246,
+    "inventory_reference_only": 247,
     "canonical_total": 226
   },
   "source_policy": "canonical public tools = TOOL_MAP ∪ TOOL_SCHEMAS ∪ TOOL_PHASE lists; inventory/tools_v15 helper names are reference-only",
@@ -14,7 +14,7 @@
     "missing_ktrsk": 43,
     "missing_ktrsh": 0,
     "missing_ktrb": 1,
-    "missing_ktrin": 1
+    "missing_ktrin": 0
   },
   "results": [
     {
@@ -3381,7 +3381,7 @@
       "ktrb": "PASS",
       "ktrsk": "MISSING",
       "ktrsh": "PASS",
-      "ktrin": "MISSING",
+      "ktrin": "PASS",
       "ktrsk_skills": [],
       "description": "Record authenticated liveness for a committed root owner. The server verifies the capability, stores",
       "test_cases": [
@@ -3396,12 +3396,6 @@
           "desc": "Tool owner_heartbeat không được đề cập trong skill nào",
           "workflow": "CA search skill để tìm cách dùng {name}",
           "expected": "Không tìm thấy skill đề cập đến tool này"
-        },
-        {
-          "name": "TC_KTRIN_FAIL",
-          "desc": "Tool owner_heartbeat không có trong tool reference",
-          "workflow": "audit_tool_matrix → kiểm tra coverage",
-          "expected": "reference coverage drift"
         }
       ]
     },

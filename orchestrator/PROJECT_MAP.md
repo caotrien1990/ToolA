@@ -1,13 +1,13 @@
 # Project Map
 
 - Schema: 2
-- Generated: 2026-08-18T12:02:52
+- Generated: 2026-08-19T11:15:14
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\orchestrator`
 - Files indexed: 6
 
 ## Groups
 
-- `source`: 6 files, 5618 LOC
+- `source`: 6 files, 5622 LOC
 
 ## Entrypoints
 
@@ -19,7 +19,7 @@
 - `tools/search.py`: complexity 166, 631 LOC, group `source`
 - `server/accounting.py`: complexity 54, 299 LOC, group `source`
 - `server/executor_lanes.py`: complexity 39, 365 LOC, group `source`
-- `core/registry_data.py`: complexity 2, 1616 LOC, group `source`
+- `core/registry_data.py`: complexity 2, 1620 LOC, group `source`
 
 ## Agent Usage
 
