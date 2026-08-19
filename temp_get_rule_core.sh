@@ -1,1 +1,0 @@
-curl -s -X POST http://localhost:8083/api/call/get_rule_core_text -H "Content-Type: application/json" -d "{\"agent_id\":\"hermes\"}"

@@ -1,2 +1,0 @@
-POST http://localhost:8083/api/call/get_rule_core_text?fields=ok,already_fetched,text,sha256
-Body: {"agent_id":"hermes"}

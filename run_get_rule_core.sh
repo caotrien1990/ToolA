@@ -1,1 +1,0 @@
-bash temp_get_rule_core.sh
