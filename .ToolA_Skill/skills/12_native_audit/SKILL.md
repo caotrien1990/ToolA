@@ -30,7 +30,14 @@ ONLY in these cases:
 Never allowed:
 - Multi-file batch without [A] API
 - Auth/token/delete operations
-- Files inside [Ab:P] when [A] available — must use API
+- Project files (any project OTHER than [A] itself) when [A] is available — must use API
+
+> Self-edit is the exception, not a bypass. Case 1 above ([Ab:P] = [A:P]) is
+> `task_class=upgrade_orchestrator` / `native_policy=hybrid_upgrade_only` in the
+> Matrix — a NATIVE write to [A]'s own tree is *expected* to pass the gate and
+> return `ok:true`. Governance is preserved by the HYBRID chain (authorization →
+> `log_native_event` → py_compile/validate → restart → verify generation), not by
+> denying the write. Reading [A]'s own files is NOT relaxed: use [A] read tools.
 
 ## Mandatory audit (every native use)
 
@@ -117,7 +124,7 @@ Every native action on a governed project must be classifiable against `.council
 
 | Counter | When |
 |---|---|
-| `forbidden_native_count` | native while row `native_policy=forbid` → **bypass event** |
+| `forbidden_native_count` | native while row `native_policy=forbid` → **bypass event** (self-edit of [A] is `hybrid_upgrade_only`, so it never lands here) |
 | `allowed_native_count` | native while policy allows **and** audit present |
 | `via_a_count` | same task class executed via `/api/call/<tool>` |
 | `unclassified_count` | action not mapped to any `task_class` |
@@ -129,7 +136,10 @@ Hybrid steering (“A plus native”): still log each native call with accurate 
 
 ## Axis 4 hard reject (ledger enforce — live)
 
-When Matrix row is `native_policy=forbid` (project write/search/etc. via native), **ledger must reject**, not only warn:
+When Matrix row is `native_policy=forbid` (write/search on a project that is NOT [A] itself, via native), **ledger must reject**, not only warn.
+A native write whose target resolves inside [A]'s own source tree is classified
+`upgrade_orchestrator` instead and must NOT hard-reject — see "Self-edit is the
+exception" above:
 
 | Signal | Meaning |
 |--------|---------|

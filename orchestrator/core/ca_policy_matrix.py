@@ -183,6 +183,43 @@ def _rows_by_class(matrix: dict[str, Any] | None = None) -> dict[str, dict]:
     return out
 
 
+# Mutating task_classes that must yield to upgrade_orchestrator when the target
+# is [A]'s own source tree. Reads are NOT listed: reading [A] via an [A] tool is
+# correct and never conflicted with the self-edit rule.
+_MUTATING_CLASSES_FOR_SELF_EDIT = frozenset({
+    "write_existing_file",
+    "create_project_file",
+    "batch_project_write",
+    "delete_or_copy_project_file",
+})
+
+_MUTATING_ACTIONS_FOR_SELF_EDIT = frozenset({"write", "edit", "create", "delete", "patch"})
+
+
+def is_orchestrator_self_target(target: str) -> bool:
+    """True when `target` lives inside [A]'s own source tree (_ROOT).
+
+    Path-exact, unlike the old keyword blob heuristic which only fired on the
+    words upgrade/hybrid/code_tools and therefore missed every real self-edit
+    (e.g. orchestrator/session/store.py).
+    """
+    t = (target or "").strip()
+    if not t:
+        return False
+    try:
+        tp = Path(t)
+        if not tp.is_absolute():
+            return False
+        tp = tp.resolve()
+        try:
+            tp.relative_to(_ROOT.resolve())
+        except ValueError:
+            return False
+        return True
+    except Exception:
+        return False
+
+
 def classify_action(
     *,
     tool_name: str = "",
@@ -252,6 +289,22 @@ def classify_action(
     if any(k in blob for k in ("upgrade", "hybrid", "edit orchestrator", "code_tools")):
         if not task_class:
             task_class = "upgrade_orchestrator"
+    # [A] self-edit: a NATIVE mutation whose target is inside [A]'s own source
+    # tree is upgrade_orchestrator (hybrid_upgrade_only), not a plain project
+    # write. Without this the tool/action map pinned it to write_existing_file
+    # -> native_policy=forbid, which contradicted the standing rule "editing [A]
+    # itself: native edit + log_native_event" and made log_native_event answer
+    # ok:false / is_forbidden_native:true for the very edits the rule mandates.
+    # Only NATIVE transport is reclassified: via_a stays governed as before.
+    if (
+        tr == "native"
+        and is_orchestrator_self_target(target)
+        and (
+            task_class in _MUTATING_CLASSES_FOR_SELF_EDIT
+            or (not task_class and action in _MUTATING_ACTIONS_FOR_SELF_EDIT)
+        )
+    ):
+        task_class = "upgrade_orchestrator"
     if any(k in blob for k in ("a down", "unreachable", "conn-refused", "connection refused")):
         task_class = "a_unreachable_mid_task"
 
