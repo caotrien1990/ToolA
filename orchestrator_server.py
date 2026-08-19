@@ -11197,9 +11197,18 @@ _RESTART_HUNG_SEMAPHORE_SEC = 15.0
 
 
 def _body_path_hint(body: dict | None) -> str:
-    """First path-like field the session/backup gates can resolve a project from."""
+    """First path-like field the session/backup gates can resolve a project from.
+
+    W7 (F020, 2026-08-19): "dst"/"src"/"target_file" were missing. copy_file
+    declares required=["src","dst"] and no other resolver, so a payload built
+    from its schema reached the session gate with nothing to resolve. It only
+    appeared to work because an ABSOLUTE dst outside the [A] root trips the
+    xroot gate first (_xroot_target, L13403) and skips the session gate
+    entirely; a relative dst, or one inside the root, still 400d. Keep the key
+    order aligned with _xroot_target so both gates agree on which path wins.
+    """
     body = body if isinstance(body, dict) else {}
-    for key in ("file_path", "path"):
+    for key in ("file_path", "path", "dst", "target_file", "src"):
         value = body.get(key)
         if isinstance(value, str) and value.strip():
             return value
@@ -13537,6 +13546,67 @@ accepted_fields=sorted(accepted_fields),
         )
         # F4: Cannot verify session without a resolvable project root
         if not _project_for_session and not _xroot_gate_allowed:
+            # W7 (F020, 2026-08-19): a page-bound T4 tool carries ONLY page_id.
+            # When that page_id is unknown/expired the resolution chain above
+            # yields "" and this gate used to answer PROJECT_PATH_REQUIRED --
+            # which sends the CA to add project_path, whose schema then rejects
+            # it as UNSUPPORTED_FIELD (the F020 "deadlock"). The real fault is
+            # the page_id, and _get_page() already has the right taxonomy; it
+            # just never runs because this gate is upstream of the handler.
+            # Answer with the page taxonomy here. The gate still BLOCKS -- only
+            # the reason and the recovery path change.
+            _w7_page_id = str(body.get("page_id", "") or "")
+            if _w7_page_id:
+                _w7_wellformed = bool(
+                    re.fullmatch(r"(pg|cdp)-[A-Za-z0-9][A-Za-z0-9_-]*", _w7_page_id)
+                )
+                return _error_response(
+                    tool_name,
+                    (
+                        f"page_id {_w7_page_id!r} is not a live page"
+                        if _w7_wellformed else
+                        f"invalid page_id: {_w7_page_id!r}; expected a live pg-... ID"
+                    ),
+                    400,
+                    cors,
+                    body,
+                    hint=(
+                        "Open a page first (open_browser_page / cdp_attach_target) and "
+                        "use the page_id it returns. Adding project_path will NOT help: "
+                        "this tool's schema does not accept it."
+                    ),
+                    error_name=("PAGE_NOT_FOUND" if _w7_wellformed else "PAGE_ID_INVALID"),
+                    ca_next_action="open_browser_page_then_reuse_page_id",
+                    retryable=False,
+                )
+            # W7 (F020, 2026-08-19): some tools legitimately resolve their project
+            # from an ALTERNATIVE field -- close_session(session_id=...) is the
+            # R64-D flow -- so project_path cannot be marked `required` for them
+            # without breaking that flow. Their schema therefore declares no
+            # required field at all, and a payload built from `required` ({}) used
+            # to answer a flat PROJECT_PATH_REQUIRED that never mentioned the
+            # alternative. Name the one-of set instead; this is a genuine missing
+            # required field, just one with more than one way to satisfy it.
+            _w7_props = ((_schema_for_tool(tool_name) or {}).get("parameters") or {}).get("properties") or {}
+            _w7_alts = [f for f in ("project_path", "file_path", "path", "session_id", "page_id")
+                        if f in _w7_props]
+            if len(_w7_alts) > 1:
+                return _error_response(
+                    tool_name,
+                    "Missing required field(s) for '%s': one of %s"
+                    % (tool_name, ", ".join(_w7_alts)),
+                    400,
+                    cors,
+                    body,
+                    hint=(
+                        "This tool resolves its project from any ONE of these fields. "
+                        "Pass project_path for the project root, or the id field that "
+                        "already names the target (session_id / page_id)."
+                    ),
+                    error_name="MISSING_REQUIRED_FIELD",
+                    required_one_of=_w7_alts,
+                    ca_next_action="rebuild_payload_with_one_of_required_one_of",
+                )
             return _error_response(
                 tool_name,
                 "Unable to determine project root; please provide project_path",

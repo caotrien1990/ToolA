@@ -148,12 +148,55 @@ class TestP5ScopeGateIsSatisfiable(unittest.TestCase):
                 f"root) but does not declare project_path, so the caller cannot "
                 f"comply: PROJECT_PATH_REQUIRED then UNSUPPORTED_FIELD")
 
-    def test_project_path_is_optional_not_required(self):
-        # The gate resolves a root from session/cwd when it can; forcing the field
-        # would break every call that already works.
+    def test_project_path_is_required_exactly_when_the_gate_demands_it(self):
+        """W7 (2026-08-19) -- replaces test_project_path_is_optional_not_required.
+
+        That test asserted project_path must NEVER be in `required`, on the
+        premise that "the gate resolves a root from session/cwd when it can, so
+        forcing the field would break every call that already works."
+
+        Measured live against gen a69eea1bbaf7, the premise is false for
+        start_app -- there is no session/cwd fallback:
+
+            start_app {"command": "cmd /c echo w7"}                    -> 400 PROJECT_PATH_REQUIRED
+            start_app {"command": "...", "health_url": "http://..."}   -> 400 PROJECT_PATH_REQUIRED
+
+        The dispatcher chain is project_path -> _body_path_hint(file_path/path/
+        dst/target_file/src/paths) -> page_id -> session_id. start_app supplies
+        none of those, so EVERY schema-derived payload 400s. Declaring the field
+        optional documented a call shape that does not exist -- the same
+        dead-end this class was written to catch, one level up in the schema.
+
+        So the invariant is not "never required", it is "required exactly when
+        the gate has no other way to resolve a root":
+
+          - gate never runs (_NO_SESSION_REQUIRED, e.g. stop_app) -> not required
+          - gate runs, another resolver is present                 -> not required
+          - gate runs, no other resolver                           -> REQUIRED
+        """
+        import orchestrator_server
+        resolvers = ("file_path", "path", "dst", "target_file", "src", "paths",
+                     "page_id", "session_id")
         for name in _P5_TOOLS:
-            required = (_schema_for(name).get("parameters") or {}).get("required") or []
-            self.assertNotIn("project_path", required, f"{name}")
+            with self.subTest(tool=name):
+                params = _schema_for(name).get("parameters") or {}
+                props = params.get("properties") or {}
+                required = params.get("required") or []
+                gate_runs = (name in orchestrator_server._MUTATING_TOOLS
+                             and name not in orchestrator_server._NO_SESSION_REQUIRED)
+                has_alt = bool(set(props).intersection(resolvers))
+                if gate_runs and not has_alt:
+                    self.assertIn(
+                        "project_path", required,
+                        f"{name} is session-gated and declares no alternative resolver "
+                        f"{resolvers}, so a payload built from `required` can never "
+                        f"pass the gate -- project_path must be required")
+                else:
+                    self.assertNotIn(
+                        "project_path", required,
+                        f"{name} can satisfy the gate another way "
+                        f"(gate_runs={gate_runs}, has_alt={has_alt}); forcing "
+                        f"project_path would break a call shape that works")
 
 
 class TestStopAppKillsTheWholeTree(unittest.IsolatedAsyncioTestCase):

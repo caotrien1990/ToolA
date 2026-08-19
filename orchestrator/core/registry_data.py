@@ -1635,11 +1635,11 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('council_config_sync', 'T2 WRITE (clauC/codoC only): propagate the SOT .council/council_config.json to derived rule docs (rewrites cost-order chain + roster list, backs up <file>.bak_ccsync), then optionally runs manage_agent(sync_rule, all). Restart [A] afterwards to refresh runtime maps.', {
 
-            "project_path": {"type": "string"},
+            "project_path": {"type": "string", "description": "Project root for the session gate. W7 2026-08-19 (F020): declared required because the write gate enforces it and no other field can resolve it."},
 
             "run_sync_rule": {"type": "boolean", "default": True},
 
-        }, []),
+        }, ["project_path"]),
 
     ('regex_search', "V15 R8 B.1: deprecated alias of search_code(mode='regex'). flags: i|m|s.", {
 
@@ -1727,7 +1727,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "structural_check": {"type": "boolean", "default": True, "description": "R43 P1 #3-B: detect range-incomplete patterns via brace/paren delta on dry_run preview."},
 
-        }, ["operations"]),
+        }, ["operations", "project_path"]),  # W7: project_path is enforced by the write gate; declaring it keeps schema == runtime.
 
     ('replace_between_anchors', 'V15 R43 P1 #3-B T2: anchor-based file patch. Resolves text anchors (start_anchor/end_anchor as substring or regex) to line numbers, then delegates to write_fix. Eliminates line-number brittleness for long functions. Token required. end_anchor_inclusive=false (default) preserves the end_anchor line.', {
 
@@ -1815,9 +1815,9 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "attach_id": {"type": "string", "default": "", "description": "Reuse existing CDP-attached page id (R15 P2.6)"},
 
-            "project_path": {"type": "string", "default": "", "description": "R44: originating project root pinned to page state for session-guard resolution."},
+            "project_path": {"type": "string", "description": "R44: originating project root pinned to page state so downstream page-bound tools resolve the session via page_id. W7 2026-08-19 (F020): the process/session gate DEMANDS a resolvable project root and this tool has no file_path/page_id/session_id to derive one from, so a payload built from `required` always answered 400 PROJECT_PATH_REQUIRED. Schema now says what runtime enforces."},
 
-        }, ["url"]),
+        }, ["url", "project_path"]),
 
     ('read_page', 'T4a: text content of selector (max 5KB).', {
 
@@ -2969,9 +2969,9 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "click_y": {"type": "integer", "default": 0},
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"type": "string", "description": "Project root for the session gate. W7 2026-08-19 (F020): this is a mutating tool with no file_path/page_id/session_id, so the gate cannot derive a project and a payload built from `required` always answered 400 PROJECT_PATH_REQUIRED."},
 
-        }, ["text"]),
+        }, ["text", "project_path"]),
 
     ('electron_devtools_log', "⚠️ DEPRECATED R41 — DO NOT USE. Use `list_cdp_targets` for CDP target enumeration, `read_console_errors` for console messages, or `evaluate_js` for log inspection. This tool will be removed in R42+. Reason: confusing name (it's enumeration not log read), overlaps with list_cdp_targets. Migration: replace `electron_devtools_log(cdp_port=9223)` with `list_cdp_targets(cdp_port=9223)`.", {
 

@@ -1004,6 +1004,15 @@ def _session_contention_fields(exc: BaseException):
     }
 
 
+# W7 (2026-08-19): the manage_agent action enum, named once. It also appears in
+# the tool schema (registry_data); keeping a literal list at the error site is how
+# the two drifted apart in the first place.
+_MANAGE_AGENT_ACTIONS = (
+    "register", "unregister", "list", "get",
+    "set_mode", "sync_rule", "sync_mcp", "sync_skill",
+)
+
+
 def _json_error(message, **extra) -> str:
     # A40: when handed the original exception (``_json_error(e)`` rather than
     # ``_json_error(str(e))``), recognize a transient session-store contention
@@ -14290,9 +14299,22 @@ async def manage_agent(action: str, agent_id: str = "", target: str = "all",
                 results.append(_ma_write_skill({"id": aid, **agents[aid]}, reg, skill_name, dry_run, explicit_target))
             all_ok = all(r.get("ok") for r in results)
             return json.dumps({"ok": all_ok, "action": act, "target": target, "skill_name": skill_name, "dry_run": dry_run, "results": results, "legacy_bak_ma_migration": migration}, ensure_ascii=False)
-        return _json_error(f"unknown action: {action}", error_name="UNSUPPORTED_FIELD",
-                           accepted_fields=["register", "unregister", "list", "get", "set_mode",
-                                            "sync_rule", "sync_mcp", "sync_skill"])
+        # W7 (F020 sweep, 2026-08-19): this used error_name=UNSUPPORTED_FIELD with
+        # accepted_fields=[...enum values...]. Both halves were wrong and they
+        # compounded: nothing is wrong with the FIELD (action is declared and
+        # required), the VALUE is; and accepted_fields is contractually a list of
+        # parameter NAMES, so a CA reading it tried to resend with a field literally
+        # called "register". Use the same shape as the other enum guards
+        # (orchestrator_server source_type, adaptive.py INVALID_SCOPE): name the
+        # field, list accepted_values. The enum is already in the schema, so this
+        # just makes the runtime error agree with it.
+        return _json_error(
+            f"action must be one of: {', '.join(_MANAGE_AGENT_ACTIONS)} (got: {action!r})",
+            error_name="SCHEMA_VIOLATION",
+            field="action",
+            accepted_values=list(_MANAGE_AGENT_ACTIONS),
+            ca_next_action="retry_with_valid_action",
+        )
     except Exception as exc:
         return _json_error(str(exc))
 

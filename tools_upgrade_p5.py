@@ -258,7 +258,7 @@ UPGRADE_P5_SCHEMA_SPECS = [
       "wait_ms": {"type": "integer", "default": 5000, "description": "Readiness verification wait (ms)."},
       "shell_mode": {"type": "string", "default": "auto", "description": "auto|cmd|powershell|exec|posix."},
       "keep_alive": {"type": "boolean", "default": True, "description": "Detach and keep running in background."}},
-     []),
+     ["project_path"]),  # W7 (F020): start_app has mutation_scope "process"; the gate needs a project root and there is no other field to derive one from.
     ("stop_app",
      "T2 MUTATING (process): stop an app by PID or process name, including its descendants. Reuses kill_process. Refuses when neither pid nor process_name is given. Mutating tool.",
      {"pid": {"type": "integer", "default": 0, "description": "Process PID to stop."},
@@ -289,6 +289,6 @@ UPGRADE_P5_SCHEMA_SPECS = [
       # not declared here and S4 then rejected it as UNSUPPORTED_FIELD. A dead-end
       # recovery hint, the same shape as B1/P11b. open_browser_page, the tool this one
       # wraps, declares project_path for exactly this reason.
-      "project_path": {"type": "string", "default": "", "description": "Project root for session/scope resolution (required by the process-scope gate)."}},
-     ["url"]),
+      "project_path": {"type": "string", "description": "Project root for session/scope resolution (required by the process-scope gate)."}},
+     ["url", "project_path"]),  # W7 (F020): B5 declared the field but left it out of `required`, so a schema-built payload still 400d.
 ]

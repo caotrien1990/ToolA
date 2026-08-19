@@ -284,6 +284,25 @@ def classify_action(
     scope_l = (scope or "").strip().lower()
     target_l = (target or "").strip().lower()
     blob = f"{tool} {action} {scope_l} {target_l}"
+    # W7 (F021, 2026-08-19): the keyword heuristics below used plain `k in blob`.
+    # `blob` ends with a FILE PATH, so an ordinary filename could flip policy:
+    #   "my_code_tools_notes.txt" -> upgrade_orchestrator (hybrid_upgrade_only)
+    #   "data download.csv"       -> a_unreachable_mid_task (allow_with_log_native_event)
+    # Both LOOSEN native_policy away from `forbid` for files that have nothing
+    # to do with [A]. Match on token boundaries instead, so "upgrade" no longer
+    # fires on "downgrade"/"upgrade_notes.md" and "code_tools" no longer fires
+    # on "my_code_tools_notes". Underscore is a word char, so \b already
+    # handles the _notes/_helper suffixes; the dot in ".txt" is a boundary.
+    def _kw_hit(text: str, keywords: tuple[str, ...]) -> bool:
+        return any(
+            re.search(r"\b" + re.escape(k) + r"\b", text)
+            for k in keywords
+        )
+
+    # "[A] is unreachable" describes the SESSION, never a path. Keeping the
+    # target out of this one blob is what kills the "data download.csv" ->
+    # allow_with_log_native_event false positive at the root.
+    signal_blob = f"{tool} {action} {scope_l}".lower()
 
     task_class = _TOOL_TO_CLASS.get(tool) or _ACTION_TO_CLASS.get(action)
     # F021: accept an action_type that already names a (non-privileged) class.
@@ -322,10 +341,10 @@ def classify_action(
                 task_class = "outside_project_os_read"
         else:
             task_class = "outside_project_os_read"
-    if "web" in blob or "http" in action:
+    if _kw_hit(blob, ("web",)) or "http" in action:
         if not task_class:
             task_class = "general_web_research"
-    if any(k in blob for k in ("upgrade", "hybrid", "edit orchestrator", "code_tools")):
+    if _kw_hit(blob, ("upgrade", "hybrid", "edit orchestrator", "code_tools")):
         if not task_class:
             task_class = "upgrade_orchestrator"
     # [A] self-edit: a NATIVE mutation whose target is inside [A]'s own source
@@ -344,7 +363,7 @@ def classify_action(
         )
     ):
         task_class = "upgrade_orchestrator"
-    if any(k in blob for k in ("a down", "unreachable", "conn-refused", "connection refused")):
+    if _kw_hit(signal_blob, ("a down", "unreachable", "conn-refused", "connection refused")):
         task_class = "a_unreachable_mid_task"
 
     if not task_class:
