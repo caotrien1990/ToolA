@@ -42,36 +42,15 @@ PRESERVED_CACHE_FILES = {
 # artifact safe to delete.
 SQLITE_CACHE_SUFFIXES = (".db", ".db-wal", ".db-shm", ".db-journal")
 PRESERVED_CACHE_DIRS = {"search_snapshots"}
-SKIP_DIRS = {
-    "node_modules", "venv", "venv312", ".venv", ".git", ".svn",
-    ".orchestrator_cache", "__pycache__", ".pytest_cache", ".mypy_cache",
-    ".tox", "dist", "build", ".idea", ".vscode",
-    # Anh 2026-08-11: backup_project writes a "_orchestrator_backups" tree
-    # (root.parent, but live repos also keep in-tree copies). It is not a
-    # dotfile, so should_skip_dir did not skip it and search/index scanned the
-    # whole backup set -> REGEX_SEARCH_TIMEOUT on narrow patterns. Skip it.
-    "_orchestrator_backups",
-    # 2026-08-13: live-data repos (e.g. ToolQ) keep large NON-code trees that bloat the
-    # index and break regex/symbol search + cause INDEX/manifest scan-vs-walk drift: an
-    # embedded venv, backup snapshots, staging clones, codex mission dirs, pytest temp.
-    ".venv_bge_m3", "backups", "staging", ".codex", ".pytest_tmp",
-    # R82 2026-08-19: runtime/archival DATA trees. Measured on ToolQ: qsleep/runs
-    # (19953 files) + qsleep/queue (8289) + archive/ (13470) made generate_project_map
-    # scan 31608 files of which 31079 were .json runtime records and only 367 were .py
-    # source. At 18.7 ms/file that is ~591s of analyze alone — past every proxy cap, so
-    # INDEX.json never got written and write_fix stayed blocked behind "INDEX not found"
-    # forever. These names hold produced records, not source, on every project.
-    "runs", "queue", "_archive", "archive",
-}
-# SOT council lives in .council — searchable despite the generic dot-dir skip.
-DOT_DIRS_SEARCHABLE = {".council"}
-
-
-def should_skip_dir(name: str) -> bool:
-    lowered = name.lower()
-    if lowered in DOT_DIRS_SEARCHABLE:
-        return False
-    return lowered in SKIP_DIRS or name.startswith(".")
+# W1 2026-08-19: SKIP_DIRS / DOT_DIRS_SEARCHABLE / should_skip_dir moved to the
+# leaf module orchestrator.skip_rules so search_snapshots can import them without
+# importing this module back (that was cycle #2). Re-exported by identity here:
+# surgical_mapper.SKIP_DIRS IS orchestrator.skip_rules.SKIP_DIRS, so CAN-042 holds.
+from orchestrator.skip_rules import (  # noqa: E402
+    DOT_DIRS_SEARCHABLE,
+    SKIP_DIRS,
+    should_skip_dir,
+)
 
 
 SKIP_FILE_GLOBS = {

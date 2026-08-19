@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
+from orchestrator.skip_rules import should_skip_dir
+
 
 CACHE_DIR_NAME = ".orchestrator_cache"
 STORE_DIR_NAME = "search_snapshots"
@@ -86,16 +88,13 @@ _PROCESS_LEASES: dict[tuple[str, str], str] = {}
 def _default_skip_dir(name: str) -> bool:
     """Default walk filter when callers omit skip_dir.
 
-    Lazy-import surgical_mapper: this module is imported by surgical_mapper at
-    import time, so a top-level import would cycle.
+    W1 2026-08-19: this used to lazy-import surgical_mapper, with an except
+    branch whose fallback silently disagreed with the real rule (it knew only
+    about ".council"). The rules now live in the leaf module
+    `orchestrator.skip_rules`, imported at the top of this file, so there is
+    one behaviour and no import cycle.
     """
-    try:
-        import surgical_mapper
-        return surgical_mapper.should_skip_dir(name)
-    except Exception:
-        if name.lower() in {".council"}:
-            return False
-        return name.startswith(".")
+    return should_skip_dir(name)
 
 
 def _project_lock(project_root: Path) -> threading.RLock:
