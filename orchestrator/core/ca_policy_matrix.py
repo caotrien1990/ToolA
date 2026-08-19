@@ -130,7 +130,43 @@ _ACTION_TO_CLASS: dict[str, str] = {
     "snapshot": "t4_snapshot",
     "restart": "orchestrator_lifecycle",
     "upgrade": "upgrade_orchestrator",
+    # F021: the log_native_event schema documents these action_type values, but
+    # they had no row here and fell through to task_class="unknown" -> a
+    # native_policy=forbid HOST_GATE_DENY on perfectly ordinary actions.
+    "edit": "write_existing_file",
+    "create": "create_project_file",
+    "patch": "write_existing_file",
+    "execute": "project_command",
+    "validate": "project_test",
+    "cache": "session_backup_audit",
+    "backup": "session_backup_audit",
 }
+
+# F021: callers routinely pass the task_class itself as action_type (the two
+# vocabularies overlap and the schema description does not spell out which one
+# it wants). Accept that as an identity mapping -- but ONLY for classes whose
+# native_policy is forbid, so a caller can never self-declare its way into
+# upgrade_orchestrator / a_unreachable_mid_task and mint native permission it
+# has not earned. Those still have to be derived from the target path.
+_SELF_DECLARABLE_CLASSES = frozenset({
+    "write_existing_file",
+    "create_project_file",
+    "batch_project_write",
+    "delete_or_copy_project_file",
+    "read_project_file",
+    "search_project_code",
+    "project_command",
+    "project_test",
+    "session_backup_audit",
+    "council_dispatch",
+    "mission_workflow",
+    "t4_action",
+    "t4_snapshot",
+    "orchestrator_lifecycle",
+    "agent_rule_sync",
+    "bootstrap_rule",
+    "project_path_resolution",
+})
 
 _OUTSIDE_PROJECT_MARKERS = (
     r"\\windows\\", r"/windows/", r"\\system32\\", r"/system32/",
@@ -250,6 +286,9 @@ def classify_action(
     blob = f"{tool} {action} {scope_l} {target_l}"
 
     task_class = _TOOL_TO_CLASS.get(tool) or _ACTION_TO_CLASS.get(action)
+    # F021: accept an action_type that already names a (non-privileged) class.
+    if not task_class and action in _SELF_DECLARABLE_CLASSES:
+        task_class = action
 
     # Scope heuristics
     outside = False

@@ -207,7 +207,8 @@ def index_project(project_path: str, *, scope: str = "core",
 
         # BUG-3a: seed cross-file imports_module edges on full index too;
         # otherwise they only appear after the first incremental_index run.
-        dep_edges = _build_dependency_edges(conn)
+        dep_stats = _build_dependency_edges(conn)
+        dep_edges = dep_stats["edges"]
         conn.commit()
         duration = round(time.monotonic() - t0, 2)
         # partial only when a stale file was actually skipped for budget —
@@ -229,6 +230,7 @@ def index_project(project_path: str, *, scope: str = "core",
             "nodes": counts["nodes"], "edges": counts["edges"],
             "nodes_new": total_nodes, "edges_new": total_edges,
             "dependency_edges": dep_edges,
+            "dependency_stats": dep_stats,
             "errors": errors,
             "meets_gates": {
                 "duration": duration <= budget,
@@ -320,31 +322,139 @@ def _delete_file_entries(conn, rel_path: str) -> None:
     conn.execute("DELETE FROM files WHERE path=?;", (rel_path,))
 
 
-def _build_dependency_edges(conn) -> int:
-    """Cross-file module dependency edges (internal, mandatory — Step 14).
+_MODULE_EXTS = (".py", ".pyi", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx")
+
+
+def _dotted_from_path(file_path: str) -> str:
+    """Dotted module path from a project-relative file path.
+
+    `orchestrator/session/store.py` -> `orchestrator.session.store`
+    `orchestrator/graph/__init__.py` -> `orchestrator.graph`
+
+    W0b/F019: module nodes carry a BARE BASENAME qualified_name (the extractor's
+    _module_name falls back to basename because it receives a relative file_path
+    against an absolute project_root). Deriving the key from file_path instead is
+    both correct and collision-free (688 modules / 0 duplicates on [A] itself),
+    where the basename map had 29 last-wins collisions.
+    """
+    p = (file_path or "").replace("\\", "/").strip("/")
+    for ext in _MODULE_EXTS:
+        if p.endswith(ext):
+            p = p[: -len(ext)]
+            break
+    if p.endswith("/__init__"):
+        p = p[: -len("/__init__")]
+    return p.replace("/", ".")
+
+
+def _dotted_prefixes(qname: str):
+    """Longest-first dotted prefixes: `a.b.c.X` -> a.b.c.X, a.b.c, a.b, a."""
+    bits = [b for b in (qname or "").split(".") if b]
+    for i in range(len(bits), 0, -1):
+        yield ".".join(bits[:i])
+
+
+def _package_ancestors(file_path: str):
+    """Enclosing packages of a file, deepest first (root package excluded)."""
+    p = (file_path or "").replace("\\", "/").strip("/")
+    bits = p.split("/")[:-1]
+    for i in range(len(bits), 0, -1):
+        yield ".".join(bits[:i])
+
+
+def _build_dependency_edges(conn) -> dict:
+    """Cross-file module dependency edges (internal, mandatory - Step 14).
 
     Links every import node whose qualified_name resolves to an indexed module
-    node (exact module match, or the module owning the imported symbol) with an
-    `imports_module` edge. Idempotent: the kind is rebuilt from scratch each
-    call — cost scales with (modules × imports) in the DB, so callers should
-    skip this when nothing changed (incremental_index guards the no-op path).
+    node with an `imports_module` edge. Idempotent: the kind is rebuilt from
+    scratch each call - callers should skip this when nothing changed
+    (incremental_index guards the no-op path).
+
+    Resolution (W0b, fixes F019/F018):
+      1. absolute - longest dotted prefix of the import qualified_name that is
+         an indexed module (`from a.b.c import X` -> module `a.b.c`).
+      2. package-relative - the extractor drops `node.level`, so `from .fs
+         import _x` only reaches here as `fs._x`. Retry each prefix under the
+         importing file's enclosing packages, deepest first. Recorded at lower
+         confidence and tagged in metadata so it stays distinguishable.
+
+    Self-imports (target file == source file) are skipped: they are not
+    dependencies and would show up as spurious 1-file cycles.
+
+    Deliberately NOT emitted: the implicit package `__init__` an import
+    traverses (`from a.b.c import X` also executes `a/b/__init__.py`). Longest
+    prefix wins, so the edge points at `a/b/c.py` alone. Counting the traversal
+    would make every package a cycle with its own submodules. Explicit package
+    imports (`from a import b`, `import a.b`) still resolve to `__init__.py`
+    normally. Verified on [A]: 0 false positives over 250 files vs real AST
+    resolution; the 102 differences are exactly this implicit-traversal class.
+
+    Returns a stats dict; `edges` is the count callers previously got as an int.
     """
     conn.execute("DELETE FROM edges WHERE kind='imports_module';")
-    modules = {r["qualified_name"]: r["id"] for r in conn.execute(
-        "SELECT qualified_name, id FROM nodes WHERE kind='module';")}
-    added = 0
+
+    modules: dict[str, tuple] = {}
+    ambiguous: set[str] = set()
     for r in conn.execute(
-            "SELECT id, qualified_name, start_line FROM nodes WHERE kind='import';"):
+            "SELECT id, file_path FROM nodes WHERE kind='module';"):
+        dotted = _dotted_from_path(r["file_path"])
+        if not dotted:
+            continue
+        if dotted in modules:
+            ambiguous.add(dotted)
+            continue
+        modules[dotted] = (r["id"], r["file_path"])
+
+    added = 0
+    by_mode = {"absolute": 0, "package_relative": 0}
+    unresolved = 0
+    self_skipped = 0
+
+    for r in conn.execute(
+            "SELECT id, qualified_name, file_path, start_line "
+            "FROM nodes WHERE kind='import';"):
         qn = r["qualified_name"] or ""
-        target = modules.get(qn) or (modules.get(qn.rsplit(".", 1)[0]) if "." in qn else None)
-        if target:
-            conn.execute(
-                "INSERT INTO edges (source, target, kind, confidence, cbm_label, "
-                "metadata, line, col, is_external) VALUES (?,?,?,?,?,?,?,?,0);",
-                (r["id"], target, "imports_module", 0.9, "inferred", "{}",
-                 r["start_line"], None))
-            added += 1
-    return added
+        if not qn:
+            continue
+        hit = None
+        mode = ""
+        for pref in _dotted_prefixes(qn):
+            if pref in modules:
+                hit, mode = modules[pref], "absolute"
+                break
+        if hit is None:
+            for pkg in _package_ancestors(r["file_path"]):
+                for pref in _dotted_prefixes(qn):
+                    cand = pkg + "." + pref
+                    if cand in modules:
+                        hit, mode = modules[cand], "package_relative"
+                        break
+                if hit is not None:
+                    break
+        if hit is None:
+            unresolved += 1
+            continue
+        target_id, target_file = hit
+        if target_file == r["file_path"]:
+            self_skipped += 1
+            continue
+        conn.execute(
+            "INSERT INTO edges (source, target, kind, confidence, cbm_label, "
+            "metadata, line, col, is_external) VALUES (?,?,?,?,?,?,?,?,0);",
+            (r["id"], target_id, "imports_module",
+             0.9 if mode == "absolute" else 0.8, "inferred",
+             '{"resolution": "%s"}' % mode, r["start_line"], None))
+        added += 1
+        by_mode[mode] += 1
+
+    return {
+        "edges": added,
+        "by_resolution": by_mode,
+        "unresolved_imports": unresolved,
+        "self_imports_skipped": self_skipped,
+        "ambiguous_modules": len(ambiguous),
+        "modules_indexed": len(modules),
+    }
 
 
 def incremental_index(project_path: str, *, project_root: Optional[str] = None,
@@ -404,7 +514,8 @@ def incremental_index(project_path: str, *, project_root: Optional[str] = None,
             # BUG-3 note: full rebuild on every incremental run (cost scales with
             # modules × imports). No-op skip would regress first-index dep edges,
             # so defer a smarter incremental-aware rebuild to Phase 4+ scale work.
-            dep_edges = _build_dependency_edges(conn)
+            dep_stats = _build_dependency_edges(conn)
+            dep_edges = dep_stats["edges"]
             orphan_after = conn.execute(
                 "SELECT COUNT(*) FROM edges e LEFT JOIN nodes n ON e.target=n.id "
                 "WHERE n.id IS NULL AND e.target NOT LIKE 'ext:%';").fetchone()[0]
@@ -417,7 +528,8 @@ def incremental_index(project_path: str, *, project_root: Optional[str] = None,
         return {"wall_ms": round((time.monotonic() - t0) * 1000, 1),
                 "skipped": changes["unchanged"], "reindexed": len(reindex_paths),
                 "deleted": len(changes["deleted"]), "renamed": changes["renamed"],
-                "dependency_edges": dep_edges, "orphan_after": orphan_after,
+                "dependency_edges": dep_edges, "dependency_stats": dep_stats,
+                "orphan_after": orphan_after,
                 "errors": errors, "status": "completed", "fallback": False}
     except Exception as e:
         # hash corruption / DB failure -> full reindex remains the safety net;
