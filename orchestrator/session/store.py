@@ -1720,6 +1720,57 @@ def _task_checkpoint_table(conn) -> None:
     """)
 
 
+_SESSION_ADOPTED_STATUS = "adopted"
+
+
+def _ensure_session_row(conn, session_key: str) -> bool:
+    """Create a placeholder `sessions` row for a caller-minted session_key.
+
+    Anh 2026-08-19 (orphan-row leak): `bootstrap_session`/`begin_task`/
+    `owner_heartbeat` accept an ARBITRARY caller-chosen ``session_id`` and write
+    task_checkpoints + events under it without ever going through
+    :func:`_open_or_resume_session` -- the only place that INSERTs into
+    ``sessions``. With ``PRAGMA foreign_keys`` off nothing rejected those rows,
+    so the child tables accumulated parentless rows (measured 2026-08-19:
+    1045/1058 task_checkpoints, 2391/7943 events). Two distinct sources were
+    separated: historical test pollution (fixed by A53 conftest redirect) and
+    this one, which was still leaking (46 new orphan events on 2026-08-18).
+
+    The placeholder is written with status ``adopted`` -- NOT ``active`` -- on
+    purpose: every "which session am I in" lookup in the codebase filters
+    ``status='active'``, so an ``active`` placeholder would let a synthetic
+    task-checkpoint session hijack `_auto_open_session` scope resolution and
+    `logs.py` native-event attribution. ``adopted`` is invisible to those
+    queries, is still pruned by age like any other session, and is NOT removed
+    by `clear_closed_sessions` (which only targets ``closed``).
+
+    Runs inside the caller's existing write transaction -- no extra commit.
+    Set ``ORCH_ADOPT_ORPHAN_SESSIONS=0`` to restore the old leaky behaviour.
+
+    Returns True when a row was created.
+    """
+    key = str(session_key or "").strip()
+    if not key:
+        return False
+    if os.environ.get("ORCH_ADOPT_ORPHAN_SESSIONS", "1").strip().lower() in {"0", "false", "no"}:
+        return False
+    try:
+        cur = conn.execute(
+            """INSERT OR IGNORE INTO sessions
+               (session_id, session_title, project_path, mode, status,
+                coverage, started_at, agent_id)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (key, f"Adopted task session {key}"[:120], "", "T3",
+             _SESSION_ADOPTED_STATUS, "A-only",
+             datetime.now().isoformat(timespec="seconds"), None),
+        )
+        return bool(cur.rowcount)
+    except Exception:
+        # Never let bookkeeping break the checkpoint write it is protecting.
+        logger.exception("failed to adopt session row for %r", key)
+        return False
+
+
 def _decode_task_checkpoint(session_key: str, payload: str | None):
     if not payload:
         return None
@@ -1747,6 +1798,7 @@ def _task_checkpoint_save(session_key: str, checkpoint: dict) -> bool:
         )
 
     def _save(conn):
+        _ensure_session_row(conn, session_key)
         conn.execute(
             """INSERT INTO task_checkpoints (session_key, payload, updated_at)
                VALUES (?,?,?)
@@ -1825,6 +1877,7 @@ def _task_checkpoint_update(session_key: str, update_fn, busy_timeout_ms: int = 
                 "Task checkpoint updater returned a non-object replacement",
                 error_name="TASK_CHECKPOINT_MALFORMED",
             )
+        _ensure_session_row(conn, session_key)
         conn.execute(
             """INSERT INTO task_checkpoints (session_key, payload, updated_at)
                VALUES (?,?,?)
@@ -1921,6 +1974,11 @@ def _log_session_event(session_id: str, tool_name: str, body: dict, result: dict
                   event_kind, error_owner, error_name, correlation_type, correlation_key,
                   evidence_json)
         def _persist_event(conn):
+            # Anh 2026-08-19: adopt the parent row first so an event logged
+            # against a caller-minted session_id (begin_task / get_task_checkpoint
+            # / owner_heartbeat never call _open_or_resume_session) does not
+            # become an orphan. See _ensure_session_row.
+            _ensure_session_row(conn, session_id)
             verb = "INSERT OR IGNORE" if audit_id else "INSERT"
             cur = conn.execute(
                 f"{verb} INTO events ({columns}) VALUES ({','.join('?' for _ in values)})",
