@@ -457,13 +457,38 @@ def _cycle_details(cycles: list[list[str]], details: dict) -> list[dict]:
     An SCC's INTERNAL edges are the ones worth reporting: an edge leaving the
     component cannot be part of the loop. `breakable_at_top_level` lists the
     edges that execute at import time — those are the ones that can actually
-    raise ImportError, and therefore the ones to attack first. When a component
-    has none, the whole loop is deferred: real coupling, but it will not crash.
+    raise ImportError, and therefore the ones to attack first.
+
+    W3: `deferred_only` used to mean `top_level_edges == 0`, which asks "does
+    this loop contain ANY import-time edge" when the question that decides
+    urgency is "does a loop survive when only import-time edges remain". Those
+    differ whenever a cycle mixes both kinds, and [A]'s own 18-file SCC is
+    exactly that shape: 17 top-level pairs and 24 deferred-only pairs, reported
+    as `import_time_risk` — yet deleting every deferred pair leaves the
+    top-level subgraph ACYCLIC, so no import order can close the loop. The old
+    rule sent a reader after 18 files and 17 import lines to fix a crash that
+    cannot happen, while a genuinely deferred-only loop nearby would rank below
+    it. Measured against the interpreter (tests/test_graph_w3_cycle_severity):
+    a two-file cycle with one side inside a function body imports cleanly.
+
+    The fix re-runs Tarjan on the component's import-time-only edges. A cycle is
+    a load-time hazard only when a sub-cycle survives there, and
+    `import_time_subcycles` names the members that survive — the actual
+    work-list, which is a subset of `files` and usually much smaller.
+
+    Conservative in the one place the graph cannot see: the extractor does not
+    record `import x` versus `from x import name`, and only the second raises on
+    a circular import. A surviving top-level sub-cycle is therefore reported as
+    a risk even though the plain-module form would import fine. Over-reporting a
+    real cycle is the acceptable direction; calling an unbreakable loop a crash
+    is not.
     """
     out = []
     for cycle in cycles:
         members = set(cycle)
         edges, top_level = [], 0
+        # Import-time-only adjacency, restricted to this component.
+        tl_adj: dict[str, list[str]] = {}
         for (src, dst), d in details.items():
             if src in members and dst in members:
                 edges.append({
@@ -477,6 +502,16 @@ def _cycle_details(cycles: list[list[str]], details: dict) -> list[dict]:
                 })
                 if not d["deferred"]:
                     top_level += 1
+                    tl_adj.setdefault(src, []).append(dst)
+        for targets in tl_adj.values():
+            targets.sort()
+
+        # The question is not "is there a top-level edge" but "does a cycle
+        # survive using top-level edges alone" — reuse the same SCC pass so the
+        # two answers cannot drift apart.
+        subcycles = tarjan_scc(members, tl_adj)
+        at_import_time = bool(subcycles)
+
         edges.sort(key=lambda e: (e["deferred"], e["src"], e["dst"]))
         out.append({
             "files": cycle,
@@ -484,14 +519,22 @@ def _cycle_details(cycles: list[list[str]], details: dict) -> list[dict]:
             "edges": edges,
             "edge_count": len(edges),
             "top_level_edges": top_level,
-            "deferred_only": top_level == 0,
-            "severity": "deferred_debt" if top_level == 0 else "import_time_risk",
+            "deferred_only": not at_import_time,
+            "severity": "import_time_risk" if at_import_time else "deferred_debt",
+            "import_time_subcycles": subcycles,
+            "import_time_cycle_size": max((len(c) for c in subcycles), default=0),
             "breakable_at_top_level": [
                 {"src": e["src"], "dst": e["dst"], "lines": e["lines"]}
                 for e in edges if not e["deferred"]
+                # Only edges inside a surviving sub-cycle can break the loop;
+                # a top-level edge whose pair is held by a deferred import is
+                # coupling, not a crash site.
+                and any(e["src"] in c and e["dst"] in c for c in subcycles)
             ],
         })
-    out.sort(key=lambda c: (-c["top_level_edges"], -c["size"]))
+    # Hazards first, then by how much of the component is actually load-bearing.
+    out.sort(key=lambda c: (not c["deferred_only"], c["import_time_cycle_size"],
+                            c["top_level_edges"], c["size"]), reverse=True)
     return out
 
 
@@ -504,7 +547,11 @@ METRIC_NOTES = {
                   "duplicate code is not counted",
     "scope": "file-level dependency graph built from imports_module edges",
     "cycle_details": "per-cycle import evidence (G2) with deferred vs top_level "
-                     "scope (G3): a deferred-only cycle cannot raise ImportError",
+                     "scope (G3): a cycle is an import-time hazard only when a "
+                     "sub-cycle survives on import-time edges alone "
+                     "(`import_time_subcycles`), not merely because one such "
+                     "edge exists; `import x` vs `from x import name` is not "
+                     "recorded, so a surviving sub-cycle errs toward risk",
 }
 
 

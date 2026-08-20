@@ -95,7 +95,11 @@ def test_imports_module_carries_import_scope(tmp_path, monkeypatch):
 
 def test_cycle_details_report_import_evidence(tmp_path, monkeypatch):
     """`cycles` used to be a bare list of filenames: true, and useless -- the
-    reader still had to grep for the imports holding the loop together."""
+    reader still had to grep for the imports holding the loop together.
+
+    The severity half of this test was corrected in W3; the evidence half is
+    original and still the point.
+    """
     project, _ = _index(tmp_path, monkeypatch, "cyc", _TWO_FILES)
     out = cycle_point.compute_cycle_point(project)
 
@@ -107,17 +111,31 @@ def test_cycle_details_report_import_evidence(tmp_path, monkeypatch):
     detail = out["cycle_details"][0]
     assert detail["size"] == 2
     assert detail["edge_count"] == 2
-    # One direction is top-level -> the loop CAN raise ImportError.
+    # The G2 job -- naming the import lines that hold the loop together -- is
+    # what this test is for, and it is unchanged: both directions are reported
+    # with their evidence regardless of how severity comes out.
     assert detail["top_level_edges"] == 1
-    assert detail["deferred_only"] is False
-    assert detail["severity"] == "import_time_risk"
-    assert out["import_time_cycles"] == 1
-    assert out["deferred_only_cycles"] == 0
+    assert {Path(e["src"]).name for e in detail["edges"]} == {"a.py", "b.py"}
+    assert all(e["lines"] for e in detail["edges"]), "an edge with no line is not evidence"
 
-    breakable = detail["breakable_at_top_level"]
-    assert len(breakable) == 1, "only the import-time edge is breakable"
-    assert Path(breakable[0]["src"]).name == "a.py"
-    assert breakable[0]["lines"], "an edge with no line number is not evidence"
+    # W3 correction. This block used to assert `import_time_risk`, on the rule
+    # "one top-level edge in the loop means it can raise ImportError". That rule
+    # is wrong, and this very fixture is the counter-example: `b -> a` lives
+    # inside `lazy()`, so importing `a` runs `import b`, and `b` completes
+    # without ever re-entering `a`. Verified against the interpreter, not
+    # reasoned about -- see tests/test_graph_w3_cycle_severity.py, which imports
+    # this exact shape and gets no error. Because the assertion matched the
+    # implementation rather than Python, it certified [A]'s own 18-file SCC as a
+    # crash risk with an acyclic import-time subgraph.
+    assert detail["deferred_only"] is True
+    assert detail["severity"] == "deferred_debt"
+    assert detail["import_time_subcycles"] == []
+    assert out["import_time_cycles"] == 0
+    assert out["deferred_only_cycles"] == 1
+
+    # A top-level edge that no import-time cycle passes through cannot break the
+    # loop -- removing it changes coupling, not crash behaviour.
+    assert detail["breakable_at_top_level"] == []
 
 
 def test_deferred_only_cycle_is_debt_not_risk(tmp_path, monkeypatch):
