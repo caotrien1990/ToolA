@@ -896,6 +896,8 @@ _R49_PHASE_MAP = {
     "TRANSPORT_POLICY_VIOLATION": "policy",
     "MUTATION_TOKEN_REQUIRED": "policy",
     "BACKUP_REQUIRED": "policy",
+    "DESTRUCTIVE_SCRIPT_CONFIRMATION_REQUIRED": "policy",  # CASE-2008
+    "DESTRUCTIVE_SCRIPT_FOOTGUN": "policy",  # CASE-2008
     # schema
     "UNSUPPORTED_FIELD": "schema",
     "UNSUPPORTED_DRY_RUN": "schema",
@@ -1014,6 +1016,12 @@ _MANAGE_AGENT_ACTIONS = (
 
 
 def _json_error(message, **extra) -> str:
+    """Serialised form. The dict form below is the implementation; this is the
+    wrapper every existing caller already uses, byte-for-byte unchanged."""
+    return json.dumps(_json_error_dict(message, **extra), ensure_ascii=False)
+
+
+def _json_error_dict(message, **extra) -> dict:
     # A40: when handed the original exception (``_json_error(e)`` rather than
     # ``_json_error(str(e))``), recognize a transient session-store contention
     # at the source and stamp the retryable contract before it collapses into
@@ -1037,7 +1045,7 @@ def _json_error(message, **extra) -> str:
     data.setdefault("ca_next_action", "inspect_error_context_or_report_backend_issue")
     # R49 — surface machine-readable phase taxonomy on every error response.
     data.setdefault("phase", _phase_for_error_name(data.get("error_name", "")))
-    return json.dumps(data, ensure_ascii=False)
+    return data
 
 _SECRET_FIELD_RE = re.compile(
     r"(token|secret|password|api[_-]?key|authorization|capability|owner_claim_id)",
@@ -4080,6 +4088,9 @@ async def run_project_command(
     include_command: bool = True,
     stdout_max_chars: int = 0,
     stderr_max_chars: int = 0,
+    dry_run: bool = False,
+    confirm_destructive: int = -1,
+    skip_backup: bool = False,
     _executor_lane: str = "command",
 ) -> str:
     """V15 R12: shell_mode={auto|cmd|powershell|exec|posix}, command_encoding={plain|base64}.
@@ -4174,10 +4185,78 @@ async def run_project_command(
             f"Unsupported shell_mode={sm!r}",
             error_name="UNSUPPORTED_FIELD",
             unsupported_fields=["shell_mode"],
-            accepted_fields=["project_path", "command", "timeout", "shell_mode", "command_encoding", "expected_port", "expected_process_name", "verify_after_launch_ms", "keep_alive", "background", "interactive", "elevated", "include_command", "stdout_max_chars", "stderr_max_chars"],
+            accepted_fields=["project_path", "command", "timeout", "shell_mode", "command_encoding", "expected_port", "expected_process_name", "verify_after_launch_ms", "keep_alive", "background", "interactive", "elevated", "include_command", "stdout_max_chars", "stderr_max_chars", "dry_run",
+                            "confirm_destructive", "skip_backup"],
             accepted_shell_modes=["auto", "cmd", "powershell", "exec", "posix"],
         )
     raw_str = command if isinstance(command, str) else " ".join(str(x) for x in command)
+
+    # ── CASE-2008 gate ──────────────────────────────────────────────────────
+    # run_project_command is the OTHER way to delete a tree, and it was not
+    # covered: `rd /s /q junk` returns ok with exit code 0 and really removes
+    # the directory. Being token-gated as "arbitrary shell exec" bounds WHO can
+    # call it, not what a mistaken call does -- and CASE-2008 was a mistaken
+    # call by an authorised caller, so authorisation was never the missing part.
+    #
+    # Scanned on raw_str because it is the single text form of both accepted
+    # shapes (a list is joined here), and placed AFTER the base64 decode above
+    # so an encoded body is scanned as the command it becomes, not as its
+    # envelope. Measured over all 34 real call sites in this repo: 0 flagged, so
+    # the common path is unchanged.
+    #
+    # runtime="any" (union of every pattern set), NOT the resolved shell_mode.
+    # shell_mode describes how the string is handed to the OS; it does not say
+    # which interpreter the string invokes. `run_project_command` is a single
+    # surface for cmd, PowerShell, `node -e` and `python -c` alike, so selecting
+    # one runtime's patterns leaves the others unguarded. Measured before this
+    # was written: naming "powershell" here missed fs.rmSync, fs.unlinkSync,
+    # shutil.rmtree and os.remove -- four working ways to delete a tree through
+    # the very tool that already had an incident.
+    _cmd_scan = _scan_destructive_script(raw_str, "any")
+    _cmd_refusal = _destructive_refusal(
+        _cmd_scan, confirm_destructive=confirm_destructive, dry_run=dry_run,
+        surface="Command",
+    )
+    if _cmd_refusal is not None:
+        _cmd_refusal["project_path"] = str(root)
+        return json.dumps(_cmd_refusal, ensure_ascii=False)
+
+    _cmd_backup_info, _cmd_backup_refusal = await _destructive_backup_or_refusal(
+        root, _cmd_scan, dry_run=dry_run, skip_backup=skip_backup,
+    )
+    if _cmd_backup_refusal is not None:
+        return json.dumps(_cmd_backup_refusal, ensure_ascii=False)
+
+    if _cmd_scan["destructive"] and dry_run:
+        # Preview only. Static: nothing is executed, so a shell-expanded target
+        # (a variable, a wildcard) is reported as written rather than resolved.
+        return json.dumps({
+            "ok": True,
+            "executed": False,
+            "dry_run": True,
+            "project_path": str(root),
+            "destructive": True,
+            "destructive_count": _cmd_scan["count"],
+            "destructive_statements": _cmd_scan["findings"],
+            "warnings": _cmd_scan["warnings"],
+            "preview_kind": "static_source_scan",
+            "preview_limits": ("Static scan of the command text. Targets are NOT "
+                               "expanded, so the real file set may differ."),
+            "confirm_destructive_required": _cmd_scan["count"],
+            "ca_next_action": "review_then_retry_with_confirm_destructive",
+        }, ensure_ascii=False)
+
+    # A destructive command must never have its output truncated: the cap is what
+    # hid the damage in CASE-2008 (68,978 chars produced; the lines naming the
+    # files that were lost scrolled off the end).
+    #
+    # Carried as a FLAG, deliberately, rather than by clearing stdout_max_chars:
+    # 0 does not mean "unlimited" everywhere in this function. The two auto-route
+    # branches pass ``stdout_max_chars or 12000`` on to run_project_test_script,
+    # so zeroing the field would silently RE-IMPOSE a 12000 cap -- the same class
+    # of accident as the truncation being fixed. Only the final filter treats 0 as
+    # off. Each site therefore reads the flag; nothing assigns to the caps.
+    _cmd_no_truncate = bool(_cmd_scan["destructive"]) and not dry_run
 
     def _standalone_ps1_path(value: object) -> str:
         """Return a script path only when the whole command is that path.
@@ -4371,8 +4450,24 @@ async def run_project_command(
                     routed = json.loads(await run_project_test_script(
                         str(root), safe_body, runtime="powershell", timeout=timeout,
                         script_label="auto_routed_powershell",
-                        stdout_max_chars=stdout_max_chars or 12000,
-                        stderr_max_chars=stderr_max_chars or 12000,
+                        return_full_stdout=_cmd_no_truncate,
+                        stdout_max_chars=(0 if _cmd_no_truncate
+                                          else (stdout_max_chars or 12000)),
+                        stderr_max_chars=(0 if _cmd_no_truncate
+                                          else (stderr_max_chars or 12000)),
+                        # The CASE-2008 gate above already ran, on the full
+                        # command text, and already took the backup. Forward the
+                        # acknowledgement so the routed call does not refuse an
+                        # already-confirmed command, and skip the second backup
+                        # rather than paying for the same snapshot twice.
+                        #
+                        # The inner gate still runs -- on safe_body, which is the
+                        # narrower text. If its count differs from the count the
+                        # caller acknowledged, it refuses. That is the correct
+                        # direction: fail closed on a body that is not the one
+                        # that was reviewed.
+                        confirm_destructive=confirm_destructive,
+                        skip_backup=True,
                     ))
                     routed.update({"auto_routed": True, "routed_from": "powershell_-Command",
                                    "transport": "script_file", "triggers": _ps_inline_triggers})
@@ -4494,8 +4589,24 @@ async def run_project_command(
                     routed = json.loads(await run_project_test_script(
                         str(root), safe_body, runtime="node", timeout=timeout,
                         script_label="auto_routed_node",
-                        stdout_max_chars=stdout_max_chars or 12000,
-                        stderr_max_chars=stderr_max_chars or 12000,
+                        return_full_stdout=_cmd_no_truncate,
+                        stdout_max_chars=(0 if _cmd_no_truncate
+                                          else (stdout_max_chars or 12000)),
+                        stderr_max_chars=(0 if _cmd_no_truncate
+                                          else (stderr_max_chars or 12000)),
+                        # The CASE-2008 gate above already ran, on the full
+                        # command text, and already took the backup. Forward the
+                        # acknowledgement so the routed call does not refuse an
+                        # already-confirmed command, and skip the second backup
+                        # rather than paying for the same snapshot twice.
+                        #
+                        # The inner gate still runs -- on safe_body, which is the
+                        # narrower text. If its count differs from the count the
+                        # caller acknowledged, it refuses. That is the correct
+                        # direction: fail closed on a body that is not the one
+                        # that was reviewed.
+                        confirm_destructive=confirm_destructive,
+                        skip_backup=True,
                     ))
                     routed.update({"auto_routed": True, "routed_from": "node_-e",
                                    "transport": "script_file", "triggers": _node_triggers})
@@ -4646,10 +4757,36 @@ async def run_project_command(
             p["command_suppressed"] = True
             for _k in ("command_received", "command", "command_executed"):
                 p.pop(_k, None)
-        if stdout_max_chars and isinstance(p.get("stdout"), str) and len(p["stdout"]) > stdout_max_chars:
+        # _cmd_no_truncate wins over any cap: a destructive run's output is the
+        # only record of what it did. READ the flag here, never assign to
+        # stdout_max_chars -- this is a nested function, so an assignment would
+        # rebind the name as a local and every non-destructive call would raise
+        # UnboundLocalError before reaching the cap it was meant to apply.
+        if not _cmd_no_truncate and stdout_max_chars and isinstance(p.get("stdout"), str) and len(p["stdout"]) > stdout_max_chars:
             p["stdout"] = p["stdout"][:stdout_max_chars] + f"\n...[truncated {len(p['stdout']) - stdout_max_chars} chars (stdout_max_chars)]"
-        if stderr_max_chars and isinstance(p.get("stderr"), str) and len(p["stderr"]) > stderr_max_chars:
+        if not _cmd_no_truncate and stderr_max_chars and isinstance(p.get("stderr"), str) and len(p["stderr"]) > stderr_max_chars:
             p["stderr"] = p["stderr"][:stderr_max_chars] + f"\n...[truncated {len(p['stderr']) - stderr_max_chars} chars (stderr_max_chars)]"
+        # CASE-2008 — a destructive run says so in its OWN result, so the audit
+        # trail does not depend on anyone having kept the refusal that preceded it,
+        # and a backed-up run stays distinguishable from a skipped one afterwards.
+        #
+        # Stamped HERE, in the one filter every success path already funnels through
+        # (four call sites), rather than at each return: the auto-route branches hand
+        # back a payload built by run_project_test_script, and a per-return version
+        # would have to be repeated and would be missed by whichever return is added
+        # next.
+        if _cmd_scan["destructive"]:
+            p["destructive"] = True
+            p["destructive_count"] = _cmd_scan["count"]
+            p["destructive_statements"] = _cmd_scan["findings"]
+            p["confirm_destructive_acknowledged"] = confirm_destructive
+            if _cmd_scan["warnings"]:
+                p["warnings"] = _cmd_scan["warnings"]
+            if _cmd_backup_info is not None:
+                p["backup_info"] = _cmd_backup_info
+            elif skip_backup:
+                p["backup_info"] = {"ran": False, "ok": None,
+                                    "reason": "skip_backup_requested"}
         return p
 
     def _readiness_proto() -> str:
@@ -6849,6 +6986,330 @@ async def verify_active_electron_source(page_id: str, expected_path: str = "",
 
 # ─── V15 R43 NEW TOOL: run_project_test_script ────────────────────────────────
 
+# --- CASE-2008 - destructive-script guard -----------------------------------
+# On 2026-08-20 an agent deleted the wrong files through ``run_ps1_script``.
+# Three independent holes lined up, and all three belong HERE rather than in the
+# wrapper, because ``run_ps1_script`` and ``run_node_script`` are thin wrappers
+# over ``run_project_test_script`` -- one gate therefore covers every caller and
+# every runtime:
+#
+#   1. No dry run existed at all, so the blast radius was never previewable.
+#   2. No backup was taken. The auto-backup gate in ``orchestrator_server.py``
+#      (``_backup_gated_tools``) is a hardcoded set of five FILE tools --
+#      delete_file / write_fix / write_fix_html / write_new_file /
+#      apply_after_dry_run -- and a script that deletes files is not one of them.
+#      NOTE for anyone reading the post-incident report: it blames
+#      ``mutation_scope`` ("process" escaping the "file_artifact" backup). That
+#      explanation is WRONG -- ``tool_mutation_scope`` is read only by
+#      /api/tools, the catalog and the drift check; it gates nothing anywhere,
+#      so editing the scope map would have prevented nothing.
+#   3. The 4000-char stdout cap hid the damage while it happened: the run
+#      produced 68,978 chars, so the lines naming .gitignore and README.md were
+#      truncated away and the agent believed only temp files had gone.
+#
+# The over-deletion itself had a narrower and nastier cause than any of those:
+# PowerShell SILENTLY IGNORES -Include / -Exclude when -LiteralPath is used, so
+# ``Remove-Item -LiteralPath <dir> -Include *.tmp -Recurse`` removes the WHOLE
+# directory. No error, no warning, exit code 0. The same silent-ignore applies
+# to -Path without -Recurse and without a trailing wildcard. Those two shapes
+# are refused outright rather than merely confirmed: the script does not do what
+# it says it does, so acknowledging a count would only confirm a wrong intent.
+#
+# A script with no destructive match takes exactly the old path, so benign
+# callers see no behaviour change at all.
+
+_DESTRUCTIVE_COMMON = [
+    (r"(?i)\bgit\s+clean\b", "git_clean"),
+    (r"(?i)\bgit\s+reset\s+--hard\b", "git_reset_hard"),
+    (r"(?i)\bgit\s+checkout\s+--\s", "git_checkout_discard"),
+    (r"(?i)\bgit\s+rm\b", "git_rm"),
+]
+
+# Destructive commands written as a STRING and handed to a shell. Any runtime can
+# do this -- ``subprocess.run(["powershell","-c","Remove-Item -Recurse $d"])``,
+# ``child_process.execSync("rm -rf " + d)``, ``& cmd /c rd /s /q ...`` -- so a
+# scan scoped to the host language would see only harmless Python or JS and wave
+# the call through. Flagging ``subprocess.run`` / ``exec`` itself was considered
+# and rejected: it fires on the many benign scripts that shell out for
+# non-destructive work, and a guard that trips on everything gets acknowledged
+# reflexively, which is worse than no guard. Matching the destructive COMMAND
+# inside whatever string carries it keeps the signal where it belongs.
+_DESTRUCTIVE_EMBEDDED_SHELL = [
+    (r"(?i)\bRemove-Item\b", "embedded_remove_item"),
+    (r"(?i)\bClear-Content\b", "embedded_clear_content"),
+    (r"(?i)\brm\s+-[a-zA-Z]*[rf]", "embedded_rm_rf"),
+    (r"(?i)\brmdir\s+/s\b", "embedded_rmdir_s"),
+    (r"(?i)\brd\s+/s\b", "embedded_rd_s"),
+    (r"(?i)\bdel\s+/[sq]\b", "embedded_del_s"),
+    (r"(?i)\bshred\b", "embedded_shred"),
+]
+
+# PowerShell aliases matter as much as the cmdlet names: rm / del / ri / rd /
+# rmdir / erase are all Remove-Item, and a guard that only knew "Remove-Item"
+# would wave through ``rm -Recurse -Force $dir``.
+_DESTRUCTIVE_PATTERNS = {
+    "powershell": [
+        (r"(?i)(?:^|[;|&{(]\s*)(?:Remove-Item|ri|rm|rmdir|rd|del|erase)\b", "remove_item"),
+        (r"(?i)\bRemove-Item(?:Property)?\b", "remove_item"),
+        (r"(?i)\bClear-Content\b", "clear_content"),
+        (r"(?i)(?:^|[;|&{(]\s*)clc\b", "clear_content"),
+        (r"(?i)(?:^|[;|&{(]\s*)(?:Move-Item|mi|move|mv)\b", "move_item"),
+        (r"(?i)\[(?:System\.)?IO\.(?:File|Directory)\]::Delete", "dotnet_delete"),
+        (r"(?i)\.Delete\s*\(", "dotnet_instance_delete"),
+        (r"(?i)\b(?:Format-Volume|Clear-Disk|Remove-Partition|Initialize-Disk)\b", "disk_destructive"),
+    ],
+    # Receiver-agnostic on purpose. Anchoring these on ``fs.`` was a MEASURED
+    # false negative: ``require("fs").rmSync(dir)`` has a ``)`` before the dot,
+    # so an fs-anchored pattern let the call straight through and it EXECUTED in
+    # a probe. The same hole covers ``const {rmSync} = require("fs")`` and any
+    # alias. Matching the method name alone over-matches (a custom
+    # ``cache.unlink()`` counts), which is the correct direction here: a false
+    # positive costs one extra call carrying confirm_destructive, a false
+    # negative costs files.
+    "node": [
+        (r"\brm(?:Sync)?\s*\(", "fs_rm"),
+        (r"\bunlink(?:Sync)?\s*\(", "fs_unlink"),
+        (r"\brmdir(?:Sync)?\s*\(", "fs_rmdir"),
+        (r"\btruncate(?:Sync)?\s*\(", "fs_truncate"),
+        (r"\brimraf\b", "rimraf"),
+    ],
+    "python": [
+        (r"\brmtree\s*\(", "rmtree"),
+        (r"\b(?:remove|unlink|rmdir|removedirs|truncate)\s*\(", "os_remove"),
+    ],
+    "sh": [
+        (r"(?:^|[;|&(]\s*)rm\b", "rm"),
+        (r"(?:^|[;|&(]\s*)rmdir\b", "rmdir"),
+        (r"(?:^|[;|&(]\s*)(?:mv|dd|shred|mkfs\S*)\b", "sh_destructive"),
+        (r"-delete\b", "find_delete"),
+    ],
+}
+
+
+def _ps_join_continuations(script: str) -> str:
+    """Fold PowerShell backtick line continuations so a split command is seen whole.
+
+    ``Remove-Item -LiteralPath $d `` + newline + ``-Include *.tmp`` is ONE
+    command written over two lines, and a purely line-based footgun check would
+    miss it -- which is exactly the shape a CA writing a long command produces.
+    """
+    return re.sub(r"`[ \t]*\r?\n[ \t]*", " ", script)
+
+
+def _scan_destructive_script(script_content: str, runtime: str) -> dict:
+    """Classify a script body: destructive matches, silent-ignore footguns, warnings.
+
+    Deliberately matches over the RAW body without stripping comments or string
+    literals. That over-matches (a comment mentioning Remove-Item counts), and
+    that is the safe direction: a false positive costs one extra call carrying
+    ``confirm_destructive``, whereas a false negative costs files. Parsing
+    PowerShell well enough to know a token sits inside a string is not something
+    a guard should be betting the filesystem on.
+    """
+    body = script_content or ""
+    # runtime="any" scans the union of every runtime's patterns. It exists for
+    # run_project_command, which is not one interpreter: the SAME tool runs
+    # `rd /s /q`, `node -e "fs.rmSync(...)"` and `python -c "shutil.rmtree(...)"`,
+    # and its shell_mode says nothing about which interpreter the command text
+    # invokes. Measured: naming a single runtime there missed fs.rmSync,
+    # fs.unlinkSync, shutil.rmtree and os.remove -- four ways to delete a tree,
+    # unguarded, on the surface that already had one incident. Over-matching in
+    # the other direction costs one extra confirm_destructive round-trip.
+    if runtime == "any":
+        selected: list = []
+        for runtime_patterns in _DESTRUCTIVE_PATTERNS.values():
+            selected.extend(runtime_patterns)
+    else:
+        selected = list(_DESTRUCTIVE_PATTERNS.get(runtime, []))
+    patterns = (selected
+                + list(_DESTRUCTIVE_COMMON)
+                + list(_DESTRUCTIVE_EMBEDDED_SHELL))
+    # One finding per LINE, not per (line, kind). ``confirm_destructive`` is a
+    # number the caller has to reproduce, so it has to mean "destructive
+    # statements I reviewed" -- and a line is the unit a reader counts. Keying on
+    # (line, kind) made a single ``Remove-Item`` score 2, because it matches both
+    # the powershell pattern and the embedded-shell one; the caller was then asked
+    # to confirm 2 deletions for 1 command. Worse, the number moved whenever the
+    # pattern list grew, silently invalidating acknowledgements that were correct
+    # when they were written. All matching kinds are kept in ``kinds`` so nothing
+    # is lost from the report.
+    findings: list[dict] = []
+    for line_no, line in enumerate(body.splitlines(), 1):
+        kinds = [kind for pattern, kind in patterns if re.search(pattern, line)]
+        if not kinds:
+            continue
+        deduped: list[str] = []
+        for kind in kinds:
+            if kind not in deduped:
+                deduped.append(kind)
+        findings.append({
+            "line": line_no,
+            "kind": deduped[0],
+            "kinds": deduped,
+            "text": line.strip()[:200],
+        })
+
+    footguns: list[dict] = []
+    warnings: list[str] = []
+    # "any" keeps the PowerShell footgun analysis: the -Include/-LiteralPath
+    # shape IS CASE-2008, and run_project_command reaches powershell.
+    if runtime in ("powershell", "any"):
+        folded = _ps_join_continuations(body)
+        for line_no, line in enumerate(folded.splitlines(), 1):
+            is_remove = re.search(
+                r"(?i)(?:^|[;|&{(]\s*)(?:Remove-Item|ri|rm|rmdir|rd|del|erase)\b", line
+            ) or re.search(r"(?i)\bRemove-Item\b", line)
+            if not is_remove:
+                continue
+            if not re.search(r"(?i)-(?:include|exclude)\b", line):
+                continue
+            snippet = line.strip()[:300]
+            if re.search(r"(?i)-literalpath\b", line):
+                footguns.append({
+                    "line": line_no,
+                    "kind": "include_ignored_with_literalpath",
+                    "text": snippet,
+                    "why": ("PowerShell ignores -Include/-Exclude when -LiteralPath is "
+                            "given. The filter has NO effect and the whole target is "
+                            "removed, silently, with exit code 0."),
+                    "fix": ("Use -Path with a trailing wildcard (e.g. -Path 'C:\\dir\\*') "
+                            "plus -Include, or enumerate with Get-ChildItem -File -Filter "
+                            "and pipe explicit items into Remove-Item."),
+                })
+            elif not re.search(r"(?i)-recurse\b", line) and not re.search(
+                r"\*\s*[\'\"]?(?:\s|$|[;|)])", line
+            ):
+                footguns.append({
+                    "line": line_no,
+                    "kind": "include_ignored_without_recurse_or_wildcard",
+                    "text": snippet,
+                    "why": ("-Include is only honoured when -Path ends in a wildcard or "
+                            "-Recurse is present; otherwise it is ignored and the path "
+                            "itself is removed."),
+                    "fix": "Append \\* to -Path, or add -Recurse, or pipe explicit items.",
+                })
+        if findings and re.search(r"(?i)-ErrorAction\s+SilentlyContinue", body):
+            warnings.append(
+                "-ErrorAction SilentlyContinue is used alongside a destructive command: "
+                "failures and partial deletions will not be reported."
+            )
+        if re.search(r"(?i)\.Delete\s*\(|\[(?:System\.)?IO\.", body):
+            warnings.append(
+                "Direct .NET calls ([IO.File]::Delete, .Delete()) do NOT honour -WhatIf, "
+                "so a dry_run preview cannot cover them."
+            )
+
+    return {
+        "destructive": bool(findings),
+        "count": len(findings),
+        "findings": findings,
+        "footguns": footguns,
+        "warnings": warnings,
+    }
+
+
+def _destructive_refusal(scan: dict, *, confirm_destructive: int, dry_run: bool,
+                         surface: str) -> dict | None:
+    """Return the CASE-2008 refusal for a scanned body, or None to let it proceed.
+
+    Extracted so ``run_project_test_script`` and ``run_project_command`` cannot
+    drift apart. The whole reason CASE-2008 was possible is that a safety property
+    lived on one tool and not on its sibling -- the dispatcher's backup gate is a
+    hardcoded set of five FILE tools, so a script that deleted files was never
+    covered. Duplicating ninety lines of gate onto a second entry point would set
+    up the identical failure a year from now, with a fix applied to one copy.
+
+    Returns a plain dict (not a JSON string) so each caller can add its own
+    surface-specific fields before serialising. ``surface`` only ever appears in
+    prose the caller reads; it never changes what is refused.
+    """
+    if scan["footguns"]:
+        # Refused, NOT confirmable. These shapes do not do what they say: the
+        # -Include filter is silently discarded and the whole target goes. There
+        # is no count worth acknowledging, only a command to rewrite.
+        return _json_error_dict(
+            "%s contains a PowerShell filter that will be SILENTLY IGNORED, so it "
+            "would delete far more than the filter implies. Rewrite it; this shape "
+            "cannot be confirmed." % surface,
+            error_name="DESTRUCTIVE_SCRIPT_FOOTGUN",
+            phase="policy",
+            footguns=scan["footguns"],
+            destructive_statements=scan["findings"],
+            incident="CASE-2008 (2026-08-20): this exact shape deleted .gitignore and "
+                     "README.md while reporting exit code 0.",
+            ca_next_action="rewrite_script_then_retry",
+            retryable=False,
+        )
+
+    if scan["destructive"] and not dry_run and confirm_destructive != scan["count"]:
+        # The preview is returned in the SAME response as the refusal, so the
+        # caller does not need a separate dry_run round-trip to learn the count.
+        return _json_error_dict(
+            "%s contains %d destructive statement(s) and was not executed. Review "
+            "the list, then retry with confirm_destructive=%d to acknowledge exactly "
+            "that many." % (surface, scan["count"], scan["count"]),
+            error_name="DESTRUCTIVE_SCRIPT_CONFIRMATION_REQUIRED",
+            phase="policy",
+            destructive_count=scan["count"],
+            destructive_statements=scan["findings"],
+            warnings=scan["warnings"],
+            confirm_destructive_required=scan["count"],
+            confirm_hint=("Pass confirm_destructive=%d. If you edit the command the "
+                          "count may change, and a stale value is refused on purpose."
+                          % scan["count"]),
+            dry_run_hint="Pass dry_run=true for a static, no-execute preview of the same list.",
+            backup_note="A project backup runs automatically before execution unless skip_backup=true.",
+            incident="CASE-2008 (2026-08-20): run_ps1_script had no dry_run and no backup; "
+                     "an agent deleted the wrong files.",
+            ca_next_action="review_then_retry_with_confirm_destructive",
+            retryable=False,
+        )
+    return None
+
+
+async def _destructive_backup_or_refusal(root: Path, scan: dict, *, dry_run: bool,
+                                         skip_backup: bool) -> tuple[dict | None, dict | None]:
+    """Take the pre-run backup for a destructive body. Returns (backup_info, refusal).
+
+    Shared with ``_destructive_refusal`` for the same reason: unrecoverability, not
+    the deletion itself, is what made CASE-2008 expensive, and a second copy of
+    this logic is a second place for the refusal-on-failure to be dropped.
+    """
+    if not (scan["destructive"] and not dry_run and not skip_backup):
+        return None, None
+    if _backup_manifest_status(str(root)) not in {"missing", "unknown"}:
+        return {"ran": False, "ok": True, "reason": "backup_already_available"}, None
+    try:
+        parsed = json.loads(await backup_project(str(root)))
+    except Exception as exc:
+        return None, _json_error_dict(
+            "Pre-run backup raised, so the destructive command was not executed: %s" % exc,
+            error_name="BACKUP_REQUIRED",
+            phase="policy",
+            destructive_count=scan["count"],
+            ca_next_action="fix_backup_or_pass_skip_backup_if_target_is_disposable",
+            retryable=False,
+        )
+    info = {
+        "ran": True,
+        "ok": bool(parsed.get("ok")),
+        "backup_path": parsed.get("backup_path", ""),
+    }
+    if not parsed.get("ok"):
+        # Refuse rather than proceed unprotected. The whole point of CASE-2008 is
+        # that the deletion was unrecoverable.
+        return None, _json_error_dict(
+            "Pre-run backup FAILED, so the destructive command was not executed.",
+            error_name="BACKUP_REQUIRED",
+            phase="policy",
+            backup_error=parsed.get("error", ""),
+            destructive_count=scan["count"],
+            ca_next_action="fix_backup_or_pass_skip_backup_if_target_is_disposable",
+            retryable=False,
+        )
+    return info, None
+
+
 async def run_project_test_script(
     project_path: str,
     script_content: str,
@@ -6861,6 +7322,9 @@ async def run_project_test_script(
     content_encoding: str = "plain",
     python_exe: str = "",
     required_python_modules: list[str] | None = None,
+    dry_run: bool = False,
+    confirm_destructive: int = -1,
+    skip_backup: bool = False,
 ) -> str:
     """V15 R43 P1 #5 T2: save script as artifact in .orchestrator_cache, execute,
     return result summary. Avoids embedding long node -e scripts in request body
@@ -6876,8 +7340,24 @@ async def run_project_test_script(
       return_full_stdout: when True, return entire stdout (overrides stdout_max_chars)
       stdout_max_chars/stderr_max_chars: truncation caps for output
       content_encoding: 'plain' or 'base64'
+      dry_run: preview only -- scan the body, report the destructive statements
+        found, and do NOT execute anything. This is a STATIC read of the source,
+        not a -WhatIf run: it cannot enumerate the files that would actually be
+        hit, and it deliberately does not try, because reaching a real -WhatIf
+        means running the script, and .NET calls ([IO.File]::Delete) ignore
+        -WhatIf entirely. Free to call and safe on any script.
+      confirm_destructive: acknowledged destructive-statement count (CASE-2008).
+        A body containing a destructive command refuses to run until this equals
+        the scanner's count exactly; -1 means "not acknowledged". The count, not
+        a boolean, so that editing the script after a preview invalidates the
+        acknowledgement instead of silently carrying over.
+      skip_backup: skip the pre-run project backup for a destructive script.
+        Requires confirm_destructive to already match; use only when the target
+        is genuinely disposable (e.g. inside .orchestrator_cache).
 
     Returns: {ok, exit_code, stdout, stderr, duration_seconds, script_path, script_hash, runtime_used, timed_out}
+      On a destructive body without acknowledgement: DESTRUCTIVE_SCRIPT_CONFIRMATION_REQUIRED.
+      On a PowerShell -Include/-LiteralPath footgun: DESTRUCTIVE_SCRIPT_FOOTGUN (refused outright).
     """
     import hashlib as _hash_rpts
     import subprocess as _sp_rpts
@@ -6916,6 +7396,61 @@ async def run_project_test_script(
         )
         if not selected_python.get("ok"):
             return json.dumps(selected_python, ensure_ascii=False)
+
+    # ── CASE-2008 gate ──────────────────────────────────────────────────────
+    # Placed after project resolution (so the response can name a real root) and
+    # before the artifact is written, because a refused script should not leave a
+    # .ps1 behind for someone to run by hand.
+    _scan = _scan_destructive_script(script_content, runtime_clean)
+
+    _refusal = _destructive_refusal(
+        _scan, confirm_destructive=confirm_destructive, dry_run=dry_run,
+        surface="Script",
+    )
+    if _refusal is not None:
+        return json.dumps(_refusal, ensure_ascii=False)
+
+    # A destructive run gets a backup FIRST. backup_project itself no-ops when
+    # today's backup already exists, so this is cheap on the common path -- and
+    # unlike the dispatcher's gate it fires for a SCRIPT, which is the hole that
+    # let CASE-2008 through.
+    _backup_info, _backup_refusal = await _destructive_backup_or_refusal(
+        root, _scan, dry_run=dry_run, skip_backup=skip_backup,
+    )
+    if _backup_refusal is not None:
+        return json.dumps(_backup_refusal, ensure_ascii=False)
+
+    # A destructive run must never have its output truncated: the 4000-char cap
+    # is what hid the damage in CASE-2008 (68,978 chars produced, and the lines
+    # naming .gitignore/README.md fell off the end).
+    if _scan["destructive"] and not dry_run:
+        return_full_stdout = True
+
+    if dry_run:
+        # Nothing is written and nothing is run. Reported as ok:true because the
+        # preview succeeded -- `executed:false` is the field that says no work
+        # happened, so a caller cannot mistake a clean preview for a clean run.
+        return json.dumps({
+            "ok": True,
+            "executed": False,
+            "dry_run": True,
+            "runtime_used": runtime_clean,
+            "destructive": _scan["destructive"],
+            "destructive_count": _scan["count"],
+            "destructive_statements": _scan["findings"],
+            "footguns": _scan["footguns"],
+            "warnings": _scan["warnings"],
+            "preview_kind": "static_source_scan",
+            "preview_limits": ("Source-level scan only: it does NOT expand variables, "
+                              "resolve globs, or list the files that would be deleted. "
+                              "Treat the count as a lower bound on intent, not as a "
+                              "blast radius."),
+            "confirm_destructive_required": _scan["count"] if _scan["destructive"] else 0,
+            "ca_next_action": (
+                "retry_with_confirm_destructive_%d" % _scan["count"]
+                if _scan["destructive"] else "rerun_without_dry_run"
+            ),
+        }, ensure_ascii=False)
 
     cache = root / ".orchestrator_cache" / "test_scripts"
     cache.mkdir(parents=True, exist_ok=True)
@@ -7039,6 +7574,19 @@ async def run_project_test_script(
             "inspect_stderr_if_failed" if rc != 0 or timed_out else "evaluate_stdout_assertions"
         ),
     }
+    # CASE-2008 — a destructive run says so in its OWN result, so the audit trail
+    # does not depend on anyone having kept the refusal that preceded it.
+    if _scan["destructive"]:
+        result["destructive"] = True
+        result["destructive_count"] = _scan["count"]
+        result["destructive_statements"] = _scan["findings"]
+        result["confirm_destructive_acknowledged"] = confirm_destructive
+        if _scan["warnings"]:
+            result["warnings"] = _scan["warnings"]
+        if _backup_info is not None:
+            result["backup_info"] = _backup_info
+        elif skip_backup:
+            result["backup_info"] = {"ran": False, "ok": None, "reason": "skip_backup_requested"}
     if _unc_auth_ctx:
         result["unc_auth_context"] = _unc_auth_ctx
         result["ca_next_action"] = _unc_auth_ctx["ca_next_action"]
@@ -9157,7 +9705,10 @@ async def run_ps1_script(project_path: str, script_content: str,
                             return_full_stdout: bool = False,
                             stdout_max_chars: int = 4000,
                             stderr_max_chars: int = 2000,
-                            content_encoding: str = "plain") -> str:
+                            content_encoding: str = "plain",
+                            dry_run: bool = False,
+                            confirm_destructive: int = -1,
+                            skip_backup: bool = False) -> str:
     """V15 R50 T2 — narrow wrapper: write .ps1 artifact + run via
     `powershell -NoProfile -ExecutionPolicy Bypass -File <temp>`.
 
@@ -9165,6 +9716,12 @@ async def run_ps1_script(project_path: str, script_content: str,
     diacritics and other non-ASCII content survive end-to-end. Use this
     instead of inline `node -e` / `powershell -Command` (both blocked by
     R46/R49 guards).
+
+    CASE-2008: a body containing Remove-Item (or any alias: rm/del/ri/rd/rmdir/
+    erase), Clear-Content, Move-Item or a .NET delete refuses to run until
+    ``confirm_destructive`` matches the scanner count, takes a project backup
+    first, and returns untruncated output. ``dry_run=true`` previews the scan
+    without executing. See ``_scan_destructive_script``.
     """
     return await run_project_test_script(
         project_path=project_path,
@@ -9176,6 +9733,9 @@ async def run_ps1_script(project_path: str, script_content: str,
         stdout_max_chars=stdout_max_chars,
         stderr_max_chars=stderr_max_chars,
         content_encoding=content_encoding,
+        dry_run=dry_run,
+        confirm_destructive=confirm_destructive,
+        skip_backup=skip_backup,
     )
 
 
@@ -9184,12 +9744,20 @@ async def run_node_script(project_path: str, script_content: str,
                             return_full_stdout: bool = False,
                             stdout_max_chars: int = 4000,
                             stderr_max_chars: int = 2000,
-                            content_encoding: str = "plain") -> str:
+                            content_encoding: str = "plain",
+                            dry_run: bool = False,
+                            confirm_destructive: int = -1,
+                            skip_backup: bool = False) -> str:
     """V15 R50 T2 — narrow wrapper: write .js artifact + run via `node <temp.js>`.
 
     JS source bytes pass through unchanged — JSON.stringify / regex literals /
     UNC paths all safe. Use this instead of inline `node -e` (blocked by R49
     guard NODE_INLINE_FORBIDDEN).
+
+    CASE-2008: a body calling fs.rm/unlink/rmdir/truncate or rimraf refuses to run
+    until ``confirm_destructive`` matches the scanner count, takes a project backup
+    first, and returns untruncated output. ``dry_run=true`` previews without
+    executing. See ``_scan_destructive_script``.
     """
     return await run_project_test_script(
         project_path=project_path,
@@ -9201,6 +9769,9 @@ async def run_node_script(project_path: str, script_content: str,
         stdout_max_chars=stdout_max_chars,
         stderr_max_chars=stderr_max_chars,
         content_encoding=content_encoding,
+        dry_run=dry_run,
+        confirm_destructive=confirm_destructive,
+        skip_backup=skip_backup,
     )
 
 

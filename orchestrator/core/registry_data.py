@@ -696,7 +696,7 @@ EXTRA_TOOL_SCHEMAS = [
 
         "name": "run_project_command",
 
-        "description": "Run bounded command in project cwd. V15 R14: shell wrapper plus optional background/keep_alive launch verification via expected_port / expected_process_name. JSON transport is a separate layer: encode backslashes before placing command in an outer JSON string. On Windows, shell operators and findstr/dir file reads are fragile; prefer direct search/read tools or script-file transport. Auto routes only a standalone script.ps1 to PowerShell -File; a command such as findstr text script.ps1 remains a normal command. CAN-053 readiness DSL: health_url + expect_status (+ readiness_protocol=http|tcp|cdp|process) verify service readiness over HTTP; CDP_UNREACHABLE is returned ONLY for cdp, dead TCP ports return PORT_UNREACHABLE, failed health probes return HEALTH_PROBE_FAILED; launcher-exited-but-health-ok returns ok_with_warning=true.",
+        "description": "Run bounded command in project cwd. V15 R14: shell wrapper plus optional background/keep_alive launch verification via expected_port / expected_process_name. JSON transport is a separate layer: encode backslashes before placing command in an outer JSON string. On Windows, shell operators and findstr/dir file reads are fragile; prefer direct search/read tools or script-file transport. Auto routes only a standalone script.ps1 to PowerShell -File; a command such as findstr text script.ps1 remains a normal command. CAN-053 readiness DSL: health_url + expect_status (+ readiness_protocol=http|tcp|cdp|process) verify service readiness over HTTP; CDP_UNREACHABLE is returned ONLY for cdp, dead TCP ports return PORT_UNREACHABLE, failed health probes return HEALTH_PROBE_FAILED; launcher-exited-but-health-ok returns ok_with_warning=true. CASE-2008 destructive guard: a command containing a delete/move/truncate statement in ANY runtime (cmd rd/del, PowerShell Remove-Item, node fs.rmSync, python shutil.rmtree, sh rm -rf, git clean) refuses to run until confirm_destructive equals the scanned count, takes a project backup first, and returns untruncated output; dry_run=true previews without executing. A PowerShell -Include paired with -LiteralPath is REFUSED outright (DESTRUCTIVE_SCRIPT_FOOTGUN) because PowerShell silently discards the filter and removes the whole target.",
 
         "parameters": {
 
@@ -741,6 +741,12 @@ EXTRA_TOOL_SCHEMAS = [
                 "stdout_max_chars": {"type": "integer", "default": 0, "description": "R43 P0 #4: explicit truncation cap for stdout (0 = use default 12000)."},
 
                 "stderr_max_chars": {"type": "integer", "default": 0, "description": "R43 P0 #4: explicit truncation cap for stderr (0 = use default 12000)."},
+
+                "dry_run": {"type": "boolean", "default": False, "description": "CASE-2008: static no-execute preview of the destructive-statement scan. Nothing runs."},
+
+                "confirm_destructive": {"type": "integer", "default": -1, "description": "CASE-2008: acknowledged destructive-statement count. A command containing rd/del/Remove-Item/rm -rf/fs.rmSync/shutil.rmtree etc. refuses to run until this EQUALS the scanner count (returned as confirm_destructive_required). A count rather than a boolean, so editing the command invalidates a stale acknowledgement."},
+
+                "skip_backup": {"type": "boolean", "default": False, "description": "CASE-2008: skip the automatic pre-run project backup for a destructive command. Only for genuinely disposable targets (e.g. inside .orchestrator_cache)."},
 
             },
 
@@ -2561,7 +2567,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["session_id", "agent_id", "owner_claim_id"]),
 
-    ('run_project_test_script', 'V15 R43 P1 #5 T2: script-file transport for node|python|powershell|sh. Python selects the first interpreter satisfying required_python_modules; otherwise returns INTERPRETER_CAPABILITY_MISSING without installing packages. Results include runtime_used, script metadata, and stdout_metadata/stderr_metadata with full-stream hashes and truncation state. Execution failures use SCRIPT_EXEC_FAILED; unsafe inline callers should route here instead of retrying COMMAND_TRANSPORT_UNSAFE or SCRIPT_RUNTIME_REQUIRED.', {
+    ('run_project_test_script', 'V15 R43 P1 #5 T2: script-file transport for node|python|powershell|sh. Python selects the first interpreter satisfying required_python_modules; otherwise returns INTERPRETER_CAPABILITY_MISSING without installing packages. Results include runtime_used, script metadata, and stdout_metadata/stderr_metadata with full-stream hashes and truncation state. Execution failures use SCRIPT_EXEC_FAILED; unsafe inline callers should route here instead of retrying COMMAND_TRANSPORT_UNSAFE or SCRIPT_RUNTIME_REQUIRED. CASE-2008 destructive guard (all runtimes): a body containing a delete/move/truncate statement refuses to run until confirm_destructive equals the scanned count, takes a project backup first, and returns untruncated output; dry_run=true previews without executing. A PowerShell -Include paired with -LiteralPath is REFUSED outright (DESTRUCTIVE_SCRIPT_FOOTGUN) because PowerShell silently discards the filter and removes the whole target.', {
 
             "project_path": {"type": "string"},
 
@@ -2584,6 +2590,12 @@ V15_R8_NEW_SCHEMA_SPECS = (
             "python_exe": {"type": "string", "default": "", "description": "Optional Python executable. Candidate order: explicit, ORCHESTRATOR_PYTHON_EXE, project venv312/.venv/venv, sys.executable, PATH."},
 
             "required_python_modules": {"type": "array", "items": {"type": "string"}, "default": [], "description": "Importable modules required from the selected Python interpreter. No packages are installed automatically."},
+
+            "dry_run": {"type": "boolean", "default": False, "description": "CASE-2008: static no-execute preview of the destructive-statement scan. Nothing is written and nothing runs."},
+
+            "confirm_destructive": {"type": "integer", "default": -1, "description": "CASE-2008: acknowledged destructive-statement count. A body containing Remove-Item/rm/del/Clear-Content/Move-Item/fs.rm/rmtree etc. refuses to run until this EQUALS the scanner count (returned as confirm_destructive_required). A count rather than a boolean, so editing the script invalidates a stale acknowledgement."},
+
+            "skip_backup": {"type": "boolean", "default": False, "description": "CASE-2008: skip the automatic pre-run project backup for a destructive script. Only for genuinely disposable targets (e.g. inside .orchestrator_cache)."},
 
         }, ["project_path", "script_content"]),
 
@@ -2663,7 +2675,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["target_folder"]),
 
-    ('run_ps1_script', 'V15 R50 T2 narrow wrapper for PowerShell script-file execution. Hides runtime=powershell selection. Writes UTF-8 BOM .ps1 + OutputEncoding prelude + UTF-8 subprocess decode → Vietnamese diacritics survive end-to-end. Use INSTEAD of inline `powershell -Command` (blocked by R46 guard POWERSHELL_INLINE_FORBIDDEN).', {
+    ('run_ps1_script', 'V15 R50 T2 narrow wrapper for PowerShell script-file execution. Hides runtime=powershell selection. Writes UTF-8 BOM .ps1 + OutputEncoding prelude + UTF-8 subprocess decode → Vietnamese diacritics survive end-to-end. Use INSTEAD of inline `powershell -Command` (blocked by R46 guard POWERSHELL_INLINE_FORBIDDEN). CASE-2008 destructive guard: Remove-Item (and aliases rm/del/ri/rd/rmdir/erase), Clear-Content, Move-Item and .NET deletes require confirm_destructive to match the scanned count, trigger a pre-run backup, and disable output truncation; -Include with -LiteralPath is refused (PowerShell ignores the filter and deletes everything).', {
 
             "project_path": {"type": "string"},
 
@@ -2681,9 +2693,15 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "content_encoding": {"type": "string", "enum": ["plain", "base64"], "default": "plain"},
 
+            "dry_run": {"type": "boolean", "default": False, "description": "CASE-2008: static no-execute preview of the destructive-statement scan. Nothing is written and nothing runs."},
+
+            "confirm_destructive": {"type": "integer", "default": -1, "description": "CASE-2008: acknowledged destructive-statement count. A body containing Remove-Item/rm/del/Clear-Content/Move-Item/fs.rm/rmtree etc. refuses to run until this EQUALS the scanner count (returned as confirm_destructive_required). A count rather than a boolean, so editing the script invalidates a stale acknowledgement."},
+
+            "skip_backup": {"type": "boolean", "default": False, "description": "CASE-2008: skip the automatic pre-run project backup for a destructive script. Only for genuinely disposable targets (e.g. inside .orchestrator_cache)."},
+
         }, ["project_path", "script_content"]),
 
-    ('run_node_script', 'V15 R50 T2 narrow wrapper for Node.js script-file execution. Hides runtime=node selection. Writes .js artifact + invokes `node <temp.js>` → JS source bytes (JSON.stringify, regex literals, UNC paths) pass through unchanged. Use INSTEAD of inline `node -e` (blocked by R49 guard NODE_INLINE_FORBIDDEN).', {
+    ('run_node_script', 'V15 R50 T2 narrow wrapper for Node.js script-file execution. Hides runtime=node selection. Writes .js artifact + invokes `node <temp.js>` → JS source bytes (JSON.stringify, regex literals, UNC paths) pass through unchanged. Use INSTEAD of inline `node -e` (blocked by R49 guard NODE_INLINE_FORBIDDEN). CASE-2008 destructive guard: fs.rm/unlink/rmdir/truncate and rimraf require confirm_destructive to match the scanned count, trigger a pre-run backup, and disable output truncation.', {
 
             "project_path": {"type": "string"},
 
@@ -2700,6 +2718,12 @@ V15_R8_NEW_SCHEMA_SPECS = (
             "stderr_max_chars": {"type": "integer", "default": 2000},
 
             "content_encoding": {"type": "string", "enum": ["plain", "base64"], "default": "plain"},
+
+            "dry_run": {"type": "boolean", "default": False, "description": "CASE-2008: static no-execute preview of the destructive-statement scan. Nothing is written and nothing runs."},
+
+            "confirm_destructive": {"type": "integer", "default": -1, "description": "CASE-2008: acknowledged destructive-statement count. A body containing Remove-Item/rm/del/Clear-Content/Move-Item/fs.rm/rmtree etc. refuses to run until this EQUALS the scanner count (returned as confirm_destructive_required). A count rather than a boolean, so editing the script invalidates a stale acknowledgement."},
+
+            "skip_backup": {"type": "boolean", "default": False, "description": "CASE-2008: skip the automatic pre-run project backup for a destructive script. Only for genuinely disposable targets (e.g. inside .orchestrator_cache)."},
 
         }, ["project_path", "script_content"]),
 
