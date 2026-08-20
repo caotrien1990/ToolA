@@ -132,7 +132,11 @@ LIVE_REF_BINDS: tuple = (*LIVE_REF_KINDS, LIVE_CALL_CONFIDENCE)
 # v7 (W4): a reference to a NESTED def (`return guard`, `cb = _run`) resolves
 # to that closure instead of being refused as a local rebinding, and a direct
 # call to one binds by scope rather than through the flat name map.
-EXTRACTOR_VERSION = "ast-p0-v7-scope-aware-nested-defs"
+# v8 (W6): a string in `__all__` no longer becomes a `name_literal`. It is an
+# export declaration, not a reference, and resolving it back to the `def` below
+# it made every `__all__` export read ALIVE with no caller anywhere -- the
+# symbol was kept alive by its own export line.
+EXTRACTOR_VERSION = "ast-p0-v8-all-is-not-a-reference"
 
 # --- Tree-sitter opt-in (A5 - aspirational, optional) ---
 CBM_USE_TREE_SITTER = os.environ.get("CBM_USE_TREE_SITTER", "0").strip().lower() in ("1", "true", "yes", "on")

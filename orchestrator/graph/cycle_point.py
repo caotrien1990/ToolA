@@ -32,6 +32,7 @@ from .config import (
     graph_enabled, LIVE_CALL_CONFIDENCE, LIVE_REF_EXISTS_SQL, LIVE_REF_BINDS,
 )
 from . import store as _store
+from .liveness import dead_callables as _dead_callables
 
 # Newman Q is bounded to [-0.5, 1.0]; rescale that range onto [0,1].
 _Q_MIN = -0.5
@@ -393,9 +394,19 @@ def _symbol_sizes(conn) -> list[float]:
 def _dead_ratio(conn) -> tuple[float, int, int]:
     """Fraction of non-exported callables with no confident inbound reference.
 
-    Mirrors the conservative filter in query.dead_code_candidates: exported and
-    decorated symbols are excluded because a framework may invoke them, and weak
-    suffix-matched call edges do not count as proof of life.
+    W6: this claimed to mirror query.dead_code_candidates and did not. It applied
+    the export and decorator filters but neither the entry-point nor the
+    framework-dispatch exclusion, so it counted 3167 dead against that report's
+    664 on the same DB -- and 2200 of the 2503 phantom entries were `test_*`
+    functions, which pytest reaches through discovery and which therefore have no
+    inbound edge by construction. The redundancy dimension was reading 41% of the
+    codebase as dead where the real figure is 8.6%, dragging `quality_signal`
+    from 0.4765 down to 0.4367.
+
+    Two reports disagreeing about the same symbol is the failure mode
+    config.LIVE_REF_EXISTS_SQL was introduced to end; it unified the SQL half and
+    the Python half kept drifting. Both halves now come from liveness.py, so
+    there is nothing left here to drift.
 
     W5: `dynamic_ref` counts as proof of life. Without it a string-keyed
     registry made its whole dispatch table read as dead -- measured on [A],
@@ -408,12 +419,8 @@ def _dead_ratio(conn) -> tuple[float, int, int]:
     ).fetchone()[0]
     if not total:
         return 0.0, 0, 0
-    dead = conn.execute(
-        "SELECT COUNT(*) FROM nodes n WHERE n.kind IN ('function','method') "
-        "AND n.is_exported = 0 AND (n.decorators IS NULL OR n.decorators IN ('','[]')) "
-        f"AND NOT {LIVE_REF_EXISTS_SQL};",
-        LIVE_REF_BINDS,
-    ).fetchone()[0]
+    dead = len(_dead_callables(conn, unexported_only=True,
+                              exclude_decorated=True))
     return min(1.0, dead / total), dead, total
 
 

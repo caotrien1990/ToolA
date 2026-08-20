@@ -122,6 +122,19 @@ class _Extractor(ast.NodeVisitor):
         self._scope_nondef_binds: list[set[str]] = []
         # names listed in module __all__ (marks is_exported post-visit)
         self._exported: set[str] = set()
+        # W6: id() of the string Constant nodes that ARE those __all__ entries.
+        # `__all__ = ["public"]` is a declaration that the name may be imported;
+        # it is not a call site, and it is not a dispatch registry. Harvesting it
+        # as a `name_literal` made the indexer resolve it back to the `def` three
+        # lines below and emit a `dynamic_ref` -- so every `__all__` export read
+        # ALIVE on the strength of its own export line, with no caller anywhere.
+        # Measured on [A]: 8 callables were alive only through a same-file
+        # literal, 1 of them purely through its own __all__ entry, and the flaw
+        # also made `unexported_only` unobservable in Python (its 220 real
+        # exclusions were all TypeScript, where `export` leaves no literal).
+        # Populated from the same walk that fills `_exported`, so the two cannot
+        # disagree about which elements those are.
+        self._export_literal_ids: set[int] = set()
         # W5: string literals in this file that spell an identifier. A registry
         # that dispatches by name ("search_code" -> the function) leaves no call
         # edge, so the callable reads as dead. The extractor sees one file at a
@@ -608,6 +621,12 @@ class _Extractor(ast.NodeVisitor):
         # every tool it routes to reads as dead code. Recorded as a node here
         # and resolved cross-file by the indexer -- this file cannot know which
         # names are defined elsewhere.
+        # W6: an `__all__` entry is an export declaration, not a reference. See
+        # `_export_literal_ids`. Skipped BEFORE setdefault on purpose: when the
+        # same name also appears in a real registry further down the file, the
+        # node now lands on that line instead of on the export list.
+        if id(node) in self._export_literal_ids:
+            return
         value = node.value
         if (isinstance(value, str)
                 and value.isidentifier()
@@ -625,6 +644,7 @@ class _Extractor(ast.NodeVisitor):
                         for el in node.value.elts:
                             if isinstance(el, ast.Constant) and isinstance(el.value, str):
                                 self._exported.add(el.value)
+                                self._export_literal_ids.add(id(el))
                 if isinstance(tgt, ast.Name):
                     qname = _qualified_name(self.module, tgt.id)
                     nid = _node_id(self.file_path, "variable", qname, node.lineno)

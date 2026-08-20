@@ -879,6 +879,131 @@ async def _durable_metrics_for_health() -> tuple[dict, str | None]:
     return result, None
 
 
+_CONTROLLER_HEALTH_CACHE: dict = {}
+_CONTROLLER_HEALTH_CACHE_AT = 0.0
+_CONTROLLER_HEALTH_FUTURE = None
+# What the cached answer is an answer ABOUT: (url, probe function). Mirrors
+# `_DURABLE_METRICS_CACHE_WRITER`, which invalidates on writer identity for the
+# same reason -- a cached value produced by a different probe, or about a
+# different URL, is not a stale answer to this question, it is an answer to
+# another one. Without this the cache would survive an
+# ORCHESTRATOR_RESTART_CONTROL_URL change and keep reporting the old port.
+_CONTROLLER_HEALTH_CACHE_KEY = None
+_CONTROLLER_HEALTH_TTL_SECONDS = 5.0
+# Only the FIRST probe is waited on, and only this long. Steady state -- which is
+# every request after the first -- costs nothing at all, which is where the 110ms
+# went. Bounding the first call rather than skipping it keeps /health's contract
+# intact: the very first response carries a real controller answer (including a
+# normalised exception) instead of a placeholder, and a caller cannot tell the
+# difference between "never probed" and "probed, came back empty".
+_CONTROLLER_HEALTH_FIRST_WAIT_SECONDS = 0.05
+_CONTROLLER_HEALTH_EXECUTOR = None
+
+
+def _controller_health_executor():
+    """A worker of its own, NOT the durable-metrics one.
+
+    Both probes are single-worker by design -- one in flight is all either needs
+    -- but sharing ONE worker between them couples two unrelated timeouts: a
+    controller probe stalling ~110ms on a refused connect would sit in front of
+    the queued durable-metrics job, which has a 50ms budget and would then report
+    `metrics_stale` for a reason that has nothing to do with SQLite. Two workers
+    cost one idle thread and remove the interference entirely.
+    """
+    global _CONTROLLER_HEALTH_EXECUTOR
+    with _DURABLE_METRICS_LOCK:
+        if _CONTROLLER_HEALTH_EXECUTOR is None:
+            _CONTROLLER_HEALTH_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="restart-controller-probe"
+            )
+        return _CONTROLLER_HEALTH_EXECUTOR
+
+
+async def _controller_health_for_health(url: str) -> dict:
+    """`controller_health` off the event loop, cached, never blocking /health.
+
+    `controller_health` is a synchronous `urllib.request.urlopen`. Awaiting it
+    inline made /health block the whole loop for as long as the socket took --
+    and the expensive case is the COMMON one: when the restart controller on
+    :8085 is not listening, Windows takes ~110ms to refuse the connection, every
+    single request, forever. Measured here: 0.109s of a 0.125s /health, i.e. 87%
+    of the handler was one blocking connect to a port that was down.
+
+    That is the exact failure `_durable_metrics_for_health` was written to
+    prevent for SQLite, and the same shape of fix applies: hand the blocking call
+    to the executor, answer from cache, and let the result land later. The
+    difference is the TTL. Durable metrics are a queue depth and go stale in
+    milliseconds; whether a control port is listening changes only when someone
+    restarts the daemon, so a 5s cache costs nothing a reader would notice and
+    turns a per-request stall into one background probe per 5 seconds.
+
+    A staleness marker rather than a silent cache: `probe_age_ms` says how old
+    the answer is, and `probe_pending` says a refresh is in flight. A health
+    endpoint that quietly reports a five-second-old fact as current is how a
+    reader concludes the controller is up when it went down four seconds ago.
+    """
+    global _CONTROLLER_HEALTH_CACHE, _CONTROLLER_HEALTH_CACHE_AT
+    global _CONTROLLER_HEALTH_FUTURE, _CONTROLLER_HEALTH_CACHE_KEY
+    now = time.monotonic()
+    key = (url, controller_health)
+    if _CONTROLLER_HEALTH_CACHE_KEY != key:
+        _CONTROLLER_HEALTH_CACHE_KEY = key
+        _CONTROLLER_HEALTH_CACHE = {}
+        _CONTROLLER_HEALTH_CACHE_AT = 0.0
+        _CONTROLLER_HEALTH_FUTURE = None
+    future = _CONTROLLER_HEALTH_FUTURE
+    if future is not None and future.done():
+        try:
+            result = future.result()
+            if isinstance(result, dict):
+                _CONTROLLER_HEALTH_CACHE = dict(result)
+                _CONTROLLER_HEALTH_CACHE_AT = now
+        except Exception as exc:
+            _CONTROLLER_HEALTH_CACHE = {
+                "configured": True, "reachable": False, "url": url,
+                "error_type": type(exc).__name__, "error_message": str(exc)[:240],
+            }
+            _CONTROLLER_HEALTH_CACHE_AT = now
+        future = _CONTROLLER_HEALTH_FUTURE = None
+    fresh = (_CONTROLLER_HEALTH_CACHE_AT
+             and now - _CONTROLLER_HEALTH_CACHE_AT < _CONTROLLER_HEALTH_TTL_SECONDS)
+    if future is None and not fresh:
+        future = _controller_health_executor().submit(
+            controller_health, url, 0.1)
+        _CONTROLLER_HEALTH_FUTURE = future
+    if not _CONTROLLER_HEALTH_CACHE_AT and future is not None:
+        # First probe ever: give it a bounded moment, the same way
+        # `_durable_metrics_for_health` bounds its own wait, so a healthy
+        # controller answers the first /health truthfully instead of "unknown".
+        deadline = time.monotonic() + _CONTROLLER_HEALTH_FIRST_WAIT_SECONDS
+        while not future.done() and time.monotonic() < deadline:
+            await asyncio.sleep(min(0.005, max(0.0, deadline - time.monotonic())))
+        if future.done():
+            try:
+                result = future.result()
+                if isinstance(result, dict):
+                    _CONTROLLER_HEALTH_CACHE = dict(result)
+                    _CONTROLLER_HEALTH_CACHE_AT = time.monotonic()
+            except Exception as exc:
+                _CONTROLLER_HEALTH_CACHE = {
+                    "configured": True, "reachable": False, "url": url,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc)[:240],
+                }
+                _CONTROLLER_HEALTH_CACHE_AT = time.monotonic()
+            _CONTROLLER_HEALTH_FUTURE = None
+    if not _CONTROLLER_HEALTH_CACHE_AT:
+        # First ever call: there is nothing to serve from cache, and reporting a
+        # controller as unreachable when it was never probed would be a lie in
+        # the direction that triggers a restart. Say "not yet known" instead.
+        return {"configured": True, "reachable": None, "url": url,
+                "probe_pending": True, "probe_age_ms": None}
+    out = dict(_CONTROLLER_HEALTH_CACHE)
+    out["probe_age_ms"] = max(0, int((now - _CONTROLLER_HEALTH_CACHE_AT) * 1000))
+    out["probe_pending"] = _CONTROLLER_HEALTH_FUTURE is not None
+    return out
+
+
 def _durable_metrics_error_is_transient(metrics_error: str | None) -> bool:
     """50ms health-metrics TimeoutError is collection lag, not writer death."""
     if not metrics_error:
@@ -12276,6 +12401,8 @@ async def handle_health(request):
     ready = bool(SERVER_READY)
     accounting = _POST_CALL_ACCOUNTING.status()
     durable_audit, durable_metrics_error = await _durable_metrics_for_health()
+    restart_controller_health = await _controller_health_for_health(
+        RESTART_CONTROL_URL)
     executors = executor_lane_status()
     executor_active = sum(int(row.get("active", 0)) for row in executors)
     executor_queued = sum(int(row.get("queued", 0)) for row in executors)
@@ -12312,7 +12439,10 @@ async def handle_health(request):
         "started_at": SERVER_STARTED_AT,
         "livez_protocol": LIVEZ_PROTOCOL,
         "livez_url": f"http://127.0.0.1:{LIVEZ_PORT}/livez",
-        "restart_controller": json_safe(controller_health(RESTART_CONTROL_URL, timeout=0.1)),
+        # NOT `controller_health(...)` inline: it is a blocking urlopen, and a
+        # refused connect to a down :8085 cost 110ms of every /health. See
+        # `_controller_health_for_health`.
+        "restart_controller": json_safe(restart_controller_health),
         "restart_busy_snapshot_alive": bool(
             _RESTART_SNAPSHOT_PUBLISHER and _RESTART_SNAPSHOT_PUBLISHER.alive
         ),
