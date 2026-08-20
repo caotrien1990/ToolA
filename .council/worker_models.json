@@ -1,1 +1,10 @@
-{}
+{
+  "clau": {
+    "provider": "claude",
+    "model": "claude-opus-4-8"
+  },
+  "pic": {
+    "provider": "ltnai",
+    "model": "deepseek-v4-pro"
+  }
+}

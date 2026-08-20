@@ -111,4 +111,4 @@ If the user already backed up the app, record that and proceed.
 - Do not delete cleanup candidates without user approval.
 - Do not claim token savings without stating the estimate method.
 - Do not translate or rewrite human-language text unless requested.
-- Follow `../ORCHESTRATOR_UPGRADE_ROADMAP.md` for planned tool upgrades.
+- Follow `../README.md` section 9 for the shipped-vs-planned tool roadmap (supersedes the retired `ORCHESTRATOR_UPGRADE_ROADMAP.md`).

@@ -3,7 +3,7 @@
 This file is generated for CA routing. Read it before opening source files.
 
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator`
-- Generated: 2026-08-19T14:45:48
+- Generated: 2026-08-20T20:20:02
 - Files indexed: 1661
 
 ## First Actions
@@ -30,10 +30,10 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 - `doc`: 692 files, 92138 LOC
 - `entrypoint`: 3 files, 13622 LOC
 - `script`: 15 files, 1579 LOC
-- `source`: 429 files, 127856 LOC
+- `source`: 429 files, 128209 LOC
 - `test`: 254 files, 38079 LOC
 - `ui`: 24 files, 4632 LOC
-- `unknown`: 121 files, 53839 LOC
+- `unknown`: 121 files, 53844 LOC
 
 ## Highest Value Files
 
@@ -49,7 +49,7 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 - `orchestrator/server/audit_writer.py` | group `source` | lang `python` | LOC 1089 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/core/ca_policy_matrix.py` | group `source` | lang `python` | LOC 794 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/mcp_packs/generator.py` | group `source` | lang `python` | LOC 1090 | weight 15: large_file: use symbols, search, or bounded ranges before full read
-- `orchestrator/graph/query.py` | group `source` | lang `python` | LOC 785 | weight 15: large_file: use symbols, search, or bounded ranges before full read
+- `orchestrator/graph/query.py` | group `source` | lang `python` | LOC 791 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/lifecycle/restart_control_service.py` | group `source` | lang `python` | LOC 780 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/server/mcp_stdio.py` | group `source` | lang `python` | LOC 901 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `research/CBM_CG/CBM/pkg/npm/package.json` | group `entrypoint` | lang `json` | LOC 41 | weight 14: metadata_first: search or read narrow ranges
