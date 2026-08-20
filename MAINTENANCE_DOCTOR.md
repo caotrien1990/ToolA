@@ -29,6 +29,7 @@ these are not scaffolding, they were all mutation-verified (see
 | `git_commit expected_staged_hash="auto"` → `GIT_STATE_STALE` | A real race | `"auto"` was compared as a literal string against a sha256, so it always mismatched | same file |
 | A script/command deleted files nobody named | Authorization gap | Authorization was never missing — it was a mistaken call by an *authorised* caller; no confirmation gate existed | `test_destructive_script_guard_case2008.py`, `test_destructive_command_guard_case2008.py` |
 | MCP tools stale for a whole session | Needs restart | Generation seen was never refreshed after a legitimate generation change | see `KNOWN_BUGS.md` (TA-5) |
+| `git_commit` over HTTP omitting the hash | B006 regressed | Schema `required` refused first, and that error cannot carry `current_staged_hash` | `test_git_status_payload_and_auto_hash.py` |
 
 ---
 
@@ -279,6 +280,25 @@ need it somewhere new, update the count in the test deliberately.
 
 ---
 
+### If you add or tighten a `required` list
+
+Ask which layer should refuse. The generic validator runs **before** the tool, and it
+knows nothing about the tool's domain -- so a field listed as `required` can only ever
+produce `MISSING_REQUIRED_FIELD`, never the domain error that carries a usable retry
+value. B008 was exactly this: `expected_staged_hash` was schema-required, so
+`EXPECTED_STAGED_HASH_REQUIRED` -- with `current_staged_hash` attached, the whole point
+of B006's fix -- was unreachable from every HTTP caller. In-process tests could not see
+it, because they call below the validator.
+
+Rule of thumb: **`required` is right when the generic error is the best error.** If the
+tool can say something more useful, leave the field optional with a falsy default and
+let the tool refuse.
+
+And when you fix something on the HTTP surface, **test it on the HTTP surface.** Eleven
+in-process tests passed over this bug.
+
+---
+
 ## Mutation testing: the acceptance bar
 
 A test that passes against the *unfixed* code proves nothing. Every fix in this
@@ -354,13 +374,13 @@ in flight.
 
 ## Test inventory added by campaign-1608
 
-67 tests across 6 files, all mutation-verified:
+70 tests across 6 files, all mutation-verified:
 
 | File | Tests | Pins |
 |---|---|---|
 | `test_destructive_script_guard_case2008.py` | 19 | CASE-2008 gate on the script surface |
 | `test_destructive_command_guard_case2008.py` | 15 | the same gate on `run_project_command` (the unguarded sibling) |
-| `test_git_status_payload_and_auto_hash.py` | 11 | payload cap, hash position, `"auto"` semantics |
+| `test_git_status_payload_and_auto_hash.py` | 14 | payload cap, hash position, `"auto"` semantics, and which layer refuses a missing hash (B008) |
 | `test_scoped_session_artifacts_survive_reindex.py` | 10 | scoped session artifacts survive a full reindex |
 | `test_mutation_token_mini_rule.py` | 7 | the mini rule at all 4 token surfaces |
 | `test_conftest_stale_symlink_tolerance.py` | 5 | A54 shim + no hardcoded-drive basetemp |

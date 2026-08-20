@@ -671,12 +671,13 @@ Tương tự các cặp redundancy khác:
 
 ---
 
-## Campaign-1608 (2026-08-20) — six defects found while auditing a weak-model campaign
+## Campaign-1608 (2026-08-20) — seven defects found while auditing a weak-model campaign
 
-All six are **fixed** and each is pinned by a mutation-verified test. Symptom-first
+All seven are **fixed** and each is pinned by a mutation-verified test. Symptom-first
 triage for every one of them lives in `MAINTENANCE_DOCTOR.md`; this section is the
 defect registry entry. The recurring theme is stated there as a rule: the first
-plausible cause was wrong in every single case.
+plausible cause was wrong in every single case. B008 was found last, while
+verifying B006 live — the same rule applied to this campaign's own output.
 
 ---
 
@@ -942,4 +943,63 @@ unrelated errors. Pinned by `tests/test_mutation_token_mini_rule.py` (7 tests).
 
 ---
 
-_Last updated: 2026-08-20 (campaign-1608: added B002-B007, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md)_
+## B008 - A schema `required` list pre-empts the error that carries the fix
+
+**Status**: fixed
+**Severity**: MEDIUM (B006's stated recovery was unreachable from every real caller)
+**Discovered**: 2026-08-20 by ClauLTN, while verifying B006 live after a restart
+**Affects**: `git_commit` over HTTP
+
+### Reproduction
+
+Call `git_commit` over HTTP with `project_path` and `message` but no
+`expected_staged_hash`:
+
+```
+HTTP 400  MISSING_REQUIRED_FIELD
+"Missing required field(s) for 'git_commit': expected_staged_hash"
+```
+
+B006 promises `EXPECTED_STAGED_HASH_REQUIRED` carrying `current_staged_hash`, so the
+corrected retry needs no second call. That error never arrives. Passing an *empty
+string* does produce it -- which is why 11 in-process tests saw nothing wrong.
+
+### Root cause
+
+Two layers refuse the same thing, and the wrong one won. `expected_staged_hash` was
+in the registry schema's `required` list, so the generic validator rejected the call
+before `git_tools.commit` ran. **The validator has no git state**, so its error
+cannot carry `current_staged_hash` -- it does not know what a staged hash is. The
+useful refusal was sitting one layer below, unreachable.
+
+This is the same registry-schema trap the last test of
+`test_git_status_payload_and_auto_hash.py` already warned about (B006: a
+signature-only parameter is unreachable over HTTP), in the opposite direction:
+there the schema was too narrow, here it was too strict. Both are the schema and the
+Python layer disagreeing about a field.
+
+Why the existing tests missed it: all 11 called `g.safe_call(g.commit, ...)`
+in-process, below the validator. **The HTTP surface was never the tested surface.**
+
+### Fix
+
+`expected_staged_hash` removed from `required` in the `git_commit` registry entry; it
+stays in `properties` and stays enforced -- by the layer holding the data. The
+wrapper's default is `""`, precisely the falsy value `git_tools.commit` refuses, so
+omitting the field now lands on `EXPECTED_STAGED_HASH_REQUIRED` with the retry hash
+attached. The schema `description` no longer says "Required": it names the error and
+documents `"auto"`, because the schema is what a CA actually reads.
+
+`project_path` and `message` stay required -- neither has a domain-layer refusal that
+carries a retry value, so for them the generic error is the best available.
+
+Pinned by 3 tests appended to `tests/test_git_status_payload_and_auto_hash.py`
+(14 total). 2 fail on revert; the third is a legitimate survivor -- it asserts the
+wrapper default and the domain error, which a schema mutation does not touch.
+
+**General lesson:** when two layers can refuse the same call, the one that runs
+first must not be the one with less information.
+
+---
+
+_Last updated: 2026-08-20 (campaign-1608: added B002-B008, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md)_

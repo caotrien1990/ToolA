@@ -247,3 +247,83 @@ def test_the_http_tool_exposes_max_records() -> None:
     entry = source[source.index(marker):]
     entry = entry[:entry.index("\n")]
     assert '"max_records"' in entry, "max_records is not in the git_status schema"
+# B008 -- the same registry-schema trap as the test above, in the opposite
+# direction. The 11 tests above all call git_tools in-process, so none of them
+# could see that the schema layer was refusing FIRST, at HTTP 400, with an error
+# that cannot carry current_staged_hash because the validator has no git state.
+
+
+def _git_commit_schema_entry() -> str:
+    import inspect
+    import orchestrator_server as srv
+
+    source = inspect.getsource(srv)
+    marker = '("git_commit",git_commit,'
+    entry = source[source.index(marker):]
+    return entry[:entry.index("\n")]
+
+
+def test_expected_staged_hash_is_not_schema_required() -> None:
+    """The generic validator must not pre-empt the git layer's own refusal.
+
+    With expected_staged_hash in the registry `required` list, a call that omits
+    it never reaches git_tools.commit: it is refused as MISSING_REQUIRED_FIELD,
+    and that error has no current_staged_hash to offer -- the schema layer does
+    not know what git is. EXPECTED_STAGED_HASH_REQUIRED, which the test above
+    pins in-process, was therefore unreachable over HTTP, i.e. from every real
+    caller. The field stays declared in `properties` and stays enforced; only the
+    layer doing the enforcing changes, to the one holding the data.
+    """
+    entry = _git_commit_schema_entry()
+    required = entry[entry.rindex("["):entry.rindex("]") + 1]
+
+    assert '"expected_staged_hash"' in entry, "the field must stay declared"
+    assert "expected_staged_hash" not in required, (
+        "expected_staged_hash is schema-required again, so a missing hash is "
+        "refused before git_tools.commit can attach current_staged_hash: " + required
+    )
+    assert '"project_path"' in required and '"message"' in required, (
+        "project_path/message must stay required -- neither has a domain-layer "
+        "refusal that carries a retry value: " + required
+    )
+
+
+def test_omitting_the_hash_reaches_the_git_layer_error(tmp_path) -> None:
+    """The behaviour the schema change exists for, asserted end to end.
+
+    Omitting the parameter entirely must land on the same error as passing an
+    empty one -- one error name for one situation, carrying the retry hash.
+    """
+    import inspect
+    import orchestrator_server as srv
+
+    default = inspect.signature(srv.git_commit).parameters["expected_staged_hash"].default
+    assert default == "", (
+        "the wrapper's default must be the falsy value git_tools.commit refuses; "
+        "a non-empty default would silently commit against an unread index"
+    )
+
+    root = _repo(tmp_path)
+    (root / "b.txt").write_text("b\n", encoding="utf-8")
+    g.stage(str(root), ["b.txt"])
+
+    omitted = g.safe_call(g.commit, str(root), "x", default)
+
+    assert omitted.get("error_name") == "EXPECTED_STAGED_HASH_REQUIRED", omitted
+    assert omitted.get("current_staged_hash"), "the retry hash is not in the error"
+    assert g.safe_call(g.commit, str(root), "x",
+                       omitted["current_staged_hash"]).get("ok") is True
+
+
+def test_the_schema_description_does_not_promise_the_schema_enforces_it() -> None:
+    """A CA reads the schema, not the source. It must not say "Required".
+
+    The description is the only place a caller learns that omitting the field is
+    answered by the git layer with a usable retry hash, rather than being allowed.
+    """
+    entry = _git_commit_schema_entry()
+    start = entry.index('"expected_staged_hash"')
+    desc = entry[start:entry.index("}", start)]
+
+    assert "EXPECTED_STAGED_HASH_REQUIRED" in desc, desc
+    assert "auto" in desc, "the opt-out is undocumented at the surface CAs read"
