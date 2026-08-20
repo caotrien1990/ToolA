@@ -17,8 +17,23 @@ from . import store as _store
 
 
 def _stale_count(conn: sqlite3.Connection, project_root: str) -> int:
-    """Count indexed files whose on-disk mtime/content differs (best-effort)."""
-    rows = conn.execute("SELECT path, content_hash FROM files;").fetchall()
+    """Count indexed files needing re-extraction, by the SAME rule the indexer uses.
+
+    Staleness has one definition and it lives in `store.stale_files`: content
+    changed, never indexed, OR indexed by a different EXTRACTOR_VERSION. This
+    function used to apply only the first clause, and the two answers diverged
+    the moment a version was bumped -- measured on [A] right after v7 -> v8:
+    this reported 5 stale while every one of the 700 rows was still v7, so the
+    report said "fresh" about a database that no longer matched the extractor.
+
+    Worse than a wrong number: `query._auto_reindex_if_stale` gates on this
+    count, so a bump could never trigger the reindex it exists to force. The DB
+    would have stayed frozen at the old node/edge shape indefinitely while every
+    status probe called it fresh -- exactly the failure `store.stale_files`
+    documents from W5, reintroduced through the other half of the pair.
+    """
+    rows = conn.execute(
+        "SELECT path, content_hash, extractor_version FROM files;").fetchall()
     import hashlib
     stale = 0
     for r in rows:
@@ -30,9 +45,12 @@ def _stale_count(conn: sqlite3.Connection, project_root: str) -> int:
         try:
             with open(abs_p, "rb") as f:
                 chash = hashlib.sha256(f.read()).hexdigest()
-            if chash != r["content_hash"]:
-                stale += 1
         except OSError:
+            stale += 1
+            continue
+        # Version first would read the same; both clauses are checked because a
+        # file can be stale for either reason independently.
+        if chash != r["content_hash"] or r["extractor_version"] != EXTRACTOR_VERSION:
             stale += 1
     return stale
 
