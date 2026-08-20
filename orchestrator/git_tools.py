@@ -101,14 +101,32 @@ def _staged_hash(root):
     raw=_run(root,['ls-files','--stage','-z'])['stdout']
     return hashlib.sha256(raw.encode()).hexdigest()
 
-def status(project_path, include_ignored=False):
+def status(project_path, include_ignored=False, max_records=0):
     root=resolve_root(project_path); records,state_hash=_porcelain(root,include_ignored)
     b=_run(root,['status','--porcelain=v2','--branch','--untracked-files=no'])['stdout']; ahead=behind=0
     m=re.search(r'^# branch\.ab \+(\d+) -(\d+)$',b,re.M)
     if m: ahead,behind=map(int,m.groups())
     head=_run(root,['rev-parse','--verify','HEAD'],check=False); branch=_run(root,['symbolic-ref','--short','-q','HEAD'],check=False)['stdout'].strip()
     counts={'changed':len(records),'staged':sum(1 for x in records if x.get('xy','.')[0] not in ('.',' ','?','!')),'unstaged':sum(1 for x in records if len(x.get('xy',''))>1 and x.get('xy')[1] not in ('.',' ','?','!')),'untracked':sum(1 for x in records if x.get('record_type')=='?'),'conflicts':sum(1 for x in records if x.get('record_type')=='u')}
-    return {'ok':True,'git_root':str(root),'branch':branch,'detached':not bool(branch),'head':head['stdout'].strip(),'ahead':ahead,'behind':behind,'records':records,'counts':counts,'clean':not records,'state_hash':state_hash,'staged_hash':_staged_hash(root)}
+    # records is capped because it is 89% of this payload (measured: ~216 chars per
+    # record) and the ONLY unbounded part. A repo mid-refactor produced a response
+    # past the transport's ~63k ceiling, so it arrived TRUNCATED -- and the field a
+    # caller most needs, staged_hash, used to sit at the END of the JSON. That is the
+    # whole reported failure: git_commit could not be given a hash nobody could read.
+    #
+    # Two independent halves of the fix, both needed:
+    #  * the hashes/counts move to the FRONT, so even a truncated response still
+    #    carries the optimistic lock;
+    #  * records is capped, and the cap is REPORTED (records_total /
+    #    records_truncated) rather than silent.
+    # counts/state_hash/staged_hash are computed over EVERY record, so they stay
+    # exact no matter what was dropped. A caller wanting the full list asks with
+    # max_records, or reads paths from git_diff. 0 = uncapped, which keeps the old
+    # behaviour for the in-process callers that walk records.
+    total=len(records)
+    cap=max(0,int(max_records or 0))
+    shown=records if not cap else records[:cap]
+    return {'ok':True,'git_root':str(root),'branch':branch,'detached':not bool(branch),'head':head['stdout'].strip(),'ahead':ahead,'behind':behind,'state_hash':state_hash,'staged_hash':_staged_hash(root),'counts':counts,'clean':not records,'records_total':total,'records_truncated':bool(cap and total>cap),'records':shown}
 
 def stale_check(project_path, max_commit_age_hours=168, expected_state_hash=''):
     root=resolve_root(project_path); s=status(str(root)); git=root/'.git'; states=[n for n in ['MERGE_HEAD','CHERRY_PICK_HEAD','REVERT_HEAD','BISECT_LOG','rebase-merge','rebase-apply'] if (git/n).exists()]
@@ -156,7 +174,12 @@ def stage(project_path, paths=None, paths_file='', allow_all=False, expected_sta
     if allow_all: raise GitToolError('GIT_ALLOW_ALL_REFUSED','allow_all is disabled; pass explicit safe paths')
     if paths_file: _run_pathspec_file(root,['--literal-pathspecs','add'],specs)
     else: _run(root,['--literal-pathspecs','add','--',*specs])
-    return {'ok':True,'paths':specs,'paths_file':str(paths_file or ''),'allow_all':bool(allow_all),'before':before,'after':status(str(root))}
+    # 'before' used to be a FULL second status, which doubled the response (measured
+    # 9341 vs 4626 chars on this repo) and carried nothing new -- the caller had just
+    # read that status to obtain expected_state_hash. Only the hashes and counts are
+    # kept, which is what a caller can actually act on: proof of which state it
+    # staged from.
+    return {'ok':True,'paths':specs,'paths_file':str(paths_file or ''),'allow_all':bool(allow_all),'before':{'state_hash':before['state_hash'],'staged_hash':before['staged_hash'],'counts':before['counts']},'after':status(str(root))}
 
 def unstage(project_path, paths=None, paths_file='', allow_all=False, expected_staged_hash=''):
     root=resolve_root(project_path); before=status(str(root))
@@ -174,7 +197,28 @@ def commit(project_path, message, expected_staged_hash, allow_empty=False, no_ve
     root=resolve_root(project_path); s=status(str(root)); msg=str(message or '').strip()
     if not msg or len(msg)>4000: raise GitToolError('INVALID_COMMIT_MESSAGE','message required and max 4000 chars')
     if s['counts']['conflicts']: raise GitToolError('GIT_CONFLICTS_PRESENT','resolve conflicts before commit')
-    if not expected_staged_hash or expected_staged_hash!=s['staged_hash']: raise GitToolError('GIT_STATE_STALE','staged content changed or expected_staged_hash missing',current_staged_hash=s['staged_hash'])
+    # Three DISTINCT rejections, previously collapsed into one GIT_STATE_STALE that
+    # named the wrong cause. A caller that passed a hash matching the live index was
+    # told the "staged content changed" -- it had not -- and the only way forward was
+    # to copy current_staged_hash out of the error and resend. Reported from live use.
+    #
+    # "auto" is accepted as an explicit opt-out of the optimistic lock. It is NOT a
+    # weakening: the guard exists so a hash read BEFORE some other actor touched the
+    # index cannot commit a surprise, and a caller who never read one has nothing
+    # stale to carry. Refusing it only pushed callers to the same place via one
+    # wasted round-trip, while making a genuine mismatch indistinguishable from a
+    # missing field. Note the read is a fresh status() taken above, in-process.
+    checked=str(expected_staged_hash or '').strip()
+    if not checked:
+        raise GitToolError('EXPECTED_STAGED_HASH_REQUIRED',
+                           'expected_staged_hash is required: pass git_status.staged_hash, '
+                           'or "auto" to commit whatever is staged right now',
+                           current_staged_hash=s['staged_hash'])
+    if checked.lower()!='auto' and checked!=s['staged_hash']:
+        raise GitToolError('GIT_STATE_STALE','staged content changed since expected_staged_hash was read',
+                           current_staged_hash=s['staged_hash'],expected_staged_hash=checked,
+                           ca_next_action='re-read git_status and resend, or pass "auto" to accept the current index',
+                           retryable=True)
     if s['counts']['staged']==0 and not allow_empty: raise GitToolError('NOTHING_STAGED','nothing staged to commit')
     for key in ('user.name','user.email'):
         if not _run(root,['config','--get',key],check=False)['stdout'].strip(): raise GitToolError('GIT_IDENTITY_MISSING',f'{key} is not configured')

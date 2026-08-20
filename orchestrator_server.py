@@ -10341,7 +10341,7 @@ async def handle_council_room_status(request):
     }, headers=cors)
 from orchestrator import git_tools as _git_tools
 
-async def git_status(project_path=None, include_ignored=False): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.status, project_path, include_ignored), ensure_ascii=False)
+async def git_status(project_path=None, include_ignored=False, max_records=0): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.status, project_path, include_ignored, max_records), ensure_ascii=False)
 async def git_stale_check(project_path=None, max_commit_age_hours=168, expected_state_hash=""): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.stale_check, project_path, max_commit_age_hours, expected_state_hash), ensure_ascii=False)
 async def git_diff(project_path=None, scope="worktree", paths=None, context_lines=3, max_chars=50000, check_whitespace=False): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.diff, project_path, scope, paths, context_lines, max_chars, check_whitespace), ensure_ascii=False)
 async def git_log(project_path=None, limit=20, ref="HEAD"): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.log, project_path, limit, ref), ensure_ascii=False)
@@ -10353,7 +10353,7 @@ from orchestrator.core.registry import register_tool as _register_tool
 
 ct.PROTECTED_TOOL_NAMES.update({"git_stage", "git_unstage", "git_commit"})
 _GIT_TOOL_SPECS = [
-("git_status",git_status,"T1",False,False,"none",{}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"include_ignored":{"type":"boolean","description":"Include ignored records","default":False}},["project_path"]),
+("git_status",git_status,"T1",False,False,"none",{}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"include_ignored":{"type":"boolean","description":"Include ignored records","default":False},"max_records":{"type":"integer","description":"Cap the records list (0=all). The response reports records_total/records_truncated; counts, state_hash and staged_hash are always computed over every record, so the optimistic lock stays exact even when records is capped. Use it when a large dirty tree pushes the response past the transport limit.","default":0}},["project_path"]),
 ("git_stale_check",git_stale_check,"T1",False,False,"none",{}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"max_commit_age_hours":{"type":"number","description":"Old HEAD threshold in hours","default":168},"expected_state_hash":{"type":"string","description":"Prior git_status state_hash for drift detection"}},["project_path"]),
 ("git_diff",git_diff,"T1",False,False,"none",{"files":"paths"}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"scope":{"type":"string","enum":["worktree","staged","both"],"description":"Diff scope","default":"worktree"},"paths":{"type":"array","items":{"type":"string"},"description":"Relative pathspec allowlist"},"context_lines":{"type":"integer","description":"Unified context lines","default":3},"max_chars":{"type":"integer","description":"Output cap","default":50000},"check_whitespace":{"type":"boolean","description":"Run git diff --check semantics","default":False}},["project_path"]),
 ("git_log",git_log,"T1",False,False,"none",{}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"limit":{"type":"integer","description":"Maximum commits","default":20},"ref":{"type":"string","description":"Revision reference","default":"HEAD"}},["project_path"]),
@@ -13293,6 +13293,7 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
                     reason="mutation token past its TTL",
                     accepted_fields=["X-Orchestrator-Token"],
                     payload_example={"headers": {"X-Orchestrator-Token": "<fresh token from GET /api/token>"}},
+                    mini_rule="Never delete a file that was not explicitly named and approved. Fail loud: report the error, never swallow it or work around it silently.",
                     write_performed=False,
                     applied=False,
                 )
@@ -13308,6 +13309,7 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
                     reason="protected tool requires X-Orchestrator-Token header",
                     accepted_fields=["X-Orchestrator-Token"],
                     payload_example={"headers": {"X-Orchestrator-Token": "<token from GET /api/token>"}},
+                    mini_rule="Never delete a file that was not explicitly named and approved. Fail loud: report the error, never swallow it or work around it silently.",
                     write_performed=False,
                     applied=False,
                 )
@@ -14914,6 +14916,7 @@ async def handle_token(request):
         "do_not_log_fields": ["token", "X-Orchestrator-Token"],
         "use_header": "X-Orchestrator-Token",
         "ca_next_action": "send_token_in_x_orchestrator_token_header_and_never_log_it",
+        "mini_rule": "Never delete a file that was not explicitly named and approved. Fail loud: report the error, never swallow it or work around it silently.",
     }, headers=cors)
 
 
@@ -14948,6 +14951,7 @@ async def handle_token_refresh(request):
         "do_not_log_fields": ["token", "X-Orchestrator-Token"],
         "use_header": "X-Orchestrator-Token",
         "ca_next_action": "reuse_token_in_x_orchestrator_token_header_and_never_log_it",
+        "mini_rule": "Never delete a file that was not explicitly named and approved. Fail loud: report the error, never swallow it or work around it silently.",
         "note": "Token rotates on restart or when its TTL (TOKEN_TTL_MINUTES) lapses; an expired token is auto-rotated on GET /api/token[/refresh]. TEST_TOKEN_TTL_MINUTES documents long-test planning.",
     }, headers=cors)
 
