@@ -1547,7 +1547,11 @@ skip_symbol_check :bool =False )->str :
                 result ["validation_error_detail"]=val .get ("error","")
                 result ["cache_synced"]=reverted_synced 
                 if not reverted_synced:
-                    result ["cache_sync_warning"]="INDEX chua duoc reseed sau auto-revert. Goi refresh_project_map truoc khi ghi tiep."
+                    result ["cache_sync_warning"]=(
+                    "INDEX chua duoc reseed sau auto-revert. Goi cache_delta hoac "
+                    "read_file_range(force_reseed=true) truoc khi ghi tiep. "
+                    "KHONG goi refresh_project_map tren mot root lon nhu [A:P]."
+                    )
                 result ["ca_next_action"]="fix_only_failed_range_via_write_draft_patch"
                 result ["hint"]=(
                 "Backend ghi xong nhưng validation báo file bị lỗi → đã tự revert về .bak. "
@@ -1579,7 +1583,11 @@ skip_symbol_check :bool =False )->str :
                     result ["auto_reverted"]=True
                     result ["cache_synced"]=reverted_synced
                     if not reverted_synced:
-                        result ["cache_sync_warning"]="INDEX chua duoc reseed sau auto-revert. Goi refresh_project_map truoc khi ghi tiep."
+                        result ["cache_sync_warning"]=(
+                    "INDEX chua duoc reseed sau auto-revert. Goi cache_delta hoac "
+                    "read_file_range(force_reseed=true) truoc khi ghi tiep. "
+                    "KHONG goi refresh_project_map tren mot root lon nhu [A:P]."
+                    )
                     if sym .get ("symbols_removed"):
                         result ["symbols_removed"]=sym .get ("symbols_removed")
                     result ["ca_next_action"]="fix_only_failed_range_via_write_draft_patch"
@@ -1602,10 +1610,20 @@ skip_symbol_check :bool =False )->str :
             synced = await ct.asyncio.to_thread(ct._update_cache_after_write, str(fp), project_path)
             result ["cache_synced"]=synced 
             if not synced :
+                # CA reported a double-bind here: this warning told CA to call
+                # refresh_project_map, while CORE_RULE and every other stale-index
+                # response in the tree forbid it on a large root ([A:P] is ~450MB) and
+                # route to cache_delta instead. cache_delta is the per-file/delta probe
+                # that actually matches what went stale after ONE write, so it is both
+                # the cheap answer and the consistent one.
                 result ["cache_sync_warning"]=(
-                "INDEX chua duoc cap nhat. Goi refresh_project_map truoc khi doc/ghi tiep."
+                "INDEX chua duoc cap nhat cho file nay. Goi cache_delta(project_path) "
+                "hoac read_file_range(..., force_reseed=true) truoc khi doc/ghi tiep. "
+                "KHONG goi refresh_project_map tren mot root lon nhu [A:P]."
                 )
-                result ["action_required"]="refresh_project_map"
+                result ["action_required"]="cache_delta"
+                result ["ca_next_action"]="cache_delta"
+                result ["fallback_sequence"]=["cache_delta","read_file_range"]
                 # R43 P0 #3-A: surface new_hash + new_mtime for sequential write chains.
                 # CA can pass new_hash as expected_hash in next write_fix on the same file to
                 # bypass FILE_CHANGED guardrail without re-reading.
@@ -1876,10 +1894,16 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
         synced =ct._update_cache_after_write (str (fp ),project_path )
         result ["cache_synced"]=synced
         if not synced :
+            # Same double-bind as the write_fix path above: route to cache_delta, not
+            # a full refresh of a large root.
             result ["cache_sync_warning"]=(
-            "INDEX chua duoc cap nhat. Goi refresh_project_map truoc khi doc/ghi tiep."
+            "INDEX chua duoc cap nhat cho file nay. Goi cache_delta(project_path) "
+            "hoac read_file_range(..., force_reseed=true) truoc khi doc/ghi tiep. "
+            "KHONG goi refresh_project_map tren mot root lon nhu [A:P]."
             )
-            result ["action_required"]="refresh_project_map"
+            result ["action_required"]="cache_delta"
+            result ["ca_next_action"]="cache_delta"
+            result ["fallback_sequence"]=["cache_delta","read_file_range"]
         if _cache_warning :
             result ["warning"]=_cache_warning
     return ct.json .dumps (result )
