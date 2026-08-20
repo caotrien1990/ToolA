@@ -174,10 +174,31 @@ def insert_nodes(conn: sqlite3.Connection, nodes: list[dict]) -> int:
 # ─── Edge-quality filter (ALGO UPGRADE B): builtin-method noise + ext placeholders ──
 # ext: call targets whose suffix matches a Python builtin / common method carry no
 # cross-symbol signal (report 2.4: ext:get/str/push/append/join dominate the 0.3
-# bucket). ext: only appears for UNRESOLVED calls, so ext:get == the builtin get,
-# never an indexed user def (those resolve to a real node id). Dropping at this
-# single edge-persistence chokepoint keeps both indexer paths clean without
-# touching extractors (which another worker owns this round).
+# bucket). Dropping at this single edge-persistence chokepoint keeps both indexer
+# paths clean without touching extractors.
+#
+# KNOWN LIMITATION, measured 2026-08-20 -- the note that used to stand here said
+# "ext:get == the builtin get, never an indexed user def". That is not true. This
+# project defines 13 of these names itself (add, append, close, format, get, join,
+# open, read, replace, set, sum, update, write), and a call to one of them is
+# dropped here before any resolver sees it. Three real call sites are lost that
+# way, all `<singleton>.close()`-shaped, so `FairAdmissionManager.close`,
+# `PostCallAccountingQueue.close` and `TaskSchedulerAdapter.end` read as dead
+# despite having live callers.
+#
+# The filter stays as it is, because every cheaper rule was measured and is
+# worse than the disease:
+#   * exempting all 13 names keeps 8165 attribute calls, of which only 285
+#     resolve at all, and spot-checking those shows them binding `f.read()` and
+#     `resp.read()` to `_InProcessToolRequest.read` -- wrong edges, which are
+#     worse than missing ones because they make dead code look alive forever;
+#   * deferring the drop until after _resolve_imported_calls adds exactly those
+#     285 wrong edges, for the same reason.
+# The only precise rule -- resolve the receiver when it is a module-level
+# singleton of a project class -- is right (32 call sites, 0 ambiguous) but
+# needs a cross-file pass that this per-file chokepoint cannot host, and would
+# recover 3 entries. Left as a documented false-positive instead of a fragile
+# pass; the three symbols above are known-live and must not be deleted.
 BUILTIN_NOISE: frozenset[str] = frozenset({
     "get", "str", "push", "append", "join", "split", "strip", "items", "keys",
     "values", "pop", "len", "print", "format", "startswith", "endswith", "lower",
@@ -201,6 +222,36 @@ NON_SYMBOL_KINDS: tuple[str, ...] = (EXTERNAL_KIND, NAME_LITERAL_KIND)
 # symbol-lookup filter instead of silently leaking the new kind through a
 # hardcoded "(?,?)".
 _NON_SYMBOL_SQL = ",".join("?" * len(NON_SYMBOL_KINDS))
+
+# A name lookup must return the DEFINITION first. `helper` can name a function
+# in util.py AND the `from util import helper` alias node in core.py -- both are
+# real, searchable symbols (unlike NON_SYMBOL_KINDS, which are filtered out
+# entirely), and both carry name='helper'. Without an ORDER BY, `LIMIT 1` picked
+# whichever row sqlite reached first, i.e. rowid order, i.e. indexing order.
+#
+# That is not a cosmetic ordering preference. `query._resolve_node` asks for
+# limit=1 and uses whatever comes back as THE node for callers/callees/impact:
+# resolving to an alias returns an empty caller list for a function with call
+# sites, which reads as "nothing calls this". Measured on [A]'s own graph.db:
+# 584 names have both a definition and a binding-site row, and 370 of them --
+# nearly two in three -- resolved to the non-definition.
+#
+# The rank is an ordering, not a filter: an alias-only name (a re-export this
+# project never defines) still resolves, it just sorts after any real
+# definition. file_path/start_line break ties so the answer is deterministic
+# across reindexes rather than dependent on which file happened to be walked
+# first.
+def _symbol_rank_sql(alias: str = "") -> str:
+    """ORDER BY fragment ranking definitions first. `alias` prefixes the columns
+    for the FTS join, where `nodes` is joined as `n`."""
+    a = f"{alias}." if alias else ""
+    return (f"CASE {a}kind WHEN 'function' THEN 0 WHEN 'method' THEN 0 "
+            f"WHEN 'class' THEN 0 WHEN 'variable' THEN 1 WHEN 'module' THEN 2 "
+            f"ELSE 3 END, {a}file_path, {a}start_line")
+
+
+_SYMBOL_RANK_SQL = _symbol_rank_sql()
+_SYMBOL_RANK_SQL_N = _symbol_rank_sql("n")
 
 
 def _ext_target_name(target: str) -> "str | None":
@@ -304,7 +355,8 @@ def find_nodes_by_name(conn: sqlite3.Connection, name: str, limit: int = 50) -> 
     # targets, not searchable symbols - must not shadow real defs in
     # graph_find_symbol name lookups.
     rows = conn.execute(
-        f"SELECT * FROM nodes WHERE name=? AND kind NOT IN ({_NON_SYMBOL_SQL}) LIMIT ?;",
+        f"SELECT * FROM nodes WHERE name=? AND kind NOT IN ({_NON_SYMBOL_SQL}) "
+        f"ORDER BY {_SYMBOL_RANK_SQL} LIMIT ?;",
         (name, *NON_SYMBOL_KINDS, limit),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -312,10 +364,16 @@ def find_nodes_by_name(conn: sqlite3.Connection, name: str, limit: int = 50) -> 
 
 def fts_search_symbols(conn: sqlite3.Connection, query: str, limit: int = 50) -> list[dict]:
     """FTS5 MATCH over graph_symbols_fts. Returns matching nodes (excludes the
-    NON_SYMBOL_KINDS placeholder rows so they never shadow real symbols)."""
+    NON_SYMBOL_KINDS placeholder rows so they never shadow real symbols).
+
+    Ordered by _SYMBOL_RANK_SQL for the same reason find_nodes_by_name is: this
+    is the fallback path of the SAME lookup, and a caller that takes the first
+    result must not get a definition from one path and an alias from the other.
+    """
     rows = conn.execute(
         "SELECT n.* FROM graph_symbols_fts f JOIN nodes n ON n.rowid = f.rowid "
-        f"WHERE graph_symbols_fts MATCH ? AND n.kind NOT IN ({_NON_SYMBOL_SQL}) LIMIT ?;",
+        f"WHERE graph_symbols_fts MATCH ? AND n.kind NOT IN ({_NON_SYMBOL_SQL}) "
+        f"ORDER BY {_SYMBOL_RANK_SQL_N} LIMIT ?;",
         (query, *NON_SYMBOL_KINDS, limit),
     ).fetchall()
     return [dict(r) for r in rows]

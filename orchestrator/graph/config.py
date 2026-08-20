@@ -116,9 +116,23 @@ LIVE_REF_BINDS: tuple = (*LIVE_REF_KINDS, LIVE_CALL_CONFIDENCE)
 # file frozen at the old shape (measured on [A] after W5 added `name_literal`:
 # a full reindex re-extracted 9 of 250 files and the other 241 kept stale
 # nodes). `stale_files` compares this too, so bumping it forces a re-extract.
+# v3 (W4): calls written outside any function now emit an edge owned by the
+# enclosing class or module, so every already-indexed file holds a `calls` set
+# that is missing its module-level entries until it is re-extracted.
+# v4 (W4): methods are pre-seeded, so `self._later()` written above `def
+# _later` now resolves to the method instead of an `ext:` placeholder.
 # Lives in config, not status.py, because indexer/store must read it and
 # status.py imports store.
-EXTRACTOR_VERSION = "ast-p0-v2-name-literal"
+# v5 (W4): a callable used as a VALUE (`x or _default`, a dict of handlers, a
+# param default) now emits a `calls` edge with metadata.callable_ref, so the
+# fallback-default idiom stops reading as dead.
+# v6 (W4): `<recv>.<attr>()` where `recv` is an imported name no longer
+# suffix-matches a local definition of `<attr>`. The edge carries
+# `metadata.recv_import` instead, so the resolver follows THAT module.
+# v7 (W4): a reference to a NESTED def (`return guard`, `cb = _run`) resolves
+# to that closure instead of being refused as a local rebinding, and a direct
+# call to one binds by scope rather than through the flat name map.
+EXTRACTOR_VERSION = "ast-p0-v7-scope-aware-nested-defs"
 
 # --- Tree-sitter opt-in (A5 - aspirational, optional) ---
 CBM_USE_TREE_SITTER = os.environ.get("CBM_USE_TREE_SITTER", "0").strip().lower() in ("1", "true", "yes", "on")

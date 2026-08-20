@@ -335,6 +335,44 @@ def _is_entry_point(name: str, decorators: str) -> bool:
     return any(k in dec for k in ("route", "command", "task", "hook", "register"))
 
 
+def _framework_dispatch_methods(conn) -> set:
+    """(file_path, qualified_name) of every PUBLIC method the graph cannot prove
+    is uncalled, because its class inherits from a base the graph cannot see.
+
+    `_Extractor.visit_Call` has zero inbound call edges and never will: nothing
+    in this project calls it by name. `ast.NodeVisitor.generic_visit` does, by
+    building the name from the node type at runtime. Same shape for `do_GET` on
+    a BaseHTTPRequestHandler subclass and for `as_payload` on a RuntimeError
+    subclass. Measured on [A]: 16 of the 92 `orchestrator/` entries -- one in
+    six -- were this, and every one of them is load-bearing code that would
+    break the moment it was deleted. A dead-code list is a deletion work-list;
+    an entry that is always wrong teaches the reader to distrust the whole list.
+
+    The signal is an `inherits` edge whose target is `external` or `import` --
+    a base outside the indexed source, so its dispatch table is unknowable. A
+    base the graph CAN see inside is not covered here: if a project-local class
+    dispatched to this method, that call site is indexed and produces an edge.
+
+    Restricted to PUBLIC names on purpose. A base class cannot dispatch to a
+    name it does not know, and `_helper` on a unittest.TestCase subclass is
+    exactly as dead as `_helper` anywhere else -- excluding it would hide 21
+    genuinely dead symbols to save these 16. Ambiguity resolves toward keeping
+    an entry that a human can check, never toward inventing liveness.
+    """
+    return {(r["sf"], r["sq"]) for r in conn.execute(
+        "SELECT DISTINCT s.file_path AS sf, s.qualified_name AS sq FROM edges e "
+        "JOIN nodes s ON s.id = e.source JOIN nodes t ON t.id = e.target "
+        "WHERE e.kind = 'inherits' AND t.kind IN ('external', 'import');")}
+
+
+def _is_framework_dispatch(row, opaque_classes: set) -> bool:
+    """True when `row` is a public method on a class from _framework_dispatch_methods."""
+    if row["kind"] != "method" or row["name"].startswith("_"):
+        return False
+    cls = (row["qualified_name"] or "").rsplit(".", 1)[0]
+    return (row["file_path"], cls) in opaque_classes
+
+
 def _node_brief(row) -> dict:
     return {"id": row["id"], "kind": row["kind"], "name": row["name"],
             "qualified_name": row["qualified_name"], "file_path": row["file_path"],
@@ -448,8 +486,13 @@ def template_query(project_path: str, template: str, *, name: str = "",
                     f"AND NOT {LIVE_REF_EXISTS_SQL} "
                     "ORDER BY n.qualified_name, n.start_line "
                     "LIMIT 50000;", LIVE_REF_BINDS).fetchall()
+                # W4: a public method on a class whose base is outside the
+                # index is dispatched by that base, not by name -- see
+                # _framework_dispatch_methods.
+                _opaque = _framework_dispatch_methods(conn)
                 filtered = [r for r in rows
-                            if not _is_entry_point(r["name"], r["decorators"])]
+                            if not _is_entry_point(r["name"], r["decorators"])
+                            and not _is_framework_dispatch(r, _opaque)]
                 payload["total_count"] = len(filtered)
                 res = [_node_brief(r) for r in filtered[offset:offset + limit]]
                 payload["truncated"] = (offset + limit) < len(filtered)
@@ -684,8 +727,13 @@ def dead_code_candidates(project_path: str, *, limit: int = 50) -> dict:
                 "AND n.is_exported = 0 "
                 f"AND NOT {LIVE_REF_EXISTS_SQL};", LIVE_REF_BINDS).fetchall()
             out = []
+            # W4: same framework-dispatch exclusion orphan_symbols applies, so
+            # the two reports cannot disagree about the same symbol.
+            opaque_classes = _framework_dispatch_methods(conn)
             for r in rows:
                 if _is_entry_point(r["name"], r["decorators"]):
+                    continue
+                if _is_framework_dispatch(r, opaque_classes):
                     continue
                 if (r["decorators"] or "[]") != "[]":
                     continue  # decorated = likely framework-invoked

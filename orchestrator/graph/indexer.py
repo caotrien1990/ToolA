@@ -213,6 +213,9 @@ def index_project(project_path: str, *, scope: str = "core",
         # W5: same reasoning for dynamic (string-name) dispatch — the edges are
         # cross-file, so only this stage can build them.
         dyn_stats = _build_dynamic_ref_edges(conn)
+        # After BOTH passes above: this one reads `imports_module`, which
+        # _build_dependency_edges has just rebuilt.
+        imp_stats = _resolve_imported_calls(conn)
         conn.commit()
         duration = round(time.monotonic() - t0, 2)
         # partial only when a stale file was actually skipped for budget —
@@ -237,6 +240,12 @@ def index_project(project_path: str, *, scope: str = "core",
             "dependency_stats": dep_stats,
             "dynamic_ref_edges": dyn_stats["edges"],
             "dynamic_ref_stats": dyn_stats,
+            # W4 v6: BOTH resolution paths count. `rebound` alone stopped
+            # counting the common case the moment the receiver-aware path took
+            # it over, so the headline read 0 while 2429 edges had just been
+            # bound -- a reported number that silently changed meaning.
+            "imported_call_edges": imp_stats["rebound"] + imp_stats["recv_rebound"],
+            "imported_call_stats": imp_stats,
             "errors": errors,
             "meets_gates": {
                 "duration": duration <= budget,
@@ -564,6 +573,208 @@ def _build_dynamic_ref_edges(conn) -> dict:
         "callable_names": len(defs),
     }
 
+
+def _resolve_imported_calls(conn) -> dict:
+    """Bind a call back to the definition the caller imported.
+
+    Two ways a call to an imported name misses its definition, both measured on
+    [A] while triaging a dead-code list that was mostly wrong:
+
+      1. `store.create_mission(...)` -- the extractor cannot follow `store`
+         across files, so it emits `ext:create_mission` (2963 edges).
+      2. `from store import create_mission` then `create_mission(...)` -- the
+         extractor binds to the local `import` ALIAS node, which is a real node,
+         so the edge looks resolved while the definition still has no callers
+         (3653 edges on an alias, 277 aliases naming an indexed definition).
+
+    Both leave the callable with zero inbound call edges and reading as dead.
+
+    An extractor sees `store.create_mission(...)` and has no way to know what
+    `store` is -- the binding lives in an import line it cannot follow across
+    files -- so it emits a placeholder `ext:create_mission` target. The symbol
+    on the other end then has zero inbound call edges and reads as dead. It is
+    not a rare shape: measured on [A], 2963 call edges pointed at an `ext:`
+    placeholder that ONE imported module actually defines, and 94 callables
+    were falsely dead because of it, `orchestrator_server.dispatch_tool_call`
+    (51 real call sites) among them.
+
+    This pass owns the cross-file view the extractor lacks, exactly like
+    `_build_dependency_edges` and `_build_dynamic_ref_edges`: for each such
+    edge, look only at the modules the SOURCE FILE imports, and rewrite the
+    target when exactly one of them defines that name.
+
+    Deliberately narrow, because a wrong call edge is worse than a missing one:
+      * only modules this file actually imports -- not a project-wide name
+        sweep, which would bind `close` to whichever class happened to define
+        it;
+      * exactly one candidate. Ambiguity (208 edges) is left as `ext:`, since
+        guessing would invent a caller relationship that does not exist;
+      * confidence CBM_SAME_MODULE (0.7, "dynamic"): the module binding is
+        real, but the receiver could still be shadowed by a local rebind, so
+        it stays below a direct same-file call.
+
+    Idempotent: reads only `is_external=1` call edges and rewrites in place, so
+    a second run finds nothing left to do.
+    """
+    imports: dict[str, set[str]] = {}
+    for r in conn.execute(
+            "SELECT s.file_path AS sf, t.qualified_name AS tq FROM edges e "
+            "JOIN nodes s ON s.id = e.source JOIN nodes t ON t.id = e.target "
+            "WHERE e.kind = 'imports_module' AND t.kind = 'module';"):
+        imports.setdefault(r["sf"], set()).add(r["tq"])
+
+    mod_of_file = {r["file_path"]: r["qualified_name"] for r in conn.execute(
+        "SELECT qualified_name, file_path FROM nodes WHERE kind = 'module';")}
+    # module qualified_name -> {def name: [node ids]}
+    mod_defs: dict[str, dict[str, list[str]]] = {}
+    # file_path -> {def name: [node ids]} -- the same data keyed by file, which
+    # is what a receiver hop needs: `imports_module` points at a module NODE,
+    # and two files can share a qualified_name (5 basenames collide on [A],
+    # `store` among them, which is exactly the name this fix is about).
+    defs_by_file: dict[str, dict[str, list[str]]] = {}
+    for r in conn.execute(
+            "SELECT id, name, file_path FROM nodes "
+            "WHERE kind IN ('function','method');"):
+        defs_by_file.setdefault(r["file_path"], {}).setdefault(r["name"], []).append(r["id"])
+        mod = mod_of_file.get(r["file_path"])
+        if mod:
+            mod_defs.setdefault(mod, {}).setdefault(r["name"], []).append(r["id"])
+
+    # import node id -> file the import resolves to, and file -> its own import
+    # aliases. Together these two let a receiver be followed one module at a
+    # time, which is what makes a re-export chain traversable: `code_tools`
+    # imports `write_fix` from `orchestrator.tools.write`, whose `__init__`
+    # imports it from `core`, which defines it.
+    imp_target_file: dict[str, str] = {}
+    for r in conn.execute(
+            "SELECT n.id AS nid, t.file_path AS tf FROM nodes n "
+            "JOIN edges e ON e.source = n.id AND e.kind = 'imports_module' "
+            "JOIN nodes t ON t.id = e.target WHERE n.kind = 'import';"):
+        imp_target_file[r["nid"]] = r["tf"]
+    file_imports: dict[str, dict[str, str]] = {}
+    for r in conn.execute(
+            "SELECT id, name, file_path FROM nodes WHERE kind = 'import';"):
+        file_imports.setdefault(r["file_path"], {})[r["name"]] = r["id"]
+
+    def _resolve_in_module(file_path: str, name: str, depth: int = 0,
+                           seen: frozenset = frozenset()) -> list:
+        """Definitions of `name` reachable from `file_path`, following re-exports.
+
+        A module that does not define the name may still be the honest receiver:
+        `code_tools.write_fix` is a re-export, and stopping at the first module
+        would leave 60 of these unresolved. Following the alias is a lookup, not
+        a guess -- each hop is an import edge this indexer already resolved.
+
+        The depth cap and `seen` set exist because [A] has import cycles by
+        construction (the W3 SCC), so an unguarded walk would not terminate.
+        Measured on [A]: 2531 receiver calls resolve, 0 ambiguously, so the
+        chain is short in practice and the cap costs nothing.
+        """
+        if depth > 4 or file_path in seen:
+            return []
+        hit = defs_by_file.get(file_path, {}).get(name)
+        if hit:
+            return list(hit)
+        nid = file_imports.get(file_path, {}).get(name)
+        if not nid:
+            return []
+        nxt = imp_target_file.get(nid)
+        if not nxt:
+            return []
+        return _resolve_in_module(nxt, name, depth + 1, seen | {file_path})
+
+    rebound = 0
+    ambiguous = 0
+    recv_rebound = 0
+    for r in conn.execute(
+            "SELECT e.rowid AS rid, e.target AS tgt, s.file_path AS sf, "
+            "       json_extract(e.metadata, '$.recv_import') AS recv "
+            "FROM edges e JOIN nodes s ON s.id = e.source "
+            "WHERE e.kind = 'calls' AND e.is_external = 1 "
+            "AND e.target LIKE 'ext:%';").fetchall():
+        name = r["tgt"][4:]
+        # A receiver the extractor could see OVERRIDES the all-imports sweep,
+        # and never falls back to it. The sweep asks "does any module this file
+        # imports define this name", which for `os.walk` answers `tools_v15.walk`
+        # and for `subprocess.run` answers `ExecutorLane.run`: 62 edges on [A],
+        # every one of them wrong, and a wrong call edge is worse than a missing
+        # one because it makes dead code look alive forever. When the receiver
+        # is known, that module is the only correct place to look.
+        if r["recv"]:
+            tf = imp_target_file.get(r["recv"])
+            if not tf:
+                continue  # receiver is stdlib / third-party: correctly external
+            cands = set(_resolve_in_module(tf, name))
+            if len(cands) != 1:
+                if len(cands) > 1:
+                    ambiguous += 1
+                continue
+            conn.execute(
+                "UPDATE edges SET target = ?, is_external = 0, confidence = ?, "
+                "cbm_label = 'dynamic', metadata = ? WHERE rowid = ?;",
+                (cands.pop(), CBM_SAME_MODULE,
+                 '{"resolution": "receiver_module"}', r["rid"]))
+            recv_rebound += 1
+            continue
+        cands = set()
+        for mod in imports.get(r["sf"], ()):
+            cands.update(mod_defs.get(mod, {}).get(name, ()))
+            if len(cands) > 1:
+                break
+        if len(cands) != 1:
+            if len(cands) > 1:
+                ambiguous += 1
+            continue
+        conn.execute(
+            "UPDATE edges SET target = ?, is_external = 0, confidence = ?, "
+            "cbm_label = 'dynamic', metadata = ? WHERE rowid = ?;",
+            (cands.pop(), CBM_SAME_MODULE,
+             '{"resolution": "imported_module"}', r["rid"]))
+        rebound += 1
+
+    # --- part 2: a call that landed on the IMPORT ALIAS, not the definition ---
+    # `from skip_rules import should_skip_dir` creates an `import` node named
+    # `should_skip_dir`, and the extractor -- correctly, from inside one file --
+    # binds the later `should_skip_dir(...)` to that alias. The alias is a real
+    # node, so the edge is not external and part 1 above never sees it; but the
+    # DEFINITION still ends with zero inbound calls and reads as dead.
+    #
+    # This shape is why `skip_rules.should_skip_dir` was on the dead list with
+    # 32 references in the tree. Measured on [A]: 3653 call edges landed on an
+    # import alias, 277 distinct aliases name a definition this project indexes.
+    #
+    # The alias carries the full dotted path it was imported from
+    # (`qualified_name = 'orchestrator.skip_rules.should_skip_dir'`), so the
+    # binding is a lookup, not a guess: split off the last segment, and accept
+    # only when the module part identifies exactly one indexed module AND that
+    # module defines that name exactly once. `import x.y` aliases (whose
+    # qualified_name is a module, not a member) find no def and are left alone.
+    alias_rebound = 0
+    for r in conn.execute(
+            "SELECT DISTINCT t.id AS tid, t.qualified_name AS tq FROM edges e "
+            "JOIN nodes t ON t.id = e.target "
+            "WHERE e.kind = 'calls' AND t.kind = 'import';").fetchall():
+        q = r["tq"] or ""
+        if "." not in q:
+            continue
+        modpath, member = q.rsplit(".", 1)
+        # the extractor stores module qualified_names unqualified (`skip_rules`),
+        # so compare on the last segment of the imported path.
+        cands = mod_defs.get(modpath.rsplit(".", 1)[-1], {}).get(member, ())
+        if len(cands) != 1:
+            continue
+        alias_rebound += conn.execute(
+            "UPDATE edges SET target = ?, confidence = ?, cbm_label = 'dynamic', "
+            "metadata = ? WHERE kind = 'calls' AND target = ?;",
+            (cands[0], CBM_SAME_MODULE, '{"resolution": "import_alias"}',
+             r["tid"])).rowcount
+
+    return {"rebound": rebound, "ambiguous": ambiguous,
+            "recv_rebound": recv_rebound,
+            "alias_rebound": alias_rebound,
+            "modules_indexed": len(mod_defs)}
+
+
 def incremental_index(project_path: str, *, project_root: Optional[str] = None,
                       scope: str = "full", exts: tuple[str, ...] = DEFAULT_EXTS) -> dict:
     """Update only changed files (Step 14): skip unchanged, cascade-delete stale,
@@ -624,6 +835,7 @@ def incremental_index(project_path: str, *, project_root: Optional[str] = None,
             dep_stats = _build_dependency_edges(conn)
             dep_edges = dep_stats["edges"]
             dyn_stats = _build_dynamic_ref_edges(conn)
+            imp_stats = _resolve_imported_calls(conn)
             orphan_after = conn.execute(
                 "SELECT COUNT(*) FROM edges e LEFT JOIN nodes n ON e.target=n.id "
                 "WHERE n.id IS NULL AND e.target NOT LIKE 'ext:%';").fetchone()[0]
@@ -639,6 +851,8 @@ def incremental_index(project_path: str, *, project_root: Optional[str] = None,
                 "dependency_edges": dep_edges, "dependency_stats": dep_stats,
                 "dynamic_ref_edges": dyn_stats["edges"],
                 "dynamic_ref_stats": dyn_stats,
+                "imported_call_edges": imp_stats["rebound"] + imp_stats["recv_rebound"],
+                "imported_call_stats": imp_stats,
                 "orphan_after": orphan_after,
                 "errors": errors, "status": "completed", "fallback": False}
     except Exception as e:

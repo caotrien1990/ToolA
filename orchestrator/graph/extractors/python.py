@@ -97,6 +97,29 @@ class _Extractor(ast.NodeVisitor):
         self._class_stack_lineno: list[int] = []
         # enclosing function node id for call edges
         self._func_stack: list[str] = []
+        # W4: the names each enclosing function scope BINDS locally (params,
+        # assignments, imports, comprehension vars). A bare `foo` inside a
+        # function is only a reference to the module-level `def foo` when the
+        # function does not rebind `foo` itself. Measured on [A]: of 318 bare
+        # references to a name this file defines, 190 -- the majority -- are a
+        # local variable that merely shares the name, so binding without this
+        # check would create more wrong edges than right ones.
+        self._scope_binds: list[set[str]] = []
+        # W4: the nested def/class each enclosing function scope declares, and
+        # the names it binds for any OTHER reason. `_scope_binds` alone cannot
+        # tell `def guard(): ...` apart from `guard = 3`, so it blocked every
+        # reference to a closure -- including the `return guard` that is the
+        # whole point of `build_guard`. Measured on [A]: 903 such references,
+        # and `restart_control_service.guard` read as dead while the function
+        # that returns it is the restart gate the daemon calls on every cycle.
+        #
+        # A separate stack rather than a wider `_local_defs`: 147 names in 61
+        # files are defined more than once in the same file (`_run` x4 in
+        # code_tools.py), so a flat name map would bind a closure reference to
+        # whichever same-named def was registered last. Scope is exactly the
+        # information that disambiguates them.
+        self._scope_defs: list[dict[str, str]] = []
+        self._scope_nondef_binds: list[set[str]] = []
         # names listed in module __all__ (marks is_exported post-visit)
         self._exported: set[str] = set()
         # W5: string literals in this file that spell an identifier. A registry
@@ -108,6 +131,45 @@ class _Extractor(ast.NodeVisitor):
         # for `import` nodes -> `imports_module` edges.
         # Maps name -> first line seen (one node per name per file).
         self._string_names: dict[str, int] = {}
+        # ast.Name nodes already handled as part of a Call (its `func`, or an
+        # argument `_emit_call` passed to _emit_callable_ref_from_expr), so
+        # visit_Name does not emit a second edge for the same reference.
+        self._consumed_as_call_operand: set[int] = set()
+
+    def _nested_def_ids(self, fn: ast.AST) -> dict:
+        """{name: node id} for every def/class declared DIRECTLY in this scope.
+
+        Directly means same scope, not same subtree: a def inside `if` or `try`
+        still belongs here, a def inside a nested function does not -- the outer
+        scope cannot refer to it, so recording it would invent an edge.
+
+        The ids are computed the way `_emit_function`/`_emit_class` will compute
+        them, class stack included: a closure inside a method is emitted as a
+        `method` node qualified by the enclosing class.
+        """
+        out: dict[str, str] = {}
+        prefix = self._class_stack[-1] if self._class_stack else None
+        kind = "method" if self._class_stack else "function"
+
+        def walk(body) -> None:
+            for st in body:
+                if isinstance(st, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    out[st.name] = _node_id(
+                        self.file_path, kind,
+                        _qualified_name(self.module, prefix, st.name), st.lineno)
+                elif isinstance(st, ast.ClassDef):
+                    out[st.name] = _node_id(
+                        self.file_path, "class",
+                        _qualified_name(self.module, st.name), st.lineno)
+                else:
+                    # Descend through the statement, NOT into a def: the two
+                    # branches above register a def and stop there, so a def
+                    # written under `if`/`try`/`with` is reached and one nested
+                    # inside another function is not.
+                    for sub in ast.iter_child_nodes(st):
+                        walk([sub])
+        walk(fn.body)
+        return out
 
     def _emit_module_node(self) -> None:
         nid = _node_id(self.file_path, "module", self.module, 1)
@@ -239,17 +301,106 @@ class _Extractor(ast.NodeVisitor):
 
     # -- calls ----------------------------------------------------------------
 
+    def _scope_callable_target(self, name: str) -> str | None:
+        """Node id of the enclosing-scope def `name` refers to, or None.
+
+        Walks scopes innermost-outward and STOPS at the first one that binds the
+        name for a non-def reason: in `def f(): guard = 3; return guard` the
+        assignment is what `guard` means, and an edge to some `def guard`
+        elsewhere would be a wrong edge -- worse than a missing one, because it
+        makes dead code look alive forever.
+        """
+        for defs, nondef in zip(reversed(self._scope_defs),
+                                reversed(self._scope_nondef_binds)):
+            if name in nondef:
+                return None
+            nid = defs.get(name)
+            if nid:
+                return nid
+        return None
+
     def _callable_target_for_name(self, name: str) -> str | None:
+        # A closure wins over a module-level def of the same name: it is what
+        # the code actually refers to at that point.
+        scoped = self._scope_callable_target(name)
+        if scoped and (":function:" in scoped or ":method:" in scoped):
+            return scoped
         target = self._local_defs.get(name)
         if target and (":function:" in target or ":method:" in target):
             return target
         return None
 
-    def _callable_target_for_attribute(self, attr: str) -> str | None:
+    def _receiver_import_node(self, recv: ast.AST) -> str | None:
+        """The `import` node id a receiver Name is bound to, or None.
+
+        `_session_logs_module._log_app_session(...)` and `plain.attr(...)` are
+        indistinguishable to a suffix match on the bare attribute -- and the
+        suffix match wins, binding the call to whatever local definition happens
+        to share the name. That is how `code_tools._log_app_session`, a wrapper
+        whose entire body is the forwarded call, ended up calling ITSELF while
+        `logs._log_app_session` read as dead with zero callers.
+
+        The receiver is the one piece of evidence that separates the two, and
+        this file can see it: an `import` line bound the name. What that import
+        actually resolves to is a cross-file question, so the id is recorded on
+        the edge and `indexer._resolve_imported_calls` follows it.
+        """
+        if not isinstance(recv, ast.Name):
+            return None
+        nid = self._local_defs.get(recv.id)
+        return nid if nid and ":import:" in nid else None
+
+    def _receiver_is_shadowed(self, recv: ast.AST) -> bool:
+        """True when an enclosing function rebinds the receiver name locally.
+
+        `os = _FakeOs()` inside a test body makes the module-level `import os`
+        irrelevant, so the recorded receiver would name the wrong module. The
+        suffix match stays suppressed either way -- knowing less about the
+        receiver is never a reason to guess harder -- but no receiver is
+        recorded on the edge, and the resolver leaves it external.
+        """
+        return isinstance(recv, ast.Name) and any(recv.id in b for b in self._scope_binds)
+
+    def _callable_target_for_attribute(self, attr: str, recv: ast.AST | None = None) -> str | None:
+        """Local definition a `<recv>.<attr>` VALUE reference points at.
+
+        Returns None when the receiver is an imported name: the same
+        receiver-blindness described in _receiver_import_node applies here, and
+        it produced six self-loops on [A] -- `_query.cbm_trace_path` bound to
+        `tools.cbm_trace_path`, the wrapper, instead of the function in the
+        module `_query` names. The caller emits a cross-file placeholder for
+        those instead, so the resolver can bind them through the right module.
+        """
+        if recv is not None and self._receiver_import_node(recv) is not None:
+            return None
         matched = [nid for n, nid in self._local_defs.items()
                    if n == attr or n.endswith("." + attr)]
         return next((nid for nid in matched
                      if ":function:" in nid or ":method:" in nid), None)
+
+    def _emit_ext_call_edge(self, *, source_id: str, attr: str, recv: ast.AST,
+                            line: int, extra: dict | None = None) -> None:
+        """Unresolved `<recv>.<attr>(...)` placeholder, carrying the receiver.
+
+        `recv_import` is the id of the `import` node the receiver name is bound
+        to. It is the whole reason this edge can be resolved correctly later:
+        the resolver looks at THAT module rather than at every module the file
+        imports, which is what bound `os.walk` to `tools_v15.walk` and
+        `subprocess.run` to `ExecutorLane.run` -- measured on [A], 62 such
+        edges, every one of them wrong.
+        """
+        meta = dict(extra or {})
+        recv_import = self._receiver_import_node(recv)
+        if recv_import is not None and not self._receiver_is_shadowed(recv):
+            meta["recv_import"] = recv_import
+        edge = {
+            "source": source_id, "target": f"ext:{attr}", "kind": "calls",
+            "confidence": CBM_SUFFIX_LOW, "cbm_label": _label_for(CBM_SUFFIX_LOW),
+            "line": line, "is_external": 1,
+        }
+        if meta:
+            edge["metadata"] = meta
+        self.edges.append(edge)
 
     def _emit_callable_ref_edge(self, *, source_id: str, target_id: str,
                                 line: int, via: str) -> None:
@@ -265,7 +416,17 @@ class _Extractor(ast.NodeVisitor):
         if isinstance(expr, ast.Name):
             target = self._callable_target_for_name(expr.id)
         elif isinstance(expr, ast.Attribute):
-            target = self._callable_target_for_attribute(expr.attr)
+            target = self._callable_target_for_attribute(expr.attr, expr.value)
+            if target is None and self._receiver_import_node(expr.value) is not None:
+                # `asyncio.to_thread(_query.nodes_query, ...)` -- a real
+                # reference to a callable in another file. Emitting the
+                # placeholder is what lets the cross-file resolver bind it;
+                # without it the reference is simply lost and the callee reads
+                # as dead.
+                self._emit_ext_call_edge(
+                    source_id=source_id, attr=expr.attr, recv=expr.value,
+                    line=line, extra={"callable_ref": via})
+                return
         else:
             target = None
         if target:
@@ -286,16 +447,43 @@ class _Extractor(ast.NodeVisitor):
                 source_id=source_id, target_id=target, line=node.lineno,
                 via="callable_string_ref")
 
+    def _call_source_id(self) -> str:
+        """The node that OWNS a call, whatever depth it was written at.
+
+        A call written outside any function used to be dropped outright -- the
+        source stack was empty, so no `calls` edge was emitted and the callee
+        read as dead. That is not an edge case: `raise SystemExit(main())`, a
+        registry built by a module-level `_build()`, a decorator applied in a
+        class body all execute at import, which is the STRONGEST evidence of
+        life there is. Measured on [A]: 171 module-level calls in orchestrator/
+        alone were invisible, including all 5 `main()` entry points, every one
+        of which the dead-code detector then reported as dead.
+
+        The module and class nodes already exist and are the honest owners, so
+        a call binds to the innermost enclosing definition:
+        function -> class -> module.
+        """
+        if self._func_stack:
+            return self._func_stack[-1]
+        if self._class_stack:
+            return _node_id(self.file_path, "class",
+                            _qualified_name(self.module, self._class_stack[-1]),
+                            self._class_stack_lineno[-1])
+        return _node_id(self.file_path, "module", self.module, 1)
+
     def _emit_call(self, node: ast.Call) -> None:
-        if not self._func_stack:
-            return  # calls outside a function have no enclosing source node
-        source_id = self._func_stack[-1]
+        source_id = self._call_source_id()
         func = node.func
         if isinstance(func, ast.Name):
             callee = func.id
-            if callee in self._local_defs:
+            # A nested def is the innermost meaning of the name, and `_local_defs`
+            # is flat: `_run()` inside one helper of code_tools.py would otherwise
+            # bind to whichever of that file's four `_run` definitions was
+            # registered last.
+            local = self._scope_callable_target(callee) or self._local_defs.get(callee)
+            if local:
                 self.edges.append({
-                    "source": source_id, "target": self._local_defs[callee],
+                    "source": source_id, "target": local,
                     "kind": "calls", "confidence": CBM_UNIQUE,
                     "cbm_label": _label_for(CBM_UNIQUE), "line": node.lineno,
                 })
@@ -309,8 +497,15 @@ class _Extractor(ast.NodeVisitor):
                 })
         elif isinstance(func, ast.Attribute):
             attr = func.attr
-            # suffix match against local defs (e.g. store.get_db -> get_db)
-            matched = [nid for n, nid in self._local_defs.items() if n == attr or n.endswith("." + attr)]
+            # suffix match against local defs (e.g. store.get_db -> get_db),
+            # but ONLY when the receiver is not a name this file imported --
+            # see _receiver_import_node for what that match did to re-export
+            # wrappers. An imported receiver names a module this file cannot
+            # read, so the honest answer is a placeholder plus the receiver.
+            if self._receiver_import_node(func.value) is not None:
+                matched = []
+            else:
+                matched = [nid for n, nid in self._local_defs.items() if n == attr or n.endswith("." + attr)]
             if matched:
                 self.edges.append({
                     "source": source_id, "target": matched[0], "kind": "calls",
@@ -318,12 +513,8 @@ class _Extractor(ast.NodeVisitor):
                     "line": node.lineno,
                 })
             else:
-                ext_id = f"ext:{attr}"
-                self.edges.append({
-                    "source": source_id, "target": ext_id, "kind": "calls",
-                    "confidence": CBM_SUFFIX_LOW, "cbm_label": _label_for(CBM_SUFFIX_LOW),
-                    "line": node.lineno, "is_external": 1,
-                })
+                self._emit_ext_call_edge(source_id=source_id, attr=attr,
+                                         recv=func.value, line=node.lineno)
 
         for arg in node.args:
             self._emit_callable_ref_from_expr(
@@ -340,7 +531,18 @@ class _Extractor(ast.NodeVisitor):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         nid = self._emit_function(node)
         self._func_stack.append(nid)
+        bound, nondef = _scope_bound_names(node)
+        self._scope_binds.append(bound)
+        self._scope_nondef_binds.append(nondef)
+        # Pre-seeded, not filled as the visitor reaches each def: `return guard`
+        # is written BELOW `def guard`, but `helper()` called at the top of a
+        # function whose `def helper` sits at the bottom is just as common, and
+        # source order is not what decides whether a callable is alive.
+        self._scope_defs.append(self._nested_def_ids(node))
         self.generic_visit(node)
+        self._scope_defs.pop()
+        self._scope_nondef_binds.pop()
+        self._scope_binds.pop()
         self._func_stack.pop()
 
     visit_AsyncFunctionDef = visit_FunctionDef
@@ -361,6 +563,43 @@ class _Extractor(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> None:
         self._emit_call(node)
+        self._consumed_as_call_operand.add(id(node.func))
+        for a in node.args:
+            self._consumed_as_call_operand.add(id(a))
+        for k in node.keywords:
+            self._consumed_as_call_operand.add(id(k.value))
+        self.generic_visit(node)
+
+    def visit_Name(self, node: ast.Name) -> None:
+        """A callable used as a VALUE is a reference, not a call.
+
+        `skip_dir = skip_dir or _default_skip_dir`, `HANDLERS = {"a": handle_a}`,
+        `run_in_executor(_query.nodes_query, ...)`, `def f(fn=_default)` -- every
+        one of these keeps the callable alive, and none of them is an ast.Call
+        with that callable as `func`, so `_emit_call` never sees it and the
+        callee ends with zero inbound edges.
+
+        _emit_callable_ref_from_expr already existed for exactly this, but was
+        wired only to call arguments/keywords and to module-level assignment
+        RHS. That covered the argument shape and missed the rest. Measured on
+        [A]: `search_snapshots._default_skip_dir` and
+        `reaper._default_kill_process_tree` sat on the dead list with their one
+        real reference being `x = x or _default_...` -- the fallback-default
+        idiom, which is a reference the graph could not see.
+
+        Binding on ast.Name only, never ast.Attribute: `.status`, `.alive`,
+        `.run` are ordinary attribute reads on unrelated objects, and the
+        attribute resolver matches on the bare suffix, so widening to them
+        would invent 20 edges of which most would be wrong. A wrong call edge
+        is worse than a missing one -- it makes dead code look alive forever.
+        """
+        if (isinstance(node.ctx, ast.Load)
+                and id(node) not in self._consumed_as_call_operand
+                and (self._scope_callable_target(node.id) is not None
+                     or not any(node.id in b for b in self._scope_binds))):
+            self._emit_callable_ref_from_expr(
+                node, source_id=self._call_source_id(),
+                line=node.lineno, via="callable_value")
         self.generic_visit(node)
 
     def visit_Constant(self, node: ast.Constant) -> None:
@@ -405,8 +644,47 @@ class _Extractor(ast.NodeVisitor):
                         self._emit_callable_ref_from_expr(
                             value, source_id=nid, line=getattr(value, "lineno", node.lineno),
                             via="callable_assign")
+                        # visit_Name would otherwise emit a second edge for the
+                        # same reference, owned by the module instead of the
+                        # variable this assignment creates.
+                        self._consumed_as_call_operand.add(id(value))
                     self._local_defs[tgt.id] = nid
         self.generic_visit(node)
+
+
+def _scope_bound_names(fn: ast.AST) -> tuple:
+    """(all names this function scope binds, names it binds for a NON-def reason).
+
+    Used to decide whether a bare `foo` inside a function refers to the
+    module-level `def foo` or to a local that merely shares the name. Nested
+    functions are included on purpose -- their bindings are not visible to the
+    outer scope, but a name bound in EITHER is not a safe reference to the
+    module-level definition, and over-refusing costs a missing edge while
+    over-binding costs a wrong one.
+
+    The second set is what makes a closure referencable. `def guard(): ...` and
+    `guard = 3` both bind `guard`, and treating them alike blocked every
+    reference to a nested def, so `return guard` emitted nothing at all and the
+    closure read as dead with zero callers. Only the non-def bindings are
+    evidence that the name means something other than the def; a name that is
+    BOTH (a def later reassigned) stays in this set and stays blocked.
+    """
+    bound: set = set()
+    defs: set = set()
+    other: set = set()
+    for x in ast.walk(fn):
+        if isinstance(x, ast.Name) and isinstance(x.ctx, (ast.Store, ast.Del)):
+            other.add(x.id)
+        elif isinstance(x, ast.arg):
+            other.add(x.arg)
+        elif isinstance(x, ast.alias):
+            other.add((x.asname or x.name).split(".")[0])
+        elif isinstance(x, ast.ExceptHandler) and x.name:
+            other.add(x.name)
+        elif isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and x is not fn:
+            defs.add(x.name)
+    bound = defs | other
+    return bound, other
 
 
 def _module_name(file_path: str, project_root: str | None = None) -> str:
@@ -458,8 +736,21 @@ def extract(source: str, *, file_path: str, project_root: str | None = None,
 
     ex = _Extractor(file_path=file_path, module=module, source_hash=source_hash)
     ex._emit_module_node()
-    # pre-seed top-level defs so forward references (a caller defined above its
-    # callee) resolve to real node ids instead of degrading to ext: targets
+    # pre-seed defs so forward references (a caller defined above its callee)
+    # resolve to real node ids instead of degrading to ext: targets.
+    #
+    # METHODS are seeded too, not just top-level defs. `_Extractor` registers a
+    # method in `_local_defs` when it VISITS it, so a `self._helper()` written
+    # above `def _helper` found nothing and emitted `ext:_helper` -- the callee
+    # then read as dead purely because of the order the two were written in.
+    # Measured on [A]: 302 `self.<method>()` calls to a method of the same
+    # class, 20 of them forward references, which is why five private methods
+    # of `DurableAuditWriter` sat on the dead list while `_initialize_schema_once`
+    # calls four of them on consecutive lines.
+    #
+    # Seeding a method into the same flat name map the visitor already writes to
+    # adds no new ambiguity: it makes resolution independent of source order
+    # rather than widening what a name can bind to.
     for child in tree.body:
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
             ex._local_defs[child.name] = _node_id(
@@ -467,6 +758,11 @@ def extract(source: str, *, file_path: str, project_root: str | None = None,
         elif isinstance(child, ast.ClassDef):
             ex._local_defs[child.name] = _node_id(
                 file_path, "class", _qualified_name(module, child.name), child.lineno)
+            for m in child.body:
+                if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    ex._local_defs.setdefault(m.name, _node_id(
+                        file_path, "method",
+                        _qualified_name(module, f"{child.name}.{m.name}"), m.lineno))
     ex.visit(tree)
     # apply module __all__ exports: mark function/method/class nodes whose name
     # appears in __all__ as is_exported=1 (BUG-2 root cause: _exported was
