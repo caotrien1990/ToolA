@@ -1,7 +1,7 @@
 # Project Map
 
 - Schema: 2
-- Generated: 2026-08-20T21:54:52
+- Generated: 2026-08-20T23:04:21
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator`
 - Files indexed: 1246
 
@@ -14,7 +14,7 @@
 - `source`: 421 files, 127443 LOC
 - `test`: 280 files, 42769 LOC
 - `ui`: 23 files, 1710 LOC
-- `unknown`: 117 files, 53918 LOC
+- `unknown`: 117 files, 53919 LOC
 
 ## Entrypoints
 
