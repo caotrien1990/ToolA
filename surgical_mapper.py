@@ -96,8 +96,39 @@ def _cache_path_is_preserved(relative: str) -> bool:
         return True
     # TT-A-04: any SQLite runtime artifact (any depth) is preserved. Check the
     # basename so a .db file inside a subdirectory is still caught.
-    basename = normalized.rsplit("/", 1)[-1].lower()
-    if basename.endswith(SQLITE_CACHE_SUFFIXES):
+    basename = normalized.rsplit("/", 1)[-1]
+    if basename.lower().endswith(SQLITE_CACHE_SUFFIXES):
+        return True
+    # Same reasoning, same bug, one layer up: PRESERVED_CACHE_FILES was written
+    # when every session artifact sat FLAT in .orchestrator_cache. Per-caller
+    # scoping moved them to sessions/<label>-<digest>/, so the exact-match check
+    # above stopped seeing them and _reindex_from_disk deleted the bootstrap of
+    # every live CA session on each full refresh. (WORKFLOW_STATE.json survived
+    # only by accident, via the "stripped stem has no extension left" rule in the
+    # prune loop -- an accident, not a guarantee.) Matching the basename at any
+    # depth restores the intent: these names ARE the runtime artifacts wherever
+    # they live. This does NOT weaken the A02/A30 pact -- write_backups.jsonl and
+    # .write_backups.seeded are deliberately absent from PRESERVED_CACHE_FILES and
+    # stay wiped together (see orchestrator/tools/write/core.py).
+    if basename in PRESERVED_CACHE_FILES:
+        return True
+    # An IN-FLIGHT atomic write is preserved, whatever it is a write of.
+    #
+    # Third layer of the same bug. The basename rule above saves the FINAL file,
+    # but _atomic_write_bytes writes ".<name>.<random>.tmp" beside it and only then
+    # os.replace()s it into place, so a prune landing in that window deletes a file
+    # the writer is still holding a path to. Measured: a reindex with an in-flight
+    # ".CA_SESSION_BOOTSTRAP.md._t2t247a.tmp" present left the final file alone and
+    # deleted the temp -- which is how the concurrent prepare_ca_session test failed
+    # with FileNotFoundError on the PermissionError fallback path, where the temp is
+    # read back rather than renamed.
+    #
+    # Matched on the temp SHAPE, not on the wrapped name, so this covers every
+    # _atomic_write_* caller rather than only the session artifacts that exposed it.
+    # Safe for the prune's real job: these names have no source counterpart to
+    # reconcile, they are never sidecars, and an abandoned one is cleaned up by the
+    # writer's own finally block, not by this loop.
+    if basename.startswith(".") and basename.endswith(".tmp"):
         return True
     return any(
         normalized == directory or normalized.startswith(directory + "/")
