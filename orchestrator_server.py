@@ -73,6 +73,7 @@ from orchestrator.council.route_metrics import (
     build_measurement as _route_build_measurement,
     parse_dispatch_metadata as _route_parse_dispatch_metadata,
 )
+from orchestrator.storage.jsonl_store import append_jsonl as _jsonl_append_locked
 from orchestrator.fileops.xroot import is_outside_project_root, xroot_check
 from orchestrator.server.accounting import PostCallAccountingQueue
 from orchestrator.server.audit_writer import (
@@ -803,6 +804,20 @@ _DURABLE_METRICS_FUTURE = None
 _DURABLE_METRICS_EXECUTOR = None
 _DURABLE_METRICS_LOCK = threading.Lock()
 _DURABLE_METRICS_TIMEOUT_SECONDS = 0.05
+# How long a collected metrics dict stays a valid ANSWER, as opposed to how long
+# /health is willing to wait for a new one. Without this the function submitted a
+# fresh collection on every single request and then waited 50ms for it, so under
+# load the answer was almost always the cached value reported as `metrics_stale`:
+# measured on this box with 3 busy threads, 1 of 8 steady-state probes came back
+# fresh, and raising the budget to 400ms only moved it to 5 of 10 while pushing p50
+# latency from 125ms to 406ms -- the budget was never the problem. The sibling
+# `_controller_health_for_health` has had a TTL for exactly this reason
+# (`_CONTROLLER_HEALTH_TTL_SECONDS`); this path simply never grew one. 2s is well
+# under any watchdog interval, and `metrics_age_ms` already reports the real age, so
+# a caller can still tell how old the answer is.
+_DURABLE_METRICS_TTL_SECONDS = 2.0
+# There is deliberately NO acquisition budget any more: see
+# `_durable_writer_for_health`, which does not wait for anything at all.
 
 
 def _durable_metrics_executor():
@@ -815,16 +830,69 @@ def _durable_metrics_executor():
         return _DURABLE_METRICS_EXECUTOR
 
 
+async def _durable_writer_for_health():
+    """Look the durable writer up WITHOUT waiting for anything.
+
+    Two measured failures, one after the other, and the second is why this now
+    waits for nothing rather than waiting less.
+
+    (1) The ">120s /health hang while MCP read/write stayed alive" report of
+    2026-08-20. This used to call `_get_durable_audit_writer(start=True)` inline.
+    `DurableAuditWriter.start()` takes `self._condition`, and `wait_until_idle`
+    (the accounting flush and the shutdown drain, both up to 10s) re-acquires that
+    condition around every `pending_count()`. Probed with the condition held 2.5s:
+    `start()` blocked 2.500s and the loop tick gap went 0.05s -> 2.531s, so every
+    route on the loop froze -- which is exactly why /health hung while MCP, a
+    separate transport in a separate process, kept answering.
+
+    (2) The first fix moved that call to `asyncio.to_thread` under a 50ms budget.
+    It did stop the hang, and it was still wrong: measured on this box with only 3
+    busy threads, a COLD `to_thread` cost 3032ms and a warm one 31-187ms, all of it
+    thread-pool scheduling rather than contention. Under any real load /health
+    would therefore have reported `metrics_stale` permanently -- a watchdog could
+    no longer tell a contended audit DB from a busy machine, which is the same
+    blind spot as the hang wearing different clothes.
+
+    So the acquisition is not bounded, it is REMOVED. Starting a background worker
+    thread is a mutation, and a health probe has no business performing one: the
+    three callers that genuinely need a running writer
+    (`_stage_durable_session_event`, `_flush_post_call_accounting`, and
+    `_post_call_accounting_startup`, which runs at HTTP boot) already pass
+    `start=True`. Reading the module global is a plain load with no lock, no
+    handoff and no deadline to miss, so contention can no longer be misread as
+    absence. Real contention is still caught one step later, where it actually
+    lives: `writer.metrics()` takes the same condition and is already bounded off
+    the loop by `_durable_metrics_for_health`.
+    """
+    if "--mcp" in sys.argv:
+        return None
+    return _DURABLE_AUDIT
+
+
 async def _durable_metrics_for_health() -> tuple[dict, str | None]:
     """Keep SQLite work off the event loop and bound health latency."""
     global _DURABLE_METRICS_CACHE_WRITER, _DURABLE_METRICS_CACHE
     global _DURABLE_METRICS_CACHE_AT, _DURABLE_METRICS_FUTURE
-    writer = _get_durable_audit_writer(start=True)
+    writer = await _durable_writer_for_health()
     if writer is None:
+        # None is now one fact only: no writer object exists yet. It can no longer
+        # mean "contended", because nothing above waits -- and conflating the two
+        # was the bug in the previous version of this branch, which reported a busy
+        # thread pool as a contended audit DB.
+        not_started = "--mcp" not in sys.argv
+        stale = dict(_DURABLE_METRICS_CACHE) if not_started else {}
+        stale.update({
+            "worker_alive": False, "admission_open": False,
+            "metrics_stale": bool(not_started),
+            "metrics_age_ms": (
+                max(0, int((time.monotonic() - _DURABLE_METRICS_CACHE_AT) * 1000))
+                if not_started and _DURABLE_METRICS_CACHE_AT else None
+            ),
+        })
         return (
-            {"worker_alive": False, "admission_open": False,
-             "metrics_stale": False, "metrics_age_ms": None},
-            "durable_audit_disabled_in_mcp",
+            stale,
+            "durable_audit_not_started"
+            if not_started else "durable_audit_disabled_in_mcp",
         )
     if (_DURABLE_METRICS_CACHE_WRITER is not writer
             and _DURABLE_METRICS_FUTURE is not None
@@ -854,6 +922,30 @@ async def _durable_metrics_for_health() -> tuple[dict, str | None]:
             if _DURABLE_METRICS_FUTURE is future:
                 _DURABLE_METRICS_FUTURE = None
 
+    # A recent answer IS the answer. Refreshing in the background and serving the
+    # cached dict keeps /health honest (age is reported) without spending the budget
+    # on a thread handoff that Windows schedules in ~16ms quanta.
+    cache_age = (
+        time.monotonic() - _DURABLE_METRICS_CACHE_AT
+        if _DURABLE_METRICS_CACHE_AT else None
+    )
+    if (_DURABLE_METRICS_CACHE and cache_age is not None
+            and cache_age <= _DURABLE_METRICS_TTL_SECONDS):
+        # Refresh only once the answer is half-expired. Submitting on every cache
+        # hit would still be one collection per request -- off the critical path,
+        # but the same per-request thread handoff the TTL exists to remove, and a
+        # /health poller would keep the executor permanently busy.
+        if (_DURABLE_METRICS_FUTURE is None
+                and cache_age >= _DURABLE_METRICS_TTL_SECONDS / 2):
+            refresh = _durable_metrics_executor().submit(writer.metrics)
+            _DURABLE_METRICS_FUTURE = refresh
+            refresh.add_done_callback(_completed)
+        fresh = dict(_DURABLE_METRICS_CACHE)
+        fresh.update({
+            "metrics_stale": False,
+            "metrics_age_ms": max(0, int(cache_age * 1000)),
+        })
+        return fresh, None
     future = _DURABLE_METRICS_FUTURE
     if future is None:
         future = _durable_metrics_executor().submit(writer.metrics)
@@ -864,7 +956,18 @@ async def _durable_metrics_for_health() -> tuple[dict, str | None]:
         await asyncio.sleep(min(0.005, max(0.0, deadline - time.monotonic())))
     try:
         if not future.done():
-            raise asyncio.TimeoutError()
+            # `str(asyncio.TimeoutError())` is the EMPTY string, so the bare raise
+            # here reached /health as the literal text "TimeoutError: " -- a field
+            # that names an exception class and then says nothing. Measured under
+            # load this is the common answer, not the rare one, so it is the text a
+            # watchdog reads most often: it has to say what timed out and by how
+            # much, or "stale" is indistinguishable from "broken".
+            raise asyncio.TimeoutError(
+                "durable audit metrics did not return within %dms (Windows sleep "
+                "granularity is ~16ms, so a busy box exceeds this budget while the "
+                "background collection keeps running); serving the cached value"
+                % int(_DURABLE_METRICS_TIMEOUT_SECONDS * 1000)
+            )
         metrics = future.result()
     except Exception as exc:
         stale = dict(_DURABLE_METRICS_CACHE)
@@ -5579,10 +5682,21 @@ def _council_usage_append(item: dict, result: dict) -> None:
             "dev_level": (item.get("measurement_metadata") or {}).get("dev_level", "unknown"),
             "prompt_bytes": (item.get("measurement_metadata") or {}).get("prompt_bytes", 0),
         }
-        with open(_HERE / ".council" / "usage_log.jsonl", "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
+        # Was a plain open(..., "a"). Safe today only because the council drain
+        # that calls this is serialised per agent by _COUNCIL_AGENT_QUEUE_DRAINING
+        # -- nothing in this function says so, and the failure mode if a second
+        # writer arrives is silent: probed at 4 processes x 4 threads x 60 appends,
+        # a plain append kept 280 of 480 lines and overwrote one line's leading
+        # brace, with zero exceptions and exit code 0. _jsonl_append_locked takes a
+        # sidecar lock (so a concurrent read_tail is not denied) and fsyncs outside
+        # the critical section.
+        _jsonl_append_locked(_HERE / ".council" / "usage_log.jsonl", rec)
+    except Exception as exc:
+        # Still fail-open: a ledger write must never break a dispatch. But it is
+        # LOGGED now. The old bare `pass` made a lost usage line indistinguishable
+        # from a run that never happened, which is the blind spot that let an
+        # unlocked append survive here unnoticed.
+        logger.warning("council usage ledger append failed: %s", exc)
 
 
 def _council_observed_p50_sec(runtime_key: str):
@@ -14426,6 +14540,100 @@ def _tool_schema_payload(name: str) -> tuple[dict, int]:
     return {"ok": False, "error": f"No schema for '{name}'", "error_name": "SCHEMA_MISSING"}, 500
 
 
+def _mcp_proxy_transport_verdict(exc: BaseException) -> tuple[str, bool, str]:
+    """Classify a proxy transport failure as (commit_state, safe_to_retry, why).
+
+    The two shapes are not the same answer and must not collapse into one 502. A
+    REFUSED connection means the request never reached the daemon, so nothing ran and
+    an identical retry is free. A TIMEOUT means the daemon accepted the request and
+    may still be running it, so the same retry can double-write. Everything else is
+    genuinely undetermined and is reported as such rather than guessed.
+    """
+    reason = getattr(exc, "reason", None)
+    if isinstance(exc, ConnectionRefusedError) or isinstance(reason, ConnectionRefusedError):
+        return ("not_committed", True,
+                "the connection was refused, so the request never reached the daemon")
+    # socket.timeout is TimeoutError on 3.10+; urllib wraps a connect timeout in URLError.
+    if isinstance(exc, TimeoutError) or isinstance(reason, TimeoutError):
+        return ("unknown", False,
+                "the proxy timed out; the daemon may still be running this call")
+    return ("unknown", False,
+            "the proxy failed after the request may already have been sent")
+
+
+def _mcp_proxy_failure_payload(tool_name: str, body: dict, exc: BaseException) -> dict:
+    """The MCP_PROXY_FAILED envelope, carrying enough identity to resolve the write.
+
+    Reported from the field on 2026-08-20: this branch returned exactly three keys
+    (`ok`, `error_name`, `error`) at status 502. For a MUTATING tool that is the worst
+    available answer -- the daemon may have completed the write and only the response
+    was lost -- and the caller got no operation identity, no `new_hash`, and not even
+    the `_mcp_proxy` metadata the sibling HTTPError branch attaches. A CA in that
+    state can only guess, and guessing "retry" is what double-writes a file.
+
+    The operation_id is deliberately NOT recomputed here. It is
+    sha256(tool + body + session) over the body the DISPATCHER sees, and the
+    dispatcher pops or rewrites several fields (task_epoch, prompt_hash, fields,
+    project_path resolution, agent_id) before it opens the ledger. An id computed on
+    this side of the wire would therefore often be a plausible-looking key for an
+    entry that does not exist -- worse than no id at all, because a 404 from
+    write_status would read as "no write happened". The ledger is also indexed by
+    (project_path, file_path) and `handle_write_status` already supports that lookup,
+    so the target query is the one that actually answers the question.
+    """
+    payload = {
+        "ok": False,
+        "error_name": "MCP_PROXY_FAILED",
+        "error": f"MCP HTTP proxy failed for {tool_name}",
+        "reason": f"{type(exc).__name__}: {exc}",
+        "_mcp_proxy": {"tool": tool_name, "transport": "http", "failed": True},
+    }
+    if tool_name not in _MUTATING_TOOLS:
+        # A read-only tool opens no ledger entry, so a write_status_url here would
+        # only earn a 404 and imply a write that never existed. Retrying is free.
+        payload["commit_state"] = "not_applicable"
+        payload["retryable"] = True
+        payload["safe_to_retry"] = True
+        payload["ca_next_action"] = "retry_same_call"
+        return payload
+    commit_state, safe_to_retry, why = _mcp_proxy_transport_verdict(exc)
+    payload["commit_state"] = commit_state
+    payload["commit_state_reason"] = why
+    payload["retryable"] = safe_to_retry
+    payload["safe_to_retry"] = safe_to_retry
+    if commit_state == "not_committed":
+        payload["write_performed"] = False
+    _pp = str((body or {}).get("project_path") or "")
+    _fp = str((body or {}).get("file_path") or (body or {}).get("path")
+              or (body or {}).get("dst") or "")
+    if _pp or _fp:
+        import urllib.parse as _up
+        _query = [(k, v) for k, v in (("project_path", _pp), ("file_path", _fp)) if v]
+        payload["write_status_url"] = "/api/write_status?" + _up.urlencode(_query)
+        payload["write_status_lookup"] = "target"
+    if safe_to_retry:
+        payload["ca_next_action"] = "retry_same_call"
+        payload["hint"] = ("The daemon was not reachable, so this call did not run. "
+                           "Retry the identical payload.")
+        payload["fallback_sequence"] = ["retry_same_call"]
+        return payload
+    payload["ca_next_action"] = (
+        "poll_write_status_url_then_read_file_range"
+        if payload.get("write_status_url")
+        else "read_file_range_to_confirm_before_retry")
+    payload["hint"] = (
+        ("GET " + payload["write_status_url"] + " to learn whether the write "
+         "committed; commit_state=committed means DO NOT retry. ")
+        if payload.get("write_status_url") else
+        "The outcome is undetermined. ") + (
+        "Confirm with read_file_range before retrying -- a blind retry can "
+        "double-write.")
+    payload["fallback_sequence"] = (
+        ["write_status", "read_file_range"] if payload.get("write_status_url")
+        else ["read_file_range"])
+    return payload
+
+
 def _mcp_is_stateful_t4_tool(tool_name: str) -> bool:
     """Keep stateful T4/browser tools in MCP; route every other tool via HTTP."""
     phases = getattr(ct, "TOOL_PHASES", {}) or {}
@@ -14565,11 +14773,11 @@ async def dispatch_tool_call(tool_name: str, body: dict | None = None,
                 "MCP HTTP proxy failed for tool %s via %s: %s",
                 tool_name, _proxy_base, exc,
             )
-            return web.json_response({
-                "ok": False,
-                "error_name": "MCP_PROXY_FAILED",
-                "error": f"MCP HTTP proxy failed for {tool_name}",
-            }, status=502)
+            # A bare 3-key 502 left CA unable to tell "never ran" from "ran, response
+            # lost" -- see _mcp_proxy_failure_payload for why that mattered and why
+            # the operation_id is resolved by target instead of recomputed.
+            return web.json_response(
+                _mcp_proxy_failure_payload(tool_name, body, exc), status=502)
     if body.get("project_path"):
         headers.setdefault("X-Project-Path", str(body.get("project_path")))
     request = _InProcessToolRequest(tool_name, body, headers=headers)

@@ -8,6 +8,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
+from ..storage.jsonl_store import append_jsonl as _append_jsonl
+
 UNKNOWN = "unknown"
 DEFAULT_MIN_SAMPLES = 5
 COST_RANKS = {
@@ -124,10 +126,23 @@ def build_measurement(item: dict[str, Any], result: dict[str, Any], *, reply_eve
 
 
 def append_measurement(path: str | Path, measurement: dict[str, Any]) -> None:
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with target.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(measurement, ensure_ascii=False) + "\n")
+    """Append one measurement under the shared JSONL lock.
+
+    This used a plain ``open(path, "a")``. That is safe for exactly one writer, and
+    it is safe today only by accident: the council drain that calls it is serialised
+    per agent by ``_COUNCIL_AGENT_QUEUE_DRAINING``. Nothing in the signature says so,
+    and the failure mode if a second writer ever arrives is the worst kind --
+    measured with 4 processes x 4 threads x 60 appends on the plain form, 280 of 480
+    lines survived, one line had its leading brace overwritten, and there were ZERO
+    exceptions with exit code 0. Silent loss, so a scorecard built from these rows
+    would simply have been quietly wrong.
+
+    ``append_jsonl`` already solves this properly -- a sidecar lock, so a concurrent
+    ``read_tail`` is not denied; ``fsync`` outside the critical section; and a
+    ``TimeoutError`` instead of a dropped line -- so this routes to it rather than
+    growing a second lock implementation.
+    """
+    _append_jsonl(path, measurement)
 
 
 def load_measurements(path: str | Path, limit: int = 0) -> list[dict[str, Any]]:
