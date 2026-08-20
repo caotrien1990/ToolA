@@ -40,7 +40,7 @@ class MCP:
 
 class CrossProcessTaskEpochTests(unittest.TestCase):
     def setUp(self):
-        self.t=tempfile.TemporaryDirectory(ignore_cleanup_errors=True); self.root=Path(self.t.name); self.db=self.root/"sessions.db"; self.sink=self.root/"sink"; self.sink.mkdir(); self.port=free_port(); self.env=os.environ.copy(); self.env.update(ORCHESTRATOR_PORT=str(self.port),ORCHESTRATOR_LIVEZ_PORT=str(free_port()),ORCHESTRATOR_BASE_URL=f"http://127.0.0.1:{self.port}",ORCHESTRATOR_SESSIONS_DB=str(self.db),ORCHESTRATOR_INSTANCE_LOCK=str(self.root/"orchestrator.lock"),PYTHONUNBUFFERED="1"); self.http=self.start_http(); self.mcp=MCP(self.env)
+        self.t=tempfile.TemporaryDirectory(ignore_cleanup_errors=True); self.root=Path(self.t.name); self.db=self.root/"sessions.db"; self.sink=self.root/"sink"; self.sink.mkdir(); self.port=free_port(); self.env=os.environ.copy(); self.env.update(ORCHESTRATOR_PORT=str(self.port),ORCHESTRATOR_LIVEZ_PORT=str(free_port()),ORCHESTRATOR_BASE_URL=f"http://127.0.0.1:{self.port}",ORCHESTRATOR_SESSIONS_DB=str(self.db),ORCHESTRATOR_INSTANCE_LOCK=str(self.root/"orchestrator.lock"),ORCHESTRATOR_GENERATION_FILE=str(self.root/"server_generation.json"),PYTHONUNBUFFERED="1"); self.http=self.start_http(); self.mcp=MCP(self.env)
     def tearDown(self):
         if hasattr(self,"mcp"): self.mcp.close()
         if hasattr(self,"http"): self.stop_http()

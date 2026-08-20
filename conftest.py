@@ -74,6 +74,29 @@ The retry is what the OS actually needs (the handle IS released, a few hundred m
 late) and the final swallow is what the caller already asked for. Tests that did
 NOT pass the flag keep raising, exactly as before -- this closes the gap between
 the flag and its behaviour, it does not widen it.
+
+--------------------------------------------------------------------------- #
+
+Same shape as A53, second file: keep the test run OUT of the production
+generation file.
+
+``orchestrator_server.py`` publishes ``SERVER_GENERATION`` (a fresh uuid4 per
+process) to ``.orchestrator_cache/server_generation.json``, and MCP reads that
+file to decide whether the daemon it proxies to has restarted. A test that spawns
+a real server therefore rewrites the LIVE daemon identity: MCP sees a generation
+it does not recognise and refuses calls with MCP_PROXY_FAILED, and once the child
+exits the file is left holding a dead pid and an ephemeral port, so the real
+daemon stays un-probeable until its next restart.
+
+Measured on 2026-08-20 during a full-suite run: the file on disk read pid 111348
+port 51156 -- a process that no longer existed, on a port the daemon never used
+-- while the live daemon was pid 209860 on 8083. A CA session took three
+consecutive MCP_PROXY_FAILED responses in that window and the writes had in fact
+landed, so the failure was purely the identity check, not the write path.
+
+``tests/test_task_epoch_cross_process.py`` was the specific leak and now isolates
+the variable itself. This default is the fence, so the next test to spawn a
+server cannot reintroduce the bug by forgetting one env var out of six.
 """
 
 import os
@@ -85,6 +108,7 @@ from pathlib import Path
 _COLOUR_FORCING_VARS = ("FORCE_COLOR", "CLICOLOR_FORCE", "PY_COLORS")
 
 _SESSIONS_DB_ENV = "ORCHESTRATOR_SESSIONS_DB"
+_GENERATION_FILE_ENV = "ORCHESTRATOR_GENERATION_FILE"
 
 
 def pytest_configure(config):  # noqa: ARG001 - pytest hook signature
@@ -97,6 +121,13 @@ def pytest_configure(config):  # noqa: ARG001 - pytest hook signature
     if not os.environ.get(_SESSIONS_DB_ENV):
         run_dir = Path(tempfile.mkdtemp(prefix="orch_pytest_sessions_"))
         os.environ[_SESSIONS_DB_ENV] = str(run_dir / "sessions.db")
+
+    # Same rule as A53: fill in a default only, so a run that deliberately points
+    # at a specific generation file is left alone. Children inherit os.environ,
+    # which is what makes one assignment here cover servers spawned by Popen.
+    if not os.environ.get(_GENERATION_FILE_ENV):
+        gen_dir = Path(tempfile.mkdtemp(prefix="orch_pytest_generation_"))
+        os.environ[_GENERATION_FILE_ENV] = str(gen_dir / "server_generation.json")
 
 
 # --- W5: make ignore_cleanup_errors=True actually ignore cleanup errors -------
