@@ -234,7 +234,7 @@ TOOL git_diff | T1 | required: project_path | Governed Git operation: git_diff (
 TOOL git_log | T1 | required: project_path | Governed Git operation: git_log (argv-only, no shell).
 TOOL git_stage | T2 | required: project_path | Governed Git operation: git_stage (argv-only, no shell).
 TOOL git_unstage | T2 | required: project_path | Governed Git operation: git_unstage (argv-only, no shell).
-TOOL git_commit | T2 | required: project_path, message, expected_staged_hash | Governed Git operation: git_commit (argv-only, no shell).
+TOOL git_commit | T2 | required: project_path, message | Governed Git operation: git_commit (argv-only, no shell).
 TOOL audit_reconciliation_report | T1 | required: - | C1 T1 READ-ONLY reconciliation of unresolved errors. Classification is expected, recovered, still_open, or infrastructure; infrastructure remains a cause category while disposition is recovered or still_open. Strong evidence yields an explicit record_error_resolution suggestion; 
 TOOL council_cron_job_list | T1 | required: - | List/get durable council cron jobs and run history.
 TOOL council_cron_job_save | T3 | required: name, worker, model, prompt, schedule_type, schedule_value | Create/update a durable council cron job. Usable by CA/leader/HTTP-only workers. Pins worker+model and optional narrator+model.
