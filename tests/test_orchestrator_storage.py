@@ -7,7 +7,11 @@ from pathlib import Path
 
 from orchestrator.storage.fs import atomic_write_text
 from orchestrator.storage.json_store import load_json
-from orchestrator.storage.jsonl_store import append_jsonl, read_tail
+from orchestrator.storage.jsonl_store import (
+    LOCK_TIMEOUT_SECONDS,
+    append_jsonl,
+    read_tail,
+)
 
 
 def _append_worker(path: str, prefix: str, count: int) -> None:
@@ -32,6 +36,19 @@ def test_load_json_returns_default_for_corrupt_file(tmp_path: Path) -> None:
     assert load_json(tmp_path / "missing.json", default=[]) == []
 
 
+# A worker may legitimately spend LOCK_TIMEOUT_SECONDS waiting for the sidecar
+# byte on ANY single append, and then pays one fsync per append on top -- measured
+# at 125ms on this disk, so 50 appends is ~6s of pure platter time per worker
+# before any contention. A join deadline below that sum does not test liveness, it
+# tests disk speed: the original 10s was shorter than the module's own documented
+# wait budget alone and failed under full-suite load with nothing actually wrong.
+#
+# Derived from the constant rather than hardcoded, so raising the module's budget
+# cannot silently reintroduce a deadline tighter than the contract it checks.
+_FSYNC_BUDGET_PER_APPEND = 0.5
+_JOIN_TIMEOUT = LOCK_TIMEOUT_SECONDS + 50 * _FSYNC_BUDGET_PER_APPEND
+
+
 def test_append_jsonl_parallel_process_thread_keeps_all_lines(tmp_path: Path) -> None:
     target = tmp_path / "events.jsonl"
     count = 50
@@ -41,10 +58,14 @@ def test_append_jsonl_parallel_process_thread_keeps_all_lines(tmp_path: Path) ->
 
     process.start()
     thread.start()
-    thread.join(timeout=10)
-    process.join(timeout=10)
+    thread.join(timeout=_JOIN_TIMEOUT)
+    process.join(timeout=_JOIN_TIMEOUT)
 
-    assert not thread.is_alive()
+    # Still asserted, and still meaningful: a lost append or a self-deadlock hangs
+    # forever, so the deadline catches it -- it is only the ARBITRARY tightness that
+    # was the bug. The line-set assertion below is what proves nothing was lost.
+    assert not thread.is_alive(), (
+        "the thread worker did not finish within %.0fs" % _JOIN_TIMEOUT)
     assert process.exitcode == 0
 
     lines = target.read_text(encoding="utf-8").splitlines()

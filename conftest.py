@@ -158,3 +158,75 @@ def _cleanup_retrying(self):
 
 tempfile.TemporaryDirectory.cleanup = _cleanup_retrying
 
+
+# --- A54: a stale `pytest-current` symlink must not abort the whole run --------
+
+# Symptom, measured 2026-08-20: every `pytest tests/` on this box died during
+# COLLECTION with
+#
+#     PermissionError: [WinError 5] Access is denied:
+#     '...\Temp\pytest-of-ADMIN\pytest-current'
+#
+# raised from `_pytest/pathlib.py:359 cleanup_dead_symlinks`, which calls
+# `path.exists()` inside a plain `for` loop. On Windows a symlink left behind by a
+# killed run can be readable-but-not-stat-able (this one dated from 2026-08-17 and
+# `ls` on it also returns EACCES), and `Path.exists()` propagates EACCES rather
+# than returning False -- so pytest's own temp-dir GARBAGE COLLECTION takes the
+# session down before a single test runs.
+#
+# This was expensive to misdiagnose. The error names a path under
+# `%LOCALAPPDATA%\Temp`, and the previous conclusion was "OneDrive is syncing the
+# temp dir" -- so every pytest call grew a `--basetemp` pointing at a fixed folder
+# on the D: drive, which moved all test I/O onto a HDD and saturated it badly
+# enough to make unrelated folders appear locked in Explorer.
+# `%LOCALAPPDATA%` is never OneDrive-redirected; the symlink was always the whole
+# story. Fixing it here removes the reason to redirect basetemp at all -- note the
+# flag is fine and used deliberately elsewhere, always resolved through
+# `tempfile.gettempdir()`; it was the hardcoded drive path that did the damage.
+#
+# Patching rather than deleting the symlink: deleting is a one-off that the next
+# killed run recreates, and this module cannot delete anything on a whim. The
+# upstream loop is simply missing an except clause, so supply it -- a dead symlink
+# that cannot be stat-ed is exactly the case the function is already trying to
+# skip.
+try:  # pragma: no cover - import guard for a private pytest module
+    from _pytest import pathlib as _pytest_pathlib
+except Exception:  # pragma: no cover
+    _pytest_pathlib = None
+
+if _pytest_pathlib is not None and hasattr(_pytest_pathlib, "cleanup_dead_symlinks"):
+    _orig_cleanup_dead_symlinks = _pytest_pathlib.cleanup_dead_symlinks
+
+    def _cleanup_dead_symlinks_tolerantly(root):
+        """Skip symlinks whose target cannot be stat-ed instead of aborting.
+
+        Deliberately narrow: only OSError from the scan is swallowed, and only by
+        falling back to a per-entry loop that keeps removing the dead links it CAN
+        see. A blanket try/except around the original call would silently stop
+        collecting garbage the first time one entry was unreadable.
+        """
+        try:
+            return _orig_cleanup_dead_symlinks(root)
+        except OSError:
+            pass
+        try:
+            entries = list(root.iterdir())
+        except OSError:
+            return None
+        for entry in entries:
+            if not entry.is_symlink():
+                continue
+            try:
+                dead = not entry.exists()
+            except OSError:
+                # Unreadable target: treat as dead, which is what it is.
+                dead = True
+            if dead:
+                try:
+                    entry.unlink()
+                except OSError:
+                    pass
+        return None
+
+    _pytest_pathlib.cleanup_dead_symlinks = _cleanup_dead_symlinks_tolerantly
+
