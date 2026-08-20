@@ -669,4 +669,277 @@ Tương tự các cặp redundancy khác:
 
 ---
 
-_Last updated: 2026-06-04 (added R-series design proposals: R101, R102, R103)_
+---
+
+## Campaign-1608 (2026-08-20) — six defects found while auditing a weak-model campaign
+
+All six are **fixed** and each is pinned by a mutation-verified test. Symptom-first
+triage for every one of them lives in `MAINTENANCE_DOCTOR.md`; this section is the
+defect registry entry. The recurring theme is stated there as a rule: the first
+plausible cause was wrong in every single case.
+
+---
+
+## B002 — A stale `pytest-current` symlink aborts the whole suite at collection
+
+**Status**: fixed
+**Severity**: CRITICAL (no test runs at all; there is no smaller signal)
+**Discovered**: 2026-08-20 by ClauLTN
+**Affects**: every `pytest` invocation on this box
+
+### Reproduction
+
+`venv312\Scripts\python.exe -m pytest tests\ -q` aborts before any test executes:
+
+```
+PermissionError: [WinError 5] Access is denied:
+'C:\Users\ADMIN\AppData\Local\Temp\pytest-of-ADMIN\pytest-current'
+```
+
+### Root cause
+
+`pytest-current` is a symlink left behind by a killed run. On Windows an orphaned
+symlink can be readable-but-not-stat-able, and `Path.exists()` propagates EACCES
+instead of returning False. `_pytest/pathlib.py::cleanup_dead_symlinks` calls
+`.exists()` in a bare loop, so pytest's own temp-dir garbage collector takes the
+session down.
+
+**Misdiagnosis that cost the most:** the path sits under `%LOCALAPPDATA%\Temp`,
+which was read as "OneDrive is syncing the temp dir". `%LOCALAPPDATA%` is never
+OneDrive-redirected. That wrong conclusion produced B003.
+
+### Fix
+
+`conftest.py` (marked `A54`) replaces `cleanup_dead_symlinks` with a version whose
+fallback loop is **per-entry** — not a blanket `try/except`, which would stop
+collecting garbage at the first unreadable entry and leak every dead link behind
+it. Pinned by `tests/test_conftest_stale_symlink_tolerance.py` (5 tests). Reverting
+the shim kills the entire session with the original error.
+
+### Workaround (symptom only)
+
+Deleting `%LOCALAPPDATA%\Temp\pytest-of-ADMIN\pytest-current` unblocks the run, but
+the next killed run recreates it.
+
+---
+
+## B003 — `--basetemp` on `D:` saturates a HDD and looks exactly like a locked folder
+
+**Status**: fixed
+**Severity**: HIGH (unrelated directories stop opening; reads as a filesystem lock)
+**Discovered**: 2026-08-20 by ClauLTN, confirmed by an independent session's report
+**Affects**: `README.md` guidance, and every suite run that followed it
+
+### Reproduction
+
+Run the ~2430-test suite with `--basetemp` pointing anywhere on `D:`. During the
+run, `du -sh` on an unrelated sibling directory hangs past 120s and Explorer will
+not open the folder. The moment pytest stops, the same command completes in 1s.
+
+### Root cause
+
+`D:` is a **HDD**. The suite's temp I/O saturates the spindle. The symptom presents
+as a held handle, so the instinct is to hunt for a process — measure **% Idle Time
+/ IOPS** instead of bytes. A *fixed* basetemp path is a second, independent bug:
+pytest wipes its basetemp at startup, so two agents running the suite concurrently
+delete each other's fixtures (`test_graph_enabled_live_flag_a13.py` already
+recorded this).
+
+### Fix
+
+`README.md` no longer recommends `--basetemp=tests\tmp_fresh`; the default `%TEMP%`
+(SSD, per-run, never OneDrive-redirected) is correct. The last test in
+`tests/test_conftest_stale_symlink_tolerance.py` enforces the distinction repo-wide:
+a hardcoded drive letter fails, a path resolved through `tempfile.gettempdir()` or
+`%TEMP%` passes. Measured effect: full suite 699s -> 352s.
+
+---
+
+## B004 — A test deadline tighter than the contract it tests
+
+**Status**: fixed
+**Severity**: MEDIUM (one intermittent failure that masqueraded as a lock bug)
+**Discovered**: 2026-08-20 by ClauLTN
+**Affects**: `tests/test_orchestrator_storage.py`
+
+### Reproduction
+
+`test_append_jsonl_parallel_process_thread_keeps_all_lines` fails with
+`assert not thread.is_alive()` under `pytest tests/`, and passes 3/3 in isolation.
+
+### Root cause
+
+"Passes alone, fails together" is the signature of test pollution or a concurrency
+bug, and `jsonl_store` has a history of both — so the lock implementation was the
+natural suspect and was not the cause. `jsonl_store.LOCK_TIMEOUT_SECONDS = 15.0`:
+a contended append is *allowed* to wait 15s. The test gave up at 10s. Each append
+also pays one `fsync`, measured at 125ms on this disk, so 50 appends is ~6s of pure
+platter time per worker before any contention. The deadline could not be met even
+with nothing wrong.
+
+### Fix
+
+The join deadline is now derived from the module constant
+(`LOCK_TIMEOUT_SECONDS + 50 * 0.5`) instead of hardcoded, so raising the module's
+budget can never silently reintroduce a deadline tighter than its own contract. The
+liveness assertion stays — a lost append or self-deadlock hangs forever, and the
+deadline is what catches that. Only the arbitrary tightness was the bug.
+
+**General lesson:** a timeout is an assertion too, and it can be wrong. Before
+blaming a lock, check the timeout against the wait the implementation documents.
+
+---
+
+## B005 — A cache reindex deletes live CA sessions' own bootstrap files
+
+**Status**: fixed
+**Severity**: CRITICAL (production data loss, silent)
+**Discovered**: 2026-08-20 by ClauLTN, while chasing one "flaky" failure
+**Affects**: `surgical_mapper._cache_path_is_preserved`, every live CA session
+
+### Reproduction
+
+Any `generate_project_map` or periodic full refresh, while another agent holds a
+prepared session: `_reindex_from_disk` deletes that agent's
+`.orchestrator_cache/sessions/<label>-<digest>/CA_SESSION_BOOTSTRAP.md` while it is
+still in use. The victim never observes the deletion at the moment it happens, and
+the agent that triggered it sees nothing wrong at all.
+
+### Root cause
+
+Name-scoping drift between two modules that never reference each other.
+`surgical_mapper.PRESERVED_CACHE_FILES` was written when session artifacts sat flat
+in `.orchestrator_cache`, so the preserve check compared the **whole** relative
+path. `code_tools._scoped_session_artifact_path` later moved them to
+`sessions/<label>-<digest>/`. After that move the exact-match check no longer
+recognised them.
+
+`WORKFLOW_STATE.json` survived by accident — the prune loop skips a name whose stem
+has no extension left after stripping `.json` — which is why this went unnoticed.
+
+### Fix
+
+Preservation now matches at three layers: the final name, the **basename at any
+depth**, and the in-flight `.<name>.<random>.tmp` shape that `_atomic_write_bytes`
+writes beside its target (preserving only the final name still deletes a file the
+writer holds a path to). Deliberately narrow — a plain `scratch.tmp` stays prunable,
+or reconciling external deletes would stop working. Pinned by
+`tests/test_scoped_session_artifacts_survive_reindex.py` (10 tests), which also
+asserts the fix did **not** widen to cover the A02/A30 write-ledger pact.
+
+**Two test shapes that prove nothing here** (both were tried and discarded):
+"prepare -> reindex -> prepare again" passes with the fix reverted because the
+second prepare rewrites the lost file; and `generate_project_map` without
+`force=True` returns a "skipped" payload when the cache is fresh — a prune that
+never ran proves nothing about pruning.
+
+---
+
+## B006 — Git tool payloads truncated, and `expected_staged_hash="auto"` refused
+
+**Status**: fixed
+**Severity**: HIGH (git_commit unusable without a manual round-trip)
+**Discovered**: 2026-08-18 from live use, reported by Anh
+**Affects**: `git_status`, `git_stage`, `git_commit`
+
+### Reproduction
+
+On a mid-refactor tree, all three tools return past the transport's ~63k ceiling and
+arrive TRUNCATED, so the response has to be routed through a file to be read. And
+`git_commit` with `expected_staged_hash="auto"` is refused as `GIT_STATE_STALE` even
+though the index has not changed; the only way through is to copy
+`current_staged_hash` out of the error text and resend.
+
+### Root cause
+
+One causal chain, which is why they were fixed together. `records` was 89% of the
+payload (~216 chars/record) and the only unbounded part. Worse, `staged_hash` sat
+**after** it in the JSON, so a response cut at the limit lost exactly the field
+`git_commit` requires — and an unreadable hash is why a caller reaches for `"auto"`
+in the first place. `"auto"` then failed because it was compared as a literal string
+against a sha256, so it always mismatched. `GIT_STATE_STALE` named the wrong cause
+and sent the caller looking for a race that was not there.
+
+### Fix
+
+* `records` capped by `max_records`, and the cap is **reported**
+  (`records_truncated`), never silent. `0` = uncapped and is the default, so
+  in-process callers that walk `records` are unaffected.
+* `counts` / `state_hash` / `staged_hash` computed over **every** record and moved
+  **ahead** of `records`. A capped read and a full read are now interchangeable for
+  every decision a caller makes.
+* `"auto"` is an explicit opt-out of the staleness check only — an empty index is
+  still `NOTHING_STAGED`, a genuine mismatch is still refused.
+* A missing hash says `EXPECTED_STAGED_HASH_REQUIRED` and carries
+  `current_staged_hash`, so the corrected retry needs no second call.
+* `git_stage` no longer returns two whole statuses.
+
+Pinned by `tests/test_git_status_payload_and_auto_hash.py` (11 tests); 7 fail on
+revert. Its last test asserts a maintenance trap: a new parameter must go in the
+**registry schema**, not just the Python signature — `allowed_params` is built from
+the schema, so a signature-only parameter is unreachable over HTTP.
+
+---
+
+## B007 — CASE-2008: script and command tools delete files nobody named
+
+**Status**: fixed
+**Severity**: CRITICAL (real file loss, and the evidence was truncated away)
+**Discovered**: 2026-08-18, reported in `REPORT_DELETEFILE_CASE2008.TXT`
+**Affects**: `run_project_test_script` (and its `run_ps1_script` / `run_node_script`
+wrappers), and independently `run_project_command`
+
+### Reproduction
+
+An agent ran a script that deleted files it was never asked to delete. The output
+that would have shown the damage was truncated (68,978 chars became 4,000, and the
+two filenames fell off the end). Separately, `rd /s /q junk` through
+`run_project_command` returned `ok` with exit code 0 and really removed the
+directory.
+
+### Root cause
+
+**Authorization was never the missing part.** The caller *was* authorised; the
+mutation token proves authorization, not intent. A token-gated tool with no
+confirmation gate is exactly what CASE-2008 was. And `run_project_command` was a
+separate entry point to the same filesystem with the same gap — a safety property
+on one tool and not its sibling.
+
+### Fix
+
+Whitelist, never blacklist: delete only what is named. `dry_run=true` previews with
+`executed:false`; `confirm_destructive=<destructive_count>` acknowledges, and a
+**stale count is refused** (a count, not a boolean, so editing the command
+invalidates the acknowledgement). `DESTRUCTIVE_SCRIPT_FOOTGUN` is deliberately not
+confirmable — PowerShell discards `-Include` when `-LiteralPath` is given, so there
+is no count worth acknowledging, only a command to rewrite.
+
+`run_project_command` runs four interpreters (cmd, PowerShell, `node -e`,
+`python -c`); scanning with a single runtime's pattern set was *measured* to miss
+`fs.rmSync`, `fs.unlinkSync`, `shutil.rmtree` and `os.remove`, so the gate scans the
+union. A base64 body is scanned after decoding and a list `command` as the string it
+becomes — encoding and list form are transport details, not privilege levels. A
+destructive run never truncates its own output, and a failed backup refuses the run
+rather than implying a recoverability that does not exist. The gate is **shared**
+between both entry points, and a test asserts each error name is raised from exactly
+one place.
+
+Pinned by `tests/test_destructive_script_guard_case2008.py` (19) and
+`tests/test_destructive_command_guard_case2008.py` (15).
+
+**Cost check, so the gate is not read as a tax:** 34 real call sites in this repo
+were measured against it — 0 flagged.
+
+### Related: the mutation token now carries a two-sentence mini rule
+
+`GET /api/token`, `/api/token/refresh`, and the `MUTATION_TOKEN_REQUIRED` /
+`MUTATION_TOKEN_EXPIRED` refusals all return `mini_rule`: whitelist-only deletion,
+and fail loud. The token **is** the destructive capability, so the reminder rides on
+the handout and on the refusal — a CA's most likely first contact with the
+destructive tier. Bounded to exactly four call sites and counted by a test:
+`_error_response` splats `**extra`, so a fifth would leak the reminder onto
+unrelated errors. Pinned by `tests/test_mutation_token_mini_rule.py` (7 tests).
+
+---
+
+_Last updated: 2026-08-20 (campaign-1608: added B002-B007, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md)_
