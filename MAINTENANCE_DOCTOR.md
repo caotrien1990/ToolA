@@ -32,6 +32,7 @@ these are not scaffolding, they were all mutation-verified (see
 | `git_commit` over HTTP omitting the hash | B006 regressed | Schema `required` refused first, and that error cannot carry `current_staged_hash` | `test_git_status_payload_and_auto_hash.py` |
 | `query_sqlite` answers `QUERY_SQLITE_ERROR: database is locked` | the DB is corrupt or the tool is broken | Neither. Another process holds the write lock; since B009 this answers `SQLITE_DATABASE_LOCKED` with `retryable:true` — wait and resend the same call | `test_p4_soft_data.py::TestQuerySqlite` |
 | `write_fix` on a large file client-times-out; nobody knows if it landed | The write was lost; resend it | It almost certainly landed. The ledger opens before the tool runs, so `/api/write_status?project_path=..&file_path=..` answers `in_flight` then `committed` — a blind resend writes the file twice | `test_write_ledger*.py`; measured 10MB: committed at t+54s after a 4s client timeout |
+| A tool works over HTTP but answers `UNSUPPORTED_FIELD` over MCP | The payload is wrong | It is not. The MCP bridge is a separate long-lived process; before B010 it screened the payload against the registry it loaded at launch. Restart the MCP client, and if the gate is back, the fix regressed | `test_mcp_gate_uses_live_schema_b010.py` |
 
 ---
 
@@ -46,6 +47,33 @@ The server does not care that the client left. So:
 3. Only resend when `commit_state` is `not_committed`. A resend during `in_flight` is a second full write of the same file.
 
 Measured end to end against the live daemon (10MB file, deliberate 4s client timeout): the client raised `TimeoutError` at 4025ms, the target lookup answered `in_flight` / `safe_to_retry: false` at t+4573ms, and flipped to `committed` at t+53961ms with `bytes_written: 10337814` and `validation_ok: true`. The recovery path was complete the whole time — what was missing, until 2026-08-20, was any document telling a CA it existed. If you are tempted to make the write path asynchronous to "fix" this, measure first: the answer is already there.
+
+## When one transport accepts a field and the other refuses it
+
+The MCP stdio bridge is **not** the daemon. It is a separate process that imports
+`orchestrator_server` once at launch and keeps that registry for its whole life,
+which can be many hours. The daemon restarts; the bridge does not.
+
+So `mcp_generation` in an MCP response is the *bridge's* stamp, not the daemon's.
+Seeing it differ from `/health` is normal after a daemon restart — TA-5 made the
+bridge re-baseline instead of failing closed, which is why calls keep working.
+
+What that means when triaging:
+
+1. **Trust the daemon's answer, not the bridge's.** Since B010 there is no local
+   schema screen: an MCP call proxies to the daemon and the daemon's registry
+   decides. A refusal you get over MCP is the daemon's refusal.
+2. **If MCP refuses something HTTP accepts, the fix has regressed.** Compare
+   `GET /api/tools/<tool>/schema` (daemon, authoritative) against MCP's own
+   `tool_schema` (bridge, possibly stale). If the daemon lists the field and MCP
+   does not, that difference is expected — but it must no longer change the
+   *verdict* on a call.
+3. **Restarting the daemon does not refresh a bridge.** A bridge started before a
+   registry change keeps the old schema until its own process restarts. That is
+   acceptable for `tool_schema` listings; it must never decide a call.
+
+Do not "fix" a stale bridge by re-adding a local screen. Two processes answering
+for one tool need one authority, and it is the process that runs the handler.
 
 ## Running the test suite
 

@@ -14673,26 +14673,19 @@ async def dispatch_tool_call(tool_name: str, body: dict | None = None,
     if (transport == "mcp"
             and tool_name not in {"tool_names", "tool_schema"}
             and not _mcp_is_stateful_t4_tool(tool_name)):
-        # Schema-invalid MCP payloads are deliberately kept local: this is a
-        # side-effect-free gate and therefore shares the duplicate-retry ledger
-        # with the direct HTTP dispatcher. Valid payloads take the proxy path
-        # below so their real handler runs in the live daemon.
-        _schema_props = ((_schema_for_tool(tool_name) or {}).get("parameters") or {}).get("properties") or {}
-        _schema_aliases = set(_ARG_ALIASES.get(tool_name, {}))
-        _schema_transport_fields = {"session_id", "task_epoch", "prompt_hash", "generation"}
-        _schema_bad_fields = [
-            key for key in body
-            if key not in _schema_props
-            and key not in _schema_aliases
-            and key not in _schema_transport_fields
-        ]
-        if _schema_bad_fields:
-            if body.get("project_path"):
-                headers.setdefault("X-Project-Path", str(body["project_path"]))
-            request = _InProcessToolRequest(tool_name, body, headers=headers)
-            return await _dispatch_tool_call_request(request, transport=transport)
+        # B010: there is deliberately NO local schema screen here. This code
+        # runs inside the MCP stdio bridge, a long-lived process that imported
+        # its registry at launch, so `_schema_for_tool` here can be older than
+        # the daemon's -- and after TA-5 taught the bridge to re-baseline its
+        # generation stamp instead of failing closed, it proxies happily to a
+        # daemon whose schema it no longer shares. Screening locally therefore
+        # answered UNSUPPORTED_FIELD for fields (and UNKNOWN_TOOL for whole
+        # tools) the daemon accepts. The screen used to justify itself by
+        # sharing the duplicate-retry ledger, but _bridge_dedup below already
+        # applies _duplicate_retry_guard to every _DETERMINISTIC_TOOLBODY_ERRORS
+        # verdict, this one included. Only the daemon's registry decides.
 
-        # Keep the valid-payload happy path on the live HTTP daemon. Both a
+        # Keep the whole path on the live HTTP daemon. Both a
         # 2xx error envelope and urllib HTTPError use the same bridge helper,
         # so the duplicate guard cannot be bypassed by HTTP status handling.
         _proxy_base = os.environ.get(

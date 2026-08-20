@@ -1,8 +1,17 @@
 """R57 regression coverage for the MCP duplicate bridge.
 
-WHY: schema-invalid MCP calls must use the local schema gate, while valid
-payloads must use the live HTTP proxy. Deterministic errors from either the
-2xx envelope or HTTPError branch must share the same duplicate ledger.
+WHY: a deterministic tool-body error must reach the caller once as itself and a
+second time as DUPLICATE_RETRY_BLOCKED, whether it arrived in a 2xx envelope or
+through the HTTPError branch -- both share one duplicate ledger.
+
+R57 originally also asserted that a schema-invalid payload never reaches the HTTP
+proxy, because the bridge screened it locally first. B010 removed that screen:
+"invalid" was decided against the bridge process's own registry, which is loaded
+once at launch and goes stale the moment the daemon gains a parameter, so fields
+the daemon accepts were refused (and whole new tools came back UNKNOWN_TOOL).
+The verdict now comes from the daemon. What R57 guards is unchanged in substance
+-- the same two statuses in the same order -- it just no longer pins which layer
+produced them. See tests/test_mcp_gate_uses_live_schema_b010.py.
 """
 
 import asyncio
@@ -23,15 +32,35 @@ def _reset_duplicate_ledger():
     server._DUPLICATE_FIRST_SEEN.clear()
 
 
-def test_schema_invalid_mcp_payload_stays_local_and_deduplicates(monkeypatch):
+def test_schema_invalid_mcp_payload_deduplicates(monkeypatch):
+    """An unsupported field: refused once, then blocked as a duplicate.
+
+    The daemon is the one that refuses now (B010), so the fake stands in for it
+    and answers the way the real validator does -- HTTP 400 carrying
+    UNSUPPORTED_FIELD and the current accepted_fields.
+    """
     _reset_duplicate_ledger()
     proxy_calls = []
 
-    def unexpected_proxy(*args, **kwargs):
-        proxy_calls.append((args, kwargs))
-        raise AssertionError("schema-invalid MCP payload must not reach HTTP proxy")
+    def fake_urlopen(request, timeout):
+        proxy_calls.append((request.full_url, timeout))
+        raw = json.dumps(
+            {
+                "ok": False,
+                "error_name": "UNSUPPORTED_FIELD",
+                "unsupported_fields": ["unsupported_from_fixture"],
+                "accepted_fields": ["project_path", "query"],
+            }
+        ).encode("utf-8")
+        raise urllib.error.HTTPError(
+            request.full_url,
+            400,
+            "schema failure",
+            hdrs=None,
+            fp=io.BytesIO(raw),
+        )
 
-    monkeypatch.setattr(urllib.request, "urlopen", unexpected_proxy)
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     body = {
         "query": "r57-local-schema",
         "unsupported_from_fixture": "no-side-effect",
@@ -52,11 +81,15 @@ def test_schema_invalid_mcp_payload_stays_local_and_deduplicates(monkeypatch):
 
     first_status, first_payload = _payload(first)
     second_status, second_payload = _payload(second)
-    assert proxy_calls == []
     assert first_status == 400
     assert first_payload["error_name"] == "UNSUPPORTED_FIELD"
+    # The daemon's accepted_fields must survive the bridge, because that is the
+    # half of the answer a CA can act on.
+    assert "query" in first_payload.get("accepted_fields", [])
     assert second_status == 409
     assert second_payload["error_name"] == "DUPLICATE_RETRY_BLOCKED"
+    assert second_payload["original_error_name"] == "UNSUPPORTED_FIELD"
+    assert len(proxy_calls) == 2
 
 
 def test_valid_mcp_payload_uses_proxy_happy_path(monkeypatch):

@@ -1061,4 +1061,95 @@ The `pragma` mutant surviving was the fix reviewing itself.
 
 ---
 
-_Last updated: 2026-08-20 (campaign-1608: added B002-B009, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md)_
+## B010 - MCP refused fields the daemon accepts, from its own stale schema
+
+**Status**: fixed
+**Severity**: MEDIUM (a valid call is refused; the caller is told its payload is wrong)
+**Discovered**: 2026-08-21 by ClauLTN, while verifying the TA-5 self-heal after a restart
+**Affects**: `dispatch_tool_call(transport="mcp")` (`orchestrator_server.py`) — every tool reached over MCP
+
+### Reproduction
+
+Same tool, same field, two transports, on generation `4c69c7c10f4b`:
+
+```
+HTTP  POST /api/call/git_status {"project_path": ..., "max_records": 0}
+    -> ok: true
+
+MCP   call_tool("git_status", {"project_path": ..., "max_records": 0})
+    -> ok: false   UNSUPPORTED_FIELD
+       accepted_fields: [include_ignored, project_path]
+```
+
+`max_records` had been in the registry since commit `ba88645` (21:18) and
+`/api/tools/git_status/schema` listed it. The MCP client processes had started at
+09:30, 17:56 and 18:37 — all before that commit.
+
+The decisive observation was in a call the gate *did* let through: `include_ignored`
+predates `ba88645`, and its MCP response came back carrying `records_total` and
+`records_truncated`, fields only the new code emits. So the handler was the new
+one all along. Only the gate was old.
+
+### Root cause
+
+`dispatch_tool_call(transport="mcp")` screened the payload before proxying,
+using `_schema_for_tool()` — which reads `ct.TOOL_SCHEMAS` **in whichever process
+runs the gate**. For an MCP call that process is the stdio bridge: a separate,
+long-lived process that imported its registry once at launch. Every parameter the
+daemon has gained since then is invisible to it.
+
+This has always been the code's shape, but it was previously unreachable in a way
+a caller would notice, because a generation mismatch made the bridge fail closed
+with `MCP_STALE_RELOAD_REQUIRED`. TA-5 fixed that — correctly, a stale stamp
+should not brick a session — and in doing so made the bridge proxy happily to a
+daemon whose schema it no longer shares. The generation layer healed; the registry
+layer did not, and the gap became visible.
+
+Two symptoms, one cause: an unknown field answered `UNSUPPORTED_FIELD` with the
+bridge's outdated `accepted_fields`, and a tool registered after the bridge
+started had `_schema_for_tool` return `{}`, so every one of its fields looked
+unknown.
+
+The screen justified itself in a comment as sharing the duplicate-retry ledger
+with the HTTP dispatcher, so a bad payload gets one correction instead of an
+infinite loop. That was already false: the proxy path runs `_bridge_dedup`, which
+applies `_duplicate_retry_guard` to every `_DETERMINISTIC_TOOLBODY_ERRORS`
+verdict, `UNSUPPORTED_FIELD` included.
+
+### Fix
+
+The local screen is deleted. Every non-T4 MCP call proxies to the daemon and the
+daemon's registry decides. A genuinely unknown field still comes back as
+`UNSUPPORTED_FIELD` — from the daemon, with the daemon's `accepted_fields`, which
+is the only version a CA can act on — and an identical resend is still blocked as
+`DUPLICATE_RETRY_BLOCKED`.
+
+Pinned by 4 tests in `tests/test_mcp_gate_uses_live_schema_b010.py`: a stale
+schema missing one field, a tool missing entirely, a field no layer knows (must
+still fail loud), and the ledger guarantee the old comment claimed the screen
+provided. Reverting the fix kills 4 tests; deleting `_bridge_dedup` from the
+error branch kills the ledger test.
+
+Two existing tests were re-pointed, both because they pinned the *decision site*
+rather than the outcome:
+
+* `test_mcp_duplicate_bridge_r57.py` asserted `proxy_calls == []` for an invalid
+  payload. Its real guarantee — 400 then 409 — is kept verbatim.
+* `test_duplicate_retry_guard.py` had **no HTTP mock at all**. Before the fix an
+  invalid payload never left the process, so it passed by accident; afterwards it
+  POSTed to whatever `[A]` was on 8083 and asserted against *that* process's
+  ledger, which is why it passed alone and failed in a group. It now forwards the
+  proxy request into the real dispatcher. A canned error envelope was tried first
+  and failed, correctly: the HTTP validator records its duplicate under a **tuple**
+  key `(scope, sha256, error)` while `_bridge_dedup` uses a **string** key, so a
+  canned reply takes a path that cannot see what the first leg wrote. Both legs
+  reach the same validator in production; only a loopback reproduces that.
+
+**General lesson:** two processes that answer for the same tool must not each
+keep their own copy of the contract. And when a fix makes a previously-fatal
+mismatch survivable, check what the mismatch was hiding — TA-5 did not cause this
+bug, it made it observable.
+
+---
+
+_Last updated: 2026-08-21 (campaign-1608: added B002-B010, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md)_
