@@ -11,6 +11,15 @@ import json
 import sqlite3
 from pathlib import Path
 
+# B009 (2026-08-20): SQLite lock contention is a WAIT, not a failure. Passing
+# this to connect(timeout=) is the whole mechanism -- sqlite3 installs it as the
+# busy handler, so PRAGMA busy_timeout reports it back (measured; an extra PRAGMA
+# here was redundant and a mutant proved it by surviving). Named so a test can
+# shrink it to milliseconds instead of blocking for the real wait. 20s:
+# graph/store.py uses 15s, council/cron_jobs.py 10s, and this is the tool CAs
+# poll by hand against databases another process is writing.
+_SQLITE_BUSY_TIMEOUT_MS = 20000
+
 
 def _err(msg: str, **extra) -> str:
     d = {"ok": False, "result": "error", "error": msg}
@@ -34,7 +43,8 @@ async def query_sqlite(db_path: str, sql: str = "", table: str = "",
         if not p.exists():
             return _err(f"DB not found: {p}", error_name="PATH_NOT_FOUND")
         limit = max(1, min(int(limit or 50), 1000))
-        conn = sqlite3.connect(f"file:{p.as_posix()}?mode=ro", uri=True, timeout=10)
+        conn = sqlite3.connect(f"file:{p.as_posix()}?mode=ro", uri=True,
+                               timeout=_SQLITE_BUSY_TIMEOUT_MS / 1000.0)
         try:
             conn.row_factory = sqlite3.Row
             if not sql or list_tables:
@@ -71,6 +81,22 @@ async def query_sqlite(db_path: str, sql: str = "", table: str = "",
                               ensure_ascii=False, default=str)
         finally:
             conn.close()
+    except sqlite3.OperationalError as e:
+        # A writer holding the DB is transient state, not a bad request. Reported
+        # as retryable so a CA waits instead of concluding the tool is broken;
+        # every other OperationalError (bad SQL, no such table) stays a hard error.
+        text = str(e).lower()
+        if "locked" in text or "database is busy" in text:
+            return _err(
+                f"OperationalError: {e}",
+                error_name="SQLITE_DATABASE_LOCKED",
+                retryable=True,
+                retry_after_seconds=1,
+                busy_timeout_ms=int(_SQLITE_BUSY_TIMEOUT_MS),
+                ca_next_action="another process holds the DB lock; wait, then resend the same call",
+            )
+        return _err(f"OperationalError: {e}", error_name="QUERY_SQLITE_ERROR",
+                    retryable=False)
     except Exception as e:
         return _err(f"{type(e).__name__}: {e}", error_name="QUERY_SQLITE_ERROR")
 
@@ -210,7 +236,7 @@ async def read_chunks(file_path: str, by: str = "line", start: int = 0,
 
 UPGRADE_P4_SCHEMA_SPECS = [
     ("query_sqlite",
-     "T1 READ-ONLY: inspect a SQLite DB (tables + columns) and run bounded SELECT/WITH/PRAGMA/EXPLAIN queries against the file opened mode=ro. Rejects every write/DDL keyword. Empty sql -> schema listing. Never writes.",
+     "T1 READ-ONLY: inspect a SQLite DB (tables + columns) and run bounded SELECT/WITH/PRAGMA/EXPLAIN queries against the file opened mode=ro. Rejects every write/DDL keyword. Empty sql -> schema listing. Never writes. Waits out a busy writer for 20s; if the lock outlasts that, answers SQLITE_DATABASE_LOCKED with retryable:true -- resend the same call rather than treating it as a failure.",
      {"db_path": {"type": "string", "description": "Path to .db (absolute or relative to project_path)."},
       "sql": {"type": "string", "default": "", "description": "Read-only query; empty -> return schema."},
       "table": {"type": "string", "default": "", "description": "Optional: focus schema on one table."},

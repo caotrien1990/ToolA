@@ -671,9 +671,9 @@ Tương tự các cặp redundancy khác:
 
 ---
 
-## Campaign-1608 (2026-08-20) — seven defects found while auditing a weak-model campaign
+## Campaign-1608 (2026-08-20) — eight defects found while auditing a weak-model campaign
 
-All seven are **fixed** and each is pinned by a mutation-verified test. Symptom-first
+All eight are **fixed** and each is pinned by a mutation-verified test. Symptom-first
 triage for every one of them lives in `MAINTENANCE_DOCTOR.md`; this section is the
 defect registry entry. The recurring theme is stated there as a rule: the first
 plausible cause was wrong in every single case. B008 was found last, while
@@ -1002,4 +1002,63 @@ first must not be the one with less information.
 
 ---
 
-_Last updated: 2026-08-20 (campaign-1608: added B002-B008, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md)_
+## B009 - `query_sqlite` reported lock contention as a permanent failure
+
+**Status**: fixed
+**Severity**: LOW (correct answer, unusable classification)
+**Discovered**: 2026-08-20 by ClauLTN, closing the last open item of the campaign
+**Affects**: `query_sqlite` (`tools_upgrade_p4.py`)
+
+### Reproduction
+
+Query a database another process is writing (a `BEGIN EXCLUSIVE` transaction is
+enough). The blanket `except Exception` answered:
+
+```
+error_name: QUERY_SQLITE_ERROR
+error: OperationalError: database is locked
+```
+
+`retryable` defaults to `false`, so a CA reading that response concludes the tool
+or the database is broken and stops. In fact the only correct action was to wait
+and resend — the same call would have succeeded seconds later.
+
+### Root cause
+
+Two separate things, and the first report of this defect got one of them wrong.
+
+The wrong half, corrected by measurement: the connection was **not** missing a
+busy timeout. `sqlite3.connect(..., timeout=10)` installs the busy handler, and
+`PRAGMA busy_timeout` reads back `10000`. An early version of this fix added an
+explicit `PRAGMA busy_timeout=...` beside it; a mutant that deleted that line
+survived all three new tests, which is exactly what a redundant statement looks
+like. It was removed rather than kept as decoration.
+
+The real half: contention was indistinguishable from a bad request. Every
+failure — a SQL typo, a missing table, a busy writer — collapsed into one
+`error_name` with no `retryable` field, and the 10s wait was the sqlite3 default
+rather than a deliberate choice for a tool CAs poll by hand.
+
+### Fix
+
+`_SQLITE_BUSY_TIMEOUT_MS = 20000` as a named module constant feeding
+`connect(timeout=...)` — one mechanism, one name, and a test can shrink it to
+milliseconds instead of blocking for the real wait. `sqlite3.OperationalError` is
+caught before the blanket handler: lock/busy text answers
+`SQLITE_DATABASE_LOCKED` with `retryable: true`, `retry_after_seconds`,
+`busy_timeout_ms` and a `ca_next_action`; every other `OperationalError` stays
+`QUERY_SQLITE_ERROR` with `retryable: false`, so a typo never becomes an
+infinite retry. The schema `description` says so too, because that string is
+what a CA reads before calling.
+
+Pinned by 3 tests in `tests/test_p4_soft_data.py` (20 total), one of which drives
+a real writer transaction rather than mocking the exception. Both surviving
+mutants (drop the `OperationalError` branch; pin `timeout=10` again) are killed.
+
+**General lesson:** a retry hint is part of the answer, not a nicety — and
+mutation testing is what tells you whether a line you just added does anything.
+The `pragma` mutant surviving was the fix reviewing itself.
+
+---
+
+_Last updated: 2026-08-20 (campaign-1608: added B002-B009, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md)_

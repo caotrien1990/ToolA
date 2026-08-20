@@ -63,6 +63,77 @@ class TestQuerySqlite(unittest.TestCase):
         self.assertFalse(r["ok"])
         self.assertEqual(r["error_name"], "PATH_NOT_FOUND")
 
+    # -- B009 (2026-08-20): lock contention is a wait, not a failure ---------
+
+    def _hold_write_lock(self):
+        """Open an EXCLUSIVE write transaction on self.db and keep it open."""
+        holder = sqlite3.connect(self.db, timeout=1)
+        holder.execute("BEGIN EXCLUSIVE")
+        holder.execute("INSERT INTO items (name) VALUES ('held')")
+        return holder
+
+    def test_locked_db_is_retryable_not_a_generic_error(self):
+        """A busy writer must answer SQLITE_DATABASE_LOCKED + retryable:true.
+
+        busy_timeout is shrunk to 50ms so the test measures the classification,
+        not the 20s production wait.
+        """
+        original = p4._SQLITE_BUSY_TIMEOUT_MS
+        holder = self._hold_write_lock()
+        try:
+            p4._SQLITE_BUSY_TIMEOUT_MS = 50
+            r = json.loads(_run(p4.query_sqlite(db_path=self.db,
+                                                sql="SELECT * FROM items")))
+        finally:
+            p4._SQLITE_BUSY_TIMEOUT_MS = original
+            holder.rollback()
+            holder.close()
+        self.assertFalse(r["ok"], r)
+        self.assertEqual(r["error_name"], "SQLITE_DATABASE_LOCKED", r)
+        self.assertTrue(r["retryable"], r)
+        self.assertEqual(r["busy_timeout_ms"], 50, r)
+        self.assertIn("ca_next_action", r)
+
+    def test_busy_timeout_constant_drives_the_effective_wait(self):
+        """The constant must reach connect() and show up as the live busy_timeout.
+
+        Asserting on the *effect* (what the connection reports) rather than on a
+        line of code: an earlier version of this fix also issued an explicit
+        PRAGMA, and a mutant that deleted it survived every test -- because
+        connect(timeout=N) already installs busy_timeout=N*1000. Measure the
+        wait, not the decoration.
+        """
+        seen = {}
+        real_connect = sqlite3.connect
+
+        def spy(*a, **kw):
+            seen["timeout"] = kw.get("timeout")
+            return real_connect(*a, **kw)
+
+        original = p4._SQLITE_BUSY_TIMEOUT_MS
+        p4._SQLITE_BUSY_TIMEOUT_MS = 7000
+        p4.sqlite3.connect = spy
+        try:
+            r = json.loads(_run(p4.query_sqlite(db_path=self.db,
+                                                sql="PRAGMA busy_timeout")))
+        finally:
+            p4.sqlite3.connect = real_connect
+            p4._SQLITE_BUSY_TIMEOUT_MS = original
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(seen.get("timeout"), 7.0,
+                         "connect() did not receive the constant: %r" % (seen,))
+        self.assertEqual(r["rows"][0]["timeout"], 7000,
+                         "the effective busy_timeout is not the constant: %r"
+                         % (r["rows"],))
+
+    def test_non_lock_operational_error_stays_a_hard_error(self):
+        """Only lock/busy text is retryable; a bad table name must not be."""
+        r = json.loads(_run(p4.query_sqlite(db_path=self.db,
+                                            sql="SELECT * FROM no_such_table")))
+        self.assertFalse(r["ok"], r)
+        self.assertEqual(r["error_name"], "QUERY_SQLITE_ERROR", r)
+        self.assertFalse(r["retryable"], r)
+
 
 class TestFileProfile(unittest.TestCase):
     def setUp(self):
