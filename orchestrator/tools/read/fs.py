@@ -108,10 +108,6 @@ async def list_structure(path: str = "", depth: int = 2, save_output: bool = Fal
     return json.dumps(response, ensure_ascii=False)
 
 
-def _same_stat(before, after) -> bool:
-    return before.st_mtime == after.st_mtime and before.st_size == after.st_size
-
-
 def _seed_read_token_detailed(fp: Path, project_path: str | None, text: str,
                               stat_after, force_reseed: bool,
                               precomputed_hash: str = "") -> tuple[bool, dict]:
@@ -160,14 +156,6 @@ def _seed_read_token_detailed(fp: Path, project_path: str | None, text: str,
         logging.getLogger(__name__).warning(
             "read_file_range reseed failed for %s: %s", fp, exc)
         return False, {"reason": "upsert_failed", "error": f"{type(exc).__name__}: {exc}"}
-
-
-def _seed_read_token(fp: Path, project_path: str | None, text: str, stat_after,
-                     force_reseed: bool, precomputed_hash: str = "") -> bool:
-    """Back-compat bool wrapper over :func:`_seed_read_token_detailed`."""
-    return _seed_read_token_detailed(
-        fp, project_path, text, stat_after, force_reseed,
-        precomputed_hash=precomputed_hash)[0]
 
 
 def _missing_file_response(fp: Path, file_path: str, project_path: str | None) -> str:

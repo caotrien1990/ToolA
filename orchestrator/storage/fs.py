@@ -6,7 +6,6 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Optional
 
 
 def atomic_write_text(path: str | os.PathLike[str], text: str, encoding: str = "utf-8") -> None:
@@ -38,13 +37,3 @@ def atomic_write_text(path: str | os.PathLike[str], text: str, encoding: str = "
             tmp_path.unlink()
         except FileNotFoundError:
             pass
-
-
-def guarded_read_text(path: str | os.PathLike[str], max_bytes: Optional[int] = None) -> str:
-    """Read bounded text so large broker artifacts cannot flood callers."""
-    if max_bytes is None:
-        return Path(path).read_text(encoding="utf-8")
-    if max_bytes < 0:
-        raise ValueError("max_bytes must be non-negative")
-    with Path(path).open("rb") as handle:
-        return handle.read(max_bytes).decode("utf-8", errors="replace")

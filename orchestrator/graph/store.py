@@ -110,11 +110,6 @@ def upsert_file(conn: sqlite3.Connection, *, path: str, content_hash: str,
     )
 
 
-def file_hash(conn: sqlite3.Connection, path: str) -> str | None:
-    row = conn.execute("SELECT content_hash FROM files WHERE path=?", (path,)).fetchone()
-    return row[0] if row else None
-
-
 def stale_files(conn: sqlite3.Connection, candidates: Iterable[dict]) -> list[dict]:
     """Given [{path, content_hash}], return those needing re-extraction.
 
@@ -440,7 +435,7 @@ def status_counts(conn: sqlite3.Connection) -> dict:
 
 __all__ = [
     "get_db", "init_db", "integrity_check", "reset_db",
-    "upsert_file", "file_hash", "stale_files",
+    "upsert_file", "stale_files",
     "insert_nodes", "insert_edges", "delete_nodes_for_file",
     "find_nodes_by_name", "fts_search_symbols", "neighbors",
     "start_index_run", "finish_index_run", "status_counts",

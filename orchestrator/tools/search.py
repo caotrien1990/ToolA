@@ -54,16 +54,6 @@ def _search_snapshot_token(root: Path) -> tuple:
         return "snapshot-missing", str(root).casefold()
 
 
-def _load_snapshot_index(root: Path) -> dict:
-    """Compatibility helper; lazy text snapshots intentionally do not trust live INDEX."""
-    index_path = root / ".orchestrator_cache" / "INDEX.json"
-    try:
-        payload = json.loads(index_path.read_text(encoding="utf-8"))
-        return payload if isinstance(payload, dict) else {}
-    except Exception:
-        return {}
-
-
 def _pin_or_create_snapshot(
     root: Path,
     expected_id: str | None = None,
