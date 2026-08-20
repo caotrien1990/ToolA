@@ -30,8 +30,22 @@ these are not scaffolding, they were all mutation-verified (see
 | A script/command deleted files nobody named | Authorization gap | Authorization was never missing — it was a mistaken call by an *authorised* caller; no confirmation gate existed | `test_destructive_script_guard_case2008.py`, `test_destructive_command_guard_case2008.py` |
 | MCP tools stale for a whole session | Needs restart | Generation seen was never refreshed after a legitimate generation change | see `KNOWN_BUGS.md` (TA-5) |
 | `git_commit` over HTTP omitting the hash | B006 regressed | Schema `required` refused first, and that error cannot carry `current_staged_hash` | `test_git_status_payload_and_auto_hash.py` |
+| `query_sqlite` answers `QUERY_SQLITE_ERROR: database is locked` | the DB is corrupt or the tool is broken | Neither. Another process holds the write lock; since B009 this answers `SQLITE_DATABASE_LOCKED` with `retryable:true` — wait and resend the same call | `test_p4_soft_data.py::TestQuerySqlite` |
+| `write_fix` on a large file client-times-out; nobody knows if it landed | The write was lost; resend it | It almost certainly landed. The ledger opens before the tool runs, so `/api/write_status?project_path=..&file_path=..` answers `in_flight` then `committed` — a blind resend writes the file twice | `test_write_ledger*.py`; measured 10MB: committed at t+54s after a 4s client timeout |
 
 ---
+
+## When a write times out on the client
+
+This is the single most-misread failure in [A], and it is not a failure. `write_fix` / `write_transaction` on a multi-megabyte file routinely run past the caller's socket timeout: on a 9.9MB file a normal `write_fix` measured **70.6s**, and the wall clock is owned by the post-write symbol check (27.5s with `skip_symbol_check=true`), not by the write or the backup — `backup_override` saved ~0.6s of that, and `backup_project` already skips when today's backup exists.
+
+The server does not care that the client left. So:
+
+1. `GET /api/write_status?operation_id=<id>` if you got a response carrying one. If you never got a response, look the operation up by target instead: `?project_path=<root>&file_path=<file>`.
+2. Read `commit_state`, not `ok`: `in_flight` means keep polling, `committed` means it landed, `not_committed` means it is safe to retry. `safe_to_retry` and `ca_next_action` say the same thing in one field.
+3. Only resend when `commit_state` is `not_committed`. A resend during `in_flight` is a second full write of the same file.
+
+Measured end to end against the live daemon (10MB file, deliberate 4s client timeout): the client raised `TimeoutError` at 4025ms, the target lookup answered `in_flight` / `safe_to_retry: false` at t+4573ms, and flipped to `committed` at t+53961ms with `bytes_written: 10337814` and `validation_ok: true`. The recovery path was complete the whole time — what was missing, until 2026-08-20, was any document telling a CA it existed. If you are tempted to make the write path asynchronous to "fix" this, measure first: the answer is already there.
 
 ## Running the test suite
 
@@ -280,6 +294,17 @@ need it somewhere new, update the count in the test deliberately.
 
 ---
 
+### If you add a line to "fix" something, make a mutant delete it
+
+B009's first patch added `PRAGMA busy_timeout=...` next to a
+`connect(timeout=...)` that already installed the same busy handler. Every test
+passed. The mutant that deleted the new line also passed every test — which is
+the definition of a statement that does nothing.
+
+Run the mutation step even when the fix looks obvious, and read a **survivor** as
+a question, not a formality: either the test is too weak, or the code is
+decoration. Both answers are worth having before the commit.
+
 ### If you add or tighten a `required` list
 
 Ask which layer should refuse. The generic validator runs **before** the tool, and it
@@ -374,7 +399,8 @@ in flight.
 
 ## Test inventory added by campaign-1608
 
-70 tests across 6 files, all mutation-verified:
+73 tests, all mutation-verified: 70 in six new files, plus 3 added to an
+existing one (`test_p4_soft_data.py`, B009).
 
 | File | Tests | Pins |
 |---|---|---|
@@ -384,6 +410,11 @@ in flight.
 | `test_scoped_session_artifacts_survive_reindex.py` | 10 | scoped session artifacts survive a full reindex |
 | `test_mutation_token_mini_rule.py` | 7 | the mini rule at all 4 token surfaces |
 | `test_conftest_stale_symlink_tolerance.py` | 5 | A54 shim + no hardcoded-drive basetemp |
+
+`test_p4_soft_data.py` grew 3 tests for B009: lock contention answers
+`SQLITE_DATABASE_LOCKED` with `retryable:true`, the busy-timeout constant
+drives the effective wait, and a non-lock `OperationalError` stays a hard
+error.
 
 Related pre-existing files worth knowing about: `test_a02_a30_interaction.py` (the
 write-ledger pact that `PRESERVED_CACHE_FILES` must **not** widen to cover),

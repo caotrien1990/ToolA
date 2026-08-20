@@ -28,6 +28,15 @@ Restart is a single tool: `restart_orchestrator_via_bat` with only `delay_second
 
 A read that precedes a write must go through `read_file_range`: it seeds the read token `write_fix` requires. A native read before a write yields `FILE_CHANGED_OUTSIDE_ORCHESTRATOR`; recover with `read_file_range(force_reseed=true)`.
 
+A write that times out on the client has **not** failed. Every mutating call opens a ledger entry *before* the tool runs, so the outcome is queryable the whole time the server is still working:
+
+```
+GET /api/write_status?operation_id=<id>
+GET /api/write_status?project_path=<root>&file_path=<file>   # no id: the response never arrived
+```
+
+It answers `commit_state` (`in_flight` | `committed` | `not_committed`), `safe_to_retry`, and `ca_next_action`. A successful write also returns its own `operation_id` and `write_status_url`. Poll until `commit_state` is terminal; do not resend a large write blind. Measured on a 10MB file: the client gave up at 4s, `write_status` reported `in_flight` from t+4.6s, and `committed` at t+54s — a blind retry there would have been a second full write of a file that was already being written.
+
 ## Read These Docs
 
 - `AGENT_BOOTSTRAP_PROMPT.md` -- agent rules, T1/T2/T3 phases, native fallback, and session close contract.
