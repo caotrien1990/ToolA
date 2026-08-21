@@ -497,8 +497,10 @@ and this is the line that separates them:
 * **exit 2** — the daemon did not answer. Not a verdict. STOP and report; a doctor
   that degrades to "all clear" when it cannot measure is worse than no doctor.
 
-Measured on `dreye_redesign` (42 JS files) at generation `7d870da7e301`:
-**12 pass / 0 fail / 1 warn**. The doctor is itself pinned by
+Measured on `dreye_redesign` (42 JS files) at generation `528d657f9449`:
+**12 pass / 0 fail / 1 warn**. The generation matters: the same doctor against
+`7d870da7e301` -- the process that still held the pre-B018 `search.py` -- measured
+**11 pass / 1 fail / 1 warn**, exit 1. Same disk, same tests, different answer. The doctor is itself pinned by
 `tests/test_live_answer_doctor.py` (27 tests), which feeds each check a synthetic
 answer shaped like the bug it was written for and asserts it FAILS — a check that
 cannot fail is decoration, and decoration is what B011-B016 walked past.
