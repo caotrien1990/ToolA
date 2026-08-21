@@ -2115,4 +2115,67 @@ about four working tools. Full reasoning in MAINTENANCE_DOCTOR.md Entry 11.
 
 ---
 
-_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit + stabilisation + real-test follow-up: added B002-B022, all fixed and mutation-verified, plus B023 filed-not-fixed; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_
+## B024 — `cache_status` omitted `ok` on both paths, inside B018's own blind spot
+
+**Status**: fixed
+**Severity**: MEDIUM (a good cache report reads as a failure; a failed check cannot be told apart from a good one)
+**Discovered**: 2026-08-21, smoke-testing the core tools on the live daemon after the B022 restart (generation `229018dbfe86`)
+
+### Reproduction
+
+```
+cache_status(project_path=<[A]'s own repo>)
+  -> keys: cache_age_hours, cache_exists, cache_files, generation, index_exists,
+           last_updated, last_updated_iso, message, status
+  -> "ok" NOT in the response
+```
+
+The failure path was worse: `except Exception as exc: return json.dumps({"error": str(exc)})`
+— no `ok:false`, no `error_name`. CORE_RULE tells CAs to branch on `error_name`;
+this path never set one, so no documented guard could distinguish "the cache is
+fine" from "the check itself blew up".
+
+### Why B018 did not catch it
+
+B018 fixed exactly this defect in `search_code` and recorded, as part of the
+finding, that *"every other tool surveyed answers `ok` on both paths — read_file_range,
+git_status, validate_file, list_sessions, cbm_graph_status, regex_search"*.
+`cache_status` was not in that list. **A survey is only evidence about the tools it
+enumerated**, and the write-up generalised past its own sample.
+
+Re-surveyed properly this time, and the first attempt at the re-survey was itself
+wrong in a way worth recording: it read `ok` from `raw.get("result", raw)`, which
+for `read_file_range` is a **`str`**, so it reported `read_file_range` and
+`cbm_trace_path` as also missing `ok`. Reading `ok` at the **top of the HTTP
+envelope** instead, the measured answer is that `cache_status` was the **only** one
+missing it — `git_status`, `read_file_range`, `cache_delta`, `cbm_trace_path` and
+`query_index` all answer it. That mistake is Entry 11's trap catching its own
+author within the hour.
+
+### Fix
+
+`code_tools.py`, `cache_status`: `result.setdefault("ok", True)` on the success
+path, and the `except` branch now answers
+`{"ok": False, "error": …, "error_name": "CACHE_STATUS_FAILED", "ca_next_action": "refresh_project_map"}`.
+
+`ok` deliberately means **"the check ran"**, not "the cache is fresh". Staleness
+keeps its own fields (`status`, `stale_warning`, `drift_warning`), because
+overloading `ok` into freshness would make a stale cache indistinguishable from a
+broken check — the same conflation B018 warned about for zero-hit searches.
+
+### Tests
+
+4 tests, `tests/test_cache_status_ok_field_b024.py`. Reverting both halves of the
+fix kills **3 of 4**. The survivor is `test_the_rest_of_the_payload_is_untouched`
+and is **supposed** to survive: it pins that the fix did not reshape the report, so
+a mutant that only removes the new key must leave it green.
+
+The first cut of that test asserted `generation` was in the payload — true on the
+live daemon's own repo, absent on a fresh tmp fixture. It failed on a correct
+payload, which made it a test asserting the environment. Now recorded in its own
+docstring as deliberately not asserted. Fourth time this campaign that a new test
+was the bug rather than the code.
+
+---
+
+_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit + stabilisation + real-test follow-up: added B002-B022, all fixed and mutation-verified, plus B023 filed-not-fixed and B024; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_

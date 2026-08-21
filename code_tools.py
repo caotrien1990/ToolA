@@ -1928,9 +1928,24 @@ async def cache_status(project_path: str) -> str:
                     }
             except Exception as exc:
                 result["drift_check_error"] = str(exc)
+        # B024: answer `ok` on BOTH paths. B018 fixed this same defect in
+        # search_code and recorded that every other tool answered `ok` --
+        # cache_status was not in that survey. `ok` means "the check ran",
+        # NOT "the cache is fresh": staleness stays in status/stale_warning/
+        # drift_warning, or a stale cache would be indistinguishable from a
+        # broken check to `if not resp.get("ok")`.
+        result.setdefault("ok", True)
         return json.dumps(result)
     except Exception as exc:
-        return json.dumps({"error": str(exc)})
+        # B024: a failure must say it failed and name itself; this branch
+        # used to answer a bare {"error": ...} with no ok and no error_name,
+        # which no documented caller guard can read.
+        return json.dumps({
+            "ok": False,
+            "error": str(exc),
+            "error_name": "CACHE_STATUS_FAILED",
+            "ca_next_action": "refresh_project_map",
+        })
 
 
 def _dedup_session_vs_core(header_text: str, core_text: str) -> str:
