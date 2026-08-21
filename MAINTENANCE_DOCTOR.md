@@ -669,7 +669,7 @@ be hiding it.**
 
 ### Two suite counts are both correct
 
-`pytest tests\` reports **2592**; a bare `pytest` reports **2619**. The 27-test gap
+`pytest tests\` reports **2599**; a bare `pytest` reports **2626**. The 27-test gap
 is three files at the **repo root** (`test_all_tools.py`,
 `test_council_reply_fallback.py`, `test_open_session_drift_note.py`), collected by
 rootdir discovery and outside the README's `tests\` baseline. Neither number is
@@ -1020,7 +1020,7 @@ write-ledger pact that `PRESERVED_CACHE_FILES` must **not** widen to cover),
 
 ## Test inventory added by the JS-repo audit (2026-08-21)
 
-141 tests, all mutation-verified: every file below was written **before** its fix
+148 tests, all mutation-verified: every file below was written **before** its fix
 and confirmed failing first. Rows 5-7 came from the doctor itself and the defect
 (B017) that building it exposed; the last two (B019, B020) came from surveying
 the other tools for B018's shape and from the one failure the full suite still had
@@ -1047,6 +1047,7 @@ default in opposite directions.
 | `test_payload_says_each_thing_once_b021.py` | 22 | B021: no `git_status` record carries `raw` beside the fields parsed out of it, every parsed field survives for all five porcelain types (`1 2 u ? !` -- `u` and `!` driven at `_parse_records`, since a conflicted merge and `--ignored` are awkward to stage and a type-1-only fix would pass a single-type fixture), the payload is measurably smaller (<120 bytes/record), and **`state_hash` is unchanged against an independently recomputed literal** -- it is an optimistic lock callers hold *between* calls, so the tidy is response-only and `stale_check` still detects drift end-to-end. `module_deps` half: the real pre-cap population, the `truncated`/`total_count` invariant at limits 1/4/12/13/50, an uncapped read answering `total_count == count` with `truncated False`, `orphan_symbols` keeping the total it already computed, the **zero case** where `total_count=0` is the truth, and the docstring that documented the bug as intended. The last 4 rows are the mutants' doing: the `DISTINCT` predicate (a file importing the same module twice gives 2 edges for 1 pair), `entry_points` counting the production set it serves rather than the pre-split list, the depth-capped blast radius `impact_scope` must not report as complete, and `impact_scope` still describing its own single row correctly. The **last 6** are the offset follow-up: `offset` present in the signature *and* in the **registered schema** (the layer the server's unknown-field gate reads), page 2 reachable end-to-end through the async wrapper, every paginated branch actually paging (with `checked >= 3`, so a shrinking fixture cannot masquerade as a passing branch), a second fixture asserting the 4/6/3 rows the first was too small to produce, a whole-population page walk whose union holds every row once and none twice, and a negative offset answering page 1 on **both** a SQL branch and the Python branch |
 | `test_drift_and_indexer_agree_b022.py` | 7 | B022: no file the drift check calls `added` may be a file the indexer refuses (against a real index, and against an **empty** one via `index_override`, because an index already holding every phantom would hide the defect), a fresh index reports `total_changed=0`, drift converges across two refreshes, and `query_index` answers `ok:true` end-to-end. Two rows are deliberately **mutant-surviving** and say so: the guard-the-guard (the fixture still contains deep data-JSON the rule refuses, and `app.py`/`package.json`/`data.json` stay indexable) and the opposite failure (a genuinely new source file is still reported). Reverting `, root` kills 5 of 7. What the tests deliberately do **not** assert is `_should_scan_file(p) == _should_scan_file(p, root)` -- those must still disagree, since R82's no-root default is intentional and the defect was a caller, not the mapper |
 | `test_cache_status_ok_field_b024.py` | 4 | B024: `cache_status` must answer `ok` on **both** paths -- `ok:true` on a report that ran, and `ok:false` + `error_name` when the check itself raises. Pins that `ok` means "the check ran" and **not** "the cache is fresh": a drifted cache is still `ok:true`, with staleness carried by `status`/`drift_warning`. Reverting the fix kills 3 of 4; the survivor (`test_the_rest_of_the_payload_is_untouched`) is **supposed** to survive, because it pins that the fix did not reshape the report. Its first cut asserted `generation`, present on the live repo and absent on a tmp fixture -- a test asserting the environment, now named as deliberately not asserted |
+| `test_trace_path_start_node_b023.py` | 7 | B023: an unresolvable `start_node_id` must not answer `ok:true` with an empty trace. Pins the refusal at the **wrapper** (`ok:false` + `error_name="START_NODE_NOT_FOUND"` + a `ca_next_action` naming `cbm_template_query`) while the **inner** `query.py` payload only *gains* `start_node_resolved` and keeps `error:null` -- three in-process consumers (`orchestrator_server.py:12849`, `orchestrator/tools/read/context.py:399`, `template_query`'s `impact_scope`) read a set `error` as a graph failure, and `orchestrator_server.py:12849` branches on the exact string `truncation_reason == "start_node_not_found"`, so both are deliberately preserved. **Two mutants**: `if False:` at the wrapper kills 3 (the refusal tests); `if not result.get("start_node_resolved")` instead of `is False` kills exactly **one**, `test_graph_disabled_still_answers_the_degraded_payload` (`AssertionError: False is not True`) -- `start_node_resolved` is three-state (`None` = never looked, e.g. `GRAPH_ENABLED=0`), and a truthiness check reports "did not look" as "not found". That mutant is the entire reason that test exists |
 
 Two harness requirements for anything touching the graph, both learned the hard
 way:
@@ -1059,8 +1060,8 @@ way:
   walk, and `CBM_GRAPH_ENABLED=1` is what lets `dead_code_candidates` run at all
   — a JS test that forgets either one passes vacuously.
 
-Baseline after this audit and the doctor that followed it: **2592 passed, 4
-skipped, 1 xfailed, 169 subtests passed, 0 failed** in 292s, measured -- not
+Baseline after this audit and the doctor that followed it: **2599 passed, 4
+skipped, 1 xfailed, 169 subtests passed, 0 failed** in 333s, measured -- not
 predicted. The four deltas this campaign is accountable for are all measured on
 the same run order: 2495 -> 2526 for the doctor's 31 tests, 2526 -> 2534 for
 B018's 8 (4 pinning the fix, 4 pinning the doctor's new check), 2534 -> 2547 for
@@ -1069,7 +1070,7 @@ plus the 6 that pin the doctor's new check and the 400-handling defect writing i
 exposed), 2556 -> 2559 for the 3 that pin the probe-scope false FAIL, and 2559 -> 2575
 for B021's 16, and 2575 -> 2581 for the 6 that pin B021's offset follow-up
 (4 of whose mutants survived the first cut because the original fixture yields 0/0/1
-rows on the branches they touch), 2581 -> 2588 for B022's 7, and 2588 -> 2592 for B024's 4. The 2534
+rows on the branches they touch), 2581 -> 2588 for B022's 7, 2588 -> 2592 for B024's 4, and 2592 -> 2599 for B023's 7. The 2534
 run had one failure, and it was not environmental: it was B020. The 2556 run had
 one too, and it was a genuine flake -- a nominal-sleep timing assertion, fixed
 and mutation-verified rather than rerun. Reproduce it the way the section above prescribes — plain

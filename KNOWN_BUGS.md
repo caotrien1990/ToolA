@@ -2023,7 +2023,7 @@ why passing it blindly everywhere would be the wrong repair.
 
 ## B023 — `cbm_trace_path` answers `ok:true` with an empty trace when the start node does not resolve
 
-**Status**: filed, not fixed (the fix is a contract change; needs its own failing test first)
+**Status**: FIXED 2026-08-22, mutation-verified (2 mutants, see below)
 **Severity**: MEDIUM (a wrong answer that reads as a correct one — "this symbol has no callers")
 **Discovered**: 2026-08-21, measuring the five proposed "schema traps" against the live daemon at generation `177faa8e5a45`
 
@@ -2061,19 +2061,51 @@ field a caller actually guards on. This is B018's asymmetry the other way round:
 there, a **successful** `search_code` omitted `ok` and read as a failure. Same
 broken contract in both directions — **the guard field must track the outcome.**
 
-### Proposed fix (not applied)
+### Fix (applied) — both proposed options were taken, at two different layers
 
-Either is a contract change and needs a decision about existing fail-open callers:
+Neither option alone was correct, and the reason is that `cbm_trace_path` has two
+different kinds of caller. Option 2 went into the payload and option 1 went onto
+the tool boundary:
 
-1. `ok:false` with `error_name="START_NODE_NOT_FOUND"`, plus `ca_next_action`
-   pointing at `cbm_template_query`; or
-2. keep `ok:true` but add an explicit `start_node_resolved: false` that callers can
-   guard on, and stop overloading `truncation_reason` for a non-truncation failure.
+* **`orchestrator/graph/query.py`** only *gains* a field. `start_node_resolved` is
+  **three-state** — `None` = we never looked (`GRAPH_ENABLED=0`, or the DB never
+  opened), `False` = we looked and the id is absent, `True` = resolved. `error`,
+  `truncated` and `truncation_reason` are all left exactly as they were.
+* **`orchestrator/graph/tools.py`** (the wrapper HTTP actually serves) refuses
+  `start_node_resolved is False` with `ok:false`,
+  `error_name="START_NODE_NOT_FOUND"`, and a `ca_next_action` naming
+  `cbm_template_query(template="callers", name="<symbol>")`.
 
-Option 2 is the smaller change and preserves fail-open for the stale/timeout cases
-the description promises. Option 1 is what a caller expects. Either way the failing
-test comes first: a node id that does not exist must not produce a response whose
-guard fields all say success.
+**Why the inner function must not refuse.** Three consumers call `query.py`
+directly and read a dict: `orchestrator_server.py:12849` (`council_graph_context`),
+`orchestrator/tools/read/context.py:399` (`architecture_context_pack`), and
+`template_query`'s own `impact_scope` branch. All three treat a set `error` as a
+graph failure, so setting it there would flip `council_graph_context`'s
+`graph_status` from `ok` to `error` — the graph did not fail, the question was
+unanswerable as asked. `truncation_reason` is kept for the same reason:
+`orchestrator_server.py:12849` branches on that exact string.
+
+**Why three states and not a bool.** `GRAPH_ENABLED=0` returns before any lookup.
+A bool would make that path `False`, the wrapper would refuse it, and the
+disabled-mode canary that guards every graph tool's degraded shape would break.
+Hence `is False` in the wrapper, never `not ...`.
+
+**The argument that this is a defect and not the declared fail-open policy**: the
+same wrapper *already* refuses an **empty** `start_node_id` with `ok:false,
+error_name:"SCHEMA_VIOLATION"`. An empty id and an unresolvable id are both "the
+caller did not pass a usable node id", and the tool answered one with a refusal and
+the other with a clean empty success. Fail-open is kept where it was promised —
+`GRAPH_ENABLED=0` still answers the byte-identical degraded payload with `ok:true`.
+
+7 tests, `tests/test_trace_path_start_node_b023.py`; 5 failed before the fix (the
+2 that already passed were disabled-mode and the `truncation_reason` server signal,
+which were correct all along). Two mutants:
+
+* `if False:` at the wrapper → **3 failed** (the refusal tests).
+* `if not result.get("start_node_resolved")` instead of `is False` → **1 failed**,
+  exactly `test_graph_disabled_still_answers_the_degraded_payload`
+  (`AssertionError: False is not True`, "GRAPH_ENABLED=0 must stay fail-open").
+  That mutant is the whole reason that test exists.
 
 ### Where a real node id comes from
 
@@ -2178,4 +2210,4 @@ was the bug rather than the code.
 
 ---
 
-_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit + stabilisation + real-test follow-up: added B002-B022, all fixed and mutation-verified, plus B023 filed-not-fixed and B024; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_
+_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit + stabilisation + real-test follow-up: added B002-B022, all fixed and mutation-verified, plus B023 and B024; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_

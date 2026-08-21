@@ -153,6 +153,11 @@ def cbm_trace_path(project_path: str, start_node_id: str, *,
         "depth": depth, "edges": [], "nodes_seen": 0, "files_seen": 0,
         "symbols_seen": 0, "truncated": False, "truncation_reason": None,
         "elapsed_ms": 0, "error": None,
+        # B023: three states, not two. None = we never looked (graph disabled,
+        # or the DB never opened), False = we looked and the id is absent, True
+        # = resolved. A bool here would report "did not look" as "not found",
+        # which is what the GRAPH_ENABLED=0 canary exists to prevent.
+        "start_node_resolved": None,
     }
     t0 = time.monotonic()
     if not graph_enabled():
@@ -179,9 +184,21 @@ def cbm_trace_path(project_path: str, start_node_id: str, *,
                 "SELECT id, file_path FROM nodes WHERE id=?;", (start_node_id,)
             ).fetchone()
             if not start_row:
+                # B023: `truncation_reason` is kept because
+                # orchestrator_server.py:12849 branches on this exact string,
+                # but it is no longer the ONLY signal -- it names truncation on
+                # a payload whose `truncated` is False, so no documented caller
+                # guard reads it. `error` stays None on purpose: the three
+                # in-process consumers (council_graph_context,
+                # architecture_context_pack, template_query's impact_scope)
+                # treat a set `error` as a graph failure, and the graph did not
+                # fail -- the question was unanswerable as asked. The refusal
+                # belongs at the tool boundary, where a caller reads `ok`.
+                payload["start_node_resolved"] = False
                 payload["truncation_reason"] = "start_node_not_found"
                 payload["elapsed_ms"] = round((time.monotonic() - t0) * 1000, 1)
                 return payload
+            payload["start_node_resolved"] = True
             visited.add(start_node_id)
             files_seen.add(start_row["file_path"])
             queue.append((start_node_id, 0))

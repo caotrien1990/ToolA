@@ -15866,7 +15866,7 @@ try:
         tool_phases=TOOL_PHASES,
         phase_labels=PHASE_LABELS,
         schema={
-            "description": "T1 read-only: bounded graph traversal (BFS) from a start node. direction=out|in|both, depth<=5, node cap 50, timeout 2s, max_files=50, max_symbols=200. Cycle-safe. On limit hit returns truncated=true + truncation_reason. Fail-open on timeout/stale/missing.",
+            "description": "T1 read-only: bounded graph traversal (BFS) from a start node. direction=out|in|both, depth<=5, node cap 50, timeout 2s, max_files=50, max_symbols=200. Cycle-safe. On limit hit returns truncated=true + truncation_reason. Fail-open on timeout/stale/missing, but an unresolvable start_node_id is REFUSED with ok:false + error_name=START_NODE_NOT_FOUND (B023): a bare symbol name is not a node id, and answering it with an empty ok:true trace was indistinguishable from a symbol that genuinely has no callers. Get a real id from cbm_template_query(template='callers', name='<symbol>'). The payload also carries start_node_resolved: true|false|null (null = never looked, e.g. GRAPH_ENABLED=0).",
             "parameters": {
                 "type": "object",
                 "properties": {

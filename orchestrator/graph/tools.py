@@ -201,6 +201,34 @@ async def cbm_trace_path(project_path: str = "", start_node_id: str = "",
             _query.cbm_trace_path, project_path, start_node_id,
             direction=direction, depth=depth
         )
+        # B023: an unresolvable start node used to answer ok:true with edges:[],
+        # truncated:false and error:null -- every field a caller guards on said
+        # success, and the only signal was `truncation_reason`, a field named
+        # for truncation on a response that says it was not truncated. So
+        # "you passed a symbol name" read exactly like "this symbol has no
+        # callers". This same wrapper already refuses an EMPTY start_node_id
+        # with SCHEMA_VIOLATION; an empty id and an absent id are the same
+        # class of caller error and must not answer oppositely.
+        #
+        # `is False` is deliberate, not `not result.get(...)`: None means the
+        # lookup never ran (GRAPH_ENABLED=0, or the DB never opened), and that
+        # path must stay fail-open exactly as the description promises and the
+        # graph-disabled canary pins.
+        if result.get("start_node_resolved") is False:
+            return _json.dumps({
+                "ok": False,
+                "error_name": "START_NODE_NOT_FOUND",
+                "error": ("start_node_id %r is not a node in the graph. It must be a "
+                          "graph node id (file.py:kind:module.symbol:LINE), not a bare "
+                          "symbol name." % start_node_id),
+                "ca_next_action": ("call cbm_template_query(template=\"callers\", "
+                                   "name=\"<symbol>\") and pass a row's `id` as "
+                                   "start_node_id"),
+                "hint": ("cbm_template_query returns rows carrying `id` in the required "
+                         "shape. find_symbol cannot supply one -- it is a text search "
+                         "returning file/line/match."),
+                "result": result,
+            }, ensure_ascii=False)
         return _ok(result)
     except Exception as e:
         return _err("cbm_trace_path", e)
