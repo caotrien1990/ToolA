@@ -44,6 +44,7 @@ these are not scaffolding, they were all mutation-verified (see
 | `regex_search` refuses `path` -- and its own budget error told you to narrow by path | the alias is the same tool as `search_code(mode='regex')` | B019: it was not. The alias's signature had no `path`, **and neither did its registry entry -- which is the one the dispatcher checks** (`orchestrator_server.py:13422`, "S4: registry properties are the public contract"). Adding the parameter alone left the live answer unchanged. Also the `REGEX_INPUT_BUDGET_EXCEEDED` answer echoed the failing unscoped call back as its `payload_example`. Pass `path` (now accepted) or `file_pattern`; both are listed in `accepted_narrowing_fields` on the refusal itself | `test_regex_search_path_b019.py` |
 | You added a parameter to a tool, the suite is green, and HTTP still answers `UNSUPPORTED_FIELD` | the daemon is stale, so restart again | Restarting will not help. **A tool's public contract is its registry entry, not its Python signature** -- `orchestrator_server.py:13422` builds `allowed_params` from `_schema_for_tool(tool)`, so a parameter absent from `orchestrator/core/registry_data.py` is refused before the function is ever called. Add it in both places, and pin it with a test that reads the registry (B019's third half; `B-01` in the same file had already paid for it once) | `test_regex_search_path_b019.py::TheRegistrySchemaIsThePublicContract` |
 | A council `room_token` is `ROOM_TOKEN_INVALID` milliseconds after it was issued | the clock or the TTL is wrong | B020: `_room_register` floored the START of the window (`int(time.time())`) while validation also floors the END, so the caller was charged for the fraction of the second already elapsed -- a `ttl_sec=1` token registered at `t=100.95` was dead by `t=101.01`. The lifetime was `ttl_sec - (time.time() % 1)`, which is why it passed 10/10 alone and failed inside the slower full suite | `test_room_token_ttl_b020.py` |
+| A timing test fails by a hair (`0.391 >= 0.4`) and passes on rerun | "flaky, rerun it" | `time.sleep(0.4)` on Windows returns in as little as 0.391s — timer granularity. Asserting a caller's wait against the **nominal** sleep measures the clock, not the fix. Have the callback time ITSELF and assert the caller waited at least that long, plus a generous multiple of the budget the regression would have cut it off at. Verify the loosened bound still catches the real regression by restoring it | `test_session_store_writer.py::test_slow_but_progressing_writer_is_not_killed_by_a_short_budget` |
 | Six defects shipped green; you need to know whether a fix reached the *real* repo | "the suite passes, so it works" | A fixture repo is the one place all six answers are honest. Run `scripts/live_answer_doctor.py --project-path <a real, already-indexed, non-Python repo>` after every restart that touches an extractor, an index path, a fallback, or a filtering argument | `test_live_answer_doctor.py` |
 
 ---
@@ -500,11 +501,13 @@ and this is the line that separates them:
 * **exit 2** — the daemon did not answer. Not a verdict. STOP and report; a doctor
   that degrades to "all clear" when it cannot measure is worse than no doctor.
 
-Measured on `dreye_redesign` (42 JS files) at generation `528d657f9449`:
-**12 pass / 0 fail / 1 warn**. The generation matters: the same doctor against
-`7d870da7e301` -- the process that still held the pre-B018 `search.py` -- measured
-**11 pass / 1 fail / 1 warn**, exit 1. Same disk, same tests, different answer. The doctor is itself pinned by
-`tests/test_live_answer_doctor.py` (33 tests), which feeds each check a synthetic
+Measured on `dreye_redesign` (42 JS files) at generation `cac7187da50d`:
+**14 pass / 0 fail / 1 warn**, exit 0. The generation matters: the same doctor
+against `7d870da7e301` -- the process that still held the pre-B018 `search.py` --
+measured **11 pass / 1 fail / 1 warn**, exit 1, and against `31156af84e36` --
+which still held the pre-B019 registry -- **12 pass / 2 fail / 1 warn**, exit 1.
+Same disk, same tests, three different answers. The doctor is itself pinned by
+`tests/test_live_answer_doctor.py` (36 tests), which feeds each check a synthetic
 answer shaped like the bug it was written for and asserts it FAILS — a check that
 cannot fail is decoration, and decoration is what B011-B016 walked past.
 
@@ -519,6 +522,22 @@ way: *"regex_search's budget error tells callers to narrow, but its live schema
 does not accept path"* — 12 pass / 2 fail / 1 warn, exit 1, on a daemon whose
 9-test fix was already committed and green. The second FAIL is the bounding one:
 the field must be *honoured*, not merely declared.
+
+**And then that same second row produced a FALSE verdict, which is worth more
+than the true ones.** After the registry fix went live it still said FAIL —
+`REGEX_INPUT_BUDGET_EXCEEDED` — against a daemon that was by then correct: the
+probe passed `path=repo`, and `path=repo` narrows *nothing*. `dreye_redesign`'s
+top level holds `1.footage`, `3.output` and `4.final`, so an unscoped scan
+legitimately hits the ceiling. **A probe aimed at the wrong scope measures nothing
+about the thing it names** — the identical mistake as the outside-the-repo
+`validate_file` probe recorded below, made again two sections later by the same
+author. The check now walks to a SUBTREE (`_probe_dir`), and a subtree that is
+itself over budget WARNs instead of accusing: the ceiling is not the bug. Three
+tests pin it, one of them asserting the exact path the probe scopes to.
+
+**Run it with `--ci` or the exit code is a lie.** Without the flag the script
+prints FAIL rows and still exits 0. Every measurement in this file was taken with
+`--ci`.
 
 **Writing that check found a defect in the doctor itself.** `call()` raised
 `Unreachable` on every `HTTPError`, so the first check that deliberately PROBED a
@@ -676,7 +695,7 @@ write-ledger pact that `PRESERVED_CACHE_FILES` must **not** widen to cover),
 
 ## Test inventory added by the JS-repo audit (2026-08-21)
 
-105 tests, all mutation-verified: every file below was written **before** its fix
+108 tests, all mutation-verified: every file below was written **before** its fix
 and confirmed failing first. Rows 5-7 came from the doctor itself and the defect
 (B017) that building it exposed; the last two (B019, B020) came from surveying
 the other tools for B018's shape and from the one failure the full suite still had
@@ -689,7 +708,7 @@ verified the wrong layer.
 | `test_js_dependency_edges.py` | 11 | B013: ESM key shape, the three `require()` forms, and that a bare package specifier stays unresolved |
 | `test_cbm_dead_code_file_filter.py` | 9 | B014/B015: the bogus-glob case, echoed `files_matched`, and `engine`/`engine_reason`/`language_detected` |
 | `test_graph_index_prunes_deleted_files.py` | 6 | B011: rows pruned, nodes dropped, `files_pruned` reported, index/status agreement, convergence, `freshness` |
-| `test_live_answer_doctor.py` | 33 | The doctor itself: every check fed an answer shaped like its bug must FAIL; `results` not `rows`; an in-repo probe file; exit 2 on an unreachable daemon; WARN never blocks; an always-`ok` search fails too. The last 6 pin the B019 check (a live schema missing `path` FAILs, a schema-only fix that still refuses the call FAILs, an unreadable schema WARNs rather than accusing the daemon of the doctor's own parsing bug) and the `call()` defect that writing it exposed: a **400 is a structured refusal**, so it must be returned, while a 404 stays fatal |
+| `test_live_answer_doctor.py` | 36 | The doctor itself: every check fed an answer shaped like its bug must FAIL; `results` not `rows`; an in-repo probe file; exit 2 on an unreachable daemon; WARN never blocks; an always-`ok` search fails too. The last 9 pin the B019 check (a live schema missing `path` FAILs, a schema-only fix that still refuses the call FAILs, an unreadable schema WARNs rather than accusing the daemon of the doctor's own parsing bug), the `call()` defect that writing it exposed (a **400 is a structured refusal** and must be returned; a 404 stays fatal), and the check's own **false FAIL**: the probe must scope to a subtree, not the repo root, and a subtree over the regex budget WARNs rather than accusing a correct tool |
 | `test_search_ok_field_b018.py` | 4 | B018: a hit and a clean zero-hit both answer `ok:True`; an empty query still answers `ok:False` with a named error |
 | `test_policy_action_vocabulary_b017.py` | 8 | B017: `<verb>_file` spellings resolve through the same table; an unknown verb stays `unknown`; a suffix cannot mint `upgrade_orchestrator`; `delete_file` keeps `delete`'s policy |
 | `test_extractor_version_pins_js_import_shape.py` | 5 | B016: a row records the reported version, a version bump re-extracts unchanged files, the JS import shape travels with it, and the pre-B013 string is refused |
@@ -707,15 +726,17 @@ way:
   walk, and `CBM_GRAPH_ENABLED=1` is what lets `dead_code_candidates` run at all
   — a JS test that forgets either one passes vacuously.
 
-Baseline after this audit and the doctor that followed it: **2556 passed, 4
-skipped, 1 xfailed, 169 subtests passed, 0 failed** in 360s, measured -- not
+Baseline after this audit and the doctor that followed it: **2559 passed, 4
+skipped, 1 xfailed, 169 subtests passed, 0 failed** in 258s, measured -- not
 predicted. The four deltas this campaign is accountable for are all measured on
 the same run order: 2495 -> 2526 for the doctor's 31 tests, 2526 -> 2534 for
 B018's 8 (4 pinning the fix, 4 pinning the doctor's new check), 2534 -> 2547 for
 B019's 9 plus B020's 4, and 2547 -> 2556 for B019's third half (3 registry tests
 plus the 6 that pin the doctor's new check and the 400-handling defect writing it
-exposed). The 2534 run had one failure, and it was not environmental: it was
-B020. Reproduce it the way the section above prescribes — plain
+exposed), and 2556 -> 2559 for the 3 that pin the probe-scope false FAIL. The 2534
+run had one failure, and it was not environmental: it was B020. The 2556 run had
+one too, and it was a genuine flake -- a nominal-sleep timing assertion, fixed
+and mutation-verified rather than rerun. Reproduce it the way the section above prescribes — plain
 `venv312\Scripts\python.exe -m pytest tests\ -q`, letting pytest resolve its own
 per-run basetemp under `%TEMP%`. The measurements in this file were taken with an
 explicit `--basetemp` on `C:` only to keep several sequential runs separable; a

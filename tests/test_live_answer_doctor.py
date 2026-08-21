@@ -415,8 +415,16 @@ def _schema(*fields):
         "properties": {f: {"type": "string"} for f in fields}}}}}
 
 
-def _b019_daemon(monkeypatch, lad, schema, scoped):
+def _b019_daemon(monkeypatch, lad, schema, scoped, *, subtree="/repo/src"):
+    """Stub the schema route, the daemon, AND the probe-subtree picker.
+
+    `_probe_dir` walks the real filesystem, so a synthetic repo path makes it
+    return None and the check WARNs out before it ever reaches the scoped call --
+    which is how two of these tests first passed vacuously. A stub whose absence
+    changes the verdict has to be explicit.
+    """
     monkeypatch.setattr(lad, "fetch_schema", lambda _tool, **_kw: schema)
+    monkeypatch.setattr(lad, "_probe_dir", lambda _repo: subtree)
     _install(monkeypatch, lad, _Daemon(regex_search=scoped))
 
 
@@ -459,6 +467,7 @@ def test_a_tolerated_but_unhonoured_path_is_a_failure(lad, rep, monkeypatch):
     lad.check_advertised_fields_are_accepted(rep, "/repo")
     assert rep.failures, "a schema-only fix passed with the live call refusing"
     assert "UNSUPPORTED_FIELD" in rep.failures[0]["detail"], rep.failures
+    assert "not honoured" in rep.failures[0]["detail"], rep.failures
 
 
 def test_an_unreadable_schema_warns_rather_than_fails(lad, rep, monkeypatch):
@@ -516,3 +525,52 @@ def test_a_404_is_still_fatal(lad, monkeypatch):
     with pytest.raises(lad.Unreachable) as exc:
         lad.call("nope", {})
     assert "tool name is wrong" in str(exc.value)
+
+
+def test_the_scoped_probe_aims_at_a_subtree_not_the_repo_root(lad, rep,
+                                                              monkeypatch):
+    """The bug in the FIRST cut of this check, pinned so it cannot come back.
+
+    `path=repo` narrows nothing. On the reported repo -- whose top level holds
+    `1.footage`, `3.output` and `4.final` -- an unscoped scan legitimately
+    answers REGEX_INPUT_BUDGET_EXCEEDED, and the check reported a FAIL against a
+    daemon that was already correctly fixed (measured at gen cac7187da50d, right
+    after the registry fix went live). A probe aimed at the wrong scope measures
+    nothing about the thing it names.
+    """
+    seen = []
+    _b019_daemon(monkeypatch, lad,
+                 _schema("project_path", "pattern", "path", "file_pattern"),
+                 lambda p: (seen.append(p["path"]) or {"ok": True, "count": 1}),
+                 subtree="/repo/src")
+    lad.check_advertised_fields_are_accepted(rep, "/repo")
+    assert seen == ["/repo/src"], (
+        "the check scoped its probe to %r -- if that is the repo root it "
+        "measures the budget ceiling, not the narrowing" % seen)
+
+
+def test_a_subtree_over_the_budget_warns_rather_than_fails(lad, rep,
+                                                           monkeypatch):
+    """The ceiling is not the bug -- B019's own test file says so.
+
+    If even the probe subtree exceeds the regex input budget, this repo cannot
+    demonstrate the narrowing. That is a WARN: the schema row still stands, and
+    accusing the tool of refusing a field it accepts would be the same false
+    verdict the first cut produced.
+    """
+    _b019_daemon(monkeypatch, lad,
+                 _schema("project_path", "pattern", "path", "file_pattern"),
+                 {"ok": False, "error_name": "REGEX_INPUT_BUDGET_EXCEEDED"})
+    lad.check_advertised_fields_are_accepted(rep, "/repo")
+    assert not rep.failures, rep.rows
+    assert rep.counts() == {"PASS": 1, "FAIL": 0, "WARN": 1}, rep.rows
+
+
+def test_no_probe_subtree_warns(lad, rep, monkeypatch):
+    """A check that could not run must not block CI."""
+    _b019_daemon(monkeypatch, lad,
+                 _schema("project_path", "pattern", "path", "file_pattern"),
+                 {"ok": True, "count": 1}, subtree=None)
+    lad.check_advertised_fields_are_accepted(rep, "/repo")
+    assert not rep.failures, rep.rows
+    assert rep.counts() == {"PASS": 1, "FAIL": 0, "WARN": 1}, rep.rows

@@ -188,6 +188,34 @@ def _probe_file(repo: str) -> str | None:
     return None
 
 
+def _probe_dir(repo: str) -> str | None:
+    """Pick a SUBTREE of `repo` small enough for a regex scan to finish.
+
+    B019's check has to prove that narrowing by `path` is actionable, and
+    `path=repo` narrows nothing: on the reported repo (`dreye_redesign`, whose
+    top level holds `1.footage`, `3.output` and `4.final`) an unscoped scan
+    legitimately hits REGEX_INPUT_BUDGET_EXCEEDED, and a probe that aims at the
+    root measures the ceiling instead of the narrowing. Same mistake shape as the
+    outside-the-repo `validate_file` probe recorded above: a probe aimed at the
+    wrong scope measures nothing about the thing it names.
+    """
+    probe = _probe_file(repo)
+    if probe is None:
+        return None
+    parent = os.path.dirname(probe)
+    if os.path.abspath(parent) != os.path.abspath(repo):
+        return parent
+    for dirpath, dirnames, filenames in os.walk(repo):
+        dirnames[:] = [d for d in dirnames
+                       if d not in {".git", "node_modules", "venv312",
+                                    ".orchestrator_cache", "__pycache__"}]
+        if os.path.abspath(dirpath) == os.path.abspath(repo):
+            continue
+        if any(fn.endswith((".js", ".ts", ".py", ".json")) for fn in filenames):
+            return dirpath
+    return None
+
+
 def check_extractor_version_is_current(rep: Report, status: dict) -> None:
     """B016 -- the version the rows carry is what makes an extractor fix ship."""
     ev = status.get("extractor_version")
@@ -496,17 +524,39 @@ def check_advertised_fields_are_accepted(rep: Report, repo: str) -> None:
         rep.ok("advertised narrowing fields are accepted",
                "path and file_pattern both in the live schema", "B019")
 
-    # And the field must be honoured, not merely tolerated: a scoped call has to
-    # answer ok. Tolerating an argument that changes nothing is B014's shape.
-    scoped = call("regex_search", {"project_path": repo, "path": repo,
+    # And the field must be honoured, not merely tolerated: the narrowing the
+    # budget error advises has to actually work. Tolerating an argument that
+    # changes nothing is B014's shape.
+    #
+    # The probe must aim at a SUBTREE. `path=repo` narrows nothing, so on a repo
+    # with heavy non-code directories it measures the ceiling rather than the
+    # narrowing -- which is how the first cut of this check reported a FAIL
+    # against a correctly-fixed daemon.
+    subtree = _probe_dir(repo)
+    if subtree is None:
+        rep.warn("a scoped regex_search runs",
+                 "found no subtree inside the repo to scope a search to", "B019")
+        return
+    scoped = call("regex_search", {"project_path": repo, "path": subtree,
                                    "pattern": "function", "max_results": 3})
     if scoped.get("ok") is True:
         rep.ok("a scoped regex_search runs",
-               "ok=True count=%s" % scoped.get("count"), "B019")
+               "ok=True count=%s scoped to %s"
+               % (scoped.get("count"), os.path.relpath(subtree, repo)), "B019")
+    elif scoped.get("error_name") == "REGEX_INPUT_BUDGET_EXCEEDED":
+        # The ceiling is not the bug -- B019's own test file says so. A subtree
+        # that is itself over the limit means this repo cannot demonstrate the
+        # narrowing, not that the tool refuses the field.
+        rep.warn("a scoped regex_search runs",
+                 "the probe subtree %s is itself over the regex input budget, "
+                 "so this repo cannot demonstrate the narrowing; the schema row "
+                 "above still stands" % os.path.relpath(subtree, repo), "B019")
     else:
         rep.bad("a scoped regex_search runs",
-                "regex_search with path= answered ok=%r error_name=%r"
-                % (scoped.get("ok"), scoped.get("error_name")), "B019")
+                "regex_search scoped to %s answered ok=%r error_name=%r -- the "
+                "field is declared but not honoured"
+                % (os.path.relpath(subtree, repo), scoped.get("ok"),
+                   scoped.get("error_name")), "B019")
 
 
 def render_text(rep: Report, repo: str, meta: dict) -> str:

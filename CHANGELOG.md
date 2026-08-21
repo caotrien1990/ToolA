@@ -22,9 +22,41 @@
   call, dropping the WARN-on-unreadable-schema guard, and reverting the
   400-handling each fail exactly the tests written for them.
 
+- **The new check then produced a FALSE FAIL, and that is the most useful thing
+  it did.** After the registry fix went live at gen `cac7187da50d`, the scoped row
+  still said FAIL -- `REGEX_INPUT_BUDGET_EXCEEDED` -- against a daemon that was by
+  then correct. The probe passed `path=repo`, and `path=repo` narrows nothing:
+  `dreye_redesign`'s top level holds `1.footage`, `3.output` and `4.final`, so an
+  unscoped scan legitimately hits the ceiling. A probe aimed at the wrong scope
+  measures nothing about the thing it names -- the identical mistake as the
+  outside-the-repo `validate_file` probe already recorded in MAINTENANCE_DOCTOR.md,
+  made again by the same author two sections later. `_probe_dir()` now walks to a
+  subtree, and a subtree that is itself over budget WARNs instead of accusing: the
+  ceiling is not the bug, which is what B019's own test file says. Also found
+  running it: without `--ci` the script prints FAIL rows and exits 0, so every
+  measurement is now taken with the flag. 3 more tests (33 -> 36) including one
+  that asserts the exact path the probe scopes to; 3 more mutants verified
+  (probe at the root, budget-refusal as FAIL, no-subtree as FAIL).
+  Live after the fix: **14 pass / 0 fail / 1 warn, exit 0** on gen `cac7187da50d`,
+  and `regex_search(project_path=<[A]>, path=<[A]>/orchestrator/core, pattern="def
+  classify_action")` -- the exact call from the bug report -- answers `ok:True
+  count=1`.
+
+- **Fixed a latent flake the 2559-test run finally hit**, in
+  `test_slow_but_progressing_writer_is_not_killed_by_a_short_budget` (A33's core
+  property): `assert elapsed >= 0.4` against a callback that called
+  `time.sleep(0.4)`. Windows returned from that sleep in 0.391s -- timer
+  granularity -- so the test asserted the caller's wait against a number the OS
+  never promised, measuring the clock instead of the fix. The callback now times
+  itself and the test asserts (a) the caller waited at least as long as its own
+  callback actually took, and (b) many times the 50ms budget, which is where a
+  restored wall-clock deadline would land. Mutation-verified: putting the
+  deadline back (`future.result(timeout=busy_ms/1000)`) fails this test and two
+  others, so the loosened bound still catches the regression it was written for.
+
 - **This is the campaign's own thesis applied to its author.** The fix was on disk, the suite was green, `py_compile` was clean, and the live answer was unchanged. The two-layer rule stands: `sync_tool_matrix`/`soft_data_reconcile` guard structure with the server down; `live_answer_doctor` guards answers with it up — and neither would have caught this one, because both were green. What caught it was making the *live HTTP call the bug report described*. A verification that never leaves the process it is verifying is not a verification.
 - All three modified modules `py_compile` clean. Adjacent suites: **186 passed / 1 xfailed / 21 subtests** across `-k "search or regex or room or council_room"`.
-- Baseline: **2556 passed, 0 failed, 4 skipped, 1 xfailed, 169 subtests passed in 360s**, measured (2534 + B019's 9 + B020's 4 = 2547, then + B019's third half: 3 registry tests and 6 doctor tests). The 2534 run's single failure was B020 itself, so 2547 was the first fully green full suite of the campaign.
+- Baseline: **2559 passed, 0 failed, 4 skipped, 1 xfailed, 169 subtests passed in 258s**, measured (2534 + B019's 9 + B020's 4 = 2547, then + B019's third half: 3 registry tests, 6 doctor tests, and 3 more pinning the probe-scope false FAIL). The 2534 run's single failure was B020 itself, so 2547 was the first fully green full suite of the campaign.
 
 ## 2026-08-21 (stabilisation restart) — B018, and the doctor earning itself
 

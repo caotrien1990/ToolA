@@ -369,23 +369,51 @@ def test_slow_but_progressing_writer_is_not_killed_by_a_short_budget(
     # disk-I/O saturation against a 93ms uncontended baseline, on a SEPARATE db
     # with no lock contention. This pins the fix without generating real disk load.
     _db_path, writer = _writer(tmp_path, batch_window_ms=1)
+    budget_ms = 50
+    slow_ms = 400
     try:
+        actual = {}
+
         def slow_but_progressing(conn):
             # Far longer than the tiny busy budget below; the old deadline would
             # have fired at ~budget while this callback is still progressing.
-            time.sleep(0.4)
-            return conn.execute(
+            #
+            # It times ITSELF rather than trusting the nominal sleep: on Windows
+            # `time.sleep(0.4)` returns in as little as 0.391s (timer
+            # granularity), so asserting the caller's wait against the NOMINAL
+            # 0.4 made this test flake -- measured `0.391 >= 0.4` in a full run
+            # that was otherwise green. The property being pinned is "the wait
+            # was not cut off at timeout_ms", not "sleep is exact", and an
+            # assertion against a number the OS never promised measures the
+            # clock instead of the fix.
+            t0 = time.monotonic()
+            row = conn.execute(
                 "INSERT INTO records(value) VALUES ('slow-progress')"
             ).lastrowid
+            time.sleep(slow_ms / 1000.0)
+            actual["callback_seconds"] = time.monotonic() - t0
+            return row
 
         started = time.monotonic()
         event_id = writer.submit(
-            "slow-progress", slow_but_progressing, durable=True, timeout_ms=50
+            "slow-progress", slow_but_progressing, durable=True,
+            timeout_ms=budget_ms
         )
         elapsed = time.monotonic() - started
         # It waited for the real commit rather than aborting at the 50ms budget.
         assert event_id == 1
-        assert elapsed >= 0.4
+        assert "callback_seconds" in actual, "the callback never ran to completion"
+        assert elapsed >= actual["callback_seconds"], (
+            "the caller returned in %.3fs, before its own callback finished "
+            "(%.3fs)" % (elapsed, actual["callback_seconds"])
+        )
+        # The real assertion: many times the budget, not merely past it. A
+        # regression that restored the wall-clock deadline would land near
+        # 0.05s, nowhere near this.
+        assert elapsed >= (budget_ms * 4) / 1000.0, (
+            "returned in %.3fs against a %dms budget -- that is the wall-clock "
+            "deadline firing again" % (elapsed, budget_ms)
+        )
         assert not writer.failed
     finally:
         writer.close()
