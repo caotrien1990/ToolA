@@ -359,29 +359,71 @@ def _detect_majority_language(project_path: str) -> str:
                 py_count += 1
             elif filename.endswith((".js", ".jsx", ".ts", ".tsx")):
                 js_ts_count += 1
-    return "python" if py_count > js_ts_count else "other"
+    # "other" was enough while this only gated the engine choice, but it is now
+    # reported as `language_detected` -- and answering "other" for a repo it just
+    # counted 41 JS files in is throwing away what it knows.
+    if py_count > js_ts_count:
+        return "python"
+    return "javascript" if js_ts_count else "other"
 
 
-def _cbm_dead_code_ast_p0(project_path: str, *, limit: int = 50) -> dict:
-    result = _query.dead_code_candidates(project_path, limit=limit)
+def _cbm_dead_code_ast_p0(project_path: str, *, limit: int = 50,
+                          rel_files: "set[str] | None" = None,
+                          language: str = "") -> dict:
+    result = _query.dead_code_candidates(project_path, limit=limit,
+                                         rel_files=rel_files)
+    # The schema advertises "Ruff-powered ... Vulture supplements", but a
+    # non-Python repo silently got this AST engine instead -- a different
+    # analysis with different semantics wearing the other one's description.
+    # Falling back is fine; not saying so is the defect.
     result["engine"] = "ast-p0-v1"
+    result["engine_reason"] = (
+        "graph AST engine: majority language is %s, not python — Vulture/Ruff "
+        "would have nothing to read" % (language or "not python"))
     return result
 
 
 def _cbm_dead_code_dispatch(project_path: str, *, limit: int = 50,
                             scope: str = "full", file_filter: str = "") -> dict:
     scan_root = os.path.join(project_path, "orchestrator") if scope == "core" else project_path
+    language = _detect_majority_language(scan_root)
+
+    # `files` used to be resolved here and then dropped on the floor by the
+    # non-Python early return, so a bogus glob and no glob at all both returned
+    # the full 207 candidates. It was also hard-filtered to `.endswith(".py")`,
+    # which made every *.js pattern match zero on the Python path too.
     files: list[str] | None = None
+    rel_files: "set[str] | None" = None
     if file_filter:
         pattern = file_filter
         if not os.path.isabs(pattern):
             pattern = os.path.join(scan_root, pattern)
-        files = [
-            path for path in glob.glob(pattern, recursive=True)
-            if os.path.isfile(path) and path.endswith(".py")
-        ]
-    if _detect_majority_language(scan_root) != "python":
-        return _cbm_dead_code_ast_p0(scan_root, limit=limit)
+        files = [path for path in glob.glob(pattern, recursive=True)
+                 if os.path.isfile(path)]
+        rel_files = set()
+        for path in files:
+            try:
+                rel = os.path.relpath(path, scan_root)
+            except ValueError:
+                continue  # different drive: cannot be a project-relative match
+            rel_files.add(rel.replace("\\", "/"))
+
+    def _annotate(result: dict) -> dict:
+        result["file_filter"] = file_filter or ""
+        result["file_filter_applied"] = bool(file_filter)
+        result["files_matched"] = len(files) if files is not None else None
+        result["language_detected"] = language
+        result["scope"] = scope
+        return result
+
+    if language != "python":
+        return _annotate(_cbm_dead_code_ast_p0(
+            scan_root, limit=limit, rel_files=rel_files, language=language))
+
+    # The Python engines take absolute paths; only the graph engine keys by
+    # project-relative path.
+    if files is not None:
+        files = [p for p in files if p.endswith(".py")]
 
     t0 = time.monotonic()
     limit = max(1, min(int(limit or 50), 200))
@@ -425,8 +467,9 @@ def _cbm_dead_code_dispatch(project_path: str, *, limit: int = 50,
         "elapsed_ms": round((time.monotonic() - t0) * 1000, 1),
         "disclaimer": "advisory only — Ruff findings require manual verify before action",
         "engine": "vulture+ruff",
+        "engine_reason": "majority language is python — Vulture + Ruff both apply",
     }
-    return out
+    return _annotate(out)
 
 
 async def cbm_incremental_index(project_path: str = "", scope: str = "full",

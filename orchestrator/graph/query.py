@@ -646,7 +646,8 @@ def cbm_get_architecture(project_path: str, *,
 
 # ─── Step 17: conservative dead-code candidates ──────────────────────────────
 
-def dead_code_candidates(project_path: str, *, limit: int = 50) -> dict:
+def dead_code_candidates(project_path: str, *, limit: int = 50,
+                         rel_files: "set[str] | None" = None) -> dict:
     """Suggest unused-code candidates WITHOUT false certainty (Step 17).
 
     Conservative: entry points, dunder/callback-ish names, decorated
@@ -659,6 +660,13 @@ def dead_code_candidates(project_path: str, *, limit: int = 50) -> dict:
     len(candidates[:limit]), so a project with 3796 dead symbols and the
     default limit reported "count: 50" -- a number that looked like a finding
     and was really the limit. `returned_count` is the page.
+
+    rel_files: project-relative paths (forward slashes) to restrict the report
+    to. This engine had no such parameter, so `cbm_dead_code`'s `file_filter`
+    resolved a glob and then dropped it on the floor for every non-Python repo --
+    a bogus glob and no glob at all returned the same 207 candidates. An empty
+    SET means "the filter matched nothing" and correctly yields no candidates;
+    None means "no filter".
     """
     t0 = time.monotonic()
     payload = {"enabled": graph_enabled(), "candidates": [], "count": 0,
@@ -689,6 +697,10 @@ def dead_code_candidates(project_path: str, *, limit: int = 50) -> dict:
             out = []
             for r in _dead_callables(conn, unexported_only=True,
                                      exclude_decorated=True):
+                if rel_files is not None:
+                    fp = (r["file_path"] or "").replace("\\", "/")
+                    if fp not in rel_files:
+                        continue
                 private = r["name"].startswith("_")
                 conf = 0.7 if private else 0.3
                 reason = ("private, 0 inbound call edges" if private else

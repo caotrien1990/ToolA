@@ -33,6 +33,11 @@ these are not scaffolding, they were all mutation-verified (see
 | `query_sqlite` answers `QUERY_SQLITE_ERROR: database is locked` | the DB is corrupt or the tool is broken | Neither. Another process holds the write lock; since B009 this answers `SQLITE_DATABASE_LOCKED` with `retryable:true` — wait and resend the same call | `test_p4_soft_data.py::TestQuerySqlite` |
 | `write_fix` on a large file client-times-out; nobody knows if it landed | The write was lost; resend it | It almost certainly landed. The ledger opens before the tool runs, so `/api/write_status?project_path=..&file_path=..` answers `in_flight` then `committed` — a blind resend writes the file twice | `test_write_ledger*.py`; measured 10MB: committed at t+54s after a 4s client timeout |
 | A tool works over HTTP but answers `UNSUPPORTED_FIELD` over MCP | The payload is wrong | It is not. The MCP bridge is a separate long-lived process; before B010 it screened the payload against the registry it loaded at launch. Restart the MCP client, and if the gate is back, the fix regressed | `test_mcp_gate_uses_live_schema_b010.py` |
+| `cbm_status` says `stale_files: N` right after a `completed` full index | The index is broken / flaky | Two counters over two populations: the index walks **disk**, the count reads the **files table**. Before B011 a full index never deleted the row of a vanished file, so it could not converge | `test_graph_index_prunes_deleted_files.py` |
+| A JS/TS repo reports `dependency_edges: 0` with hundreds of callables | tree-sitter is not installed / JS is unsupported | It is supported. `require()` is a `call_expression` and never reached the import path, **and** ESM emitted path-shaped keys (`./lib/util.js.helper`) whose prefixes can never match `lib.util` — two gaps, either alone keeps the zero | `test_js_dependency_edges.py` |
+| `validate_file` returns `ok: true` for a file you know is broken | The individual checker is broken | Check the `lang` you passed and the `checked` field. Before B012 any unrecognised spelling (`JSON`, `javascript`, `node`, `py`) fell through to `ok:true, lang:"none"` with nothing run; now it refuses with `UNSUPPORTED_LANG`, and `checked:false` marks a genuine pass-through | `test_validate_file_unknown_lang_fails_loud.py` |
+| `cbm_dead_code`'s `file_filter` changes nothing | The glob is wrong / too broad | Test it with a deliberately **bogus** glob: identical output proves the argument is inert, not broad. Before B014 the resolved glob was dropped by the non-Python early return, and hard-filtered to `.py` on the Python path. Now `files_matched: 0` is visible | `test_cbm_dead_code_file_filter.py` |
+| `cbm_dead_code` on a JS repo returns nothing for `bug_risk` / `perf` / `code_smell` | The repo is clean | Those categories are Ruff-only, so on a JS/TS repo they are empty **by construction**. Read `engine`, `engine_reason` and `language_detected` — since B015 every answer says which engine ran and why | same file, `test_the_engine_name_says_what_actually_ran` |
 
 ---
 
@@ -352,6 +357,61 @@ in-process tests passed over this bug.
 
 ---
 
+## Entry 7 — Auditing [A] against a non-Python repo
+
+Almost every analysis tool in [A] was built and tested against [A] itself — a
+Python repo. Point it at a JS/TS repo and a class of defect appears that a
+Python-only test suite structurally cannot see. Five were found this way on
+2026-08-21 (B011-B015). The pattern behind all five is worth naming:
+
+**A tool that cannot do something answered as though it had.** The engine fell
+back without saying so (B015). The glob was resolved and discarded (B014). The
+validator passed a file it never opened (B012). The extractor emitted a key that
+could never match (B013). The index reported success while leaving rows behind
+(B011). None of them errored. Every one of them returned `ok`.
+
+So the audit technique that actually worked was not reading code, it was
+**asking each tool to prove it did the thing**:
+
+* Pass a **deliberately impossible argument** and check the answer differs. A
+  bogus glob returning the same 207 candidates as no glob is what exposed B014 —
+  the "correct" glob returning a plausible number had looked fine for a long
+  time.
+* Pass a **misspelling of something supported** (`JSON`, `javascript`, `node`).
+  B012's terminal `else` had swallowed those for as long as it existed, and three
+  of them name languages the tool really implements.
+* **Count the same thing two ways.** B011 is nothing but two counters
+  disagreeing; the disagreement was visible in one payload for months.
+* **Check the number moves at all.** `dependency_edges: 0` is not a small number,
+  it is a missing feature — and a repo with 426 callables and zero edges cannot
+  both be true.
+
+### If you fix one of these, fix it at extraction time
+
+B013's real lesson: the ESM key was wrong because it was built where the
+importing file's directory was still known, and consumed where it no longer was.
+Normalising later is impossible, not merely awkward. When a value has to be
+canonical for a later join, canonicalise it at the point where you still hold the
+context that makes it canonical.
+
+### What is deliberately still not fixed
+
+On a JS/TS repo, `cbm_dead_code`'s `bug_risk` / `perf` / `complexity` /
+`code_smell` / `tech_debt` / `security` categories come back **empty**, because
+they are Ruff findings and Ruff does not read JS. Since B015 the response says
+which engine ran, so this is now visible rather than mistakable for a clean
+repo — but it is a gap, not a fix. Anh deferred the JS equivalents explicitly
+("1 số tool python sẽ không bắt được, nâng cấp sau"). Do not read an empty
+`bug_risk` on a JS repo as good news.
+
+Likewise `unresolved_imports` on a JS repo counts bare package specifiers
+(`fs`, `express`) and that is correct: resolving them to same-named local files
+would be worse than leaving them unresolved. A test pins that restraint, so if a
+future change makes that number drop to zero, check it did not start colliding
+node_modules names with project files.
+
+---
+
 ## Mutation testing: the acceptance bar
 
 A test that passes against the *unfixed* code proves nothing. Every fix in this
@@ -448,3 +508,32 @@ Related pre-existing files worth knowing about: `test_a02_a30_interaction.py` (t
 write-ledger pact that `PRESERVED_CACHE_FILES` must **not** widen to cover),
 `test_command_transport_c2.py` (`%`/`&` escaping in commands),
 `test_antidrift_contract.py`, `test_schema_params_contract.py`.
+
+---
+
+## Test inventory added by the JS-repo audit (2026-08-21)
+
+39 tests, all mutation-verified: every file below was written **before** its fix
+and confirmed failing first.
+
+| File | Tests | Pins |
+|---|---|---|
+| `test_validate_file_unknown_lang_fails_loud.py` | 13 | B012: alias normalisation, `UNSUPPORTED_LANG` with `supported_langs`, the `checked` flag, RFC-8259 rejections |
+| `test_js_dependency_edges.py` | 11 | B013: ESM key shape, the three `require()` forms, and that a bare package specifier stays unresolved |
+| `test_cbm_dead_code_file_filter.py` | 9 | B014/B015: the bogus-glob case, echoed `files_matched`, and `engine`/`engine_reason`/`language_detected` |
+| `test_graph_index_prunes_deleted_files.py` | 6 | B011: rows pruned, nodes dropped, `files_pruned` reported, index/status agreement, convergence, `freshness` |
+
+Two harness requirements for anything touching the graph, both learned the hard
+way:
+
+* `ORCHESTRATOR_PARALLEL_INDEX=off` in any ad-hoc script or test —
+  `_snapshot_files` uses a ProcessPool that is not spawn-safe and raises
+  `BrokenProcessPool` otherwise.
+* `GRAPH_DB_DIR` per test, or the fixture writes into the real
+  `.orchestrator_cache/graph.db`. `CBM_EXTRACT_JS=1` is what admits JS/TS to the
+  walk, and `CBM_GRAPH_ENABLED=1` is what lets `dead_code_candidates` run at all
+  — a JS test that forgets either one passes vacuously.
+
+Baseline after this audit: **2517 passed, 4 skipped, 1 xfailed, 165 subtests
+passed, 0 failed** in 388s with `--basetemp` on `C:` (was 2478 before the 39 new
+tests).

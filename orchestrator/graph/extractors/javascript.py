@@ -8,6 +8,7 @@ indexing never crashes on JS/TS files (per-language rollback = disable flag).
 """
 import hashlib
 import os
+import posixpath
 
 from ..config import (
     CBM_EXACT, CBM_UNIQUE, CBM_SAME_MODULE, CBM_SUFFIX_LOW, CBM_SUFFIX_HIGH,
@@ -99,6 +100,9 @@ class _JsWalker:
         self._func_stack: list[str] = []
         # names exported via export-clause / default-identifier (post-visit mark)
         self._exported: set = set()
+        # require() calls already turned into import nodes by the declarator
+        # branch, so the generic call_expression branch does not record them twice
+        self._consumed_requires: set[int] = set()
 
     # -- helpers --------------------------------------------------------------
 
@@ -193,11 +197,41 @@ class _JsWalker:
                 })
         return nid
 
+    def _module_key(self, specifier: str) -> str:
+        """Dotted module key for an import specifier, as the indexer keys modules.
+
+        The raw specifier was used verbatim, so `./lib/util.js` became the
+        qualified_name `./lib/util.js.helper`, whose dotted prefixes are
+        `/lib/util.js.helper`, `/lib/util.js`, `/lib/util` -- and the indexer
+        keys modules by `_dotted_from_path('lib/util.js')` == `lib.util`. The two
+        could never meet, so every ESM project resolved to zero dependency edges
+        no matter how many imports it had.
+
+        This is the only place the relative forms CAN be resolved: it needs the
+        importing file's directory, which the indexer no longer has when it walks
+        import nodes. Bare package specifiers ('fs', 'react') are returned
+        unchanged -- they are external and must stay unresolvable rather than
+        collide with a same-named local file.
+        """
+        spec = (specifier or "").replace("\\", "/")
+        if not spec.startswith("."):
+            return spec.strip("/").replace("/", ".")
+        base = os.path.dirname(self.file_path.replace("\\", "/"))
+        joined = posixpath.normpath(posixpath.join(base, spec))
+        joined = joined.replace("\\", "/").lstrip("./").strip("/")
+        for ext in SUPPORTED_EXTS:
+            if joined.endswith(ext):
+                joined = joined[: -len(ext)]
+                break
+        if joined.endswith("/index"):
+            joined = joined[: -len("/index")]
+        return joined.replace("/", ".")
+
     def _emit_import(self, node) -> None:
         source_node = node.child_by_field_name("source")
         src_mod = ""
         if source_node is not None:
-            src_mod = self._text(source_node).strip("'\"`")
+            src_mod = self._module_key(self._text(source_node).strip("'\"`"))
         names: list[str] = []
         clause = next((c for c in node.children if c.type == "import_clause"), None)
         if clause is not None:
@@ -216,8 +250,41 @@ class _JsWalker:
                     ident = next((g for g in c.children if g.type == "identifier"), None)
                     if ident is not None:
                         names.append(self._text(ident))
+        self._add_import_nodes(src_mod, names, node)
+
+    def _require_specifier(self, node) -> str | None:
+        """The specifier of a `require('...')` call, else None.
+
+        `require()` is a call_expression, so it never reached _emit_import and a
+        CommonJS project produced NO import nodes at all -- only an `ext:require`
+        call edge. That is why dependency_edges was 0 on a 41-file repo.
+        """
+        if node is None or node.type != "call_expression":
+            return None
+        fn = node.child_by_field_name("function")
+        if fn is None or fn.type != "identifier" or self._text(fn) != "require":
+            return None
+        args = node.child_by_field_name("arguments")
+        if args is None:
+            return None
+        for a in args.children:
+            if a.type in ("string", "template_string"):
+                raw = self._text(a).strip("'\"`")
+                return raw or None
+        return None  # require(variable): specifier not statically known
+
+    def _emit_require(self, call_node, *, bound: list[str]) -> bool:
+        """Record a require() as an import node, like its ESM equivalent."""
+        spec = self._require_specifier(call_node)
+        if spec is None:
+            return False
+        self._consumed_requires.add(id(call_node))
+        self._add_import_nodes(self._module_key(spec), list(bound), call_node)
+        return True
+
+    def _add_import_nodes(self, src_mod: str, names: list[str], node) -> None:
         if not names:
-            names = [src_mod]  # side-effect import: import './x'
+            names = [src_mod]  # side-effect import: import './x' / require('./x')
         for name in names:
             if not name:
                 continue
@@ -433,9 +500,29 @@ class _JsWalker:
                     continue
                 name_n = d.child_by_field_name("name")
                 value = d.child_by_field_name("value")
+                # `const {a, b} = require('./x')` -- the destructured names are
+                # exactly the imported bindings, so this is the one destructuring
+                # shape worth reading: without it the later call to `a()` stays an
+                # `ext:` edge and the cross-file call is lost.
+                if (name_n is not None and name_n.type == "object_pattern"
+                        and self._require_specifier(value) is not None):
+                    picks: list[str] = []
+                    for el in name_n.children:
+                        if el.type == "shorthand_property_identifier_pattern":
+                            picks.append(self._text(el))
+                        elif el.type == "pair_pattern":
+                            alias = el.child_by_field_name("value")
+                            if alias is not None and alias.type == "identifier":
+                                picks.append(self._text(alias))
+                    self._emit_require(value, bound=picks)
+                    continue
                 if name_n is None or name_n.type != "identifier":
-                    continue  # destructuring patterns: out of prototype scope
+                    continue  # other destructuring patterns: out of prototype scope
                 name = self._text(name_n)
+                if value is not None and self._require_specifier(value) is not None:
+                    # `const util = require('./x')` -- default-style binding.
+                    self._emit_require(value, bound=[name])
+                    continue
                 if value is not None and value.type in (
                         "arrow_function", "function_expression", "function",
                         "generator_function"):
@@ -464,7 +551,12 @@ class _JsWalker:
                         self.walk(value)
             return
         if t == "call_expression":
-            self._emit_call(node)
+            # A bare `require('./x');` (side-effect import) reaches here with no
+            # declarator above it. Already-consumed requires are skipped so a
+            # bound require is not recorded twice.
+            if id(node) not in self._consumed_requires:
+                if not self._emit_require(node, bound=[]):
+                    self._emit_call(node)
             # fallthrough: keep walking arguments for nested calls
         for child in node.children:
             self.walk(child)

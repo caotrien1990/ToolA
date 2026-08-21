@@ -1152,4 +1152,215 @@ bug, it made it observable.
 
 ---
 
-_Last updated: 2026-08-21 (campaign-1608: added B002-B010, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md)_
+## B011 — A full index never dropped the row of a deleted file, so `stale_files` could not converge
+
+**Status**: fixed
+**Severity**: HIGH (the graph kept answering from files that no longer exist)
+**Discovered**: 2026-08-21, reported as "`stale_files: 24` right after `cbm_index(full)` said `completed` with `files_unchanged: 2` — the two numbers contradict each other"
+
+### Reproduction
+
+```
+cbm_index(project_path=..., scope="full")   -> completed, files_unchanged: 2
+cbm_status(project_path=...)                -> stale_files: 24, freshness: "fresh"
+```
+Repeat the index any number of times; the count never moves.
+
+### Root cause
+
+Two counters over **two different populations**:
+
+* `store.stale_files` / `status._stale_count` iterate the **rows of the `files`
+  table** and call a row stale when its file is missing on disk.
+* `index_project` iterates the **on-disk candidate walk**. A file that left the
+  tree simply stops appearing — nothing on that path ever deleted its row.
+
+`_delete_file_entries` already existed and already did the right cascade; it was
+only wired into `incremental_index`. Three consequences beyond the mismatched
+number, and the number was the least of them:
+
+1. Nodes and edges of deleted files stayed in the graph and kept surfacing in
+   `dead_code` / architecture answers.
+2. `query._auto_reindex_if_stale` gates on that count, so a full reindex could
+   never clear it — it re-fired forever without converging.
+3. `freshness` answered `"fresh"` for a whole hour on age alone while
+   `stale_files > 0` — one field contradicting another in the same payload.
+
+The contract had in fact been written down already, in
+`tests/test_graph_stale_count_agreement.py::test_a_deleted_file_is_stale`
+("*or a deletion would never prompt the reindex that drops its nodes*"). The
+*drops its nodes* half was never implemented.
+
+### Fix
+
+`_prune_missing_files(conn, root)` in `orchestrator/graph/indexer.py`, called
+**before** the dependency passes so no edge is built onto a node about to be
+deleted. Missing-on-disk is the only criterion, deliberately: that is
+scope-independent, so a `core` index never prunes the rows a previous `full`
+index wrote for files outside `orchestrator/`. An `OSError` while testing
+existence is treated as "present" — a transient stat failure must not delete a
+file's graph. The count is reported as `files_pruned`, so the deletion is never
+silent. `status.py` now derives `freshness` from a non-zero count instead of
+letting the age branch overrule it.
+
+**Pinned by** `tests/test_graph_index_prunes_deleted_files.py` (6 tests).
+
+---
+
+## B012 — `validate_file` answered `ok:true` for any `lang` it did not recognise
+
+**Status**: fixed
+**Severity**: HIGH (a validator that passes what it never read)
+**Discovered**: 2026-08-21, reported as "`lang: json` returns `ok: true` for a syntactically broken JSON file"
+
+### The report's diagnosis was wrong; the defect was worse
+
+Measured first: `lang="json"` on broken JSON already returned `ok:false` with a
+real `JSONDecodeError`, and `lang="js"` really did run `node --check`. Those
+branches worked.
+
+The door was the **terminal `else`**: any `lang` the dispatcher did not match
+answered `ok:true, lang:"none"` — no check attempted, no mention of that. So a
+broken file passed under `JSON`, `Json`, `jsonc`, `javascript`, `node`, `py`.
+Three of those name a language the tool **does** implement, under a different
+spelling. And the registered schema documented 4 languages (`python | js | ts |
+auto`) while the code branched on 9, so a caller could not learn the vocabulary
+except by reading source.
+
+### Fix
+
+In `code_tools.py`: `_VALIDATE_LANGS` (the 9 the code really implements) plus
+`_VALIDATE_LANG_ALIASES`, normalisation before dispatch, and an
+`UNSUPPORTED_LANG` refusal carrying `supported_langs` for anything else. A
+`checked` boolean now rides on every answer, so `ok:true` is never ambiguous
+about whether anything ran — `auto` on an unknown extension still passes
+(`write_fix` validates every write and must not fail a `.txt`), but with
+`checked:false`. The json branch additionally rejects RFC-8259 violations that
+Python's `json` accepts by default: `NaN`/`Infinity` literals, and duplicate
+keys (which parsers silently resolve last-wins, discarding data).
+
+**Pinned by** `tests/test_validate_file_unknown_lang_fails_loud.py` (13 tests).
+
+---
+
+## B013 — JS dependency graph empty: `require()` never extracted, and ESM import keys were path-shaped
+
+**Status**: fixed
+**Severity**: HIGH (`module_deps` / `imports` / `imported_by` / cycles all empty on any JS repo)
+**Discovered**: 2026-08-21, reported as "`dependency_edges: 0, modules_indexed: 65, dynamic_ref_edges: 0` despite `callable_names: 426` — CommonJS `require()` is not extracted"
+
+### Two independent gaps, not one
+
+The report named `require()`. Measurement found a second gap that would have
+kept the symptom alive after fixing the first:
+
+1. **`require()`** is a `call_expression`, so it never reached `_emit_import` —
+   CommonJS produced no import node at all, only an `ext:require` call edge.
+2. **ESM did emit an import node, but path-shaped**: `./lib/util.js.helper`.
+   The indexer keys modules with `_dotted_from_path('lib/util.js')` →
+   `lib.util`, and matches by dotted prefixes longest-first. The prefixes of a
+   path-shaped name (`/lib/util.js.helper`, `/lib/util.js`, `/lib/util`) start
+   with `/` and can never equal `lib.util`.
+
+So fixing `require()` alone would have left every ESM project at zero edges and
+the reported number unchanged.
+
+### Fix
+
+`orchestrator/graph/extractors/javascript.py`. `_module_key()` resolves a
+relative specifier against the importing file's directory, strips a supported
+extension and a trailing `/index`, and returns dots — at **extraction** time,
+which is the only place it can be done, because the indexer no longer knows the
+importing file's directory when it walks import nodes. A bare package specifier
+(`fs`, `express`) is deliberately left unresolved rather than collided with a
+same-named local file; a test pins that restraint. `_require_specifier` /
+`_emit_require` handle the three real shapes — `const x = require('m')`,
+`const {a, b: c} = require('m')`, and a bare `require('m');` side effect — with
+`_consumed_requires` so a bound require is not also recorded as a call.
+
+Measured on the reported repo: `dependency_edges` **0 → 46** (nodes 1864, edges
+4504, `unresolved_imports: 38`, correctly the bare package specifiers).
+
+**Pinned by** `tests/test_js_dependency_edges.py` (11 tests).
+
+---
+
+## B014 — `cbm_dead_code`'s `file_filter` was accepted and discarded
+
+**Status**: fixed
+**Severity**: HIGH (made the tool unusable on any repo with a large data directory)
+**Discovered**: 2026-08-21, reported as "`file_filter: '5.backend/**/*.js'` returns exactly the same 207 items as no filter"
+
+### Reproduction (the decisive one)
+
+A **bogus** glob returned the full result set too:
+
+```
+no filter                        -> count 207
+file_filter=5.backend/**/*.js    -> count 207
+file_filter=no/such/dir/**/*.js  -> count 207   <-- matches zero files
+```
+
+Identical output for a filter that matches nothing is the proof the argument is
+inert rather than merely broad.
+
+### Root cause — two defects in one function
+
+1. `_cbm_dead_code_dispatch` resolved `files` from the glob and then, for any
+   non-Python repo, early-returned into `_cbm_dead_code_ast_p0`, which had no
+   parameter to receive it. `query.dead_code_candidates` had no such parameter
+   either. The filter was accepted, silently dropped, and never reported as
+   dropped.
+2. Even on the Python path the glob was hard-filtered with
+   `path.endswith(".py")`, so a `*.js` pattern matched zero. The schema's
+   "matching files are passed directly to Vulture/Ruff" was true only for Python
+   paths.
+
+The user's underlying need is the point: with `scope` limited to `full|core`
+there was no way to exclude a large data directory.
+
+### Fix
+
+`rel_files` threaded from `_cbm_dead_code_dispatch` → `_cbm_dead_code_ast_p0` →
+`query.dead_code_candidates`. An empty **set** means "the filter matched
+nothing" and correctly yields nothing; `None` means "no filter". The `.py`
+hard-filter moved to after the language check, where it belongs (the Python
+engines only). The response echoes `file_filter`, `file_filter_applied` and
+`files_matched`, so a glob that matched nothing reads as `files_matched: 0`
+instead of looking like a full scan. Schema now points at `file_filter` for
+restricting to a subtree.
+
+Measured on the reported repo: **208** (no filter) / **131** with
+`files_matched: 28` (`5.backend/**/*.js`) / **0** with `files_matched: 0`
+(bogus glob).
+
+**Pinned by** `tests/test_cbm_dead_code_file_filter.py` (9 tests).
+
+---
+
+## B015 — `cbm_dead_code` described itself as Ruff-powered while running a different engine
+
+**Status**: fixed
+**Severity**: MEDIUM (a correct fallback, presented as something it is not)
+**Discovered**: 2026-08-21, reported alongside B014
+
+A non-Python repo silently got `engine: "ast-p0-v1"` — the graph AST engine, a
+different analysis with different semantics — under a schema advertising
+"Ruff-powered ... Vulture supplements". Falling back is legitimate; not saying
+so is the defect, and it also hid the fact that on a JS repo the other
+categories (`bug_risk`, `perf`, `code_smell`, ...) are Ruff-only and therefore
+come back empty by construction, not because the repo is clean.
+
+**Fix**: every answer now carries `engine`, `engine_reason` and
+`language_detected`. `_detect_majority_language` was returning only
+`"python"`/`"other"`; adequate while it merely gated the engine choice, but as a
+reported field it discarded what it had just counted — it now answers
+`"javascript"` when it counted JS/TS files. The registered schema states which
+engine each repo shape gets and that the Ruff-only categories will be empty on a
+JS/TS repo.
+
+**Pinned by** `tests/test_cbm_dead_code_file_filter.py::test_the_engine_name_says_what_actually_ran`.
+
+---
+
+_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit: added B002-B015, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md)_

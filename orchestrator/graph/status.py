@@ -123,10 +123,18 @@ def graph_status(project_path: str) -> dict:
                 fin = counts["last_run"]["finished_at"]
                 if fin:
                     age_ms = int(time.time() * 1000) - fin
-                    if payload.get("stale_files") == 0:
+                    stale_n = payload.get("stale_files")
+                    if stale_n == 0:
                         payload["freshness"] = "fresh"
-                    else:
+                    elif stale_n is None:
+                        # The count itself failed; age is all we have left.
                         payload["freshness"] = "fresh" if age_ms < 3_600_000 else "stale"
+                    else:
+                        # A non-zero count IS the staleness signal. The age branch
+                        # used to answer "fresh" for a whole hour regardless, so
+                        # `stale_files: 24` sat next to `freshness: "fresh"` -- one
+                        # field contradicting the other in the same payload.
+                        payload["freshness"] = "stale"
                 else:
                     payload["freshness"] = "indexing"  # run in progress, not stale
             else:

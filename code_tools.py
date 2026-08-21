@@ -1453,7 +1453,11 @@ _ENGLISH_PROPERTY_DESCRIPTIONS = {
     "idea": "Short task description.",
     "approved_inputs": "User-approved build inputs.",
     "folder_path": "Absolute folder path.",
-    "lang": "python | js | ts | auto.",
+    "lang": ("auto | python | js | ts | esbuild | html | vue | json | css. "
+             "auto picks by extension and passes unknown extensions with "
+             "checked:false. Common aliases (javascript, node, typescript, py, "
+             "jsonc, htm, scss) are normalised; anything else is refused with "
+             "UNSUPPORTED_LANG rather than silently unchecked."),
     "session_title": "Optional session title.",
     "mode": "Workflow mode such as T1 or T2.",
     "new_title": "New session title.",
@@ -11889,6 +11893,30 @@ def _py_error_ruff_hint(error_msg: str) -> tuple[bool, list[str], str]:
     return True, matched, f"Ruff safe-fix co the sua (rules: {rules}). Goi ruff_fix(path=<file>,apply=false) de preview truoc - CA tu quyet dinh."
 
 
+# Every lang `validate_file` actually implements a checker for. The registered
+# schema used to document four of these ("python | js | ts | auto") while the
+# code branched on nine, so a caller had no way to learn the real vocabulary
+# except by reading the source -- and an unlisted-but-real value looked identical
+# to a typo. This set is the single source of truth for both the refusal message
+# and the schema text.
+_VALIDATE_LANGS = frozenset({
+    "auto", "python", "js", "ts", "esbuild", "html", "vue", "json", "css",
+})
+
+# Spellings that mean one of the above. These are the values a caller naturally
+# sends; answering ok:true to them (the old behaviour) validated nothing.
+_VALIDATE_LANG_ALIASES = {
+    "py": "python", "python3": "python",
+    "javascript": "js", "node": "js", "nodejs": "js", "mjs": "js", "cjs": "js",
+    "typescript": "ts",
+    "jsx": "esbuild", "tsx": "esbuild",
+    "htm": "html",
+    "jsonc": "json", "json5": "json",
+    "scss": "css", "sass": "css",
+    "": "auto", "detect": "auto",
+}
+
+
 async def validate_file(file_path: str, lang: str = "auto", project_path: str = "") -> str:
     """Check syntax/validity sau write. Python: py_compile. JS/TS: node --check.
     HTML: UTF-8 + extract <script> blocks → node --check.
@@ -11920,6 +11948,28 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
             write_performed=False,
         )
 
+    # A lang the dispatcher did not recognise used to fall through to the
+    # terminal `else` and be answered ok:true ("no syntax checker for this file
+    # type"), so `lang="JSON"` / `"javascript"` / `"jsonc"` / `"node"` -- all of
+    # them different spellings of a language this tool DOES implement -- silently
+    # validated nothing. Normalise the spellings, then refuse anything still
+    # unknown instead of passing it.
+    lang = _VALIDATE_LANG_ALIASES.get(str(lang).strip().lower(), str(lang).strip())
+    if lang not in _VALIDATE_LANGS:
+        return _json_error(
+            f"Unsupported lang {lang!r}. Supported: "
+            + ", ".join(sorted(_VALIDATE_LANGS)),
+            error_name="UNSUPPORTED_LANG",
+            type="VALIDATION_ERROR",
+            severity="error",
+            retryable=False,
+            reason="lang is not one this validator can check",
+            ca_next_action="retry_with_supported_lang",
+            write_performed=False,
+            lang=lang,
+            file=str(fp),
+            supported_langs=sorted(_VALIDATE_LANGS),
+        )
     if lang == "auto":
         ext = fp.suffix.lower()
         if ext == ".py":
@@ -12133,8 +12183,29 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                 return {"ok": False, "lang": "vue", "file": str(fp), "error": str(exc)}
         elif lang == "json":
             try:
-                json.loads(fp.read_text(encoding="utf-8"))
-                return {"ok": True, "lang": "json", "file": str(fp)}
+                # json.loads accepts NaN/Infinity as an extension and silently
+                # last-wins duplicate keys. Both produce a file that json.parse,
+                # jq and serde_json all reject or read differently -- calling it
+                # valid is the validator reporting the opposite of the truth.
+                def _reject_constant(name):
+                    raise ValueError(
+                        f"{name} is not valid JSON (RFC 8259 has no such literal; "
+                        f"json.parse / jq / serde_json all reject it)")
+
+                def _reject_duplicates(pairs):
+                    seen = {}
+                    for key, value in pairs:
+                        if key in seen:
+                            raise ValueError(
+                                f"duplicate key {key!r} — JSON parsers silently "
+                                f"keep the last value, discarding the first")
+                        seen[key] = value
+                    return seen
+
+                json.loads(fp.read_text(encoding="utf-8"),
+                           parse_constant=_reject_constant,
+                           object_pairs_hook=_reject_duplicates)
+                return {"ok": True, "lang": "json", "file": str(fp), "checked": True}
             except json.JSONDecodeError as exc:
                 return {"ok": False, "lang": "json", "file": str(fp), "error": str(exc)}
             except Exception as exc:
@@ -12151,14 +12222,25 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
             except Exception as exc:
                 return {"ok": False, "lang": "css", "file": str(fp), "error": str(exc)}
         else:
+            # Reachable only via lang="auto" on an extension with no checker --
+            # the caller asked us to guess and there was nothing to run. That
+            # stays a pass (write_fix validates every write and must not fail a
+            # .txt), but `checked: False` marks it so a reader cannot mistake
+            # "nothing ran" for "validated". An explicitly-named lang can no
+            # longer land here; it is refused as UNSUPPORTED_LANG above.
             try:
                 fp.read_text(encoding="utf-8")
-                return {"ok": True, "lang": "none", "file": str(fp),
+                return {"ok": True, "lang": "none", "file": str(fp), "checked": False,
                         "note": "No syntax checker for this file type - UTF-8 readability OK"}
             except Exception as exc:
-                return {"ok": False, "lang": "none", "file": str(fp), "error": str(exc)}
+                return {"ok": False, "lang": "none", "file": str(fp), "checked": False,
+                        "error": str(exc)}
 
     result = await asyncio.to_thread(_check)
+    # Every branch except the no-checker fallback really ran a checker; say so
+    # explicitly so `ok:true` is never ambiguous about whether anything was
+    # verified. The fallback sets checked=False itself.
+    result.setdefault("checked", True)
     if not result.get("ok", False):
         err_text = str(result.get("error", "syntax validation failed"))
         result.setdefault("error_name", "VALIDATION_FAILED")
@@ -15851,14 +15933,14 @@ try:
         tool_phases=TOOL_PHASES,
         phase_labels=PHASE_LABELS,
         schema={
-            "description": "T1 read-only: Ruff-powered full-project health scan (dead_code + bug_risk + perf + complexity + code_smell + tech_debt + security). Vulture supplements dead-code detection. Output grouped by category field. ADVISORY ONLY — never edit source from this list alone.",
+            "description": "T1 read-only: full-project health scan (dead_code + bug_risk + perf + complexity + code_smell + tech_debt + security). Engine depends on the repo's majority language and is reported in `engine` + `engine_reason`: a Python repo gets Ruff + Vulture; a JS/TS repo gets the graph AST engine (dead_code only — the other categories are Ruff-only, so they come back empty). Output grouped by category field. ADVISORY ONLY — never edit source from this list alone.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "project_path": {"type": "string", "description": "Absolute project root."},
                     "limit": {"type": "integer", "description": "Max candidates (clamped to 200). Default: 50."},
-                    "scope": {"type": "string", "enum": ["full", "core"], "default": "full", "description": "Scan scope. core restricts to orchestrator/."},
-                    "file_filter": {"type": "string", "default": "", "description": "Optional glob relative to scan scope; matching files are passed directly to Vulture/Ruff."},
+                    "scope": {"type": "string", "enum": ["full", "core"], "default": "full", "description": "Scan scope. core restricts to orchestrator/. To restrict to any other subtree (e.g. skip a large data directory), use file_filter."},
+                    "file_filter": {"type": "string", "default": "", "description": "Optional glob relative to scan scope (recursive ** supported), e.g. 'src/**/*.js'. Restricts BOTH engines. The response echoes file_filter, file_filter_applied and files_matched, so a glob that matched nothing is visible as files_matched:0 rather than looking like a full scan."},
                 },
                 "required": ["project_path"],
             },

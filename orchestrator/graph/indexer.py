@@ -206,6 +206,14 @@ def index_project(project_path: str, *, scope: str = "core",
             total_edges += edges_added
             files_indexed += 1
 
+        # A full index never dropped the row of a file that had left the tree,
+        # so status._stale_count kept counting it stale on every call (reported:
+        # `stale_files: 24` right after a completed index reporting
+        # `files_unchanged: 2`) and _auto_reindex_if_stale could never converge.
+        # Prune BEFORE the dependency passes so no edge is built onto a node
+        # that is about to be deleted.
+        files_pruned = _prune_missing_files(conn, root)
+
         # BUG-3a: seed cross-file imports_module edges on full index too;
         # otherwise they only appear after the first incremental_index run.
         dep_stats = _build_dependency_edges(conn)
@@ -234,6 +242,7 @@ def index_project(project_path: str, *, scope: str = "core",
             "duration_s": duration, "budget_s": budget,
             "files_scanned": len(snapshots), "files_indexed": files_indexed,
             "files_unchanged": files_unchanged,
+            "files_pruned": files_pruned,
             "nodes": counts["nodes"], "edges": counts["edges"],
             "nodes_new": total_nodes, "edges_new": total_edges,
             "dependency_edges": dep_edges,
@@ -335,6 +344,35 @@ def _delete_file_entries(conn, rel_path: str) -> None:
         "OR target IN (SELECT id FROM nodes WHERE file_path=?);", (rel_path, rel_path))
     conn.execute("DELETE FROM nodes WHERE file_path=?;", (rel_path,))
     conn.execute("DELETE FROM files WHERE path=?;", (rel_path,))
+
+
+def _prune_missing_files(conn, root: str) -> int:
+    """Drop the rows of every indexed file that is no longer on disk.
+
+    `index_project` walks the on-disk candidate set, so a file that left the tree
+    simply stops appearing -- nothing on that path ever deleted its row. Meanwhile
+    `status._stale_count` iterates the files TABLE and counts a row stale when its
+    file is missing, which is why a completed index reporting `files_unchanged: 2`
+    could sit next to `stale_files: 24` forever, and why `_auto_reindex_if_stale`
+    re-fired without ever converging.
+
+    Missing-on-disk is the only criterion, deliberately: it is scope-independent,
+    so a `core` index never prunes the rows a previous `full` index wrote for
+    files outside orchestrator/ (they are still on disk). An OSError while
+    testing existence is treated as "present" -- a transient stat failure must
+    not delete a file's graph, and the next run will settle it.
+    """
+    pruned = 0
+    for row in list(conn.execute("SELECT path FROM files;")):
+        rel = row["path"] if not isinstance(row, tuple) else row[0]
+        try:
+            if os.path.exists(os.path.join(root, rel)):
+                continue
+        except OSError:
+            continue
+        _delete_file_entries(conn, rel)
+        pruned += 1
+    return pruned
 
 
 _MODULE_EXTS = (".py", ".pyi", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx")
