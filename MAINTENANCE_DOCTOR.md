@@ -461,9 +461,105 @@ are different claims. Anything cached, hashed, or memoised sits between them.
 
 ---
 
+## Entry 9 — A payload that describes its own contents wrongly
+
+Entry 4 capped `git_status`'s `records` and reported the cap honestly. B021 is
+the same wound one level down: **the cap made the payload smaller without making
+any record smaller.** Every record carried `raw` — the porcelain line — beside
+`record_type`/`xy`/`sub`/`path`/`orig_path`, which are the fields parsed *out of*
+it. ~71% of a record's bytes were a second copy of the same information, and 270
+records came to 126,770 bytes and got cut. Nobody had counted a record's bytes
+against the *information* in it.
+
+The second half of B021 was `cbm_template_query(module_deps)` answering
+`count=12`, `truncated=True`, `total_count=0` — the two fields a paginating caller
+chooses between, contradicting each other, because they were **set
+independently**. `total_count` is now the pre-cap population and `truncated` is
+**derived** from it. Two fields that must agree should be one number and a
+derivation.
+
+### The three questions this entry exists to make you ask
+
+1. **Does any field in this payload restate another?** If a record carries both a
+   raw line and the fields parsed from it, one of them is waste on whichever part
+   of the payload is unbounded — and that is the part that gets truncated.
+2. **Can two fields in this payload disagree?** If yes, derive one from the other
+   at a single site. `truncated` and `total_count` disagreed for as long as they
+   were two assignments.
+3. **Is the tidied value also a value someone holds?** `state_hash` is a sha256
+   over `{'branch','records'}` and callers hold it *between* calls as an
+   optimistic lock — `git_stage` refuses with `GIT_STATE_STALE`,
+   `git_stale_check` reports `state_hash_mismatch`. Hashing the tidied records
+   would shift every hash at once and make every held lock read as a concurrent
+   modification that never happened. So `raw` is dropped from the **response**
+   and kept in the **hash input**. **Tidying a payload must not be a protocol
+   change.**
+
+### Probing the fix found the actual severe defect
+
+In `-z` mode a rename/copy record (type `2`) is **two NUL-separated fields** —
+the record, then the original path — because a path cannot carry the tab that
+separates them in the non-`-z` format. `git-status(1)` documents this. The
+splitter treated the second field as a record of its own, so every rename made a
+**phantom record** (`{'record_type': 'o', 'raw': 'old.txt'}`) counted in
+`counts['changed']`, `orig_path` was **always `''`**, and when the old path began
+with `u`, `1`, `2` or `!` the phantom was parsed as an unmerged/ordinary/ignored
+record and `rec.split(' ',10)[10]` raised **IndexError**. Measured:
+`git mv util.py helper.py` made `git_status` **raise**, and `git_stage` and
+`git_commit` both call `status()` first, so all three went down together.
+
+Nobody reported this. It was found by writing a fixture that produced *every*
+record type instead of the one the report happened to contain. **A fixture that
+covers only the reported case verifies only the reported case.**
+
+### The rule: a fixture too small to distinguish the mutant is a test that measures nothing
+
+B021's first cut was 13 green tests, and **three mutants walked through them**:
+
+| Mutant | Why it survived |
+|---|---|
+| `total_count` falls back to `0` instead of `len(res)` | Nothing asserted on `impact_scope`, the **only** branch reaching the fallback. `count=1 total_count=0` — the exact reported contradiction — would have shipped in the template the fix deliberately exempted. |
+| `COUNT` over raw edges instead of the `DISTINCT` pairs | Every fixture had one import per file, where the two counts agree. A file importing the same module twice gives 2 edges for 1 pair, so the mutant reports a total the LIMIT-ed select can never reach and `truncated` stays true on a **complete** read — a caller looping forever on the same last page. |
+| `entry_points` counts `_all_eps`, not `_prod_eps` | The view drops test runners (CAN-053); the fixture had none, so both lists were the same length. |
+
+Each got its own test. **The only way to learn that a fixture cannot see a defect
+is to introduce the defect and watch the suite stay green.**
+
+Two operational notes from doing it:
+
+* **A mutant that did not apply is not a mutant that survived.** One patch failed
+  on tab escaping and the suite printed `12 passed` — indistinguishable from a
+  surviving mutant. Assert the patch applied (`assert s.count(old)==1`) before
+  reading the result.
+* **`orchestrator/git_tools.py` is CRLF** with 53 pre-existing lone-LF lines. A
+  heredoc matching `\n`-joined text fails on it; splice by line index against
+  `.split("\r\n")` and write with `newline=""`. Check `crlf`/`lone_lf` counts
+  before and after so the fix does not smuggle in a line-ending change.
+
+### And check your own assertions before blaming the fix
+
+Two of B021's tests were wrong, not the code.
+`assert "state_hash_mismatch" not in matched["stale"]` raised
+`TypeError: argument of type 'bool' is not iterable` — `stale` is a **bool**, the
+named causes live in `reasons`; read as a container it would have asserted nothing
+on the happy path. And asserting that rewriting an already-`.M` file moves
+`state_hash` was **false before the fix too** — porcelain is byte-identical for a
+content-only edit, so it measured git's output rather than the lock. When a new
+test fails, run it against the **pre-fix** module: if it fails there for the same
+reason, the test is the bug.
+
+### A docstring that documents the bug is part of the bug
+
+`template_query`'s docstring said *"total_count is the true population for
+paginated templates (orphan_symbols); 0 otherwise."* A reader checking whether
+`total_count=0` was a defect would have concluded it was intended and closed the
+report. There is now a test asserting the docstring does not promise `0`.
+
+---
+
 ## The doctor: `scripts/live_answer_doctor.py`
 
-Two campaigns produced Entries 1-8. This is what they add up to, and it is
+Two campaigns produced Entries 1-9. This is what they add up to, and it is
 runnable rather than written down:
 
 ```
@@ -695,12 +791,14 @@ write-ledger pact that `PRESERVED_CACHE_FILES` must **not** widen to cover),
 
 ## Test inventory added by the JS-repo audit (2026-08-21)
 
-108 tests, all mutation-verified: every file below was written **before** its fix
+124 tests, all mutation-verified: every file below was written **before** its fix
 and confirmed failing first. Rows 5-7 came from the doctor itself and the defect
 (B017) that building it exposed; the last two (B019, B020) came from surveying
 the other tools for B018's shape and from the one failure the full suite still had
 after it. B019's last 3 rows came from a restart proving its first 9 tests had
 verified the wrong layer.
+B021's last 4 rows came from mutants walking through 13 green tests -- a
+fixture too small to distinguish the mutant is a test that measures nothing.
 
 | File | Tests | Pins |
 |---|---|---|
@@ -714,6 +812,7 @@ verified the wrong layer.
 | `test_extractor_version_pins_js_import_shape.py` | 5 | B016: a row records the reported version, a version bump re-extracts unchanged files, the JS import shape travels with it, and the pre-B013 string is refused |
 | `test_regex_search_path_b019.py` | 12 | B019: the alias accepts `path` **and forwards it** (a hit found from inside, nothing from outside), the budget error names a field the tool really takes, its `payload_example` is not the failing call, it carries the worker's own message for both ceilings, and the live branch actually routes through the builder -- a mutant that unrouted it survived the first 8 tests. The last 3 pin the **registry** schema and the dispatcher's own `allowed_params` expression: the signature fix was invisible over HTTP, and all 9 earlier tests passed through it |
 | `test_room_token_ttl_b020.py` | 4 | B020: a one-second token survives most of that second, the full TTL is honoured wherever in the wall-clock second the register lands (5 subtests), `expires_at` is at least `ttl_sec` away, and a token still expires |
+| `test_payload_says_each_thing_once_b021.py` | 16 | B021: no `git_status` record carries `raw` beside the fields parsed out of it, every parsed field survives for all five porcelain types (`1 2 u ? !` -- `u` and `!` driven at `_parse_records`, since a conflicted merge and `--ignored` are awkward to stage and a type-1-only fix would pass a single-type fixture), the payload is measurably smaller (<120 bytes/record), and **`state_hash` is unchanged against an independently recomputed literal** -- it is an optimistic lock callers hold *between* calls, so the tidy is response-only and `stale_check` still detects drift end-to-end. `module_deps` half: the real pre-cap population, the `truncated`/`total_count` invariant at limits 1/4/12/13/50, an uncapped read answering `total_count == count` with `truncated False`, `orphan_symbols` keeping the total it already computed, the **zero case** where `total_count=0` is the truth, and the docstring that documented the bug as intended. The last 4 rows are the mutants' doing: the `DISTINCT` predicate (a file importing the same module twice gives 2 edges for 1 pair), `entry_points` counting the production set it serves rather than the pre-split list, the depth-capped blast radius `impact_scope` must not report as complete, and `impact_scope` still describing its own single row correctly |
 
 Two harness requirements for anything touching the graph, both learned the hard
 way:
@@ -726,14 +825,15 @@ way:
   walk, and `CBM_GRAPH_ENABLED=1` is what lets `dead_code_candidates` run at all
   — a JS test that forgets either one passes vacuously.
 
-Baseline after this audit and the doctor that followed it: **2559 passed, 4
-skipped, 1 xfailed, 169 subtests passed, 0 failed** in 258s, measured -- not
+Baseline after this audit and the doctor that followed it: **2575 passed, 4
+skipped, 1 xfailed, 169 subtests passed, 0 failed** in 288s, measured -- not
 predicted. The four deltas this campaign is accountable for are all measured on
 the same run order: 2495 -> 2526 for the doctor's 31 tests, 2526 -> 2534 for
 B018's 8 (4 pinning the fix, 4 pinning the doctor's new check), 2534 -> 2547 for
 B019's 9 plus B020's 4, and 2547 -> 2556 for B019's third half (3 registry tests
 plus the 6 that pin the doctor's new check and the 400-handling defect writing it
-exposed), and 2556 -> 2559 for the 3 that pin the probe-scope false FAIL. The 2534
+exposed), 2556 -> 2559 for the 3 that pin the probe-scope false FAIL, and 2559 -> 2575
+for B021's 16. The 2534
 run had one failure, and it was not environmental: it was B020. The 2556 run had
 one too, and it was a genuine flake -- a nominal-sleep timing assertion, fixed
 and mutation-verified rather than rerun. Reproduce it the way the section above prescribes — plain

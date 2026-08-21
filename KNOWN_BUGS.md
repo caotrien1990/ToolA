@@ -1731,4 +1731,147 @@ advertised `expires_at` is never short -- and, bounding it, a token still
 expires, so validity was not bought by making tokens immortal.
 Mutation-verified: reverting to `int()` fails 6.
 
-_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit + stabilisation: added B002-B020, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_
+## B021 - two payloads that described their own contents wrongly
+
+**Status**: fixed
+**Severity**: HIGH (`git_status` CRASHED on any rename whose old path began with `u`, `1`, `2` or `!`, taking `git_stage` and `git_commit` down with it -- found while fixing the reported symptom, never reported)
+**Discovered**: 2026-08-21 by Anh in live use, at gen `cac7187da50d`
+
+### Reproduction
+
+```
+git_status(project_path=<repo>)
+  -> 126,770 bytes, TRUNCATED by the transport, 270 records
+     and EVERY record carried its own content twice:
+       {"record_type":"1",
+        "raw":"1 .M N... 100644 100644 100644 592f3d11.. 592f3d11.. PROJECT_CONTEXT.md",
+        "xy":".M","sub":"N...","path":"PROJECT_CONTEXT.md"}
+
+cbm_template_query(project_path=<repo>, template="module_deps", limit=12)
+  -> count=12  truncated=True  total_count=0
+```
+
+Anh graded the second one "lỗi nhỏ, không cản việc". It is -- and it is also the
+shape of a payload a paginating caller cannot act on: `total_count` said "nothing
+here", `truncated` said "keep asking", and one of them had to be lying.
+
+### Root cause, issue 1 (`git_status`)
+
+`_porcelain` stored the porcelain line as `raw` next to `record_type`/`xy`/`sub`/
+`path`/`orig_path` -- **the fields parsed out of it**. Nothing in `raw` was new
+information and it was ~71% of the record's bytes, on the one *unbounded* part of
+the payload. The B-series had already capped the record count and reported the cap
+(`records_total` / `records_truncated`); the duplication survived that fix because
+capping made the payload smaller without making any record smaller, and nobody had
+counted a record's bytes against the information in it.
+
+**The constraint that shaped the fix:** `state_hash` is a sha256 over
+`{'branch','records'}` and callers hold it *between* calls as an optimistic lock --
+`git_stage` refuses with `GIT_STATE_STALE`, `git_stale_check` reports
+`state_hash_mismatch`. Hashing the tidied records would shift every hash at once,
+so every lock a caller was holding would read as a concurrent modification that
+never happened. `raw` is therefore dropped from the **response** while the **hash
+input keeps it**. Tidying a payload must not be a protocol change.
+
+### Two further defects at the same site, found by probing, never reported
+
+In `-z` mode a rename/copy record (type `2`) is **two NUL-separated fields** -- the
+record, then the original path -- because a path cannot carry the tab that
+separates them in the non-`-z` format. `git-status(1)` documents this. The splitter
+treated the second field as a record of its own, so:
+
+1. **every rename produced a phantom record** whose `record_type` was the first
+   character of the old path and whose only other content was `raw`
+   (`{'record_type': 'o', 'raw': 'old.txt'}` from `old.txt`). It was counted in
+   `counts['changed']`, and `orig_path` was always `''` because its value had been
+   split off into the phantom.
+2. **`git_status` RAISED IndexError** when the old path began with `u`, `1`, `2` or
+   `!`: the phantom was then parsed as an unmerged / ordinary / ignored record and
+   `rec.split(' ',10)[10]` blew up. Measured: `git mv util.py helper.py` made
+   `git_status` raise. `git_stage` and `git_commit` both call `status()` first, so
+   all three tools went down on a rename of any file named `util.py`, `1.txt`,
+   `2.txt`...
+
+The two fields are now rejoined with a **tab** -- exactly the shape the non-`-z`
+format uses, and the shape the type-2 parser already expected. `_parse_records`
+also keeps an unrecognised record's own line under `unparsed` instead of raising:
+a future porcelain change must not be able to take these three tools offline.
+
+### Root cause, issue 2 (`module_deps`)
+
+`total_count` and `truncated` were **set independently**, and `module_deps` set
+neither: it inherited the initializer `0` and the shared tail's
+`if len(res) >= limit: truncated = True`. `total_count` is now the pre-cap
+population per branch -- a `COUNT` over the *same predicate* as that branch's
+LIMIT-ed `SELECT`, `DISTINCT` included -- and `truncated` is **derived** from it,
+offset-aware: `truncated iff offset + count < total_count`. One number, not two
+fields that can disagree.
+
+`impact_scope` is the one exemption: it answers a single synthetic row whose
+`truncated` reports the **trace-depth cap**, not a row count. Deriving it from
+1-of-1 would report a blast radius that dropped files at
+`GRAPH_CONTEXT_MAX_FILES` as complete.
+
+### The docstring was part of the bug
+
+`template_query`'s docstring read *"total_count is the true population for
+paginated templates (orphan_symbols); 0 otherwise."* A reader checking whether
+`total_count=0` was a defect would have concluded it was documented behaviour and
+closed the report. Documentation that describes a bug as a feature is part of the
+bug, and `test_the_docstring_no_longer_promises_zero` now pins that.
+
+### What mutation testing caught that the first cut of the tests did not
+
+The first 13 tests were green and **three mutants survived them**, each because a
+fixture could not tell the mutant from the fix:
+
+- `total_count` falling back to `0` instead of `len(res)` -- nothing asserted on
+  `impact_scope`, the only branch that reaches the fallback, so `count=1
+  total_count=0` (*the exact reported contradiction*) would have shipped in the
+  template the fix deliberately exempted. The exemption is from deriving
+  `truncated`; it was never an exemption from describing itself correctly.
+- counting **raw edges** instead of the `DISTINCT` pairs -- every fixture had one
+  import per file, where the two counts happen to agree. A file that imports the
+  same module twice (`from util import helper` + `import util`) gives 2 edges for
+  1 pair, so the mutant reports a total the LIMIT-ed select can never reach and
+  `truncated` stays true on a **complete** read: the reported bug pointing the
+  other way, a caller looping forever on the same last page.
+- counting `_all_eps` instead of `_prod_eps` in `entry_points` -- that view drops
+  test runners (CAN-053), so counting the pre-split list reports a total no page
+  of the template will ever serve.
+
+3 tests were added for exactly those three, plus one for the capped blast radius.
+**A fixture too small to distinguish the mutant is a test that measures nothing**,
+and the only way to find that out is to run the mutant.
+
+### Pinned by
+
+`tests/test_payload_says_each_thing_once_b021.py` (16 tests). git half: no record
+carries `raw`, every parsed field survives for all five porcelain types
+(`1 2 u ? !`), the payload is measurably smaller (<120 bytes/record), `state_hash`
+is unchanged *against an independently recomputed literal*, and the lock still
+detects drift end-to-end through `stale_check`. module_deps half: the real
+population, the `truncated`/`total_count` invariant at limits 1/4/12/13/50, an
+uncapped read reporting `total_count == count` with `truncated False`,
+`orphan_symbols` keeping the total it already computed correctly, the **zero case**
+where `total_count=0` is the truth, the `DISTINCT` predicate, the `entry_points`
+production set, the depth-capped blast radius, and the docstring.
+Mutation-verified: 6 mutants across the two files, each failing exactly the tests
+written for it (`raw` back in the response -> 2; the `-z` rejoin removed -> 1;
+hashing the tidied records -> 1; `total_count` falling back to 0 -> 1;
+`module_deps` not counting -> 1; `truncated` back to `len(res) >= limit` -> 1).
+
+### Two of my own tests were wrong, not the fix
+
+`assert "state_hash_mismatch" not in matched["stale"]` raised
+`TypeError: argument of type 'bool' is not iterable` -- `stale` is a **bool**, and
+the named causes live in `reasons`. Read as a container it would have asserted
+nothing on the happy path (`"x" not in True` does not even raise when the value is
+a truthy list). And an assertion that rewriting an already-`.M` file moves
+`state_hash` was **false before the fix too**: porcelain is byte-identical for a
+content-only edit, so the assertion measured git's output rather than the lock.
+Both are fixed, and both now carry the reason in the test.
+
+---
+
+_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit + stabilisation: added B002-B021, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_

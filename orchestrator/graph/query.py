@@ -359,7 +359,15 @@ def template_query(project_path: str, template: str, *, name: str = "",
     """Named graph queries without full Cypher (Step 15). Fail-open.
 
     Returns {enabled, template, results, count, total_count, truncated, error, elapsed_ms}.
-    total_count is the true population for paginated templates (orphan_symbols); 0 otherwise.
+
+    total_count is the TRUE PRE-CAP population for every template, and truncated
+    is derived from it: truncated iff offset+count < total_count. B021: these two
+    used to be set independently, and module_deps answered count=12 truncated=True
+    total_count=0 -- the two fields a paginating caller chooses between,
+    contradicting each other. impact_scope is the one exception: it answers a
+    single synthetic row whose `truncated` reports the TRACE-DEPTH cap, not a row
+    count.
+
     Unsupported template -> clear error listing the supported set.
     """
     t0 = time.monotonic()
@@ -380,6 +388,9 @@ def template_query(project_path: str, template: str, *, name: str = "",
         conn = _store.get_db(project_path, readonly=True)
         try:
             res: list[dict] = []
+            # None = "this branch does not know its population". The tail
+            # falls back to len(res) rather than inventing a number.
+            total: int | None = None
             if template in ("callers", "callees", "impact_scope"):
                 node = _resolve_node(conn, project_path, node_id=node_id, name=name)
                 if node is None:
@@ -393,6 +404,9 @@ def template_query(project_path: str, template: str, *, name: str = "",
                         (node["id"], limit)).fetchall()
                     res = [{**_node_brief(r), "confidence": r["edge_confidence"],
                             "call_line": r["call_line"]} for r in rows]
+                    total = conn.execute(
+                        "SELECT COUNT(*) FROM edges e JOIN nodes n ON n.id=e.source "
+                        "WHERE e.target=? AND e.kind='calls';", (node["id"],)).fetchone()[0]
                 elif template == "callees":
                     rows = conn.execute(
                         "SELECT e.target, e.confidence, e.line, e.is_external "
@@ -401,6 +415,9 @@ def template_query(project_path: str, template: str, *, name: str = "",
                     res = [{"target": r["target"], "confidence": r["confidence"],
                             "line": r["line"], "external": bool(r["is_external"])}
                            for r in rows]
+                    total = conn.execute(
+                        "SELECT COUNT(*) FROM edges WHERE source=? AND kind='calls';",
+                        (node["id"],)).fetchone()[0]
                 else:  # impact_scope: inbound closure = blast radius
                     tr = cbm_trace_path(project_path, node["id"], direction="in",
                                         depth=min(depth, DEFAULT_DEPTH))
@@ -423,6 +440,11 @@ def template_query(project_path: str, template: str, *, name: str = "",
                     " (qualified_name=? OR file_path=?)) LIMIT ?;",
                     (target_mod, target_mod, limit)).fetchall()
                 res = [_node_brief(r) for r in rows]
+                total = conn.execute(
+                    "SELECT COUNT(*) FROM nodes WHERE kind='import' AND file_path IN "
+                    "(SELECT file_path FROM nodes WHERE kind='module' AND "
+                    " (qualified_name=? OR file_path=?));",
+                    (target_mod, target_mod)).fetchone()[0]
             elif template == "imported_by":
                 target_mod = module or name
                 rows = conn.execute(
@@ -433,6 +455,12 @@ def template_query(project_path: str, template: str, *, name: str = "",
                     "AND m.qualified_name=? LIMIT ?;", (target_mod, limit)).fetchall()
                 res = [{"file_path": r["file_path"], "import": r["qualified_name"],
                         "line": r["line"]} for r in rows]
+                total = conn.execute(
+                    "SELECT COUNT(*) FROM (SELECT DISTINCT n.file_path, n.qualified_name, e.line "
+                    "FROM edges e JOIN nodes n ON n.id=e.source "
+                    "JOIN nodes m ON m.id=e.target "
+                    "WHERE e.kind='imports_module' AND m.kind='module' "
+                    "AND m.qualified_name=?);", (target_mod,)).fetchone()[0]
             elif template == "orphan_symbols":
                 # E3: true population via total_count + offset pagination (report 2.6).
                 # Fetch a generous headroom so the Python entry-point filter still
@@ -450,9 +478,8 @@ def template_query(project_path: str, template: str, *, name: str = "",
                 # No `unexported_only` here: an `__all__` export with no caller
                 # is exactly the graph shape this template is asked about.
                 filtered = _dead_callables(conn)
-                payload["total_count"] = len(filtered)
+                total = len(filtered)
                 res = [_node_brief(r) for r in filtered[offset:offset + limit]]
-                payload["truncated"] = (offset + limit) < len(filtered)
             elif template == "module_deps":
                 rows = conn.execute(
                     "SELECT DISTINCT s.file_path AS src, m.qualified_name AS dep "
@@ -460,6 +487,14 @@ def template_query(project_path: str, template: str, *, name: str = "",
                     "JOIN nodes m ON m.id=e.target "
                     "WHERE e.kind='imports_module' LIMIT ?;", (limit,)).fetchall()
                 res = [{"file": r["src"], "depends_on": r["dep"]} for r in rows]
+                # COUNT over the SAME predicate, DISTINCT included: counting the
+                # raw edges instead would report a total the LIMIT-ed SELECT can
+                # never reach, so `truncated` would stay true on a complete read.
+                total = conn.execute(
+                    "SELECT COUNT(*) FROM (SELECT DISTINCT s.file_path, m.qualified_name "
+                    "FROM edges e JOIN nodes s ON s.id=e.source "
+                    "JOIN nodes m ON m.id=e.target "
+                    "WHERE e.kind='imports_module');").fetchone()[0]
             elif template == "entry_points":
                 rows = conn.execute(
                     "SELECT * FROM nodes WHERE kind IN ('function','method') "
@@ -472,11 +507,42 @@ def template_query(project_path: str, template: str, *, name: str = "",
                              if not (str(b.get("name", "")).startswith("test_")
                                      or "test" in str(b.get("file_path", "")).lower())]
                 res = _prod_eps[:limit]
+                # The population is the PRODUCTION set: _all_eps includes the
+                # test runners this view deliberately drops, so counting those
+                # would report a total no page of this template ever serves.
+                total = len(_prod_eps)
                 payload["test_entrypoints_excluded"] = len(_all_eps) - len(_prod_eps)
+            # B021: `total_count` is the PRE-CAP population, and `truncated` is
+            # DERIVED from it -- one number, not two fields set independently.
+            #
+            # Reported: module_deps answered count=12, truncated=True and
+            # total_count=0 in the same payload. Those are the two fields a
+            # paginating caller chooses between, and they disagreed: total_count
+            # said "nothing here", truncated said "keep asking". The docstring
+            # made it look intended ("0 otherwise"), so a reader checking whether
+            # it was a defect would have closed the report.
+            #
+            # Every branch above now records its own population in `total` --
+            # a COUNT over the same predicate as its LIMIT-ed SELECT -- and the
+            # tail derives truncation from it. `total is None` means the branch
+            # genuinely does not know, and the honest fallback is len(res):
+            # never claim MORE than was shown, because an invented total is the
+            # bug being fixed pointing the other way.
+            #
+            # Offset-aware on purpose: for a paginated template the question is
+            # "does another PAGE remain", not "is total > this page" -- the last
+            # page of three is complete, not truncated.
             payload["results"] = res
             payload["count"] = len(res)
-            if len(res) >= limit and template not in ("impact_scope", "orphan_symbols"):
-                payload["truncated"] = True
+            payload["total_count"] = len(res) if total is None else int(total)
+            if template == "impact_scope":
+                # impact_scope answers ONE synthetic row whose own `truncated`
+                # comes from the trace depth cap, not from a row count. Deriving
+                # it from 1-of-1 would silently report a depth-capped blast
+                # radius as complete.
+                pass
+            else:
+                payload["truncated"] = (offset + len(res)) < payload["total_count"]
         finally:
             conn.close()
     except Exception as e:

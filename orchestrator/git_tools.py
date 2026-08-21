@@ -77,24 +77,85 @@ def _run_pathspec_file(root, command, specs):
     finally:
         path.unlink(missing_ok=True)
 
+def _split_porcelain(raw):
+    """Split git's `-z` porcelain into branch headers + one STRING PER RECORD.
+
+    B021: in `-z` mode a rename/copy record (type 2) is TWO NUL-separated
+    fields -- the record, then the original path -- because a path cannot carry
+    the tab that separates them in the non-`-z` format. git-status(1) documents
+    this. The old splitter treated that second field as a record of its own, so
+    every rename produced a PHANTOM record whose `record_type` was the first
+    character of the old path and whose only other content was `raw`:
+
+        {'record_type': 'o', 'raw': 'old.txt'}          # from `old.txt`
+
+    That phantom was counted in `counts['changed']`, and when the old path began
+    with `u`, `1`, `2` or `!` it was parsed as an unmerged / ordinary / ignored
+    record instead -- `rec.split(' ',10)[10]` then raised IndexError. Measured:
+    `git mv util.py helper.py` made git_status RAISE, which takes git_stage and
+    git_commit down with it because both call status() first. `orig_path` was
+    always '' for the same reason: its value had been split off into the phantom.
+
+    The two fields are rejoined with a TAB -- exactly the shape the non-`-z`
+    format uses, and the shape the type-2 parser already expected.
+    """
+    fields=[f for f in raw.split('\x00') if f]
+    branch={}; body=[]; index=0
+    while index<len(fields):
+        field=fields[index]; index+=1
+        if field.startswith('# '):
+            key,_,value=field[2:].partition(' '); branch[key]=value; continue
+        if field.startswith('2 ') and index<len(fields):
+            field=field+'\t'+fields[index]; index+=1
+        body.append(field)
+    return branch,body
+
+def _parse_records(lines):
+    """Parse porcelain records into fields, WITHOUT keeping the line they came from.
+
+    B021: each record used to carry `raw` -- the porcelain line -- next to
+    record_type/xy/sub/path/orig_path, which are the fields parsed OUT of it.
+    Nothing in `raw` was new information and it was ~71% of the record's bytes,
+    on the one unbounded part of the payload: 270 records came to 126,770 bytes
+    and the transport cut the response. `raw` is dropped from the RESPONSE only;
+    _porcelain still hashes it (see there).
+
+    A record whose shape this parser does not recognise keeps its own line under
+    `unparsed` instead of raising: a future porcelain change must not be able to
+    take git_status -- and with it git_stage and git_commit -- offline, and the
+    line is the only place that record's data would then live.
+    """
+    records=[]
+    for rec in lines:
+        typ=rec[0]; item={'record_type':typ}
+        try:
+            if typ=='1':
+                bits=rec.split(' ',8); item.update(xy=bits[1],sub=bits[2],path=bits[8])
+            elif typ=='2':
+                bits=rec.split(' ',9); item.update(xy=bits[1],sub=bits[2]); path,_,orig=bits[9].partition('\t'); item.update(path=path,orig_path=orig)
+            elif typ=='u':
+                bits=rec.split(' ',10); item.update(xy=bits[1],sub=bits[2],path=bits[10])
+            elif typ in ('?','!'): item.update(xy=typ+typ,path=rec[2:])
+            else: item['unparsed']=rec
+        except IndexError:
+            item['unparsed']=rec
+        records.append(item)
+    return records
+
 def _porcelain(root, include_ignored=False):
     args=['--literal-pathspecs','status','--porcelain=v2','--branch','--renames','-z','--untracked-files=all']
     if include_ignored: args.append('--ignored=matching')
-    raw=_run(root,args)['stdout']; records=[]; branch={}
-    for rec in raw.split('\x00'):
-        if not rec: continue
-        if rec.startswith('# '):
-            key,_,value=rec[2:].partition(' '); branch[key]=value; continue
-        typ=rec[0]; item={'record_type':typ,'raw':rec}
-        if typ=='1':
-            bits=rec.split(' ',8); item.update(xy=bits[1],sub=bits[2],path=bits[8])
-        elif typ=='2':
-            bits=rec.split(' ',9); item.update(xy=bits[1],sub=bits[2]); path,_,orig=bits[9].partition('\t'); item.update(path=path,orig_path=orig)
-        elif typ=='u':
-            bits=rec.split(' ',10); item.update(xy=bits[1],sub=bits[2],path=bits[10])
-        elif typ in ('?','!'): item.update(xy=typ+typ,path=rec[2:])
-        records.append(item)
-    payload={'branch':branch,'records':records}
+    raw=_run(root,args)['stdout']
+    branch,body=_split_porcelain(raw)
+    records=_parse_records(body)
+    # The HASH INPUT keeps the full porcelain line even though the response no
+    # longer does. state_hash is an optimistic lock callers hold BETWEEN calls --
+    # git_stage refuses with GIT_STATE_STALE and git_stale_check reports
+    # state_hash_mismatch by comparing it -- so hashing the tidied records would
+    # shift every hash at once and make every held lock read as a concurrent
+    # modification that never happened. Tidying a payload must not be a protocol
+    # change.
+    payload={'branch':branch,'records':[{**item,'raw':rec} for item,rec in zip(records,body)]}
     return records,hashlib.sha256(json.dumps(payload,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
 
 def _staged_hash(root):
