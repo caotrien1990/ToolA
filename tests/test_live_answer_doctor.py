@@ -400,3 +400,119 @@ def test_always_saying_ok_is_also_a_failure(lad, rep, monkeypatch):
     lad.check_success_answers_ok(rep, "/repo")
     assert rep.failures, "an always-ok search_code was allowed to pass"
     assert "stops carrying information" in rep.failures[0]["detail"], rep.failures
+
+
+# ---------------------------------------------------------------- B019
+
+def _schema(*fields):
+    """The shape `/api/tools/<tool>/schema` really serves.
+
+    Nested under `tool.function.parameters.properties` -- one level deeper than
+    the `result` envelope `call()` unwraps. Getting this wrong reads as an empty
+    schema, which is why the check WARNs on empty instead of failing.
+    """
+    return {"ok": True, "tool": {"function": {"parameters": {
+        "properties": {f: {"type": "string"} for f in fields}}}}}
+
+
+def _b019_daemon(monkeypatch, lad, schema, scoped):
+    monkeypatch.setattr(lad, "fetch_schema", lambda _tool, **_kw: schema)
+    _install(monkeypatch, lad, _Daemon(regex_search=scoped))
+
+
+def test_a_schema_without_path_is_a_failure(lad, rep, monkeypatch):
+    """The exact third half of B019: signature fixed, registry not.
+
+    This is the state the live daemon was actually in at gen 31156af84e36 --
+    9 green tests, a clean py_compile, and `ok:False UNSUPPORTED_FIELD` over
+    HTTP. The check has to read the schema the daemon serves, so feed it one
+    that omits the field its own budget error advises.
+    """
+    _b019_daemon(monkeypatch, lad, _schema("project_path", "pattern",
+                                           "file_pattern"),
+                 {"ok": True, "count": 3})
+    lad.check_advertised_fields_are_accepted(rep, "/repo")
+    assert rep.failures, "a schema missing `path` was allowed to pass"
+    assert "does not accept path" in rep.failures[0]["detail"], rep.failures
+    assert rep.failures[0]["bug"] == "B019"
+
+
+def test_a_schema_that_accepts_the_advice_passes(lad, rep, monkeypatch):
+    """Both halves right: the fields are in the schema AND the call runs."""
+    _b019_daemon(monkeypatch, lad, _schema("project_path", "pattern", "path",
+                                           "file_pattern"),
+                 {"ok": True, "count": 3})
+    lad.check_advertised_fields_are_accepted(rep, "/repo")
+    assert not rep.failures, rep.rows
+    assert rep.counts()["PASS"] == 2, rep.rows
+
+
+def test_a_tolerated_but_unhonoured_path_is_a_failure(lad, rep, monkeypatch):
+    """The bounding half, and B014's shape: declared is not the same as honoured.
+
+    Adding `path` to the schema alone would silence the first row while the tool
+    still refused the call, so the check must drive a real scoped search too.
+    """
+    _b019_daemon(monkeypatch, lad, _schema("project_path", "pattern", "path",
+                                           "file_pattern"),
+                 {"ok": False, "error_name": "UNSUPPORTED_FIELD"})
+    lad.check_advertised_fields_are_accepted(rep, "/repo")
+    assert rep.failures, "a schema-only fix passed with the live call refusing"
+    assert "UNSUPPORTED_FIELD" in rep.failures[0]["detail"], rep.failures
+
+
+def test_an_unreadable_schema_warns_rather_than_fails(lad, rep, monkeypatch):
+    """A check that could not run must not block CI -- WARN, never FAIL.
+
+    Reading the wrong nesting level yields `{}`, and a FAIL there would accuse
+    the daemon of a defect that is really the doctor's own parsing bug.
+    """
+    _b019_daemon(monkeypatch, lad, {"ok": True}, {"ok": True, "count": 3})
+    lad.check_advertised_fields_are_accepted(rep, "/repo")
+    assert not rep.failures, rep.rows
+    assert rep.counts() == {"PASS": 0, "FAIL": 0, "WARN": 1}, rep.rows
+
+
+def test_a_structured_refusal_is_returned_not_reported_unreachable(lad,
+                                                                  monkeypatch):
+    """A 400 carries the answer; treating it as Unreachable destroys the run.
+
+    Found by extending the doctor: `call()` raised Unreachable on every
+    HTTPError, so the first check that PROBED a refusal aborted the whole script
+    with "cannot reach [A]" -- reporting a reachable daemon as dead, which is
+    exactly the misdiagnosis this script exists to prevent.
+    """
+    import io
+    import json as _json
+    import urllib.error
+
+    def _refusing(*_a, **_kw):
+        raise urllib.error.HTTPError(
+            "http://x/api/call/regex_search", 400, "Bad Request", {},
+            io.BytesIO(_json.dumps({"ok": False,
+                                    "error_name": "UNSUPPORTED_FIELD"}
+                                   ).encode()))
+
+    monkeypatch.setattr(lad.urllib.request, "urlopen", _refusing)
+    got = lad.call("regex_search", {"path": "x"})
+    assert got["error_name"] == "UNSUPPORTED_FIELD", got
+    assert got["ok"] is False, got
+
+
+def test_a_404_is_still_fatal(lad, monkeypatch):
+    """Bounding the fix: a wrong tool name must still stop the doctor.
+
+    No check written against a tool that does not exist can mean anything, so
+    404 is the one HTTP code that stays Unreachable.
+    """
+    import io
+    import urllib.error
+
+    def _missing(*_a, **_kw):
+        raise urllib.error.HTTPError("http://x/api/call/nope", 404,
+                                     "Not Found", {}, io.BytesIO(b"{}"))
+
+    monkeypatch.setattr(lad.urllib.request, "urlopen", _missing)
+    with pytest.raises(lad.Unreachable) as exc:
+        lad.call("nope", {})
+    assert "tool name is wrong" in str(exc.value)

@@ -99,12 +99,45 @@ def call(tool: str, payload: dict, *, timeout: int = 300) -> dict:
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:  # 404 = the tool name is wrong
-        raise Unreachable("%s -> HTTP %s %s"
-                          % (tool, exc.code, exc.reason)) from exc
+    except urllib.error.HTTPError as exc:
+        # B019 follow-up: a 400 is a STRUCTURED REFUSAL, not an unreachable
+        # daemon. UNSUPPORTED_FIELD / SCHEMA_VIOLATION / MISSING_REQUIRED_FIELD
+        # all arrive as 400 with a real JSON body, and treating them as
+        # Unreachable aborted the entire doctor on the first check that probed a
+        # refusal -- turning "this tool refuses a field it advertises" into
+        # "cannot reach [A]", which is precisely the misdiagnosis this whole
+        # script exists to prevent. 404 stays fatal: it means the tool name is
+        # wrong, so no check written against it can mean anything.
+        if exc.code == 404:
+            raise Unreachable("%s -> HTTP 404 %s (tool name is wrong)"
+                              % (tool, exc.reason)) from exc
+        try:
+            raw = json.loads(exc.read().decode("utf-8"))
+        except Exception:
+            raise Unreachable("%s -> HTTP %s %s"
+                              % (tool, exc.code, exc.reason)) from exc
+        return raw.get("result", raw)
     except (urllib.error.URLError, OSError, TimeoutError) as exc:
         raise Unreachable("%s -> %s" % (tool, exc)) from exc
     return raw.get("result", raw)
+
+
+def fetch_schema(tool: str, *, timeout: int = 60) -> dict:
+    """GET /api/tools/<tool>/schema -- the contract the dispatcher enforces.
+
+    B019's third half: `allowed_params` is built from this schema, not from the
+    Python signature, so this route is the only honest answer to "will the
+    daemon accept this field". Never infer it from source on disk.
+    """
+    req = urllib.request.Request(f"{BASE_URL}/api/tools/{tool}/schema")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raise Unreachable("schema %s -> HTTP %s %s"
+                          % (tool, exc.code, exc.reason)) from exc
+    except (urllib.error.URLError, OSError, TimeoutError) as exc:
+        raise Unreachable("schema %s -> %s" % (tool, exc)) from exc
 
 
 class Report:
@@ -425,6 +458,57 @@ def check_success_answers_ok(rep: Report, repo: str) -> None:
                 "answer is ok, the field stops carrying information"
                 % (bad.get("ok"), bad.get("error_name")), "B018")
 
+
+def check_advertised_fields_are_accepted(rep: Report, repo: str) -> None:
+    """B019 -- a refusal must not advise a field the tool refuses.
+
+    `regex_search` answered REGEX_INPUT_BUDGET_EXCEEDED with
+    `ca_next_action: narrow_path_or_reduce_regex_input`, and then answered
+    UNSUPPORTED_FIELD when the caller passed `path`. Advice in a circle.
+
+    The reason this check has to be LIVE is the whole lesson of B019's third
+    half: the dispatcher validates against the registry, not the Python
+    signature (orchestrator_server.py, "S4: registry properties are the public
+    contract"). The signature was fixed, the suite was green, py_compile was
+    clean -- and the live answer was unchanged, because the registry entry still
+    had no `path`. A unit test that calls the function directly cannot see that
+    gap. Only the HTTP call can.
+
+    Generalised past the one tool: every field a tool advertises as the way
+    forward must appear in the schema that same daemon serves.
+    """
+    schema = fetch_schema("regex_search")
+    props = set((((schema.get("tool") or {}).get("function") or {})
+                 .get("parameters") or {}).get("properties") or {})
+    if not props:
+        rep.warn("advertised narrowing fields are accepted",
+                 "could not read regex_search's live schema", "B019")
+        return
+
+    missing = [f for f in ("path", "file_pattern") if f not in props]
+    if missing:
+        rep.bad("advertised narrowing fields are accepted",
+                "regex_search's budget error tells callers to narrow, but its "
+                "live schema does not accept %s -- the dispatcher builds "
+                "allowed_params from this schema, so the advice is refused"
+                % ", ".join(missing), "B019")
+    else:
+        rep.ok("advertised narrowing fields are accepted",
+               "path and file_pattern both in the live schema", "B019")
+
+    # And the field must be honoured, not merely tolerated: a scoped call has to
+    # answer ok. Tolerating an argument that changes nothing is B014's shape.
+    scoped = call("regex_search", {"project_path": repo, "path": repo,
+                                   "pattern": "function", "max_results": 3})
+    if scoped.get("ok") is True:
+        rep.ok("a scoped regex_search runs",
+               "ok=True count=%s" % scoped.get("count"), "B019")
+    else:
+        rep.bad("a scoped regex_search runs",
+                "regex_search with path= answered ok=%r error_name=%r"
+                % (scoped.get("ok"), scoped.get("error_name")), "B019")
+
+
 def render_text(rep: Report, repo: str, meta: dict) -> str:
     out = ["[A] live-answer doctor",
            "  repo:       %s" % repo,
@@ -482,6 +566,7 @@ def main(argv: list[str] | None = None) -> int:
         check_engine_says_what_ran(rep, repo, language)
         check_validate_file_fails_loud(rep, repo)
         check_success_answers_ok(rep, repo)
+        check_advertised_fields_are_accepted(rep, repo)
     except Unreachable as exc:
         print("cannot reach [A]: %s\nSTOP and report -- do not retry and do "
               "not fall back to native work." % exc, file=sys.stderr)

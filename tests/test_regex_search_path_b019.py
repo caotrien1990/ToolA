@@ -1,4 +1,4 @@
-"""B019: regex_search's own error told the caller to narrow the path, and refused `path`.
+r"""B019: regex_search's own error told the caller to narrow the path, and refused `path`.
 
 Two halves of one defect, both measured on the live daemon at generation
 528d657f9449 against [A]'s own tree:
@@ -183,6 +183,76 @@ class TheCeilingStillFires(unittest.TestCase):
         src = Path(rw.__file__).read_text(encoding="utf-8")
         self.assertIn("REGEX_INPUT_BUDGET_EXCEEDED", src,
                       "the byte ceiling was removed instead of made actionable")
+
+
+class TheRegistrySchemaIsThePublicContract(unittest.TestCase):
+    """The third half of B019, and the one the first nine tests could not see.
+
+    Adding `path` to the Python signature changed nothing over HTTP. The
+    dispatcher validates against the REGISTRY, not the signature -- it says so
+    itself at orchestrator_server.py:13422, "S4: registry properties are the
+    public contract; signatures are internal" -- so `allowed_params` came from
+    `_schema_for_tool(tool_name)`, `path` was not in it, and a restart onto the
+    fixed source still answered:
+
+      regex_search(..., path=<[A]>/orchestrator/core)
+        -> ok:False UNSUPPORTED_FIELD           (gen 31156af84e36, live)
+
+    That is the campaign's own thesis turned on its author: the fix was on disk,
+    the suite was green, and the live answer was unchanged. The 9 tests above
+    called the Python function directly, so every one of them passed while the
+    tool remained exactly as broken as the day it was reported.
+
+    B-01 (registry_data.py, immediately above the line this fixes) had already
+    paid for this lesson once, for `regex_deadline_seconds`, in the same tool.
+    """
+
+    def _props(self, tool):
+        import code_tools
+        import orchestrator_server  # noqa: F401 -- triggers late register_tool()
+        for entry in code_tools.TOOL_SCHEMAS:
+            if isinstance(entry, dict) and entry.get("function", {}).get("name") == tool:
+                return entry["function"]["parameters"]["properties"]
+        self.fail(f"{tool} is not in TOOL_SCHEMAS")
+
+    def test_the_registry_exposes_path(self):
+        """Not the signature -- the schema the dispatcher actually validates against."""
+        self.assertIn("path", self._props("regex_search"),
+                      "regex_search's registry schema omits `path`, so the dispatcher "
+                      "answers UNSUPPORTED_FIELD no matter what the signature says")
+
+    def test_the_dispatcher_would_accept_it(self):
+        """Drive the allow-list itself, the way orchestrator_server builds it.
+
+        `allowed_params = set(_registry_props)` at orchestrator_server.py:13424.
+        A test on the schema dict alone would pass even if _schema_for_tool
+        resolved a different entry for this tool, which is the same
+        builder-nothing-routes-to mistake this file already recorded once.
+        """
+        import orchestrator_server as srv
+        params = srv._schema_for_tool("regex_search").get("parameters") or {}
+        allowed = set(params.get("properties") or {})
+        self.assertIn("path", allowed)
+        # exactly the expression the dispatcher uses to build its refusal
+        unsupported = sorted(k for k in {"path": "x"} if k not in allowed)
+        self.assertEqual(unsupported, [],
+                         "the dispatcher would still answer UNSUPPORTED_FIELD for `path`")
+
+    def test_the_narrowing_field_the_error_names_is_in_the_schema(self):
+        """Close the loop: every field the budget refusal advertises must be real.
+
+        This is the invariant the whole bug violated. Asserting it against the
+        registry -- not the signature -- is what makes it true over HTTP.
+        """
+        props = self._props("regex_search")
+        payload = search_module._regex_budget_payload(
+            query="x", path="", project_path="D:/repo", file_pattern="*")
+        advertised = payload.get("accepted_narrowing_fields") or []
+        self.assertTrue(advertised, "the budget error advertises no narrowing field")
+        for field in advertised:
+            self.assertIn(field, props,
+                          f"the budget error advertises `{field}`, which the registry "
+                          f"schema does not accept -- advice in a circle again")
 
 
 if __name__ == "__main__":

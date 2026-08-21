@@ -1625,11 +1625,23 @@ an example identical to the failure.
 
 ### Root cause
 
-Two independent halves that only hurt together.
+THREE halves, and the third was found only after a restart proved the first two
+were invisible over HTTP.
 
-`tools_v15.regex_search` never had a `path` parameter, so it never forwarded one
-(the schema is generated from the signature, which is why `path` was absent from
-`/api/tools/regex_search/schema` too).
+`tools_v15.regex_search` never had a `path` parameter, so it never forwarded one.
+
+But adding it changed nothing live. **The dispatcher validates against the
+REGISTRY, not the signature** -- it says so itself at
+`orchestrator_server.py:13422`, *"S4: registry properties are the public
+contract; signatures are internal"* -- so `allowed_params = set(_registry_props)`
+still had no `path`, and a restart onto the fixed source answered
+`UNSUPPORTED_FIELD` exactly as before (measured at gen `31156af84e36`). The first
+nine tests all called the Python function directly, so all nine passed while the
+tool stayed as broken as the day it was reported. `orchestrator/core/registry_data.py`
+had already paid for this once, for `regex_deadline_seconds` in this same tool
+(comment `B-01`, directly above the line that fixes this) -- and the second cut
+of the docs still asserted the schema came from the signature, which is how a
+wrong sentence outlives the bug it describes.
 
 And in `orchestrator/tools/search.py`, the `RegexSearchBudgetExceeded` case fell
 into a shared bare handler that could carry only `ca_next_action` -- no

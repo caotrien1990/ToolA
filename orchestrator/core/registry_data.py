@@ -1655,6 +1655,18 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "project_path": {"type": "string", "description": "Project root to search."},
 
+            # B019 (2026-08-21): the third half of the same defect. The signature
+            # fix in tools_v15 was invisible over HTTP because the dispatcher
+            # validates against THIS schema, not the Python signature -- so the
+            # alias still answered UNSUPPORTED_FIELD for `path` while its own
+            # REGEX_INPUT_BUDGET_EXCEEDED told the caller to narrow by path. Same
+            # shape as B-01 directly below, which had to expose
+            # regex_deadline_seconds here for exactly the same reason. In
+            # search_code `path` resolves as `_path = path or project_path`, so
+            # passing a subtree makes that subtree the search root: that IS the
+            # narrowing the budget error advises.
+            "path": {"type": "string", "default": "", "description": "Narrow the search to this subtree (becomes the search root). The field REGEX_INPUT_BUDGET_EXCEEDED tells you to narrow by."},
+
             "file_pattern": {"type": "string", "default": "*", "description": "File glob filter."},
 
             "flags": {"type": "string", "default": "i", "description": "Regex flags: i|m|s."},
