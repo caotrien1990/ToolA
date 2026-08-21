@@ -39,6 +39,8 @@ these are not scaffolding, they were all mutation-verified (see
 | `cbm_dead_code`'s `file_filter` changes nothing | The glob is wrong / too broad | Test it with a deliberately **bogus** glob: identical output proves the argument is inert, not broad. Before B014 the resolved glob was dropped by the non-Python early return, and hard-filtered to `.py` on the Python path. Now `files_matched: 0` is visible | `test_cbm_dead_code_file_filter.py` |
 | `cbm_dead_code` on a JS repo returns nothing for `bug_risk` / `perf` / `code_smell` | The repo is clean | Those categories are Ruff-only, so on a JS/TS repo they are empty **by construction**. Read `engine`, `engine_reason` and `language_detected` — since B015 every answer says which engine ran and why | same file, `test_the_engine_name_says_what_actually_ran` |
 | A fix to an extractor changes nothing on a real repo; a full index says `files_indexed: 0` | The fix is wrong / the index is cached | The source bytes did not change, so `stale_files` saw nothing stale. Bump `config.EXTRACTOR_VERSION` — an extractor change and a version bump are **one change** (B016, and B013's W5 predecessor before it) | `test_extractor_version_pins_js_import_shape.py` |
+| `log_native_event` answers `logged_and_rejected` / `HOST_GATE_DENY` for an ordinary action | the native edit was not authorised | Check the `action_type` spelling. `classify_action` resolves it through a lookup table; a word with no row falls through to `task_class: "unknown"` -> `native_policy: "forbid"`. Before B017, `create_file` was refused inside [A] while `write_existing_file` on the same file was allowed | `test_policy_action_vocabulary_b017.py` |
+| Six defects shipped green; you need to know whether a fix reached the *real* repo | "the suite passes, so it works" | A fixture repo is the one place all six answers are honest. Run `scripts/live_answer_doctor.py --project-path <a real, already-indexed, non-Python repo>` after every restart that touches an extractor, an index path, a fallback, or a filtering argument | `test_live_answer_doctor.py` |
 
 ---
 
@@ -452,6 +454,98 @@ are different claims. Anything cached, hashed, or memoised sits between them.
 
 ---
 
+---
+
+## The doctor: `scripts/live_answer_doctor.py`
+
+Two campaigns produced Entries 1-8. This is what they add up to, and it is
+runnable rather than written down:
+
+```
+venv312\Scripts\python.exe scripts\live_answer_doctor.py --project-path <repo>
+venv312\Scripts\python.exe scripts\live_answer_doctor.py --project-path <repo> --ci
+```
+
+Run it against a **real, already-indexed, non-Python repo**. Those three
+adjectives are the whole design, because they are the three conditions under
+which the answers stop being honest, and a `tmp_path` fixture has none of them:
+
+| Condition | What it exposes | Fixture equivalent |
+|---|---|---|
+| **real** | a file that vanished, a glob that matches part of the tree | nothing vanishes; no glob is passed |
+| **already-indexed** | rows written by an older extractor (B016) | no prior rows exist to be stale |
+| **non-Python** | an engine answering under another engine's description (B015), JS import keys (B013) | Python repo → the engine named is the engine that ran |
+
+The suite was green through all six of B011-B016. That is not a gap in the suite;
+it is what a fixture *is*. So `tests/` pins the mechanisms and the doctor pins the
+claim that the mechanisms reach production data — the two are different claims,
+and this is the line that separates them:
+
+> **"The tests pass" and "the fix reaches production data" are different claims.
+> Anything cached, hashed, or memoised sits between them.**
+
+### Reading the output
+
+* **FAIL** — a tool answered as though it had done something it did not do. Each
+  row carries its bug id; go to `KNOWN_BUGS.md` and then to the pinning test.
+  `--ci` exits 1 here.
+* **WARN** — the check could not run *here*, or a known gap is being surfaced.
+  Never blocks. The standing WARN on a JS/TS repo is the deferred Ruff-only gap:
+  `bug_risk` / `perf` / `complexity` / `code_smell` / `tech_debt` / `security` are
+  empty **by construction**, not because the repo is clean.
+* **exit 2** — the daemon did not answer. Not a verdict. STOP and report; a doctor
+  that degrades to "all clear" when it cannot measure is worse than no doctor.
+
+Measured on `dreye_redesign` (42 JS files) at generation `1f4d2d30b836`:
+**10 pass / 0 fail / 1 warn**. The doctor is itself pinned by
+`tests/test_live_answer_doctor.py` (23 tests), which feeds each check a synthetic
+answer shaped like the bug it was written for and asserts it FAILS — a check that
+cannot fail is decoration, and decoration is what B011-B016 walked past.
+
+### Its own first run found two bugs — in itself
+
+Both are mistakes the next CA will repeat, so they are pinned:
+
+* `cbm_template_query` answers **`results` + `count`**, not `rows`. Reading `rows`
+  reported 14 real rows as 0, which reads exactly like "the query is broken".
+  Same family as reading past the HTTP `result` envelope.
+* `validate_file` refuses an out-of-scope path **before** it considers `lang`, so
+  a probe file outside the repo measures nothing. Measured: the identical call
+  answers `UNSUPPORTED_LANG` for a file inside the repo and `VALIDATION_FAILED`
+  for one outside it. The doctor now picks its probe from inside.
+
+### Adding a check
+
+The bar is one question: **is the answer knowable independently of the tool being
+asked?** A check that can only be verified by the tool it is checking proves
+nothing. The four shapes that worked:
+
+1. **Pass a deliberately impossible argument.** A bogus glob returning the
+   unfiltered count proves the argument is *inert*; a narrow glob returning many
+   results proves nothing, because it may just be broad.
+2. **Pass a misspelling of something supported.** `JSON`, `javascript`, `py` each
+   name a language the tool implements under another spelling — which is exactly
+   why they used to pass silently.
+3. **Count the same thing two ways.** The index walks disk; `stale_files` reads
+   the files table. Two populations that must agree.
+4. **Check the number moves at all.** Do the thing twice. A count that two full
+   indexes cannot clear is a different bug from a count that is merely high.
+
+Then add the failing-answer case to `tests/test_live_answer_doctor.py` before the
+check itself, and confirm it fails.
+
+### Where it fits in the cadence
+
+`scripts/DIAGNOSTIC_SUITE.md` guards *structure* — drift between code, schema,
+skills and inventory — by importing modules with the server down. This doctor
+guards *answers*, and needs the server up and a real repo. They do not overlap:
+run the diagnostic suite before a commit, and the doctor after a restart, when the
+new code is finally the running code.
+
+**Run it after every restart that ships a change to an extractor, an index path, a
+fallback, or an argument that filters.** B016 existed for exactly as long as the
+gap between "committed, tested, deployed" and "someone asked the live tool".
+
 ## Mutation testing: the acceptance bar
 
 A test that passes against the *unfixed* code proves nothing. Every fix in this
@@ -553,8 +647,9 @@ write-ledger pact that `PRESERVED_CACHE_FILES` must **not** widen to cover),
 
 ## Test inventory added by the JS-repo audit (2026-08-21)
 
-44 tests, all mutation-verified: every file below was written **before** its fix
-and confirmed failing first.
+75 tests, all mutation-verified: every file below was written **before** its fix
+and confirmed failing first. The last three rows came from the doctor itself and
+the defect (B017) that building it exposed.
 
 | File | Tests | Pins |
 |---|---|---|
@@ -562,6 +657,8 @@ and confirmed failing first.
 | `test_js_dependency_edges.py` | 11 | B013: ESM key shape, the three `require()` forms, and that a bare package specifier stays unresolved |
 | `test_cbm_dead_code_file_filter.py` | 9 | B014/B015: the bogus-glob case, echoed `files_matched`, and `engine`/`engine_reason`/`language_detected` |
 | `test_graph_index_prunes_deleted_files.py` | 6 | B011: rows pruned, nodes dropped, `files_pruned` reported, index/status agreement, convergence, `freshness` |
+| `test_live_answer_doctor.py` | 23 | The doctor itself: every check fed an answer shaped like its bug must FAIL; `results` not `rows`; an in-repo probe file; exit 2 on an unreachable daemon; WARN never blocks |
+| `test_policy_action_vocabulary_b017.py` | 8 | B017: `<verb>_file` spellings resolve through the same table; an unknown verb stays `unknown`; a suffix cannot mint `upgrade_orchestrator`; `delete_file` keeps `delete`'s policy |
 | `test_extractor_version_pins_js_import_shape.py` | 5 | B016: a row records the reported version, a version bump re-extracts unchanged files, the JS import shape travels with it, and the pre-B013 string is refused |
 
 Two harness requirements for anything touching the graph, both learned the hard
@@ -575,5 +672,6 @@ way:
   walk, and `CBM_GRAPH_ENABLED=1` is what lets `dead_code_candidates` run at all
   — a JS test that forgets either one passes vacuously.
 
-Baseline after this audit: **2522 passed, 4 skipped, 1 xfailed, 165 subtests
-passed, 0 failed** with `--basetemp` on `C:` (was 2478 before these 44 tests).
+Baseline after this audit and the doctor that followed it: **2526 passed, 4
+skipped, 1 xfailed, 161 subtests passed, 0 failed** in 351s with `--basetemp` on
+`C:` (was 2478 before these 75 tests).

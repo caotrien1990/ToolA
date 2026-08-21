@@ -42,6 +42,7 @@ It answers `commit_state` (`in_flight` | `committed` | `not_committed`), `safe_t
 - `AGENT_BOOTSTRAP_PROMPT.md` -- agent rules, T1/T2/T3 phases, native fallback, and session close contract.
 - `MAINTENANCE_DOCTOR.md` -- **start here when something is broken.** Symptom-first triage: the symptom as it appears, the cause that was assumed, the cause that was real, and the test that pins it. Also covers editing [A] itself and the mutation-testing bar.
 - `KNOWN_BUGS.md` -- open and closed defects in `B###`/`R###` form.
+- `scripts/live_answer_doctor.py` -- **run this after a restart that ships a change to an extractor, an index path, a fallback, or a filtering argument.** Asks the LIVE daemon about a real, already-indexed, non-Python repo and checks each answer against something knowable independently of the tool being asked. B011-B016 all shipped through a green suite, because a fresh `tmp_path` fixture is the one environment in which all six of those answers are honest. `--ci` exits 1 on FAIL; a WARN means the check could not run here; exit 2 means the daemon did not answer, which is not a verdict. Registered in `scripts/DIAGNOSTIC_SUITE.md` as the *answers* layer next to the *structure* layer.
 - `TOOL_REFERENCE.md` -- callable tool inventory and current live-tool notes.
 - `WORKFLOW_T1.md` -- fixing or improving an existing app.
 - `WORKFLOW_T2.md` -- building a new app or scaffold from scratch.
@@ -74,7 +75,7 @@ venv312\Scripts\python.exe -m pytest tests\ -q
 
 **Do not pass `--basetemp` at a fixed path, and never one on `D:`.** The opposite advice used to live in this file and did real damage: `D:` is a HDD, and routing the suite's temp I/O onto it saturated the spindle until unrelated folders stopped opening in Explorer -- which read as a locked folder and was a busy disk. A fixed path is also shared mutable state, since pytest wipes its basetemp at startup and two concurrent runs then delete each other's fixtures. `%TEMP%` is on SSD, per-run, and is never OneDrive-redirected; it is the correct default. `test_conftest_stale_symlink_tolerance.py` enforces this repo-wide.
 
-Quiescent baseline: **2522 passed, 0 failed, 4 skipped, 1 xfailed, 165 subtests passed in ~356s** across 240 files in `tests\`. Run with the orchestrator server idle (no active council dispatch): `test_council_runtime_status_tracks_terminal_state` reads a shared council-runtime file, so a live dispatch for the same agent (e.g. `ope`) can flip it to an environmental failure unrelated to source state.
+Quiescent baseline: **2526 passed, 0 failed, 4 skipped, 1 xfailed, 161 subtests passed in ~351s** across 242 files in `tests\`. Run with the orchestrator server idle (no active council dispatch): `test_council_runtime_status_tracks_terminal_state` reads a shared council-runtime file, so a live dispatch for the same agent (e.g. `ope`) can flip it to an environmental failure unrelated to source state.
 
 If the run aborts during **collection** with `PermissionError: [WinError 5]` on a path under `%LOCALAPPDATA%\Temp`, that is the stale `pytest-current` symlink -- Entry 1 of `MAINTENANCE_DOCTOR.md`, not a sync client.
 

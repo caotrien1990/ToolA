@@ -330,6 +330,18 @@ def classify_action(
     # F021: accept an action_type that already names a (non-privileged) class.
     if not task_class and action in _SELF_DECLARABLE_CLASSES:
         task_class = action
+    # B017: and accept the `<verb>_file` / `<verb>_files` spelling of a verb that
+    # already has a row. `create_file` fell through to task_class="unknown" ->
+    # native_policy="forbid", so a native CREATE inside [A]'s own tree was
+    # refused while a native EDIT of the same file was allowed -- a distinction
+    # no rule makes, and it made the audit trail for a new file unwritable.
+    # This resolves ONLY through the table above: an unknown verb stays unknown,
+    # so "frobnicate_file" is still forbid, and a suffix can never mint
+    # upgrade_orchestrator (not in _ACTION_TO_CLASS; derived from the path).
+    if not task_class:
+        stem = re.sub(r"_files?$", "", action)
+        if stem != action:
+            task_class = _ACTION_TO_CLASS.get(stem)
 
     # Scope heuristics
     outside = False

@@ -1418,4 +1418,92 @@ is exactly why B013's own 11 tests were all green while the live repo was not.
 
 ---
 
-_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit: added B002-B016, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md)_
+---
+
+## B017 — a native CREATE inside [A] was refused while a native EDIT was allowed
+
+**Status**: fixed
+**Severity**: MEDIUM (the audit trail for any NEW file inside [A] could not be written)
+**Discovered**: 2026-08-21, while logging the audit trail for the live-answer doctor
+
+### Reproduction
+
+Two new files were created inside [A]'s own tree and logged the standard way.
+Same tool, same tree, same session — only the `action_type` differed:
+
+```
+log_native_event(action_type="create_file",         target=<[A]>\scripts\live_answer_doctor.py)
+  -> ok: false, audit_status: "logged_and_rejected"
+     task_class: "unknown", native_policy: "forbid"
+     host_gate: "deny_native_forbid", ca_next_action: "stop_native_use_a_tool"
+
+log_native_event(action_type="write_existing_file", target=<[A]>\MAINTENANCE_DOCTOR.md)
+  -> ok: true,  audit_status: "logged"
+```
+
+So editing a file inside [A] was authorised and creating one was refused — a
+distinction no rule makes. The event is still *recorded* (`logged_and_rejected`),
+but it is recorded as a policy violation, which is exactly backwards for the one
+path the standing rule authorises.
+
+### Root cause
+
+`classify_action` resolves `action_type` through `_ACTION_TO_CLASS`. `create_file`
+has no row there, so `task_class` fell through to `"unknown"`, whose
+`native_policy` is `forbid`. The class it should reach — `create_project_file` —
+already exists and is already reachable from the *tool* side
+(`_TOOL_TO_CLASS["write_new_file"]`). Only the action word was missing.
+
+This is **F021's defect a second time, in the same table**. F021's own comment in
+that file reads: *"the log_native_event schema documents these action_type values,
+but they had no row here and fell through to task_class='unknown' -> a
+native_policy=forbid HOST_GATE_DENY on perfectly ordinary actions."* F021 added
+rows for the seven verbs the schema description happens to list
+(`read | write | execute | validate | cache | backup | workflow`) plus a few
+synonyms — and `create_file` is not among them.
+
+It is also the same shape as B012: the vocabulary a caller must use is documented
+in one place and enforced in another, and the two disagree. `create_file` reads
+like the obvious name for the thing being logged, exactly as `JSON` read like the
+obvious spelling of `json`.
+
+### Fix
+
+`classify_action` now strips a `_file` / `_files` suffix and retries **through the
+same table**:
+
+```python
+if not task_class:
+    stem = re.sub(r"_files?$", "", action)
+    if stem != action:
+        task_class = _ACTION_TO_CLASS.get(stem)
+```
+
+Resolving only through the table is what bounds it: an unknown verb stays
+unknown (`frobnicate_file` is still `forbid`), and a suffix can never mint a
+privileged class, because `upgrade_orchestrator` and `a_unreachable_mid_task` have
+no rows in `_ACTION_TO_CLASS` at all — they are derived from the target path.
+That restraint is F021's, kept deliberately.
+
+**Pinned by** `tests/test_policy_action_vocabulary_b017.py` (8 tests). Five pin
+the fix — `create_file` is not `unknown`, create inside [A] carries the same
+policy as edit, every `<verb>_file`/`<verb>_files` spelling matches its bare verb,
+case and surrounding whitespace do not matter, and F021's bare verbs still work.
+Three bound it, and they are the half that matters: an unknown word is still
+`unknown`, a suffix cannot mint `upgrade_orchestrator` on a path outside [A], and
+`delete_file` carries `delete`'s policy exactly — the suffix must never be a route
+around the destructive gate.
+
+### The general rule
+
+**A vocabulary enforced in a lookup table must be generated from that table, or
+the table must accept every spelling the docs and the callers use.** Three defects
+now share this shape — B012 (`lang`), F021 (`action_type`), B017 (`action_type`
+again) — and in each one the failing spelling named something the system already
+implemented. When a schema description lists valid values by hand, that list is a
+copy, and copies drift. The tell is always the same: a refusal, or a silent pass,
+for a word that obviously means the right thing.
+
+---
+
+_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit: added B002-B017, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_
