@@ -572,6 +572,220 @@ report. There is now a test asserting the docstring does not promise `0`.
 
 ---
 
+## Entry 10 — Two callers of one predicate, and only one of them passed what the predicate needs
+
+B022 looked like a missing ignore-list. The ignore-list was there and correct. The
+**caller** omitted the argument the ignore-list needs:
+
+```
+code_tools.py:3654      _should_scan_file(path)              # drift check  — NO project_root
+surgical_mapper.py:1134 _should_scan_file(fp, project_root)  # indexer      — WITH it
+```
+
+`project_root` is what `_skip_reason` needs to compute `_depth_below_root` for the
+`data_json_not_source` rule. Without it the depth is `None`, and R82's
+**deliberate** conservative default keeps the file: *"depth unknown -> conservative:
+index it rather than silently drop it."*
+
+### The question this entry exists to make you ask
+
+**Is the default that makes this predicate safe still safe for THIS caller?**
+
+R82's default is not a bug. It is right for the indexer, where keeping a file means
+indexing one file too many. It is **inverted** for the drift check, where keeping a
+file means **"there is a new file here"** — a claim a refresh can never satisfy,
+because the indexer will refuse the same file again. Measured on [A]'s own repo:
+52 files where the two predicates disagree, `total_changed=53 added=52`, **52 of 52
+`added` refused by the indexer, 0 genuinely addable**. Drift → refresh → refuse →
+drift, forever.
+
+A conservative default is directional. When a shared predicate has one, the
+question is never "is the default sound" but "which way does this caller's cost
+point". Two callers of the same helper can need the same default in **opposite**
+directions, and the one that gets it wrong will not raise — it will report
+confidently.
+
+### One cause can wear two error names
+
+The report named `STALE_INDEX_AFTER_REFRESH`. By the time the fix was written the
+same call answered `INDEX_QUERY_TIMEOUT` ("budget 12.0s") instead: the phantom
+refresh had grown to eat the whole `_query_index_deadline_seconds()` budget. Two
+names, one defect. Treating them as two bugs would have sent the timeout
+investigation into the scheduler and found nothing wrong there.
+
+And only `query_index` died, because it is the only tool that gates **hard** on
+drift — `search_code` measured `ok=True` with `cache_status` unaffected. **The tool
+that fails is not the tool that is broken; it is the strictest consumer of what is
+broken.** Do not scope the search to the tool that reported.
+
+### Do not fix the same missing argument everywhere it is missing
+
+Auditing the other call sites was the second half of this entry's value. All six
+`cache_delta` consumers — `code_tools.py:1794`, `1912`, `3092`, `12599`,
+`6113`/`6161` and `orchestrator/tools/search.py:1165` — route through the **same**
+`_cache_delta_sync`, so one argument reached all of them. There was exactly one
+other no-root call site, `orchestrator/fileops/common.py:41`
+(`should_scan_for_text`), and its sign is the **opposite**: measured 1312 admitted
+against the indexer's 1260 — 52 search-only files, all `.json`. For a text search,
+keeping a file means finding a match; refusing it means silently missing one.
+
+So the same missing argument is a defect in one place and the correct default in
+the other. It was left alone, deliberately. **"The other caller is missing it too"
+is a reason to measure that caller's direction, not a reason to patch it.**
+
+### A test that asserts the parameter instead of the consequence can be unpassable
+
+The first version of the invariant test asserted
+`_should_scan_file(p) == _should_scan_file(p, root)`. That can **never** pass and
+should not: those two must still disagree, because R82's no-root default is
+deliberate and untouched. The fix was at the caller, not in the mapper. Written
+that way the test failed, and the failure was the test's, not the code's — the
+third time this campaign that a new test was the bug (see Entry 9's closing
+section).
+
+The honest form pins the consequence: **no file the drift check calls `added` may
+be a file the indexer refuses.** Reverting `, root` kills **5 of 7** tests. The 2
+survivors are by design and say so in their own docstrings — the guard-the-guard
+(a fixture with nothing to refuse proves nothing) and the opposite failure (the fix
+must not silence real drift). **Name the tests a mutant is supposed to survive, or
+the next reader will "fix" them.**
+
+### An entry point that assembles is not an entry point that builds
+
+Six of these tests were green-then-wrong because `sm.build_index()` on a fresh tmp
+repo returns **0 files** and writes no INDEX.json — it only *assembles* an index
+from cache sidecars that already exist. They were measuring an empty index rather
+than the drift rule. `generate_project_map` is the entry point that walks, writes
+the sidecars and publishes INDEX.json. Measured: `build_index` → 0 files,
+`generate_project_map` → 2 files, `total_changed` 0.
+
+And the invariant test alone was not enough for a subtler reason worth copying: it
+asks what drift reports against a **real** index, so it only sees files that happen
+to be missing from it. An index that already held every phantom would hide the
+defect. `test_the_walk_admits_nothing_the_indexer_refuses` passes
+`index_override={"files": {}}` so `added` becomes the walk's complete admit-list —
+**measure the predicate against an empty baseline when the baseline is what might
+be hiding it.**
+
+### Two suite counts are both correct
+
+`pytest tests\` reports **2588**; a bare `pytest` reports **2615**. The 27-test gap
+is three files at the **repo root** (`test_all_tools.py`,
+`test_council_reply_fallback.py`, `test_open_session_drift_note.py`), collected by
+rootdir discovery and outside the README's `tests\` baseline. Neither number is
+wrong, and the collect count moves with which one you ran. Before concluding a
+count drifted, check the **scope** — `--collect-only` plus `git stash` of the new
+file separates "new tests" from "different set".
+
+---
+
+## Entry 11 — Five "schema traps", measured: four were my own wrong calls, one was a real silent answer
+
+This entry was proposed as "document the 5 schema traps", because the same class of
+mistake produced a wrong report twice in one campaign. Measuring them first turned
+the entry inside out: **the schemas were right.** Each was checked against
+`GET /api/tools/<tool>/schema` and against the live daemon at generation
+`177faa8e5a45`, and only one of the five was a defect in [A].
+
+The split is the whole value, so it is recorded honestly rather than as five
+warnings. Writing five warnings would have made the docs lie about four working
+tools.
+
+### Four were caller error, and [A] already answered loudly
+
+| What I called | Correct | What [A] actually answered |
+|---|---|---|
+| `write_fix` as find-and-replace | `start_line` / `end_line` / `new_content` | Nothing to answer — the schema already reads *"Replace a line range in one file, create a .bak backup, and sync the cache after writing"*, `start_line`: *"1-based start line."*, `end_line`: *"Inclusive end line."* |
+| `copy_file` with `source`/`dest` | `src` / `dst` | HTTP **400**, `UNSUPPORTED_FIELD`, `unsupported_fields: ["dest","source"]`, `accepted_fields: ["backup_existing","dst","overwrite","project_path","src"]`, `ca_next_action: remove_unsupported_field` |
+| `read_context_batch` with `reads` | `requests` | HTTP **400**, `UNSUPPORTED_FIELD`, `accepted_fields` naming `requests` |
+| `write_new_file` with `path` instead of `file_path` | **either works** | `ok:true` both ways under `dry_run` — measured. There was never a trap here |
+
+A refusal that names the offending field, lists `accepted_fields` and sets
+`ca_next_action` is the contract working as designed. **A tool that refuses with
+the correct field list is not under-documented — the caller did not read the
+refusal.**
+
+Two facts from these four are worth carrying forward anyway, because neither is in
+the schema:
+
+* **`expected_hash` is a bypass for chained writes, not a safety latch.** The
+  schema says so (*"pass new_hash from previous write_fix response to bypass
+  FILE_CHANGED guardrail in sequential same-file writes"*), and
+  `orchestrator/tools/write/core.py:590-663` confirms the shape: a matching
+  `expected_hash` returns early (`:629`); a wrong one simply falls through to the
+  real `read_token` guard, which compares `read_hash`/`read_mtime`/`read_size` and
+  returns `_file_changed_error` (`:652`). **Passing a stale hash does not weaken
+  the guard, and omitting it does not strengthen it.**
+* **`read_file_range` returns the file text in `result`, and there is no
+  `content` key.** Measured top-level envelope: 31 keys including `ok`, `file`,
+  `result`, `selection`, `shown`, `total_lines`, `next_ranges`, `content_hash`,
+  `read_token_seeded`, `range_id`, `truncated` — and `result` is a **`str`**, not
+  nested JSON, so `json.loads(resp["result"])` raises
+  `JSONDecodeError: Extra data: line 1 column 2 (char 1)`. `read_context_batch`
+  nests the same shape once per item under `items[]`. Nothing is broken here, but
+  a caller reaching for `content` reads an absent key as an empty file.
+
+### The one real defect: an answer that is `ok:true` and empty
+
+```
+cbm_trace_path(start_node_id="_cache_delta_sync")   ->  ok:true, edges:[], nodes_seen:0,
+                                                        truncated:false, error:null,
+                                                        truncation_reason:"start_node_not_found"
+cbm_trace_path(start_node_id="code_tools.py:function:code_tools.cache_delta:3674")
+                                                    ->  ok:true, edges:20, nodes_seen:18,
+                                                        truncation_reason:None
+```
+
+`start_node_id` needs a **graph node id**, not a symbol name, and the schema says
+exactly that: *"Graph node id to traverse from (e.g. 'file.py:function:mod.fn:LINE')."*
+The requirement is not the defect. The defect is that missing it answers **`ok:true`
+with an empty result**, and the only signal is `truncation_reason` — on a response
+whose `truncated` is `false` and whose `error` is `null`. A caller guarding on `ok`,
+or on `error`, or on `truncated`, reads "this symbol has no callers".
+
+This is **fail-open used where the caller cannot tell**. The tool description
+declares the policy up front (*"Fail-open on timeout/stale/missing"*), which is the
+right default for a stale-index read — but fail-open only works when the failure
+lands in a field somebody guards on. **A field that carries the failure must not be
+the field nobody reads.** Compare B018, which was the same asymmetry the other way
+round: a *successful* `search_code` omitted `ok` and so read as a failure. Both
+break the same contract — the guard field must track the outcome.
+
+Filed, not fixed in this pass: the fix is a contract change (`ok:false` with a named
+error, or a `start_node_resolved: false` field callers can guard on) and needs its
+own failing test first, plus a decision about which existing callers depend on
+fail-open.
+
+Where a real node id comes from: `cbm_template_query(template="callers",
+name="<sym>")` returns rows carrying `id` in exactly that shape. The field is
+**`name`** — `symbol` and `symbol_name` are both refused — and a *repeat* of the
+same wrong payload answers `DUPLICATE_RETRY_BLOCKED` ("Identical deterministic
+failure already returned a correction"), which is the dedup guard working, not a
+new error. `find_symbol` cannot supply a node id; it is a text search returning
+`file`/`line`/`match`.
+
+### `payload_example` is an error field, not a schema field
+
+Half of this entry's original plan was "also fix each tool's `payload_example`".
+There is nowhere to put it: measured, `payload_example` is `null` in the schema of
+all six tools, because it is built **into error envelopes** at answer time
+(`orchestrator/tools/search.py:613-630`, `code_tools.py:1129`, `5247`,
+`orchestrator/session/process.py:22`) rather than declared statically. The four
+loud refusals already carry `accepted_fields` + `ca_next_action`, which is the same
+job done better. `cbm_trace_path` has no error envelope to carry one — which is
+precisely the defect above.
+
+### The rule this entry is really about
+
+Before writing "tool X's schema is wrong" in a report, call
+`GET /api/tools/X/schema` (the descriptions live at
+`tool.function.parameters.properties`, not at the response root) and re-read the
+refusal the tool already gave. Four of five findings dissolved on contact with that
+one step, and the fifth got sharper: the problem was never the required shape, it
+was that violating it answered `ok:true`.
+
+---
+
 ## The doctor: `scripts/live_answer_doctor.py`
 
 Two campaigns produced Entries 1-9. This is what they add up to, and it is
@@ -806,7 +1020,7 @@ write-ledger pact that `PRESERVED_CACHE_FILES` must **not** widen to cover),
 
 ## Test inventory added by the JS-repo audit (2026-08-21)
 
-130 tests, all mutation-verified: every file below was written **before** its fix
+137 tests, all mutation-verified: every file below was written **before** its fix
 and confirmed failing first. Rows 5-7 came from the doctor itself and the defect
 (B017) that building it exposed; the last two (B019, B020) came from surveying
 the other tools for B018's shape and from the one failure the full suite still had
@@ -814,6 +1028,9 @@ after it. B019's last 3 rows came from a restart proving its first 9 tests had
 verified the wrong layer.
 B021's last 4 rows came from mutants walking through 13 green tests -- a
 fixture too small to distinguish the mutant is a test that measures nothing.
+B022's row came from Anh's real test: the last one is a caller-side default,
+not a rule -- two callers of one predicate needed the same conservative
+default in opposite directions.
 
 | File | Tests | Pins |
 |---|---|---|
@@ -828,6 +1045,7 @@ fixture too small to distinguish the mutant is a test that measures nothing.
 | `test_regex_search_path_b019.py` | 12 | B019: the alias accepts `path` **and forwards it** (a hit found from inside, nothing from outside), the budget error names a field the tool really takes, its `payload_example` is not the failing call, it carries the worker's own message for both ceilings, and the live branch actually routes through the builder -- a mutant that unrouted it survived the first 8 tests. The last 3 pin the **registry** schema and the dispatcher's own `allowed_params` expression: the signature fix was invisible over HTTP, and all 9 earlier tests passed through it |
 | `test_room_token_ttl_b020.py` | 4 | B020: a one-second token survives most of that second, the full TTL is honoured wherever in the wall-clock second the register lands (5 subtests), `expires_at` is at least `ttl_sec` away, and a token still expires |
 | `test_payload_says_each_thing_once_b021.py` | 22 | B021: no `git_status` record carries `raw` beside the fields parsed out of it, every parsed field survives for all five porcelain types (`1 2 u ? !` -- `u` and `!` driven at `_parse_records`, since a conflicted merge and `--ignored` are awkward to stage and a type-1-only fix would pass a single-type fixture), the payload is measurably smaller (<120 bytes/record), and **`state_hash` is unchanged against an independently recomputed literal** -- it is an optimistic lock callers hold *between* calls, so the tidy is response-only and `stale_check` still detects drift end-to-end. `module_deps` half: the real pre-cap population, the `truncated`/`total_count` invariant at limits 1/4/12/13/50, an uncapped read answering `total_count == count` with `truncated False`, `orphan_symbols` keeping the total it already computed, the **zero case** where `total_count=0` is the truth, and the docstring that documented the bug as intended. The last 4 rows are the mutants' doing: the `DISTINCT` predicate (a file importing the same module twice gives 2 edges for 1 pair), `entry_points` counting the production set it serves rather than the pre-split list, the depth-capped blast radius `impact_scope` must not report as complete, and `impact_scope` still describing its own single row correctly. The **last 6** are the offset follow-up: `offset` present in the signature *and* in the **registered schema** (the layer the server's unknown-field gate reads), page 2 reachable end-to-end through the async wrapper, every paginated branch actually paging (with `checked >= 3`, so a shrinking fixture cannot masquerade as a passing branch), a second fixture asserting the 4/6/3 rows the first was too small to produce, a whole-population page walk whose union holds every row once and none twice, and a negative offset answering page 1 on **both** a SQL branch and the Python branch |
+| `test_drift_and_indexer_agree_b022.py` | 7 | B022: no file the drift check calls `added` may be a file the indexer refuses (against a real index, and against an **empty** one via `index_override`, because an index already holding every phantom would hide the defect), a fresh index reports `total_changed=0`, drift converges across two refreshes, and `query_index` answers `ok:true` end-to-end. Two rows are deliberately **mutant-surviving** and say so: the guard-the-guard (the fixture still contains deep data-JSON the rule refuses, and `app.py`/`package.json`/`data.json` stay indexable) and the opposite failure (a genuinely new source file is still reported). Reverting `, root` kills 5 of 7. What the tests deliberately do **not** assert is `_should_scan_file(p) == _should_scan_file(p, root)` -- those must still disagree, since R82's no-root default is intentional and the defect was a caller, not the mapper |
 
 Two harness requirements for anything touching the graph, both learned the hard
 way:
@@ -840,8 +1058,8 @@ way:
   walk, and `CBM_GRAPH_ENABLED=1` is what lets `dead_code_candidates` run at all
   — a JS test that forgets either one passes vacuously.
 
-Baseline after this audit and the doctor that followed it: **2581 passed, 4
-skipped, 1 xfailed, 169 subtests passed, 0 failed** in 288s, measured -- not
+Baseline after this audit and the doctor that followed it: **2588 passed, 4
+skipped, 1 xfailed, 169 subtests passed, 0 failed** in 296s, measured -- not
 predicted. The four deltas this campaign is accountable for are all measured on
 the same run order: 2495 -> 2526 for the doctor's 31 tests, 2526 -> 2534 for
 B018's 8 (4 pinning the fix, 4 pinning the doctor's new check), 2534 -> 2547 for
@@ -850,7 +1068,7 @@ plus the 6 that pin the doctor's new check and the 400-handling defect writing i
 exposed), 2556 -> 2559 for the 3 that pin the probe-scope false FAIL, and 2559 -> 2575
 for B021's 16, and 2575 -> 2581 for the 6 that pin B021's offset follow-up
 (4 of whose mutants survived the first cut because the original fixture yields 0/0/1
-rows on the branches they touch). The 2534
+rows on the branches they touch), and 2581 -> 2588 for B022's 7. The 2534
 run had one failure, and it was not environmental: it was B020. The 2556 run had
 one too, and it was a genuine flake -- a nominal-sleep timing assertion, fixed
 and mutation-verified rather than rerun. Reproduce it the way the section above prescribes — plain

@@ -1920,4 +1920,199 @@ Both are fixed, and both now carry the reason in the test.
 
 ---
 
-_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit + stabilisation: added B002-B021 plus B021's offset follow-up, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_
+## B022 — `query_index` answered `STALE_INDEX_AFTER_REFRESH` forever: the drift check and the indexer asked different questions
+
+**Status**: fixed
+**Severity**: HIGH (`query_index` unusable on [A]'s own repo; the tool has alternatives, so the loop was survivable, not harmless)
+
+**Reproduction** (from Anh's real test, at generation `177faa8e5a45`):
+`query_index(project_path=<[A]'s own repo>, query="…")` → `STALE_INDEX_AFTER_REFRESH`
+after ~11s, stable across 3 consecutive calls. `refresh_project_map` completed
+successfully each time and changed nothing.
+
+**Root cause.** Not a missing ignore-list — the ignore-list exists and is correct.
+The *caller* omitted the argument the ignore-list needs:
+
+```
+code_tools.py:3654      _should_scan_file(path)              # drift check  — NO project_root
+surgical_mapper.py:1134 _should_scan_file(fp, project_root)  # indexer      — WITH it
+```
+
+`_should_scan_file` → `_skip_reason` → for `.json`/`.jsonl` calls
+`_is_data_json(file_path, _depth_below_root(file_path, project_root))`.
+`_depth_below_root` returns `None` when `project_root` is falsy, and R82's
+**deliberate** conservative default then KEEPS the file
+(`tests/test_data_json_and_reindex_r82.py`: "depth unknown -> conservative: index
+it rather than silently drop it").
+
+That default is right for the INDEXER and **inverted for the DRIFT CHECK**. In the
+indexer, keeping a file means "index one file too many". In the drift check,
+keeping it means **"there is a new file here"** — so every deep data-JSON the
+indexer refuses was reported `added`, forever.
+
+Measured on [A]'s own repo at generation `177faa8e5a45`:
+
+```
+files where the two predicates disagree     : 52
+_cache_delta_sync                           : 0.44s total_changed=53 added=52 modified=1
+of those 52 `added`, refused by the indexer : 52 / 52
+genuinely addable                           : 0
+```
+
+An unbreakable loop: drift reports 52 new files → refresh → the indexer refuses
+all 52 → drift reports 52 again. `query_index` is the only tool that gates **hard**
+on drift, which is why only it died: `search_code` measured `ok=True` with
+`cache_status` unaffected.
+
+**One cause wearing two faces.** By the time the fix was written the same call
+answered `INDEX_QUERY_TIMEOUT` ("budget 12.0s") instead — the phantom refresh had
+grown to eat the whole `_query_index_deadline_seconds()` budget. Two error names,
+one defect. A report that treated them as separate bugs would have chased the
+timeout into the wrong module.
+
+**Fix**: one argument, at `code_tools.py:3654` — `_should_scan_file(path, root)`.
+Measured after: `total_changed 53 → 2`, and both remaining entries are files this
+campaign really did change.
+
+**The tests are the substance, not the one-line fix.** The invariant they pin is
+not "the parameter is passed" but the consequence: **no file the drift check calls
+`added` may be a file the indexer refuses.** A test asserting
+`_should_scan_file(p) == _should_scan_file(p, root)` would be **wrong** and can
+never pass — those two must still disagree, because R82's no-root default is
+deliberate and untouched. The defect was never in the mapper; it was a caller not
+passing what the mapper needs. Written that way first, the assertion failed, and
+the honest form replaced it.
+
+7 tests, `tests/test_drift_and_indexer_agree_b022.py`, mutation-verified: reverting
+`, root` kills **5 of 7**. The 2 survivors are by design and named as such —
+`test_the_fixture_really_contains_files_the_rule_refuses` (guard-the-guard: a
+fixture with nothing to refuse proves nothing) and
+`test_a_genuinely_new_source_file_is_still_reported` (the opposite failure: the fix
+must not silence real drift). Both are independent of the fix on purpose.
+
+Two of the seven exist because the first cut could not see the defect from where it
+stood:
+
+* `sm.build_index()` on a fresh tmp repo returns **0 files** and writes no
+  INDEX.json — it only *assembles* an index from cache sidecars that already exist.
+  Six tests were measuring an empty index rather than the drift rule.
+  `generate_project_map` is the entry point that walks, writes the sidecars and
+  publishes INDEX.json (measured: `build_index` → 0 files,
+  `generate_project_map` → 2 files, `total_changed` 0). **My test was wrong, not
+  the fix.**
+* The invariant test asks what drift reports against a **real** index, so it only
+  sees files that happen to be missing from it — an index already holding every
+  phantom would hide the defect. `test_the_walk_admits_nothing_the_indexer_refuses`
+  passes `index_override={"files": {}}` so `added` becomes the walk's complete
+  admit-list, and every file the walk lets through gets checked.
+
+**Audit of the other consumers** (Anh's second approved item). All six
+`cache_delta` call sites — `code_tools.py:1794` (rebuild-skip probe), `1912`
+(cache-status drift), `3092` (session state), `12599` (`validate_all`),
+`6113`/`6161` (snapshot-scoped) and `orchestrator/tools/search.py:1165` (A03b) —
+route through the **same** `_cache_delta_sync`, so the one-line fix reaches all of
+them. There was exactly one other no-root call site,
+`orchestrator/fileops/common.py:41` (`should_scan_for_text`), and its sign is the
+**opposite**: measured 1312 admitted vs the indexer's 1260, 52 search-only files,
+all `.json`. For a text search, keeping a file means finding a match; refusing it
+means silently missing one. Left alone deliberately — the same missing argument is
+a defect in one direction and the correct default in the other, which is exactly
+why passing it blindly everywhere would be the wrong repair.
+
+---
+
+## B023 — `cbm_trace_path` answers `ok:true` with an empty trace when the start node does not resolve
+
+**Status**: filed, not fixed (the fix is a contract change; needs its own failing test first)
+**Severity**: MEDIUM (a wrong answer that reads as a correct one — "this symbol has no callers")
+**Discovered**: 2026-08-21, measuring the five proposed "schema traps" against the live daemon at generation `177faa8e5a45`
+
+### Reproduction
+
+```
+cbm_trace_path(project_path=<[A]'s own repo>, start_node_id="_cache_delta_sync",
+               direction="out", depth=1)
+  -> ok:true, edges:[], nodes_seen:0, truncated:false, error:null,
+     truncation_reason:"start_node_not_found"
+
+cbm_trace_path(project_path=<same>,
+               start_node_id="code_tools.py:function:code_tools.cache_delta:3674")
+  -> ok:true, edges:20, nodes_seen:18, truncation_reason:None
+```
+
+### What is and is not the defect
+
+`start_node_id` requires a **graph node id**, not a symbol name, and the schema
+already says so: *"Graph node id to traverse from (e.g.
+'file.py:function:mod.fn:LINE')."* That requirement is correct and is **not** the
+bug.
+
+The bug is the answer shape when the requirement is missed. The response is
+`ok:true`, `error:null`, `truncated:false`, and `edges:[]`. The only signal is
+`truncation_reason:"start_node_not_found"` — a field named for truncation, carried
+on a response that says it was not truncated. Every ordinary caller guard (`ok`,
+`error`, `truncated`) reads success, and an empty `edges` list is
+indistinguishable from a real symbol that genuinely has no callers.
+
+The tool description declares the policy openly — *"Fail-open on
+timeout/stale/missing"* — and fail-open is the right default for a bounded read
+over a possibly-stale graph. Fail-open is only safe when the failure lands in a
+field a caller actually guards on. This is B018's asymmetry the other way round:
+there, a **successful** `search_code` omitted `ok` and read as a failure. Same
+broken contract in both directions — **the guard field must track the outcome.**
+
+### Proposed fix (not applied)
+
+Either is a contract change and needs a decision about existing fail-open callers:
+
+1. `ok:false` with `error_name="START_NODE_NOT_FOUND"`, plus `ca_next_action`
+   pointing at `cbm_template_query`; or
+2. keep `ok:true` but add an explicit `start_node_resolved: false` that callers can
+   guard on, and stop overloading `truncation_reason` for a non-truncation failure.
+
+Option 2 is the smaller change and preserves fail-open for the stale/timeout cases
+the description promises. Option 1 is what a caller expects. Either way the failing
+test comes first: a node id that does not exist must not produce a response whose
+guard fields all say success.
+
+### Where a real node id comes from
+
+`cbm_template_query(template="callers", name="<sym>")` returns rows carrying `id`
+in exactly the required shape (measured: `count 3, total_count 4`, rows like
+`"id": "code_tools.py:function:code_tools._cache_delta_for_snapshot:3688"`). The
+field is **`name`** — `symbol` and `symbol_name` are both refused, and a *repeat*
+of the same wrong payload answers `DUPLICATE_RETRY_BLOCKED` ("Identical
+deterministic failure already returned a correction"), which is the dedup guard
+working rather than a new error. `find_symbol` cannot supply a node id: it is a
+text search returning `file`/`line`/`match`.
+
+### The four findings this one was filed alongside, all of which dissolved
+
+Proposed as five "schema traps"; measured, four were caller error against schemas
+that were already correct, and three of those four already refuse **loudly** with
+`unsupported_fields` + `accepted_fields` + `ca_next_action`:
+
+* `write_fix` is line-based (`start_line`/`end_line`/`new_content`) and its schema
+  says so — no error to read, the payload was simply wrong.
+* `copy_file` with `source`/`dest` → HTTP 400 `UNSUPPORTED_FIELD`,
+  `accepted_fields: ["backup_existing","dst","overwrite","project_path","src"]`.
+* `read_context_batch` with `reads` → HTTP 400 `UNSUPPORTED_FIELD`,
+  `accepted_fields` naming `requests`.
+* `write_new_file` accepts **both** `file_path` and `path` — measured `ok:true`
+  both ways. There was never a trap here.
+
+Two response-shape facts worth knowing, neither of which is a defect:
+`read_file_range` returns the file text as a **`str`** in `result` and has **no
+`content` key** (so `json.loads(resp["result"])` raises
+`Extra data: line 1 column 2`), and `read_context_batch` nests that same shape per
+item under `items[]`. And `expected_hash` is a **bypass for chained writes, not a
+safety latch**: verified at `orchestrator/tools/write/core.py:590-663`, a matching
+hash returns early (`:629`) and a wrong one falls through to the real `read_token`
+guard, which still returns `_file_changed_error` (`:652`).
+
+Recorded because writing all five up as tool defects would have made the docs lie
+about four working tools. Full reasoning in MAINTENANCE_DOCTOR.md Entry 11.
+
+---
+
+_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit + stabilisation + real-test follow-up: added B002-B022, all fixed and mutation-verified, plus B023 filed-not-fixed; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_

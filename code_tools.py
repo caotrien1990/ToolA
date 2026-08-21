@@ -3645,7 +3645,13 @@ def _cache_delta_sync(project_path: str, index_override: dict | None = None) -> 
         dirs[:] = [d for d in dirs if not surgical_mapper.should_skip_dir(d)]
         for fn in walk_files:
             path = Path(walk_root) / fn
-            if path.is_file() and surgical_mapper._should_scan_file(path):
+            # B022: pass `root`. `_skip_reason` needs it for `_depth_below_root`,
+            # and the indexer already passes it (surgical_mapper.py:1134). Without
+            # it the depth is None and R82's conservative default KEEPS the file --
+            # correct for the indexer, inverted here, where keeping it means "new
+            # file". Every deep data-JSON the indexer refuses was reported `added`
+            # forever, so no refresh could ever clear it.
+            if path.is_file() and surgical_mapper._should_scan_file(path, root):
                 rel = str(path.relative_to(root)).replace("\\", "/")
                 if rel not in indexed:
                     added.append(rel)
