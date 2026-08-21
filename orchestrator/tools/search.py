@@ -1044,6 +1044,15 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         raise
     results = producer_payload["results"]
     response = {
+        # B018: `ok` on the SUCCESS path too. Every failure branch above answers
+        # ok:False, and this branch answered nothing at all -- so the ordinary
+        # caller guard `if not resp.get("ok")` read a search with real hits as a
+        # failure, a missing key being falsy exactly like False. This is the
+        # safe-looking direction of the B012/F021/B017 family: nothing errors, the
+        # results are right there, and the caller throws them away. A search that
+        # RAN is ok=True; "found nothing" is carried by count/stale_index, never
+        # by ok.
+        "ok": True,
         "results": results,
         "count": len(results),
         "mode": mode,

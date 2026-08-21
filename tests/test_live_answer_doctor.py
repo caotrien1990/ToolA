@@ -349,3 +349,54 @@ def test_the_call_helper_unwraps_the_result_envelope(lad, monkeypatch):
                       ({"ok": True, "count": 7}, 7)):
         monkeypatch.setattr(lad.urllib.request, "urlopen", _serving(raw))
         assert lad.call("t", {})["count"] == want, raw
+
+
+# ---------------------------------------------------------------- B018
+
+def test_a_search_that_omits_ok_is_a_failure(lad, rep, monkeypatch):
+    """The exact B018 defect, fed to the check: hits present, `ok` absent.
+
+    This is the shape a fixture cannot catch, because a unit test asserts on the
+    value of a field whose name it already knows. Only a guard written the way
+    callers actually guard -- `if not resp.get("ok")` -- sees it, so the check
+    must be that guard.
+    """
+    _install(monkeypatch, lad, _Daemon(search_code=lambda p: (
+        {"count": 3, "results": [1, 2, 3]} if p.get("query")
+        else {"ok": False, "error_name": "MISSING_REQUIRED_FIELD"})))
+    lad.check_success_answers_ok(rep, "/repo")
+    assert rep.failures, "a success payload with no `ok` was allowed to pass"
+    assert "no `ok` field" in rep.failures[0]["detail"], rep.failures
+
+
+def test_a_search_that_answers_ok_false_on_success_is_a_failure(lad, rep,
+                                                               monkeypatch):
+    """Present but wrong is not better than absent."""
+    _install(monkeypatch, lad, _Daemon(search_code=lambda p: (
+        {"ok": False, "count": 3, "results": [1, 2, 3]} if p.get("query")
+        else {"ok": False, "error_name": "MISSING_REQUIRED_FIELD"})))
+    lad.check_success_answers_ok(rep, "/repo")
+    assert rep.failures, "ok=False on a search that ran was allowed to pass"
+
+
+def test_a_correct_search_envelope_passes(lad, rep, monkeypatch):
+    """ok:True on the hit, ok:False on the empty query -- both halves right."""
+    _install(monkeypatch, lad, _Daemon(search_code=lambda p: (
+        {"ok": True, "count": 3, "results": [1, 2, 3]} if p.get("query")
+        else {"ok": False, "error_name": "MISSING_REQUIRED_FIELD"})))
+    lad.check_success_answers_ok(rep, "/repo")
+    assert not rep.failures, rep.rows
+    assert rep.counts()["PASS"] == 2, rep.rows
+
+
+def test_always_saying_ok_is_also_a_failure(lad, rep, monkeypatch):
+    """The bounding half: if every answer is ok, the field carries nothing.
+
+    A fix that sets ok:True unconditionally would satisfy the success check and
+    silently destroy the failure signal, so the check has to fail that too.
+    """
+    _install(monkeypatch, lad, _Daemon(
+        search_code={"ok": True, "count": 3, "results": [1, 2, 3]}))
+    lad.check_success_answers_ok(rep, "/repo")
+    assert rep.failures, "an always-ok search_code was allowed to pass"
+    assert "stops carrying information" in rep.failures[0]["detail"], rep.failures

@@ -1,18 +1,18 @@
 # Project Map
 
 - Schema: 2
-- Generated: 2026-08-20T23:04:21
+- Generated: 2026-08-21T11:25:53
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator`
-- Files indexed: 1246
+- Files indexed: 1256
 
 ## Groups
 
 - `config`: 105 files, 30459 LOC
-- `doc`: 282 files, 34415 LOC
-- `entrypoint`: 3 files, 13924 LOC
+- `doc`: 282 files, 35138 LOC
+- `entrypoint`: 3 files, 13910 LOC
 - `script`: 15 files, 1579 LOC
-- `source`: 421 files, 127443 LOC
-- `test`: 280 files, 42769 LOC
+- `source`: 422 files, 128058 LOC
+- `test`: 289 files, 44259 LOC
 - `ui`: 23 files, 1710 LOC
 - `unknown`: 117 files, 53919 LOC
 
@@ -24,8 +24,8 @@
 
 ## Hotspots
 
-- `orchestrator_server.py`: complexity 3233, 13827 LOC, group `entrypoint`
-- `code_tools.py`: complexity 2924, 13571 LOC, group `source`
+- `orchestrator_server.py`: complexity 3227, 13813 LOC, group `entrypoint`
+- `code_tools.py`: complexity 2927, 13621 LOC, group `source`
 - `tools_v15.py`: complexity 1735, 8094 LOC, group `source`
 - `research/CBM_CG/CBM/docs/EVALUATION_PLAN.md`: complexity 751, 8802 LOC, group `doc`
 - `examples/mcp_175_tool_rag.html`: complexity 569, 5 LOC, group `ui`
@@ -33,7 +33,7 @@
 - `orchestrator/session/store.py`: complexity 307, 1749 LOC, group `source`
 - `orchestrator/search_snapshots.py`: complexity 299, 1270 LOC, group `source`
 - `research/CBM_CG/CBM/scripts/smoke-test.sh`: complexity 260, 1505 LOC, group `unknown`
-- `orchestrator/tools/search.py`: complexity 241, 869 LOC, group `source`
+- `orchestrator/tools/search.py`: complexity 241, 870 LOC, group `source`
 
 ## Agent Usage
 

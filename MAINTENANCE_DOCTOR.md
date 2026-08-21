@@ -40,6 +40,7 @@ these are not scaffolding, they were all mutation-verified (see
 | `cbm_dead_code` on a JS repo returns nothing for `bug_risk` / `perf` / `code_smell` | The repo is clean | Those categories are Ruff-only, so on a JS/TS repo they are empty **by construction**. Read `engine`, `engine_reason` and `language_detected` — since B015 every answer says which engine ran and why | same file, `test_the_engine_name_says_what_actually_ran` |
 | A fix to an extractor changes nothing on a real repo; a full index says `files_indexed: 0` | The fix is wrong / the index is cached | The source bytes did not change, so `stale_files` saw nothing stale. Bump `config.EXTRACTOR_VERSION` — an extractor change and a version bump are **one change** (B016, and B013's W5 predecessor before it) | `test_extractor_version_pins_js_import_shape.py` |
 | `log_native_event` answers `logged_and_rejected` / `HOST_GATE_DENY` for an ordinary action | the native edit was not authorised | Check the `action_type` spelling. `classify_action` resolves it through a lookup table; a word with no row falls through to `task_class: "unknown"` -> `native_policy: "forbid"`. Before B017, `create_file` was refused inside [A] while `write_existing_file` on the same file was allowed | `test_policy_action_vocabulary_b017.py` |
+| A `search_code` call with real hits reads as a failure | the caller guarded on `ok`, which the success path omitted | B018: every failure branch answered `ok:False` and the success branch answered nothing, so a missing key was falsy exactly like `False`. A search that RAN is `ok:True`; "found nothing" is carried by `count`/`stale_index` | `test_search_ok_field_b018.py` |
 | Six defects shipped green; you need to know whether a fix reached the *real* repo | "the suite passes, so it works" | A fixture repo is the one place all six answers are honest. Run `scripts/live_answer_doctor.py --project-path <a real, already-indexed, non-Python repo>` after every restart that touches an extractor, an index path, a fallback, or a filtering argument | `test_live_answer_doctor.py` |
 
 ---
@@ -496,11 +497,17 @@ and this is the line that separates them:
 * **exit 2** — the daemon did not answer. Not a verdict. STOP and report; a doctor
   that degrades to "all clear" when it cannot measure is worse than no doctor.
 
-Measured on `dreye_redesign` (42 JS files) at generation `1f4d2d30b836`:
-**10 pass / 0 fail / 1 warn**. The doctor is itself pinned by
-`tests/test_live_answer_doctor.py` (23 tests), which feeds each check a synthetic
+Measured on `dreye_redesign` (42 JS files) at generation `7d870da7e301`:
+**12 pass / 0 fail / 1 warn**. The doctor is itself pinned by
+`tests/test_live_answer_doctor.py` (27 tests), which feeds each check a synthetic
 answer shaped like the bug it was written for and asserts it FAILS — a check that
 cannot fail is decoration, and decoration is what B011-B016 walked past.
+
+**It has already earned itself.** The B018 check was added to a doctor running
+against a daemon that still held the old `search.py` in memory, and it FAILED
+immediately — `search_code answered count=3 with no ok field` — exit 1. That is
+the whole design working in one line: the fix was on disk, the tests were green,
+and the live answer was still wrong until a restart.
 
 ### Its own first run found two bugs — in itself
 
@@ -647,7 +654,7 @@ write-ledger pact that `PRESERVED_CACHE_FILES` must **not** widen to cover),
 
 ## Test inventory added by the JS-repo audit (2026-08-21)
 
-75 tests, all mutation-verified: every file below was written **before** its fix
+79 tests, all mutation-verified: every file below was written **before** its fix
 and confirmed failing first. The last three rows came from the doctor itself and
 the defect (B017) that building it exposed.
 
@@ -657,7 +664,8 @@ the defect (B017) that building it exposed.
 | `test_js_dependency_edges.py` | 11 | B013: ESM key shape, the three `require()` forms, and that a bare package specifier stays unresolved |
 | `test_cbm_dead_code_file_filter.py` | 9 | B014/B015: the bogus-glob case, echoed `files_matched`, and `engine`/`engine_reason`/`language_detected` |
 | `test_graph_index_prunes_deleted_files.py` | 6 | B011: rows pruned, nodes dropped, `files_pruned` reported, index/status agreement, convergence, `freshness` |
-| `test_live_answer_doctor.py` | 23 | The doctor itself: every check fed an answer shaped like its bug must FAIL; `results` not `rows`; an in-repo probe file; exit 2 on an unreachable daemon; WARN never blocks |
+| `test_live_answer_doctor.py` | 27 | The doctor itself: every check fed an answer shaped like its bug must FAIL; `results` not `rows`; an in-repo probe file; exit 2 on an unreachable daemon; WARN never blocks; an always-`ok` search fails too |
+| `test_search_ok_field_b018.py` | 4 | B018: a hit and a clean zero-hit both answer `ok:True`; an empty query still answers `ok:False` with a named error |
 | `test_policy_action_vocabulary_b017.py` | 8 | B017: `<verb>_file` spellings resolve through the same table; an unknown verb stays `unknown`; a suffix cannot mint `upgrade_orchestrator`; `delete_file` keeps `delete`'s policy |
 | `test_extractor_version_pins_js_import_shape.py` | 5 | B016: a row records the reported version, a version bump re-extracts unchanged files, the JS import shape travels with it, and the pre-B013 string is refused |
 
@@ -672,6 +680,13 @@ way:
   walk, and `CBM_GRAPH_ENABLED=1` is what lets `dead_code_candidates` run at all
   — a JS test that forgets either one passes vacuously.
 
-Baseline after this audit and the doctor that followed it: **2526 passed, 4
-skipped, 1 xfailed, 161 subtests passed, 0 failed** in 351s with `--basetemp` on
-`C:` (was 2478 before these 75 tests).
+Baseline after this audit and the doctor that followed it: **2534 passed, 4
+skipped, 1 xfailed, 161 subtests passed, 0 failed** in 351s, measured -- not
+predicted. The two deltas this campaign is accountable for are both measured on
+the same run order: 2495 -> 2526 for the doctor's 31 tests, and 2526 -> 2534 for
+B018's 8 (4 pinning the fix, 4 pinning the doctor's new check). Reproduce it the way the section above prescribes — plain
+`venv312\Scripts\python.exe -m pytest tests\ -q`, letting pytest resolve its own
+per-run basetemp under `%TEMP%`. The measurements in this file were taken with an
+explicit `--basetemp` on `C:` only to keep several sequential runs separable; a
+**hardcoded** basetemp is the thing the earlier section forbids, and it is not
+part of the reproduction.

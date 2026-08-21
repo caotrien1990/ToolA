@@ -75,7 +75,7 @@ venv312\Scripts\python.exe -m pytest tests\ -q
 
 **Do not pass `--basetemp` at a fixed path, and never one on `D:`.** The opposite advice used to live in this file and did real damage: `D:` is a HDD, and routing the suite's temp I/O onto it saturated the spindle until unrelated folders stopped opening in Explorer -- which read as a locked folder and was a busy disk. A fixed path is also shared mutable state, since pytest wipes its basetemp at startup and two concurrent runs then delete each other's fixtures. `%TEMP%` is on SSD, per-run, and is never OneDrive-redirected; it is the correct default. `test_conftest_stale_symlink_tolerance.py` enforces this repo-wide.
 
-Quiescent baseline: **2526 passed, 0 failed, 4 skipped, 1 xfailed, 161 subtests passed in ~351s** across 242 files in `tests\`. Run with the orchestrator server idle (no active council dispatch): `test_council_runtime_status_tracks_terminal_state` reads a shared council-runtime file, so a live dispatch for the same agent (e.g. `ope`) can flip it to an environmental failure unrelated to source state.
+Quiescent baseline: **2534 passed, 0 failed, 4 skipped, 1 xfailed, 161 subtests passed in 351s** across 243 files in `tests\`. Run with the orchestrator server idle (no active council dispatch): `test_council_runtime_status_tracks_terminal_state` reads a shared council-runtime file, so a live dispatch for the same agent (e.g. `ope`) can flip it to an environmental failure unrelated to source state.
 
 If the run aborts during **collection** with `PermissionError: [WinError 5]` on a path under `%LOCALAPPDATA%\Temp`, that is the stale `pytest-current` symlink -- Entry 1 of `MAINTENANCE_DOCTOR.md`, not a sync client.
 

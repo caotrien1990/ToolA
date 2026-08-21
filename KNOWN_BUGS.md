@@ -1506,4 +1506,88 @@ for a word that obviously means the right thing.
 
 ---
 
-_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit: added B002-B017, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_
+
+---
+
+## B018 — `search_code` omitted `ok` on the success path
+
+**Status**: fixed
+**Severity**: MEDIUM (a successful search reads as a failure to any ordinary caller guard)
+**Discovered**: 2026-08-21, smoke-testing the core tools after the stabilisation restart
+
+### Reproduction
+
+Measured against the live daemon at generation `7d870da7e301`:
+
+```
+search_code(query="_ACTION_TO_CLASS")     -> count=2  "ok" NOT IN the response
+search_code(query="zzz_no_such_symbol")   -> count=0  "ok" NOT IN the response
+search_code(query="")                     -> ok=False error_name=MISSING_REQUIRED_FIELD
+```
+
+So `search_code` answered `ok:False` when it failed and answered *nothing* when it
+succeeded. Surveyed the same way, every other tool answers `ok` on both paths:
+`read_file_range`, `git_status`, `validate_file`, `list_sessions`,
+`cbm_graph_status`, `regex_search` — `search_code` was the only one missing it.
+
+The consequence is that the ordinary caller guard
+
+```python
+if not resp.get("ok"):
+    ...treat as failure...
+```
+
+reads a **successful** search with real hits as a failure, because a missing key is
+falsy in exactly the same way `False` is.
+
+### Root cause
+
+`orchestrator/tools/search.py` builds two different shapes. Every error branch
+returns `{"ok": False, "error": ..., "error_name": ...}`; the success branch built
+`{"results", "count", "mode", "max_results", "max_context_lines", "bounded",
+"snapshot_id"}` and never included `ok`. Nothing removed the key — it was never
+added.
+
+This is the **safe-looking direction** of the B012/F021/B017 family: the contract a
+caller is told to rely on is enforced in one place and not honoured in another, and
+the failing read names something the system did in fact do. It is the more dangerous
+half of that family, because nothing errors, no gate denies, and the results are
+right there in the payload — the caller simply throws them away and goes looking for
+a bug that does not exist. That is precisely how a previous subagent came to declare
+`cbm_cycle_point` (a real tool) non-existent, which is the same wound A03 was written
+for.
+
+### Fix
+
+One key on the success branch, with the semantics written down so it is not later
+overloaded:
+
+```python
+response = {
+    "ok": True,
+    "results": results,
+    ...
+}
+```
+
+A search that **ran** is `ok:True`. "Found nothing" is carried by `count` and
+`stale_index` (A03/A03b), never by `ok` — otherwise a clean zero-hit and a broken
+search become indistinguishable again, one layer down.
+
+**Pinned by** `tests/test_search_ok_field_b018.py` (4 tests). Two pin the fix — a hit
+says `ok:True`, and a clean zero-hit says `ok:True` too — one asserts the rest of the
+success payload is untouched, and one bounds it: an empty query must still answer
+`ok:False` with a named error, so adding the key never becomes "always say ok".
+Mutation-verified: removing the line failed exactly 2. Adjacent suites clean —
+77 passed / 1 xfailed across the 13 search suites plus `test_r101_fields_unknown_a23p2`.
+
+### The general rule
+
+**A field every failure path sets is part of the contract, and the success path owes
+it too.** An absent key is not a neutral silence: in Python it is falsy, so omitting
+`ok` on success is indistinguishable from setting it False. Two defects now share
+this exact shape — B015 (an answer that did not name its engine) and B018 — and both
+were invisible to a green suite because no test asserted on the *presence* of a
+field, only on its value when present.
+
+_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit: added B002-B018, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_

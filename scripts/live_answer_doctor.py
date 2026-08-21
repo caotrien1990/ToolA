@@ -384,6 +384,47 @@ def check_validate_file_fails_loud(rep: Report, repo: str) -> None:
                   alias.get("error_name")), "B012")
 
 
+def check_success_answers_ok(rep: Report, repo: str) -> None:
+    """B018 -- a field every failure path sets, the success path owes too.
+
+    `search_code` answered `ok:False` when it failed and answered *nothing*
+    when it succeeded, so the ordinary caller guard `if not resp.get("ok")`
+    read a search with real hits as a failure -- a missing key being falsy in
+    exactly the same way False is. Nothing errored, no gate denied, and the
+    results were right there in the payload; the caller simply threw them away.
+
+    This is the one shape a fixture can never catch, because a unit test asserts
+    on the value of a field it already knows the name of. Only a caller that
+    guards the way callers actually guard sees it. So the check is the guard
+    itself, run against the live answer.
+    """
+    hit = call("search_code", {"project_path": repo, "query": "function",
+                               "max_results": 3})
+    if "ok" not in hit:
+        rep.bad("a successful search says ok",
+                "search_code answered count=%s with no `ok` field, so "
+                "`if not resp.get(\"ok\")` reads a successful search as a "
+                "failure" % hit.get("count"), "B018")
+    elif hit.get("ok") is not True:
+        rep.bad("a successful search says ok",
+                "search_code answered ok=%r on a search that ran (count=%s)"
+                % (hit.get("ok"), hit.get("count")), "B018")
+    else:
+        rep.ok("a successful search says ok",
+               "ok=True count=%s" % hit.get("count"), "B018")
+
+    # And `ok` must still be able to be False, or the field carries nothing.
+    # An empty query is the cheapest failure that does not touch the index.
+    bad = call("search_code", {"project_path": repo, "query": ""})
+    if bad.get("ok") is False and bad.get("error_name"):
+        rep.ok("a failed search still says ok:false",
+               "%s" % bad.get("error_name"), "B018")
+    else:
+        rep.bad("a failed search still says ok:false",
+                "an empty query answered ok=%r error_name=%r -- if every "
+                "answer is ok, the field stops carrying information"
+                % (bad.get("ok"), bad.get("error_name")), "B018")
+
 def render_text(rep: Report, repo: str, meta: dict) -> str:
     out = ["[A] live-answer doctor",
            "  repo:       %s" % repo,
@@ -440,6 +481,7 @@ def main(argv: list[str] | None = None) -> int:
         check_file_filter_is_not_inert(rep, repo)
         check_engine_says_what_ran(rep, repo, language)
         check_validate_file_fails_loud(rep, repo)
+        check_success_answers_ok(rep, repo)
     except Unreachable as exc:
         print("cannot reach [A]: %s\nSTOP and report -- do not retry and do "
               "not fall back to native work." % exc, file=sys.stderr)
