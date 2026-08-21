@@ -4913,7 +4913,18 @@ def _room_register(room_id: str, room_token: str | None = None, ttl_sec: int = 3
     del room_token
     _room_garbage_collect()
     room_dir = _room_resolve_dir(room_id)
-    expiry = int(time.time()) + max(1, int(ttl_sec))
+    # B020: ceil, not int(). `_room_validate_token` compares
+    # `expiry <= int(time.time())`, so flooring the START of the window while the
+    # END is also floored charged the caller for the fraction of the second
+    # already elapsed: registering at t=100.95 with ttl_sec=1 gave expires_at=101,
+    # and a validate 60 ms later at t=101.01 raised ROOM_TOKEN_INVALID -- a
+    # one-second token with an effective life of 0.05s. The lifetime was
+    # `ttl_sec - (time.time() % 1)`, decided by where in the wall-clock second the
+    # register happened to land, which is why the pinning test passed 10/10 alone
+    # and failed inside the slower full suite. Ceiling makes the advertised
+    # expires_at always at least ttl_sec away; it can overshoot by under a second,
+    # which is the safe direction for an authorization window's own grace.
+    expiry = math.ceil(time.time()) + max(1, int(ttl_sec))
     token = _room_token(str(room_id), expiry)
     meta = {"room_id": str(room_id), "room_token": token, "expires_at": expiry, "created_at": time.time()}
     if metadata:

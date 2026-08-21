@@ -639,6 +639,70 @@ def _regex_timeout_payload(query: str, effective_regex_deadline: float | None,
     }
 
 
+def _regex_budget_payload(query: str, path: str, project_path: str,
+                          file_pattern: str, detail: str = "") -> dict:
+    """B019: the BUDGET refusal, made actionable.
+
+    The old branch answered ok:False + error_name +
+    ca_next_action="narrow_path_or_reduce_regex_input" and nothing else, so the
+    generic envelope filled payload_example with {"project_path": ...} -- the
+    same unscoped call that had just failed. Worse, the advice named `path`,
+    which `regex_search` did not accept at all until this same fix. A refusal a
+    caller cannot act on costs exactly as much as a wrong answer and teaches
+    nothing.
+
+    The 16 MB ceiling itself stays: it is a real, named limit and refusing loudly
+    is correct. Only the guidance changes -- it now names the two fields that
+    genuinely shrink the input (`path`, `file_pattern`) and hands back concrete
+    payloads, the same shape _regex_timeout_payload already used for its sibling.
+    """
+    from orchestrator import search_regex_worker as _rw
+    q_echo = _regex_timeout_query_echo(query)
+    loc = project_path or path
+    loc_key = "project_path" if project_path else "path"
+
+    # Narrow by directory: the field the old ca_next_action already advised.
+    by_path: dict = {"query": q_echo, "mode": "regex"}
+    if loc:
+        by_path[loc_key] = loc
+    by_path["path"] = (path or "<a subdirectory of the repo, not its root>")
+
+    # Narrow by glob: works even when the whole tree is genuinely in scope.
+    by_glob: dict = {"query": q_echo, "mode": "regex"}
+    if loc:
+        by_glob[loc_key] = loc
+    by_glob["file_pattern"] = file_pattern if file_pattern and file_pattern != "*" else "*.py"
+
+    return {
+        "ok": False,
+        # The worker raises this same error_name for two different ceilings
+        # (MAX_RECORDS and MAX_INPUT_BYTES), so carry ITS message rather than
+        # restating one of them here -- a builder that names the wrong ceiling is
+        # the same dishonesty in a smaller place.
+        "error": detail or "regex input exceeded a worker budget",
+        "error_name": "REGEX_INPUT_BUDGET_EXCEEDED",
+        "retryable": True,
+        "bounded": True,
+        "query": q_echo,
+        "input_budget_bytes": _rw.MAX_INPUT_BYTES,
+        "input_budget_records": _rw.MAX_RECORDS,
+        "corrected_payload": by_glob,
+        "payload_example": by_path,
+        "accepted_narrowing_fields": ["path", "file_pattern"],
+        "retry_sequence": [
+            {"tool": "search_code", "payload": by_glob,
+             "note": "narrow the input by glob -- fewer files read, same tree in scope"},
+            {"tool": "search_code", "payload": by_path,
+             "note": "or scope to a subdirectory; `path` and `file_pattern` compose"},
+        ],
+        "hint": "The regex never ran: the candidate bytes exceeded the ceiling "
+                "before matching started. Shrink the input with `file_pattern` "
+                "and/or `path` -- both are accepted by search_code and by "
+                "regex_search. Raising the ceiling is not a caller-side option.",
+        "ca_next_action": "narrow_path_or_reduce_regex_input",
+    }
+
+
 async def search_code(query: str = "", path: str = "", project_path: str = "",
                       file_pattern: str = "*", literal_search: bool = True,
                       mode: str = "text", query_encoding: str = "plain",
@@ -1027,10 +1091,19 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                 exc,
                 (regex_worker.RegexSearchTimeout, regex_worker.RegexSearchBudgetExceeded),
             )
+            # B019: BUDGET goes through its own builder, for the same reason the
+            # TimeoutError branch above does -- one error_name must not have two
+            # contracts. The bare shape below could only carry a next_action, and
+            # a next_action that names a field the caller cannot pass is advice
+            # in a circle.
+            if isinstance(exc, regex_worker.RegexSearchBudgetExceeded):
+                return json.dumps(
+                    _regex_budget_payload(query, path, project_path, file_pattern,
+                                          detail=str(exc)),
+                    ensure_ascii=False,
+                )
             if isinstance(exc, regex_worker.RegexSearchTimeout):
                 next_action = "narrow_or_simplify_regex"
-            elif isinstance(exc, regex_worker.RegexSearchBudgetExceeded):
-                next_action = "narrow_path_or_reduce_regex_input"
             else:
                 next_action = "inspect_regex_worker_failure"
             return json.dumps({

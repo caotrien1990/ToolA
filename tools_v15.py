@@ -346,7 +346,8 @@ def _missing_dep(name: str, install: str, **extra) -> str:
 # B.1 — T1 Code intel
 # ────────────────────────────────────────────────────────────────────────────
 
-async def regex_search(pattern: str = "", project_path: str = "", file_pattern: str = "*",
+async def regex_search(pattern: str = "", project_path: str = "", path: str = "",
+                       file_pattern: str = "*",
                        flags: str = "i", max_results: int = 50,
                        max_context_lines: int = 0,
                        regex_deadline_seconds: float = 5.0, **aliases) -> str:
@@ -354,6 +355,14 @@ async def regex_search(pattern: str = "", project_path: str = "", file_pattern: 
 
     flags: 'i' case-insensitive (default), 'm' multiline, 's' dotall, '' none.
     Accepts `query` as alias for `pattern`.
+
+    B019 (2026-08-21): `path` accepted and forwarded. It was missing, so the
+    alias was strictly weaker than its target on the one axis its own error
+    message names: REGEX_INPUT_BUDGET_EXCEEDED answers
+    ca_next_action="narrow_path_or_reduce_regex_input", and passing `path` to
+    narrow it answered UNSUPPORTED_FIELD while the identical
+    search_code(mode='regex', path=...) answered ok:True. An alias that advises a
+    field it does not accept sends the caller in a circle.
 
     B-01 (2026-08-10): default regex deadline raised from the search-code
     hard default (1.0s) to 5.0s. The live daemon path adds ~1-2s of overhead
@@ -370,6 +379,7 @@ async def regex_search(pattern: str = "", project_path: str = "", file_pattern: 
     return await search_code(
         query=pattern,
         project_path=project_path,
+        path=path,
         file_pattern=file_pattern,
         mode="regex",
         max_results=max_results,

@@ -1590,4 +1590,133 @@ this exact shape — B015 (an answer that did not name its engine) and B018 — 
 were invisible to a green suite because no test asserted on the *presence* of a
 field, only on its value when present.
 
-_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit: added B002-B018, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_
+
+---
+
+## B019 - `regex_search` advised narrowing by a field it refused
+
+**Status**: fixed
+**Severity**: MEDIUM (the tool's only actionable escape from a real ceiling was unreachable through the tool)
+**Discovered**: 2026-08-21, while surveying 10 more tools for the B018 shape
+
+### Reproduction
+
+Measured on the live daemon at generation `528d657f9449`, against [A]'s own tree:
+
+```
+regex_search(project_path=<[A]>, pattern="def classify_action")
+  -> ok:false  REGEX_INPUT_BUDGET_EXCEEDED  "regex input exceeds 16777216 bytes"
+     ca_next_action: "narrow_path_or_reduce_regex_input"
+     payload_example: {"project_path": "D:/path/to/project"}     <- the failing call
+
+regex_search(..., path=<[A]>\orchestrator\core)  -> ok:false UNSUPPORTED_FIELD
+search_code(..., mode="regex", path=<same>)       -> ok:true  count=1
+```
+
+So the tool advised narrowing by path, refused `path`, and echoed the very call
+that had just failed as its example. `regex_search`'s own docstring calls it a
+"convenience alias of `search_code(mode='regex')`" -- and the alias was strictly
+weaker than its target on the one axis its own error names.
+
+The 16 MB ceiling is NOT the bug. A named limit refusing loudly is correct; [A]'s
+own tree really does exceed it. The bug is that the refusal was unactionable
+through this tool: every route out of it was either a field this tool rejected or
+an example identical to the failure.
+
+### Root cause
+
+Two independent halves that only hurt together.
+
+`tools_v15.regex_search` never had a `path` parameter, so it never forwarded one
+(the schema is generated from the signature, which is why `path` was absent from
+`/api/tools/regex_search/schema` too).
+
+And in `orchestrator/tools/search.py`, the `RegexSearchBudgetExceeded` case fell
+into a shared bare handler that could carry only `ca_next_action` -- no
+`corrected_payload`, no `retry_sequence`, no `payload_example` of its own -- so
+the generic envelope supplied one, and the only thing it had to work with was the
+original call. The sibling `RegexSearchTimeout` case had had a dedicated builder
+since A40 for exactly this reason: *two paths, one error_name, divergent
+contracts*. BUDGET was the path that never got one.
+
+### Fix
+
+`path` accepted and forwarded in `regex_search`, and a `_regex_budget_payload`
+builder modelled on `_regex_timeout_payload`, with the BUDGET branch routed
+through it. The guidance now names the two fields that really shrink the input
+(`path`, `file_pattern`) and hands back two concrete payloads.
+
+One deliberate restraint: the builder takes the worker's own message rather than
+restating a ceiling. `REGEX_INPUT_BUDGET_EXCEEDED` is raised for **two** limits --
+`MAX_RECORDS` and `MAX_INPUT_BYTES` (`search.py:946,953`) -- so a builder that
+hardcoded one would name the wrong ceiling for the other cause. That is B015's
+defect (an answer that does not describe what actually happened) one layer down.
+
+**Pinned by** `tests/test_regex_search_path_b019.py` (9 tests). Two pin the
+signature and real forwarding, four pin the guidance, two bound it (the ceiling
+still fires, the worker still enforces bytes), and one pins **routing**.
+
+That last one exists because of a mistake worth recording: the first cut of this
+file tested only the builder, and a mutant that unrouted the branch (`if False:`)
+passed all 8 tests. A builder nothing reaches is decoration -- the exact failure
+mode B011-B016 were written about, reproduced inside their own campaign's tests.
+The routing test fails the mutant by patching `validate_next_record_budget`, the
+function that really raises this error, rather than a name invented for the mock.
+
+---
+
+## B020 - a room token's TTL was truncated to the current second
+
+**Status**: fixed
+**Severity**: MEDIUM (a council room token could expire almost immediately after issue)
+**Discovered**: 2026-08-21, from a single full-suite failure that passed 10/10 in isolation
+
+### Reproduction
+
+Deterministic, with the clock pinned:
+
+```
+register at t=100.95, ttl_sec=1   -> expires_at = 101
+validate  at t=101.01 (60 ms later) -> PermissionError: ROOM_TOKEN_INVALID
+```
+
+A one-second token had an effective life of **0.05s**.
+
+### Root cause
+
+`_room_register` computed `expiry = int(time.time()) + ttl_sec` while
+`_room_validate_token` compares `expiry <= int(time.time())`. Flooring the start
+of the window while the end is also floored charges the caller for the fraction
+of the second already elapsed, so the real lifetime was
+`ttl_sec - (time.time() % 1)` -- anywhere from the full `ttl_sec` down to nearly
+zero, decided by where in the wall-clock second the register happened to land.
+
+Reachable from production: `POST /api/council/room/register` passes any caller's
+`ttl_sec` straight through.
+
+### How it presented, and why that matters
+
+`test_council_rooms.py::test_register_meta_token_and_expiry` failed once in the
+full suite and passed **10/10 in isolation**. That reads exactly like the
+test-ordering pollution this campaign has already diagnosed twice, and the cheap
+move was to file it as flake. It was not flake: the suite is slower, so the
+register call lands late in its second more often. The probability was
+environmental; the defect was not.
+
+**A timing-dependent failure is a real defect until measured otherwise.** The
+measurement that settles it is cheap -- pin the clock and see if the failure is
+deterministic. Isolation passing is not that measurement.
+
+### Fix
+
+`expiry = math.ceil(time.time()) + max(1, int(ttl_sec))`. Ceiling makes the
+advertised `expires_at` always at least `ttl_sec` away; it can overshoot by under
+a second, which is the safe direction for an authorization window's own grace.
+
+**Pinned by** `tests/test_room_token_ttl_b020.py` (4 tests, 8 subtests): a
+1-second token survives 60 ms, the full TTL holds at every sub-second phase, the
+advertised `expires_at` is never short -- and, bounding it, a token still
+expires, so validity was not bought by making tokens immortal.
+Mutation-verified: reverting to `int()` fails 6.
+
+_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit + stabilisation: added B002-B020, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_

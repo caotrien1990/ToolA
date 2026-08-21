@@ -41,6 +41,8 @@ these are not scaffolding, they were all mutation-verified (see
 | A fix to an extractor changes nothing on a real repo; a full index says `files_indexed: 0` | The fix is wrong / the index is cached | The source bytes did not change, so `stale_files` saw nothing stale. Bump `config.EXTRACTOR_VERSION` — an extractor change and a version bump are **one change** (B016, and B013's W5 predecessor before it) | `test_extractor_version_pins_js_import_shape.py` |
 | `log_native_event` answers `logged_and_rejected` / `HOST_GATE_DENY` for an ordinary action | the native edit was not authorised | Check the `action_type` spelling. `classify_action` resolves it through a lookup table; a word with no row falls through to `task_class: "unknown"` -> `native_policy: "forbid"`. Before B017, `create_file` was refused inside [A] while `write_existing_file` on the same file was allowed | `test_policy_action_vocabulary_b017.py` |
 | A `search_code` call with real hits reads as a failure | the caller guarded on `ok`, which the success path omitted | B018: every failure branch answered `ok:False` and the success branch answered nothing, so a missing key was falsy exactly like `False`. A search that RAN is `ok:True`; "found nothing" is carried by `count`/`stale_index` | `test_search_ok_field_b018.py` |
+| `regex_search` refuses `path` -- and its own budget error told you to narrow by path | the alias is the same tool as `search_code(mode='regex')` | B019: it was not. The alias's signature had no `path`, so the HTTP schema had none either, and the `REGEX_INPUT_BUDGET_EXCEEDED` answer echoed the failing unscoped call back as its `payload_example`. Pass `path` (now accepted) or `file_pattern`; both are listed in `accepted_narrowing_fields` on the refusal itself | `test_regex_search_path_b019.py` |
+| A council `room_token` is `ROOM_TOKEN_INVALID` milliseconds after it was issued | the clock or the TTL is wrong | B020: `_room_register` floored the START of the window (`int(time.time())`) while validation also floors the END, so the caller was charged for the fraction of the second already elapsed -- a `ttl_sec=1` token registered at `t=100.95` was dead by `t=101.01`. The lifetime was `ttl_sec - (time.time() % 1)`, which is why it passed 10/10 alone and failed inside the slower full suite | `test_room_token_ttl_b020.py` |
 | Six defects shipped green; you need to know whether a fix reached the *real* repo | "the suite passes, so it works" | A fixture repo is the one place all six answers are honest. Run `scripts/live_answer_doctor.py --project-path <a real, already-indexed, non-Python repo>` after every restart that touches an extractor, an index path, a fallback, or a filtering argument | `test_live_answer_doctor.py` |
 
 ---
@@ -656,9 +658,11 @@ write-ledger pact that `PRESERVED_CACHE_FILES` must **not** widen to cover),
 
 ## Test inventory added by the JS-repo audit (2026-08-21)
 
-79 tests, all mutation-verified: every file below was written **before** its fix
-and confirmed failing first. The last three rows came from the doctor itself and
-the defect (B017) that building it exposed.
+96 tests, all mutation-verified: every file below was written **before** its fix
+and confirmed failing first. Rows 5-7 came from the doctor itself and the defect
+(B017) that building it exposed; the last two (B019, B020) came from surveying
+the other tools for B018's shape and from the one failure the full suite still
+had after it.
 
 | File | Tests | Pins |
 |---|---|---|
@@ -670,6 +674,8 @@ the defect (B017) that building it exposed.
 | `test_search_ok_field_b018.py` | 4 | B018: a hit and a clean zero-hit both answer `ok:True`; an empty query still answers `ok:False` with a named error |
 | `test_policy_action_vocabulary_b017.py` | 8 | B017: `<verb>_file` spellings resolve through the same table; an unknown verb stays `unknown`; a suffix cannot mint `upgrade_orchestrator`; `delete_file` keeps `delete`'s policy |
 | `test_extractor_version_pins_js_import_shape.py` | 5 | B016: a row records the reported version, a version bump re-extracts unchanged files, the JS import shape travels with it, and the pre-B013 string is refused |
+| `test_regex_search_path_b019.py` | 9 | B019: the alias accepts `path` **and forwards it** (a hit found from inside, nothing from outside), the budget error names a field the tool really takes, its `payload_example` is not the failing call, it carries the worker's own message for both ceilings, and the live branch actually routes through the builder -- a mutant that unrouted it survived the first 8 tests |
+| `test_room_token_ttl_b020.py` | 4 | B020: a one-second token survives most of that second, the full TTL is honoured wherever in the wall-clock second the register lands (5 subtests), `expires_at` is at least `ttl_sec` away, and a token still expires |
 
 Two harness requirements for anything touching the graph, both learned the hard
 way:
@@ -682,11 +688,13 @@ way:
   walk, and `CBM_GRAPH_ENABLED=1` is what lets `dead_code_candidates` run at all
   — a JS test that forgets either one passes vacuously.
 
-Baseline after this audit and the doctor that followed it: **2534 passed, 4
-skipped, 1 xfailed, 161 subtests passed, 0 failed** in 351s, measured -- not
-predicted. The two deltas this campaign is accountable for are both measured on
-the same run order: 2495 -> 2526 for the doctor's 31 tests, and 2526 -> 2534 for
-B018's 8 (4 pinning the fix, 4 pinning the doctor's new check). Reproduce it the way the section above prescribes — plain
+Baseline after this audit and the doctor that followed it: **2547 passed, 4
+skipped, 1 xfailed, 169 subtests passed, 0 failed** in 286s, measured -- not
+predicted. The three deltas this campaign is accountable for are all measured on
+the same run order: 2495 -> 2526 for the doctor's 31 tests, 2526 -> 2534 for
+B018's 8 (4 pinning the fix, 4 pinning the doctor's new check), and 2534 -> 2547
+for B019's 9 plus B020's 4. The 2534 run had one failure, and it was not
+environmental: it was B020. Reproduce it the way the section above prescribes — plain
 `venv312\Scripts\python.exe -m pytest tests\ -q`, letting pytest resolve its own
 per-run basetemp under `%TEMP%`. The measurements in this file were taken with an
 explicit `--basetemp` on `C:` only to keep several sequential runs separable; a
