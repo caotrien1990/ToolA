@@ -368,6 +368,10 @@ def template_query(project_path: str, template: str, *, name: str = "",
     single synthetic row whose `truncated` reports the TRACE-DEPTH cap, not a row
     count.
 
+    `offset` pages EVERY paginated template, not just orphan_symbols: the
+    derivation above reads offset, so a template that ignored it answered page 1
+    forever while still claiming a population the caller could not reach.
+
     Unsupported template -> clear error listing the supported set.
     """
     t0 = time.monotonic()
@@ -400,8 +404,9 @@ def template_query(project_path: str, template: str, *, name: str = "",
                     rows = conn.execute(
                         "SELECT n.*, e.confidence AS edge_confidence, e.line AS call_line "
                         "FROM edges e JOIN nodes n ON n.id=e.source "
-                        "WHERE e.target=? AND e.kind='calls' LIMIT ?;",
-                        (node["id"], limit)).fetchall()
+                        "WHERE e.target=? AND e.kind='calls' "
+                        "ORDER BY n.id, e.line LIMIT ? OFFSET ?;",
+                        (node["id"], limit, offset)).fetchall()
                     res = [{**_node_brief(r), "confidence": r["edge_confidence"],
                             "call_line": r["call_line"]} for r in rows]
                     total = conn.execute(
@@ -410,8 +415,9 @@ def template_query(project_path: str, template: str, *, name: str = "",
                 elif template == "callees":
                     rows = conn.execute(
                         "SELECT e.target, e.confidence, e.line, e.is_external "
-                        "FROM edges e WHERE e.source=? AND e.kind='calls' LIMIT ?;",
-                        (node["id"], limit)).fetchall()
+                        "FROM edges e WHERE e.source=? AND e.kind='calls' "
+                        "ORDER BY e.target, e.line LIMIT ? OFFSET ?;",
+                        (node["id"], limit, offset)).fetchall()
                     res = [{"target": r["target"], "confidence": r["confidence"],
                             "line": r["line"], "external": bool(r["is_external"])}
                            for r in rows]
@@ -437,8 +443,9 @@ def template_query(project_path: str, template: str, *, name: str = "",
                 rows = conn.execute(
                     "SELECT * FROM nodes WHERE kind='import' AND file_path IN "
                     "(SELECT file_path FROM nodes WHERE kind='module' AND "
-                    " (qualified_name=? OR file_path=?)) LIMIT ?;",
-                    (target_mod, target_mod, limit)).fetchall()
+                    " (qualified_name=? OR file_path=?)) "
+                    "ORDER BY id LIMIT ? OFFSET ?;",
+                    (target_mod, target_mod, limit, offset)).fetchall()
                 res = [_node_brief(r) for r in rows]
                 total = conn.execute(
                     "SELECT COUNT(*) FROM nodes WHERE kind='import' AND file_path IN "
@@ -452,7 +459,9 @@ def template_query(project_path: str, template: str, *, name: str = "",
                     "FROM edges e JOIN nodes n ON n.id=e.source "
                     "JOIN nodes m ON m.id=e.target "
                     "WHERE e.kind='imports_module' AND m.kind='module' "
-                    "AND m.qualified_name=? LIMIT ?;", (target_mod, limit)).fetchall()
+                    "AND m.qualified_name=? "
+                    "ORDER BY n.file_path, n.qualified_name, e.line "
+                    "LIMIT ? OFFSET ?;", (target_mod, limit, offset)).fetchall()
                 res = [{"file_path": r["file_path"], "import": r["qualified_name"],
                         "line": r["line"]} for r in rows]
                 total = conn.execute(
@@ -485,7 +494,8 @@ def template_query(project_path: str, template: str, *, name: str = "",
                     "SELECT DISTINCT s.file_path AS src, m.qualified_name AS dep "
                     "FROM edges e JOIN nodes s ON s.id=e.source "
                     "JOIN nodes m ON m.id=e.target "
-                    "WHERE e.kind='imports_module' LIMIT ?;", (limit,)).fetchall()
+                    "WHERE e.kind='imports_module' "
+                    "ORDER BY src, dep LIMIT ? OFFSET ?;", (limit, offset)).fetchall()
                 res = [{"file": r["src"], "depends_on": r["dep"]} for r in rows]
                 # COUNT over the SAME predicate, DISTINCT included: counting the
                 # raw edges instead would report a total the LIMIT-ed SELECT can
@@ -506,7 +516,7 @@ def template_query(project_path: str, template: str, *, name: str = "",
                 _prod_eps = [b for b in _all_eps
                              if not (str(b.get("name", "")).startswith("test_")
                                      or "test" in str(b.get("file_path", "")).lower())]
-                res = _prod_eps[:limit]
+                res = _prod_eps[offset:offset + limit]
                 # The population is the PRODUCTION set: _all_eps includes the
                 # test runners this view deliberately drops, so counting those
                 # would report a total no page of this template ever serves.

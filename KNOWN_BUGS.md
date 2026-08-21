@@ -1846,7 +1846,8 @@ and the only way to find that out is to run the mutant.
 
 ### Pinned by
 
-`tests/test_payload_says_each_thing_once_b021.py` (16 tests). git half: no record
+`tests/test_payload_says_each_thing_once_b021.py` (22 tests, 16 for the reported
+pair and 6 for the offset follow-up below). git half: no record
 carries `raw`, every parsed field survives for all five porcelain types
 (`1 2 u ? !`), the payload is measurably smaller (<120 bytes/record), `state_hash`
 is unchanged *against an independently recomputed literal*, and the lock still
@@ -1861,6 +1862,51 @@ written for it (`raw` back in the response -> 2; the `-z` rejoin removed -> 1;
 hashing the tidied records -> 1; `total_count` falling back to 0 -> 1;
 `module_deps` not counting -> 1; `truncated` back to `len(res) >= limit` -> 1).
 
+### Follow-up: an offset-aware derivation whose offset cannot leave 0
+
+Found by probing this fix, not reported. B021 derived `truncated` as
+`offset + count < total_count` -- and `offset` **could not be passed**.
+`cbm_template_query` had no `offset` in its signature and none in its **registered
+schema**, and the server gates unknown fields on the registered schema
+(`orchestrator_server.py:13482`), so a signature-only fix would still have answered
+`UNSUPPORTED_FIELD`. Measured live at gen `94fa01936e89`:
+
+```
+cbm_template_query(template="module_deps", limit=500, offset=500)
+  -> "Unsupported field(s) for 'cbm_template_query': offset"
+     from the same daemon that reported total_count=619
+```
+
+So the honest total the fix had just started reporting named 619 rows while rows
+501-619 were unreachable. Internally, only the `orphan_symbols` branch used
+`offset` at all; `callers`, `callees`, `imports`, `imported_by`, `module_deps` and
+`entry_points` ignored it, so even after the field arrived they would have answered
+**page 1 forever** while `truncated` -- derived from an offset the SQL never saw --
+said "keep asking". `tests/test_graph_ext_edges.py::test_offset_pagination` had
+pinned offset paging since E3, but at the **function** level, which is exactly why
+the tool-level gap stayed invisible: a test that calls past the layer holding the
+defect cannot see it.
+
+Fixed at all three layers: `LIMIT ? OFFSET ?` on the five SQL branches and
+`_prod_eps[offset:offset+limit]` on the Python one, `offset: int = 0` on the async
+wrapper and forwarded, and an `offset` property in the registered schema (whose
+`limit` text also said "clamped to 200" where the code clamps at 500).
+
+`max(0, int(offset or 0))` is load-bearing across the branch kinds: SQLite ignores
+a negative `OFFSET` and returns page 1, but `_prod_eps[-3:-1]` counts from the
+**end** -- without the clamp a SQL branch and a Python branch disagree about which
+rows page 1 holds.
+
+6 tests added (16 -> **22**). Mutation-verified **10/10 killed** -- and four of them
+survived the first cut for the reason this entry already names: `_graph_repo`
+yields `entry_points` 0, `imports` 0, `callees` 1, so a mutant that ignored
+`offset` on those branches was indistinguishable. A second fixture
+(`_entrypoint_repo`, measured 4/6/3 rows) plus a test that fails loudly if it stops
+producing them is what killed M13/M16/M17. Two honest limits are recorded in the
+tests' own docstrings rather than claimed: removing `ORDER BY` stays green at
+fixture size (SQLite's plan is stable), so the page-walk test pins the **union**
+invariant -- every row seen once, none twice -- not the clause.
+
 ### Two of my own tests were wrong, not the fix
 
 `assert "state_hash_mismatch" not in matched["stale"]` raised
@@ -1874,4 +1920,4 @@ Both are fixed, and both now carry the reason in the test.
 
 ---
 
-_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit + stabilisation: added B002-B021, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_
+_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit + stabilisation: added B002-B021 plus B021's offset follow-up, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_

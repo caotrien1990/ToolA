@@ -478,7 +478,7 @@ independently**. `total_count` is now the pre-cap population and `truncated` is
 **derived** from it. Two fields that must agree should be one number and a
 derivation.
 
-### The three questions this entry exists to make you ask
+### The four questions this entry exists to make you ask
 
 1. **Does any field in this payload restate another?** If a record carries both a
    raw line and the fields parsed from it, one of them is waste on whichever part
@@ -494,6 +494,21 @@ derivation.
    modification that never happened. So `raw` is dropped from the **response**
    and kept in the **hash input**. **Tidying a payload must not be a protocol
    change.**
+4. **Can the caller actually supply the field the answer is derived from?** B021
+   derived `truncated` from `offset + count < total_count` — and `offset` could not
+   be passed. It was missing from `cbm_template_query`'s signature *and* from its
+   **registered schema**, which is the one the server's unknown-field gate reads
+   (`orchestrator_server.py:13482`), so a signature-only fix still answers
+   `UNSUPPORTED_FIELD`. Measured live at gen `94fa01936e89`: the same daemon that
+   reported `total_count=619` refused `offset=500`, so rows 501-619 of a total it
+   had just started reporting honestly were unreachable. Internally six of seven
+   branches ignored `offset` too, so they would have answered **page 1 forever**
+   while `truncated` said “keep asking”. **An offset-aware derivation whose offset
+   cannot leave 0 is not offset-aware.**
+   `tests/test_graph_ext_edges.py::test_offset_pagination` had pinned offset paging
+   since E3 — at the **function** level. *A test that calls past the layer holding
+   the defect cannot see it*, and this is the second campaign to learn it (B019's
+   registry schema was the first).
 
 ### Probing the fix found the actual severe defect
 
@@ -791,7 +806,7 @@ write-ledger pact that `PRESERVED_CACHE_FILES` must **not** widen to cover),
 
 ## Test inventory added by the JS-repo audit (2026-08-21)
 
-124 tests, all mutation-verified: every file below was written **before** its fix
+130 tests, all mutation-verified: every file below was written **before** its fix
 and confirmed failing first. Rows 5-7 came from the doctor itself and the defect
 (B017) that building it exposed; the last two (B019, B020) came from surveying
 the other tools for B018's shape and from the one failure the full suite still had
@@ -812,7 +827,7 @@ fixture too small to distinguish the mutant is a test that measures nothing.
 | `test_extractor_version_pins_js_import_shape.py` | 5 | B016: a row records the reported version, a version bump re-extracts unchanged files, the JS import shape travels with it, and the pre-B013 string is refused |
 | `test_regex_search_path_b019.py` | 12 | B019: the alias accepts `path` **and forwards it** (a hit found from inside, nothing from outside), the budget error names a field the tool really takes, its `payload_example` is not the failing call, it carries the worker's own message for both ceilings, and the live branch actually routes through the builder -- a mutant that unrouted it survived the first 8 tests. The last 3 pin the **registry** schema and the dispatcher's own `allowed_params` expression: the signature fix was invisible over HTTP, and all 9 earlier tests passed through it |
 | `test_room_token_ttl_b020.py` | 4 | B020: a one-second token survives most of that second, the full TTL is honoured wherever in the wall-clock second the register lands (5 subtests), `expires_at` is at least `ttl_sec` away, and a token still expires |
-| `test_payload_says_each_thing_once_b021.py` | 16 | B021: no `git_status` record carries `raw` beside the fields parsed out of it, every parsed field survives for all five porcelain types (`1 2 u ? !` -- `u` and `!` driven at `_parse_records`, since a conflicted merge and `--ignored` are awkward to stage and a type-1-only fix would pass a single-type fixture), the payload is measurably smaller (<120 bytes/record), and **`state_hash` is unchanged against an independently recomputed literal** -- it is an optimistic lock callers hold *between* calls, so the tidy is response-only and `stale_check` still detects drift end-to-end. `module_deps` half: the real pre-cap population, the `truncated`/`total_count` invariant at limits 1/4/12/13/50, an uncapped read answering `total_count == count` with `truncated False`, `orphan_symbols` keeping the total it already computed, the **zero case** where `total_count=0` is the truth, and the docstring that documented the bug as intended. The last 4 rows are the mutants' doing: the `DISTINCT` predicate (a file importing the same module twice gives 2 edges for 1 pair), `entry_points` counting the production set it serves rather than the pre-split list, the depth-capped blast radius `impact_scope` must not report as complete, and `impact_scope` still describing its own single row correctly |
+| `test_payload_says_each_thing_once_b021.py` | 22 | B021: no `git_status` record carries `raw` beside the fields parsed out of it, every parsed field survives for all five porcelain types (`1 2 u ? !` -- `u` and `!` driven at `_parse_records`, since a conflicted merge and `--ignored` are awkward to stage and a type-1-only fix would pass a single-type fixture), the payload is measurably smaller (<120 bytes/record), and **`state_hash` is unchanged against an independently recomputed literal** -- it is an optimistic lock callers hold *between* calls, so the tidy is response-only and `stale_check` still detects drift end-to-end. `module_deps` half: the real pre-cap population, the `truncated`/`total_count` invariant at limits 1/4/12/13/50, an uncapped read answering `total_count == count` with `truncated False`, `orphan_symbols` keeping the total it already computed, the **zero case** where `total_count=0` is the truth, and the docstring that documented the bug as intended. The last 4 rows are the mutants' doing: the `DISTINCT` predicate (a file importing the same module twice gives 2 edges for 1 pair), `entry_points` counting the production set it serves rather than the pre-split list, the depth-capped blast radius `impact_scope` must not report as complete, and `impact_scope` still describing its own single row correctly. The **last 6** are the offset follow-up: `offset` present in the signature *and* in the **registered schema** (the layer the server's unknown-field gate reads), page 2 reachable end-to-end through the async wrapper, every paginated branch actually paging (with `checked >= 3`, so a shrinking fixture cannot masquerade as a passing branch), a second fixture asserting the 4/6/3 rows the first was too small to produce, a whole-population page walk whose union holds every row once and none twice, and a negative offset answering page 1 on **both** a SQL branch and the Python branch |
 
 Two harness requirements for anything touching the graph, both learned the hard
 way:
@@ -825,7 +840,7 @@ way:
   walk, and `CBM_GRAPH_ENABLED=1` is what lets `dead_code_candidates` run at all
   — a JS test that forgets either one passes vacuously.
 
-Baseline after this audit and the doctor that followed it: **2575 passed, 4
+Baseline after this audit and the doctor that followed it: **2581 passed, 4
 skipped, 1 xfailed, 169 subtests passed, 0 failed** in 288s, measured -- not
 predicted. The four deltas this campaign is accountable for are all measured on
 the same run order: 2495 -> 2526 for the doctor's 31 tests, 2526 -> 2534 for
@@ -833,7 +848,9 @@ B018's 8 (4 pinning the fix, 4 pinning the doctor's new check), 2534 -> 2547 for
 B019's 9 plus B020's 4, and 2547 -> 2556 for B019's third half (3 registry tests
 plus the 6 that pin the doctor's new check and the 400-handling defect writing it
 exposed), 2556 -> 2559 for the 3 that pin the probe-scope false FAIL, and 2559 -> 2575
-for B021's 16. The 2534
+for B021's 16, and 2575 -> 2581 for the 6 that pin B021's offset follow-up
+(4 of whose mutants survived the first cut because the original fixture yields 0/0/1
+rows on the branches they touch). The 2534
 run had one failure, and it was not environmental: it was B020. The 2556 run had
 one too, and it was a genuine flake -- a nominal-sleep timing assertion, fixed
 and mutation-verified rather than rerun. Reproduce it the way the section above prescribes — plain

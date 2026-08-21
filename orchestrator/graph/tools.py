@@ -210,7 +210,8 @@ async def cbm_trace_path(project_path: str = "", start_node_id: str = "",
 
 async def cbm_template_query(project_path: str = "", template: str = "",
                              name: str = "", node_id: str = "", module: str = "",
-                             depth: int = 2, limit: int = 50, **aliases) -> str:
+                             depth: int = 2, limit: int = 50, offset: int = 0,
+                             **aliases) -> str:
     """T1: named graph queries — callers|callees|imports|imported_by|orphan_symbols|module_deps|entry_points|impact_scope."""
     if not project_path or not template:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
@@ -223,7 +224,8 @@ async def cbm_template_query(project_path: str = "", template: str = "",
         result = await asyncio.to_thread(
             _query.template_query, project_path, template,
             name=name, node_id=node_id, module=module,
-            depth=int(depth or 2), limit=int(limit or 50))
+            depth=int(depth or 2), limit=int(limit or 50),
+            offset=int(offset or 0))
         return _ok(result)
     except Exception as e:
         return _err("cbm_template_query", e)

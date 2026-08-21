@@ -537,3 +537,301 @@ def test_the_docstring_no_longer_promises_zero() -> None:
     assert "0 otherwise" not in doc, (
         "the docstring still documents total_count=0 as correct: " + doc)
     assert "total_count" in doc, doc
+def test_the_paging_field_the_derivation_needs_reaches_the_tool() -> None:
+    """B021 follow-up: `truncated` is derived from `offset`, and offset could not
+    be passed.
+
+    The derivation this file pins is `offset + count < total_count`. Every HTTP
+    or MCP caller reaches template_query through cbm_template_query, whose
+    signature had no `offset` and whose registered schema did not list one -- so
+    the server's schema gate answered UNSUPPORTED_FIELD before the tool ran, and
+    the offset term was permanently 0. Measured on the live daemon at generation
+    94fa01936e89: module_deps limit=500 offset=500 -> UNSUPPORTED_FIELD, while
+    total_count was 619. A caller told "there are 619, you have 500" had no way
+    to ask for the other 119, and page 2 of orphan_symbols -- whose offset
+    pagination test_graph_ext_edges.py::test_offset_pagination has pinned at the
+    function level since E3 -- was unreachable through the tool.
+
+    An offset-aware derivation whose offset cannot leave 0 is not offset-aware.
+    """
+    import inspect
+
+    from orchestrator.graph.tools import cbm_template_query
+
+    sig = inspect.signature(cbm_template_query)
+    assert "offset" in sig.parameters, (
+        "cbm_template_query drops the field the derivation is written around; "
+        "params: %r" % (list(sig.parameters),))
+    assert sig.parameters["offset"].default == 0, sig.parameters["offset"]
+
+    import code_tools
+
+    # TOOL_SCHEMAS is a LIST of OpenAI-style entries, not a dict keyed by name.
+    matches = [s for s in code_tools.TOOL_SCHEMAS
+               if s.get("function", {}).get("name") == "cbm_template_query"]
+    assert len(matches) == 1, "expected exactly one registered schema: %d" % len(matches)
+    props = matches[0]["function"]["parameters"]["properties"]
+    assert "offset" in props, (
+        "the server rejects a field on the registered schema, not on the "
+        "signature, so a signature-only fix still answers UNSUPPORTED_FIELD; "
+        "schema props: %r" % (sorted(props),))
+    assert props["offset"]["type"] == "integer", props["offset"]
+
+
+def test_page_two_is_reachable_through_the_tool(tmp_path) -> None:
+    """End-to-end through the wrapper, not the function it wraps.
+
+    test_graph_ext_edges.py::test_offset_pagination already proves
+    template_query pages correctly. It calls the function directly, so it stayed
+    green for as long as no caller could reach that argument. This test asks the
+    same question of the layer Anh's calls actually go through.
+    """
+    import asyncio
+    import json as _json
+
+    from orchestrator.graph.tools import cbm_template_query
+
+    project = _graph_repo(tmp_path, modules=6)
+
+    def _call(**kw):
+        raw = asyncio.run(cbm_template_query(project_path=project,
+                                             template="module_deps", **kw))
+        env = _json.loads(raw)
+        return env.get("result", env)
+
+    whole = _call(limit=500)
+    total = whole["total_count"]
+    assert total >= 4, whole
+    assert whole["truncated"] is False, whole
+
+    page1 = _call(limit=2, offset=0)
+    page2 = _call(limit=2, offset=2)
+    assert page1["count"] == 2 and page2["count"] == 2, (page1, page2)
+    assert page1["results"] != page2["results"], (
+        "offset reached the tool but changed nothing -- it is being dropped "
+        "somewhere between the wrapper and the query")
+    assert page1["total_count"] == page2["total_count"] == total
+
+    last = _call(limit=2, offset=max(0, total - 2))
+    assert last["truncated"] is False, (
+        "the final page still says keep asking, which is the loop the B021 "
+        "derivation exists to end: %r" % ({k: last[k] for k in
+                                          ("count", "offset", "total_count",
+                                           "truncated") if k in last},))
+def test_every_paginated_template_actually_pages(tmp_path) -> None:
+    """The mutant that walked through the first cut of the offset tests.
+
+    Removing `offset` from the entry_points slice left 18 tests green, because
+    the two tests written for the offset fix only ever exercised module_deps.
+    A fix applied to six branches and verified on one is a fix verified on one:
+    each branch drops the field independently, and the shared tail then derives
+    `truncated` from an offset the branch never honoured, so page 2 answers
+    page 1's rows while claiming to be a later page.
+
+    imports/imported_by are asked with the module the fixture actually has, and
+    callers/callees with a symbol every module calls, so no branch here is
+    silently answering an empty set -- an empty page pages "correctly" for the
+    same reason an untested branch passes.
+    """
+    import asyncio
+    import json as _json
+
+    from orchestrator.graph.tools import cbm_template_query
+
+    project = _graph_repo(tmp_path, modules=6)
+
+    def _call(template, **kw):
+        raw = asyncio.run(cbm_template_query(project_path=project,
+                                             template=template, **kw))
+        env = _json.loads(raw)
+        return env.get("result", env)
+
+    checked = 0
+    for template, kw in (("module_deps", {}),
+                         ("entry_points", {}),
+                         ("imported_by", {"module": "util"}),
+                         ("callers", {"name": "helper"})):
+        whole = _call(template, limit=500, **kw)
+        assert whole["error"] is None, (template, whole)
+        if whole["count"] < 2:
+            # Not a pass by default: say so, so a fixture that stops covering
+            # a branch cannot look like a branch that passed.
+            continue
+        page1 = _call(template, limit=1, offset=0, **kw)
+        page2 = _call(template, limit=1, offset=1, **kw)
+        assert page1["count"] == page2["count"] == 1, (template, page1, page2)
+        assert page1["results"] != page2["results"], (
+            "%s ignores offset: page 2 served page 1's row while total_count "
+            "said %r" % (template, whole["count"]))
+        assert page1["total_count"] == page2["total_count"] == whole["total_count"]
+        assert page1["truncated"] is True, (template, page1)
+        checked += 1
+
+    assert checked >= 3, (
+        "only %d branch(es) had enough rows to distinguish a dropped offset -- "
+        "this test can no longer see the mutant it was written for" % checked)
+def _entrypoint_repo(tmp_path: Path) -> str:
+    """A repo with several entry points, several imports, and a multi-callee call.
+
+    _graph_repo cannot see a dropped offset on entry_points/imports/callees: it
+    measures 0, 0 and 1 rows on those branches, and one row pages identically
+    whether or not offset is honoured. Measured with this fixture instead:
+    entry_points 4, imports 6, callees 3.
+    """
+    (tmp_path / "util.py").write_text(
+        "def helper():\n    return 42\n\n\ndef second():\n    return 7\n\n\n"
+        "def third():\n    return 9\n", encoding="utf-8")
+    (tmp_path / "app.py").write_text(
+        "import os\nimport sys\nimport json\n"
+        "from util import helper, second, third\n\n\n"
+        "def main():\n    return helper() + second() + third()\n\n\n"
+        "def handle_a():\n    return 1\n\n\ndef handle_b():\n    return 2\n\n\n"
+        "def on_start():\n    return 3\n", encoding="utf-8")
+    project = str(tmp_path).replace("\\", "/")
+    from orchestrator.graph.indexer import incremental_index, index_project
+    index_project(project, scope="full")
+    incremental_index(project)
+    return project
+
+
+def test_the_branches_the_other_fixture_is_too_small_to_page(tmp_path) -> None:
+    """entry_points, imports and callees -- three mutants that walked through.
+
+    Dropping offset from each of these three branches left the offset tests
+    green, because _graph_repo measures 0, 0 and 1 rows there. Three fixes
+    verified by a fixture that cannot reach them are three unverified fixes.
+    entry_points is the one that pages in Python rather than SQL, so it is the
+    one a SQL-shaped review would skip.
+    """
+    import asyncio
+    import json as _json
+
+    from orchestrator.graph.tools import cbm_template_query
+
+    project = _entrypoint_repo(tmp_path)
+
+    def _call(template, **kw):
+        raw = asyncio.run(cbm_template_query(project_path=project,
+                                             template=template, **kw))
+        env = _json.loads(raw)
+        return env.get("result", env)
+
+    expected = {"entry_points": 4, "imports": 6, "callees": 3}
+    for template, kw in (("entry_points", {}),
+                         ("imports", {"module": "app"}),
+                         ("callees", {"name": "main"})):
+        whole = _call(template, limit=500, **kw)
+        assert whole["error"] is None, (template, whole)
+        assert whole["count"] == expected[template], (
+            "the fixture stopped producing enough rows on %s (%d, wanted %d), "
+            "so this test can no longer distinguish a dropped offset"
+            % (template, whole["count"], expected[template]))
+        assert whole["truncated"] is False, (template, whole)
+
+        page1 = _call(template, limit=1, offset=0, **kw)
+        page2 = _call(template, limit=1, offset=1, **kw)
+        assert page1["results"] != page2["results"], (
+            "%s ignores offset: page 2 served page 1's row" % template)
+        assert page1["total_count"] == whole["count"], (template, page1)
+        assert page1["truncated"] is True, (template, page1)
+
+        last = _call(template, limit=1, offset=whole["count"] - 1, **kw)
+        assert last["count"] == 1 and last["truncated"] is False, (
+            "the final page of %s still says keep asking: %r"
+            % (template, {k: last.get(k) for k in ("count", "total_count",
+                                                   "truncated")}))
+def test_paging_the_whole_population_loses_and_repeats_nothing(tmp_path) -> None:
+    """Why the paged SELECTs carry an ORDER BY.
+
+    LIMIT/OFFSET over an unordered SELECT has no guaranteed row order between
+    calls, so a caller walking pages can be served the same row twice and never
+    see another. This test pins the property that guarantees: the union of every
+    page equals the whole population exactly once.
+
+    Honest limit, recorded so the next maintainer does not over-trust it:
+    removing the ORDER BY leaves this green, because SQLite's plan on a fixture
+    this size happens to be stable. It measures the invariant, not the clause --
+    the clause is what makes the invariant hold when the planner changes its
+    mind on a real repo.
+    """
+    import asyncio
+    import json as _json
+
+    from orchestrator.graph.tools import cbm_template_query
+
+    project = _graph_repo(tmp_path, modules=9)
+
+    def _call(**kw):
+        raw = asyncio.run(cbm_template_query(project_path=project,
+                                             template="module_deps", **kw))
+        env = _json.loads(raw)
+        return env.get("result", env)
+
+    whole = _call(limit=500)
+    total = whole["total_count"]
+    assert total >= 6, whole
+
+    seen, offset, pages = [], 0, 0
+    while True:
+        page = _call(limit=2, offset=offset)
+        if page["count"] == 0:
+            break
+        seen.extend(tuple(sorted(r.items())) for r in page["results"])
+        pages += 1
+        if page["truncated"] is False:
+            break
+        offset += page["count"]
+        assert pages < 200, "paging did not terminate: truncated never went false"
+
+    assert pages > 1, "one page covered everything; this cannot see a paging bug"
+    assert len(seen) == total, (
+        "walked %d rows over %d pages for a population of %d -- pages are "
+        "overlapping or skipping" % (len(seen), pages, total))
+    assert len(set(seen)) == len(seen), (
+        "%d duplicate row(s) across pages" % (len(seen) - len(set(seen))))
+def test_a_negative_offset_is_page_one_on_every_branch(tmp_path) -> None:
+    """Why `offset` is clamped, and not just passed through.
+
+    Measured with the clamp removed: a SQL branch treats OFFSET -3 as 0 (SQLite
+    ignores a negative offset), but entry_points pages with a PYTHON SLICE, and
+    `_prod_eps[-3:-1]` is a window counted from the END -- so the same negative
+    offset made the two kinds of branch disagree about which rows page 1 holds,
+    and entry_points silently skipped its first row. The derived `truncated`
+    then reads `-3 + 2 < 4`, describing a page the caller never asked for.
+
+    A clamp is not defensive noise here: it is what makes one offset mean one
+    thing across a SQL branch and a Python branch.
+    """
+    import asyncio
+    import json as _json
+
+    from orchestrator.graph.tools import cbm_template_query
+
+    # module_deps needs several importers (_graph_repo), entry_points needs
+    # several entry points (_entrypoint_repo). One repo per branch, so neither
+    # branch is measured on a single row.
+    deps_dir, eps_dir = tmp_path / "deps", tmp_path / "eps"
+    deps_dir.mkdir()
+    eps_dir.mkdir()
+    projects = {"module_deps": _graph_repo(deps_dir, modules=6),
+                "entry_points": _entrypoint_repo(eps_dir)}
+
+    def _call(template, **kw):
+        raw = asyncio.run(cbm_template_query(project_path=projects[template],
+                                             template=template, **kw))
+        env = _json.loads(raw)
+        return env.get("result", env)
+
+    for template, kw in (("module_deps", {}), ("entry_points", {})):
+        page1 = _call(template, limit=2, offset=0, **kw)
+        assert page1["count"] == 2, (
+            "the fixture no longer returns two rows on %s, so a shifted window "
+            "would be invisible here" % template)
+        negative = _call(template, limit=2, offset=-3, **kw)
+        assert negative["results"] == page1["results"], (
+            "%s served a different window for offset=-3 than for offset=0 -- "
+            "a python slice counts a negative offset from the END while SQL "
+            "ignores it, so the branches disagree about page 1" % template)
+        assert negative["truncated"] == page1["truncated"], (
+            "%s derived truncated from the unclamped offset: %r vs %r"
+            % (template, negative["truncated"], page1["truncated"]))
