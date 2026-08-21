@@ -136,7 +136,17 @@ LIVE_REF_BINDS: tuple = (*LIVE_REF_KINDS, LIVE_CALL_CONFIDENCE)
 # export declaration, not a reference, and resolving it back to the `def` below
 # it made every `__all__` export read ALIVE with no caller anywhere -- the
 # symbol was kept alive by its own export line.
-EXTRACTOR_VERSION = "ast-p0-v8-all-is-not-a-reference"
+# v9 (B013): the JS extractor changed shape. `require()` is now recorded as an
+# import instead of a bare call, and a relative specifier is resolved against
+# the importing file's directory, so the key is `lib.util.helper` rather than
+# the path-shaped `./lib/util.js.helper` -- whose dotted prefixes start with
+# `/` and could never match the `lib.util` the indexer builds. Neither change
+# touches source bytes, so without this bump every already-indexed repo keeps
+# its old rows: a *full* index answered `files_unchanged: 41` /
+# `dependency_edges: 0` on the reported repo AFTER the fix was live. This is
+# the second time that has happened here (see the W5 note in
+# store.stale_files) -- an extractor change and a version bump are one change.
+EXTRACTOR_VERSION = "ast-p0-v9-js-imports-are-modules"
 
 # --- Tree-sitter opt-in (A5 - aspirational, optional) ---
 CBM_USE_TREE_SITTER = os.environ.get("CBM_USE_TREE_SITTER", "0").strip().lower() in ("1", "true", "yes", "on")

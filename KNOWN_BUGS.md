@@ -1363,4 +1363,59 @@ JS/TS repo.
 
 ---
 
-_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit: added B002-B015, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md)_
+## B016 — B013's fix did not ship: an extractor change without an `EXTRACTOR_VERSION` bump
+
+**Status**: fixed
+**Severity**: HIGH (the JS dependency fix was inert on every already-indexed repo)
+**Discovered**: 2026-08-21, while live-verifying B013 after the restart that made the new code running
+
+### Reproduction
+
+After the restart to generation `c9b9ccd82333`, with B013 committed and live:
+
+```
+cbm_index(project_path=<the reported JS repo>, scope="full")
+  -> status: completed, files_indexed: 0, files_unchanged: 41, dependency_edges: 0
+cbm_template_query(template="module_deps")  -> 0 rows
+```
+
+The fix was in the process. The graph still held the old shape.
+
+### Root cause
+
+`store.stale_files` re-extracts a file when its content changed, when it was
+never indexed, **or** when its row's `extractor_version` differs from
+`config.EXTRACTOR_VERSION`. B013 changed the *extractor*, not the source: same
+bytes, same hashes, so every row matched and nothing was re-extracted. The
+repo kept its path-shaped import keys and its unrecorded `require()` calls.
+
+The mechanism was already there, and `store.stale_files`'s own docstring had
+already recorded this exact failure once: "*Shipping the W5 extractor left 241
+of 250 [A] files frozen at the pre-`name_literal` shape through a full reindex,
+because every hash still matched.*" The bump is the step that gets skipped,
+twice now — which is why it is now pinned by a test rather than by a comment.
+
+### Fix
+
+`EXTRACTOR_VERSION` bumped `ast-p0-v8-all-is-not-a-reference` →
+`ast-p0-v9-js-imports-are-modules`, with the reason written next to it.
+
+**Pinned by** `tests/test_extractor_version_pins_js_import_shape.py` (5 tests).
+Four of them pin the mechanism — a row records the version the code reports, an
+unchanged file *is* re-indexed when the version moves, the JS import shape
+travels with the version, and dependency edges come back after a bump. The
+fifth is narrower on purpose: it refuses the one exact pre-B013 string, so any
+legitimate future bump passes while *this* omission cannot recur.
+
+### The general rule
+
+**An extractor change and a version bump are one change.** Anything that alters
+what extraction *produces* from unchanged bytes — a new node kind, a new edge
+kind, a different key shape — is invisible to content hashing, so the fix ships
+only for repos indexed after it. Test it against a repo that was **already
+indexed**, not only a fresh temp one; a fresh fixture passes either way, which
+is exactly why B013's own 11 tests were all green while the live repo was not.
+
+---
+
+_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit: added B002-B016, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md)_

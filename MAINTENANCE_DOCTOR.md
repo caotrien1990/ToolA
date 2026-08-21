@@ -38,6 +38,7 @@ these are not scaffolding, they were all mutation-verified (see
 | `validate_file` returns `ok: true` for a file you know is broken | The individual checker is broken | Check the `lang` you passed and the `checked` field. Before B012 any unrecognised spelling (`JSON`, `javascript`, `node`, `py`) fell through to `ok:true, lang:"none"` with nothing run; now it refuses with `UNSUPPORTED_LANG`, and `checked:false` marks a genuine pass-through | `test_validate_file_unknown_lang_fails_loud.py` |
 | `cbm_dead_code`'s `file_filter` changes nothing | The glob is wrong / too broad | Test it with a deliberately **bogus** glob: identical output proves the argument is inert, not broad. Before B014 the resolved glob was dropped by the non-Python early return, and hard-filtered to `.py` on the Python path. Now `files_matched: 0` is visible | `test_cbm_dead_code_file_filter.py` |
 | `cbm_dead_code` on a JS repo returns nothing for `bug_risk` / `perf` / `code_smell` | The repo is clean | Those categories are Ruff-only, so on a JS/TS repo they are empty **by construction**. Read `engine`, `engine_reason` and `language_detected` — since B015 every answer says which engine ran and why | same file, `test_the_engine_name_says_what_actually_ran` |
+| A fix to an extractor changes nothing on a real repo; a full index says `files_indexed: 0` | The fix is wrong / the index is cached | The source bytes did not change, so `stale_files` saw nothing stale. Bump `config.EXTRACTOR_VERSION` — an extractor change and a version bump are **one change** (B016, and B013's W5 predecessor before it) | `test_extractor_version_pins_js_import_shape.py` |
 
 ---
 
@@ -412,6 +413,45 @@ node_modules names with project files.
 
 ---
 
+## Entry 8 — An extractor change and a version bump are one change
+
+B013 fixed the JS import shape and added `require()` extraction. Its 11 tests
+were green, the full suite was green, the commit was clean, the daemon was
+restarted. On the actual reported repo the fix did **nothing**:
+
+```
+cbm_index(scope="full") -> completed, files_indexed: 0, files_unchanged: 41
+cbm_template_query(module_deps) -> 0 rows
+```
+
+`store.stale_files` re-extracts on changed content, never-indexed, **or** a
+differing `extractor_version`. B013 changed what extraction *produces* from
+unchanged bytes — nothing a content hash can see. Every row matched, nothing was
+re-extracted, and the graph kept its path-shaped keys. Filed as B016; the bump to
+`ast-p0-v9-js-imports-are-modules` is the whole fix.
+
+**This is the second time.** `store.stale_files`'s docstring already recorded the
+W5 case: 241 of 250 [A] files frozen at the pre-`name_literal` shape through a
+full reindex. A comment did not prevent the recurrence, so it is now a test.
+
+### If you touch an extractor, ask two questions
+
+1. **Can unchanged bytes now produce a different node or edge?** New kind, new
+   key shape, new resolution rule — if yes, bump `config.EXTRACTOR_VERSION` in
+   the same commit and say why next to it.
+2. **Did I verify against a repo that was already indexed?** A fresh `tmp_path`
+   fixture passes either way, because it has no rows to be stale. That is
+   precisely why 11 green tests coexisted with a live repo at zero edges. The
+   cheap version of this check is to index a fixture twice, rewrite
+   `files.extractor_version` to an older string, and index again asserting
+   `files_indexed > 0` — which is what
+   `test_extractor_version_pins_js_import_shape.py` does.
+
+Corollary for reviews: "the tests pass" and "the fix reaches production data"
+are different claims. Anything cached, hashed, or memoised sits between them.
+
+---
+
 ## Mutation testing: the acceptance bar
 
 A test that passes against the *unfixed* code proves nothing. Every fix in this
@@ -513,7 +553,7 @@ write-ledger pact that `PRESERVED_CACHE_FILES` must **not** widen to cover),
 
 ## Test inventory added by the JS-repo audit (2026-08-21)
 
-39 tests, all mutation-verified: every file below was written **before** its fix
+44 tests, all mutation-verified: every file below was written **before** its fix
 and confirmed failing first.
 
 | File | Tests | Pins |
@@ -522,6 +562,7 @@ and confirmed failing first.
 | `test_js_dependency_edges.py` | 11 | B013: ESM key shape, the three `require()` forms, and that a bare package specifier stays unresolved |
 | `test_cbm_dead_code_file_filter.py` | 9 | B014/B015: the bogus-glob case, echoed `files_matched`, and `engine`/`engine_reason`/`language_detected` |
 | `test_graph_index_prunes_deleted_files.py` | 6 | B011: rows pruned, nodes dropped, `files_pruned` reported, index/status agreement, convergence, `freshness` |
+| `test_extractor_version_pins_js_import_shape.py` | 5 | B016: a row records the reported version, a version bump re-extracts unchanged files, the JS import shape travels with it, and the pre-B013 string is refused |
 
 Two harness requirements for anything touching the graph, both learned the hard
 way:
@@ -534,6 +575,5 @@ way:
   walk, and `CBM_GRAPH_ENABLED=1` is what lets `dead_code_candidates` run at all
   — a JS test that forgets either one passes vacuously.
 
-Baseline after this audit: **2517 passed, 4 skipped, 1 xfailed, 165 subtests
-passed, 0 failed** in 388s with `--basetemp` on `C:` (was 2478 before the 39 new
-tests).
+Baseline after this audit: **2522 passed, 4 skipped, 1 xfailed, 165 subtests
+passed, 0 failed** with `--basetemp` on `C:` (was 2478 before these 44 tests).
