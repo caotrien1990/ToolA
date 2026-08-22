@@ -32,8 +32,12 @@ def is_unc_path_like(value: Any) -> bool:
     return s.startswith("\\\\") or s.startswith("//")
 
 
-def should_skip_dir(name: str) -> bool:
-    return surgical_mapper.should_skip_dir(name)
+def should_skip_dir(name: str, project_root=None) -> bool:
+    # B027: project_root is optional and forwarded. This wrapper is what the walk
+    # sites actually call, so the per-project overlay has to reach through it --
+    # patching only the leaf module would have left every real caller on the
+    # global-only path.
+    return surgical_mapper.should_skip_dir(name, project_root)
 
 
 def should_scan_for_text(file_path: Path) -> bool:
@@ -256,7 +260,7 @@ def index_delta(project_path: str) -> dict | None:
         if size_changed or mtime_changed or hash_changed:
             modified.append(rel)
     for scan_root, dirs, files in os.walk(root):
-        dirs[:] = [d for d in dirs if not should_skip_dir(d)]
+        dirs[:] = [d for d in dirs if not should_skip_dir(d, root)]
         for name in files:
             fp = Path(scan_root) / name
             if not should_scan_for_text(fp):

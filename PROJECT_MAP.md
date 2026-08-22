@@ -1,18 +1,18 @@
 # Project Map
 
 - Schema: 2
-- Generated: 2026-08-21T23:29:27
+- Generated: 2026-08-22T15:25:29
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator`
-- Files indexed: 1261
+- Files indexed: 1263
 
 ## Groups
 
 - `config`: 105 files, 30459 LOC
-- `doc`: 282 files, 36024 LOC
+- `doc`: 282 files, 36152 LOC
 - `entrypoint`: 3 files, 13910 LOC
 - `script`: 15 files, 1579 LOC
-- `source`: 422 files, 128321 LOC
-- `test`: 294 files, 45624 LOC
+- `source`: 422 files, 128375 LOC
+- `test`: 296 files, 45964 LOC
 - `ui`: 23 files, 1710 LOC
 - `unknown`: 117 files, 53919 LOC
 
@@ -33,7 +33,7 @@
 - `orchestrator/session/store.py`: complexity 307, 1749 LOC, group `source`
 - `orchestrator/search_snapshots.py`: complexity 299, 1270 LOC, group `source`
 - `research/CBM_CG/CBM/scripts/smoke-test.sh`: complexity 260, 1505 LOC, group `unknown`
-- `orchestrator/tools/search.py`: complexity 247, 925 LOC, group `source`
+- `orchestrator/tools/search.py`: complexity 254, 954 LOC, group `source`
 
 ## Agent Usage
 

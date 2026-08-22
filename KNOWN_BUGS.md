@@ -2317,4 +2317,297 @@ with **0 mismatches of 4400** against the original `fnmatch` loop.
 
 ---
 
-_Last updated: 2026-08-22 (campaign-1608 + JS-repo audit + stabilisation + real-test follow-up: added B002-B025, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_
+## B026 - `search_code` mode='text' had no byte budget at all
+
+**Status**: FIXED 2026-08-22 (commit `7d7284d`), pinned by
+`tests/test_search_text_size_cap_b026.py` (7 tests)
+
+`mode='regex'` has had a byte budget since it was written
+(`regex_worker.validate_next_record_budget`), so a runaway pattern is stopped.
+`mode='text'` had **nothing**: it re-scanned every byte of every record with no
+ceiling, however heavy the repo.
+
+Measured on `dreye_redesign`, a builder repo that keeps site DATA next to source:
+
+| | records | bytes | `re.search` |
+|---|---|---|---|
+| everything the scanner reached | 760 | 230.9 MB | 2165 ms |
+| the same minus 7 minified HTML files >2MB | 753 | 55.3 MB | **504 ms (-77%)** |
+| actual source in that repo | 74 | 0.6 MB (largest 0.78 MB) | - |
+
+Seven files were **76% of all bytes scanned**. cProfile on the live tool agrees:
+of 3.86s, `re.Pattern.search` is 2.249s and reading snapshot blobs only 0.448s.
+This is a **scan-cost** problem, not I/O -- so cutting what gets scanned is the
+fix and skipping the read would not be.
+
+**`max_file_bytes`** (default 2 000 000; `0` disables the cap for that one call).
+Three placements were rejected on purpose:
+
+- **not** in `should_scan_for_text` -- `index_delta` shares it, and a file
+  vanishing from "should be scanned" would skew the drift report;
+- skipped records are **counted and reported**
+  (`skipped_large_files` / `_count` / `_listed` / `_hint`), never dropped
+  silently: a hit inside a capped file returning as a confident 0-hit is exactly
+  the failure **A03** exists to prevent.
+
+**Two follow-ups shipped with it.** `registry_data.py` had to *register*
+`max_file_bytes` -- without that line the dispatcher answers `UNSUPPORTED_FIELD`
+over HTTP (reproduced), which is B-01's lesson from 10/08 again: *an escape hatch
+nobody can reach is not an escape hatch*. And `test_skip_reason_glob_cost_b025.py`
+carried a **pre-existing** defect (fails identically before and after B026,
+verified by `git stash`): its `zzz_b025_...` sentinel was written as ONE literal,
+so it sat in the test file itself, `search_code` scanned `tests/` and found 1 hit
+-- the 0-hit probe was measuring itself. Fixed by splitting the string.
+
+---
+
+## B027 - `SKIP_DIRS` was global-only, so every repo's private names had to live in [A]
+
+**Status**: FIXED 2026-08-22, mutation-verified (3 mutants, 3 killed)
+**Severity**: MEDIUM (design defect; the workaround was to widen a shared global set)
+
+**Reported as** the root cause behind B025's claim 4.2, which was filed real but
+**not fixed**: `SKIP_DIRS` is shared by search *and* the indexer, so adding one
+repo's `1.footage` / `2.working` / `3.output` / `BIN` changes what gets **indexed**
+for every project on the daemon. Measured before writing anything: **0 grep hits**
+for any per-project ignore mechanism. There was no narrow place to put a name.
+
+Anh's framing is the one that shaped the design: *"khong lien quan den cu the 1 repo
+nao ca, day la nang cap toolA"* -- so no repo name appears anywhere in the fix.
+
+**Fix**: a `<project_root>/.orchestrator_ignore` overlay. `should_skip_dir` keeps
+its one-argument form and gains an **optional** `project_root`
+(`orchestrator/skip_rules.py:43`); the nine pre-B027 call sites that pass one
+argument answer exactly the global rule, byte for byte, and are pinned to do so.
+
+Decisions that are the entry:
+
+- **Both directions.** `name` adds a skip; `!name` **un-skips** a global entry.
+  A global set can only ever express one half, and `!` has to beat *both*
+  `SKIP_DIRS` and the leading-dot rule or `!.venv_bge_m3` -- a real case -- does
+  nothing and the hatch is not one.
+- **`.council` is not hideable.** `DOT_DIRS_SEARCHABLE` is checked **before** the
+  overlay: it is the SOT transcript tree and a project must not be able to hide
+  it from search or index.
+- **Parsed once per `(resolved_root, st_mtime_ns, st_size)`**, not per directory
+  -- re-reading per directory is the exact per-file cost R82/B025 were fixing. The
+  key is the content stat, so an **edit takes effect without a restart**: keying
+  on the path alone is the A03 stale-read shape.
+- **FAILS OPEN.** No file, unreadable file, unresolvable root -> two empty sets
+  and the global rule. A broken ignore file silently *dropping* directories is
+  the quiet-data-loss shape of CASE-2008.
+- **`surgical_mapper.SKIP_DIRS is skip_rules.SKIP_DIRS` stays true** (CAN-042):
+  the global set is never mutated, and a test asserts the identity.
+- Only `#` starts a comment. `;` is a legal Windows directory character and
+  treating it as a comment marker would silently drop an entry.
+
+**Five walk sites forward the root** -- `orchestrator/fileops/common.py`,
+two in `orchestrator/tools/search.py`, `surgical_mapper.py`, `code_tools.py` --
+plus two `publish_snapshot` filters bound with `functools.partial`, the pattern
+R82 already used there. The snapshot walk and the index scan **must** agree on
+which directories exist, or `_validate_index_against_records` raises on the set
+mismatch. `orchestrator/search_snapshots.py:_default_skip_dir` deliberately takes
+no root, and says why in a comment: every real caller overrides `skip_dir`.
+
+**Pinned by**: `tests/test_project_ignore_b027.py` (18 tests, 20 subtests) and
+`tests/test_project_ignore_snapshot_b027b.py` (5 tests -- see B027b below).
+
+### Mutants
+
+| mutant | killed |
+|---|---|
+| skip wins over unskip (`!name` cannot beat a global entry) | **2** -- `test_bang_prefix_unskips_a_global_entry`, `test_a_bang_entry_can_reach_a_dot_directory` |
+| cache keyed on the path only, dropping mtime+size | **1** -- `test_an_edit_is_picked_up_without_a_restart` |
+| the `fileops/common.py` wrapper drops `project_root` | **1** -- `test_re_exported_helper_accepts_the_optional_root` |
+| `search.py`'s `functools.partial` drops `project_root` (B027b) | **1** |
+| `surgical_mapper.py`'s `functools.partial` drops `project_root` (B027b) | **1** |
+
+The last three are the same shape and it is the one worth keeping: the leaf module is
+still correct under every one of them, but the overlay never reaches a walk, so the
+feature is completely dead while every unit test of `should_skip_dir` stays green.
+
+---
+
+## B027b - the overlay worked; the README described it wrongly
+
+**Status**: FIXED 2026-08-22, mutation-verified (2 mutants, 2 killed)
+**Severity**: LOW (documentation correctness), **found by live-smoke-testing B027**
+
+My own defect, and the way it was found is the point: after restarting the daemon I
+called `search_code` on a throwaway project, wrote `.orchestrator_ignore` **after** that
+first call, and searched again -- **2 hits both times**. B027 looked like a feature that
+did nothing.
+
+It was not. Measured on the same tree, an ordinary **new source file** (`src/b.py`) is
+equally invisible, because `search_code` never walks at query time -- it serves a
+published **snapshot**. `refresh_project_map` republished it and the entry took effect:
+
+| step | count |
+|---|---|
+| no ignore file | 2 |
+| ignore file written, no refresh | 2 |
+| after `refresh_project_map` | **1** |
+
+So the overlay was right and **the sentence I wrote in the README was wrong**: *"An edit
+takes effect immediately -- the file is cached on its `(mtime, size)`, so no restart is
+needed."* Those are **two different claims**. No-restart is true and is pinned by
+`test_an_edit_is_picked_up_without_a_restart`; immediately-visible-in-search is false. I
+wrote it from the cache design rather than from a measurement.
+
+**Fix**: the README now says no restart is needed **and** that `search_code` serves a
+snapshot, so `refresh_project_map` is what makes the entry visible -- with the measured
+2 -> 2 -> 1 chain and the note that this is not specific to the ignore file.
+
+**Pinned by**: `tests/test_project_ignore_snapshot_b027b.py` (5 tests). Three assert the
+overlay reaches the walk `publish_snapshot` is called from (the only walk search cares
+about); two assert the README section names `refresh_project_map` and no longer promises
+an immediate effect. Mutants: dropping `project_root=` from either `functools.partial`
+kills 1 each.
+
+**The lesson is the same one as B028b, in a different medium**: a doc sentence a caller
+can follow to a wrong conclusion is a defect, exactly like a warning that names a field
+the response does not carry. Both fixes were correct; both were invisible or misdescribed
+at the surface a caller actually touches. **Restart and call the tool.**
+
+---
+
+## B028 - the destructive scanner read PowerShell here-string PROSE as commands
+
+**Status**: FIXED 2026-08-22, mutation-verified (3 mutants, 3 killed)
+**Severity**: MEDIUM (correctness defect in what `confirm_destructive` *means*)
+
+**Reported and reproduced by Anh.** A commit message inside `@'...'@` -- a
+single-quoted here-string, in which PowerShell does not even expand variables --
+had two of its **sentences** classified as destructive commands:
+
+```
+line 8   "... wildcard, khong Remove-Item -Recurse tren thu muc):"   -> remove_item
+line 30  "... git rm --cached -> 580/583 VAN NGUYEN TREN DIA ..."    -> git_rm
+```
+
+Anh's own words for the consequence: *"cang ghi chep trung thuc cang bi chan"*.
+He worked around it with `git commit -F` on a separate file.
+
+**One correction to the report, because it changes what the defect is**: the answer
+was `DESTRUCTIVE_SCRIPT_CONFIRMATION_REQUIRED`, which **is** confirmable via
+`confirm_destructive=N`, not a hard block. The defect is still real and is sharper
+than "false positive": `confirm_destructive` is a number the caller must reproduce
+and it is supposed to mean *"destructive statements I reviewed"*. Prose inflated it,
+so documenting a deletion honestly **raised** the count, and editing a **word** of
+the message moved it and invalidated an acknowledgement that was correct when
+written. **A guard whose number means something other than what it says is a
+correctness defect.**
+
+### The reported fix was rejected, with a measurement
+
+The report asked to *"bo qua noi dung ben trong `@'...'@` truoc khi quet"*.
+Implemented as a mutant, that **breaks 8 tests**, because
+`_DESTRUCTIVE_EMBEDDED_SHELL` exists for precisely this:
+
+```powershell
+powershell -Command @'
+Remove-Item -Recurse -Force $target
+'@
+```
+
+is a deletion, written as a string. Blanket-skipping here-strings waves it through.
+
+**What shipped instead**: a here-string is treated as **data only when the body
+contains no way to evaluate a string as code**. Any eval route present -- `iex`,
+`Invoke-Command`, `-Command`, `cmd /c`, `node -e`, `python -c`, `subprocess`,
+`bash -c`, `child_process`, `Start-Process`, `[scriptblock]::Create`, a bare `&`
+call operator, or writing the string out to a `.ps1`/`.cmd`/`.sh` and running it
+later -- and here-strings are scanned exactly as before B028
+(`_STRING_EVAL_ROUTES`, `code_tools.py:7146`).
+
+- **Nothing is dropped silently.** Prose findings move to a new
+  **`prose_matches`** key with a `why_not_counted` string, plus a `warnings` line.
+  They leave `count`, which is the number with meaning. `prose_matches` is
+  **always present**, even empty -- a key that appears only sometimes is how a
+  `KeyError` reaches production.
+- **Footguns get the same exclusion for a sharper reason.**
+  `DESTRUCTIVE_SCRIPT_FOOTGUN` is `retryable=False` with **no confirm path**, so a
+  sentence merely *describing* the CASE-2008 `-Include`+`-LiteralPath` shape could
+  make a script permanently unrunnable.
+- **Malformed input fails SAFE.** PowerShell 5.1 syntax is followed exactly: an
+  opener only opens when `@'` **ends** the line, a terminator must **start** a line
+  (an indented `'@` is a parse error in 5.1), and an unterminated here-string
+  yields an **empty** span, leaving every line executable. Guessing "this is prose"
+  is the direction that costs files.
+- Non-PowerShell runtimes are untouched -- `@'` in a JS or Python body is not a
+  data delimiter. `runtime='any'` **does** get the rule, because
+  `run_project_command` passes `'any'` and reaches PowerShell: without that, Anh's
+  exact case still fails on the tool he actually used.
+
+**Pinned by**: `tests/test_destructive_here_string_b028.py` (22 tests, 10 subtests) and
+`tests/test_prose_matches_surface_b028b.py` (7 tests -- see B028b below).
+
+### Mutants -- and a hole in my own test
+
+| mutant | killed |
+|---|---|
+| drop the eval-route check (**the reported fix, verbatim**) | **8** |
+| an unterminated here-string fails shut (`close_at = len(lines)`) | **2** |
+| the opener matches anywhere on the line, not only at EOL | **1** |
+
+The third mutant **survived the first cut, 22/22 green**, and the reason is the
+lesson: `test_the_opener_must_end_the_line_like_real_powershell` used a body with
+**no `'@` line at all**, so it passed through the *unterminated* fail-safe path and
+never once exercised the end-of-line condition in its name. Rewritten with a body
+that has a real terminator (`"$a = @'x'\nRemove-Item -Recurse $d\n'@\n"`) and
+asserting `count == 1`, `findings[0]["line"] == 2`, `prose_matches == []`, it now
+kills the mutant. **A test that passes for a reason other than the one in its name
+is not a guard.**
+
+---
+
+## B028b - `prose_matches` never reached the caller
+
+**Status**: FIXED 2026-08-22, mutation-verified (3 mutants, 3 killed)
+**Severity**: MEDIUM, **found by live-smoke-testing B028**, and it is my own defect
+from the first cut of B028
+
+The scan dict gained `prose_matches` **and** a `warnings` line that says, in so many
+words, *"(see prose_matches)"*. Not one of the **six** sites that flatten a scan into a
+response copied the key. So the live answer told a caller to consult a field the
+response did not have -- verified against the restarted daemon: the warning was present
+and `prose_matches` was absent from all 18 keys.
+
+That is worse than a missing escape hatch, because the warning **actively names it**. A
+caller following the instruction finds nothing and then has to guess whether the guard
+silently dropped two real destructive statements or correctly classified two sentences.
+Same class as B026's unregistered `max_file_bytes` and B-01 before it: **a field nobody
+can reach is not a field.**
+
+**Fix**: added at all six sites -- the `run_project_command` dry-run preview and its
+executed payload, both refusal builders (`_destructive_refusal`, `code_tools.py:7380`),
+the script dry-run preview and the executed script result. Present **only when
+non-empty**: the scan dict guarantees the key, a payload reports an event, and an
+always-empty list on the 99% of scripts with no here-string is noise.
+
+**Pinned by**: `tests/test_prose_matches_surface_b028b.py` (7 tests), including
+`test_the_warning_names_a_field_that_is_actually_present` -- the exact defect in one
+assertion -- and a **mechanical source assertion** over every line mentioning
+`destructive_statements` with a +/-14-line window, because the defect was a *missing copy
+at one of several structurally identical sites*, which no behavioural test on a single
+tool can catch (B018: a survey only proves things about the sites it enumerated).
+
+### Mutants
+
+| mutant | killed |
+|---|---|
+| the dry-run preview drops the key | **4** |
+| the refusal builders drop the key | **3** |
+| the executed payload drops the key | **3** |
+
+**Live verification** on generation `69f4f4e33aff` (PID 33988), three calls:
+
+| case | count | confirm required | `prose_matches` |
+|---|---|---|---|
+| Anh's exact commit message | 0 | 0 | `[(2, remove_item), (3, git_rm)]` |
+| the same here-string handed to `-Command` | **1** | 1 | absent |
+| `Write-Host 'hello'` | 0 | - | key absent |
+
+---
+
+_Last updated: 2026-08-22 (campaign-1608 + JS-repo audit + stabilisation + real-test follow-up: added B002-B028, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_

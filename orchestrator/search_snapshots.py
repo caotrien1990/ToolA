@@ -94,6 +94,12 @@ def _default_skip_dir(name: str) -> bool:
     `orchestrator.skip_rules`, imported at the top of this file, so there is
     one behaviour and no import cycle.
     """
+    # B027: no project_root here on purpose. This default is called from the
+    # snapshot walk, which passes only a bare name; callers that want the
+    # per-project overlay pass their own skip_dir (search.py passes
+    # fo.should_skip_dir, which is root-aware). Wiring a root in here would mean
+    # threading it through publish_snapshot's whole filter contract for a default
+    # that every real caller already overrides.
     return should_skip_dir(name)
 
 

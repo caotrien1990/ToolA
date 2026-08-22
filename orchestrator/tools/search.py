@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import fnmatch
+import functools
 import json
 import os
 import re
@@ -92,7 +93,9 @@ def _pin_or_create_snapshot(
         snapshot_id = search_snapshots.publish_snapshot(
             root,
             include_file=fo.should_scan_for_text,
-            skip_dir=fo.should_skip_dir,
+            # B027: bind root so a project's .orchestrator_ignore reaches the
+            # snapshot search_code serves from, not just the os.walk paths below.
+            skip_dir=functools.partial(fo.should_skip_dir, project_root=root),
             index=None,
             deadline_at=deadline_at,
         )
@@ -364,7 +367,7 @@ async def find_symbol(name: str = "", path: str = "", project_path: str = "",
     def _search() -> list[dict]:
         results: list[dict] = []
         for root, dirs, files in os.walk(base, onerror=lambda e: None):
-            dirs[:] = [d for d in dirs if not fo.should_skip_dir(d)]
+            dirs[:] = [d for d in dirs if not fo.should_skip_dir(d, base)]
             for fn in files:
                 fp = Path(root) / fn
                 if not _is_def_source_file(fp):
@@ -538,7 +541,7 @@ async def find_symbol(name: str = "", path: str = "", project_path: str = "",
             hits: list[dict] = []
             def_lines = {(r["file"], r["line"]) for r in results}
             for root2, dirs2, files2 in os.walk(base, onerror=lambda e: None):
-                dirs2[:] = [d for d in dirs2 if not fo.should_skip_dir(d)]
+                dirs2[:] = [d for d in dirs2 if not fo.should_skip_dir(d, base)]
                 for fn2 in files2:
                     fp2 = Path(root2) / fn2
                     if fp2.suffix.lower() in _NON_SOURCE_EXTS:

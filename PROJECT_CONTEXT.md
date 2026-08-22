@@ -3,8 +3,8 @@
 This file is generated for CA routing. Read it before opening source files.
 
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator`
-- Generated: 2026-08-21T23:29:27
-- Files indexed: 1261
+- Generated: 2026-08-22T15:25:29
+- Files indexed: 1263
 
 ## First Actions
 
@@ -27,11 +27,11 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 ## Groups
 
 - `config`: 105 files, 30459 LOC
-- `doc`: 282 files, 36024 LOC
+- `doc`: 282 files, 36152 LOC
 - `entrypoint`: 3 files, 13910 LOC
 - `script`: 15 files, 1579 LOC
-- `source`: 422 files, 128321 LOC
-- `test`: 294 files, 45624 LOC
+- `source`: 422 files, 128375 LOC
+- `test`: 296 files, 45964 LOC
 - `ui`: 23 files, 1710 LOC
 - `unknown`: 117 files, 53919 LOC
 
@@ -39,17 +39,17 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 
 - `orchestrator_server.py` | group `entrypoint` | lang `python` | LOC 13813 | weight 24: large_file: use symbols, search, or bounded ranges before full read
 - `code_tools.py` | group `source` | lang `python` | LOC 13628 | weight 20: large_file: use symbols, search, or bounded ranges before full read
-- `surgical_mapper.py` | group `source` | lang `python` | LOC 1035 | weight 20: large_file: use symbols, search, or bounded ranges before full read
+- `surgical_mapper.py` | group `source` | lang `python` | LOC 1041 | weight 20: large_file: use symbols, search, or bounded ranges before full read
 - `tools_v15.py` | group `source` | lang `python` | LOC 8103 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/tools/write/core.py` | group `source` | lang `python` | LOC 1748 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/session/store.py` | group `source` | lang `python` | LOC 1749 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/search_snapshots.py` | group `source` | lang `python` | LOC 1270 | weight 15: large_file: use symbols, search, or bounded ranges before full read
-- `orchestrator/tools/search.py` | group `source` | lang `python` | LOC 925 | weight 15: large_file: use symbols, search, or bounded ranges before full read
+- `orchestrator/tools/search.py` | group `source` | lang `python` | LOC 954 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/server/audit_writer.py` | group `source` | lang `python` | LOC 1089 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/core/ca_policy_matrix.py` | group `source` | lang `python` | LOC 843 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/mcp_packs/generator.py` | group `source` | lang `python` | LOC 1090 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/lifecycle/restart_control_service.py` | group `source` | lang `python` | LOC 780 | weight 15: large_file: use symbols, search, or bounded ranges before full read
-- `orchestrator/graph/query.py` | group `source` | lang `python` | LOC 826 | weight 15: large_file: use symbols, search, or bounded ranges before full read
+- `orchestrator/graph/query.py` | group `source` | lang `python` | LOC 829 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/server/mcp_stdio.py` | group `source` | lang `python` | LOC 901 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/graph/extractors/python.py` | group `source` | lang `python` | LOC 626 | weight 14: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/graph/indexer.py` | group `source` | lang `python` | LOC 724 | weight 14: large_file: use symbols, search, or bounded ranges before full read
@@ -75,7 +75,7 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 - `orchestrator/session/store.py`: complexity 307, 1749 LOC, group `source`
 - `orchestrator/search_snapshots.py`: complexity 299, 1270 LOC, group `source`
 - `research/CBM_CG/CBM/scripts/smoke-test.sh`: complexity 260, 1505 LOC, group `unknown`
-- `orchestrator/tools/search.py`: complexity 247, 925 LOC, group `source`
+- `orchestrator/tools/search.py`: complexity 254, 954 LOC, group `source`
 
 ## Deterministic Rules
 

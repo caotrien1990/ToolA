@@ -40,8 +40,140 @@ SKIP_DIRS = {
 DOT_DIRS_SEARCHABLE = {".council"}
 
 
-def should_skip_dir(name: str) -> bool:
+def should_skip_dir(name: str, project_root=None) -> bool:
+    """True when a directory named `name` must not be walked.
+
+    `project_root` is OPTIONAL (B027). Pass it and a `.orchestrator_ignore` at that
+    root can add names for this project or, with a `!` prefix, un-skip a global
+    entry for this project. Omit it -- as nine pre-B027 call sites do -- and the
+    answer is exactly the global rule.
+    """
     lowered = name.lower()
     if lowered in DOT_DIRS_SEARCHABLE:
+        # Checked BEFORE the overlay on purpose: .council is the SOT transcript
+        # tree and a project must not be able to hide it from search or index.
         return False
+    if project_root is not None:
+        extra_skips, unskips = load_project_ignore(project_root)
+        # unskip wins over skip. A `!name` has to beat BOTH the global set and the
+        # leading-dot rule, otherwise `!.venv_bge_m3` -- a real case -- does
+        # nothing and the escape hatch is not one.
+        if lowered in unskips:
+            return False
+        if lowered in extra_skips:
+            return True
     return lowered in SKIP_DIRS or name.startswith(".")
+
+
+# ---------------------------------------------------------------------------
+# B027 2026-08-22 (Anh/Clau): per-project ignore overlay.
+#
+# SKIP_DIRS above is ONE global set applied to every project [A] opens, and it
+# was the only lever anybody had. That is how ToolQ's `runs`/`queue`/`archive`
+# and `.venv_bge_m3`/`backups`/`staging`/`.codex`/`.pytest_tmp` ended up global:
+# each was a measured, justified decision (see R82 above -- 31608 files, 591s of
+# analyze, INDEX.json never written) but the cost lands on repos that never had
+# those trees. The reverse case had NO answer at all: a JS repo whose real source
+# lives in `build/` could not opt out, because removing `build` would un-skip it
+# everywhere.
+#
+# The global set is unchanged. A project may now ship `.orchestrator_ignore` at
+# its root with one directory name per line:
+#
+#     2.working          # skip this tree in THIS project only
+#     1.footage/         # trailing slash tolerated
+#     !build             # UN-skip a global entry, THIS project only
+#     # comments and blank lines ignored
+#
+# Design constraints that shaped this, each learned from a prior incident:
+#
+#   * `should_skip_dir(name)` keeps its one-argument form. Nine call sites pass
+#     only a name; changing the signature would have been a nine-site edit with
+#     nine chances to get it wrong. `project_root` is OPTIONAL and omitting it
+#     reproduces the previous behaviour exactly (pinned by
+#     test_one_argument_calls_behave_exactly_as_before).
+#   * Parsed ONCE per (root, mtime, size), not per directory. A walk calls this
+#     tens of thousands of times; re-reading a file each time would spend exactly
+#     the cost R82 was fixing.
+#   * Keyed on the content stat rather than "seen this root", so editing the file
+#     takes effect without restarting [A]. The alternative is the stale-snapshot
+#     trap already documented as A03, where a change on disk is invisible until a
+#     restart and the agent reads a confident wrong answer.
+#   * FAILS OPEN. A malformed or unreadable file degrades to the global set. The
+#     other direction -- fail shut, start skipping -- silently drops directories
+#     from the index, which is the CASE-2008 shape: quiet data loss with a
+#     success exit code.
+#   * `.council` is NOT hideable. It is the SOT tree holding every agent's
+#     transcript; an ignore file that could hide it would make "the council never
+#     spoke" indistinguishable from "the council is not indexed".
+# ---------------------------------------------------------------------------
+
+PROJECT_IGNORE_FILENAME = ".orchestrator_ignore"
+
+# (skip, unskip) keyed by (resolved_root, mtime_ns, size). Bounded below.
+_IGNORE_CACHE: "dict[tuple[str, int, int], tuple[frozenset[str], frozenset[str]]]" = {}
+_IGNORE_CACHE_MAX = 64
+
+
+def clear_project_ignore_cache() -> None:
+    """Drop the parsed-overlay cache. Used by tests and by refresh_project_map."""
+    _IGNORE_CACHE.clear()
+
+
+def _parse_project_ignore(text: str) -> "tuple[frozenset[str], frozenset[str]]":
+    skips: set[str] = set()
+    unskips: set[str] = set()
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        # Only '#' starts a comment. ';' is a legal directory name character on
+        # Windows and treating it as a comment marker would silently drop an entry.
+        if not line or line.startswith("#"):
+            continue
+        negated = line.startswith("!")
+        if negated:
+            line = line[1:].strip()
+        # A trailing separator is how .gitignore spells "directory", so accept it
+        # rather than making a CA who typed `dist/` wonder why nothing happened.
+        line = line.rstrip("/\\").strip()
+        if not line:
+            continue
+        (unskips if negated else skips).add(line.lower())
+    return frozenset(skips), frozenset(unskips)
+
+
+def load_project_ignore(project_root) -> "tuple[frozenset[str], frozenset[str]]":
+    """Return (skip, unskip) name sets for one project root.
+
+    Returns two empty sets when there is no file, when it cannot be read, or when
+    the root does not resolve -- see the FAILS OPEN note above.
+    """
+    if not project_root:
+        return frozenset(), frozenset()
+    from pathlib import Path as _Path
+    try:
+        root = _Path(project_root).resolve()
+        target = root / PROJECT_IGNORE_FILENAME
+        stat_result = target.stat()
+    except Exception:
+        return frozenset(), frozenset()
+
+    key = (str(root).lower(), stat_result.st_mtime_ns, stat_result.st_size)
+    cached = _IGNORE_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    try:
+        # errors="replace" over "strict": a stray byte must not take the whole
+        # overlay down, and the replacement char simply fails to match any name.
+        text = target.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return frozenset(), frozenset()
+
+    parsed = _parse_project_ignore(text)
+    if len(_IGNORE_CACHE) >= _IGNORE_CACHE_MAX:
+        # Plain clear rather than an LRU: the cache holds at most one entry per
+        # project root, 64 is far past how many roots one daemon sees, and a
+        # dependency-free leaf module is worth more here than an eviction policy.
+        _IGNORE_CACHE.clear()
+    _IGNORE_CACHE[key] = parsed
+    return parsed

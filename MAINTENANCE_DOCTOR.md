@@ -669,7 +669,7 @@ be hiding it.**
 
 ### Two suite counts are both correct
 
-`pytest tests\` reports **2610**; a bare `pytest` reports **2637**. The 27-test gap
+`pytest tests\` reports **2669**; a bare `pytest` reports **2696**. The 27-test gap
 is three files at the **repo root** (`test_all_tools.py`,
 `test_council_reply_fallback.py`, `test_open_session_drift_note.py`), collected by
 rootdir discovery and outside the README's `tests\` baseline. Neither number is
@@ -1016,11 +1016,95 @@ write-ledger pact that `PRESERVED_CACHE_FILES` must **not** widen to cover),
 `test_command_transport_c2.py` (`%`/`&` escaping in commands),
 `test_antidrift_contract.py`, `test_schema_params_contract.py`.
 
+### A shared global set is not a place to put one project's name (B027)
+
+B025's claim 4.2 was **right and unfixable where it was filed**: `SKIP_DIRS` is
+shared by search *and* the indexer, so a repo's private directory names cannot go
+there without changing what gets **indexed** for every other project. The lesson is
+the shape, not the names: when a request is "add X to the global list", first check
+whether a **per-project overlay** exists — measured here, **0 grep hits**, and that
+absence *was* the defect.
+
+Three things a per-project overlay has to get right, each of which is a mutant that
+was written and killed:
+
+- **`!name` must beat the global rule**, not lose to it. An overlay that can only
+  add is half a feature, and `!.venv_bge_m3` must be able to reach a dot-directory.
+- **Cache on the content stat (`st_mtime_ns`, `st_size`), never the path alone.**
+  Path-only is the A03 stale-read shape: the file is edited and nothing changes
+  until a restart, which is indistinguishable from "the entry does not work".
+- **Fix the wrapper, not just the leaf.** `orchestrator/fileops/common.py` is what
+  the walk sites actually call; a mutant that drops `project_root` there leaves the
+  leaf module perfectly correct and the feature completely dead. `grep` for the
+  bare one-argument call shape in a source-assertion test.
+
+And it must **fail open**. A broken ignore file that starts silently *dropping*
+directories is CASE-2008's shape — quiet data loss — where degrading to the global
+set is merely less specific.
+
+### A guard's number has to mean what it says (B028)
+
+`confirm_destructive=N` is a number the caller reproduces to acknowledge N
+destructive statements. When prose inside a PowerShell here-string counted toward
+it, **documenting a deletion honestly raised the number**, and editing a *word* of a
+commit message invalidated an acknowledgement that was correct when written. That is
+not a cosmetic false positive: the field stopped meaning what its name says.
+
+Two rules came out of fixing it, both worth reusing:
+
+- **A "just skip that region" request is usually wrong when a scanner deliberately
+  reads raw text.** Implemented verbatim, the reported fix broke **8 tests**:
+  `powershell -Command @'<nl>Remove-Item -Recurse $t<nl>'@` **is** a deletion,
+  written as a string. The narrower rule — treat a region as data *only when the
+  body has no way to evaluate a string as code* — keeps the teeth. Before removing
+  a check, mutate it out and read which tests die; they are the reason it exists.
+- **Excluded findings must be reported, not dropped.** They moved to `prose_matches`
+  with a `why_not_counted` string, and the key is **always present, even empty** —
+  a key that appears only sometimes is how a `KeyError` reaches production.
+- **A non-confirmable refusal deserves a stricter false-positive bar than a
+  confirmable one.** `DESTRUCTIVE_SCRIPT_FOOTGUN` is `retryable=False` with no
+  confirm path, so one sentence *describing* a footgun could make a script
+  permanently unrunnable. When triaging a false positive, check the refusal's
+  `retryable` first — it tells you whether the caller has any way out.
+
+### Restart, then call the tool -- the fix is not the surface (B027b, B028b)
+
+Both follow-ups this session were **my own**, both were found by restarting the daemon
+and actually calling the tool, and neither was reachable from a green suite. The pattern
+is worth naming: **a correct fix can be invisible or misdescribed at the surface a
+caller touches**, and every unit test can still pass.
+
+- **B028b**: the scan dict carried `prose_matches` and a warning that *names* it, but
+  none of the **six** sites that flatten a scan into a response copied the key. A
+  warning pointing at an absent field is worse than no warning -- the caller cannot
+  tell whether two destructive statements were dropped or two sentences were
+  classified. When you add a field to an internal dict, **grep for every site that
+  flattens that dict** and write a mechanical source assertion over them; a behavioural
+  test on one tool cannot see a missing copy at the fifth structurally identical site.
+- **B027b**: I wrote *"an edit takes effect immediately"* into the README from the cache
+  design. True of the cache (no restart), false of `search_code` (serves a published
+  snapshot; needs `refresh_project_map`). **Two claims that sound like one.** If a doc
+  sentence can be measured, measure it before writing it -- and note that a doc sentence
+  a caller can follow to a wrong conclusion is a defect in the same sense a wrong
+  warning is.
+
+Practical rule: after any fix that changes what a tool *answers*, restart via
+`restart_orchestrator_via_bat`, verify the new PID and incremented generation, then call
+the tool three ways -- the reported case, the case that must still have teeth, and a
+clean case that must gain no noise. All three of B028's live checks earned their place.
+
+And the mutation lesson that cost the most: a test can pass **for the wrong
+reason**. `test_the_opener_must_end_the_line_like_real_powershell` used a body with
+no terminator, so it exercised the *unterminated* fail-safe path and never touched
+the end-of-line condition in its name — the mutant it was written to catch survived
+22/22 green. When a mutant survives, suspect the test's **fixture** before the
+assertion.
+
 ---
 
 ## Test inventory added by the JS-repo audit (2026-08-21)
 
-159 tests, all mutation-verified: every file below was written **before** its fix
+218 tests, all mutation-verified: every file below was written **before** its fix
 and confirmed failing first. Rows 5-7 came from the doctor itself and the defect
 (B017) that building it exposed; the last two (B019, B020) came from surveying
 the other tools for B018's shape and from the one failure the full suite still had
@@ -1061,8 +1145,8 @@ way:
   walk, and `CBM_GRAPH_ENABLED=1` is what lets `dead_code_candidates` run at all
   — a JS test that forgets either one passes vacuously.
 
-Baseline after this audit and the doctor that followed it: **2610 passed, 4
-skipped, 1 xfailed, 169 subtests passed, 0 failed** in 420s, measured -- not
+Baseline after this audit and the doctor that followed it: **2669 passed, 4
+skipped, 1 xfailed, 199 subtests passed, 0 failed** in 361s, measured -- not
 predicted. The four deltas this campaign is accountable for are all measured on
 the same run order: 2495 -> 2526 for the doctor's 31 tests, 2526 -> 2534 for
 B018's 8 (4 pinning the fix, 4 pinning the doctor's new check), 2534 -> 2547 for
@@ -1071,7 +1155,7 @@ plus the 6 that pin the doctor's new check and the 400-handling defect writing i
 exposed), 2556 -> 2559 for the 3 that pin the probe-scope false FAIL, and 2559 -> 2575
 for B021's 16, and 2575 -> 2581 for the 6 that pin B021's offset follow-up
 (4 of whose mutants survived the first cut because the original fixture yields 0/0/1
-rows on the branches they touch), 2581 -> 2588 for B022's 7, 2588 -> 2592 for B024's 4, 2592 -> 2599 for B023's 7, and 2599 -> 2610 for B025's 11. The 2534
+rows on the branches they touch), 2581 -> 2588 for B022's 7, 2588 -> 2592 for B024's 4, 2592 -> 2599 for B023's 7, and 2599 -> 2610 for B025's 11, 2610 -> 2617 for B026's 7, 2617 -> 2635 for B027's 18, 2635 -> 2657 for B028's 22, 2657 -> 2664 for B028b's 7, and 2664 -> **2669** for B027b's 5. The 2534
 run had one failure, and it was not environmental: it was B020. The 2556 run had
 one too, and it was a genuine flake -- a nominal-sleep timing assertion, fixed
 and mutation-verified rather than rerun. Reproduce it the way the section above prescribes — plain

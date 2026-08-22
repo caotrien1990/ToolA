@@ -49,6 +49,39 @@ It answers `commit_state` (`in_flight` | `committed` | `not_committed`), `safe_t
 - `WORKFLOW_T3.md`, `WORKFLOW_T4.md` -- research/council and stateful page-session tiers.
 - `ALIAS_CONTRACT.md` -- tool parameter aliases (backed by `test_schema_params_contract.py`).
 
+## Per-project ignore (`.orchestrator_ignore`)
+
+Directory skipping has a global rule (`orchestrator/skip_rules.py:SKIP_DIRS`) that is
+shared by search **and** the indexer, so a single repo's private directory names must
+not go there. Put them in a `.orchestrator_ignore` at that project's root instead:
+
+```
+# one name per line; only '#' starts a comment
+# (';' is a legal Windows directory name, so it is NOT a comment marker)
+1.footage
+2.working
+BIN/                 # a trailing / or \ is stripped
+!.venv_bge_m3        # '!' UN-skips: overrides the global set AND the leading-dot rule
+```
+
+Names are matched case-insensitively against the directory name only -- not a path,
+not a glob. Both directions work: a bare name adds a skip for this project, and `!name`
+removes one that the global rule would otherwise apply.
+
+- **No restart is needed** -- the file is cached on its `(mtime, size)`, so editing it
+  is picked up in-process. But `search_code` serves a published **snapshot**, so a new
+  entry only changes what search returns after the snapshot is republished: call
+  `refresh_project_map(project_path=...)` (measured: 2 hits -> 2 hits -> `refresh` ->
+  1 hit). This is not specific to the ignore file -- an ordinary new source file is
+  invisible to search until the same republish -- so treat `refresh_project_map` as the
+  step that makes any tree change visible, this one included.
+- **A broken or unreadable file fails open**: you get the global rule, never a silently
+  wider skip.
+- **`.council` cannot be hidden.** It is the shared transcript tree and stays searchable
+  and indexed regardless of what the file says.
+- Verify what a name resolves to with
+  `python -c "from orchestrator import skip_rules as s; print(s.should_skip_dir('1.footage', r'<project_root>'))"`.
+
 ## Deterministic Boundary
 
 This server does not use internal AI, local model executors, model proxies, API-key AI adapters, or crawler tools.
@@ -75,7 +108,7 @@ venv312\Scripts\python.exe -m pytest tests\ -q
 
 **Do not pass `--basetemp` at a fixed path, and never one on `D:`.** The opposite advice used to live in this file and did real damage: `D:` is a HDD, and routing the suite's temp I/O onto it saturated the spindle until unrelated folders stopped opening in Explorer -- which read as a locked folder and was a busy disk. A fixed path is also shared mutable state, since pytest wipes its basetemp at startup and two concurrent runs then delete each other's fixtures. `%TEMP%` is on SSD, per-run, and is never OneDrive-redirected; it is the correct default. `test_conftest_stale_symlink_tolerance.py` enforces this repo-wide.
 
-Quiescent baseline: **2610 passed, 0 failed, 4 skipped, 1 xfailed, 169 subtests passed in 420s** across 250 files in `tests\`. Scope is `tests\` only: 27 more tests live in three files at the repo root (`test_all_tools.py`, `test_council_reply_fallback.py`, `test_open_session_drift_note.py`), so a bare `pytest` collects 2642 and reports **2637 passed** (173 subtests -- the root files carry 4 of their own) -- both numbers are correct, they count different sets. Run with the orchestrator server idle (no active council dispatch): `test_council_runtime_status_tracks_terminal_state` reads a shared council-runtime file, so a live dispatch for the same agent (e.g. `ope`) can flip it to an environmental failure unrelated to source state.
+Quiescent baseline: **2669 passed, 0 failed, 4 skipped, 1 xfailed, 199 subtests passed in 361s** across 255 files in `tests\`. Scope is `tests\` only: 27 more tests live in three files at the repo root (`test_all_tools.py`, `test_council_reply_fallback.py`, `test_open_session_drift_note.py`), so a bare `pytest` reports **2696 passed** (203 subtests -- the root files carry 4 of their own) -- both numbers are correct, they count different sets. Run with the orchestrator server idle (no active council dispatch): `test_council_runtime_status_tracks_terminal_state` reads a shared council-runtime file, so a live dispatch for the same agent (e.g. `ope`) can flip it to an environmental failure unrelated to source state.
 
 If the run aborts during **collection** with `PermissionError: [WinError 5]` on a path under `%LOCALAPPDATA%\Temp`, that is the stale `pytest-current` symlink -- Entry 1 of `MAINTENANCE_DOCTOR.md`, not a sync client.
 

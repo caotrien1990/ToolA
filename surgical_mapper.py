@@ -191,7 +191,12 @@ def _publish_search_snapshot(project_root: Path, index: dict, changed_paths: dic
         return search_snapshots.publish_snapshot(
             project_root,
             include_file=functools.partial(_should_scan_file, project_root=project_root),
-            skip_dir=should_skip_dir,
+            # B027: bind the root for the SAME reason R82 bound it above. The
+            # snapshot walk and the index scan must agree on which directories
+            # exist, or a project that ignores a tree gets it dropped from one
+            # walk and kept in the other -- which is the INDEX/manifest set
+            # mismatch that _validate_index_against_records raises on.
+            skip_dir=functools.partial(should_skip_dir, project_root=project_root),
             index=index,
             changed_paths=cp,
             deadline_at=deadline_at,
@@ -1163,7 +1168,7 @@ def _reindex_from_disk(project_root: Path) -> dict:
         # degrades to a stale cache instead of no cache.
         written: set[str] = set()
         for root, dirs, files in os.walk(project_root):
-            dirs[:] = [d for d in dirs if not should_skip_dir(d)]
+            dirs[:] = [d for d in dirs if not should_skip_dir(d, project_root)]
 
             for fn in files:
                 fp = Path(root) / fn

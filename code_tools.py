@@ -3657,7 +3657,7 @@ def _cache_delta_sync(project_path: str, index_override: dict | None = None) -> 
             modified.append(rel)
     indexed = set(files)
     for walk_root, dirs, walk_files in os.walk(root):
-        dirs[:] = [d for d in dirs if not surgical_mapper.should_skip_dir(d)]
+        dirs[:] = [d for d in dirs if not surgical_mapper.should_skip_dir(d, root)]
         for fn in walk_files:
             path = Path(walk_root) / fn
             # B022: pass `root`. `_skip_reason` needs it for `_depth_below_root`,
@@ -4263,6 +4263,12 @@ async def run_project_command(
             "destructive": True,
             "destructive_count": _cmd_scan["count"],
             "destructive_statements": _cmd_scan["findings"],
+            # B028: what the here-string rule EXCLUDED from the count, so a caller
+            # can see it was classified rather than silently dropped. The warning
+            # already names this field; a warning pointing at an absent key is
+            # worse than no warning.
+            **({"prose_matches": _cmd_scan["prose_matches"]}
+               if _cmd_scan.get("prose_matches") else {}),
             "warnings": _cmd_scan["warnings"],
             "preview_kind": "static_source_scan",
             "preview_limits": ("Static scan of the command text. Targets are NOT "
@@ -4804,6 +4810,8 @@ async def run_project_command(
             p["destructive"] = True
             p["destructive_count"] = _cmd_scan["count"]
             p["destructive_statements"] = _cmd_scan["findings"]
+            if _cmd_scan.get("prose_matches"):        # B028
+                p["prose_matches"] = _cmd_scan["prose_matches"]
             p["confirm_destructive_acknowledged"] = confirm_destructive
             if _cmd_scan["warnings"]:
                 p["warnings"] = _cmd_scan["warnings"]
@@ -7111,6 +7119,116 @@ _DESTRUCTIVE_PATTERNS = {
 }
 
 
+# B028 2026-08-22 (Anh/Clau): PowerShell here-string PROSE is data, not commands.
+#
+# Reported and reproduced: a commit message inside @'...'@ had two of its
+# SENTENCES classified as destructive commands ("khong Remove-Item -Recurse tren
+# thu muc" -> remove_item; "git rm --cached -> 580/583 VAN NGUYEN" -> git_rm).
+# `confirm_destructive` is a number the caller has to reproduce and it is supposed
+# to mean "destructive statements I reviewed"; prose inflated it, so documenting a
+# deletion honestly RAISED the count, and editing a word moved it and invalidated
+# an acknowledgement that was correct when written. That is a correctness defect
+# in what the number MEANS, not a cosmetic false positive.
+#
+# The report asked to skip here-string contents outright. That is NOT what this
+# does, because it would reopen the hole _DESTRUCTIVE_EMBEDDED_SHELL exists to
+# close -- `powershell -Command @'<nl>Remove-Item -Recurse $t<nl>'@` IS a
+# deletion, written as a string. So:
+#
+#   * A here-string counts as DATA only when the body contains no way to evaluate
+#     a string as code. Any eval route present (iex, -Command, cmd /c, node -e,
+#     python -c, subprocess, &, Start-Process, [scriptblock]::Create, a redirect
+#     into a .ps1) and here-strings are scanned exactly as before B028.
+#   * Findings inside a data here-string are REPORTED as `prose_matches`, never
+#     dropped silently. They only leave `count`, which is the number with meaning.
+#   * Malformed input fails SAFE: an unterminated here-string, an opener that is
+#     not at end of line, or an indented terminator all leave the region
+#     executable. Guessing "this is prose" is the direction that costs files.
+#
+# Footguns get the same exclusion for a sharper reason than the count: a footgun is
+# refused with retryable=False and NO confirm path at all, so one sentence
+# mentioning -Include and -LiteralPath could make a script permanently unrunnable.
+
+# Each of these evaluates a string. Deliberately broad -- a false positive here
+# costs one confirm_destructive round-trip; a false negative costs files.
+_STRING_EVAL_ROUTES = (
+    r"(?i)\b(?:iex|Invoke-Expression)\b",
+    r"(?i)\bInvoke-Command\b",
+    r"(?i)\[\s*scriptblock\s*\]\s*::\s*Create",
+    r"(?i)\bStart-Process\b",
+    r"(?i)\b(?:powershell|pwsh)(?:\.exe)?\b[^\r\n]*?-(?:c|Command|EncodedCommand)\b",
+    r"(?i)\bcmd(?:\.exe)?\b[^\r\n]*?/c\b",
+    r"(?i)\bnode(?:\.exe)?\b[^\r\n]*?-e\b",
+    r"(?i)\b(?:python|python3|py)(?:\.exe)?\b[^\r\n]*?-c\b",
+    r"(?i)\bsubprocess\b",
+    r"(?i)\bexecSync\b|\bspawnSync\b|\bchild_process\b",
+    r"(?i)\bbash\b[^\r\n]*?-c\b",
+    # Writing the string out to a script file and running it later is an eval
+    # route too, just a slower one.
+    r"(?i)\bSet-Content\b|\bOut-File\b|>>?\s*['\"]?[^\r\n]*\.(?:ps1|cmd|bat|sh|js|py)\b",
+    # A bare call operator on its own token: `& $s`. Not `&&`, which is a chain.
+    r"(?<!&)&(?!&)\s*[\$\(]",
+)
+
+
+def _ps_here_string_line_span(script: str) -> set:
+    """1-based line numbers that sit INSIDE a PowerShell here-string body.
+
+    The opener (@' / @") and terminator ('@ / "@) lines are NOT included: the
+    opener line can legally carry a command before it, and the terminator line can
+    carry one after it, so both stay scannable.
+
+    PowerShell 5.1 syntax, followed exactly -- loose parsing here is what turns a
+    guard into a bypass:
+      * an opener is only an opener when @' or @" ENDS the line (trailing
+        whitespace tolerated);
+      * a terminator must be at the START of a line. An indented terminator is a
+        parse error in 5.1, so it does not close anything;
+      * an unterminated here-string yields an EMPTY span, leaving every line
+        executable. Fail safe.
+    """
+    lines = script.splitlines()
+    inside = set()
+    index = 0
+    while index < len(lines):
+        opener = re.search(r"@(['\"])[ \t]*$", lines[index])
+        if not opener:
+            index += 1
+            continue
+        quote = opener.group(1)
+        terminator = re.compile(r"^" + re.escape(quote) + r"@")
+        body_start = index + 1
+        close_at = None
+        for probe in range(body_start, len(lines)):
+            if terminator.match(lines[probe]):
+                close_at = probe
+                break
+        if close_at is None:
+            break
+        for line_no in range(body_start, close_at):
+            inside.add(line_no + 1)
+        index = close_at + 1
+    return inside
+
+
+def _ps_prose_line_span(script: str, runtime: str) -> set:
+    """Here-string lines that may be treated as data for THIS body.
+
+    Empty when the runtime is not PowerShell-reachable (here-strings are
+    PowerShell syntax; `@'` in a JS or Python body is not a data delimiter), and
+    empty when the body contains any way to evaluate a string as code.
+    """
+    if runtime not in ("powershell", "any"):
+        return set()
+    span = _ps_here_string_line_span(script)
+    if not span:
+        return set()
+    for pattern in _STRING_EVAL_ROUTES:
+        if re.search(pattern, script):
+            return set()
+    return span
+
+
 def _ps_join_continuations(script: str) -> str:
     """Fold PowerShell backtick line continuations so a split command is seen whole.
 
@@ -7158,7 +7276,13 @@ def _scan_destructive_script(script_content: str, runtime: str) -> dict:
     # pattern list grew, silently invalidating acknowledgements that were correct
     # when they were written. All matching kinds are kept in ``kinds`` so nothing
     # is lost from the report.
+    # B028: lines inside a here-string that this body has no way to EXECUTE are
+    # prose. They are still reported (`prose_matches`) so nothing is hidden, but
+    # they leave `count` -- the number the caller has to reproduce, which must mean
+    # "destructive statements", not "sentences mentioning one".
+    prose_lines = _ps_prose_line_span(body, runtime)
     findings: list[dict] = []
+    prose_matches: list[dict] = []
     for line_no, line in enumerate(body.splitlines(), 1):
         kinds = [kind for pattern, kind in patterns if re.search(pattern, line)]
         if not kinds:
@@ -7167,12 +7291,21 @@ def _scan_destructive_script(script_content: str, runtime: str) -> dict:
         for kind in kinds:
             if kind not in deduped:
                 deduped.append(kind)
-        findings.append({
+        record = {
             "line": line_no,
             "kind": deduped[0],
             "kinds": deduped,
             "text": line.strip()[:200],
-        })
+        }
+        if line_no in prose_lines:
+            record["why_not_counted"] = (
+                "inside a PowerShell here-string and this script contains no way to "
+                "evaluate a string as code, so the line is data (e.g. a commit "
+                "message), not a command"
+            )
+            prose_matches.append(record)
+            continue
+        findings.append(record)
 
     footguns: list[dict] = []
     warnings: list[str] = []
@@ -7180,7 +7313,16 @@ def _scan_destructive_script(script_content: str, runtime: str) -> dict:
     # shape IS CASE-2008, and run_project_command reaches powershell.
     if runtime in ("powershell", "any"):
         folded = _ps_join_continuations(body)
+        # B028: folding continuations shifts nothing here (a here-string body has no
+        # backtick continuations to fold), but recompute the span against the FOLDED
+        # text so the line numbers line up with the loop below.
+        folded_prose = _ps_prose_line_span(folded, runtime)
         for line_no, line in enumerate(folded.splitlines(), 1):
+            # A footgun is refused with retryable=False and NO confirm path, so a
+            # sentence merely DESCRIBING the CASE-2008 shape would make a script
+            # permanently unrunnable. Prose cannot delete anything.
+            if line_no in folded_prose:
+                continue
             is_remove = re.search(
                 r"(?i)(?:^|[;|&{(]\s*)(?:Remove-Item|ri|rm|rmdir|rd|del|erase)\b", line
             ) or re.search(r"(?i)\bRemove-Item\b", line)
@@ -7224,10 +7366,20 @@ def _scan_destructive_script(script_content: str, runtime: str) -> dict:
                 "so a dry_run preview cannot cover them."
             )
 
+    if prose_matches:
+        warnings.append(
+            "%d line(s) inside a here-string mention a destructive command but were "
+            "NOT counted: this script has no way to execute a string, so they are "
+            "data (see prose_matches). If the here-string IS meant to be executed, "
+            "add the eval route and the count will include them." % len(prose_matches)
+        )
     return {
         "destructive": bool(findings),
         "count": len(findings),
         "findings": findings,
+        # B028: always present, even when empty. A key that appears only sometimes
+        # is how a KeyError reaches production.
+        "prose_matches": prose_matches,
         "footguns": footguns,
         "warnings": warnings,
     }
@@ -7260,6 +7412,7 @@ def _destructive_refusal(scan: dict, *, confirm_destructive: int, dry_run: bool,
             phase="policy",
             footguns=scan["footguns"],
             destructive_statements=scan["findings"],
+            prose_matches=scan.get("prose_matches") or [],   # B028
             incident="CASE-2008 (2026-08-20): this exact shape deleted .gitignore and "
                      "README.md while reporting exit code 0.",
             ca_next_action="rewrite_script_then_retry",
@@ -7277,6 +7430,7 @@ def _destructive_refusal(scan: dict, *, confirm_destructive: int, dry_run: bool,
             phase="policy",
             destructive_count=scan["count"],
             destructive_statements=scan["findings"],
+            prose_matches=scan.get("prose_matches") or [],   # B028
             warnings=scan["warnings"],
             confirm_destructive_required=scan["count"],
             confirm_hint=("Pass confirm_destructive=%d. If you edit the command the "
@@ -7463,6 +7617,8 @@ async def run_project_test_script(
             "destructive": _scan["destructive"],
             "destructive_count": _scan["count"],
             "destructive_statements": _scan["findings"],
+            **({"prose_matches": _scan["prose_matches"]}     # B028
+               if _scan.get("prose_matches") else {}),
             "footguns": _scan["footguns"],
             "warnings": _scan["warnings"],
             "preview_kind": "static_source_scan",
@@ -7605,6 +7761,8 @@ async def run_project_test_script(
         result["destructive"] = True
         result["destructive_count"] = _scan["count"]
         result["destructive_statements"] = _scan["findings"]
+        if _scan.get("prose_matches"):                       # B028
+            result["prose_matches"] = _scan["prose_matches"]
         result["confirm_destructive_acknowledged"] = confirm_destructive
         if _scan["warnings"]:
             result["warnings"] = _scan["warnings"]
