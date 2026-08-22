@@ -2210,4 +2210,111 @@ was the bug rather than the code.
 
 ---
 
-_Last updated: 2026-08-21 (campaign-1608 + JS-repo audit + stabilisation + real-test follow-up: added B002-B022, all fixed and mutation-verified, plus B023 and B024; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_
+## B025 — `search_code`'s hot path re-`fnmatch`ed 56 constant globs for every single file
+
+**Status**: FIXED 2026-08-22, mutation-verified (2 mutants, see below)
+
+**Reported as**: "còn 1 tool chưa tối ưu" — a performance report naming `search_code`
+as the last unoptimised tool, with five claims. **Three of the five were wrong about
+where the code is**, and recording that is half the value of this entry:
+
+| claim | verdict |
+|---|---|
+| 4.1 `search_code` uses `os.walk` + `read_text()` + a per-line Python scan (`orchestrator/tools/search.py:346`) | **wrong function.** `:346` is `find_symbol`'s inner `_search()`. `search_code` is at `:706` and its scanner `_search_snapshot` (`:883`) reads an immutable snapshot pin (`pin.iter_records`, `pin.read_bytes`) — no walk, no `read_text` |
+| 4.2 `SKIP_DIRS` lacks the data dirs `1.footage`/`2.working`/`3.output`/`BIN` | real, **not fixed** — `SKIP_DIRS` is shared by search *and* the indexer, so widening it changes what gets **indexed**. Out of the authorised scope ("fix và tối ưu tool search_code") and needs its own gate |
+| 4.3 no file-size threshold in the skip path | real, **not fixed** — same reason |
+| 4.4 `search_code` ignores INDEX.json | it reads a snapshot pin instead, which is the stronger guarantee (size + sha256 verified per read). Not a defect |
+| 4.5 `cache_status` calls `cache_delta` every time with no TTL | real, **not fixed** — a TTL on a staleness probe is exactly how a stale answer gets cached |
+
+**The actual defect was somewhere the report did not look**, and two of my own
+hypotheses had to be falsified by measurement before cProfile found it:
+
+- *not* the regex — the whole per-line scan over cached payloads is **109ms**;
+- *not* I/O — `read_bytes` is **94–125ms** warm for 17.9MB;
+- *not* the snapshot's size+sha256 verification — **≈0ms** against a raw read (93 vs 94ms).
+
+cProfile on a 0-hit `search_code` against [A]'s own repo (1261 indexed files,
+17.9MB), 2.032s total, 5 753 475 calls:
+
+```
+1.109s  code_tools.py:3639        _cache_delta        <- A03's drift probe, on purpose
+0.900s  surgical_mapper.py:957    _should_scan_file
+0.898s  surgical_mapper.py:328    _skip_reason        <- 4369 calls
+0.776s  surgical_mapper.py:266    _matches_any        <- 8716 calls
+0.747s  surgical_mapper.py:268    <genexpr>           <- 246761 iterations
+```
+
+`_matches_any` is `any(fnmatch.fnmatch(name.lower(), p.lower()) for p in patterns)`.
+For every file it re-lowercases all 56 patterns (11 `SECRET_FILE_GLOBS` + 45
+`SKIP_FILE_GLOBS`) and re-dispatches each glob. `fnmatch` caches the compiled regex
+by *pattern string*, so the parse is cached but the 246 761 per-call dispatches are
+not. **The pattern set is a module constant. Nothing about it changes between files.**
+
+### What was deliberately NOT changed: A03's drift probe
+
+The report's model — "fewer hits is slower" — is real and reproduced at a uniform
+`max_results=3`: `function` 185ms/3 hits vs `openActDialog` 1956ms/0 hits vs a
+nonsense query 2023ms/0 hits. That 1.1s is `cache_delta`, and `search_code` pays it
+**only** on `count == 0` (`orchestrator/tools/search.py:1155`) on purpose: a 0-hit over
+a possibly-stale snapshot is *inconclusive*, not "absent", and silently degrading
+there is what once let a real committed symbol be declared a phantom. The probe is
+the feature; what it should not do is cost what it costs around it.
+`TheDriftProbeIsNotTheDefect` exists so that "make the 0-hit path fast" is never
+mistaken by a later reader for "make the 0-hit path skip the probe".
+
+### Fix (applied) — compile each constant glob set once
+
+`_compile_glob_union` builds one alternation per set with `fnmatch.translate`, which
+is *the same translator `fnmatch` itself uses*, so the accepted language is preserved
+**by construction** rather than by re-implementation. Patterns are `sorted()` first,
+because a `set`'s iteration order is not stable across processes and an unstable
+pattern string would compile to a differently-ordered regex between runs.
+`_matches_any` is kept intact — it is the readable statement of what the unions mean.
+
+### The trap: a faster classifier that silently relabels
+
+The first candidate hoisted the cheap `SUPPORTED_EXTENSIONS` set-lookup to the front
+of `_skip_reason`. It was **2.0×** — and it relabelled **227 files** in [A]'s own repo
+(`.gitignore`, `.gitignore.bak`, `orchestrator.log`, `orchestrator.mcp.log`,
+`orchestrator_access.log`, `phase1p5_run.log`, `pyrightconfig.json.bak`,
+`restart_orchestrator.bat.lnk` and 219 more) from
+`generated_archive_backup_or_internal_ai` to `unsupported_extension`. Both verdicts
+mean "skip", so **nothing failed loudly** — only the reason string a caller reads
+started lying. `_skip_reason` decides what gets indexed *and* what gets searched, and
+its return value is surfaced. Rejected; the shipped fix keeps the original check order
+and only makes each individual check cheaper.
+
+A second candidate memoised the filename-only prefix with `lru_cache`: cold 265ms /
+warm 235ms, i.e. **nothing**, because 4215 of 4400 filenames are distinct. Also
+rejected. `test_no_file_changes_verdict` pins determinism whether or not a cache is
+ever added back.
+
+### Measured
+
+Clean A/B, same process, 3 warm-ups + 5 timed runs, median, then **reverted and
+re-measured under identical warm conditions**:
+
+| query | reverted | fixed |
+|---|---|---|
+| `zzz-khong-ton-tai-b023` (0 hits) | 969ms | **735ms** (−24%) |
+| `gradient` | 219ms | **172ms** (−21%) |
+| `function` (3 hits) | 110ms | 125ms (noise; this path never reached the probe) |
+
+`_skip_reason` micro-benchmark over 4400 real repo files: **453ms → 266ms (1.70×)**,
+with **0 mismatches of 4400** against the original `fnmatch` loop.
+
+### Mutants
+
+- **drop the leading-dot test** in `_is_generated_or_junk` (the 227-file relabel in its
+  purest form) → kills **2**: `test_a_dotfile_is_generated_not_unsupported` and
+  `test_the_glob_sets_still_decide_the_same_names`;
+- **revert the compiled unions** → kills exactly **1**,
+  `test_it_is_faster_than_the_naive_glob_loop` (`235.0 not less than 218.0`). That test
+  times the fix against the exact loop it replaced, both in the same process on the
+  same files, so it is a floor rather than a hardware-dependent target.
+
+**Pinned by**: `tests/test_skip_reason_glob_cost_b025.py` (11 tests).
+
+---
+
+_Last updated: 2026-08-22 (campaign-1608 + JS-repo audit + stabilisation + real-test follow-up: added B002-B025, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_

@@ -263,17 +263,53 @@ def _rel_path(file_path: str | Path, project_root: str | Path) -> str:
     return str(Path(file_path).resolve().relative_to(Path(project_root).resolve())).replace("\\", "/")
 
 
+# B025: `_skip_reason` is the hot path of BOTH the indexer and `search_code`, and
+# this pair of helpers was 81% of a 0-hit search. `_matches_any` was
+# `any(fnmatch.fnmatch(name.lower(), p.lower()) for p in patterns)`: per FILE it
+# re-lowercased all 56 patterns (11 secret + 45 junk) and re-dispatched fnmatch
+# 56 times. cProfile on one `search_code` call over [A]'s own repo: 4369 files ->
+# 8716 `_matches_any` calls -> 246761 genexpr iterations, 0.776s of a 2.032s
+# answer. The pattern sets are module constants; nothing in them varies per file.
+#
+# Fix: compile each glob set ONCE into a single alternation. `fnmatch.translate`
+# is the same translator `fnmatch` itself uses, so the accepted language is
+# unchanged by construction rather than by re-implementation -- that equivalence
+# is swept over 4400 real files by
+# tests/test_skip_reason_glob_cost_b025.py::test_the_glob_sets_still_decide_the_same_names.
+#
+# `_matches_any` is KEPT and still exported: it is the readable form, it is what
+# a future glob set would use, and deleting a working helper to inline two calls
+# is not an optimisation. It is simply no longer on the hot path.
+def _compile_glob_union(patterns: set[str]) -> "re.Pattern[str]":
+    # Sorted for a deterministic pattern string (a set's order is not stable
+    # across runs), which keeps the compiled regex identical between processes.
+    return re.compile("|".join(
+        fnmatch.translate(pattern.lower()) for pattern in sorted(patterns)))
+
+
 def _matches_any(name: str, patterns: set[str]) -> bool:
     low = name.lower()
     return any(fnmatch.fnmatch(low, pattern.lower()) for pattern in patterns)
 
 
+_SECRET_FILE_RE = _compile_glob_union(SECRET_FILE_GLOBS)
+_SKIP_FILE_RE = _compile_glob_union(SKIP_FILE_GLOBS)
+
+
 def _is_secret_file(file_path: Path) -> bool:
-    return _matches_any(file_path.name, SECRET_FILE_GLOBS)
+    return _SECRET_FILE_RE.match(file_path.name.lower()) is not None
 
 
 def _is_generated_or_junk(file_path: Path) -> bool:
-    return file_path.name.startswith(".") or _matches_any(file_path.name, SKIP_FILE_GLOBS)
+    # Order preserved deliberately: the dot test stays FIRST, so a `.gitignore`
+    # is "generated_archive_backup_or_internal_ai" and not
+    # "unsupported_extension". A candidate fix that hoisted the cheap extension
+    # set-lookup ahead of these relabelled 227 files in [A]'s own repo -- both
+    # verdicts mean "skip", so nothing failed loudly and only the reason string a
+    # caller reads started lying. Pinned by
+    # test_a_dotfile_is_generated_not_unsupported.
+    low = file_path.name.lower()
+    return low.startswith(".") or _SKIP_FILE_RE.match(low) is not None
 
 
 # R82: .json/.jsonl earn their place in SUPPORTED_EXTENSIONS as CONFIG (package.json,
