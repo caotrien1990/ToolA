@@ -413,6 +413,56 @@ def _cbm_dead_code_ast_p0(project_path: str, *, limit: int = 50,
     return result
 
 
+def _scanner_health(vulture_status: dict, ruff_status: dict) -> dict:
+    """Name what actually ran, not what the engine was designed to run.
+
+    B029b 2026-08-22. The payload hardcoded `engine="vulture+ruff"` and
+    `engine_reason="Vulture + Ruff both apply"` with `error=None`, so a run where
+    vulture had timed out on every attempt (B029c) looked identical to a healthy
+    run that genuinely found nothing. `count=0` is only readable when the caller
+    can tell which of those it is.
+
+    `error` is set only when NO scanner survived: one working scanner still
+    produces a usable advisory answer, and marking that an error would push
+    callers to discard findings that are real.
+
+    An empty status dict means the scanner was never invoked (the `files == []`
+    short-circuit). That is neither success nor failure, so it is reported as
+    neither -- inventing an outcome for a scan that did not happen is the same
+    class of lie this function exists to remove.
+    """
+    ran = [s for s in (vulture_status, ruff_status) if s]
+    failed = [{"scanner": s.get("scanner"), "reason": s.get("reason")}
+              for s in ran if not s.get("ok")]
+    healthy = [str(s.get("scanner")) for s in ran if s.get("ok")]
+
+    if not ran:
+        engine = "vulture+ruff"
+        reason = "majority language is python — Vulture + Ruff both apply"
+    elif not failed:
+        engine = "+".join(healthy)
+        reason = ("majority language is python — %s both apply"
+                  % " + ".join(name.capitalize() for name in healthy)
+                  if len(healthy) > 1 else
+                  "majority language is python — %s applied"
+                  % healthy[0].capitalize())
+    else:
+        names = ", ".join("%s (%s)" % (f["scanner"], f["reason"] or "unknown")
+                          for f in failed)
+        engine = "+".join(healthy) if healthy else "none"
+        reason = ("majority language is python, but these scanners did not "
+                  "contribute: %s — findings below come from %s only"
+                  % (names, "+".join(healthy) if healthy else "no scanner"))
+    return {
+        "engine": engine,
+        "engine_reason": reason,
+        "scanners_failed": failed,
+        "error": (None if healthy or not failed else
+                  "every dead-code scanner failed: %s"
+                  % ", ".join(str(f["scanner"]) for f in failed)),
+    }
+
+
 def _cbm_dead_code_dispatch(project_path: str, *, limit: int = 50,
                             scope: str = "full", file_filter: str = "") -> dict:
     scan_root = os.path.join(project_path, "orchestrator") if scope == "core" else project_path
@@ -457,11 +507,17 @@ def _cbm_dead_code_dispatch(project_path: str, *, limit: int = 50,
 
     t0 = time.monotonic()
     limit = max(1, min(int(limit or 50), 200))
+    # B029b: the scanners report their own health here. Left empty when the scan
+    # is skipped entirely (`files == []`), because "nothing was asked of it" is
+    # not the same claim as "it ran".
+    vulture_status: dict = {}
+    ruff_status: dict = {}
     if files == []:
         candidates = []
     else:
-        v = scan_vulture(scan_root, min_conf=60, files=files)
-        r = scan_ruff(scan_root, files=files)
+        v = scan_vulture(scan_root, min_conf=60, files=files,
+                         status=vulture_status)
+        r = scan_ruff(scan_root, files=files, status=ruff_status)
         candidates = _merge_dedup(v + r)
     candidates.sort(
         key=lambda item: (
@@ -496,9 +552,8 @@ def _cbm_dead_code_dispatch(project_path: str, *, limit: int = 50,
         "error": None,
         "elapsed_ms": round((time.monotonic() - t0) * 1000, 1),
         "disclaimer": "advisory only — Ruff findings require manual verify before action",
-        "engine": "vulture+ruff",
-        "engine_reason": "majority language is python — Vulture + Ruff both apply",
     }
+    out.update(_scanner_health(vulture_status, ruff_status))
     return _annotate(out)
 
 

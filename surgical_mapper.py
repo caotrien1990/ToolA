@@ -49,6 +49,7 @@ PRESERVED_CACHE_DIRS = {"search_snapshots"}
 from orchestrator.skip_rules import (  # noqa: E402
     DOT_DIRS_SEARCHABLE,
     SKIP_DIRS,
+    ignored_directory_name,
     should_skip_dir,
 )
 
@@ -377,10 +378,12 @@ def _skip_reason(file_path: Path, project_root: str | Path | None = None) -> str
         file_path, _depth_below_root(file_path, project_root)
     ):
         return "data_json_not_source"
-    parts = {part.lower() for part in file_path.parts}
-    for skip_dir in SKIP_DIRS:
-        if skip_dir.lower() in parts:
-            return f"ignored_directory:{skip_dir}"
+    # B027c: ask the shared gate, not the raw set. `project_root` reached this
+    # function before B027c and was never used for the directory decision, so a
+    # `!name` un-skip opened the walk and this line closed it again.
+    ignored = ignored_directory_name(file_path.parts, project_root)
+    if ignored is not None:
+        return f"ignored_directory:{ignored}"
     return None
 
 
@@ -417,7 +420,8 @@ def classify_group(file_path: str, project_root: str) -> str:
     suffix = Path(file_path).suffix.lower()
     name = Path(file_path).name.lower()
 
-    if any(part.lower() in SKIP_DIRS for part in rel.parts):
+    # B027c: same shared gate as _skip_reason, for the same reason.
+    if ignored_directory_name(rel.parts, project_root) is not None:
         return "ignored"
     if _is_secret_file(Path(file_path)):
         return "secret"

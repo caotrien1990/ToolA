@@ -41,6 +41,27 @@ async def list_structure(path: str = "", depth: int = 2, save_output: bool = Fal
     effective_depth = min(depth, 2) if effective_compact else depth
     truncated_folders: list[str] = []
 
+    # B027e 2026-08-23. The last skip gate the overlay could not reach. This tool
+    # ALREADY filtered through should_skip_dir, so it was never the "raw tree" view
+    # its missing root suggested -- it was a filtered view whose filter a project
+    # could not correct, which put `!name` out of reach at the one surface a human
+    # uses to check what their .orchestrator_ignore actually did.
+    #
+    # ONE direction only, on purpose: `!name` REVEALS, and an overlay must never be
+    # able to HIDE a directory from a structure listing. A listing that silently
+    # omits a real directory is how a caller concludes a file does not exist, which
+    # is CASE-2008's shape. `_unskipped` therefore asks should_skip_dir twice and
+    # only accepts the answer that shows more, never less. Pinned by
+    # test_an_extra_skip_is_deliberately_not_honoured.
+    overlay_root = project_path or (str(base) if base.is_dir() else "")
+
+    def _hidden(name: str) -> bool:
+        if not fo.should_skip_dir(name):
+            return False
+        if overlay_root and not fo.should_skip_dir(name, overlay_root):
+            return False  # an explicit !name un-skip: reveal it
+        return True
+
     def _build(current: Path, current_depth: int, prefix: str) -> list[str]:
         if current_depth > effective_depth:
             return []
@@ -49,7 +70,7 @@ async def list_structure(path: str = "", depth: int = 2, save_output: bool = Fal
             entries = sorted(current.iterdir(), key=lambda e: (e.is_file(), e.name.lower()))
         except PermissionError:
             return []
-        entries = [entry for entry in entries if not fo.should_skip_dir(entry.name)]
+        entries = [entry for entry in entries if not _hidden(entry.name)]
         if effective_compact and len(entries) > 30:
             files_only = [e for e in entries if e.is_file()]
             dirs_only = [e for e in entries if e.is_dir()]

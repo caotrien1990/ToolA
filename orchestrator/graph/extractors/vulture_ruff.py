@@ -5,11 +5,39 @@ empty list so cbm_dead_code can keep serving advisory results.
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
 import warnings
 from pathlib import Path
+
+# B029c 2026-08-22. Was 30s, against a measured 56s for vulture on ToolA full
+# scope -- so every full run timed out, and (before B029b) said nothing. The
+# budget is generous rather than tight because the failure mode of "too short" is
+# a silent empty result, while "too long" only costs latency on an already-slow
+# advisory tool. Overridable so a caller on a huge tree is not stuck with ours.
+_SCAN_TIMEOUT_S = float(os.environ.get("CBM_SCAN_TIMEOUT_S", "180"))
+
+# B029a 2026-08-22. The daemon inherits FORCE_COLOR from whatever launched it
+# (measured =3), so ruff painted ANSI even into a pipe and `_RUFF_RE` matched
+# none of 5803 lines. `--color never` handles ruff; these are dropped as well
+# because NO_COLOR does not beat FORCE_COLOR and other tools read them too.
+_COLOUR_ENV_VARS = ("FORCE_COLOR", "CLICOLOR_FORCE", "CLICOLOR", "COLORTERM")
+
+# Strip ANSI SGR sequences before parsing. Belt and braces next to --color never:
+# a flag only helps the process we spawn ourselves, and returning zero findings
+# because of an escape code is not a failure any caller can diagnose.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def _scan_env() -> dict:
+    """The parent environment minus anything that forces coloured output."""
+    env = dict(os.environ)
+    for name in _COLOUR_ENV_VARS:
+        env.pop(name, None)
+    env["NO_COLOR"] = "1"
+    return env
 
 _VULTURE_RE = re.compile(
     r"^(?P<file>.+?):(?P<line>\d+):\s+"
@@ -198,7 +226,8 @@ def _parse_vulture_output(output: str, min_conf: int = 60) -> list[dict]:
 def _parse_ruff_output(output: str) -> list[dict]:
     candidates: list[dict] = []
     for line in output.splitlines():
-        match = _RUFF_RE.match(line.strip())
+        # B029a: see _ANSI_RE.
+        match = _RUFF_RE.match(_ANSI_RE.sub("", line).strip())
         if not match:
             continue
         rule = match.group("rule")
@@ -232,6 +261,24 @@ def _scanner_warning(scanner: str, exc: BaseException | str) -> None:
     warnings.warn(f"{scanner} scan failed: {exc}", RuntimeWarning, stacklevel=2)
 
 
+def _record(status: "dict | None", scanner: str, reason: "str | None") -> None:
+    """Write a scanner's outcome into the caller's dict, if it asked for one.
+
+    B029b 2026-08-22. `warnings.warn` was the ONLY failure channel, and nothing
+    it emits survives the trip to an HTTP caller: `cbm_dead_code` kept answering
+    `engine="vulture+ruff"`, `error=None`, `count=0` while vulture had in fact
+    timed out on every single run. Same class as B028b -- a payload that
+    misdescribes itself is a defect even when the analysis it did run is correct.
+
+    `status` stays optional so every existing call site keeps working unchanged;
+    a caller that wants the truth opts in by passing a dict.
+    """
+    if status is None:
+        return
+    status.clear()
+    status.update({"scanner": scanner, "ok": reason is None, "reason": reason})
+
+
 def _console_python() -> str:
     """Resolve python.exe (CONSOLE subsystem) from sys.executable.
 
@@ -246,7 +293,9 @@ def _console_python() -> str:
 
 
 def scan_vulture(project_path: str, min_conf: int = 60,
-                 files: list[str] | None = None) -> list[dict]:
+                 files: list[str] | None = None,
+                 status: "dict | None" = None) -> list[dict]:
+    """Vulture dead-code scan. Fail-open: returns [] and reports via `status`."""
     targets = [str(Path(p)) for p in files] if files else [str(Path(project_path))]
     try:
         completed = subprocess.run(
@@ -260,20 +309,32 @@ def scan_vulture(project_path: str, min_conf: int = 60,
             ],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=_SCAN_TIMEOUT_S,
             check=False,
+            env=_scan_env(),
         )
+    except subprocess.TimeoutExpired as exc:
+        reason = f"timeout after {_SCAN_TIMEOUT_S:g}s"
+        _scanner_warning("vulture", exc)
+        _record(status, "vulture", reason)
+        return []
     except (OSError, subprocess.SubprocessError) as exc:
         _scanner_warning("vulture", exc)
+        _record(status, "vulture", str(exc))
         return []
     if completed.returncode not in (0, 1, 3):
-        _scanner_warning("vulture", completed.stderr.strip() or f"exit {completed.returncode}")
+        reason = completed.stderr.strip() or f"exit {completed.returncode}"
+        _scanner_warning("vulture", reason)
+        _record(status, "vulture", reason)
         return []
+    _record(status, "vulture", None)
     return _parse_vulture_output(completed.stdout, min_conf=min_conf)
 
 
 def scan_ruff(project_path: str, rules: str | None = None,
-              files: list[str] | None = None) -> list[dict]:
+              files: list[str] | None = None,
+              status: "dict | None" = None) -> list[dict]:
+    """Ruff lint scan. Fail-open: returns [] and reports via `status`."""
     targets = [str(Path(p)) for p in files] if files else [str(Path(project_path))]
     select_rules = rules if rules else _ALL_SCAN_RULES
     try:
@@ -289,18 +350,33 @@ def scan_ruff(project_path: str, rules: str | None = None,
                 "--no-cache",
                 "--output-format",
                 "concise",
+                # B029a: wins over FORCE_COLOR, which NO_COLOR does not. Same
+                # fix A24 applied to ruff_fix in graph/tools.py; this site was
+                # missed because that survey only enumerated ruff_fix.
+                "--color",
+                "never",
             ],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=_SCAN_TIMEOUT_S,
             check=False,
+            env=_scan_env(),
         )
+    except subprocess.TimeoutExpired as exc:
+        reason = f"timeout after {_SCAN_TIMEOUT_S:g}s"
+        _scanner_warning("ruff", exc)
+        _record(status, "ruff", reason)
+        return []
     except (OSError, subprocess.SubprocessError) as exc:
         _scanner_warning("ruff", exc)
+        _record(status, "ruff", str(exc))
         return []
     if completed.returncode not in (0, 1):
-        _scanner_warning("ruff", completed.stderr.strip() or f"exit {completed.returncode}")
+        reason = completed.stderr.strip() or f"exit {completed.returncode}"
+        _scanner_warning("ruff", reason)
+        _record(status, "ruff", reason)
         return []
+    _record(status, "ruff", None)
     return _parse_ruff_output(completed.stdout)
 
 
@@ -328,6 +404,7 @@ def _merge_dedup(candidates: list[dict]) -> list[dict]:
 
 __all__ = [
     "_ALL_SCAN_RULES",
+    "_SCAN_TIMEOUT_S",
     "_merge_dedup",
     "_parse_ruff_output",
     "_parse_vulture_output",

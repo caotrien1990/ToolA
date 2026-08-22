@@ -7164,11 +7164,62 @@ _STRING_EVAL_ROUTES = (
     r"(?i)\bexecSync\b|\bspawnSync\b|\bchild_process\b",
     r"(?i)\bbash\b[^\r\n]*?-c\b",
     # Writing the string out to a script file and running it later is an eval
-    # route too, just a slower one.
-    r"(?i)\bSet-Content\b|\bOut-File\b|>>?\s*['\"]?[^\r\n]*\.(?:ps1|cmd|bat|sh|js|py)\b",
+    # route too, just a slower one. B028c: the redirect form checks WHERE the
+    # string lands; `Set-Content` / `Out-File` are checked for the same thing by
+    # `_writes_string_to_executable`, because they used to match on the cmdlet
+    # name alone and so counted `Out-File msg.txt` -- a data write -- as a way to
+    # execute the here-string.
+    r"(?i)>>?\s*['\"]?[^\r\n]*\.(?:ps1|cmd|bat|sh|js|py)\b",
     # A bare call operator on its own token: `& $s`. Not `&&`, which is a chain.
     r"(?<!&)&(?!&)\s*[\$\(]",
 )
+
+
+_SCRIPT_TARGET_EXTS = ("ps1", "cmd", "bat", "sh", "js", "py")
+
+# A quoted string, or a bare token, ending in a short extension. This is what "a
+# target this parser can read" means; anything else is unreadable by design.
+_TARGET_LITERAL_RE = re.compile(
+    r"'([^']*\.[A-Za-z0-9]{1,10})'"
+    r'|"([^"]*\.[A-Za-z0-9]{1,10})"'
+    r"|(?<![\w'\"])([^\s'\"();|]*\.[A-Za-z0-9]{1,10})(?![\w.])"
+)
+_STRING_WRITE_CMDLET_RE = re.compile(r"(?i)\b(?:Set-Content|Out-File|Add-Content)\b")
+
+
+def _writes_string_to_executable(script: str) -> bool:
+    """True when the body writes a string to something that can later be RUN.
+
+    B028c 2026-08-22. `Set-Content` / `Out-File` used to be eval routes on the
+    cmdlet name alone, while the `>` redirect right beside them in
+    `_STRING_EVAL_ROUTES` checked the target extension. Same alternation, two
+    halves that disagreed -- so a prose here-string written to `msg.txt` came back
+    as destructive, and `git commit -F msg.txt` written the obvious way was
+    unrunnable.
+
+    Three answers, because two are not enough:
+      * a literal target with a script extension -> True (the slow eval route);
+      * a literal target with any other extension -> False (a data write);
+      * NO readable literal target -- a bare `$dest`, a `(Join-Path ...)`, a
+        cmdlet with no target at all -> True. FAIL SAFE: guessing "that is
+        probably a .txt" is the direction that costs files.
+
+    Judged per line, so one data write does not excuse a script write elsewhere in
+    the same body.
+    """
+    for line in script.splitlines():
+        match = _STRING_WRITE_CMDLET_RE.search(line)
+        if not match:
+            continue
+        rest = line[match.end():]
+        targets = [group.lower() for found in _TARGET_LITERAL_RE.findall(rest)
+                   for group in found if group]
+        if not targets:
+            return True  # cannot read the target -> assume it is runnable
+        for target in targets:
+            if target.rsplit(".", 1)[-1] in _SCRIPT_TARGET_EXTS:
+                return True
+    return False
 
 
 def _ps_here_string_line_span(script: str) -> set:
@@ -7226,6 +7277,10 @@ def _ps_prose_line_span(script: str, runtime: str) -> set:
     for pattern in _STRING_EVAL_ROUTES:
         if re.search(pattern, script):
             return set()
+    # B028c: the cmdlet write forms, which need a target check the pattern list
+    # cannot express (see `_writes_string_to_executable`).
+    if _writes_string_to_executable(script):
+        return set()
     return span
 
 

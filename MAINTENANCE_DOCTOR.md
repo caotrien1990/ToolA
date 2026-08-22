@@ -669,7 +669,7 @@ be hiding it.**
 
 ### Two suite counts are both correct
 
-`pytest tests\` reports **2669**; a bare `pytest` reports **2696**. The 27-test gap
+`pytest tests\` reports **2726**; a bare `pytest` reports **2753**. The 27-test gap
 is three files at the **repo root** (`test_all_tools.py`,
 `test_council_reply_fallback.py`, `test_open_session_drift_note.py`), collected by
 rootdir discovery and outside the README's `tests\` baseline. Neither number is
@@ -785,6 +785,104 @@ one step, and the fifth got sharper: the problem was never the required shape, i
 was that violating it answered `ok:true`.
 
 ---
+
+### One gate is never the whole gate (B027c / B027d, 2026-08-22)
+
+B027 bound `project_root` into `should_skip_dir` and every test agreed. Two more
+gates were still comparing against the raw `SKIP_DIRS` set, and **both** were
+invisible to those tests for the same structural reason:
+
+* `_skip_reason` / `classify_group` (`surgical_mapper.py`) are the **FILE** gate --
+  the same question asked about a path the walk has already descended into;
+* `_walk_files` (`orchestrator/graph/indexer.py`) is the **GRAPH** walk, which
+  never called `should_skip_dir` at all, so `cbm_index` built its graph from a
+  different file set than `search_code` sees.
+
+Why the whole B027 suite could not see either: in the **extra-skip** direction the
+walk cuts the tree before any file reaches gate 2, so gate 1 alone *looks*
+sufficient. Only the `!name` un-skip -- where the walk deliberately descends --
+makes the second gate observable. **A feature with two directions needs tests in
+both, or the passing direction hides the broken one.**
+
+When you add a rule that answers "should this path be skipped", grep for every
+place that answers the same question, not every place that calls the function you
+just changed:
+
+    grep -rn "SKIP_DIRS" --include=*.py .
+
+At B027d time that returned three answering sites for one question. B027c routes
+the file gate through one shared `skip_rules.ignored_directory_name` rather than
+copying the precedence into each caller -- duplicated precedence is *how* the gates
+came to disagree. The graph walk keeps its own dot-directory rule on purpose:
+`should_skip_dir` returns False for `.council`, so reusing it verbatim there would
+have started indexing the SOT transcript tree.
+
+### The last gate is the one with a defence (B027e, 2026-08-23)
+
+`list_structure` (`orchestrator/tools/read/fs.py`) was the fourth and final site still
+asking the global-only skip question, and it came with a reasonable-sounding argument
+for staying that way: *a directory listing should stay browsable*. That argument is
+what kept it unfixed through B027, B027c and B027d.
+
+It does not survive measurement. `list_structure` **already** filtered through
+`should_skip_dir`, so it was never the raw-tree view its missing root implied --
+`node_modules`, `venv312` and `__pycache__` were hidden before B027 and are hidden
+now. It was a *filtered* view whose filter a project could not correct, which put
+`!name` out of reach at the one surface a human uses to check what their
+`.orchestrator_ignore` actually did. **An ignore file whose effect you cannot see is
+an ignore file you cannot debug.**
+
+The fix honours **one direction only**, and the asymmetry is the design:
+
+* `!name` **reveals** -> honoured.
+* a project-declared skip would **hide** -> deliberately **not** honoured, because a
+  listing that silently omits a real directory is how a caller concludes a file does
+  not exist. That is CASE-2008's shape, and a structure listing is exactly where it
+  would do the most damage.
+
+`_hidden` therefore asks `should_skip_dir` twice and accepts only the answer that
+shows *more*, never less. One test pins that asymmetry as intended rather than as an
+oversight -- otherwise the next person to "finish the job" by sharing the helper
+would introduce the hiding direction and every existing test would stay green.
+
+**When a site resists a sweep because it has a defence, measure the defence.** Three
+rounds of B027 fixes went past this one on the strength of an argument nobody had
+checked against what the function actually did.
+
+
+### A scanner that fails silently reports zero findings, which reads as "clean" (B029)
+
+`cbm_dead_code` answered `count=0` on a repo with thousands of real lint hits, with
+`error=None` and `engine="vulture+ruff"`. Three defects stacked:
+
+* **colour** -- the daemon inherits `FORCE_COLOR` (measured `=3`) from whatever
+  launched it, so ruff painted ANSI into a pipe and `_RUFF_RE` matched **0 of 5803
+  lines**. This is A24's defect at a site A24's survey never enumerated -- the B018
+  lesson: a survey only proves things about the sites it listed. `--color never`
+  beats `FORCE_COLOR`; `NO_COLOR` does **not**, which is why the child env is
+  scrubbed as well, and the parser strips ANSI anyway because a flag only helps a
+  process we spawn ourselves.
+* **timeout** -- `scan_vulture` ran with `timeout=30` against a measured **56s**
+  need on ToolA full scope, so it timed out on every full run.
+* **silence** -- both failures went only to `warnings.warn`, which nothing over
+  HTTP can ever see.
+
+The rule that comes out of it: **a fail-open scanner must report that it failed
+open.** `scan_vulture` / `scan_ruff` now take an optional `status` dict (optional so
+every pre-B029 call site keeps working) and `_scanner_health` derives `engine`,
+`engine_reason` and `scanners_failed` from what actually ran. `error` is set only
+when *no* scanner survived -- one working scanner still produces usable advisory
+findings, and calling that an error would push callers to discard real results. An
+**empty** status means the scanner was never invoked (`files == []`) and is reported
+as neither success nor failure: inventing an outcome for a scan that did not happen
+is the same class of lie the function exists to remove.
+
+Diagnostic when a scan returns suspiciously few results: run it with the colour
+variables cleared and compare the two counts. On a very large tree, raise the
+budget rather than accept a silent empty answer:
+
+    CBM_SCAN_TIMEOUT_S=300
+
 
 ## The doctor: `scripts/live_answer_doctor.py`
 
@@ -1134,6 +1232,36 @@ default in opposite directions.
 | `test_trace_path_start_node_b023.py` | 7 | B023: an unresolvable `start_node_id` must not answer `ok:true` with an empty trace. Pins the refusal at the **wrapper** (`ok:false` + `error_name="START_NODE_NOT_FOUND"` + a `ca_next_action` naming `cbm_template_query`) while the **inner** `query.py` payload only *gains* `start_node_resolved` and keeps `error:null` -- three in-process consumers (`orchestrator_server.py:12849`, `orchestrator/tools/read/context.py:399`, `template_query`'s `impact_scope`) read a set `error` as a graph failure, and `orchestrator_server.py:12849` branches on the exact string `truncation_reason == "start_node_not_found"`, so both are deliberately preserved. **Two mutants**: `if False:` at the wrapper kills 3 (the refusal tests); `if not result.get("start_node_resolved")` instead of `is False` kills exactly **one**, `test_graph_disabled_still_answers_the_degraded_payload` (`AssertionError: False is not True`) -- `start_node_resolved` is three-state (`None` = never looked, e.g. `GRAPH_ENABLED=0`), and a truthiness check reports "did not look" as "not found". That mutant is the entire reason that test exists |
 | `test_skip_reason_glob_cost_b025.py` | 11 | B025: `_skip_reason` is `search_code`'s hot path and re-`fnmatch`ed 56 module-constant globs, with a fresh `.lower()`, for **every file** -- 246 761 genexpr iterations for 4369 files, 0.776s of a 2.032s answer. Pinned as an **equivalence, not a speedup**, because the risk is a faster classifier that silently *reclassifies*: `_skip_reason` decides what gets indexed AND what gets searched, and returns a *reason string* callers surface. A 2.0x candidate that hoisted the cheap `SUPPORTED_EXTENSIONS` lookup to the front relabelled **227 files** (`.gitignore`, `orchestrator.log`, `pyrightconfig.json.bak`, ...) from `generated_archive_backup_or_internal_ai` to `unsupported_extension` -- both mean "skip", so nothing failed loudly and only the reason lied. **Two mutants**: dropping the leading-dot test kills 2 (`test_a_dotfile_is_generated_not_unsupported`, `test_the_glob_sets_still_decide_the_same_names`); reverting the compiled unions kills exactly **1**, `test_it_is_faster_than_the_naive_glob_loop`, which times the fix against the exact loop it replaced in the same process on the same files -- a floor, not a hardware-dependent target. `TheDriftProbeIsNotTheDefect` is the load-bearing one: it pins that A03's `cache_delta` probe on `count == 0` **stays**, so "make the 0-hit path fast" is never read as "make the 0-hit path skip the probe" |
 
+## Test inventory added by the overlay + guard batch (2026-08-22 -> 08-23)
+
+116 tests across ten files, all written **before** their fix and confirmed failing
+first, all mutation-verified. The B027 family is one defect found **five** times at five
+layers -- directory gate, snapshot filters, file gate, graph walk, structure listing -- which is the point of the entry above: each new layer was found by testing
+the previous fix through the surface a caller actually uses, never by re-reading the
+diff.
+
+| File | Tests | Pins |
+|---|---|---|
+| `test_search_text_size_cap_b026.py` | 7 | B026: the text cap applies per match rather than per answer |
+| `test_project_ignore_b027.py` | 18 | B027: `.orchestrator_ignore` both directions -- `name` adds a skip, `!name` beats **both** `SKIP_DIRS` and the leading-dot rule; `.council` stays unhideable; the cache keys on `(root, st_mtime_ns, st_size)` so an edit takes effect with no restart; FAIL OPEN on a missing, unreadable or corrupt file; `should_skip_dir` keeps its one-argument form byte for byte (10-name subtest) |
+| `test_project_ignore_snapshot_b027b.py` | 5 | B027b: the two `publish_snapshot` filters forward the root, so the snapshot walk and the index scan agree on which directories exist -- a set mismatch makes `_validate_index_against_records` raise |
+| `test_project_ignore_file_gate_b027c.py` | 10 | B027c: the **FILE** gate. `_skip_reason` / `classify_group` honour the overlay, so `!name` is not opened by the walk and then closed by the classifier; and an ignored file does not return to the snapshot through the `changed_paths` fast path, which skips `os.walk` entirely (the A03 shape: search answering differently depending on whether a write had just happened). Deliberately **not** routed through `should_skip_dir` -- that also skips leading-dot directories, which this gate never has, and `.github/x.py` has always been scannable |
+| `test_project_ignore_graph_walk_b027d.py` | 6 | B027d: the **GRAPH** walk honours the overlay in both directions at once (the pre-fix measurement was wrong in both -- a declared skip walked anyway *and* an explicit un-skip still pruned). One row pins that an explicit `skip_dirs=` argument still means "use exactly this set", and one pins the FAIL-OPEN fallback on a corrupt overlay. The dot rule stays local rather than borrowed from `should_skip_dir`, which would have started indexing `.council` |
+| `test_project_ignore_structure_b027e.py` | 7 | B027e: `list_structure` honours `!name`, and the un-skip reaches the files inside the revealed directory. One row pins the baseline (a global skip stays hidden with no overlay) and **one pins the asymmetry as deliberate**: a project-declared skip must NOT hide a directory from a listing, because that is CASE-2008's shape at the surface where it does the most damage. `.council` stays visible even when the overlay names it, a corrupt overlay falls back to the global rules, and a call with no `project_path` uses the walk root so the overlay still applies |
+| `test_destructive_here_string_b028.py` | 22 | B028: here-string prose is not a destructive command, while a here-string that *writes a script* still is; `confirm_destructive` cannot bypass `DESTRUCTIVE_SCRIPT_FOOTGUN`; the exact line that wiped a repo on 2026-08-20 is still caught |
+| `test_prose_matches_surface_b028b.py` | 7 | B028b: the payload must describe what the scan really did -- a field nobody can reach is not a field |
+| `test_eval_route_target_b028c.py` | 17 | B028c: `Set-Content` / `Out-File` / `Add-Content` ask the same question the `>` branch beside them already asked -- *where does the string land*. **Three** answers, because two are not enough: a literal script target is an eval route, a literal data target is not, and **no readable literal target** (a bare `$dest`, a `(Join-Path ...)`, a cmdlet with no target) is an eval route by design. Fail safe: guessing "that is probably a .txt" is the direction that costs files. One subtest covers all six script extensions; three rows keep the CASE-2008 line answering `include_ignored_with_literalpath` |
+| `test_dead_code_scanner_health_b029.py` | 17 | B029: `--color never` is passed, the colour variables are scrubbed from the child env, and an ANSI-painted line still parses (a real line captured under `FORCE_COLOR=3`); a timeout, a bad exit code and a success each reach the caller's `status`, and `status` stays optional; the payload names only the scanners that ran, carries the failure **reason** and not just the name, and sets `error` only when every scanner died. One row pins that the env is **scrubbed, not emptied** -- see the note below, it did not always |
+
+`test_the_child_env_is_not_emptied` is worth its own paragraph. It first asserted
+only that the child env was **truthy**, which the over-correction `env = {}`
+survives, because `_scan_env` then adds `NO_COLOR=1` to the empty dict. The mutant
+walked through a green test. The fix was to the **test**, not the code: it now
+asserts every inherited parent variable is actually present in the child env, and
+it kills the mutant. Same lesson as B028's opener test -- **a test that passes for a
+reason other than the one in its name is not a guard.**
+
+
 Two harness requirements for anything touching the graph, both learned the hard
 way:
 
@@ -1145,8 +1273,8 @@ way:
   walk, and `CBM_GRAPH_ENABLED=1` is what lets `dead_code_candidates` run at all
   — a JS test that forgets either one passes vacuously.
 
-Baseline after this audit and the doctor that followed it: **2669 passed, 4
-skipped, 1 xfailed, 199 subtests passed, 0 failed** in 361s, measured -- not
+Baseline after this audit and the doctor that followed it: **2726 passed, 4
+skipped, 1 xfailed, 205 subtests passed, 0 failed** in 363s, measured -- not
 predicted. The four deltas this campaign is accountable for are all measured on
 the same run order: 2495 -> 2526 for the doctor's 31 tests, 2526 -> 2534 for
 B018's 8 (4 pinning the fix, 4 pinning the doctor's new check), 2534 -> 2547 for
@@ -1155,7 +1283,7 @@ plus the 6 that pin the doctor's new check and the 400-handling defect writing i
 exposed), 2556 -> 2559 for the 3 that pin the probe-scope false FAIL, and 2559 -> 2575
 for B021's 16, and 2575 -> 2581 for the 6 that pin B021's offset follow-up
 (4 of whose mutants survived the first cut because the original fixture yields 0/0/1
-rows on the branches they touch), 2581 -> 2588 for B022's 7, 2588 -> 2592 for B024's 4, 2592 -> 2599 for B023's 7, and 2599 -> 2610 for B025's 11, 2610 -> 2617 for B026's 7, 2617 -> 2635 for B027's 18, 2635 -> 2657 for B028's 22, 2657 -> 2664 for B028b's 7, and 2664 -> **2669** for B027b's 5. The 2534
+rows on the branches they touch), 2581 -> 2588 for B022's 7, 2588 -> 2592 for B024's 4, 2592 -> 2599 for B023's 7, and 2599 -> 2610 for B025's 11, 2610 -> 2617 for B026's 7, 2617 -> 2635 for B027's 18, 2635 -> 2657 for B028's 22, 2657 -> 2664 for B028b's 7, 2664 -> 2669 for B027b's 5, 2669 -> 2679 for B027c's 10, 2679 -> 2685 for B027d's 6, 2685 -> 2702 for B028c's 17, 2702 -> 2719 for B029's 17, and 2719 -> **2726** for B027e's 7. The 2534
 run had one failure, and it was not environmental: it was B020. The 2556 run had
 one too, and it was a genuine flake -- a nominal-sleep timing assertion, fixed
 and mutation-verified rather than rerun. Reproduce it the way the section above prescribes — plain

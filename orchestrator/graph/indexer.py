@@ -26,6 +26,7 @@ from .extractors import javascript as _extractor_js
 # dirs the existing [A] search tools skip.
 import surgical_mapper  # resolved from project root (code_tools does the same)
 SKIP_DIRS = surgical_mapper.SKIP_DIRS
+from orchestrator.skip_rules import load_project_ignore  # noqa: E402
 
 PYTHON_EXTS = (".py",)
 JS_EXTS = _extractor_js.SUPPORTED_EXTS
@@ -115,14 +116,49 @@ def _extract_snapshots(stale_snapshots: list[dict], root: str, *, parallel: bool
 
 
 def _walk_files(project_root: str, *, exts: tuple[str, ...] = PYTHON_EXTS,
-                skip_dirs: Optional[set[str]] = None) -> list[str]:
-    """Yield absolute file paths under project_root matching exts, honoring SKIP_DIRS."""
+                skip_dirs: Optional[set[str]] = None,
+                overlay_root: Optional[str] = None) -> list[str]:
+    """Yield absolute file paths under project_root matching exts, honoring SKIP_DIRS.
+
+    `overlay_root` is the project whose `.orchestrator_ignore` applies, defaulting to
+    the walk root. It is a separate argument because core scope walks
+    `<root>/orchestrator` while the overlay file lives at `<root>` -- one value for
+    both would make core scope silently ignore the overlay.
+
+    B027d 2026-08-22. Before this, the prune line compared `d not in SKIP_DIRS`
+    directly, so the graph was built from a different file set than `search_code`
+    sees: a project-declared skip was walked anyway AND an explicit `!name` un-skip
+    was still pruned. Both directions were wrong at once.
+
+    NOT routed through `should_skip_dir` on purpose: that function returns False for
+    `.council`, so reusing it would make the graph start indexing the SOT transcript
+    tree. The dot rule below is unchanged; only the overlay is new, with `!name`
+    beating it the same way it beats the dot rule inside `should_skip_dir`.
+
+    An explicit `skip_dirs=` still means "use exactly this set" -- the overlay must
+    not override a caller who asked for something specific.
+    """
     skip = skip_dirs if skip_dirs is not None else SKIP_DIRS
+    extra_skips: "frozenset[str]" = frozenset()
+    unskips: "frozenset[str]" = frozenset()
+    if skip_dirs is None:
+        # FAIL OPEN: a corrupt or absent overlay yields two empty sets, so the
+        # global rules below still apply.
+        extra_skips, unskips = load_project_ignore(overlay_root or project_root)
+
+    def _prune(d: str) -> bool:
+        low = d.lower()
+        if low in unskips:
+            return False  # explicit opt-in wins over every skip, dot rule included
+        if low in extra_skips:
+            return True
+        return d in skip or d.startswith(".")
+
     out: list[str] = []
     root = os.path.normpath(project_root)
     for dirpath, dirnames, filenames in os.walk(root):
         # mutate dirnames in place to prune skipped dirs
-        dirnames[:] = [d for d in dirnames if d not in skip and not d.startswith(".")]
+        dirnames[:] = [d for d in dirnames if not _prune(d)]
         for fn in filenames:
             if fn.endswith(exts):
                 out.append(os.path.join(dirpath, fn))
@@ -160,9 +196,10 @@ def index_project(project_path: str, *, scope: str = "core",
         # Determine candidate files. Core scope = the orchestrator/ package only.
         if scope == "core":
             core_root = os.path.join(root, "orchestrator")
-            candidates = _walk_files(core_root, exts=exts) if os.path.isdir(core_root) else []
+            candidates = (_walk_files(core_root, exts=exts, overlay_root=root)
+                          if os.path.isdir(core_root) else [])
         else:
-            candidates = _walk_files(root, exts=exts)
+            candidates = _walk_files(root, exts=exts, overlay_root=root)
 
         parallel = _parallel_index_enabled()
         # Snapshot content hashes; detect stale (changed or new) files.
@@ -296,9 +333,10 @@ def detect_changes(project_path: str, *, project_root: Optional[str] = None,
     root = project_root or project_path
     if scope == "core":
         core_root = os.path.join(root, "orchestrator")
-        candidates = _walk_files(core_root, exts=exts) if os.path.isdir(core_root) else []
+        candidates = (_walk_files(core_root, exts=exts, overlay_root=root)
+                      if os.path.isdir(core_root) else [])
     else:
-        candidates = _walk_files(root, exts=exts)
+        candidates = _walk_files(root, exts=exts, overlay_root=root)
     disk: dict[str, dict] = {}
     for abs_path in candidates:
         try:

@@ -65,6 +65,44 @@ def should_skip_dir(name: str, project_root=None) -> bool:
     return lowered in SKIP_DIRS or name.startswith(".")
 
 
+def ignored_directory_name(parts, project_root=None) -> "str | None":
+    """Return the directory name that makes a FILE under `parts` ignored, else None.
+
+    B027c 2026-08-22. `should_skip_dir` is the DIRECTORY gate: it decides which trees
+    a walk descends. This is the FILE gate -- the same question asked about a path
+    that has already been walked -- and before B027c it compared against the raw
+    `SKIP_DIRS` set, so `!name` opened gate 1 and gate 2 closed again. Both gates now
+    read the same overlay from one place; duplicating the precedence rules into the
+    caller is exactly how they came to disagree.
+
+    Precedence matches `should_skip_dir` where the two overlap: `.council` can never
+    be hidden, then `!name` wins over any skip, then a project-declared skip, then
+    the global set.
+
+    NOT implemented as `should_skip_dir` per part on purpose: that one also skips
+    every leading-dot directory, which this gate never has -- `.github/x.py` has
+    always been scannable -- so reusing it verbatim would drop files that have
+    nothing to do with this defect.
+    """
+    lowered = [str(part).lower() for part in parts]
+    extra_skips: "frozenset[str]" = frozenset()
+    unskips: "frozenset[str]" = frozenset()
+    if project_root is not None:
+        extra_skips, unskips = load_project_ignore(project_root)
+    for name in lowered:
+        if name in DOT_DIRS_SEARCHABLE:
+            # SOT transcript tree: a project must not be able to hide it, so it is
+            # checked before the overlay here for the same reason it is there.
+            continue
+        if name in unskips:
+            continue
+        if name in extra_skips:
+            return name
+        if name in SKIP_DIRS:
+            return name
+    return None
+
+
 # ---------------------------------------------------------------------------
 # B027 2026-08-22 (Anh/Clau): per-project ignore overlay.
 #

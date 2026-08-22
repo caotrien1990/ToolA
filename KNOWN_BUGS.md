@@ -2610,4 +2610,332 @@ tool can catch (B018: a survey only proves things about the sites it enumerated)
 
 ---
 
-_Last updated: 2026-08-22 (campaign-1608 + JS-repo audit + stabilisation + real-test follow-up: added B002-B028, all fixed and mutation-verified; triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_
+## B027c - the overlay stopped at the walk gate and never reached the FILE gate
+
+**Status**: FIXED 2026-08-22, mutation-verified (3 mutants, 3 killed)
+**Severity**: HIGH, **found by Anh's independent verification of B027** (33
+function-layer cases through the live daemon, generation `69f4f4e33aff` / PID 33988)
+
+B027 bound `project_root` into every `should_skip_dir` call and that part was right.
+But `should_skip_dir` only answers one question: *"does the walk descend into this
+directory?"* A file that **has** been walked passes a **second, independent gate** --
+`_skip_reason` (`surgical_mapper.py:380`) and `classify_group` (`:420`) -- and that
+gate still compared against the raw `SKIP_DIRS` set. Both functions already **took**
+`project_root`; neither used it for this decision.
+
+Two symptoms, one root cause:
+
+1. **`!name` was dead end-to-end.** `should_skip_dir('build', root)` returns `False`,
+   so the walk descends into `build/` -- and then `_skip_reason` answers
+   `ignored_directory:build` and the file is dropped anyway. Gate 1 opens, gate 2
+   closes. This is exactly the case B027's own comment gives as the *reason* `!name`
+   exists.
+2. **An ignored file came back to the snapshot after every write.** The `changed_paths`
+   fast path (`search_snapshots.py:1016`) skips `os.walk` **entirely** and filters only
+   through `include_file` -> `_should_scan_file` -> `_skip_reason`. So search answered
+   differently depending on whether a write had just happened -- the same family as
+   A03's stale read: the same question, two answers, decided by history rather than by
+   the rule.
+
+**Fix**: one shared `skip_rules.ignored_directory_name(name, project_root)`, routed
+from **both** sites, rather than the precedence copied into `surgical_mapper`.
+Duplicated precedence is *how* the two gates came to disagree in the first place;
+copying it a third time would have been the same bug with a longer fuse.
+
+Deliberately **not** routed through `should_skip_dir`, even though it is the obvious
+one-line answer: `should_skip_dir` also skips every leading-dot directory, which the
+FILE gate never has. `.github/x.py` has always been scannable, and quietly making it
+unscannable is a behaviour change this defect is not about.
+
+**Pinned by**: `tests/test_project_ignore_file_gate_b027c.py` (10 tests) -- both
+directions at the file gate, the `changed_paths` fast path specifically, the dot
+directory staying scannable, and FAIL OPEN on a corrupt overlay.
+
+### Mutants
+
+| mutant | killed |
+|---|---|
+| the file gate ignores the overlay again (pre-B027c) | **6** |
+| `!name` no longer beats an extra skip at the file gate | **3** |
+| the shared helper is bypassed and the raw set consulted | **5** |
+
+---
+
+## B027d - the CBM graph walk never saw the overlay either
+
+**Status**: FIXED 2026-08-22, mutation-verified (4 mutants, 4 killed)
+**Severity**: MEDIUM, found while measuring what Anh's B027c report pointed at -- he
+named the site (`indexer.py:120`) as the smaller of the two gaps
+
+`_walk_files` (`orchestrator/graph/indexer.py`) pruned with `d not in skip` against the
+raw `SKIP_DIRS` set. It never called `should_skip_dir` at all, so it was invisible to
+every survey that looked for callers of that function. The consequence: `cbm_index` and
+`cbm_incremental_index` built their graph from a **different file set** than
+`search_code` sees, on the same project, at the same moment.
+
+Measured on a tree declaring `2.working` plus `!build`:
+
+    walk returned   ['2.working/j.py', 'src/a.py']
+    overlay says    ['build/made.py', 'src/a.py']
+
+**Wrong in both directions at once** -- the declared skip was walked anyway *and* the
+explicit un-skip was still pruned. All four call sites already held the root; the
+parameter was simply never passed.
+
+**Fix**: `_walk_files` gained `overlay_root` (a separate argument from `project_root`,
+because core scope walks `<root>/orchestrator` while the overlay file lives at `<root>`
+-- one value for both would make core scope silently ignore the overlay), and prunes
+through `load_project_ignore` with `!name` beating both the extra skips and the dot
+rule.
+
+Two deliberate non-changes, each with a comment saying why:
+
+* It keeps **its own** dot-directory rule rather than borrowing `should_skip_dir`,
+  which returns `False` for `.council`. Reusing it verbatim would have started indexing
+  the SOT transcript tree.
+* An explicit `skip_dirs=` argument still means *"use exactly this set"* -- the overlay
+  must not override a caller who asked for something specific. One test pins it.
+
+**Pinned by**: `tests/test_project_ignore_graph_walk_b027d.py` (6 tests), including
+`test_both_directions_at_once` -- the measurement above as one assertion.
+
+### Mutants
+
+| mutant | killed |
+|---|---|
+| unskip no longer wins in the graph walk | **2** |
+| the graph walk ignores the overlay (pre-B027d) | **3** |
+| the prune predicate loses its teeth entirely | **3** |
+| the overlay overrides an explicit `skip_dirs=` caller | **1** |
+
+### The lesson, which is why B027 needed four entries
+
+Every B027 test stops at `should_skip_dir`, and in the **extra-skip** direction the walk
+cuts the tree before any file can reach gate 2 -- so the directory gate alone *looks*
+sufficient. Only the `!name` un-skip, where the walk deliberately descends, makes the
+second gate observable at all. **A feature with two directions needs tests in both, or
+the passing direction hides the broken one.**
+
+When you add a rule that answers *"should this path be skipped"*, survey every place
+that **answers** that question, not every place that calls the function you just
+changed:
+
+    grep -rn "SKIP_DIRS" --include=*.py .
+
+At B027d time that returned three answering sites for one question.
+
+---
+
+## B027e - `list_structure` was the last skip gate the overlay could not reach, and it had a defence
+
+**Status**: FIXED 2026-08-23, mutation-verified (4 mutants, 4 killed)
+**Severity**: MEDIUM, **found by Anh's independent verification of B027** -- he named
+the site (`orchestrator/tools/read/fs.py:52`) and gave it a fair defence: *a directory
+should stay browsable*
+
+That defence is why this site went past B027, B027c and B027d unfixed. It does not
+survive measurement. `list_structure` **already** filtered through `should_skip_dir`,
+so it was never the raw-tree view its missing `project_root` implied: `node_modules`,
+`venv312` and `__pycache__` were hidden before B027 and are hidden now. What it
+actually was is a **filtered view whose filter a project could not correct** -- which
+put `!name` out of reach at the one surface a human uses to check what their
+`.orchestrator_ignore` actually did.
+
+**An ignore file whose effect you cannot see is an ignore file you cannot debug.**
+That makes this the worst of the four sites to be missing, even though it is the least
+severe by blast radius: the other three answer wrongly, this one hides the evidence.
+
+**Fix**: a local `_hidden(name)` that asks `should_skip_dir` twice -- once globally,
+once with the overlay root -- and accepts only the answer that shows **more**. The
+overlay root falls back to the walk root when `project_path` is omitted, since
+`list_structure` may be called with `path` alone and the walk root then *is* the
+project.
+
+**One direction only, and the asymmetry is the design:**
+
+| overlay says | effect | honoured? |
+|---|---|---|
+| `!name` | **reveals** a globally-skipped directory | **yes** |
+| `name` | would **hide** a directory the global rules show | **no** |
+
+A listing that silently omits a real directory is how a caller concludes a file does
+not exist. That is CASE-2008's shape, at the surface where it does the most damage. So
+the hiding direction is refused, and **one test pins that refusal as intended** rather
+than as an oversight -- otherwise the next person to "finish the job" by routing this
+gate through the shared helper introduces the hiding direction with every existing
+test still green.
+
+**Pinned by**: `tests/test_project_ignore_structure_b027e.py` (7 tests) -- the baseline
+with no overlay, the un-skip reaching both the directory and the files inside it, the
+deliberate asymmetry, `.council` staying visible even when the overlay names it, FAIL
+OPEN on a corrupt overlay, and a call with no `project_path`.
+
+### Mutants
+
+| mutant | killed |
+|---|---|
+| the gate is global-only again (pre-B027e) | **3** |
+| the un-skip branch is removed | **3** |
+| no fallback to the walk root when `project_path` is omitted | **1** |
+| the overlay may HIDE too (the CASE-2008 direction) | **1** |
+
+### The lesson
+
+**When a site resists a sweep because it has a defence, measure the defence.** Three
+rounds of B027 fixes went past this one on the strength of an argument -- *"a listing
+should stay browsable"* -- that nobody had checked against what the function actually
+did. The argument was not dishonest; it was just never measured. `grep -rn
+"should_skip_dir"` had listed this site every single time.
+
+That also closes the B027 family: **one defect, five layers** -- directory gate
+(B027), snapshot filters (B027b), file gate (B027c), graph walk (B027d), structure
+listing (B027e). Each layer was found by exercising the previous fix through a
+caller's surface, never by re-reading the diff.
+
+---
+
+## B028c - `Set-Content` / `Out-File` were eval routes on the cmdlet name alone
+
+**Status**: FIXED 2026-08-22, mutation-verified (4 mutants, 4 killed)
+**Severity**: MEDIUM, **found by Anh's independent verification of B028**
+
+One alternation in `_STRING_EVAL_ROUTES` had two halves that disagreed with each other.
+The `>` redirect half checked *where the string lands*
+(`.ps1|.cmd|.bat|.sh|.js|.py`); the two cmdlet halves matched the **name** and never
+asked about the target.
+
+Anh's measurement -- the same prose block every time, only the last line differing:
+
+| last line | destructive_count | correct |
+|---|---|---|
+| no write at all | 0 | yes |
+| `[IO.File]::WriteAllText(...)` | 0 | yes |
+| `$msg > m.txt` | 0 | yes |
+| `$msg > run.ps1` | 2 | yes |
+| `$msg \| Out-File msg.txt` | **2** | **no** |
+| `Set-Content msg.txt $msg` | **2** | **no** |
+
+So `git commit -F msg.txt` written the obvious way was unrunnable. That is the reason a
+commit message had to be routed through `[IO.File]::WriteAllText` -- a workaround for a
+defect, not a style choice.
+
+**Fix**: `_writes_string_to_executable` asks all three branches the same question, with
+**three** answers because two are not enough:
+
+* a literal target with a script extension -> eval route;
+* a literal target with any other extension -> a data write, not an eval route;
+* **no readable literal target** -- a bare `$dest`, a `(Join-Path ...)`, a cmdlet with
+  no target at all -> **eval route, fail safe**. Guessing *"that is probably a .txt"* is
+  the direction that costs files, and CASE-2008 is what that costs.
+
+Judged **per line**, so one data write does not excuse a script write elsewhere in the
+same body.
+
+Re-measured after the fix: `Out-File msg.txt` -> **0**, `Out-File run.ps1` -> **2**,
+`Out-File $dest` -> **2**, and the exact line that wiped the repo on 2026-08-20 still
+answers `include_ignored_with_literalpath`.
+
+**Pinned by**: `tests/test_eval_route_target_b028c.py` (17 tests, 6 subtests) -- data
+targets, script targets (one subtest over all six extensions), the three unreadable-target
+shapes, and three rows keeping the CASE-2008 line caught.
+
+### Mutants
+
+| mutant | killed |
+|---|---|
+| an unreadable target fails OPEN instead of safe | **3** |
+| script targets stop being eval routes | **5** |
+| the cmdlet target check is never called | **6** |
+| only `.ps1` counted, the other five extensions dropped | **5** |
+
+---
+
+## B029 - `cbm_dead_code` answered `count=0` on a repo full of findings, and the payload said nothing was wrong
+
+**Status**: FIXED 2026-08-22, mutation-verified (11 mutants, 11 killed)
+**Severity**: HIGH -- a scanner that fails silently reports zero findings, and zero
+findings reads as *"clean"*
+
+Three defects stacked, each of which alone would have been survivable:
+
+**(a) Colour.** `scan_ruff` never passed `--color never`, and the daemon inherits
+`FORCE_COLOR` from whatever launched it (measured **=3**). Ruff therefore painted ANSI
+even into a pipe, and `_RUFF_RE` matched **0 of 5803 lines** -- 5801 with the variable
+stripped from the environment. This is A24's defect at a site A24's survey never
+enumerated: the **B018** lesson, *a survey only proves things about the sites it listed*.
+`--color never` wins over `FORCE_COLOR`; **`NO_COLOR` does not**, which is why the child
+env is scrubbed as well, and the parser strips ANSI regardless because a flag only helps
+a process we spawn ourselves.
+
+**(b) Timeout.** `scan_vulture` ran with `timeout=30` against a measured **56s** need on
+ToolA full scope. It timed out on **every** full run. `_SCAN_TIMEOUT_S` is now 180s,
+overridable via `CBM_SCAN_TIMEOUT_S` -- generous rather than tight, because the failure
+mode of "too short" is a silent empty result while "too long" only costs latency on an
+already-slow advisory tool.
+
+**(c) Silence.** Both failures went **only** to `warnings.warn`, which nothing over HTTP
+can see, while the payload kept claiming `engine="vulture+ruff"`,
+`engine_reason="majority language is python - Vulture + Ruff both apply"`, `error=None`.
+Same class as **B028b**: a payload that misdescribes itself is a defect even when the
+analysis it *did* run is correct.
+
+**Fix**: `scan_vulture` / `scan_ruff` take an **optional** `status` dict -- optional so
+every pre-B029 call site keeps working unchanged, and a caller who wants the truth opts
+in by passing one. `_scanner_health` (`orchestrator/graph/tools.py`) derives `engine`,
+`engine_reason` and `scanners_failed` from what actually ran.
+
+Two decisions inside that helper are the entry:
+
+* `error` is set **only** when **no** scanner survived. One working scanner still
+  produces usable advisory findings, and marking that an error would push callers to
+  discard results that are real.
+* An **empty** status dict means the scanner was never invoked (the `files == []`
+  short-circuit). That is neither success nor failure, and is reported as neither --
+  inventing an outcome for a scan that did not happen is the same class of lie this
+  helper exists to remove.
+
+**Measured before / after, same environment:**
+
+| call | before | after |
+|---|---|---|
+| scope=full under `FORCE_COLOR=3` | count **0** | count **1630** in 61.2s |
+| scope=core under `FORCE_COLOR=3` | not measured | count **617** in 0.8s |
+| `scan_ruff` direct | 0 parsed of 5803 lines | **5818** findings, `{ok: True}` |
+
+With vulture forced dead the payload now reads `engine="ruff"`,
+`scanners_failed=[{"scanner": "vulture", "reason": "timeout after 180s"}]`, an
+`engine_reason` that names it, and `error=None` -- because ruff's 5818 findings are still
+worth returning.
+
+**Pinned by**: `tests/test_dead_code_scanner_health_b029.py` (17 tests).
+
+### Mutants
+
+| mutant | killed |
+|---|---|
+| `--color never` removed from `scan_ruff` | **1** |
+| colour vars no longer scrubbed from the child env | **2** |
+| ANSI strip removed from the parser | **1** |
+| env **emptied** instead of scrubbed (over-correction) | **1** |
+| `_record` writes nothing (pre-B029 silence) | **9** |
+| every scanner reports `ok` regardless of outcome | **6** |
+| health never sees either status | **3** |
+| all-scanners-dead no longer sets `error` | **1** |
+| `engine` claims both scanners even when one died | **3** |
+| timeout back to 30s | **1** |
+| vulture hardcodes 30 again, ignoring the constant | **2** |
+
+### A hole in my own test, found by mutation
+
+`test_the_child_env_is_not_emptied` first asserted only that the child env was
+**truthy** -- which the over-correction `env = {}` survives, because `_scan_env` then
+adds `NO_COLOR=1` to the empty dict. The mutant walked straight through a green test.
+
+The fix was to the **test**, not the code: it now asserts every inherited parent
+variable is actually present in the child env, and it kills the mutant. Same lesson as
+B028's opener test: **a test that passes for a reason other than the one in its name is
+not a guard.**
+
+---
+
+_Last updated: 2026-08-23 (campaign-1608 + JS-repo audit + stabilisation + real-test follow-up + verification of the verification: added B002-B029, all fixed and mutation-verified. B027c/B027d/B027e/B028c came from Anh's independent function-layer verification of B027+B028, and B029 from measuring what those reports pointed at -- none of them from re-reading a diff. Triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_
