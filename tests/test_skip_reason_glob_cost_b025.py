@@ -215,8 +215,13 @@ class TheDriftProbeIsNotTheDefect(unittest.TestCase):
         from orchestrator.tools import search as S
 
         repo = str(Path(__file__).resolve().parents[1])
+        # 2026-08-22: the sentinel must NOT appear whole in this file. Written as one
+        # literal it matched THIS test's own source (search_code scans tests/ too), so
+        # the "absent" probe found 1 hit and the assertion below failed on every run --
+        # the test was measuring itself, not the 0-hit path it exists to protect.
+        absent = "zzz_b025_" + "definitely_not_present" + "_anywhere"
         raw = asyncio.run(S.search_code(
-            query="zzz_b025_definitely_not_present_anywhere", project_path=repo,
+            query=absent, project_path=repo,
             max_results=3))
         d = json.loads(raw)
         self.assertIs(d.get("ok"), True, d)

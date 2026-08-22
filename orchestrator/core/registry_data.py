@@ -310,6 +310,12 @@ BASE_TOOL_SCHEMAS = [
 
 					"max_results": {"type": "integer", "default": 20, "description": "Maximum returned hits, capped by backend defaults."},
 
+					# B026 (2026-08-22): mode='text' now skips records above MAX_TEXT_RECORD_BYTES
+					# (2 MB). Same lesson as B-01 twelve days ago: a parameter the backend
+					# understands is still UNSUPPORTED_FIELD until the registry lists it, and an
+					# escape hatch nobody can reach is not an escape hatch. 0 = scan everything.
+					"max_file_bytes": {"type": "integer", "default": 2000000, "description": "mode='text' skips records larger than this (bytes). 0 = no cap, scan every record. Skipped files are reported in skipped_large_files."},
+
 				},
 
 				"required": [],

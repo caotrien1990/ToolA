@@ -18,6 +18,26 @@ from orchestrator.server.fair_admission import FAIR_ADMISSION
 MAX_SEARCH_CONTEXT_LINES = fo.MAX_SEARCH_CONTEXT_LINES
 MAX_SEARCH_RESULTS = fo.MAX_SEARCH_RESULTS
 
+# B026 2026-08-22 (Anh/Clau): text mode had NO size budget. mode='regex' has one
+# (regex_worker.validate_next_record_budget), so a runaway pattern is capped -- but a
+# plain literal search re-scanned EVERY byte of EVERY record with no ceiling at all.
+# Measured on dreye_redesign (a data repo: 760 records / 230.9 MB reach the scanner):
+# SEVEN minified HTML files >2MB hold 175.6 MB = 76% of the bytes and ~77% of all
+# re.search time (2165ms -> 504ms once they are excluded), while holding zero source
+# code -- the largest genuine source file in that repo is 0.78 MB. cProfile on the live
+# tool agrees: 2.249s of a 3.86s search_code call is `re.Pattern.search`, against only
+# 0.448s of blob reads, so this is a SCAN-cost problem, not an I/O one.
+#
+# The cap lives HERE and nowhere else on purpose:
+#   - NOT in _skip_reason / SKIP_DIRS: those feed INDEX.json, and dropping a file there
+#     would take away its index entry (and CAN-042 pins that set as a single source).
+#     A 25MB page.html that a CA is actively editing must KEEP its index entry.
+#   - NOT in should_scan_for_text: index_delta shares it, and a file that vanished from
+#     "should be scanned" would distort drift reporting.
+# Skipped records are COUNTED and REPORTED back to the caller (`skipped_large_files`),
+# never dropped silently, and `max_file_bytes=0` turns the cap off for that one call.
+MAX_TEXT_RECORD_BYTES = 2_000_000
+
 _SEARCH_MODE_ALIASES = {
     "plain": "text", "literal": "text", "raw": "text", "exact": "text",
     "string": "text", "fixed": "text", "re": "regex", "pattern": "regex", "regexp": "regex",
@@ -868,6 +888,12 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         effective_max_results = max(1, min(int(max_results), MAX_SEARCH_RESULTS))
     except (TypeError, ValueError):
         effective_max_results = MAX_SEARCH_RESULTS
+    # B026: 0 / negative / None -> cap off (scan everything, the pre-B026 behaviour).
+    _cap_raw = aliases.get("max_file_bytes", aliases.get("max_record_bytes", MAX_TEXT_RECORD_BYTES))
+    try:
+        text_record_cap = max(0, int(_cap_raw))
+    except (TypeError, ValueError):
+        text_record_cap = MAX_TEXT_RECORD_BYTES
 
     snapshot_root = _snapshot_root_for(base, project_path)
     base_resolved = base.resolve()
@@ -962,10 +988,20 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                 records.append((relative_path, label, payload))
 
             results: list[dict] = []
+            skipped_large: list[dict] = []
+            skipped_large_total = 0   # dem THAT; skipped_large chi giu 20 vi du dau
 
-            def _search_text_record(relative_path: str, label: str) -> None:
+            def _search_text_record(relative_path: str, label: str, size: int) -> None:
                 virtual_path = snapshot_root.joinpath(*PurePosixPath(relative_path).parts)
                 if not fo.should_scan_for_text(virtual_path):
+                    return
+                # B026: a record past the cap is reported, not silently dropped, so the
+                # caller can see WHAT was left out and re-run with max_file_bytes=0.
+                if text_record_cap and size > text_record_cap:
+                    nonlocal skipped_large_total
+                    skipped_large_total += 1
+                    if len(skipped_large) < 20:
+                        skipped_large.append({"file": label, "size_bytes": size})
                     return
                 payload = pin.read_bytes(relative_path)
                 lines = payload.decode("utf-8", errors="ignore").splitlines()
@@ -1006,7 +1042,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                 if mode == "regex":
                     _append_record(relative_path, label, int(record["size"]))
                 else:
-                    _search_text_record(relative_path, label)
+                    _search_text_record(relative_path, label, int(record["size"]))
                     if len(results) >= effective_max_results:
                         break
 
@@ -1019,7 +1055,16 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                     context_lines=effective_context,
                     deadline_seconds=_regex_remaining(),
                 )
-            return {"results": results, "snapshot_id": pin.snapshot_id}
+            payload_out = {"results": results, "snapshot_id": pin.snapshot_id}
+            if skipped_large:
+                payload_out["skipped_large_files"] = skipped_large
+                payload_out["skipped_large_count"] = skipped_large_total
+                payload_out["skipped_large_listed"] = len(skipped_large)
+                payload_out["skipped_large_hint"] = (
+                    f"{skipped_large_total} file lon hon max_file_bytes={text_record_cap} "
+                    "da bi bo qua trong mode='text'. Dat max_file_bytes=0 de quet ca chung."
+                )
+            return payload_out
         finally:
             pin.release()
 
@@ -1034,6 +1079,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                 str(base_resolved).casefold(), pattern, re_flags, file_pattern,
                 mode, effective_regex_deadline,
                 effective_context, effective_max_results,
+                text_record_cap,   # B026: khac cap = khac ket qua, khong duoc dung chung
             )
             wait_timeout = None
             producer_deadline_at = None
@@ -1134,6 +1180,16 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         "bounded": True,
         "snapshot_id": producer_payload["snapshot_id"],
     }
+    # B026: carry the cap report OUT. This matters most on count==0: the A03 rule below
+    # says a 0-hit must never silently read as "not there", and a hit that lived inside a
+    # capped file is exactly that shape. The caller sees what was left out and how to
+    # get it back, instead of a confident empty answer.
+    if producer_payload.get("skipped_large_files"):
+        response["skipped_large_files"] = producer_payload["skipped_large_files"]
+        response["skipped_large_count"] = producer_payload["skipped_large_count"]
+        response["skipped_large_listed"] = producer_payload["skipped_large_listed"]
+        response["skipped_large_hint"] = producer_payload["skipped_large_hint"]
+        response["max_file_bytes"] = text_record_cap
     # A03: search_code serves an immutable published snapshot that is NOT reconciled
     # against disk for files changed OUTSIDE [A] (native edit / git checkout / IDE).
     # A 0-hit over a stale snapshot is therefore INCONCLUSIVE ("khong ket luan duoc"),
