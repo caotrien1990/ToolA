@@ -669,7 +669,7 @@ be hiding it.**
 
 ### Two suite counts are both correct
 
-`pytest tests\` reports **2726**; a bare `pytest` reports **2753**. The 27-test gap
+`pytest tests\` reports **2742**; a bare `pytest` reports **2769**. The 27-test gap
 is three files at the **repo root** (`test_all_tools.py`,
 `test_council_reply_fallback.py`, `test_open_session_drift_note.py`), collected by
 rootdir discovery and outside the README's `tests\` baseline. Neither number is
@@ -883,6 +883,68 @@ budget rather than accept a silent empty answer:
 
     CBM_SCAN_TIMEOUT_S=300
 
+
+### The named line can be real and still not be the deciding one (B027f, 2026-08-23)
+
+Anh's verification named a site precisely, and every word of it measured out:
+`orchestrator/fileops/common.py` -- `should_scan_for_text(file_path)` had no
+`project_root` while `should_skip_dir` three lines above it did, and
+`orchestrator/tools/search.py:95` handed the unbound function to
+`publish_snapshot`. Patching that one line would still have left the tool broken.
+
+The measurement that showed it, taken before writing any fix:
+
+```
+snapshot published by refresh_project_map (root ALREADY bound)  ['build/made.py', 'src/a.py']
+search_code over that exact snapshot                            1 hit, ['src/a.py']
+snapshot id unchanged by the search                             True
+```
+
+The publish site was not the gate the answer came out of. Five more call sites
+re-asked the same unbound question -- the per-record read-back in `_append_record`
+and `_search_text_record`, the `find_symbol` definition walk, the `find_callers`
+`_scan` walk, and `index_delta`'s walk -- and the read-back is the one a caller's
+result passes through **last**. A fix at the named line would have looked right in
+the diff, passed a snapshot-level test, and returned the same wrong answer.
+
+**When a report names a line, confirm the line and then measure which site decides
+the output.** `grep -rn "should_scan_for_text" --include=*.py .` took seconds and
+found all six. This is the `grep` for the *question*, not for the caller you just
+changed -- the same survey B027c/B027d needed, at a sixth layer.
+
+A second defect sat in the same call, in the opposite direction, and predated B027
+entirely. R82 bound `project_root` at the refresh publish so deep data-JSON is
+judged by depth; the search-first fallback publish stayed unbound, where depth is
+unknown and the file is KEPT:
+
+```
+search-first    2 hits  ['outputs/round0/case01/result.json', 'src/a.py']
+refresh-first   1 hit   ['src/a.py']
+```
+
+Same project, same query, two answers -- an order dependence nobody could see,
+because whether anyone had run `refresh_project_map` first is not part of the query.
+**Two code paths that publish the same artefact are one contract; test that they
+agree, in both directions, or one of them drifts silently.**
+
+**And direction is deliberately not uniform across tools.** B027e ruled that an
+overlay may only REVEAL for `list_structure`, never HIDE, because a listing that
+omits a real directory is CASE-2008's shape. Search is the opposite by design --
+hiding produced records is the entire reason the overlay exists -- so B027f binds
+both directions. Do not "unify" these two gates into one helper: they answer
+deliberately different questions, and the tests say so.
+
+### `log_native_event` classifies on `tool_name`, not on what you touched
+
+Logging the B027f edits was refused three times with `HOST_GATE_DENY` /
+`audit_status: logged_and_rejected`, on files inside [A]'s own tree that the
+authorized-self-edit path covers. The cause was the `tool_name` string:
+`"Bash"` and `"Bash+Write"` classify as `task_class=project_command`,
+`native_policy=forbid`. `action_type="write_existing_file"` with
+`tool_name="Write"` returns `ok:true`, `audit_status: logged`,
+`task_class=upgrade_orchestrator`, `native_policy=hybrid_upgrade_only` --
+for the identical edit to the identical file. Report the *kind* of action, not the
+harness you happened to run it through.
 
 ## The doctor: `scripts/live_answer_doctor.py`
 
@@ -1234,9 +1296,9 @@ default in opposite directions.
 
 ## Test inventory added by the overlay + guard batch (2026-08-22 -> 08-23)
 
-116 tests across ten files, all written **before** their fix and confirmed failing
-first, all mutation-verified. The B027 family is one defect found **five** times at five
-layers -- directory gate, snapshot filters, file gate, graph walk, structure listing -- which is the point of the entry above: each new layer was found by testing
+132 tests across eleven files, all written **before** their fix and confirmed failing
+first, all mutation-verified. The B027 family is one defect found **six** times at six
+layers -- directory gate, snapshot filters, file gate, graph walk, structure listing, search filter -- which is the point of the entry above: each new layer was found by testing
 the previous fix through the surface a caller actually uses, never by re-reading the
 diff.
 
@@ -1248,6 +1310,7 @@ diff.
 | `test_project_ignore_file_gate_b027c.py` | 10 | B027c: the **FILE** gate. `_skip_reason` / `classify_group` honour the overlay, so `!name` is not opened by the walk and then closed by the classifier; and an ignored file does not return to the snapshot through the `changed_paths` fast path, which skips `os.walk` entirely (the A03 shape: search answering differently depending on whether a write had just happened). Deliberately **not** routed through `should_skip_dir` -- that also skips leading-dot directories, which this gate never has, and `.github/x.py` has always been scannable |
 | `test_project_ignore_graph_walk_b027d.py` | 6 | B027d: the **GRAPH** walk honours the overlay in both directions at once (the pre-fix measurement was wrong in both -- a declared skip walked anyway *and* an explicit un-skip still pruned). One row pins that an explicit `skip_dirs=` argument still means "use exactly this set", and one pins the FAIL-OPEN fallback on a corrupt overlay. The dot rule stays local rather than borrowed from `should_skip_dir`, which would have started indexing `.council` |
 | `test_project_ignore_structure_b027e.py` | 7 | B027e: `list_structure` honours `!name`, and the un-skip reaches the files inside the revealed directory. One row pins the baseline (a global skip stays hidden with no overlay) and **one pins the asymmetry as deliberate**: a project-declared skip must NOT hide a directory from a listing, because that is CASE-2008's shape at the surface where it does the most damage. `.council` stays visible even when the overlay names it, a corrupt overlay falls back to the global rules, and a call with no `project_path` uses the walk root so the overlay still applies |
+| `test_project_ignore_search_gate_b027f.py` | 16 | B027f: the **FILE** gate `search_code` serves through. Six call sites asked the same unbound question, and the one that decides a caller's answer is the per-record read-back (`_append_record` / `_search_text_record`), not the publish site the report named -- one row pins that the snapshot id is **unchanged** by the search, so it is measuring the read-back and not a republish. `find_symbol` and `find_callers` are separate walks and get a row each (the `find_callers` row exists **because** its mutant survived the first cut). INDEX.json and `search_code` are asserted to return the identical file set, which is the divergence as reported. Three rows cover the second, older defect: the two publish paths must agree in **both** directions, and a deep data-JSON stays unsearchable either way -- named explicitly, so "they agree" cannot be satisfied by both being wrong |
 | `test_destructive_here_string_b028.py` | 22 | B028: here-string prose is not a destructive command, while a here-string that *writes a script* still is; `confirm_destructive` cannot bypass `DESTRUCTIVE_SCRIPT_FOOTGUN`; the exact line that wiped a repo on 2026-08-20 is still caught |
 | `test_prose_matches_surface_b028b.py` | 7 | B028b: the payload must describe what the scan really did -- a field nobody can reach is not a field |
 | `test_eval_route_target_b028c.py` | 17 | B028c: `Set-Content` / `Out-File` / `Add-Content` ask the same question the `>` branch beside them already asked -- *where does the string land*. **Three** answers, because two are not enough: a literal script target is an eval route, a literal data target is not, and **no readable literal target** (a bare `$dest`, a `(Join-Path ...)`, a cmdlet with no target) is an eval route by design. Fail safe: guessing "that is probably a .txt" is the direction that costs files. One subtest covers all six script extensions; three rows keep the CASE-2008 line answering `include_ignored_with_literalpath` |
@@ -1273,8 +1336,8 @@ way:
   walk, and `CBM_GRAPH_ENABLED=1` is what lets `dead_code_candidates` run at all
   — a JS test that forgets either one passes vacuously.
 
-Baseline after this audit and the doctor that followed it: **2726 passed, 4
-skipped, 1 xfailed, 205 subtests passed, 0 failed** in 363s, measured -- not
+Baseline after this audit and the doctor that followed it: **2742 passed, 4
+skipped, 1 xfailed, 205 subtests passed, 0 failed** in 388s, measured -- not
 predicted. The four deltas this campaign is accountable for are all measured on
 the same run order: 2495 -> 2526 for the doctor's 31 tests, 2526 -> 2534 for
 B018's 8 (4 pinning the fix, 4 pinning the doctor's new check), 2534 -> 2547 for
@@ -1283,7 +1346,7 @@ plus the 6 that pin the doctor's new check and the 400-handling defect writing i
 exposed), 2556 -> 2559 for the 3 that pin the probe-scope false FAIL, and 2559 -> 2575
 for B021's 16, and 2575 -> 2581 for the 6 that pin B021's offset follow-up
 (4 of whose mutants survived the first cut because the original fixture yields 0/0/1
-rows on the branches they touch), 2581 -> 2588 for B022's 7, 2588 -> 2592 for B024's 4, 2592 -> 2599 for B023's 7, and 2599 -> 2610 for B025's 11, 2610 -> 2617 for B026's 7, 2617 -> 2635 for B027's 18, 2635 -> 2657 for B028's 22, 2657 -> 2664 for B028b's 7, 2664 -> 2669 for B027b's 5, 2669 -> 2679 for B027c's 10, 2679 -> 2685 for B027d's 6, 2685 -> 2702 for B028c's 17, 2702 -> 2719 for B029's 17, and 2719 -> **2726** for B027e's 7. The 2534
+rows on the branches they touch), 2581 -> 2588 for B022's 7, 2588 -> 2592 for B024's 4, 2592 -> 2599 for B023's 7, and 2599 -> 2610 for B025's 11, 2610 -> 2617 for B026's 7, 2617 -> 2635 for B027's 18, 2635 -> 2657 for B028's 22, 2657 -> 2664 for B028b's 7, 2664 -> 2669 for B027b's 5, 2669 -> 2679 for B027c's 10, 2679 -> 2685 for B027d's 6, 2685 -> 2702 for B028c's 17, 2702 -> 2719 for B029's 17, 2719 -> 2726 for B027e's 7, and 2726 -> **2742** for B027f's 16. The 2534
 run had one failure, and it was not environmental: it was B020. The 2556 run had
 one too, and it was a genuine flake -- a nominal-sleep timing assertion, fixed
 and mutation-verified rather than rerun. Reproduce it the way the section above prescribes — plain

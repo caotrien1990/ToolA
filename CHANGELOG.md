@@ -1,6 +1,66 @@
 # CHANGELOG
 
-## 2026-08-23 (latest) — B027c / B027d / B027e / B028c / B029: five defects found by verifying the previous four
+## 2026-08-23 (latest) — B027f: the named line was real, and it was not the one that decided
+
+- **B027f — `!name` reached INDEX.json and `list_structure` but never `search_code`.**
+  Anh's independent function-layer verification named the site exactly:
+  `orchestrator/fileops/common.py` — `should_scan_for_text(file_path)` had no
+  `project_root` while `should_skip_dir` three lines above it did, and
+  `orchestrator/tools/search.py:95` handed the unbound function to
+  `publish_snapshot`. All of it measured out. What moved the culprit was measuring
+  *which* of the six call sites decides the output: with the publish site already
+  bound (via `refresh_project_map`) the snapshot held `build/made.py` and
+  `search_code` still refused it — **on a snapshot it did not republish**. The
+  per-record read-back (`_append_record` / `_search_text_record`) is the gate a
+  caller's result comes out of last, and a fix at the named line alone would have
+  looked correct in the diff, passed a snapshot-level test, and answered exactly as
+  wrong as before. Bound at all six: the wrapper, `index_delta`'s walk, the
+  fallback publish, the `find_symbol` definition walk, the `find_callers` `_scan`
+  walk, and both read-backs.
+- **Measured before / after**, on a project whose `.orchestrator_ignore` says
+  `!build`: `should_skip_dir('build', root)` → `False` (B027 opened the directory),
+  `_skip_reason(build/made.py, root)` → `None` (B027c opened the file),
+  `should_scan_for_text(build/made.py)` → `False` — this gate closed it again, so
+  `search_code` answered `1 hit ['src/a.py']` while INDEX.json held
+  `['build/made.py', 'src/a.py']`. After: `should_scan_for_text` `False → True`
+  with the root bound, `search_code` **2 hits** `['build/made.py', 'src/a.py']` in
+  both `text` and `regex` mode, and INDEX.json and `search_code` return the
+  identical set. Blast radius on this repo: of **3119** walked files, **52** answer
+  differently bound vs unbound — all `.council` benchmark record JSON that the
+  depth rule is meant to exclude, i.e. the fix removes false *keeps*, not real hits.
+- **A second, older defect in the same call, in the opposite direction.** R82 bound
+  the root at the refresh publish so deep data-JSON is judged by depth
+  (`DATA_JSON_MAX_DEPTH = 2`); the search-first fallback publish was unbound, where
+  depth is unknown and the file is KEPT. Measured: search-first `2 hits
+  ['outputs/round0/case01/result.json', 'src/a.py']` vs refresh-first `1 hit
+  ['src/a.py']` — the same project and the same query answering differently
+  depending on who published the snapshot first. Nothing in the query says whether
+  anyone had refreshed, so the divergence was invisible. Now both paths agree, and
+  three tests pin the agreement **plus the direction**, so "they agree" cannot be
+  satisfied by both being wrong.
+- **Direction is deliberately not uniform.** B027e ruled an overlay may only REVEAL
+  for `list_structure`, never HIDE (a listing that omits a real directory is
+  CASE-2008's shape); search is the opposite by design, since hiding produced
+  records is the entire reason the overlay exists. B027f binds both directions, and
+  the two gates must **not** be "unified" into one helper.
+- **Two holes in my own test set, found by mutation-verify, fixed in the test.**
+  Reverting the `find_callers` binding left every other case green — `_scan` is a
+  separate loop from the definition walk and nothing exercised `include="callers"`,
+  so `test_find_callers_agrees_too` exists because its mutant survived. And the two
+  per-record filters are byte-identical lines, so neither could be mutated in
+  isolation until `test_regex_mode_answers_the_same_as_text_mode` existed to reach
+  the regex one. **8/8 mutants killed** after that. **16 tests.**
+- **Suite, measured**: `pytest tests\` **2742 passed, 4 skipped, 1 xfailed, 205
+  subtests in 387.74s** across **258** `test_*.py` files; bare `pytest` **2769
+  passed, 209 subtests in 375.56s**. Chain: 2726 → **2742** for B027f's 16.
+  **0 failed.**
+- **Note for the next CA**: `log_native_event` classifies on `tool_name`, not on the
+  path. `"Bash"` / `"Bash+Write"` map to `task_class=project_command`,
+  `native_policy=forbid` → `HOST_GATE_DENY`, even for an edit the
+  authorized-self-edit path covers. Use `action_type="write_existing_file"` with
+  `tool_name="Write"`.
+
+## 2026-08-23 — B027c / B027d / B027e / B028c / B029: five defects found by verifying the previous four
 
 Not one of these came from re-reading a diff. Every one came from **exercising the previous fix through the surface a caller actually uses**. Two were reported by Anh's independent verification of B027 + B028 (33 function-layer cases through the live daemon); two I found while measuring what those reports pointed at.
 

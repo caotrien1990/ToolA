@@ -2936,6 +2936,140 @@ variable is actually present in the child env, and it kills the mutant. Same les
 B028's opener test: **a test that passes for a reason other than the one in its name is
 not a guard.**
 
+## B027f - the FILE gate `search_code` serves through never learned about the overlay
+
+**Status**: FIXED 2026-08-23, mutation-verified (8 mutants, 8 killed)
+**Severity**: HIGH (`search_code` and INDEX.json answered different questions about
+the same project, and a second half made the answer depend on call order)
+
+**Reported by** Anh's independent function-layer verification, which named the site
+precisely and correctly: `orchestrator/fileops/common.py` --
+`should_scan_for_text(file_path)` had no `project_root` while `should_skip_dir`
+three lines above it did, and `orchestrator/tools/search.py:95` handed the unbound
+function to `publish_snapshot`. His conclusion -- *`!name` shows up in INDEX.json
+and `list_structure` but not in `search_code`; index and snapshot disagree* -- is
+exactly what measures out.
+
+**Reproduction** (a project whose `.orchestrator_ignore` contains `!build`, where
+`build` is a global `SKIP_DIRS` entry):
+
+```
+should_skip_dir('build', root)          False   <- B027 opened the directory
+_skip_reason(build/made.py, root)       None    <- B027c opened the file
+should_scan_for_text(build/made.py)     False   <- this gate closed it again
+search_code(NEEDLE_B027F)               1 hit, ['src/a.py']
+INDEX.json                              ['build/made.py', 'src/a.py']
+```
+
+**Root cause 1 -- and the named line is not the deciding one.** Six call sites asked
+the same unbound question. Measuring which one decides the output moved the culprit
+off `search.py:95`:
+
+```
+snapshot published by refresh_project_map (root ALREADY bound)  ['build/made.py', 'src/a.py']
+search_code over that exact snapshot                            1 hit, ['src/a.py']
+snapshot id unchanged by the search                             True
+```
+
+The publish site is real but not sufficient: the per-record read-back
+(`_append_record` / `_search_text_record`) re-asks the same unbound question for
+every record, and that is the gate a caller's result passes through **last**. A fix
+at the named line alone would have looked correct in the diff, passed a
+snapshot-level test, and returned the same wrong answer -- the B027c/B027d lesson at
+a sixth layer.
+
+**Root cause 2 -- an older defect in the same call, in the opposite direction.** R82
+bound `project_root` at the refresh publish so deep data-JSON is judged by depth
+(`DATA_JSON_MAX_DEPTH = 2`); the search-first fallback publish stayed unbound, where
+depth is unknown and `_is_data_json` answers `False`, so the file is **kept**:
+
+```
+search-first    2 hits  ['outputs/round0/case01/result.json', 'src/a.py']
+refresh-first   1 hit   ['src/a.py']
+```
+
+Same project, same query, two answers depending on who published the snapshot first
+-- and nothing in the query says whether anyone had refreshed, so the divergence was
+invisible. This half predates B027 entirely.
+
+**Fix**: `should_scan_for_text` gains an **optional** `project_root` (default `None`,
+so every pre-B027f caller answers the global rule byte for byte) and forwards it to
+`surgical_mapper._should_scan_file`. Bound at all six sites:
+
+| site | why |
+|---|---|
+| `fileops/common.py` wrapper | signature parity with `should_skip_dir` three lines above |
+| `fileops/common.py` `index_delta` walk | its `dirs[:]` filter one line above was already bound; bound dir gate + unbound file gate means an un-skipped file is walked and then dropped, so it never shows as `added` |
+| `tools/search.py` fallback `publish_snapshot` | the site as reported; unbound it published a different record set than `surgical_mapper._publish_search_snapshot` |
+| `tools/search.py` `find_symbol` definition walk | walks the tree itself instead of reading the snapshot |
+| `tools/search.py` `find_callers` `_scan` walk | a **separate** loop from the definition walk |
+| `tools/search.py` `_append_record` + `_search_text_record` | the per-record read-back -- **the gate a caller's answer comes out of** |
+
+**Measured after**, same fixtures:
+
+| measurement | before | after |
+|---|---|---|
+| `should_scan_for_text(build/made.py, root)` | `False` | **`True`** |
+| `search_code` mode=text | 1 hit `['src/a.py']` | **2 hits** `['build/made.py', 'src/a.py']` |
+| `search_code` mode=regex | 1 hit | **2 hits**, same set |
+| INDEX.json vs `search_code` | disagreed | **identical set** |
+| data-JSON search-first vs refresh-first | 2 hits vs 1 hit | **1 hit both** |
+
+Blast radius on this repo: of **3119** walked files, **52** answer differently bound
+vs unbound -- all `.council/BENCHMARK_4HARNESS_5MODEL/**/*.json` produced records
+(`unbound=True`, `bound=False`), i.e. the fix removes false *keeps*, not real hits.
+
+**Direction is deliberately not uniform across tools.** B027e ruled that an overlay
+may only REVEAL for `list_structure`, never HIDE, because a listing that omits a real
+directory is CASE-2008's shape. Search is the opposite **by design** -- hiding
+produced records is the entire reason the overlay exists (ToolQ's `runs` / `queue` /
+`archive`), and B027b already pins that an ignored directory is absent from the
+snapshot. So B027f binds both directions, and the two gates must not be "unified"
+into one helper.
+
+**Pinned by**: `tests/test_project_ignore_search_gate_b027f.py` (16 tests).
+
+### Mutants
+
+Each mutant reverts exactly one of the seven bindings; the suite run is the whole
+B027 family (six files, **62 tests, 20 subtests**, clean in 3.63s), so a kill count
+is over that set rather than over B027f's 16 alone.
+
+| mutant | tests killed |
+|---|---|
+| M1 the wrapper is unbound again (pre-B027f) | **12** |
+| M2 the signature keeps `project_root` but discards it | **12** |
+| M3 `index_delta` walk unbound | **1** |
+| M4 fallback publish unbound (the site as reported) | **3** |
+| M5 `find_symbol` definition walk unbound | **1** |
+| M6 `find_callers` `_scan` walk unbound | **1** |
+| M7a `_append_record` unbound (regex read-back) | **1** |
+| M7b `_search_text_record` unbound (text read-back) | **3** |
+
+M1 and M2 kill 12 each because they disable the parameter itself, which every other
+binding depends on. The single-test kills are the point of the split: each of the
+five downstream sites has **exactly one** test that reaches it, so none of them is
+covered incidentally by another.
+
+### Two holes in my own test set, found by mutation
+
+**M6 survived the first round.** Reverting the `find_callers` binding left every
+other case green, because `_scan` is a separate loop from the definition walk and
+nothing exercised `include="callers"`. The **code** was right; the test set had a hole
+exactly where the two loops differ. Fixed in the test:
+`test_find_callers_agrees_too`.
+
+**M7 could not be mutated at all** at first -- the two per-record filters are
+byte-identical lines, so a patch matched twice and was refused by the `count == 1`
+guard. Split into M7a / M7b keyed on unique trailing context, which then needed a
+test that reaches the *regex* read-back:
+`test_regex_mode_answers_the_same_as_text_mode`. 8/8 killed after that.
+
+Same lesson as B028's opener and B029's env test: **a mutant that survives is a
+statement about the tests, not always about the fix.**
+
 ---
 
-_Last updated: 2026-08-23 (campaign-1608 + JS-repo audit + stabilisation + real-test follow-up + verification of the verification: added B002-B029, all fixed and mutation-verified. B027c/B027d/B027e/B028c came from Anh's independent function-layer verification of B027+B028, and B029 from measuring what those reports pointed at -- none of them from re-reading a diff. Triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_
+---
+
+_Last updated: 2026-08-23 (campaign-1608 + JS-repo audit + stabilisation + real-test follow-up + verification of the verification: added B002-B029 plus B027f, all fixed and mutation-verified. B027c/B027d/B027e/B028c came from Anh's independent function-layer verification of B027+B028, B029 from measuring what those reports pointed at, and B027f from his verification of *those* -- where the line he named was real but not the one that decided the answer. None of them from re-reading a diff. Triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_

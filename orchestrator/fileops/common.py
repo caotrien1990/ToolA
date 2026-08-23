@@ -40,9 +40,21 @@ def should_skip_dir(name: str, project_root=None) -> bool:
     return surgical_mapper.should_skip_dir(name, project_root)
 
 
-def should_scan_for_text(file_path: Path) -> bool:
+def should_scan_for_text(file_path: Path, project_root=None) -> bool:
+    # B027f 2026-08-23. `project_root` is OPTIONAL and forwarded, for the same
+    # reason `should_skip_dir` above takes it: this is the FILE half of one
+    # question, and it was the last gate that still answered from the global
+    # rules alone. Measured before the fix, on a project whose overlay says
+    # `!build`: should_skip_dir opened the directory (False), _skip_reason
+    # opened the file (None), and this wrapper closed it again (False), so
+    # `!build` reached INDEX.json and list_structure but never search_code.
+    #
+    # Binding it also removes an ORDER DEPENDENCE that predates B027: R82 bound
+    # the root at the refresh publish so deep data-JSON is judged by depth, while
+    # the search-first fallback publish was unbound -- depth unknown, file kept.
+    # Same project, same query, two answers depending on who published first.
     try:
-        return surgical_mapper._should_scan_file(file_path)
+        return surgical_mapper._should_scan_file(file_path, project_root)
     except Exception:
         return file_path.suffix.lower() in surgical_mapper.SUPPORTED_EXTENSIONS
 
@@ -263,7 +275,11 @@ def index_delta(project_path: str) -> dict | None:
         dirs[:] = [d for d in dirs if not should_skip_dir(d, root)]
         for name in files:
             fp = Path(scan_root) / name
-            if not should_scan_for_text(fp):
+            # B027f: bound, because the dirs[:] filter one line above already is.
+            # Bound directory gate + unbound file gate = an un-skipped file gets
+            # walked and then dropped, so it never shows up as `added` and the
+            # index never learns it exists.
+            if not should_scan_for_text(fp, root):
                 continue
             rel = str(fp.relative_to(root)).replace("\\", "/")
             if rel not in indexed:

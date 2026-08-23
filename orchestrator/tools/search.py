@@ -92,7 +92,11 @@ def _pin_or_create_snapshot(
             raise
         snapshot_id = search_snapshots.publish_snapshot(
             root,
-            include_file=fo.should_scan_for_text,
+            # B027f: bind the root here too. Unbound, this fallback published a
+            # DIFFERENT record set than surgical_mapper._publish_search_snapshot
+            # (which R82 bound), so the answer depended on whether anyone had
+            # refreshed the map first -- and `!name` never reached search at all.
+            include_file=functools.partial(fo.should_scan_for_text, project_root=root),
             # B027: bind root so a project's .orchestrator_ignore reaches the
             # snapshot search_code serves from, not just the os.walk paths below.
             skip_dir=functools.partial(fo.should_skip_dir, project_root=root),
@@ -372,7 +376,8 @@ async def find_symbol(name: str = "", path: str = "", project_path: str = "",
                 fp = Path(root) / fn
                 if not _is_def_source_file(fp):
                     continue
-                if not fo.should_scan_for_text(fp):
+                # B027f: bound, matching the dirs[:] filter above.
+                if not fo.should_scan_for_text(fp, base):
                     continue
                 try:
                     lines = fp.read_text(encoding="utf-8", errors="ignore").splitlines()
@@ -546,7 +551,8 @@ async def find_symbol(name: str = "", path: str = "", project_path: str = "",
                     fp2 = Path(root2) / fn2
                     if fp2.suffix.lower() in _NON_SOURCE_EXTS:
                         continue
-                    if not fo.should_scan_for_text(fp2):
+                    # B027f: bound, matching the dirs2[:] filter above.
+                    if not fo.should_scan_for_text(fp2, base):
                         continue
                     try:
                         lines2 = fp2.read_text(encoding="utf-8", errors="ignore").splitlines()
@@ -968,7 +974,13 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
             ) -> None:
                 nonlocal regex_record_count, regex_total_bytes
                 virtual_path = snapshot_root.joinpath(*PurePosixPath(relative_path).parts)
-                if not fo.should_scan_for_text(virtual_path):
+                # B027f: THIS is the gate a caller's result actually comes out of.
+                # Measured: with the publish site already bound (via
+                # refresh_project_map) the snapshot held build/made.py and
+                # search_code still refused it, on a snapshot it did not
+                # republish. Fixing the publish alone would have looked correct
+                # in the diff and left the tool answering exactly as wrong.
+                if not fo.should_scan_for_text(virtual_path, snapshot_root):
                     return
                 if mode == "regex":
                     _regex_remaining()
@@ -996,7 +1008,8 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
 
             def _search_text_record(relative_path: str, label: str, size: int) -> None:
                 virtual_path = snapshot_root.joinpath(*PurePosixPath(relative_path).parts)
-                if not fo.should_scan_for_text(virtual_path):
+                # B027f: bound for the same reason as _append_record above.
+                if not fo.should_scan_for_text(virtual_path, snapshot_root):
                     return
                 # B026: a record past the cap is reported, not silently dropped, so the
                 # caller can see WHAT was left out and re-run with max_file_bytes=0.
