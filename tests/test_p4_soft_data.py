@@ -10,6 +10,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from pathlib import Path
 
 import tools_upgrade_p4 as p4
 
@@ -102,12 +103,25 @@ class TestQuerySqlite(unittest.TestCase):
         PRAGMA, and a mutant that deleted it survived every test -- because
         connect(timeout=N) already installs busy_timeout=N*1000. Measure the
         wait, not the decoration.
+
+        2026-08-23: the spy must FILTER BY DB PATH. `p4.sqlite3` is the global
+        stdlib module (`p4.sqlite3 is sqlite3` is True), so patching its
+        `connect` intercepts every thread in the process, not just this call.
+        Under the full suite `audit_writer.py` runs a background writer whose
+        default is `busy_timeout_ms=200`, and its connect(timeout=0.2) landed in
+        `seen` after ours -- one failure in 2742 tests, green when the file runs
+        alone. Measured with 4 noisy threads: seen was poisoned 40/40 times while
+        the value p4 actually used was correct 40/40. The test observed global
+        state; the code was never wrong.
         """
         seen = {}
         real_connect = sqlite3.connect
+        mine = Path(self.db).name
 
         def spy(*a, **kw):
-            seen["timeout"] = kw.get("timeout")
+            # Only OUR database. Another thread's connect must not overwrite it.
+            if a and mine in str(a[0]):
+                seen["timeout"] = kw.get("timeout")
             return real_connect(*a, **kw)
 
         original = p4._SQLITE_BUSY_TIMEOUT_MS
@@ -125,7 +139,6 @@ class TestQuerySqlite(unittest.TestCase):
         self.assertEqual(r["rows"][0]["timeout"], 7000,
                          "the effective busy_timeout is not the constant: %r"
                          % (r["rows"],))
-
     def test_non_lock_operational_error_stays_a_hard_error(self):
         """Only lock/busy text is retryable; a bad table name must not be."""
         r = json.loads(_run(p4.query_sqlite(db_path=self.db,

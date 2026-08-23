@@ -12,6 +12,48 @@ from .store import _SESSIONS_DB, _log_session_event, _project_cache_dir
 _ORCHESTRATOR_ROOT = Path(__file__).parents[2]
 _LOG_FILE_LOCK = threading.RLock()
 
+# B030 2026-08-23. How old a `.<name>.<rand>.tmp` must be before the NEXT writer
+# reclaims it. Measured cause: 132 orphans / 10,360,372 bytes accumulated in
+# [A]'s own .orchestrator_cache, and the count regrew 2 -> 4 -> 6 -> 8 over three
+# runs of the epoch tests. An instrumented `_atomic_write_bytes` counted
+# LOGS_MADE 13 / LOGS_REPLACED 11 with ZERO exceptions raised: the writer was
+# killed between `mkstemp` and `os.replace` by `p.terminate()` (TerminateProcess
+# on Windows), so no `except`, no `finally` and no atexit ever ran. The dying
+# process cannot clean up after itself -- only a later writer can.
+#
+# 15 minutes, not seconds: a fresh tmp may be ANOTHER process's in-flight write
+# microseconds from its own `os.replace`, and deleting that one would turn
+# cosmetic garbage into a lost log record. The tests pin both directions.
+_TMP_ORPHAN_TTL_SECONDS = 15 * 60
+
+
+def _sweep_orphan_tmp(path: Path, ttl_seconds: float = _TMP_ORPHAN_TTL_SECONDS) -> int:
+    """Remove stale `.<path.name>.<rand>.tmp` siblings; return how many went.
+
+    Scoped to `path`'s own tmp pattern on purpose: `_atomic_write_bytes` also
+    writes caller files, and a sweep matching `*.tmp` alone would delete
+    someone else's unrelated temporary. Best-effort by contract -- an orphan
+    another process still holds open cannot be unlinked on Windows, and that
+    must not fail the write this sweep is a side effect of.
+    """
+    removed = 0
+    try:
+        import os
+        import time
+        parent = path.parent
+        cutoff = time.time() - float(ttl_seconds)
+        for candidate in parent.glob("." + path.name + ".*.tmp"):
+            try:
+                if candidate.stat().st_mtime > cutoff:
+                    continue
+                os.unlink(str(candidate))
+                removed += 1
+            except OSError:
+                continue
+    except Exception:
+        return removed
+    return removed
+
 
 def _atomic_write_bytes(path: Path, data: bytes) -> None:
     import os
@@ -43,6 +85,9 @@ def _log_to_file(log_path: Path, entry: dict, max_entries: int = 500) -> bool:
     try:
         with _LOG_FILE_LOCK:
             log_path.parent.mkdir(parents=True, exist_ok=True)
+            # B030: reclaim what a killed writer left behind. This is the only
+            # place that CAN -- the process that made the orphan was terminated.
+            _sweep_orphan_tmp(log_path)
             lines = log_path.read_text(encoding="utf-8").splitlines() if log_path.exists() else []
             lines.append(json.dumps(entry, ensure_ascii=False))
             if len(lines) > max_entries:
