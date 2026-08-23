@@ -25,6 +25,7 @@ This file pins BOTH halves so the distinction cannot drift:
 from __future__ import annotations
 
 import functools
+import shutil
 import sys
 import tempfile
 import unittest
@@ -40,6 +41,7 @@ from orchestrator.fileops import common as fo  # noqa: E402
 
 def _project(with_ignore: bool) -> Path:
     root = Path(tempfile.mkdtemp(prefix="b027_snap_test_"))
+    _B031_TEMP_ROOTS.append(root)
     (root / "src").mkdir()
     (root / "src" / "a.py").write_text("NEEDLE = 1\n", encoding="utf-8")
     (root / "2.working").mkdir()
@@ -68,6 +70,19 @@ def _records(root: Path) -> list[str]:
         return sorted(out)
     finally:
         pin.release()
+
+
+
+# B031: a module-level factory has no `self`, so cleanup cannot be `addCleanup`.
+# Every root it hands out is recorded here and removed by `tearDownModule`. Measured
+# before this: 3 directories left in %TEMP% by one run of this module alone.
+_B031_TEMP_ROOTS: list[Path] = []
+
+
+def tearDownModule() -> None:
+    for _root in _B031_TEMP_ROOTS:
+        shutil.rmtree(_root, ignore_errors=True)
+    _B031_TEMP_ROOTS.clear()
 
 
 class TheOverlayReachesThePublishedSnapshotTest(unittest.TestCase):

@@ -55,13 +55,27 @@ def test_conftest_only_defaults_the_variable_and_never_overrides_it() -> None:
     cheaper and less flaky than spawning an interpreter to observe it.
     """
     source = (_ROOT / "conftest.py").read_text(encoding="utf-8")
+    # The bookkeeping lines between mkdtemp and the assignment are deliberately
+    # tolerated: B031 records the directory there so `pytest_unconfigure` can
+    # remove it, and pinning byte-adjacency would forbid any such line while
+    # pinning nothing extra. What must hold is that the assignment is INSIDE the
+    # `if not os.environ.get(...)` guard, so the intervening pattern excludes any
+    # line that touches os.environ.
     guard = re.search(
         r"if not os\.environ\.get\(_GENERATION_FILE_ENV\):\s*\n"
         r"\s*gen_dir = Path\(tempfile\.mkdtemp\([^)]*\)\)\s*\n"
+        r"(?:[^\n]*\n)*?"
         r"\s*os\.environ\[_GENERATION_FILE_ENV\] = ",
         source,
     )
     assert guard, "conftest must DEFAULT the generation file, not assign it outright"
+
+    # And the guard must be the ONLY writer: an unconditional assignment anywhere
+    # else would override a caller's explicit value, which is the actual bug this
+    # module was written for. Two occurrences = the guarded one plus the env read.
+    assert source.count("os.environ[_GENERATION_FILE_ENV] =") == 1, (
+        "conftest assigns the generation file in more than one place"
+    )
 
 
 def test_the_server_spawning_test_isolates_the_variable_itself() -> None:

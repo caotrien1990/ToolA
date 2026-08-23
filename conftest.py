@@ -100,6 +100,7 @@ server cannot reintroduce the bug by forgetting one env var out of six.
 """
 
 import os
+import shutil
 import tempfile
 import time
 from pathlib import Path
@@ -109,6 +110,19 @@ _COLOUR_FORCING_VARS = ("FORCE_COLOR", "CLICOLOR_FORCE", "PY_COLORS")
 
 _SESSIONS_DB_ENV = "ORCHESTRATOR_SESSIONS_DB"
 _GENERATION_FILE_ENV = "ORCHESTRATOR_GENERATION_FILE"
+
+# B031: only the directories THIS conftest created with `mkdtemp` below. A value
+# supplied by the caller is never recorded and so never removed -- the A53 rule
+# that an explicit target is left alone has to hold for cleanup too, or a run
+# pointed at a real DB would have its parent deleted underneath it.
+#
+# Measured before this: every `pytest <module>` invoked without the two env vars
+# already set left exactly 2 directories behind, permanently. That is per pytest
+# PROCESS, not per test, which is why it hid under the per-module leak counts --
+# the B031 guard runs its children from inside pytest, so they inherited both
+# vars and skipped the mkdtemp branch entirely. It only surfaced when a child ran
+# with a clean environment.
+_B031_OWNED_TEMP_DIRS: list[Path] = []
 
 
 def pytest_configure(config):  # noqa: ARG001 - pytest hook signature
@@ -120,6 +134,7 @@ def pytest_configure(config):  # noqa: ARG001 - pytest hook signature
     # run that deliberately targets a specific DB is left alone.
     if not os.environ.get(_SESSIONS_DB_ENV):
         run_dir = Path(tempfile.mkdtemp(prefix="orch_pytest_sessions_"))
+        _B031_OWNED_TEMP_DIRS.append(run_dir)
         os.environ[_SESSIONS_DB_ENV] = str(run_dir / "sessions.db")
 
     # Same rule as A53: fill in a default only, so a run that deliberately points
@@ -127,6 +142,7 @@ def pytest_configure(config):  # noqa: ARG001 - pytest hook signature
     # which is what makes one assignment here cover servers spawned by Popen.
     if not os.environ.get(_GENERATION_FILE_ENV):
         gen_dir = Path(tempfile.mkdtemp(prefix="orch_pytest_generation_"))
+        _B031_OWNED_TEMP_DIRS.append(gen_dir)
         os.environ[_GENERATION_FILE_ENV] = str(gen_dir / "server_generation.json")
 
 
@@ -136,6 +152,33 @@ def pytest_configure(config):  # noqa: ARG001 - pytest hook signature
 # attempts over ~1.4s of backoff cleared it in every observed case; the swallow
 # afterwards is the documented meaning of the flag, not a new leniency.
 _CLEANUP_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.8)
+
+def pytest_unconfigure(config):  # noqa: ARG001 - pytest hook signature
+    """Remove only what `pytest_configure` created. Runs after all finalisers.
+
+    The sessions.db handle has to be released FIRST. Windows refuses to unlink an
+    open file, and `ignore_errors=True` turns that refusal into silence -- the
+    directory was simply left behind (measured: sessions.db still 94208 bytes at
+    this point, so the handle was live). `store.close_writer` is the existing
+    public teardown for exactly this: it closes the writer loop, this thread's
+    cached read connection, and gc.collects the ones stranded on dead
+    `asyncio.to_thread` workers.
+
+    Imported here rather than at module scope: conftest is imported before the
+    repo's own packages are importable in some invocations, and a collection-time
+    ImportError here would take the whole session down.
+    """
+    if _B031_OWNED_TEMP_DIRS:
+        try:
+            from orchestrator.session import store
+
+            store.close_writer()
+        except Exception:  # pragma: no cover - teardown must never fail a run
+            pass
+    for _owned in _B031_OWNED_TEMP_DIRS:
+        shutil.rmtree(_owned, ignore_errors=True)
+    _B031_OWNED_TEMP_DIRS.clear()
+
 
 _orig_tmpdir_cleanup = tempfile.TemporaryDirectory.cleanup
 

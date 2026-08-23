@@ -37,6 +37,7 @@ tests below pin BOTH directions -- stale is removed, fresh is left alone.
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -77,6 +78,7 @@ class TheSweepHasATtlConstantTest(unittest.TestCase):
 class AStaleOrphanIsRemovedByTheNextWriteTest(unittest.TestCase):
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix="b030_stale_"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
         self.log = self.root / "USAGE_LOG.jsonl"
 
     def test_the_next_write_removes_it(self):
@@ -112,6 +114,7 @@ class AFreshTmpIsALiveWriterAndMustSurviveTest(unittest.TestCase):
 
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix="b030_fresh_"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
         self.log = self.root / "USAGE_LOG.jsonl"
 
     def test_a_brand_new_tmp_is_left_alone(self):
@@ -183,6 +186,7 @@ class TheSweepIsScopedToThisLogTest(unittest.TestCase):
 
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix="b030_scope_"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
         self.log = self.root / "USAGE_LOG.jsonl"
 
     def test_another_logs_orphan_is_not_touched(self):
@@ -215,6 +219,7 @@ class TheKillPathIsWhatThisPinsTest(unittest.TestCase):
 
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix="b030_kill_"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
         self.log = self.root / "USAGE_LOG.jsonl"
         self.log.write_text('{"seed": 1}\n', encoding="utf-8")
 

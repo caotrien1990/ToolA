@@ -7,6 +7,7 @@ TOOL_SCHEMAS + TOOL_PHASES tier T1). Added when P4 was wired into code_tools.
 import asyncio
 import json
 import os
+import shutil
 import sqlite3
 import tempfile
 import unittest
@@ -22,6 +23,7 @@ def _run(coro):
 class TestQuerySqlite(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.db = os.path.join(self.tmp, "t.db")
         conn = sqlite3.connect(self.db)
         conn.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)")
@@ -151,6 +153,7 @@ class TestQuerySqlite(unittest.TestCase):
 class TestFileProfile(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
 
     def test_text_profile(self):
         p = os.path.join(self.tmp, "a.py")
@@ -179,6 +182,7 @@ class TestFileProfile(unittest.TestCase):
 class TestSampleDataFile(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.csv = os.path.join(self.tmp, "d.csv")
         with open(self.csv, "w", encoding="utf-8") as f:
             f.write("col1,col2\n" + "".join(f"{i},v{i}\n" for i in range(20)))
@@ -203,6 +207,7 @@ class TestSampleDataFile(unittest.TestCase):
 class TestReadChunks(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.f = os.path.join(self.tmp, "big.txt")
         with open(self.f, "w", encoding="utf-8") as fh:
             fh.write("".join(f"line{i}\n" for i in range(100)))

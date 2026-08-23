@@ -31,6 +31,7 @@ descends -- exposes the second gate. A test must cross `_skip_reason` /
 from __future__ import annotations
 
 import functools
+import shutil
 import sys
 import tempfile
 import unittest
@@ -45,9 +46,22 @@ from orchestrator import search_snapshots as ss  # noqa: E402
 from orchestrator.fileops.common import should_skip_dir  # noqa: E402
 
 
+# B031: a module-level factory has no `self`, so cleanup cannot be `addCleanup`.
+# Every root it hands out is recorded here and removed by `tearDownModule`. Measured
+# before this: 10 directories left in %TEMP% by one run of this module alone.
+_B031_TEMP_ROOTS: list[Path] = []
+
+
+def tearDownModule() -> None:
+    for _root in _B031_TEMP_ROOTS:
+        shutil.rmtree(_root, ignore_errors=True)
+    _B031_TEMP_ROOTS.clear()
+
+
 def _tree(ignore: str | None, *, extra_dir: str) -> Path:
     """A project with `src/app.py` plus one file under `extra_dir`."""
     root = Path(tempfile.mkdtemp(prefix="b027c_"))
+    _B031_TEMP_ROOTS.append(root)
     (root / "src").mkdir()
     (root / "src" / "app.py").write_text("NEEDLE = 1\n", encoding="utf-8")
     (root / extra_dir).mkdir(parents=True)

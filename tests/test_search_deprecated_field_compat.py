@@ -12,6 +12,7 @@ Evidence gate coverage:
 from __future__ import annotations
 
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,6 +23,7 @@ import orchestrator_server as srv
 def _make_search_project() -> str:
     """Create a minimal project with searchable content."""
     tmp = tempfile.mkdtemp(prefix="cap_r3_test_")
+    _B031_TEMP_ROOTS.append(Path(tmp))
     root = Path(tmp)
     (root / "sample.py").write_text(
         "def hello_world():\n"
@@ -38,6 +40,19 @@ def _make_search_project() -> str:
         encoding="utf-8",
     )
     return str(root)
+
+
+
+# B031: a module-level factory has no `self`, so cleanup cannot be `addCleanup`.
+# Every root it hands out is recorded here and removed by `tearDownModule`. Measured
+# before this: 17 directories left in %TEMP% by one run of this module alone.
+_B031_TEMP_ROOTS: list[Path] = []
+
+
+def tearDownModule() -> None:
+    for _root in _B031_TEMP_ROOTS:
+        shutil.rmtree(_root, ignore_errors=True)
+    _B031_TEMP_ROOTS.clear()
 
 
 class TestSearchDeprecatedFieldCompat(unittest.IsolatedAsyncioTestCase):

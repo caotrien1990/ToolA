@@ -49,6 +49,7 @@ import asyncio
 import functools
 import inspect
 import json
+import shutil
 import sys
 import tempfile
 import unittest
@@ -64,9 +65,23 @@ from orchestrator.fileops import common as fo  # noqa: E402
 from orchestrator.tools.search import find_symbol, search_code  # noqa: E402
 
 
+# B031: a module-level factory has no `self`, so cleanup cannot be `addCleanup`.
+# Every root it hands out is recorded here and removed by `tearDownModule`. Measured
+# before this: 17 directories left in %TEMP% by one run of this module alone.
+_B031_TEMP_ROOTS: list[Path] = []
+
+
+def tearDownModule() -> None:
+    for _root in _B031_TEMP_ROOTS:
+        shutil.rmtree(_root, ignore_errors=True)
+    _B031_TEMP_ROOTS.clear()
+
+
+
 def _unskip_project(prefix: str, needle: str = "NEEDLE_B027F") -> Path:
     """`build` is a GLOBAL skip; the overlay un-skips it for this project only."""
     root = Path(tempfile.mkdtemp(prefix=prefix))
+    _B031_TEMP_ROOTS.append(root)
     (root / "src").mkdir()
     (root / "src" / "a.py").write_text(needle + " = 1\n", encoding="utf-8")
     (root / "build").mkdir()
@@ -78,6 +93,7 @@ def _unskip_project(prefix: str, needle: str = "NEEDLE_B027F") -> Path:
 def _data_json_project(prefix: str) -> Path:
     """A .json record three directories deep -- past DATA_JSON_MAX_DEPTH = 2."""
     root = Path(tempfile.mkdtemp(prefix=prefix))
+    _B031_TEMP_ROOTS.append(root)
     (root / "src").mkdir()
     (root / "src" / "a.py").write_text("NEEDLE_DJ = 1\n", encoding="utf-8")
     deep = root / "outputs" / "round0" / "case01"

@@ -253,6 +253,8 @@ class TestListSessionsOffload(unittest.IsolatedAsyncioTestCase):
         import os
 
         tmpdir = tempfile.mkdtemp()
+        import shutil
+        self.addCleanup(shutil.rmtree, tmpdir, ignore_errors=True)
         db_path = os.path.join(tmpdir, "sessions.db")
         conn = _sq.connect(db_path)
         conn.execute(

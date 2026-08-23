@@ -28,6 +28,7 @@ Both directions are supported on purpose, because the defect had two halves:
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import unittest
 from pathlib import Path
@@ -46,6 +47,7 @@ class ProjectIgnoreParseTest(unittest.TestCase):
     def _write(self, body: str) -> Path:
         import tempfile
         root = Path(tempfile.mkdtemp(prefix="b027_"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
         (root / ".orchestrator_ignore").write_text(body, encoding="utf-8")
         return root
 
@@ -95,6 +97,7 @@ class ProjectIgnoreParseTest(unittest.TestCase):
     def test_a_missing_file_is_not_an_error_and_changes_nothing(self):
         import tempfile
         root = Path(tempfile.mkdtemp(prefix="b027_none_"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
         self.assertFalse(skip_rules.should_skip_dir("2.working", root))
         self.assertTrue(skip_rules.should_skip_dir("node_modules", root))
         self.assertEqual(skip_rules.load_project_ignore(root), (frozenset(), frozenset()))
@@ -108,6 +111,7 @@ class ProjectIgnoreParseTest(unittest.TestCase):
         """
         import tempfile
         root = Path(tempfile.mkdtemp(prefix="b027_bin_"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
         (root / ".orchestrator_ignore").write_bytes(b"\xff\xfe\x00\x00garbage\x00")
         skips, unskips = skip_rules.load_project_ignore(root)
         self.assertIsInstance(skips, frozenset)
@@ -141,6 +145,7 @@ class ProjectIgnoreCacheTest(unittest.TestCase):
         R82 was fixing. The parse is cached per (root, mtime, size)."""
         import tempfile
         root = Path(tempfile.mkdtemp(prefix="b027_cache_"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
         target = root / ".orchestrator_ignore"
         target.write_text("2.working\n", encoding="utf-8")
 
@@ -167,6 +172,7 @@ class ProjectIgnoreCacheTest(unittest.TestCase):
         import tempfile
         import time
         root = Path(tempfile.mkdtemp(prefix="b027_edit_"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
         target = root / ".orchestrator_ignore"
         target.write_text("aaa\n", encoding="utf-8")
         self.assertTrue(skip_rules.should_skip_dir("aaa", root))
@@ -204,6 +210,7 @@ class GlobalContractTest(unittest.TestCase):
         import surgical_mapper
         from orchestrator.fileops import common as fo
         root = Path(tempfile.mkdtemp(prefix="b027_reexport_"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
         (root / ".orchestrator_ignore").write_text("2.working\n", encoding="utf-8")
         skip_rules.clear_project_ignore_cache()
         self.assertTrue(surgical_mapper.should_skip_dir("2.working", root))
@@ -221,6 +228,7 @@ class WalkIntegrationTest(unittest.TestCase):
         import tempfile
         import surgical_mapper
         root = Path(tempfile.mkdtemp(prefix="b027_walk_"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
         (root / "src").mkdir()
         (root / "src" / "real.py").write_text("def real():\n    return 1\n", encoding="utf-8")
         heavy = root / "2.working"
