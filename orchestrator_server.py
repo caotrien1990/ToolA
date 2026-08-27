@@ -4554,25 +4554,47 @@ def _council_harness_started(raw: str) -> bool:
     return False
 
 
-def _council_launcher_argv_too_long(raw: str) -> bool:
+_COUNCIL_ARGV_REFUSAL_MAX_LINES = 3
+
+
+def _council_launcher_argv_too_long(raw: str, returncode: int | None = None) -> bool:
     """Detect a REAL argv-too-long launcher failure, not the phrase merely quoted.
 
-    Two independent scopes, BOTH required, because `raw` is stdout+stderr of the
+    THREE independent scopes, ALL required, because `raw` is stdout+stderr of the
     whole worker run -- every stream-json ``tool_result`` a worker read plus every
     stderr line of processes the worker itself spawned:
+      * ``returncode == 0`` is positive, harness-AGNOSTIC proof the argv was accepted:
+        a genuine launcher refusal means cmd.exe/CreateProcess never spawned the
+        child, so the child cannot possibly have exited 0. Checked FIRST, and unlike
+        the init-envelope scope it holds for harnesses that emit no JSON at all.
+        ``returncode is None`` (killed / timed out) has no such proof, so it falls
+        through to the remaining scopes and keeps the pre-existing behaviour.
       * the harness must never have started (no init envelope). Once claude.exe is
         running, argv was accepted by definition, so a launcher failure is impossible.
       * the phrase must sit on a NON-JSON line, i.e. launcher / cmd.exe stderr, never
-        inside a stream-json record describing content the worker merely READ.
+        inside a stream-json record describing content the worker merely READ, AND
+        the blob must carry no substantive harness output: a real shell refusal is
+        emitted ALONE, so more than _COUNCIL_ARGV_REFUSAL_MAX_LINES = 3 non-empty
+        lines means a worker actually produced prose and merely mentioned the phrase.
+        3 (not 1) leaves headroom for a launcher banner / blank-ish wrapper lines
+        around the single refusal, while staying far below any real answer.
 
     Without this scoping a substring match over the whole blob relabels a SUCCESSFUL
     run as a launcher failure. Observed 2026-08-27 13:24 (request mcp_a5f2657e1404):
     returncode 0, valid init envelope, MCP connected, correct model -- still reported
     COUNCIL_HARNESS_ARGV_TOO_LONG, because the worker was auditing this very file.
+    Observed again 2026-08-27 14:48 (run-979141e5, agent gro, grok-4.6-build): the
+    harness emitted PLAIN VIETNAMESE TEXT with no JSON line anywhere, so the
+    init-envelope scope could never be satisfied, and the answer quoted the phrase on
+    a non-JSON line -- both R2 scopes passed on a returncode-0 SUCCESS. Hence scope 1.
     """
+    if returncode == 0:
+        return False
     if not raw:
         return False
     if _council_harness_started(raw):
+        return False
+    if len([ln for ln in str(raw).splitlines() if ln.strip()]) > _COUNCIL_ARGV_REFUSAL_MAX_LINES:
         return False
     for line in str(raw).splitlines():
         stripped = line.strip()
@@ -4589,10 +4611,11 @@ def _council_launcher_argv_too_long(raw: str) -> bool:
 
 def _council_finalize_model_resolution(resolution: CouncilModelResolution, raw: str,
                                        risk_level: str = "unknown", dev_level: str = "unknown",
-                                       request_id: str = "", session_id: str = "") -> tuple[CouncilModelResolution, str]:
+                                       request_id: str = "", session_id: str = "",
+                                       returncode: int | None = None) -> tuple[CouncilModelResolution, str]:
     # A harness that never started emits no attestation at all, which used to be
     # reported as the misleading COUNCIL_MODEL_UNVERIFIED. Name the launcher failure.
-    if _council_launcher_argv_too_long(raw):
+    if _council_launcher_argv_too_long(raw, returncode):
         return (replace(resolution, resolution_status="unavailable",
                         warnings=resolution.warnings + ({"warning_name": "HARNESS_ARGV_TOO_LONG"},)),
                 "COUNCIL_HARNESS_ARGV_TOO_LONG")
@@ -7942,7 +7965,8 @@ def _council_run_agent(agent: str, prompt: str, timeout_sec: int = 6000,
             if not context_mode:
                 _council_cleanup_broker_session_async(agent, raw, prompt, run_started_at)
             final_resolution, _ = _council_finalize_model_resolution(
-                resolution, raw, risk_level, dev_level, request_id=request_id, session_id=resume_id or new_session_id)
+                resolution, raw, risk_level, dev_level, request_id=request_id,
+                session_id=resume_id or new_session_id, returncode=None)
             return {"ok": False, "returncode": None, "reply": _council_clean_timeout(raw),
                     "raw_preview": raw[:4000], "error": "timeout", "timeout_kind": timeout_kind,
                     "provider": final_resolution.resolved_provider, "model": final_resolution.resolved_model,
@@ -8011,7 +8035,8 @@ def _council_run_agent(agent: str, prompt: str, timeout_sec: int = 6000,
         elif not context_mode:
             _council_cleanup_broker_session_async(agent, raw, prompt, run_started_at)
         final_resolution, model_error = _council_finalize_model_resolution(
-            resolution, raw, risk_level, dev_level, request_id=request_id, session_id=captured_session_id)
+            resolution, raw, risk_level, dev_level, request_id=request_id,
+            session_id=captured_session_id, returncode=returncode)
         result_ok = returncode == 0 and not model_error
         return {
             "ok": result_ok,
@@ -8040,7 +8065,7 @@ def _council_run_agent(agent: str, prompt: str, timeout_sec: int = 6000,
         raw = ((exc.stdout or "") + (chr(10) + exc.stderr if exc.stderr else "")).strip()
         final_resolution, _ = _council_finalize_model_resolution(
             resolution, raw, risk_level, dev_level, request_id=request_id,
-            session_id=locals().get("captured_session_id", ""))
+            session_id=locals().get("captured_session_id", ""), returncode=None)
         return {"ok": False, "returncode": None, "reply": _council_clean_timeout(raw),
                 "raw_preview": raw[:4000], "error": "timeout",
                 "provider": final_resolution.resolved_provider, "model": final_resolution.resolved_model,
