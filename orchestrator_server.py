@@ -4407,13 +4407,13 @@ def _council_agent_caps(agent: str) -> dict:
 
 
 _COUNCIL_DEFAULT_MODELS_FALLBACK = {
-    "clau": {"provider": "claude",      "model": "claude-opus-4-8"},
-    "ope":  {"provider": "opencode-zen", "model": "opencode/deepseek-v4-flash-free"},
-    "codo": {"provider": "codex",        "model": "openai/gpt-5.6-sol"},
+    "clau": {"provider": "claude",      "model": "claude-opus-5"},
+    "ope":  {"provider": "openai-compatible", "model": "openai-compatible/grok-4.6-build"},
+    "codo": {"provider": "codex",        "model": "grok-4.6-build"},
     "kilo": {"provider": "ltnai", "model": "ltnai/glm-5.2"},
     "pic": {"provider": "ltnai", "model": "deepseek-v4-pro"},
     "hermes": {"provider": "opencode-zen", "model": "deepseek-v4-flash-free"},
-    "gro": {"provider": "ltnai", "model": "xAI-grok-4.6-build"},
+    "gro": {"provider": "ltnai", "model": "grok-4.6-build"},
 }
 
 def _council_default_models_from_config(fallback: dict) -> dict:
@@ -4529,9 +4529,73 @@ def _council_attest_model(raw: str, request_id: str = "", session_id: str = "") 
     return provider or None, model or None, ""
 
 
+def _council_harness_started(raw: str) -> bool:
+    """True when the CLI harness really launched, proven by its own init envelope.
+
+    A launcher that never spawned the exe emits NO structured provider output at
+    all -- only the shell's own refusal on stderr. So any provider-native envelope
+    is positive proof that the operating system ACCEPTED the argv we built.
+
+    claude emits ``{"type":"system","subtype":"init"}``; codex / opencode / kilo emit
+    their own records instead, so key on the generic envelope shape too -- otherwise
+    those harnesses keep the false positive this guard exists to remove.
+    """
+    envelope_keys = ("type", "session_id", "sessionID", "thread_id", "threadId", "messageID")
+    for line in str(raw or "").splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("{"):
+            continue
+        try:
+            value = json.loads(stripped)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if isinstance(value, dict) and any(k in value for k in envelope_keys):
+            return True
+    return False
+
+
+def _council_launcher_argv_too_long(raw: str) -> bool:
+    """Detect a REAL argv-too-long launcher failure, not the phrase merely quoted.
+
+    Two independent scopes, BOTH required, because `raw` is stdout+stderr of the
+    whole worker run -- every stream-json ``tool_result`` a worker read plus every
+    stderr line of processes the worker itself spawned:
+      * the harness must never have started (no init envelope). Once claude.exe is
+        running, argv was accepted by definition, so a launcher failure is impossible.
+      * the phrase must sit on a NON-JSON line, i.e. launcher / cmd.exe stderr, never
+        inside a stream-json record describing content the worker merely READ.
+
+    Without this scoping a substring match over the whole blob relabels a SUCCESSFUL
+    run as a launcher failure. Observed 2026-08-27 13:24 (request mcp_a5f2657e1404):
+    returncode 0, valid init envelope, MCP connected, correct model -- still reported
+    COUNCIL_HARNESS_ARGV_TOO_LONG, because the worker was auditing this very file.
+    """
+    if not raw:
+        return False
+    if _council_harness_started(raw):
+        return False
+    for line in str(raw).splitlines():
+        stripped = line.strip()
+        if stripped.startswith("{") or stripped.startswith("["):
+            try:
+                json.loads(stripped)
+                continue
+            except (TypeError, ValueError, json.JSONDecodeError):
+                pass
+        if "command line is too long" in stripped.lower():
+            return True
+    return False
+
+
 def _council_finalize_model_resolution(resolution: CouncilModelResolution, raw: str,
                                        risk_level: str = "unknown", dev_level: str = "unknown",
                                        request_id: str = "", session_id: str = "") -> tuple[CouncilModelResolution, str]:
+    # A harness that never started emits no attestation at all, which used to be
+    # reported as the misleading COUNCIL_MODEL_UNVERIFIED. Name the launcher failure.
+    if _council_launcher_argv_too_long(raw):
+        return (replace(resolution, resolution_status="unavailable",
+                        warnings=resolution.warnings + ({"warning_name": "HARNESS_ARGV_TOO_LONG"},)),
+                "COUNCIL_HARNESS_ARGV_TOO_LONG")
     observed_provider, observed_model, attestation_error = _council_attest_model(raw, request_id, session_id)
     high_risk = str(risk_level).lower() in {"high", "critical"} or str(dev_level).lower() in {"high", "critical", "architecture"}
     if attestation_error:
@@ -7270,6 +7334,65 @@ def _council_prepare_codo_env(env: dict[str, str]) -> None:
     env["API_KEY"] = _council_codo_api_key(env)
 
 
+def _council_claudeltnai_target() -> tuple[str, dict[str, str]]:
+    """Resolve the claudeltnai harness to (real executable, env overrides).
+
+    `claudeltnai` is a HAND-WRITTEN npm shim, not an npm-generated one: it only
+    exports the LTNAI environment and then CALLs claude.cmd. Two consequences bit
+    ClauC in production:
+      * `_resolve_cmd_shim` cannot parse it (there is no quoted %dp0% .exe target line), so
+        the argv kept going through cmd.exe and hit the 8191-char batch limit --
+        every real broker prompt died with the cmd.exe argv-length refusal
+      * Resolving it naively to claude.exe DROPS that environment, so ClauC ran as
+        vanilla `claude` against the wrong config dir (observed 2026-08-19: hooks
+        loaded from ~/.claude instead of ~/.claude-ltnai). Wrong harness, wrong
+        account, wrong proxy -- not a cosmetic difference.
+    So spawn claude.exe directly AND rebuild the shim's environment in Python.
+    Falls back to the shim path with no overrides if the real exe is missing.
+    """
+    npm_bin = Path.home() / "AppData" / "Roaming" / "npm"
+    shim = str(npm_bin / "claudeltnai.cmd")
+    exe = npm_bin / "node_modules" / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
+    if not exe.is_file():
+        return shim, {}
+    return str(exe), {
+        "CLAUDE_CONFIG_DIR": str(Path.home() / ".claude-ltnai"),
+        "ANTHROPIC_BASE_URL": "https://api.ltnproxy.com",
+    }
+
+
+def _council_ltn_key(env: dict[str, str]) -> str:
+    """LTN proxy token, read from the same source the shim uses: LTN_KEY (User)."""
+    key = str(env.get("LTN_KEY") or "").strip()
+    if key:
+        return key
+    try:
+        out = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command",
+             "[Environment]::GetEnvironmentVariable('LTN_KEY','User')"],
+            capture_output=True, text=True, timeout=20,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return (out.stdout or "").strip()
+    except Exception:
+        return ""
+
+
+def _council_prepare_clau_env(env: dict[str, str]) -> None:
+    """Recreate claudeltnai.cmd's environment for a direct claude.exe spawn."""
+    _, overrides = _council_claudeltnai_target()
+    if not overrides:
+        return
+    env.update(overrides)
+    key = _council_ltn_key(env)
+    if key:
+        env["LTN_KEY"] = key
+        env["ANTHROPIC_AUTH_TOKEN"] = key
+    # The shim deletes this so the proxy token is the only credential in play;
+    # leaving an inherited key here would silently re-target the real Anthropic API.
+    env.pop("ANTHROPIC_API_KEY", None)
+
+
 def _council_agent_command(agent: str, prompt: str, *, mode: str = "broker",
                            resume_id: str = "", new_session_id: str = "",
                            cwd: Path | None = None,
@@ -7304,16 +7427,18 @@ def _council_agent_command(agent: str, prompt: str, *, mode: str = "broker",
 
     if agent == "clau":
         _, _model = _council_worker_model(
-            "clau", "", _COUNCIL_DEFAULT_MODELS.get("clau", {}).get("model") or "claude-opus-4-8",
+            "clau", "", _COUNCIL_DEFAULT_MODELS.get("clau", {}).get("model") or "claude-opus-5",
             provider_override, model_override)
         # The custom --system-prompt overrides the CLI's default (which normally tells claude its
         # own model id), so inject the model id here or clauC won't know its model in council.
         _clau_sys = _COUNCIL_BROKER_SYSTEM + (
-            f" Your underlying model id is '{_model}' (an Anthropic Claude model, set by the CLI --model flag = source of truth). "
-            f"When asked which model/version you are, answer EXACTLY '{_model}'; never guess an older version like '3.5 Sonnet'."
+            f" Your underlying model id is '{_model}' (set by the CLI --model flag = source of truth). "
+            f"When asked which model/version you are, answer EXACTLY '{_model}'."
         )
         base = [
-            cli("claude"), "--print", "--model", _model,
+            # Direct exe + _council_prepare_clau_env(): keeps the claudeltnai
+            # identity while keeping cmd.exe (8191-char limit) out of the argv.
+            _council_claudeltnai_target()[0], "--print", "--model", _model,
             "--output-format", "stream-json", "--include-partial-messages", "--verbose",
             "--system-prompt", _clau_sys,
             "--dangerously-skip-permissions",
@@ -7330,7 +7455,7 @@ def _council_agent_command(agent: str, prompt: str, *, mode: str = "broker",
         return base
     if agent == "ope":
         _, _model = _council_worker_model(
-            "ope", "", _COUNCIL_DEFAULT_MODELS.get("ope", {}).get("model") or "openai-compatible/qwen3.7-max",
+            "ope", "", _COUNCIL_DEFAULT_MODELS.get("ope", {}).get("model") or "openai-compatible/grok-4.6-build",
             provider_override, model_override)
         _ope_thinking = _model.endswith("glm-5.2")
         base = [
@@ -7353,7 +7478,7 @@ def _council_agent_command(agent: str, prompt: str, *, mode: str = "broker",
         _rsum = ["-c", 'model_reasoning_summary="detailed"',
                  "-c", 'model_reasoning_effort="xhigh"']
         _, _model = _council_worker_model(
-            "codo", "codex", _COUNCIL_DEFAULT_MODELS.get("codo", {}).get("model") or "openai/gpt-5.6-sol",
+            "codo", "codex", _COUNCIL_DEFAULT_MODELS.get("codo", {}).get("model") or "grok-4.6-build",
             provider_override, model_override)
         _route = ["--model", _model]
         _no_nested_sandbox = ["--dangerously-bypass-approvals-and-sandbox"]
@@ -7670,6 +7795,11 @@ def _council_run_agent(agent: str, prompt: str, timeout_sec: int = 6000,
     if agent == "codo":
         # This helper is live dispatch setup, not dead configuration scaffolding.
         _council_prepare_codo_env(env)
+    if agent == "clau":
+        # ClauC runs the claudeltnai harness (~/.claude-ltnai config + LTN proxy),
+        # never vanilla `claude`. argv[0] is claude.exe so cmd.exe stays out of the
+        # path; that means the shim's environment has to be injected right here.
+        _council_prepare_clau_env(env)
     output_path = None
     input_text = None
     creationflags = 0
@@ -11297,21 +11427,15 @@ def _council_provider_for_model(agent: str, model: str) -> str:
     if agent == "gro":
         return "ltnai"
     if agent == "clau":
-        if model.startswith("claude"):
+        if model.startswith("claude") or model in {
+            "grok-4.6-build", "stealth/ox-alpha", "minimax/minimax-m3",
+        }:
             return "claude"
         return ""
     if agent == "codo":
-        # B2 (2026-08-16): this set only listed the openai/-prefixed spellings, but
-        # every other source of truth is unprefixed -- .council/ID_MODELS/GPT.txt
-        # ("gpt-5.6-sol"), council_config.json (codo.model = "gpt-5.6-sol") and the
-        # green contract test test_codo_broker_command_uses_ephemeral_exec, which
-        # asserts the codex CLI receives `--model gpt-5.6-sol`. _council_agent_command
-        # passes the model through verbatim, so the prefixed form is not a wire
-        # string for codo at all; it was the odd one out. Accepting BOTH keeps any
-        # caller that learned the prefixed spelling working (the code fallback
-        # _COUNCIL_DEFAULT_MODELS_FALLBACK still carries "openai/gpt-5.6-sol") while
-        # making the configured default resolve instead of returning "".
+        # Live LTNAI IDs plus leftover GPT spellings. Prefix form kept for old callers.
         if model in {
+            "stealth/ox-alpha", "grok-4.6-build", "minimax/minimax-m3",
             "gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.6-terra",
             "openai/gpt-5.6-sol", "openai/gpt-5.6-luna", "openai/gpt-5.6-terra",
         }:
@@ -11345,11 +11469,8 @@ async def council_worker_model(agent=None, model=None, provider=None, action=Non
     action: 'get' (current, default), 'set' (validate vs ID_MODELS then write), 'list'
     (curated valid ids). Writes .council/worker_models.json, applied at the NEXT
     dispatch (no restart).     Switchable workers: clau|codo|pic|ope|hermes|kilo.
-    Council routing hint: benchmark v3 chooses harness+model together.
-    PiC+qwen3.7-max is primary durable design; KiloC+ltnai/minimax-m3 is
-    routine stable value; PiC+deepseek-v4-pro is adversarial scan;
-    OpeC+openai-compatible/qwen3.7-max is operations review. Kimi K3 is
-    leader-routing default-off. Always action='get' after action='set'.
+    Council routing hint: ROUTE RULE SOT = Anh chỉ đạo. Benchmark 2026-07-25
+    table is SUSPENDED. Always action='get' after action='set'.
     If PiC cannot read/write a path, stage files under .council/tmp_*; do not
     change model/provider as a path workaround. For full routing rules, load
     leader-council-skill.
@@ -11423,9 +11544,7 @@ _register_tool(
         "description": "Get/set/list a council worker's model (clau|codo|pic|ope|hermes|kilo) WITHOUT "
                        "the dashboard UI / Playwright DOM. Validates against curated "
                        ".council/ID_MODELS/<PROVIDER>.txt; applies at the next dispatch. "
-                       "Benchmark v3 routes harness+model: PiC+qwen3.7-max durable design; "
-                       "KiloC+ltnai/minimax-m3 routine stable value; PiC+deepseek-v4-pro adversarial scan; "
-                       "OpeC+openai-compatible/qwen3.7-max operations review; Kimi K3 default-off. "
+                       "ROUTE RULE SOT = Anh chỉ đạo. Benchmark 2026-07-25 table SUSPENDED. "
                        "Set, then verify with action='get' before council_message. "
                        "Do not change provider/model to work around path/read/write failures; stage PiC files under "
                        "[A]\\.council\\tmp_* instead. Load leader-council-skill for full council routing rules.",
@@ -11433,7 +11552,7 @@ _register_tool(
             "type": "object",
             "properties": {
                 "agent": {"type": "string", "description": "Worker id: clau|codo|pic|ope|hermes|kilo (alias: worker)"},
-                "model": {"type": "string", "description": "Model id to set (alias: id). Must be in curated ID_MODELS. Benchmark v3 preferred: pic=qwen3.7-max or deepseek-v4-pro; kilo=ltnai/minimax-m3; ope=openai-compatible/qwen3.7-max; codo=gpt-5.6-sol. Kimi K3 is leader-routing default-off despite catalog presence. Always verify with action=get."},
+                "model": {"type": "string", "description": "Model id to set (alias: id). Must be in curated ID_MODELS. SET only the model Anh named or keep the live pin. Benchmark 2026-07-25 preferred cells are SUSPENDED. Always verify with action=get."},
                 "provider": {"type": "string", "description": "Optional override. Normal routing omits provider only when action=get verifies backend/provider mapping; set explicitly for mismatch/debug."},
                 "action": {"type": "string", "description": "get (default) | set | list. Recommended: set, then get to verify before dispatch."},
             },

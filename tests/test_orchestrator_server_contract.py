@@ -1113,7 +1113,10 @@ process.stdout.write(JSON.stringify(snapshots));
         codo_broker = orchestrator_server._council_agent_command('codo', 'hi', mode='broker')
         self.assertIn('--ephemeral', codo_broker)
         self.assertIn('--model', codo_broker)
-        self.assertEqual(codo_broker[codo_broker.index('--model') + 1], 'gpt-5.6-sol')
+        # codo default model migrated to grok-4.6-build (claudeltnai/codexltnai route,
+        # Anh-directed 2026-08-27); stealth/ox-alpha is deferred, see
+        # _COUNCIL_DEFAULT_MODELS_FALLBACK.
+        self.assertEqual(codo_broker[codo_broker.index('--model') + 1], 'grok-4.6-build')
         self.assertNotIn('model_provider="ltn-api"', codo_broker)
         self.assertIn('model_reasoning_effort="xhigh"', codo_broker)
         self.assertNotIn('--sandbox', codo_broker)
@@ -1149,9 +1152,9 @@ process.stdout.write(JSON.stringify(snapshots));
         # assertion pinned a shape nothing depends on and turned a deliberate
         # widening into a false red -- the same A19/A21 trap of testing the
         # mechanism instead of the property. What must hold: the legacy keys still
-        # exist and still carry codo's resolved codex/gpt-5.6-sol.
+        # exist and still carry codo's resolved CodexLTNAI live ID.
         self.assertEqual(effective.get('provider'), 'codex')
-        self.assertEqual(effective.get('model'), 'gpt-5.6-sol')
+        self.assertEqual(effective.get('model'), 'stealth/ox-alpha')
         self.assertEqual(effective.get('resolution_status'), 'unverified')
 
     def test_codo_executable_prefers_dedicated_ltnai_launcher(self):
