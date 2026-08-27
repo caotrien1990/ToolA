@@ -1388,14 +1388,12 @@ skip_symbol_check :bool =False )->str :
     span =built ["span"]
     # DRY RUN: validate proposed, tra preview + diff, KHONG ghi file
     if dry_run :
-        # R83: a dry-run that cannot be applied must say so, not hand out a dry_run_id.
+        # TOOLA-AHEALTHHUNG-R1: missing INDEX is no longer a hard blocker.
+        # The real write auto-seeds a minimal INDEX (cache-only, no O(repo)
+        # generate_project_map). Dry-run stays side-effect free and reports
+        # the same apply-will-succeed contract via index_auto_seed_pending.
         _idx_err =_index_missing_error (fp ,project_path )
-        if _idx_err :
-            _idx_err ["dry_run"]=True 
-            _idx_err ["ca_next_action"]="generate_project_map"
-            _idx_err ["hint"]=("Dry-run stopped at the same precondition the real write "
-            "enforces: no INDEX.json for this project. Run generate_project_map, then retry.")
-            return ct.json .dumps (_idx_err ,ensure_ascii =False )
+        _index_auto_seed_pending =bool (_idx_err )
         val_result =None 
         if fp .suffix .lower ()in _VALIDATE_EXTS :
             with ct.tempfile .NamedTemporaryFile (
@@ -1442,7 +1440,7 @@ skip_symbol_check :bool =False )->str :
             "target_file":str (fp ),
             "target_file_hash":ct._sha256_file (fp ),
             "requires_confirm":False ,
-            "warnings":[],
+            "warnings":(["index_auto_seed_pending"] if _index_auto_seed_pending else []),
             }
             dry_run_meta =ct._store_dry_run (str (ct.Path (_root_for_dry ).resolve ()),dry_payload )
         return ct.json .dumps ({
@@ -1459,9 +1457,27 @@ skip_symbol_check :bool =False )->str :
         "encoding_check":encoding_check ,
         "validation":val_result ,
         "range_id":f"{fp.name}:{start_line}p{span}",
+        "index_auto_seed_pending":_index_auto_seed_pending ,
         **dry_run_meta ,
-        "hint":"Goi lai write_fix voi dry_run=False (hoac bo dry_run) de apply",
+        "hint":("Goi lai write_fix voi dry_run=False (hoac bo dry_run) de apply"
+        + ("; apply se tu seed INDEX.json toi thieu, khong can generate_project_map"
+           if _index_auto_seed_pending else "")),
         })
+
+    _idx_err =_index_missing_error (fp ,project_path )
+    _index_auto_seeded =False 
+    if _idx_err :
+        import surgical_mapper as _sm_seed
+        _seed_root =project_path or ct.find_project_root (str (fp ))
+        if not _seed_root :
+            return ct.json .dumps (_idx_err ,ensure_ascii =False )
+        try :
+            _seed =await ct.asyncio .to_thread (_sm_seed .ensure_minimal_index ,str (_seed_root ))
+            _index_auto_seeded =bool (_seed .get ("ok"))
+        except Exception :
+            _index_auto_seeded =False 
+        if not _index_auto_seeded and not (ct._project_cache_dir (_seed_root )/"INDEX.json").exists ():
+            return ct.json .dumps (_idx_err ,ensure_ascii =False )
 
     if skip_pre_write_check :
         _audit_skip_pre_write_check (str (fp ),"write_fix")
@@ -1607,6 +1623,8 @@ skip_symbol_check :bool =False )->str :
 
             # Fix 3: escalate cache_sync fail
         if result .get ("ok"):
+            if _index_auto_seeded :
+                result ["index_auto_seeded"]=True 
             synced = await ct.asyncio.to_thread(ct._update_cache_after_write, str(fp), project_path)
             result ["cache_synced"]=synced 
             if not synced :
@@ -1891,7 +1909,11 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
                     result ["draft_error"]=str (_draft_exc )[:200 ]
                 return ct.json .dumps (result ,ensure_ascii =False )
             result ["validation"]=val
-        synced =ct._update_cache_after_write (str (fp ),project_path )
+        # TOOLA-AHEALTHHUNG-R1: write_fix already offloads this; write_new_file
+        # used to run update_file_cache (and a possible 180s snapshot full-walk)
+        # synchronously on the asyncio loop, so /health could not answer and
+        # auto-heal killed the process after the file had already been committed.
+        synced =await ct.asyncio .to_thread (ct._update_cache_after_write ,str (fp ),project_path )
         result ["cache_synced"]=synced
         if not synced :
             # Same double-bind as the write_fix path above: route to cache_delta, not

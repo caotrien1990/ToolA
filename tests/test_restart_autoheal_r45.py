@@ -64,5 +64,60 @@ class TestAutoHealTuning(unittest.TestCase):
         self.assertGreaterEqual(d["warmup_grace_s"], 30.0)
 
 
+class TestAutoHealInflightDefer(unittest.TestCase):
+    def test_fresh_busy_snapshot_defers_kill(self):
+        now = 1_000_000.0
+        snap = {
+            "busy": True,
+            "requests_in_flight": 1,
+            "executor_in_flight": 0,
+            "accounting_pending": 0,
+            "captured_at": now - 2.0,
+        }
+        defer, why = rcs._should_defer_auto_heal(snap, now=now)
+        self.assertTrue(defer)
+        self.assertEqual(why, "inflight")
+
+    def test_stale_snapshot_does_not_defer(self):
+        now = 1_000_000.0
+        snap = {
+            "busy": True,
+            "requests_in_flight": 1,
+            "captured_at": now - 120.0,
+        }
+        defer, why = rcs._should_defer_auto_heal(snap, now=now)
+        self.assertFalse(defer)
+        self.assertEqual(why, "snapshot_stale")
+
+    def test_idle_fresh_snapshot_does_not_defer(self):
+        now = 1_000_000.0
+        snap = {
+            "busy": False,
+            "requests_in_flight": 0,
+            "executor_in_flight": 0,
+            "accounting_pending": 0,
+            "captured_at": now - 1.0,
+        }
+        defer, why = rcs._should_defer_auto_heal(snap, now=now)
+        self.assertFalse(defer)
+        self.assertEqual(why, "not_busy")
+
+    def test_missing_snapshot_does_not_defer(self):
+        defer, why = rcs._should_defer_auto_heal(None)
+        self.assertFalse(defer)
+        self.assertEqual(why, "no_snapshot")
+
+    def test_defer_cap_reopens_heal(self):
+        now = 1_000_000.0
+        snap = {
+            "busy": True,
+            "requests_in_flight": 1,
+            "captured_at": now - 1.0,
+        }
+        defer, why = rcs._should_defer_auto_heal(snap, now=now, defer_streak=20)
+        self.assertFalse(defer)
+        self.assertEqual(why, "defer_cap")
+
+
 if __name__ == "__main__":
     unittest.main()

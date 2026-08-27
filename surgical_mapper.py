@@ -177,7 +177,8 @@ def _publish_snapshot_deadline_seconds() -> float:
         return 180.0
 
 
-def _publish_search_snapshot(project_root: Path, index: dict, changed_paths: dict | None = None) -> str:
+def _publish_search_snapshot(project_root: Path, index: dict, changed_paths: dict | None = None,
+                             allow_full_walk: bool = True) -> str:
     # Each attempt gets its OWN fresh budget window (a wall-clock deadline
     # computed at call time), so the authoritative full-walk fallback below is
     # NOT starved by whatever the fast path already spent. Sharing one deadline
@@ -214,13 +215,25 @@ def _publish_search_snapshot(project_root: Path, index: dict, changed_paths: dic
         # with `index` (same file set/filter). If it is not, the validators raised before
         # commit — fall back to an authoritative full walk (self-healing, never mis-publishes).
         # Deadline exceptions are handled above and must NOT reach here.
+        #
+        # TOOLA-AHEALTHHUNG-R1: a first write to a project with no prior snapshot
+        # (or a write whose INDEX was just seeded) used to fall through to
+        # _publish(None) with a 180s deadline. That O(repo) walk ran inside
+        # write_new_file ON the asyncio loop and made /health miss 5 polls
+        # (~150s) -> auto_heal livez_ok_health_hung killed the process mid-write.
+        # Skip the full walk on that path; generate_project_map still walks.
         if changed_paths is None:
             raise
-        snapshot_id = _publish(None)
+        if not allow_full_walk:
+            snapshot_id = ""
+        else:
+            snapshot_id = _publish(None)
     # GC every _SNAPSHOT_GC_EVERY publishes rather than every write: it parses the retained
     # generation manifests + scans the blob store (O(generations x repo)), which is wasteful
     # to repeat on each single-file write. keep_last bounds accumulation between sweeps.
-    if _snapshot_should_gc(Path(project_root).resolve()):
+    # Same hang class as the full walk: first-publish GC of a mislocated store
+    # must not run on the write hot path.
+    if allow_full_walk and _snapshot_should_gc(Path(project_root).resolve()):
         search_snapshots.collect_garbage(project_root, keep_last=10)
     return snapshot_id
 
@@ -935,6 +948,28 @@ def build_index(project_root: str, timeout_s: float | None = None) -> dict:
     return index
 
 
+def ensure_minimal_index(project_root: str) -> dict:
+    """Seed INDEX.json from existing cache sidecars (or an empty skeleton).
+
+    Does NOT walk the source tree and does NOT call generate_project_map.
+    Used by write_fix when a project has no INDEX after a restart or a
+    first write_new_file that was killed before cache update finished.
+    """
+    root = Path(project_root).resolve()
+    cache_root = root / CACHE_DIR_NAME
+    idx_path = cache_root / INDEX_FILENAME
+    if idx_path.exists():
+        return {"ok": True, "seeded": False, "path": str(idx_path)}
+    cache_root.mkdir(parents=True, exist_ok=True)
+    index = build_index(str(root))
+    return {
+        "ok": True,
+        "seeded": True,
+        "path": str(idx_path),
+        "files": len((index or {}).get("files") or {}),
+    }
+
+
 def update_index_incremental(project_root, cache_data: dict, *, removed: bool = False) -> dict:
     """Patch INDEX.json for ONE changed file WITHOUT re-reading the whole cache tree.
 
@@ -1285,6 +1320,7 @@ def update_file_cache(file_path: str, project_root: str) -> dict:
     else:
         metadata = write_file_cache(file_path, project_root)
     resolved_root = Path(project_root).resolve()
+    index_existed = (resolved_root / CACHE_DIR_NAME / INDEX_FILENAME).exists()
     # Incremental single-file INDEX patch (was: full build_index on every write, which
     # re-read the entire cache tree — O(repo) disk, minutes on 29k-file repos). Falls back
     # to a full rebuild inside update_index_incremental when the INDEX is missing/corrupt.
@@ -1300,16 +1336,22 @@ def update_file_cache(file_path: str, project_root: str) -> dict:
     # Reconcile the INDEX from disk FIRST so the authoritative full walk agrees with the
     # re-captured content by construction. (rel_for_snapshot is falsy only defensively;
     # a full walk still needs a disk-consistent INDEX, so reconcile there too.)
+    #
+    # TOOLA-AHEALTHHUNG-R1: never kick an O(repo) _reindex_from_disk or a 180s
+    # snapshot full-walk on the first write that just created INDEX. That path
+    # blocked the asyncio loop (write_new_file called this synchronously) and
+    # auto-heal killed the process after ~150s of /health timeouts.
     rel_for_snapshot = metadata.get("file")
     full_refresh = bool(rel_for_snapshot) and _snapshot_needs_full_refresh(resolved_root)
-    if full_refresh or not rel_for_snapshot:
+    if index_existed and (full_refresh or not rel_for_snapshot):
         index = _reindex_from_disk(resolved_root)
         changed_paths = None
     else:
-        changed_paths = {rel_for_snapshot: "removed" if removed else "modified"}
+        changed_paths = {rel_for_snapshot: "removed" if removed else "modified"} if rel_for_snapshot else None
     _write_project_map_markdown(resolved_root, index)
     _write_project_context_markdown(resolved_root, index)
-    metadata["snapshot_id"] = _publish_search_snapshot(resolved_root, index, changed_paths)
+    metadata["snapshot_id"] = _publish_search_snapshot(
+        resolved_root, index, changed_paths, allow_full_walk=index_existed)
     return metadata
 
 

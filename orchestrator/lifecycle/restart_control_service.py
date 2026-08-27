@@ -734,6 +734,48 @@ def _health_is_responsive(url: str, timeout: float,
         return True
     except Exception:
         return False
+
+
+def _should_defer_auto_heal(
+    snapshot: Mapping[str, object] | None,
+    *,
+    now: float | None = None,
+    max_age_s: float = 30.0,
+    defer_streak: int = 0,
+    max_defer_streak: int = 20,
+) -> tuple[bool, str]:
+    """Return (defer, reason) for auto-heal when /health is silent.
+
+    Killing mid-write loses the USAGE_LOG line and can lose INDEX; a FRESH
+    busy snapshot means in-flight work is still being published by the
+    independent snapshot thread, so the loop is busy rather than dead.
+
+    Does NOT reopen the fake-livez hole: a genuine deadlock that freezes the
+    publisher makes captured_at go stale, and we then heal as before. A
+    deadlock that releases the GIL but never yields the loop can keep the
+    snapshot fresh+busy; max_defer_streak caps that at ~10 min (20*30s).
+    """
+    if defer_streak >= max_defer_streak:
+        return False, "defer_cap"
+    if not isinstance(snapshot, Mapping):
+        return False, "no_snapshot"
+    captured_at = snapshot.get("captured_at")
+    if not isinstance(captured_at, (int, float)):
+        return False, "invalid_captured_at"
+    age = (now if now is not None else time.time()) - float(captured_at)
+    if age > max_age_s:
+        return False, "snapshot_stale"
+    inflight = (
+        int(snapshot.get("requests_in_flight") or 0) > 0
+        or int(snapshot.get("executor_in_flight") or 0) > 0
+        or int(snapshot.get("accounting_pending") or 0) > 0
+        or bool(snapshot.get("busy"))
+    )
+    if not inflight:
+        return False, "not_busy"
+    return True, "inflight"
+
+
 def _auto_heal_monitor(
     livez_url: str,
     health_url: str,
@@ -747,10 +789,12 @@ def _auto_heal_monitor(
     warmup_grace_s: float = 60.0,
     # Anh 2026-08-11: 900s -> 300s (env-tunable ORCH_WATCHDOG_COOLDOWN_S). The old
     # 15-min cooldown left a re-hang unhealed for 15 min after an auto-heal; 5 min
-    # recovers faster while still preventing restart-thrashing. Root cause of the
-    # recurring hang (on-loop index_delta/session-write) is now fixed, so re-hangs
-    # should be rare — a shorter cooldown is safe.
+    # recovers faster while still preventing restart-thrashing.
+    # TOOLA-AHEALTHHUNG-R1 (2026-08-27): the "on-loop hang is fixed so re-hangs
+    # are rare" claim was false — write_new_file still ran update_file_cache on
+    # the loop (snapshot full-walk up to 180s) and this monitor killed mid-write.
     cooldown_s: float = float(os.environ.get("ORCH_WATCHDOG_COOLDOWN_S", "300")),
+    busy_snapshot_path: str | os.PathLike[str] | None = None,
 ) -> None:
     """(d) Anh 2026-08-09: autonomous auto-heal cho event-loop TREO.
 
@@ -779,9 +823,11 @@ def _auto_heal_monitor(
         return _health_is_responsive(url, timeout)
 
     hung_streak = 0
+    defer_streak = 0
     last_heal = 0.0
     last_gen = None
     warmup_until = 0.0
+    snap_path = Path(busy_snapshot_path) if busy_snapshot_path else None
     while True:
         time.sleep(poll_interval)
         livez_ok = _probe(livez_url, 2.0)
@@ -797,9 +843,32 @@ def _auto_heal_monitor(
             last_gen = gen
             warmup_until = time.monotonic() + warmup_grace_s
             hung_streak = 0
+            defer_streak = 0
         if time.monotonic() < warmup_until:
             continue
-        hung_streak = hung_streak + 1 if (livez_ok and not health_alive) else 0
+        if livez_ok and not health_alive:
+            snap = None
+            if snap_path is not None:
+                try:
+                    loaded = _read_json(snap_path)
+                    snap = loaded if isinstance(loaded, Mapping) else None
+                except Exception:
+                    snap = None
+            defer, defer_why = _should_defer_auto_heal(snap, defer_streak=defer_streak)
+            if defer:
+                defer_streak += 1
+                append_audit({
+                    "event": "auto_heal_deferred_inflight",
+                    "reason": defer_why,
+                    "defer_streak": defer_streak,
+                    "hung_streak": hung_streak,
+                })
+                continue
+            hung_streak += 1
+            defer_streak = 0
+        else:
+            hung_streak = 0
+            defer_streak = 0
         if hung_streak < hung_threshold:
             continue
         if (time.monotonic() - last_heal) < cooldown_s:
@@ -897,6 +966,7 @@ def main() -> int:
         target=_auto_heal_monitor,
         args=(livez_url, health_url, scheduler, settled_stop,
               lambda event: _append_audit(cache / "restart_control_audit.jsonl", event)),
+        kwargs={"busy_snapshot_path": cache / "restart_busy_snapshot.json"},
         name="auto-heal-monitor",
         daemon=True,
     ).start()

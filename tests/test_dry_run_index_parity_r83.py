@@ -28,16 +28,20 @@ class TestDryRunParity:
         root, target = _project(tmp_path, indexed=False)
         dry = _run(code_tools.write_fix(str(target), 2, 2, "B = 20\n",
                                         project_path=str(root), dry_run=True))
+        # TOOLA-AHEALTHHUNG-R1: missing INDEX is no longer a hard fail. Dry-run
+        # stays side-effect free and advertises that apply will auto-seed.
+        assert dry.get("ok") is True, dry
+        assert dry.get("dry_run") is True
+        assert dry.get("index_auto_seed_pending") is True
+        assert not (root / ".orchestrator_cache" / "INDEX.json").exists()
+        assert target.read_text(encoding="utf-8") == "A = 1\nB = 2\nC = 3\n"
+
         real = _run(code_tools.write_fix(str(target), 2, 2, "B = 20\n",
                                          project_path=str(root), dry_run=False))
-        # The bug: dry-run said ok:true + handed out a dry_run_id, then the identical
-        # payload with dry_run=false failed on INDEX. Both must now agree.
-        assert dry.get("ok") is False, dry
-        assert real.get("ok") is False, real
-        assert "INDEX not found" in str(dry.get("error", ""))
-        assert dry.get("ca_next_action") == "generate_project_map"
-        assert "dry_run_id" not in dry
-        assert target.read_text(encoding="utf-8") == "A = 1\nB = 2\nC = 3\n"
+        assert real.get("ok") is True, real
+        assert real.get("index_auto_seeded") is True
+        assert (root / ".orchestrator_cache" / "INDEX.json").exists()
+        assert "B = 20" in target.read_text(encoding="utf-8")
 
     def test_both_pass_once_the_index_exists(self, tmp_path):
         root, target = _project(tmp_path, indexed=True)
