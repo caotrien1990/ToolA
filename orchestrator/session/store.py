@@ -748,12 +748,39 @@ _SESSION_WRITER: SessionWriter | None = None
 
 
 def _shutdown_session_writer() -> None:
+    """Close the process-global writer AND drop the reference to it.
+
+    Clearing the global is not tidiness, it is the contract. Two hot paths
+    decide what to do by comparing ``_SESSION_WRITER.db_path`` against the
+    current ``_SESSIONS_DB``: ``_get_session_writer`` (reuse vs rebuild) and
+    ``_init_session_db`` (skip the DDL when a live writer already owns this
+    path). Leaving a *closed* writer in the global makes both of them reason
+    about a corpse, and against a path that may no longer exist on disk.
+
+    Observed 2026-09-09 in tests/test_orchestrator_server_contract.py: after a
+    sessions.db swap, ``_SESSION_WRITER`` still pointed at the previous temp
+    directory with ``_closing`` already set. A ``_log_session_event`` racing
+    that state submitted into the dead writer and drained into a database with
+    no schema -- `sqlite3.OperationalError: no such table: events` -- which
+    then held a handle open and failed the TemporaryDirectory cleanup with
+    WinError 32. Nothing was wrong with the swap; the stale global was the bug.
+
+    ``None`` is the honest value for "there is no writer". Both callers already
+    handle it: they build a fresh one bound to whatever ``_SESSIONS_DB`` says
+    now, after running the schema check for that path.
+    """
+    global _SESSION_WRITER
     writer = globals().get("_SESSION_WRITER")
     if writer is not None:
         try:
             writer.close(timeout=5.0)
         except Exception:
             logger.exception("SessionWriter shutdown failed")
+        finally:
+            # Drop the reference even if close() raised: a writer we failed to
+            # shut down cleanly is the last thing that should stay reachable as
+            # the process-global "current" writer.
+            _SESSION_WRITER = None
 
 
 def close_writer() -> None:

@@ -287,7 +287,46 @@ def commit(project_path, message, expected_staged_hash, allow_empty=False, no_ve
     if allow_empty: args.append('--allow-empty')
     if no_verify: args.append('--no-verify')
     res=_run(root,args,timeout=300); head=_run(root,['rev-parse','HEAD'])['stdout'].strip()
-    return {'ok':True,'commit':head,'stdout':res['stdout'],'stderr':res['stderr'],'status':status(str(root))}
+    out={'ok':True,'commit':head,'stdout':res['stdout'],'stderr':res['stderr'],'status':status(str(root))}
+    # P7-S3 H3: advisory AFTER successful commit+hash, BEFORE return.
+    # Flag-OFF = no hooks/graph/status/parser import. Throw cannot fail the commit.
+    if os.environ.get("CBM_ENRICH_COMMIT", "0").strip().lower() in ("1", "true", "yes", "on"):
+        try:
+            from orchestrator.graph.hooks import KIND_COMMIT, lookup_enrich
+            staged_key = checked if checked.lower() != "auto" else str(s.get("staged_hash") or "")
+            if not staged_key or checked.lower() == "auto":
+                out["advisory"] = {"status": "unavailable", "reason": "partial_stage", "payload": None}
+            else:
+                # GAP-01/H3: warm KIND_COMMIT keyed by the PRE-commit staged_hash
+                # so the lookup below hits a real advisory instead of cache_miss.
+                # Staged paths come from the index metadata already in s (captured
+                # before the commit ran), split prod/test by PATH NAME -- never
+                # stdout. TTL is 60s, so this must run at commit time, which it
+                # does (inside commit(), after the staged key is known).
+                _staged_paths = [
+                    str(r.get("path")) for r in (s.get("records") or [])
+                    if str(r.get("xy", "."))[:1] not in (".", " ", "?", "!") and r.get("path")
+                ]
+                if _staged_paths:
+                    try:
+                        from orchestrator.graph.enrich_producers import produce_commit_advisory as _cbm_warm_commit
+                        _warm = _cbm_warm_commit(str(root), staged_key, _staged_paths)
+                        if isinstance(_warm, dict):
+                            out["advisory_warm"] = {"warmed": bool(_warm.get("warmed")),
+                                                    "reason": _warm.get("reason")}
+                    except Exception:
+                        pass  # fail-open: a warm miss leaves the honest cache_miss path
+                hit = lookup_enrich(KIND_COMMIT, staged_key)
+                if hit.get("status") == "ok":
+                    out["advisory"] = {"status": "ok", "reason": None, "payload": hit.get("payload")}
+                else:
+                    reason = str(hit.get("reason") or "cache_miss")
+                    if reason in ("cache_miss", "cache_stale", "fingerprint_mismatch"):
+                        reason = "unavailable" if reason == "fingerprint_mismatch" else reason
+                    out["advisory"] = {"status": "unavailable", "reason": reason, "payload": None}
+        except Exception:
+            out["advisory"] = {"status": "unavailable", "reason": "advisory_error", "payload": None}
+    return out
 
 def log(project_path, limit=20, ref='HEAD'):
     root=resolve_root(project_path); n=max(1,min(int(limit),200)); raw=_run(root,['log',f'-{n}','--date=iso-strict','--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%s',str(ref)])['stdout']; rows=[]

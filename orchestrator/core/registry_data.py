@@ -2609,6 +2609,8 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "required_python_modules": {"type": "array", "items": {"type": "string"}, "default": [], "description": "Importable modules required from the selected Python interpreter. No packages are installed automatically."},
 
+            "executed_test_files": {"type": "array", "items": {"type": "string"}, "description": "GAP-01/H2 (CBM_ENRICH_TEST=1): caller-DECLARED test files this script executed, project-relative paths. Honest source only -- the daemon never scrapes stdout. Declaring it emits executed_test_files in the result and unlocks the cached test_gap advisory keyed by script_hash."},
+
             "dry_run": {"type": "boolean", "default": False, "description": "CASE-2008: static no-execute preview of the destructive-statement scan. Nothing is written and nothing runs."},
 
             "confirm_destructive": {"type": "integer", "default": -1, "description": "CASE-2008: acknowledged destructive-statement count. A body containing Remove-Item/rm/del/Clear-Content/Move-Item/fs.rm/rmtree etc. refuses to run until this EQUALS the scanner count (returned as confirm_destructive_required). A count rather than a boolean, so editing the script invalidates a stale acknowledgement."},

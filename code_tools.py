@@ -7556,6 +7556,7 @@ async def run_project_test_script(
     content_encoding: str = "plain",
     python_exe: str = "",
     required_python_modules: list[str] | None = None,
+    executed_test_files: list[str] | None = None,
     dry_run: bool = False,
     confirm_destructive: int = -1,
     skip_backup: bool = False,
@@ -7828,6 +7829,34 @@ async def run_project_test_script(
     if _unc_auth_ctx:
         result["unc_auth_context"] = _unc_auth_ctx
         result["ca_next_action"] = _unc_auth_ctx["ca_next_action"]
+    # P7-S2 H2: opt-in cached enrich. Flag-OFF = no hooks/graph import.
+    if os.environ.get("CBM_ENRICH_TEST", "0").strip().lower() in ("1", "true", "yes", "on"):
+        # GAP-01/H2: the caller-DECLARED test list is the only honest source --
+        # the daemon never scrapes stdout. Surface it on the result (so
+        # enrich_test_result marks selection="explicit") and warm the KIND_TEST
+        # cache keyed by script_hash BEFORE the read-side lookup runs, so a
+        # declared run yields a real advisory instead of skipped:cache_miss.
+        _declared = [str(f).strip().replace("\\", "/")
+                     for f in (executed_test_files or []) if str(f).strip()]
+        if _declared:
+            result["executed_test_files"] = _declared
+            try:
+                from orchestrator.graph.enrich_producers import produce_test_advisory as _cbm_warm_test
+                _warm = _cbm_warm_test(str(root), script_hash, _declared)
+                if isinstance(_warm, dict):
+                    result["test_gap_warm"] = {
+                        "warmed": bool(_warm.get("warmed")),
+                        "reason": _warm.get("reason"),
+                    }
+            except Exception:
+                pass  # fail-open: warm miss leaves the honest skipped path below
+        try:
+            from orchestrator.graph.hooks import enrich_test_result as _cbm_enrich_test
+            result = _cbm_enrich_test(result)
+        except Exception:
+            result["test_gap"] = {
+                "status": "skipped", "reason": "advisory_error", "payload": None,
+            }
     return json.dumps(result, ensure_ascii=False)
 
 
@@ -14533,7 +14562,7 @@ Use [A] as the PRIMARY project channel instead of raw file ops.
 
 ## Start
 - [A] auto-starts at Windows logon — do NOT health-check / poll. If any [A] call is connection-refused → STOP and report immediately; do NOT retry.
-- At the first prompt of every CA session, before any project/council/UI/desktop/browser/computer-use-related work, load the core rule exactly once through HTTP: `POST http://localhost:8083/api/call/get_rule_core_text?fields=ok,already_fetched,text,sha256` with body `{"agent_id":"<clau|codo|pic|ope|hermes|kilo|cozo>"}`. First fetch/force must include `text` because that is the full core rule. If `already_fetched:true`, reuse the rule. If a rule upgrade is suspected, a new session may be stale, or Anh asks to verify latest rule, call again with "force":true (but do NOT call force routinely). If a tool list/schema is needed, use `GET /api/tools/names` or `GET /api/tools/<tool>/schema`.
+- At the first prompt of every CA session, before any project/council/UI/desktop/browser/computer-use-related work, load the core rule exactly once through HTTP: `POST http://localhost:8083/api/call/get_rule_core_text?fields=ok,already_fetched,text,sha256` with body `{"agent_id":"<clau|codo|gro|hermes|kilo|ope|pic>"}`. First fetch/force must include `text` because that is the full core rule. If `already_fetched:true`, reuse the slim already in context; missing `text` is the expected stub. Compaction is NOT a new CA session and does NOT authorize `get_rule_core_text` or `force:true`. `force:true` only when (a) Anh asks to verify, (b) sha mismatch, or (c) NEW [A] PID/generation and text is missing. If a tool list/schema is needed, use `GET /api/tools/names` or `GET /api/tools/<tool>/schema`.
 
 ## Transport policy
 - Legend: +=and | →=then | ==is | > = priority | w/o=without | ~=approx
@@ -14555,13 +14584,13 @@ Use [A] as the PRIMARY project channel instead of raw file ops.
 - Use the [A] HTTP API ONLY (`/api/call/<tool>` via PowerShell Invoke-RestMethod). NEVER use MCP. HTTP is parallel-safe and always reflects the current [A].
 - Inter-agent messaging = the `council_message` [A] tool. Call it like any [A] tool — you MUST pin UTF-8 or Vietnamese diacritics corrupt (PowerShell sends a string body as cp1252): `$b=[Text.Encoding]::UTF8.GetBytes((@{sender='<you>'; to='<ope|codo|pic|hermes|clau|kilo|cozo|user>'; text='<message>'} | ConvertTo-Json)); Invoke-RestMethod -Method Post -Uri http://localhost:8083/api/call/council_message -ContentType 'application/json; charset=utf-8' -Body $b`. Field is `sender`, NOT `from`. [A] auto-dispatches + logs the broker + returns the recipient's reply in `reply` — report it verbatim, never fabricate. `to='user'` posts to the human/leader dashboard (no agent run).
 - NEVER run curl/raw-shell, hand-build JSON, or run helper scripts to message — only the `council_message` tool. Read `.council/broker_filtered.jsonl` for the cross-agent transcript.
-- Council leadership: current desktop CA is leader only after user trigger (user-only; never from worker/broker) `bat hoi dong tr` / `bật hội đồng tr`; call HTTP `convene_council` and follow the live leader rule. Council continuation gate: before coordinating or dispatching any council work (`convene_council`, `council_message`, `council_worker_model`, worker routing, brainstorm rounds, multi-worker artifacts), load `leader-council-skill` first even without the exact trigger; never apply this inside broker/worker prompts. Worker routing chooses PiC/OpeC/HermC/KiloC/ClauC; model routing uses HTTP `council_worker_model` (NO Playwright DOM). Benchmark v3 defaults: CodoC+gpt-5.6-sol=fixed builder/final judge; PiC+qwen3.7-max=complex logic/durable design; KiloC+ltnai/minimax-m3=routine stable value route; PiC+deepseek-v4-pro=cheap adversarial scan; OpeC+openai-compatible/qwen3.7-max=operations review. Kimi K3 is DEFAULT_OFF_BENCHMARK_FAILED on PiC/HermC/OpeC/KiloC. GPT-5.6 Sol is verified only on PiC among those four switchable harnesses. Always set+get; no silent substitution.
+- Council leadership: current desktop CA is leader only after user trigger (user-only; never from worker/broker) `bat hoi dong tr` / `bật hội đồng tr`; call HTTP `convene_council` and follow the live leader rule. Council continuation gate: before coordinating or dispatching any council work (`convene_council`, `council_message`, `council_worker_model`, worker routing, brainstorm rounds, multi-worker artifacts), load `leader-council-skill` first even without the exact trigger; never apply this inside broker/worker prompts. Worker/model routing uses HTTP `council_worker_model` (NO Playwright DOM). ROUTE RULE SOT = Anh chỉ đạo. Benchmark 2026-07-25 table SUSPENDED. Always set+get; no silent substitution.
 """
 
 _SLIM_RULE_INLINE = (
     "Use [A] as the primary project channel instead of raw file ops. "
     "[A] auto-starts at Windows logon — do NOT health-check; if an [A] call is connection-refused, STOP and report (do not retry). "
-    "At the first prompt of every CA session, before any project/council/UI/desktop/browser/computer-use-style work, call HTTP POST http://localhost:8083/api/call/get_rule_core_text?fields=ok,already_fetched,text,sha256 with body {\"agent_id\":\"<clau|codo|pic|ope|hermes|kilo|cozo>\"} ONCE and follow it; first fetch/force needs text because that is the full core rule; if already_fetched:true, reuse the rule (call again with force:true only when rule upgrade suspected, new session may be stale, or Anh asks to verify). Never use computer-use/inline screenshots before or instead of this bootstrap; route all such work through [A] tools. "
+    "At the first prompt of every CA session, before any project/council/UI/desktop/browser/computer-use-style work, call HTTP POST http://localhost:8083/api/call/get_rule_core_text?fields=ok,already_fetched,text,sha256 with body {\"agent_id\":\"<clau|codo|gro|hermes|kilo|ope|pic>\"} ONCE and follow it; first fetch/force needs text because that is the full core rule; if already_fetched:true, reuse the slim already in context (missing text is the expected stub; compaction is NOT a new CA session and does not authorize get_rule_core_text or force:true; force:true only when Anh asks to verify, sha mismatches, or NEW [A] PID/generation and text is missing). Never use computer-use/inline screenshots before or instead of this bootstrap; route all such work through [A] tools. "
     "Transport policy: HTTP /api/call/<tool> is canonical for ALL agents and ALL non-T4 work. Discovery uses GET /api/tools/names or /api/tools/<tool>/schema. MCP is reserved for Clau/ClauC only and only for explicit stateful T4 runtime/DOM/CDP/browser/Electron page-session work. "
     "DEFAULT read-only; writes need explicit user go-ahead. "
     "Editing [A] itself: native edit + log_native_event, then CA self-restarts [A] via [A:S] when needed — no need to ask user. Do NOT restart [A] while any worker dispatch is in flight (it can kill the HTTP reply). "
@@ -14569,7 +14598,7 @@ _SLIM_RULE_INLINE = (
     "Reply in Vietnamese (code/identifiers/tool-names/errors stay English); objective, no flattery, never fabricate. Fail loud about anything skipped or uncertain. "
     "Token discipline: NEVER use computer-use or inline screenshots; all UI/desktop/browser inspection must use [A] desktop_screenshot (disk path only), describe_page, DOM, or CDP tools. Do not paste full logs, full files, raw screenshots, or huge tool/schema dumps into chat; use bounded reads, tails, summaries, and exact fields= filters only when keys are known. For get_rule_core_text: first/force ok,already_fetched,text,sha256; repeat/hash-check ok,already_fetched,sha256. "
     "WORKER transport: use the [A] HTTP API ONLY (/api/call/<tool> via Invoke-RestMethod); NEVER MCP. "
-    "Current desktop CA is council leader only after user trigger (user-only; never from worker/broker) bat hoi dong tr / bật hội đồng tr. Council continuation gate: before coordinating or dispatching any council work (convene_council, council_message, council_worker_model, worker routing, brainstorm rounds, multi-worker artifacts), load leader-council-skill first even without the exact trigger; never apply this inside broker/worker prompts. Worker routing chooses PiC/OpeC/HermC/KiloC/ClauC; model routing uses HTTP council_worker_model, not Playwright DOM. Benchmark v3 defaults: CodoC+gpt-5.6-sol=fixed builder/final judge; PiC+qwen3.7-max=complex logic/durable design; KiloC+ltnai/minimax-m3=routine stable value route; PiC+deepseek-v4-pro=cheap adversarial scan; OpeC+openai-compatible/qwen3.7-max=operations review. Kimi K3 is DEFAULT_OFF_BENCHMARK_FAILED on PiC/HermC/OpeC/KiloC. GPT-5.6 Sol is verified only on PiC among those four switchable harnesses. Always set+get; no silent substitution. ClauC = Judgement/scoped bug-fix/master-dev after retry >2 and the only MCP-capable worker for T4. "
+    "Current desktop CA is council leader only after user trigger (user-only; never from worker/broker) bat hoi dong tr / bật hội đồng tr. Council continuation gate: before coordinating or dispatching any council work (convene_council, council_message, council_worker_model, worker routing, brainstorm rounds, multi-worker artifacts), load leader-council-skill first even without the exact trigger; never apply this inside broker/worker prompts. Model routing uses HTTP council_worker_model, not Playwright DOM. ROUTE RULE SOT = Anh chỉ đạo. Benchmark 2026-07-25 table SUSPENDED. Always set+get; no silent substitution. ClauC = Judgement/scoped bug-fix/master-dev after retry >2 and the only MCP-capable worker for T4. "
     "Inter-agent messaging = the council_message tool. MUST pin UTF-8 or Vietnamese diacritics corrupt (PowerShell encodes a string body as cp1252): $b=[Text.Encoding]::UTF8.GetBytes((@{sender='<you>';to='<ope|codo|pic|hermes|clau|kilo|cozo|user>';text='<msg>'}|ConvertTo-Json)); Invoke-RestMethod -Method Post -Uri http://localhost:8083/api/call/council_message -ContentType 'application/json; charset=utf-8' -Body $b (field sender not from); [A] returns the recipient reply in `reply` — report verbatim, never fabricate; to='user' posts to the human dashboard. Never curl/hand-build-JSON/scripts to message."
 )
 
@@ -15296,7 +15325,7 @@ def _council_build_from_config(cfg: dict):
             "role": m.get("role", ""),
             "cli_channel": m.get("cli_channel", ""),
         })
-    route_capabilities = {"selection_rule": "Select by task fit and benchmark evidence; no fixed cost chain."}
+    route_capabilities = {"selection_rule": "ROUTE RULE SOT = Anh chỉ đạo. Do not use a cost chain. Benchmark 2026-07-25 table SUSPENDED."}
     for aid, m in _council_enabled_agents(cfg):
         if aid == "clau":
             line = "ONLY agent allowed MCP: use MCP (call_tool) for T4 (runtime/DOM/CDP/browser) + high-stakes stateful; HTTP /api/call otherwise"
@@ -15319,15 +15348,15 @@ def _council_build_from_config(cfg: dict):
 
 # Fallback hardcoded council spec, used only when council_config.json is missing/invalid.
 _COUNCIL_FALLBACK_ROSTER = [
-    {"agent": "clauC", "bridge_agent": "clau", "role": "Judgement: final verification, limited patching, T4/MCP only when explicitly delegated", "cli_channel": 'claude --print --model claude-opus-4-8 -p "<prompt>"  [diagnostic only; dispatch via council_message; log .council\\log_clau.txt]'},
-    {"agent": "opeC", "bridge_agent": "ope", "role": "Operations/migration/observability review; benchmark primary model qwen3.7-max", "cli_channel": 'opencode run "<prompt>" --model openai-compatible/qwen3.7-max --dangerously-skip-permissions  [diagnostic only; dispatch via council_message; log .council\\log_ope.txt]'},
-    {"agent": "codoC", "bridge_agent": "codo", "role": "High-end gpt-5.6-sol worker for judgement, independent audit, high-difficulty development, code building, plan drafting, and final conflict resolution; never the default leader", "cli_channel": 'codex exec "<prompt>" --sandbox workspace-write --skip-git-repo-check  [diagnostic only; dispatch via council_message; log .council\\log_codo.txt]'},
-    {"agent": "kiloC", "bridge_agent": "kilo", "role": "Stable basic harness; default KiloC+ltnai/minimax-m3 for routine implementation, backend ops, recovery/lease/fencing", "cli_channel": 'kilo run "<prompt>" --model ltnai/minimax-m3 --format json --dangerously-skip-permissions  [diagnostic only; dispatch via council_message; log .council\\log_kilo.txt; cwd set by subprocess not --dir]'},
-    {"agent": "PiC", "bridge_agent": "com", "role": "Qwen primary for complex logic/conflict/architecture/durable design; DeepSeek for adversarial scan; GPT available; Kimi default-off", "cli_channel": 'pi -p "<prompt>" --yolo --skip-onboarding  [diagnostic only; dispatch via council_message; log .council\\log_pic.txt]'},
+    {"agent": "clauC", "bridge_agent": "clau", "role": "Judgement: final verification, limited patching, T4/MCP only when explicitly delegated", "cli_channel": 'claudeltnai --print --model claude-opus-5 -p "<prompt>"  [diagnostic only; dispatch via council_message; log .council\\log_clau.txt]'},
+    {"agent": "opeC", "bridge_agent": "ope", "role": "OpenCode worker; live pin grok-4.6-build; no suspended Qwen default", "cli_channel": 'opencode run "<prompt>" --model openai-compatible/grok-4.6-build --dangerously-skip-permissions  [diagnostic only; dispatch via council_message; log .council\\log_ope.txt]'},
+    {"agent": "codoC", "bridge_agent": "codo", "role": "High-end grok-4.6-build worker via CodexLTNAI for judgement, independent audit, high-difficulty development; never the default leader", "cli_channel": 'codexltnai exec "<prompt>" --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check  [diagnostic only; dispatch via council_message; log .council\\log_codo.txt]'},
+    {"agent": "kiloC", "bridge_agent": "kilo", "role": "Kilo harness; no Anh-directed default route cell; do not apply suspended MiniMax default", "cli_channel": 'kilo run "<prompt>" --model ltnai/glm-5.2 --format json --dangerously-skip-permissions  [diagnostic only; dispatch via council_message; log .council\\log_kilo.txt; cwd set by subprocess not --dir]'},
+    {"agent": "PiC", "bridge_agent": "com", "role": "Pi harness; no Anh-directed default route cell; do not apply suspended Qwen/DeepSeek defaults", "cli_channel": 'pi -p "<prompt>" --yolo --skip-onboarding  [diagnostic only; dispatch via council_message; log .council\\log_pic.txt]'},
     {"agent": "HermC", "bridge_agent": "hermes", "role": "general worker (Hermes); BROKER-ONLY one-shot; web/file by default, browser only when explicitly required", "cli_channel": 'hermes chat -q "<prompt>" --yolo -t web,file [-m <model>] [--provider <prov>]  [diagnostic only; dispatch via council_message; log .council\\log_hermes.txt]'},
 ]
 _COUNCIL_FALLBACK_CAPABILITIES = {
-    "selection_rule": "Select by task fit and benchmark evidence; no fixed cost chain. ClauC is outside normal routing order.",
+    "selection_rule": "ROUTE RULE SOT = Anh chỉ đạo. Do not use a cost chain. Benchmark 2026-07-25 table SUSPENDED. ClauC is outside normal routing order.",
     "clauC": "Judgement/final verification; ONLY worker allowed MCP for T4; HTTP /api/call otherwise",
     "codoC": "HTTP /api/call ONLY; never MCP. Optional high-context worker when explicitly routed",
     "clinC": "DISABLED fallback entry; do not route unless explicitly re-enabled in council_config.json",
@@ -15335,7 +15364,7 @@ _COUNCIL_FALLBACK_CAPABILITIES = {
     "opeC": "HTTP /api/call ONLY; never MCP. FREE worker — prefer for token-heavy scan/test/search",
     "HermC": "HTTP /api/call ONLY; never MCP. FREE worker — prefer for token-heavy scan/test/search",
 }
-_COUNCIL_FALLBACK_COORDINATION = "The user-triggered desktop CA is temporary leader. Route by benchmark task fit, never a cost chain. CodoC+gpt-5.6-sol is a high-end worker for judgement, independent audit, high-difficulty development, builder work and final conflict resolution; it is not default leader. PiC+qwen3.7-max handles complex logic/durable design; KiloC+ltnai/minimax-m3 routine implementation/recovery; PiC+deepseek-v4-pro adversarial scan; OpeC+openai-compatible/qwen3.7-max operations review. ClauC is outside normal routing order and explicit exceptional T4/scoped work only. Always set+get; no silent substitution."
+_COUNCIL_FALLBACK_COORDINATION = "The user-triggered desktop CA is temporary leader. ROUTE RULE SOT = Anh chỉ đạo. Never a cost chain. Benchmark 2026-07-25 table SUSPENDED. CodoC is a high-end worker, not default leader. ClauC is outside normal routing order and explicit exceptional T4/scoped work only. Always set+get; no silent substitution."
 _COUNCIL_FALLBACK_PARALLELISM = "Leader MAY dispatch independent worker tasks in PARALLEL (workers run over HTTP /api/call — parallel-safe). Serialize ONLY tasks that WRITE the SAME project concurrently. Writes to [A] itself restricted to clauC or codoC ONLY."
 
 
@@ -15378,7 +15407,7 @@ async def convene_council(project_path: str = "") -> str:
         "verify_outbox_rule": "VERIFY ONLY / no-edits prohibits source/runtime changes, but appending the required RES block to the worker's own outbox is mandatory and is not considered a forbidden edit.",
         "prompt_style_rule": "Worker prompts should be short Vietnamese with correct diacritics; avoid ambiguous 'Chao Anh' headers in agent-to-agent prompts.",
         "leadership_rule": "The desktop/current CA that receives Anh's exact user-only trigger `bat hoi dong tr` / `bật hội đồng tr` is the temporary council LEADER unless Anh explicitly delegates leadership. Continuation gate: before coordinating or dispatching any council work (`convene_council`, `council_message`, `council_worker_model`, worker routing, brainstorm rounds, multi-worker artifacts), load `leader-council-skill` first even without the exact trigger; never apply this inside broker/worker prompts.",
-        "leader_frugality_rule": "Temporary leader = reason + direct ONLY: scope, plan, route workers, route PiC model, then delegate anything more expensive than directing. ClauC is Judgement, not the default coordinator.",
+        "leader_frugality_rule": "Temporary leader = reason + direct ONLY: scope, plan, route workers only from Anh chỉ đạo or live pin after SET+GET, then delegate anything more expensive than directing. ClauC is Judgement, not the default coordinator.",
         "worker_prompt_route_rule": "BROKER-ONLY: every worker runs one-shot with NO context/session retention. Send each task as a SELF-CONTAINED Council Message; embed any required prior context directly in the prompt — workers do not remember previous turns.",
         "broker_only_rule": "Context mode has been REMOVED from [A]. All workers (ClauC/OpeC/CodoC/PiC/HermC/KiloC) run BROKER one-shot only: fresh process each dispatch, no --resume/--id/session continuity. Provider+model is set through HTTP council_worker_model (writes .council/worker_models.json, applied on next dispatch, no restart); runtime supports clau|codo|pic|ope|hermes|kilo though schema text may lag. Verify HermC slots with action=get before relying on a switch. For PiC, route exactly one model per task and dispatch sequentially.",
         "messaging_rule": "CA/worker messaging uses the [A] tool council_message via POST /api/call/council_message with {sender,to,text,timeout_sec?}. The dashboard may use /api/council/message internally. Each message is an independent one-shot task. Route by target worker id and read cross-agent replies from .council\\broker_filtered.jsonl.",
@@ -15459,7 +15488,7 @@ async def council_config_diff(project_path: str = "") -> str:
         n_drift = sum(1 for item in drift if item["status"] != "in_sync")
         return json.dumps({"ok": True, "config_source": str(_council_config_path()),
             "enabled_agents": [{"id": aid, "label": meta.get("label", aid), "can_write_A": bool(meta.get("can_write_A"))} for aid, meta in _council_enabled_agents(cfg)],
-            "selection_rule": "task_fit_and_benchmark_evidence", "fixed_cost_chain": False,
+            "selection_rule": "anh_chi_dao_benchmark_20260725_suspended", "fixed_cost_chain": False,
             "normal_routing_excludes": ["ClauC"], "roster_labels": roster_labels, "drift": drift,
             "summary": f"{n_drift} drift / {len(drift)} doc targets",
             "next_action": "update canonical derived docs" if n_drift else "all docs in sync"}, ensure_ascii=False)
@@ -15481,7 +15510,7 @@ async def council_config_sync(project_path: str = "", run_sync_rule: bool = True
             except Exception as exc:
                 sync_rule_result = {"ok": False, "error": str(exc)}
         return json.dumps({"ok": bool(diff_result.get("ok")), "config_source": str(_council_config_path()),
-            "selection_rule": "task_fit_and_benchmark_evidence", "fixed_cost_chain": False,
+            "selection_rule": "anh_chi_dao_benchmark_20260725_suspended", "fixed_cost_chain": False,
             "normal_routing_excludes": ["ClauC"], "drift": diff_result.get("drift", []),
             "sync_rule": ({"ran": True, "ok": bool(sync_rule_result and sync_rule_result.get("ok"))} if run_sync_rule else {"ran": False}),
             "note": "convene_council reads council_config.json live; Python restart refreshes this tool contract."}, ensure_ascii=False)
@@ -16329,3 +16358,137 @@ try:
 except Exception as _cbm_p2_exc:
     import logging as _cbm_log_p2
     _cbm_log_p2.warning(f"CBM graph P2 tool registration failed: {_cbm_p2_exc}")
+
+# ── CBM campaign P3–P6 tools: additive fourth block (do not move the three above) ──
+try:
+    from orchestrator.graph.tools import (
+        cbm_test_gap as _cbm_test_gap_handler,
+        cbm_quality_gate as _cbm_quality_gate_handler,
+        cbm_what_if as _cbm_what_if_handler,
+        cbm_evolution as _cbm_evolution_handler,
+        cbm_dsm as _cbm_dsm_handler,
+    )
+    from orchestrator.core.registry import register_tool as _register_cbm_p3
+
+    _register_cbm_p3(
+        name="cbm_test_gap",
+        handler=_cbm_test_gap_handler,
+        phase="T1",
+        tool_map=TOOL_MAP,
+        tool_schemas=TOOL_SCHEMAS,
+        tool_phases=TOOL_PHASES,
+        phase_labels=PHASE_LABELS,
+        schema={
+            "description": "T1 read-only advisory: static import-reach test gap (BFS from explicit test seeds over observed imports_module). Isolated production stays uncovered. no_tests => status=unavailable, coverage_ratio=null (not 0%). tests+zero source => ratio=1 vacuous. Missing CC is unavailable — rank by fan-in, never fabricate CC=1. include_architecture default false; when true, payload.architecture adds stability cascade + entry reach (service/context, not separate public tools). Not executed coverage.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_path": {"type": "string", "description": "Absolute project root holding .orchestrator_cache/graph.db."},
+                    "included_files": {"type": "array", "items": {"type": "string"}, "description": "Optional production file list (slash paths). Omitted = view default included set."},
+                    "test_files": {"type": "array", "items": {"type": "string"}, "description": "Explicit test seeds. Empty => unavailable:no_tests."},
+                    "include_architecture": {"type": "boolean", "default": False, "description": "Opt-in stability + entry_reach on the same file universe. Default false. Not a legacy include_extensions flag."},
+                    "per_test_maps": {"type": "boolean", "default": False, "description": "Optional bounded per-test cover maps."},
+                },
+                "required": ["project_path"],
+            },
+        },
+    )
+    _register_cbm_p3(
+        name="cbm_quality_gate",
+        handler=_cbm_quality_gate_handler,
+        phase="T1",
+        tool_map=TOOL_MAP,
+        tool_schemas=TOOL_SCHEMAS,
+        tool_phases=TOOL_PHASES,
+        phase_labels=PHASE_LABELS,
+        schema={
+            "description": "T1 read-only quality gate. mode=rules evaluates 13 TOML keys (unknown key = invalid_config; max_cc/no_god_files always unavailable v1). mode=compare is readonly vs a caller-chosen baseline (delta .02; missing value unavailable). mode=snapshot RETURNS JSON only and never writes; persist only via later write_new_file overwrite=false. Generic quality still routes to cbm_cycle_point. Not include_extensions.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_path": {"type": "string", "description": "Absolute project root."},
+                    "mode": {"type": "string", "enum": ["rules", "compare", "snapshot"], "default": "rules", "description": "rules | compare | snapshot. snapshot never writes."},
+                    "rules_toml": {"type": "string", "description": "TOML document for mode=rules. 64KiB / 128 rules cap."},
+                    "baseline": {"type": "string", "description": "Caller-chosen baseline JSON for mode=compare. Not auto-loaded."},
+                    "included_files": {"type": "array", "items": {"type": "string"}, "description": "Optional production file list."},
+                    "test_files": {"type": "array", "items": {"type": "string"}, "description": "Optional test seeds excluded from production layers."},
+                    "metrics": {"type": "object", "description": "Optional quality_factors / analysis_quality_v1 / file_line_counts / fn_spans / labelled proxies."},
+                },
+                "required": ["project_path"],
+            },
+        },
+    )
+    _register_cbm_p3(
+        name="cbm_what_if",
+        handler=_cbm_what_if_handler,
+        phase="T1",
+        tool_map=TOOL_MAP,
+        tool_schemas=TOOL_SCHEMAS,
+        tool_phases=TOOL_PHASES,
+        phase_labels=PHASE_LABELS,
+        schema={
+            "description": "T1 read-only RAM what-if. Clone analysis_view; apply move_file|add_edge|remove_edge|remove_file|break_cycle atomically (invalid step rejects whole sequence, ops_applied=0). Caps 20 ops / 2000 nodes / 50000 pairs / 2s => unavailable (cap_ops/cap_nodes/cap_pairs/deadline). Never writes source/DB. break_cycle is a heuristic (min target fan-in then src then dst), not min-cut. Named cbm_what_if is H1 after registration; generic quality still cbm_cycle_point. Not include_extensions.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_path": {"type": "string", "description": "Absolute project root holding .orchestrator_cache/graph.db."},
+                    "ops": {"type": "array", "items": {"type": "object"}, "description": "Sequence of {op, ...} objects. Invalid/unknown op rejects the whole request."},
+                    "included_files": {"type": "array", "items": {"type": "string"}, "description": "Optional production file list (slash paths). Omitted = view default included set."},
+                    "test_files": {"type": "array", "items": {"type": "string"}, "description": "Optional test seeds excluded from production layers."},
+                    "edge_kind": {"type": "string", "enum": ["observed", "strict"], "default": "observed", "description": "Edge list to mutate/score. observed (default) or strict."},
+                },
+                "required": ["project_path"],
+            },
+        },
+    )
+    _register_cbm_p3(
+        name="cbm_evolution",
+        handler=_cbm_evolution_handler,
+        phase="T1",
+        tool_map=TOOL_MAP,
+        tool_schemas=TOOL_SCHEMAS,
+        tool_phases=TOOL_PHASES,
+        phase_labels=PHASE_LABELS,
+        schema={
+            "description": "T1 read-only git evolution. argv-only `git log` (no shell/network/git config). 90d/1000 commits; pair cap 50 files/commit (1225 pairs) with dropped count. Jaccard=co/(a+b-co). Author id = SHA256(trim(lower(email))) full 64 hex; missing email unknown, never hashed name. Rename v1 canonical = new path, rename_history_partial. No git => unavailable:not_git_repository. Shallow => partial/history_truncated. Missing CC never invents hotspot. Named cbm_evolution is H1 after registration; generic quality still cbm_cycle_point. No git_stage/git_diff feed. Not include_extensions.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_path": {"type": "string", "description": "Absolute project root (git work tree)."},
+                    "included_files": {"type": "array", "items": {"type": "string"}, "description": "Optional file filter (slash paths). Omitted = all files seen in the walk."},
+                    "lookback_days": {"type": "integer", "default": 90, "description": "UTC lookback window. Default 90. Capped at 3650."},
+                    "complexity_map": {"type": "object", "description": "Optional {path: cyclomatic_int}. Missing CC => no fake hotspot."},
+                },
+                "required": ["project_path"],
+            },
+        },
+    )
+    _register_cbm_p3(
+        name="cbm_dsm",
+        handler=_cbm_dsm_handler,
+        phase="T1",
+        tool_map=TOOL_MAP,
+        tool_schemas=TOOL_SCHEMAS,
+        tool_phases=TOOL_PHASES,
+        phase_labels=PHASE_LABELS,
+        schema={
+            "description": "T1 read-only DSM. Level = longest path in SCC condensation toward sinks; order by level then lexical. Exact propagation only for N<=500 (avg_reach/(N-1)); 501+ deterministic sample; 2001 truncated keep lowest+highest 1000. Page <=100x100 sparse cells only — never a dense matrix. Mutual-edge clusters (A↔B). UTF-8 labels intact. Named cbm_dsm is H1 after registration; generic quality still cbm_cycle_point. Never writes source/DB. Not include_extensions.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_path": {"type": "string", "description": "Absolute project root holding .orchestrator_cache/graph.db."},
+                    "included_files": {"type": "array", "items": {"type": "string"}, "description": "Optional production file list (slash paths). Omitted = view default included set."},
+                    "test_files": {"type": "array", "items": {"type": "string"}, "description": "Optional test seeds excluded from production layers."},
+                    "row_start": {"type": "integer", "default": 0, "description": "Page row offset."},
+                    "col_start": {"type": "integer", "default": 0, "description": "Page column offset."},
+                    "page_rows": {"type": "integer", "default": 100, "description": "Page height, capped at 100."},
+                    "page_cols": {"type": "integer", "default": 100, "description": "Page width, capped at 100."},
+                    "edge_kind": {"type": "string", "enum": ["observed", "strict"], "default": "observed", "description": "Edge list to score. observed (default) or strict."},
+                },
+                "required": ["project_path"],
+            },
+        },
+    )
+except Exception as _cbm_p3_exc:
+    import logging as _cbm_log_p3
+    _cbm_log_p3.warning(f"CBM graph P3 tool registration failed: {_cbm_p3_exc}")

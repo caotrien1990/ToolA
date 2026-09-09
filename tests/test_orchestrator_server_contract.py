@@ -1153,8 +1153,21 @@ process.stdout.write(JSON.stringify(snapshots));
         # widening into a false red -- the same A19/A21 trap of testing the
         # mechanism instead of the property. What must hold: the legacy keys still
         # exist and still carry codo's resolved CodexLTNAI live ID.
+        #
+        # R57: the same trap caught this test one level down. It said "carry
+        # codo's resolved live ID" and then hardcoded 'stealth/ox-alpha' -- a
+        # snapshot of the config, not the property. .council/council_config.json
+        # is the declared SOT and has since moved codo to grok-4.6-build, its
+        # own stale_memory_corrections reading "CodoC live pin is grok-4.6-build
+        # on CodexLTNAI. ox-alpha deferred." The config moved, the literal did
+        # not, and the suite went red over a deliberate routing change. Assert
+        # the pass-through instead: whatever the SOT declares for codo is what
+        # the compatibility view must report.
         self.assertEqual(effective.get('provider'), 'codex')
-        self.assertEqual(effective.get('model'), 'stealth/ox-alpha')
+        self.assertEqual(
+            effective.get('model'),
+            orchestrator_server._COUNCIL_DEFAULT_MODELS['codo']['model'],
+        )
         self.assertEqual(effective.get('resolution_status'), 'unverified')
 
     def test_codo_executable_prefers_dedicated_ltnai_launcher(self):

@@ -1407,7 +1407,25 @@ _DECISION_RULES = [
       "tier": "T2", "tool": "write_new_file / run_project_test_script",
       "skill": "05_write_pipeline + 08_command_windows",
       "why": "Encode UTF-8 explicitly; do not assume btoa exists in the host runtime."},
-     # CAN-053 (codo P1): architecture/dependency/entrypoint/blast-radius intents
+    # --- W0 (SYNTRUX-AU1/AU2, AUTO_USE_MATRIX muc 10): CBM quality tools — cụ thể hơn CAN-053 nên phải đứng trước ---
+    {"re": r"\b(circular.?(dep\w*|import\w*|ref\w*|dependenc\w*)|cyclic\w*|\bcycles\b|import.?cycles?|vong.?phu.?thuoc|vong.?lap.?phu.?thuoc|tarjan|kosaraju|\bscc\b|leveliz\w*|upward.?violat\w*|quality.?signal|chat.?luong.?kien.?truc|kien.?truc.?chat.?luong|codebase.?health|arch\w*health)\b",
+     "tier": "T1", "tool": "cbm_cycle_point",
+     "skill": "15_search_code_intel",
+     "why": "graph-first: cycles (Tarjan SCC), levelization, geometric-mean quality_signal — 1 call cbm_cycle_point trên graph.db"},
+    {"re": r"\b(dead.?code|dead.?call\w*|uncalled\w*|unused.?(code|func\w*|method\w*|symbol|class|callable\w*)|code.?chet|ham.?chet|khong.?(duoc|ai).?(su.?dung|goi))\b",
+     "tier": "T1", "tool": "cbm_dead_code",
+     "skill": "15_search_code_intel",
+     "why": "graph-first: unreferenced callables + framework-dispatch suppression trong 1 call cbm_dead_code"},
+    # --- W0b (AU3/AU4): fix route nhầm của lexical fallback (probe D/F 07/09) ---
+    {"re": r"\b(sua|fix|edit|chinh.?sua)\b[^.]{0,40}\b(file|tap.?tin|ham|function|method|class|loi|bug|dong|line|code)\b",
+     "tier": "T2", "tool": "write_fix",
+     "skill": "05_write_pipeline",
+     "why": "edit existing file = write_fix (line-range edit); draft_patch chỉ dành cho draft proposal"},
+    {"re": r"\b(chup.{0,15}(man.?hinh|screen)|screenshot|screen.?capture|anh.?man.?hinh)\b",
+     "tier": "T4a", "tool": "desktop_screenshot",
+     "skill": "00_skill_router",
+     "why": "UI snapshot = desktop_screenshot (disk path); không phải DOM tools"},
+    # CAN-053 (codo P1): architecture/dependency/entrypoint/blast-radius intents
     # must hit CBM graph tools BEFORE broad find/search rules shadow them.
     {"re": r"\b(architecture|kien.?truc|module.?dep\w*|dependenc\w+|phu.?thuoc|entry.?points?|blast.?radius|impact.?scope|data.?flow|component.?map|nam.*kien.?truc|so.?do.*(module|he.?thong))\b",
      "tier": "T1", "tool": "cbm_get_architecture / cbm_template_query / cbm_graph_status / cbm_trace_path",
@@ -1519,6 +1537,172 @@ def _wt_vn_expand(task: str) -> str:
     folded = _wt_vn_fold(task)
     extra = [en for vn_pat, en in _WT_VN_HINTS if re.search(vn_pat, folded)]
     return folded + ((" " + " ".join(extra)) if extra else "")
+
+
+def _wt_campaign_fold_raw(text: str) -> str:
+    """R2 C: lowercase accent-folded RAW (d-stroke -> d) + whitespace normalize.
+    No vocabulary expansion -- expanded tokens must not create new intent.
+    """
+    return re.sub(r"\s+", " ", _wt_vn_fold(text)).strip()
+
+
+def _campaign_quality_has_code_context(folded: str) -> bool:
+    return bool(re.search(
+        r"\b(architecture|kien[ _-]?truc|code|cbm|commit|dependenc|"
+        r"module|graph|scc|cycle|import)\b",
+        folded or "",
+    ))
+
+
+def _campaign_suppress_write_fix(folded: str) -> bool:
+    """R2 rule-7 exclusion: report/prose/wording/bao cao is not a code edit."""
+    return bool(
+        re.search(r"\b(sua|fix|edit|chinh[ _-]?sua)\b", folded or "")
+        and re.search(r"\b(report|prose|wording|bao[ _-]?cao)\b", folded or "")
+    )
+
+
+def _campaign_routing_prepass(folded_raw: str, live_tools: set) -> list:
+    """R2 C ordered semantic rules on folded RAW, before expand/CAN-053.
+
+    First match is the campaign primary; later matches are multi-intent
+    alternates. A rule is omitted when its exclusion fires.
+    cbm_quality_gate is claimed only when already registered (P4+).
+    """
+    if not folded_raw:
+        return []
+    live = live_tools or set()
+    out = []
+
+    def _add(tool, tier, skill, why):
+        out.append({
+            "re": "",
+            "tier": tier,
+            "tool": tool,
+            "skill": skill,
+            "why": why,
+        })
+
+    if re.search(
+        r"\b(draft[ _-]?patch|syntax[ _-]?pre[ _-]?write|draft[ _-]?syntax)\b",
+        folded_raw,
+    ):
+        _add("write_draft_patch", "T2", "05_write_pipeline",
+             "R2 C1: draft-patch / syntax-pre-write repair, not a general edit.")
+    if re.search(
+        r"\b(run[ _-]?tests?|chay[ _-]?test|pytest|unittest)\b",
+        folded_raw,
+    ):
+        _add("run_project_test_script", "T2", "09_testing_validation",
+             "R2 C2: run-tests / chay-test / pytest / unittest.")
+    if re.search(
+        r"\b(tao|create|new)\b.{0,60}\b(file|module)\b|\bnew[ _-]?file\b",
+        folded_raw,
+    ):
+        _add("write_new_file", "T2", "05_write_pipeline",
+             "R2 C3: create/new file or module, not a line edit.")
+    if (re.search(r"\bcbm_quality_gate\b", folded_raw)
+            and "cbm_quality_gate" in live):
+        _add("cbm_quality_gate", "T1", "15_search_code_intel",
+             "R2 C4: explicit cbm_quality_gate after P4 registration.")
+    if (
+        (
+            re.search(r"\bcbm_what_if\b", folded_raw)
+            or re.search(
+                r"\b(what[ _-]?if|gia[ _-]?lap|break[ _-]?cycle)\b",
+                folded_raw,
+            )
+        )
+        and "cbm_what_if" in live
+    ):
+        _add("cbm_what_if", "T1", "15_search_code_intel",
+             "P5 H1: explicit what-if / gia lap / break cycle after registration.")
+    if (
+        (
+            re.search(r"\bcbm_evolution\b", folded_raw)
+            or re.search(
+                r"\b(evolution|churn|co[ _-]?change|bus[ _-]?factor|"
+                r"lich[ _-]?su[ _-]?git|git[ _-]?history)\b",
+                folded_raw,
+            )
+        )
+        and "cbm_evolution" in live
+    ):
+        _add("cbm_evolution", "T1", "15_search_code_intel",
+             "P6 H1: explicit evolution / churn / bus-factor after registration.")
+    if (
+        (
+            re.search(r"\bcbm_dsm\b", folded_raw)
+            or re.search(
+                r"\b(dsm|design[ _-]?structure[ _-]?matrix|"
+                r"propagation[ _-]?cost|ma[ _-]?tran[ _-]?phu[ _-]?thuoc)\b",
+                folded_raw,
+            )
+        )
+        and "cbm_dsm" in live
+    ):
+        _add("cbm_dsm", "T1", "15_search_code_intel",
+             "P6 H1: explicit dsm / design-structure-matrix after registration.")
+    if (
+        (
+            re.search(r"\bcbm_test_gap\b", folded_raw)
+            or re.search(
+                r"\b(test[ _-]?gap|uncovered[ _-]?(files?|modules?)|"
+                r"khoang[ _-]?trong[ _-]?test)\b",
+                folded_raw,
+            )
+        )
+        and "cbm_test_gap" in live
+    ):
+        _add("cbm_test_gap", "T1", "15_search_code_intel",
+             "P3 H1: explicit test-gap / uncovered files; run-tests still wins first.")
+    if re.search(
+        r"\b(dead[ _-]?code|dead[ _-]?callables?|"
+        r"unused[ _-]?(code|functions?|methods?)|"
+        r"ham[ _-]?chet|code[ _-]?chet)\b",
+        folded_raw,
+    ):
+        _add("cbm_dead_code", "T1", "15_search_code_intel",
+             "R2 C5: dead code / ham chet, before CAN-053 and find/search.")
+    _strong_cycle = re.search(
+        r"\b(circular[ _-]?(dependency|dependencies|imports?)|"
+        r"cyclic|cycles?|scc|tarjan|kosaraju)\b",
+        folded_raw,
+    )
+    _generic_quality = re.search(r"\b(quality|chat[ _-]?luong)\b", folded_raw)
+    if _strong_cycle or (
+        _generic_quality
+        and _campaign_quality_has_code_context(folded_raw)
+    ):
+        _add("cbm_cycle_point", "T1", "15_search_code_intel",
+             "R2 C6: cycle / architecture quality, before CAN-053.")
+    if (
+        re.search(
+            r"\b(sua|fix|edit|chinh[ _-]?sua)\b.{0,60}"
+            r"\b(ham|function|method|class|code|file|line|dong)\b",
+            folded_raw,
+        )
+        and not _campaign_suppress_write_fix(folded_raw)
+    ):
+        _add("write_fix", "T2", "05_write_pipeline",
+             "R2 C7: targeted code/file edit; draft/test/create win first.")
+    if re.search(
+        r"\b(chup.{0,15}man[ _-]?hinh|screenshot|screen[ _-]?capture)\b",
+        folded_raw,
+    ):
+        _source_lookup = (
+            re.search(r"\b(find|search|tim|lookup)\b", folded_raw)
+            and re.search(
+                r"\b(source|code|function|symbol|trong)\b",
+                folded_raw,
+            )
+        )
+        if not _source_lookup:
+            _add("desktop_screenshot", "T4", "18_runtime_dom_T4",
+                 "R2 C8: chup man hinh / screenshot, not a source snapshot.")
+    return out
+
+
 
 
 def _wt_rank_lexical(task_expanded: str, top_k: int = 3) -> list:
@@ -1736,14 +1920,25 @@ async def tool_decision_hint(task_description: str = "", scope_hint: str = "",
                     pass
         return out
 
-    # WT-2026-07-12: rules run on the raw task first (back-compat), then on the
-    # Vietnamese-folded/expanded text so VN intents hit the same EN rules.
-    # CAN-053 multi-intent: collect ALL matching rules (list order = specificity);
-    # the first stays primary, the next distinct ones surface as alternates so a
-    # broad find/search rule cannot silently shadow architecture intent.
+    # R2 C: semantic prepass on lowercase accent-folded RAW before
+    # vocabulary expansion and before CAN-053 / find/search. Do not inject
+    # these regexes into _DECISION_RULES -- a raw broad match can beat a
+    # folded specific match. A07 must not revoke a confirmed campaign primary.
+    folded_raw = _wt_campaign_fold_raw(task)
+    _campaign = _campaign_routing_prepass(folded_raw, live_tools)
     task_expanded = _wt_vn_expand(task)
     _matched = []
     _seen_tools = set()
+    _campaign_primary = False
+    for rule in _campaign:
+        _key = str(rule["tool"])
+        if _key not in _seen_tools:
+            _seen_tools.add(_key)
+            _matched.append(rule)
+            _campaign_primary = True
+    # WT-2026-07-12: legacy rules still run on raw then VN-expanded text.
+    # CAN-053 multi-intent: remaining matches become alternates so a broad
+    # find/search rule cannot silently shadow architecture intent.
     for probe in (task, task_expanded):
         for rule in _DECISION_RULES:
             if re.search(rule["re"], probe):
@@ -1758,7 +1953,12 @@ async def tool_decision_hint(task_description: str = "", scope_hint: str = "",
     # A07: a broad rule that fired on a single query word must not shadow a
     # tool whose multi-segment name the query spells out. When that happens,
     # drop stage 1 entirely and let the lexical ranker answer.
-    if _matched and _a07_should_defer(task, _matched[0], _lex_ranked):
+    # R2: confirmed campaign (R1) primary is not A07-deferrable.
+    if (
+        _matched
+        and not _campaign_primary
+        and _a07_should_defer(task, _matched[0], _lex_ranked)
+    ):
         _matched = []
     if _matched:
         rule = _matched[0]

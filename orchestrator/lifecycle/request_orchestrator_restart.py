@@ -21,7 +21,13 @@ class ControllerUnavailableBeforePost(ConnectionError):
 
 def _is_connection_refused(exc: BaseException) -> bool:
     reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
-    return isinstance(reason, ConnectionRefusedError) or getattr(reason, "errno", None) in {61, 10061}
+    if isinstance(reason, ConnectionRefusedError):
+        return True
+    # WSAECONNREFUSED reaches us as `errno` on the socket-mapped paths and as
+    # `winerror` on some raw Windows OSError paths. Checking only one of the two
+    # let a genuine refusal fall through to the generic "unreachable" branch.
+    return (getattr(reason, "errno", None) in {61, 10061}
+            or getattr(reason, "winerror", None) == 10061)
 
 
 def request_status(*, url: str, secret: bytes, request_id: str, timeout: float = 2.0,
@@ -123,15 +129,58 @@ def request_restart(
                           deadline=deadline, opener=opener)
 
 
+def _is_timeout(exc: BaseException) -> bool:
+    reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+    if isinstance(reason, TimeoutError):
+        return True
+    return "timed out" in str(reason).lower()
+
+
+def _classify_controller_error(exc: BaseException) -> tuple[str, bool | None]:
+    """Name what actually happened, and say whether anything is listening.
+
+    Returns (classification, listener_present).
+
+    The misreport this ends: a loopback port with NOTHING listening came back as
+    `URLError: <urlopen error timed out>` with `connection_refused: false`, which
+    a reader can only interpret as "the controller is up but hung" -- the
+    opposite of the truth. The cause was a probe budget shorter than the time
+    the OS itself needs to deliver the refusal, so the probe's own deadline
+    fired before the RST arrived and the refusal was never classified.
+
+    `refused`         nothing is listening; the OS said so.        -> False
+    `http_error`      something answered with a status.            -> True
+    `bad_payload`     something answered, but not our JSON.        -> True
+    `connect_timeout` the deadline hit before any answer. On
+                      loopback a connect completes or is refused
+                      well inside a second, so this points at too
+                      small a budget far more often than at a
+                      silent listener -- but it proves neither.    -> None
+    `unreachable`     any other socket/OS failure.                 -> None
+    """
+    if _is_connection_refused(exc):
+        return "refused", False
+    if isinstance(exc, urllib.error.HTTPError):
+        return "http_error", True
+    if isinstance(exc, ValueError):  # includes json.JSONDecodeError
+        return "bad_payload", True
+    if _is_timeout(exc):
+        return "connect_timeout", None
+    return "unreachable", None
+
+
 def controller_health(url: str, timeout: float = 1.0, opener: Callable[..., object] = urllib.request.urlopen) -> dict[str, object]:
     parsed = urllib.parse.urlparse(url)
     health_url = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, "/health", "", "", ""))
     try:
         with opener(health_url, timeout=timeout) as response:
             payload = json.loads(response.read().decode("utf-8"))
-        return {"configured": True, "reachable": bool(payload.get("ok")), "url": health_url}
+        reachable = bool(payload.get("ok"))
+        return {"configured": True, "reachable": reachable, "url": health_url,
+                "classification": "ok" if reachable else "not_ok",
+                "listener_present": True, "probe_timeout_s": timeout}
     except (OSError, ValueError, urllib.error.URLError, json.JSONDecodeError) as exc:
-        reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+        classification, listener_present = _classify_controller_error(exc)
         return {
             "configured": True,
             "reachable": False,
@@ -139,6 +188,12 @@ def controller_health(url: str, timeout: float = 1.0, opener: Callable[..., obje
             "error_type": type(exc).__name__,
             "error_message": str(exc),
             "connection_refused": _is_connection_refused(exc),
+            # `connection_refused: false` alone cannot distinguish "nothing is
+            # listening" from "something accepted and went quiet". These two
+            # fields can, and are additive: no existing reader loses a key.
+            "classification": classification,
+            "listener_present": listener_present,
+            "probe_timeout_s": timeout,
         }
 
 

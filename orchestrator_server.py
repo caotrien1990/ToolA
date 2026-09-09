@@ -1000,6 +1000,32 @@ _CONTROLLER_HEALTH_TTL_SECONDS = 5.0
 # normalised exception) instead of a placeholder, and a caller cannot tell the
 # difference between "never probed" and "probed, came back empty".
 _CONTROLLER_HEALTH_FIRST_WAIT_SECONDS = 0.05
+# The PROBE's budget, not the caller's. It runs on the executor below and
+# /health never waits for it, so this only has to be long enough to let the OS
+# finish answering. 0.1s was not, and the reason is not the one the docstring
+# below assumed. Measured 2026-09-09 on this host, connecting to a bound-then-
+# released 127.0.0.1 port with nothing listening:
+#
+#     raw connect, timeout 0.1  ->  112ms  TimeoutError
+#     raw connect, timeout 0.6  ->  609ms  TimeoutError
+#     raw connect, timeout 3.0  -> 2020ms  ConnectionRefusedError WinError 10061
+#     via `localhost` (dual stack, ::1 then 127.0.0.1)
+#                     timeout 3.0 -> 4074ms ConnectionRefusedError
+#
+# So the refusal takes ~2.0s here, not ~110ms: Windows retransmits the SYN and
+# the RST only surfaces after the retry window. Any budget under that returns
+# `URLError: <urlopen error timed out>` with `connection_refused: false`, which
+# reads as "listening but hung" about a port with nothing on it at all. The
+# number meant to protect /health latency was corrupting /health's answer
+# instead, and it protected nothing, because the wait is already off-loop.
+#
+# 2.5s clears the measured 2.02s and stays under the 5s cache TTL, so a down
+# controller costs one sleeping thread for 2.5s per 5s and no /health latency.
+# A `localhost` control URL would still exceed this (~4.1s, two address
+# families); that case is not silently mislabelled -- `controller_health`
+# reports `classification: "connect_timeout"` with `listener_present: None`,
+# which says "no answer yet", not "nothing is there".
+_CONTROLLER_HEALTH_PROBE_TIMEOUT_SECONDS = 2.5
 _CONTROLLER_HEALTH_EXECUTOR = None
 
 
@@ -1008,10 +1034,15 @@ def _controller_health_executor():
 
     Both probes are single-worker by design -- one in flight is all either needs
     -- but sharing ONE worker between them couples two unrelated timeouts: a
-    controller probe stalling ~110ms on a refused connect would sit in front of
-    the queued durable-metrics job, which has a 50ms budget and would then report
+    controller probe stalling on a refused connect would sit in front of the
+    queued durable-metrics job, which has a 50ms budget and would then report
     `metrics_stale` for a reason that has nothing to do with SQLite. Two workers
     cost one idle thread and remove the interference entirely.
+
+    This separation is what makes the probe budget affordable. A refused
+    loopback connect measures ~2.02s on this host, not the ~110ms this file used
+    to claim, so the probe must be allowed ~2.5s to get a truthful answer. It can
+    be, precisely because it stalls its own dedicated thread and nothing else's.
     """
     global _CONTROLLER_HEALTH_EXECUTOR
     with _DURABLE_METRICS_LOCK:
@@ -1028,9 +1059,18 @@ async def _controller_health_for_health(url: str) -> dict:
     `controller_health` is a synchronous `urllib.request.urlopen`. Awaiting it
     inline made /health block the whole loop for as long as the socket took --
     and the expensive case is the COMMON one: when the restart controller on
-    :8085 is not listening, Windows takes ~110ms to refuse the connection, every
-    single request, forever. Measured here: 0.109s of a 0.125s /health, i.e. 87%
-    of the handler was one blocking connect to a port that was down.
+    :8085 is not listening, every single request pays the full refusal latency,
+    forever. Moving it off-loop was right and stays right.
+
+    The NUMBER this docstring used to quote was not. It said "Windows takes
+    ~110ms to refuse the connection", citing 0.109s of a 0.125s /health. That
+    0.109s was the probe's own 0.1s deadline expiring, not the OS answering:
+    re-measured 2026-09-09 against a closed 127.0.0.1 port, the refusal needs
+    ~2.02s (Windows retransmits the SYN before surfacing the RST), and a 0.1s
+    connect reports `TimeoutError` at 112ms every time. Reading that 112ms as
+    "the refusal is fast" is what set the probe budget below the refusal and
+    made a dead port report as a hung one. See
+    `_CONTROLLER_HEALTH_PROBE_TIMEOUT_SECONDS` for the full measurement.
 
     That is the exact failure `_durable_metrics_for_health` was written to
     prevent for SQLite, and the same shape of fix applies: hand the blocking call
@@ -1072,7 +1112,7 @@ async def _controller_health_for_health(url: str) -> dict:
              and now - _CONTROLLER_HEALTH_CACHE_AT < _CONTROLLER_HEALTH_TTL_SECONDS)
     if future is None and not fresh:
         future = _controller_health_executor().submit(
-            controller_health, url, 0.1)
+            controller_health, url, _CONTROLLER_HEALTH_PROBE_TIMEOUT_SECONDS)
         _CONTROLLER_HEALTH_FUTURE = future
     if not _CONTROLLER_HEALTH_CACHE_AT and future is not None:
         # First probe ever: give it a bounded moment, the same way
@@ -10246,10 +10286,29 @@ async def _council_dispatch_message(sender, target, text, timeout_sec=6000, queu
     )
     if queued_result.get("error_name"):
         return queued_result
-    return {"ok": bool(queued_result.get("ok")), "from": target, "to": sender,
+    _resp = {"ok": bool(queued_result.get("ok")), "from": target, "to": sender,
             "reply": queued_result.get("reply_text", ""), "error": queued_result.get("error", ""),
             "provider": queued_result.get("provider", provider), "model": queued_result.get("model", model),
             "error_name": "" if queued_result.get("ok") else "AGENT_ERROR"}
+    # GAP-01/H5: opt-in council graph-context pack, RESPONSE ATTACHMENT only --
+    # it is NEVER injected into the worker prompt (Step-21 contract). Keyed by
+    # (project_path, context-registry generation) so a bumped generation
+    # invalidates it. project_path = the worker's latest live context entry.
+    # Fail-open: any miss leaves the dispatch reply byte-for-byte unchanged.
+    if os.environ.get("CBM_ENRICH_COUNCIL", "0").strip().lower() in ("1", "true", "yes", "on"):
+        try:
+            _ctx = _council_find_latest_context(target) or {}
+            _proj = str(_ctx.get("project_path") or "").strip()
+            if _proj:
+                from orchestrator.graph.enrich_producers import produce_council_pack as _cbm_warm_council
+                _pack = await asyncio.to_thread(_cbm_warm_council, _proj, generation=_council_context_generation())
+                if isinstance(_pack, dict) and _pack.get("payload"):
+                    _resp["council_pack"] = {"status": "ok", "reason": _pack.get("reason"),
+                                             "fingerprint": _pack.get("fingerprint"),
+                                             "payload": _pack.get("payload")}
+        except Exception:
+            pass  # fail-open: no pack attached, the reply still returns intact
+    return _resp
 
 
 from orchestrator.council.cron_jobs import (
@@ -12540,6 +12599,33 @@ async def handle_council_dashboard(request):
         content_type='text/html',
         charset='utf-8',
         headers=_cors(request.headers.get('Origin'), {'Cache-Control': 'no-store, max-age=0'}),
+    )
+
+
+async def handle_council_glass_dashboard(request):
+    """GET /council/glass - Council Liquid Glass secondary theme, read from disk per request."""
+    cors = _cors(request.headers.get('Origin'))
+    if not _is_local(request) or not _origin_ok(request):
+        return web.Response(text="blocked", status=403, headers=cors)
+
+    glass_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "orchestrator", "council", "glass_dashboard.html",
+    )
+    try:
+        with open(glass_path, "r", encoding="utf-8") as f:
+            html = f.read()
+    except OSError:
+        return web.Response(
+            text="glass theme file missing",
+            status=404,
+            headers=_cors(request.headers.get("Origin"), {"Cache-Control": "no-store, max-age=0"}),
+        )
+    return web.Response(
+        text=html,
+        content_type="text/html",
+        charset="utf-8",
+        headers=_cors(request.headers.get("Origin"), {"Cache-Control": "no-store, max-age=0"}),
     )
 
 _LOG_LINE_RE = __import__('re').compile(
@@ -16104,6 +16190,7 @@ def create_app() -> web.Application:
     app.router.add_get('/health', handle_health)
     app.router.add_get('/api/health', handle_health)
     app.router.add_get('/council', handle_council_dashboard)
+    app.router.add_get('/council/glass', handle_council_glass_dashboard)
     app.router.add_get('/api/council/activity', handle_council_activity)
     app.router.add_get('/api/council/state', handle_council_state)
     app.router.add_get('/api/council/events', handle_council_events)

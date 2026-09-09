@@ -11,10 +11,19 @@ import os
 import subprocess
 import time
 
+from . import analysis_service as _analysis_service
 from . import cycle_point as _cycle_point
 from . import indexer as _indexer
 from . import status as _status
 from . import query as _query
+from . import testgap as _testgap
+from . import stability as _stability
+from . import attack as _attack
+from . import rules as _rules
+from . import baseline as _baseline
+from . import whatif as _whatif
+from . import evolution as _evolution
+from . import dsm as _dsm
 from .extractors.vulture_ruff import (
     _console_python,
     _merge_dedup,
@@ -599,6 +608,517 @@ async def cbm_cycle_point(project_path: str = "", **aliases) -> str:
         return _err("cbm_cycle_point", e)
 
 
+async def cbm_analysis_view(
+    project_path: str = "",
+    included_files: list | None = None,
+    test_files: list | None = None,
+    finalize_scope: bool = False,
+    **aliases,
+) -> str:
+    """T1 versioned extension: bounded readonly analysis_view. Does not take the write lock."""
+    if not project_path:
+        return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
+                            "error": "project_path required"}, ensure_ascii=False)
+    project_path, path_err = _clean_project_path(project_path)
+    if path_err:
+        return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
+                            "error": path_err}, ensure_ascii=False)
+    if not os.path.isdir(project_path):
+        return _json.dumps({"ok": False, "error_name": "INVALID_PROJECT_PATH",
+                            "error": f"project_path is not an existing directory: {project_path}"},
+                           ensure_ascii=False)
+    try:
+        result = await _analysis_service.run_analysis_view(
+            project_path,
+            included_files=included_files,
+            test_files=test_files,
+            finalize_scope=bool(finalize_scope),
+        )
+        return _ok(result)
+    except Exception as e:
+        return _err("cbm_analysis_view", e)
+
+
+def _as_path_list(value) -> list[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        if text.startswith("["):
+            try:
+                parsed = _json.loads(text)
+            except ValueError:
+                parsed = None
+            if isinstance(parsed, list):
+                return [str(item) for item in parsed if str(item).strip()]
+        return [part.strip() for part in text.split(",") if part.strip()]
+    if isinstance(value, (list, tuple, set)):
+        return [str(item) for item in value if str(item).strip()]
+    return [str(value)]
+
+
+def _raise_if_stopped(checkpoint, stop=None, deadline_mono=None) -> None:
+    if checkpoint is not None and checkpoint("work"):
+        raise InterruptedError("analysis_stop")
+    if stop is not None and stop.is_set():
+        raise InterruptedError("analysis_stop")
+    if deadline_mono is not None and time.monotonic() >= deadline_mono:
+        raise InterruptedError("analysis_stop")
+
+
+async def cbm_test_gap(
+    project_path: str = "",
+    included_files: list | None = None,
+    test_files: list | None = None,
+    include_architecture: bool = False,
+    per_test_maps: bool = False,
+    **aliases,
+) -> str:
+    """T1 advisory: static test-gap BFS. Opt-in architecture adds stability/entry."""
+    if not project_path:
+        return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
+                            "error": "project_path required"}, ensure_ascii=False)
+    project_path, path_err = _clean_project_path(project_path)
+    if path_err:
+        return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
+                            "error": path_err}, ensure_ascii=False)
+    if not os.path.isdir(project_path):
+        return _json.dumps({"ok": False, "error_name": "INVALID_PROJECT_PATH",
+                            "error": f"project_path is not an existing directory: {project_path}"},
+                           ensure_ascii=False)
+    included = _as_path_list(included_files)
+    tests = _as_path_list(test_files) or []
+    want_arch = bool(include_architecture)
+
+    def _work(*, checkpoint, stop, deadline_mono, project_path, included_files, test_files, finalize_scope):
+        del finalize_scope
+        _raise_if_stopped(checkpoint, stop, deadline_mono)
+        payload = _testgap.build_test_gap(
+            project_path,
+            included_files=included_files,
+            test_files=test_files,
+            per_test_maps=bool(per_test_maps),
+            checkpoint=checkpoint,
+        )
+        if want_arch and isinstance(payload, dict):
+            from .analysis_view import build_analysis_view
+            universe = list(included_files or []) + list(test_files or [])
+            view_payload = build_analysis_view(
+                project_path,
+                included_files=universe or included_files,
+                test_files=test_files or [],
+                finalize_scope=False,
+                checkpoint=checkpoint,
+            )
+            if isinstance(view_payload, dict) and view_payload.get("status") != "unavailable":
+                view_payload = dict(view_payload)
+                if included_files is not None:
+                    view_payload["included_files"] = list(included_files)
+                view_payload["test_files"] = list(test_files or [])
+            payload = dict(payload)
+            payload["architecture"] = {
+                "stability": _stability.compute_stability(view_payload),
+                "entry_reach": _attack.compute_entry_reach(
+                    view_payload, included_files or []
+                ),
+            }
+            payload["metric_notes"] = list(payload.get("metric_notes") or []) + [
+                "architecture_opt_in_stability_entry"
+            ]
+        return payload
+
+    try:
+        result = await _analysis_service.run_analysis_view(
+            project_path,
+            included_files=included,
+            test_files=tests,
+            finalize_scope=False,
+            work_fn=_work,
+        )
+        return _ok(result)
+    except Exception as e:
+        return _err("cbm_test_gap", e)
+
+
+def _as_metrics(value) -> dict:
+    if value is None:
+        return {}
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return {}
+        try:
+            parsed = _json.loads(text)
+        except ValueError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
+def _snapshot_from_view(view: dict, metrics: dict) -> dict:
+    from .analysis_view import ALGORITHM_VERSION as _VIEW_ALGO
+    from .config import EXTRACTOR_VERSION
+    from .schema import SCHEMA_VERSION
+
+    stab = _stability.compute_stability(view)
+    included = list(view.get("included_files") or [])
+    tests = {_rules._identity_key(p) for p in (view.get("test_files") or [])}
+    production = [p for p in included if _rules._identity_key(p) not in tests]
+    nodes = [_rules._identity_key(p) for p in production]
+    pairs = _rules._pair_edges(view)
+    cycles = _rules.cycle_group_count(nodes, pairs)
+    depth = _rules.max_depth_of(nodes, pairs)
+    quality = metrics.get("analysis_quality_v1")
+    prov = view.get("provenance") or {}
+    return {
+        "version": 1,
+        "status": "ok" if view.get("status") in {"ok", "partial"} else str(view.get("status") or "unavailable"),
+        "reason": view.get("reason"),
+        "pass": False,
+        "mode": "snapshot",
+        "wrote": False,
+        "identity": {
+            "root": prov.get("root"),
+            "included_set_hash": prov.get("included_set_hash"),
+            "algorithm_version": prov.get("algorithm_version") or _VIEW_ALGO,
+            "extractor_version": prov.get("extractor_version") or EXTRACTOR_VERSION,
+            "schema_version": prov.get("schema_version") or SCHEMA_VERSION,
+            "confidence_policy": prov.get("confidence_policy"),
+        },
+        "metrics": {
+            "analysis_quality_v1": quality,
+            "coupling_score": stab.get("coupling_score"),
+            "cycles": cycles,
+            "max_depth": depth,
+        },
+        "stability": {
+            "status": stab.get("status"),
+            "coupling_score": stab.get("coupling_score"),
+        },
+        "metric_notes": [
+            "snapshot_t1_no_write",
+            "no_auto_baseline",
+            "no_legacy_score_replace",
+        ],
+        "provenance": prov,
+        "persist_hint": ".orchestrator_cache/cbm/baselines/<scope-hash>/<run-id>.json via write_new_file overwrite=false",
+    }
+
+
+async def cbm_quality_gate(
+    project_path: str = "",
+    mode: str = "rules",
+    rules_toml: str = "",
+    baseline: str = "",
+    included_files: list | None = None,
+    test_files: list | None = None,
+    metrics: dict | None = None,
+    **aliases,
+) -> str:
+    """T1: rules / compare / snapshot. Snapshot returns JSON only — never writes."""
+    if not project_path:
+        return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
+                            "error": "project_path required"}, ensure_ascii=False)
+    project_path, path_err = _clean_project_path(project_path)
+    if path_err:
+        return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
+                            "error": path_err}, ensure_ascii=False)
+    if not os.path.isdir(project_path):
+        return _json.dumps({"ok": False, "error_name": "INVALID_PROJECT_PATH",
+                            "error": f"project_path is not an existing directory: {project_path}"},
+                           ensure_ascii=False)
+    chosen = str(mode or aliases.get("gate_mode") or "rules").strip().lower()
+    if chosen not in {"rules", "compare", "snapshot"}:
+        return _json.dumps({
+            "ok": True,
+            "result": {
+                "status": "unavailable",
+                "reason": "invalid_mode",
+                "pass": False,
+                "wrote": False,
+                "counts": {"passed": 0, "violated": 0, "unavailable": 0, "evaluated": 0},
+            },
+        }, ensure_ascii=False)
+    included = _as_path_list(included_files)
+    tests = _as_path_list(test_files) or []
+    extra = _as_metrics(metrics)
+    toml_text = rules_toml or aliases.get("toml") or ""
+    baseline_raw = baseline if baseline else None
+
+    def _work(*, checkpoint, stop, deadline_mono, project_path, included_files, test_files, finalize_scope):
+        del finalize_scope
+        _raise_if_stopped(checkpoint, stop, deadline_mono)
+        from .analysis_view import build_analysis_view
+        view = build_analysis_view(
+            project_path,
+            included_files=included_files,
+            test_files=test_files,
+            finalize_scope=False,
+            checkpoint=checkpoint,
+        )
+        if chosen == "snapshot":
+            payload = _snapshot_from_view(view, extra)
+            payload["wrote"] = False
+            return payload
+        if chosen == "compare":
+            snap = _snapshot_from_view(view, extra)
+            compared = _baseline.compare_baseline(snap, baseline_raw)
+            compared["mode"] = "compare"
+            compared["wrote"] = False
+            compared["snapshot"] = snap
+            return compared
+        if not str(toml_text).strip():
+            return {
+                "status": "unavailable",
+                "reason": "missing_rules",
+                "pass": False,
+                "mode": "rules",
+                "wrote": False,
+                "aggregate": "unavailable",
+                "checks": [],
+                "counts": {"passed": 0, "violated": 0, "unavailable": 0, "evaluated": 0},
+            }
+        evaluated = _rules.evaluate_rules(view, toml_text, metrics=extra)
+        evaluated["mode"] = "rules"
+        evaluated["wrote"] = False
+        return evaluated
+
+    try:
+        result = await _analysis_service.run_analysis_view(
+            project_path,
+            included_files=included,
+            test_files=tests,
+            finalize_scope=False,
+            work_fn=_work,
+        )
+        if isinstance(result, dict):
+            result = dict(result)
+            result["wrote"] = False
+        return _ok(result)
+    except Exception as e:
+        return _err("cbm_quality_gate", e)
+
+    except Exception as e:
+        return _err("cbm_quality_gate", e)
+
+
+def _as_ops(value) -> list:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        try:
+            parsed = _json.loads(text)
+        except ValueError:
+            parsed = text
+        return list(parsed) if isinstance(parsed, list) else [parsed]
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    return [value]
+
+
+async def cbm_what_if(
+    project_path: str = "",
+    ops: list | None = None,
+    included_files: list | None = None,
+    test_files: list | None = None,
+    edge_kind: str = "observed",
+    **aliases,
+) -> str:
+    """T1: RAM-only what-if over a cloned analysis_view. Never writes."""
+    if not project_path:
+        return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
+                            "error": "project_path required"}, ensure_ascii=False)
+    project_path, path_err = _clean_project_path(project_path)
+    if path_err:
+        return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
+                            "error": path_err}, ensure_ascii=False)
+    if not os.path.isdir(project_path):
+        return _json.dumps({"ok": False, "error_name": "INVALID_PROJECT_PATH",
+                            "error": f"project_path is not an existing directory: {project_path}"},
+                           ensure_ascii=False)
+    included = _as_path_list(included_files)
+    tests = _as_path_list(test_files) or []
+    chosen_kind = str(edge_kind or aliases.get("kind") or "observed").strip().lower()
+    if chosen_kind not in {"observed", "strict"}:
+        chosen_kind = "observed"
+    parsed_ops = _as_ops(ops if ops is not None else aliases.get("operations"))
+
+    def _work(*, checkpoint, stop, deadline_mono, project_path, included_files, test_files, finalize_scope):
+        del finalize_scope
+        _raise_if_stopped(checkpoint, stop, deadline_mono)
+        from .analysis_view import build_analysis_view
+        view = build_analysis_view(
+            project_path,
+            included_files=included_files,
+            test_files=test_files,
+            finalize_scope=False,
+            checkpoint=checkpoint,
+        )
+        return _whatif.simulate_sequence(view, parsed_ops, edge_kind=chosen_kind)
+
+    try:
+        result = await _analysis_service.run_analysis_view(
+            project_path,
+            included_files=included,
+            test_files=tests,
+            finalize_scope=False,
+            work_fn=_work,
+        )
+        if isinstance(result, dict):
+            result = dict(result)
+            result["wrote"] = False
+        return _ok(result)
+    except Exception as e:
+        return _err("cbm_what_if", e)
+
+
+def _as_lookback(value, default: int = 90) -> int:
+    try:
+        days = int(value)
+    except (TypeError, ValueError):
+        return default
+    if days < 1:
+        return default
+    return min(days, 3650)
+
+
+def _as_complexity_map(value) -> dict | None:
+    raw = _as_metrics(value)
+    if not raw:
+        return None
+    parsed: dict[str, int] = {}
+    for key, item in raw.items():
+        try:
+            cc = int(item)
+        except (TypeError, ValueError):
+            continue
+        if cc > 0 and isinstance(key, str) and key.strip():
+            parsed[key] = cc
+    return parsed or None
+
+
+async def cbm_evolution(
+    project_path: str = "",
+    included_files: list | None = None,
+    lookback_days: int = 90,
+    complexity_map: dict | None = None,
+    **aliases,
+) -> str:
+    """T1: argv-only git evolution. Never writes. Author IDs hashed by default."""
+    if not project_path:
+        return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
+                            "error": "project_path required"}, ensure_ascii=False)
+    project_path, path_err = _clean_project_path(project_path)
+    if path_err:
+        return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
+                            "error": path_err}, ensure_ascii=False)
+    if not os.path.isdir(project_path):
+        return _json.dumps({"ok": False, "error_name": "INVALID_PROJECT_PATH",
+                            "error": f"project_path is not an existing directory: {project_path}"},
+                           ensure_ascii=False)
+    included = _as_path_list(included_files)
+    days = _as_lookback(
+        lookback_days if lookback_days is not None else aliases.get("days"),
+        90,
+    )
+    cc_map = _as_complexity_map(
+        complexity_map if complexity_map is not None else aliases.get("cc_map")
+    )
+
+    def _work():
+        return _evolution.compute_evolution(
+            project_path,
+            known_files=included or None,
+            complexity_map=cc_map,
+            lookback_days=days,
+        )
+
+    try:
+        result = await asyncio.to_thread(_work)
+        if isinstance(result, dict):
+            result = dict(result)
+            result["wrote"] = False
+        return _ok(result)
+    except Exception as e:
+        return _err("cbm_evolution", e)
+
+
+async def cbm_dsm(
+    project_path: str = "",
+    included_files: list | None = None,
+    test_files: list | None = None,
+    row_start: int = 0,
+    col_start: int = 0,
+    page_rows: int = 100,
+    page_cols: int = 100,
+    edge_kind: str = "observed",
+    **aliases,
+) -> str:
+    """T1: RAM-only DSM sparse page. Never writes source/DB."""
+    if not project_path:
+        return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
+                            "error": "project_path required"}, ensure_ascii=False)
+    project_path, path_err = _clean_project_path(project_path)
+    if path_err:
+        return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
+                            "error": path_err}, ensure_ascii=False)
+    if not os.path.isdir(project_path):
+        return _json.dumps({"ok": False, "error_name": "INVALID_PROJECT_PATH",
+                            "error": f"project_path is not an existing directory: {project_path}"},
+                           ensure_ascii=False)
+    included = _as_path_list(included_files)
+    tests = _as_path_list(test_files) or []
+    chosen_kind = str(edge_kind or aliases.get("kind") or "observed").strip().lower()
+    if chosen_kind not in {"observed", "strict"}:
+        chosen_kind = "observed"
+    rs = row_start if row_start is not None else aliases.get("row", 0)
+    cs = col_start if col_start is not None else aliases.get("col", 0)
+    pr = page_rows if page_rows is not None else aliases.get("rows", 100)
+    pc = page_cols if page_cols is not None else aliases.get("cols", 100)
+
+    def _work(*, checkpoint, stop, deadline_mono, project_path, included_files, test_files, finalize_scope):
+        del finalize_scope
+        _raise_if_stopped(checkpoint, stop, deadline_mono)
+        from .analysis_view import build_analysis_view
+        view = build_analysis_view(
+            project_path,
+            included_files=included_files,
+            test_files=test_files,
+            finalize_scope=False,
+            checkpoint=checkpoint,
+        )
+        return _dsm.build_dsm(
+            view=view,
+            row_start=rs,
+            col_start=cs,
+            page_rows=pr,
+            page_cols=pc,
+            edge_kind=chosen_kind,
+        )
+
+    try:
+        result = await _analysis_service.run_analysis_view(
+            project_path,
+            included_files=included,
+            test_files=tests,
+            finalize_scope=False,
+            work_fn=_work,
+        )
+        if isinstance(result, dict):
+            result = dict(result)
+            result["wrote"] = False
+        return _ok(result)
+    except Exception as e:
+        return _err("cbm_dsm", e)
+
+
 async def cbm_council_context(project_path: str = "", name: str = "",
                               depth: int = 2, file_path: str = "",
                               **aliases) -> str:
@@ -625,4 +1145,6 @@ async def cbm_council_context(project_path: str = "", name: str = "",
 
 __all__ = ["cbm_index", "cbm_graph_status", "cbm_trace_path",
            "cbm_template_query", "cbm_get_architecture", "cbm_dead_code",
-           "cbm_incremental_index", "cbm_council_context", "cbm_cycle_point"]
+           "cbm_incremental_index", "cbm_council_context", "cbm_cycle_point",
+           "cbm_analysis_view", "cbm_test_gap", "cbm_quality_gate",
+           "cbm_what_if", "cbm_evolution", "cbm_dsm"]
