@@ -40,6 +40,14 @@ _PROD_EXCLUDE_PREFIXES = (
     "venv312/",
     ".venv/",
     "__pycache__/",
+    # STT-26b: measured on ToolQ DSM output - backup snapshots, isolation
+    # campaign trees and pytest %TEMP% fixtures all sit in the graph DB
+    # files table (indexer SKIP_DIRS does not know them) and polluted the
+    # included scope: 348 "production" files contained _backup_*/ copies
+    # and %TEMP%toolq_tests/ fixtures. Matched casefolded, prefix style.
+    "_backup",
+    "_iso_campaign/",
+    "%temp%",
 )
 _PROD_SEEDS = ("orchestrator_server.py", "code_tools.py", "tools_v15.py")
 _CONFIDENCE_POLICY = {
