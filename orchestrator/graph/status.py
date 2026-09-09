@@ -31,26 +31,47 @@ def _stale_count(conn: sqlite3.Connection, project_root: str) -> int:
     would have stayed frozen at the old node/edge shape indefinitely while every
     status probe called it fresh -- exactly the failure `store.stale_files`
     documents from W5, reintroduced through the other half of the pair.
+
+    STT-26 (large-repo latency): this gate runs inside EVERY analysis-view
+    build, and hashing all 549 ToolQ rows on an HDD cost ~75s per call — every
+    cbm_test_gap/dsm/quality_gate died on the freshness gate before the view
+    even started. Order per row now: version drift -> stale with ZERO disk I/O;
+    then one os.stat; hash (still authoritative) only when size or mtime moved
+    or when the row lacks usable size/modified_at metadata. Residual risk: a
+    content edit that preserves BOTH size and mtime reads fresh here — the
+    hash-based indexer.detect_changes still catches it on any explicit
+    cbm_incremental_index, so drift can never outlive the next index run.
     """
     rows = conn.execute(
-        "SELECT path, content_hash, extractor_version FROM files;").fetchall()
+        "SELECT path, content_hash, size, modified_at, extractor_version "
+        "FROM files;").fetchall()
     import hashlib
     stale = 0
     for r in rows:
-        path = r["path"]
-        abs_p = os.path.join(project_root, path)
-        if not os.path.exists(abs_p):
+        # Cheapest clause first: version drift needs no filesystem touch.
+        if r["extractor_version"] != EXTRACTOR_VERSION:
             stale += 1
             continue
+        path = r["path"]
+        abs_p = os.path.join(project_root, path)
+        try:
+            st = os.stat(abs_p)
+        except OSError:
+            stale += 1
+            continue
+        size = r["size"]
+        mtime_ms = r["modified_at"]
+        if size is not None and mtime_ms:
+            if (int(st.st_size) == int(size)
+                    and int(st.st_mtime * 1000) == int(mtime_ms)):
+                continue
         try:
             with open(abs_p, "rb") as f:
                 chash = hashlib.sha256(f.read()).hexdigest()
         except OSError:
             stale += 1
             continue
-        # Version first would read the same; both clauses are checked because a
-        # file can be stale for either reason independently.
-        if chash != r["content_hash"] or r["extractor_version"] != EXTRACTOR_VERSION:
+        if chash != r["content_hash"]:
             stale += 1
     return stale
 
@@ -122,13 +143,13 @@ def graph_status(project_path: str) -> dict:
             if counts["last_run"]:
                 fin = counts["last_run"]["finished_at"]
                 if fin:
-                    age_ms = int(time.time() * 1000) - fin
                     stale_n = payload.get("stale_files")
                     if stale_n == 0:
                         payload["freshness"] = "fresh"
                     elif stale_n is None:
-                        # The count itself failed; age is all we have left.
-                        payload["freshness"] = "fresh" if age_ms < 3_600_000 else "stale"
+                        # Count failed: age is not a freshness signal. Recent
+                        # last_run must not become false-fresh (BUG-01 / AC-P1-S1).
+                        payload["freshness"] = "unknown"
                     else:
                         # A non-zero count IS the staleness signal. The age branch
                         # used to answer "fresh" for a whole hour regardless, so

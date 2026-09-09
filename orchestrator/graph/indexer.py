@@ -17,6 +17,7 @@ from typing import Optional
 from .config import (
     INDEX_TIME_BUDGET_CORE_S, INDEX_TIME_BUDGET_FULL_S,
     INDEX_MIN_NODES, INDEX_MIN_EDGES, CBM_EXTRACT_JS, CBM_SAME_MODULE,
+    EXTRACTOR_VERSION,
 )
 from . import store as _store
 from .extractors.python import extract as _extract_python
@@ -322,7 +323,8 @@ def compute_file_hash(path: str) -> str:
 
 def detect_changes(project_path: str, *, project_root: Optional[str] = None,
                    scope: str = "full", exts: tuple[str, ...] = DEFAULT_EXTS) -> dict:
-    """Diff the on-disk tree against the files table by content hash.
+    """Diff the on-disk tree against the files table by content hash + extractor
+    version (same staleness rule as store.stale_files / status._stale_count).
 
     Returns {added, modified, deleted, renamed, unchanged, elapsed_ms}.
     renamed = (old_path, new_path) pairs detected by identical content hash
@@ -348,19 +350,29 @@ def detect_changes(project_path: str, *, project_root: Optional[str] = None,
 
     conn = _store.get_db(project_path, readonly=True)
     try:
-        indexed = {r["path"]: r["content_hash"]
-                   for r in conn.execute("SELECT path, content_hash FROM files;")}
+        indexed = {r["path"]: (r["content_hash"], r["extractor_version"])
+                   for r in conn.execute(
+                       "SELECT path, content_hash, extractor_version FROM files;")}
     finally:
         conn.close()
 
     added = [p for p in disk if p not in indexed]
     deleted = [p for p in indexed if p not in disk]
-    modified = [p for p in disk if p in indexed and disk[p]["content_hash"] != indexed[p]]
+    # STT-26: extractor_version drift IS a change, same rule as store.stale_files
+    # and status._stale_count (content OR version). Rows written before the
+    # version column existed carry NULL, and hash-only diffing skipped them
+    # forever: measured on ToolQ (549 files, HDD) 200 rows had extractor_version
+    # NULL, incremental reported reindexed=0 while _stale_count said 200 stale,
+    # so freshness pinned "stale" and every analysis view failed freshness:stale.
+    modified = [p for p in disk
+                if p in indexed
+                and (disk[p]["content_hash"] != indexed[p][0]
+                     or indexed[p][1] != EXTRACTOR_VERSION)]
     unchanged = len(disk) - len(added) - len(modified)
 
     # rename detection: deleted+added with the same content hash pair up
     renamed: list[tuple[str, str]] = []
-    del_by_hash = {indexed[p]: p for p in deleted}
+    del_by_hash = {indexed[p][0]: p for p in deleted}
     for new_p in list(added):
         h = disk[new_p]["content_hash"]
         old_p = del_by_hash.pop(h, None)

@@ -250,7 +250,34 @@ def _static_imports(tree: ast.AST) -> list[tuple[str | None, int]]:
         elif isinstance(node, ast.ImportFrom):
             out.append((node.module, int(node.level or 0)))
     return out
+def _db_included_scope(root: str) -> dict[str, str] | None:
+    """STT-26: included scope straight from the graph DB files table.
 
+    One readonly SELECT replaces the os.walk + realpath-per-entry candidate
+    discovery (measured 81.6s on ToolQ, 549 files, HDD) and the AST-walk
+    filter hardcode (rel.startswith("orchestrator/")) that made included=0
+    on every non-[A] repo. Returns None (fall back to the walk) when there
+    is no DB, the schema is wrong, or the DB yields no production rows.
+    """
+    try:
+        conn = _store.get_db(root, readonly=True)
+    except Exception:
+        return None
+    try:
+        if not _schema_ok(conn):
+            return None
+        rows = conn.execute("SELECT path FROM files;").fetchall()
+    except Exception:
+        return None
+    finally:
+        conn.close()
+    out: dict[str, str] = {}
+    for r in rows:
+        rel = _norm_slash(r["path"] if not isinstance(r, tuple) else r[0])
+        if not rel or _is_excluded_production(rel):
+            continue
+        out[_identity_key(rel)] = rel
+    return out or None
 
 def finalize_included_scope_v1(
     root: str,
@@ -269,6 +296,34 @@ def finalize_included_scope_v1(
     unresolved: list[str] = []
 
     if candidate_files is None:
+        # STT-26: graph-DB scope first (one SELECT over the files table).
+        # The AST walk below stays the fallback for roots without a DB.
+        if checkpoint is not None and checkpoint("db_scope"):
+            raise InterruptedError("analysis_stop")
+        db_scope = _db_included_scope(root)
+        if db_scope is not None:
+            tests = _sorted_display(test_files or [])
+            included_files = _sorted_display(db_scope.values())
+            blocked_reason = (
+                "discovery_file_cap"
+                if len(included_files) > MAX_DISCOVERY_FILES else None)
+            return {
+                "status": "blocked" if blocked_reason else "ok",
+                "blocked_reason": blocked_reason,
+                "included_files": included_files,
+                "test_files": tests,
+                "included_set_hash": _included_set_hash(included_files),
+                "test_set_hash": _included_set_hash(tests),
+                "dynamic_import_count": 0,
+                "dynamic_import_names": [],
+                "unresolved_count": 0,
+                "unresolved_names": [],
+                "diagnostics": [],
+                "bytes_read": 0,
+                "files_visited": len(included_files),
+                "scope_source": "graph_db",
+                "elapsed_ms": round((time.monotonic() - t0) * 1000, 1),
+            }
         candidates, rejected = _candidate_python_files(root, checkpoint=checkpoint)
         diagnostics.extend(rejected)
     else:
