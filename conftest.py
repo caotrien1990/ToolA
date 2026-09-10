@@ -105,6 +105,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import pytest
+
 # Precedence order matters: FORCE_COLOR beats NO_COLOR in ruff, so drop it.
 _COLOUR_FORCING_VARS = ("FORCE_COLOR", "CLICOLOR_FORCE", "PY_COLORS")
 
@@ -144,6 +146,26 @@ def pytest_configure(config):  # noqa: ARG001 - pytest hook signature
         gen_dir = Path(tempfile.mkdtemp(prefix="orch_pytest_generation_"))
         _B031_OWNED_TEMP_DIRS.append(gen_dir)
         os.environ[_GENERATION_FILE_ENV] = str(gen_dir / "server_generation.json")
+
+
+# --- STT-27 (B032): release the process-global SessionWriter after every test ---
+#
+# The SessionWriter is created lazily on first DB write and its drain-loop sqlite
+# conn pins the sessions.db file. On Windows, any test that wrote to a temp
+# sessions.db leaves the directory behind because rmtree (even with
+# ignore_errors=True) silently fails on the pinned file. Per-test tearDown edits
+# are one source of leaks but not the only one: a writer can start mid-test (via
+# asyncio.to_thread, dispatch, checkpoint) and never reach any single tearDown.
+# An autouse hook covers every path unconditionally -- close_writer on a process
+# that never opened a writer is a no-op.
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_teardown(item, nextitem):  # noqa: ARG001
+    yield
+    try:
+        from orchestrator.session import store
+        store.close_writer()
+    except Exception:  # pragma: no cover - teardown must never fail a run
+        pass
 
 
 # --- W5: make ignore_cleanup_errors=True actually ignore cleanup errors -------

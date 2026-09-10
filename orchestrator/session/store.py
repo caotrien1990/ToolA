@@ -184,7 +184,7 @@ class SessionWriter:
         self._enqueued_total = 0
         self._committed_total = 0
         self._dropped_count = 0
-        self._failed_count = 0
+        self._drain_conn: sqlite3.Connection | None = None
         self._restart_count = 0
         if auto_start:
             self.start()
@@ -614,6 +614,7 @@ class SessionWriter:
                 try:
                     if conn is None:
                         conn = self._open_connection()
+                        self._drain_conn = conn
                     healthy = self._process_batch(conn, batch)
                     if not healthy:
                         try:
@@ -649,11 +650,22 @@ class SessionWriter:
                 try:
                     if conn.in_transaction:
                         conn.rollback()
-                    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    # During forced shutdown (_closing), switch journal_mode
+                    # to DELETE so conn.close() doesn't do an implicit WAL
+                    # checkpoint — the checkpoint holds file locks that block
+                    # rmtree on Windows and can take > 5 s on HDD.
+                    if self._closing.is_set():
+                        try:
+                            conn.execute("PRAGMA journal_mode=DELETE")
+                        except Exception:
+                            pass
+                    else:
+                        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                 except Exception:
                     logger.exception("SessionWriter shutdown checkpoint failed")
                 finally:
                     conn.close()
+                    self._drain_conn = None
             self._active_batch_since = 0.0
             self._idle.set()
 
@@ -741,6 +753,24 @@ def _configure_sessions_connection(conn: sqlite3.Connection, busy_timeout_ms: in
 
 _SESSION_READ_LOCAL = threading.local()
 _SESSION_WRITER_SWAP_LOCK = threading.Lock()
+# STT-27 (B032): track all open read connections so close_writer() can close them
+# across all threads, not just the calling thread. Daemon threads (asyncio_0,
+# orchestrator-accounting, Thread-1) hold thread-local conns that survive
+# close_writer() otherwise, pinning sessions.db and blocking rmtree on Windows.
+# Plain set (sqlite3.Connection is not weakly-referenceable on CPython 3.12).
+# Cleanup relies on close_writer() + gc.collect() + _TEARDOWN_COMPLETE flag.
+_ALL_READ_CONNECTIONS: set[sqlite3.Connection] = set()
+_ALL_READ_CONNECTIONS_LOCK = threading.Lock()
+# STT-27 (B032): after close_writer() sets this flag, _session_read_connection()
+# returns an in-memory connection instead of opening the real DB. Daemon threads
+# (asyncio_0, orchestrator-accounting, Thread-1) can create new read connections
+# AFTER close_writer() closes all existing ones, and those new connections pin
+# sessions.db and block rmtree. The flag prevents that.
+_TEARDOWN_COMPLETE = False
+# STT-27 (B032): track the DB path when teardown completes. When a new test starts
+# with a different DB path, reset the flag so _session_read_connection() returns
+# real connections again.
+_TEARDOWN_DB_PATH: str | None = None
 # campaign-1608 (A38): the process-wide writer is created LAZILY on first DB use
 # by _get_session_writer, not at import. Declared here so ``globals().get`` and
 # the ``global`` rebind in _get_session_writer both see a defined name.
@@ -800,7 +830,25 @@ def close_writer() -> None:
     worker thread blocks ``shutil.rmtree`` of a TemporaryDirectory with
     WinError 32 even after the writer and the main-thread read conn are closed.
     """
+    # Save writer ref before _shutdown_session_writer clears the global.
+    writer_ref = globals().get("_SESSION_WRITER")
     _shutdown_session_writer()
+    # Explicitly close the writer's drain-loop connection if still open
+    # (the drain-loop thread may not exit within its join timeout on Windows).
+    if writer_ref is not None:
+        drain = getattr(writer_ref, "_drain_conn", None)
+        if drain is not None:
+            try:
+                # STT-27 (B032): interrupt any pending SQLite operation
+                # (e.g. wal_checkpoint) so the handle releases on Windows.
+                drain.interrupt()
+            except Exception:
+                pass
+            try:
+                drain.close()
+            except Exception:
+                pass
+            writer_ref._drain_conn = None
     read_local = globals().get("_SESSION_READ_LOCAL")
     if read_local is not None:
         conn = getattr(read_local, "conn", None)
@@ -811,14 +859,30 @@ def close_writer() -> None:
                 pass
             read_local.conn = None
             read_local.db_path = None
-    # Read connections cached on dead asyncio.to_thread worker threads live in
-    # per-thread copies of _SESSION_READ_LOCAL that this thread cannot reach;
-    # only garbage collection finalizes them and releases the OS file handle.
+    # Explicitly close every tracked read connection (plain set, not WeakSet,
+    # because sqlite3.Connection is not weakly-referenceable on CPython 3.12).
+    # This covers connections cached on dead asyncio.to_thread worker threads
+    # that gc.collect() alone may not finalize in time on Windows.
+    with _ALL_READ_CONNECTIONS_LOCK:
+        for tracked_conn in list(_ALL_READ_CONNECTIONS):
+            try:
+                tracked_conn.close()
+            except Exception:
+                pass
+        _ALL_READ_CONNECTIONS.clear()
+    # Also collect any remaining thread-local connections via gc.
     gc.collect()
+    # STT-27 (B032): mark teardown complete so daemon threads that create NEW
+    # read connections after this point get in-memory connections instead of
+    # pinning sessions.db. Track the DB path so we can reset the flag when a
+    # new test starts with a different DB.
+    global _TEARDOWN_COMPLETE, _TEARDOWN_DB_PATH
+    _TEARDOWN_COMPLETE = True
+    _TEARDOWN_DB_PATH = str(Path(_SESSIONS_DB))
 
 
 def _get_session_writer() -> SessionWriter:
-    global _SESSION_WRITER
+    global _SESSION_WRITER, _TEARDOWN_COMPLETE
     wanted = Path(_SESSIONS_DB)
     writer = globals().get("_SESSION_WRITER")
     if writer is not None and writer.db_path == wanted and not writer._closing.is_set():
@@ -835,10 +899,32 @@ def _get_session_writer() -> SessionWriter:
         ):
             _init_session_db()
         _SESSION_WRITER = SessionWriter(wanted)
+        # STT-27 (B032): reset teardown flag when creating a new writer, so
+        # _session_read_connection() returns real connections again.
+        _TEARDOWN_COMPLETE = False
         return _SESSION_WRITER
 
 
 def _session_read_connection() -> sqlite3.Connection:
+    """Return a sqlite3 connection to the sessions database.
+
+    Thread-local: each thread gets its own connection. If teardown has completed
+    (close_writer() was called) and no new writer has been created, returns an
+    in-memory connection instead of opening the real DB — this prevents daemon
+    threads from creating new handles that pin sessions.db after teardown and
+    block rmtree.
+    """
+    global _TEARDOWN_COMPLETE
+    writer = globals().get("_SESSION_WRITER")
+    # STT-27 (B032): reset teardown flag when a new writer exists and is alive.
+    if _TEARDOWN_COMPLETE and (writer is None or (writer is not None and not writer._closing.is_set())):
+        _TEARDOWN_COMPLETE = False
+
+    # STT-27 (B032): if teardown is complete and no new writer, return in-memory
+    # connection to prevent daemon threads from pinning sessions.db.
+    if _TEARDOWN_COMPLETE:
+        return sqlite3.connect(":memory:")
+
     _get_session_writer()
     wanted = str(Path(_SESSIONS_DB))
     conn = getattr(_SESSION_READ_LOCAL, "conn", None)
@@ -848,11 +934,18 @@ def _session_read_connection() -> sqlite3.Connection:
             conn.close()
         except Exception:
             pass
+        # STT-27 (B032): remove from tracking set before discarding.
+        with _ALL_READ_CONNECTIONS_LOCK:
+            _ALL_READ_CONNECTIONS.discard(conn)
         conn = None
     if conn is None:
+        # check_same_thread=False: connections tracked in _ALL_READ_CONNECTIONS
+        # may be closed from the main thread during teardown (close_writer),
+        # even though they were created on asyncio worker threads.
         conn = sqlite3.connect(
             wanted,
             timeout=_SESSION_DB_BUSY_TIMEOUT_MS / 1000.0,
+            check_same_thread=False,
         )
         conn.execute(f"PRAGMA busy_timeout={_SESSION_DB_BUSY_TIMEOUT_MS}")
         conn.execute("PRAGMA cache_size=-16000")
@@ -861,6 +954,10 @@ def _session_read_connection() -> sqlite3.Connection:
         conn.execute("PRAGMA query_only=ON")
         _SESSION_READ_LOCAL.conn = conn
         _SESSION_READ_LOCAL.db_path = wanted
+        # STT-27 (B032): track this connection so close_writer() can close it
+        # even if it lives on a daemon thread that outlives the calling thread.
+        with _ALL_READ_CONNECTIONS_LOCK:
+            _ALL_READ_CONNECTIONS.add(conn)
     return conn
 
 

@@ -95,10 +95,12 @@ WHITELIST: dict[tuple[str, str], tuple[int, str, str]] = {
     # ── worker pool, reused across calls, closed on DB-path rebind and by   ──
     # ── __del__ at thread/interpreter shutdown (no unbounded leak).         ──
     ("orchestrator/session/store.py", "_session_read_connection"): (
-        1, "POOL",
+        2, "POOL",
         ("thread-local query_only read connection; cached on threading.local, "
          "reused per worker thread, closed on path change — a connection pool, "
-         "not a per-call leak"),
+         "not a per-call leak. STT-27 B032: +1 for :memory: fallback when "
+         "_TEARDOWN_COMPLETE is set (prevents daemon threads from pinning "
+         "sessions.db after close_writer())."),
     ),
 }
 
