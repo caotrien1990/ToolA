@@ -642,6 +642,8 @@ def _write_fix_guard_result(fp: Path, project_path: str, file_path: str, expecte
         if _read_hash or _read_mtime:
             if _read_hash:
                 _current_text = fp.read_text(encoding="utf-8", errors="replace")
+                if _current_text.startswith("\ufeff"):
+                    _current_text = _current_text[1:]
                 _current_read_hash = ct.hashlib.sha256(
                     _current_text.encode("utf-8", errors="replace")
                 ).hexdigest()
