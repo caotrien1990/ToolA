@@ -1531,6 +1531,24 @@ skip_symbol_check :bool =False )->str :
             log_intent(fp, "write_fix", session_id)
         try:
             result = await ct.asyncio.to_thread(_write)
+            # Auto-refresh read token after successful write to prevent
+            # FILE_CHANGED_OUTSIDE_ORCHESTRATOR on next write_fix without re-read.
+            if result.get("ok"):
+                try:
+                    _refresh_root = project_path or ct.find_project_root(str(fp))
+                    if _refresh_root:
+                        _stat_after = fp.stat()
+                        _after_text = fp.read_text(encoding="utf-8", errors="replace")
+                        if _after_text.startswith("﻿"):
+                            _after_text = _after_text[1:]
+                        _new_hash = ct.hashlib.sha256(
+                            _after_text.encode("utf-8", errors="replace")
+                        ).hexdigest()
+                        _resolved_root = str(ct.Path(_refresh_root).resolve())
+                        _rel_path = str(fp.relative_to(ct.Path(_refresh_root).resolve())).replace("\\", "/")
+                        ct._read_token_upsert(_resolved_root, _rel_path, _new_hash, _stat_after.st_mtime, _stat_after.st_size)
+                except Exception:
+                    pass
             if _xroot_managed:
                 log_result(fp, "write_fix", session_id, ok=bool(result.get("ok")))
         except Exception:
