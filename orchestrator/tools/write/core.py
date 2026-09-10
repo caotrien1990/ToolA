@@ -548,7 +548,21 @@ def _restore_backup_and_reseed(fp: Path, backup_path: Path, project_path: str = 
     def _do() -> bool:
         original = backup_path.read_text(encoding="utf-8", errors="replace")
         ct._atomic_write_text(fp, original, encoding="utf-8")
-        return ct._update_cache_after_write(str(fp), project_path or None)
+        ct._update_cache_after_write(str(fp), project_path or None)
+        # BUG-01: reseed read token so the restored content is fresh --
+        # without this, the next write_fix sees FILE_CHANGED because
+        # the token still carries the pre-revert hash.
+        _synced = True
+        try:
+            _root = ct.find_project_root(str(fp))
+            if _root:
+                _rel = str(fp.relative_to(ct.Path(_root).resolve())).replace("\\\\", "/")
+                _stat = fp.stat()
+                _h = ct._sha256_file(fp)
+                ct._read_token_upsert(str(ct.Path(_root).resolve()), _rel, _h, _stat.st_mtime, _stat.st_size)
+        except Exception:
+            pass
+        return _synced
     if already_gated:
         return _do()
     with _path_lock([fp]):
@@ -633,6 +647,13 @@ def _write_fix_guard_result(fp: Path, project_path: str, file_path: str, expecte
             except Exception:
                 pass
             return True, {}, False
+
+        # BUG-02: explicit expected_hash was set but did not match current
+        # file hash -- reject immediately rather than falling through to
+        # the read_token check, which may mask the mismatch after a
+        # same-file hash-chain write in write_transaction.
+        if expected_hash and _current_hash and _current_hash != expected_hash:
+            return True, _file_changed_error(ct, fp), True
 
         _read_hash = _tok.get("read_hash") or _entry.get("read_hash")
         _read_mtime = float(_tok.get("read_mtime") or _entry.get("read_mtime") or 0)

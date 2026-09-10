@@ -960,6 +960,17 @@ async def write_transaction(operations: list, project_path: str = "",
                 else:
                     _ct_r41._atomic_write_bytes(target, original)
                 _ct_r41._update_cache_after_write(str(target))
+                # BUG-01b: reseed read token after rollback so the
+                # restored content does not trigger stale FILE_CHANGED.
+                try:
+                    _rb = _ct_r41.find_project_root(str(target))
+                    if _rb:
+                        _rl = str(target.relative_to(Path(_rb).resolve())).replace("\\\\", "/")
+                        _rs = target.stat()
+                        _rh = _ct_r41._sha256_file(target)
+                        _ct_r41._read_token_upsert(str(Path(_rb).resolve()), _rl, _rh, _rs.st_mtime, _rs.st_size)
+                except Exception:
+                    pass
                 restored.append(target_label)
             except Exception as exc:
                 rollback_errors.append({"file": target_label, "error": str(exc)})
@@ -1421,7 +1432,12 @@ _DECISION_RULES = [
      "tier": "T2", "tool": "write_fix",
      "skill": "05_write_pipeline",
      "why": "edit existing file = write_fix (line-range edit); draft_patch chỉ dành cho draft proposal"},
-    {"re": r"\b(chup.{0,15}(man.?hinh|screen)|screenshot|screen.?capture|anh.?man.?hinh)\b",
+    # STT-27: source-lookup guard — "search screenshot function in source" is a
+    # code-search intent, not a UI snapshot. Mirrors the _source_lookup
+    # suppression in _campaign_routing_prepass: when a find/search verb AND a
+    # source-context word co-occur anywhere in the query, skip this rule so the
+    # find/search rule below wins. Two anchored lookaheads at ^ = AND.
+    {"re": r"^(?!(?=.*\b(?:find|search|tim|lookup)\b)(?=.*\b(?:source|code|function|symbol|trong)\b))\b(chup.{0,15}(man.?hinh|screen)|screenshot|screen.?capture|anh.?man.?hinh)\b",
      "tier": "T4a", "tool": "desktop_screenshot",
      "skill": "00_skill_router",
      "why": "UI snapshot = desktop_screenshot (disk path); không phải DOM tools"},
