@@ -12529,6 +12529,10 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
         result.setdefault("ruff_fix_applicable", False)
         result.setdefault("ruff_rules_matched", [])
         result.setdefault("ruff_fix_hint", "")
+    # Task 4 auto-chain: hint ruff_fix when applicable
+    if result.get("ruff_fix_applicable"):
+        result["ca_hint"] = "ruff_fix available to auto-fix lint issues"
+        result.setdefault("ca_next_action", "ruff_fix")
     return json.dumps(result, ensure_ascii=False)
 
 

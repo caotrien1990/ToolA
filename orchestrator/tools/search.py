@@ -293,7 +293,7 @@ async def find_symbol(name: str = "", path: str = "", project_path: str = "",
             # off the event loop so include='def' find_symbol/search never pins the
             # loop (was an on-loop blocker alongside index_delta).
             graph_resp = await asyncio.to_thread(
-                find_symbol_as_search_response, name, project_root, context_lines=context_lines
+                find_symbol_as_search_response, name, project_root, context_lines=context_lines,
             )
             if graph_resp is not None:
                 if stale_info:
@@ -321,7 +321,7 @@ async def find_symbol(name: str = "", path: str = "", project_path: str = "",
         rf"|^\s*(export\s+)?(async\s+)?function\s+{escaped}\s*\("
         rf"|^\s*(export\s+)?(const|let|var)\s+{escaped}\s*[=:(]"
         rf"|^\s*(export\s+)?(async\s+|static\s+|get\s+|set\s+)*{escaped}\s*\([^)]*\)\s*\{{"
-        rf"|^\s*{escaped}\s*:\s*(async\s+)?function"
+        rf"|^\s*{escaped}\s*:\s*(async\s+)?function",
     )
 
     # TT-A-01 fix: definitions live in source files only. JSON artifacts,
@@ -825,7 +825,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         effective_regex_deadline = regex_worker.normalize_deadline_seconds(
             regex_deadline_seconds
             if regex_deadline_seconds is not None
-            else regex_worker.DEFAULT_DEADLINE_SECONDS
+            else regex_worker.DEFAULT_DEADLINE_SECONDS,
         )
         regex_deadline_at = search_started_at + effective_regex_deadline
         try:
@@ -923,7 +923,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
             remaining = producer_deadline_at - time.monotonic()
             if remaining < regex_worker.MIN_DEADLINE_SECONDS:
                 raise regex_worker.RegexSearchTimeout(
-                    f"regex search exceeded hard deadline of {effective_regex_deadline:.3f}s"
+                    f"regex search exceeded hard deadline of {effective_regex_deadline:.3f}s",
                 )
             return remaining
 
@@ -943,7 +943,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                 )
         except search_snapshots.SnapshotDeadlineExceeded as exc:
             raise regex_worker.RegexSearchTimeout(
-                f"regex search exceeded hard deadline of {effective_regex_deadline:.3f}s"
+                f"regex search exceeded hard deadline of {effective_regex_deadline:.3f}s",
             ) from exc
         if mode == "regex":
             _regex_remaining()
@@ -1103,7 +1103,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                 wait_timeout = regex_deadline_at - time.monotonic()
                 if wait_timeout <= 0:
                     raise regex_worker.RegexSearchTimeout(
-                        f"regex search exceeded hard deadline of {effective_regex_deadline:.3f}s"
+                        f"regex search exceeded hard deadline of {effective_regex_deadline:.3f}s",
                     )
                 producer_deadline_at = regex_deadline_at
             try:
@@ -1267,4 +1267,9 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         response.setdefault("tip", "0 hits for text multi-word query. Try regex "
                                    "OR-split or search_code(mode='symbol').")
         response.setdefault("ca_next_action", "retry_with_regex_or_symbol_mode")
+    # Task 3 auto-chain rule 5: hint for read_file_range when search found file+line
+    if results and mode in {"text", "regex", "smart"}:
+        _has_line_hits = any(r.get("line") or r.get("line_number") for r in results if isinstance(r, dict))
+        if _has_line_hits:
+            response["ca_hint"] = "read_file_range available for detailed view of matched files"
     return json.dumps(response, ensure_ascii=False)

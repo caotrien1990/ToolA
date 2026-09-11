@@ -197,7 +197,9 @@ async def sample_data_file(file_path: str, n: int = 5, mode: str = "head",
 
 async def read_chunks(file_path: str, by: str = "line", start: int = 0,
                       count: int = 200, project_path: str = "", **_kw) -> str:
-    """Bounded chunk read by line or byte; never returns the whole file by default."""
+    """DEPRECATED (Task 2 2026-09-10): use read_file_range instead. Legacy raw read.
+
+    Bounded chunk read by line or byte; never returns the whole file by default."""
     try:
         p = _resolve(file_path, project_path)
         if not p.exists():

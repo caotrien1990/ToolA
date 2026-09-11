@@ -253,7 +253,7 @@ async def _pre_write_syntax_check(fp: Path, content: str) -> dict:
         out_path = ""
         try:
             with ct.tempfile.NamedTemporaryFile(
-            suffix=suffix_for_temp, delete=False, mode="w", encoding="utf-8"
+            suffix=suffix_for_temp, delete=False, mode="w", encoding="utf-8",
             ) as tmp:
                 tmp.write(source)
                 tmp_path = tmp.name
@@ -601,7 +601,7 @@ def _index_missing_error(fp: Path, project_path: str) -> dict | None:
     ))
 
 
-def _write_fix_guard_result(fp: Path, project_path: str, file_path: str, expected_hash: str) -> tuple[bool, dict, bool]:
+def _write_fix_guard_result(fp: Path, project_path: str, _file_path: str, expected_hash: str) -> tuple[bool, dict, bool]:
     import code_tools as ct
     from orchestrator.fileops.xroot import is_outside_project_root
 
@@ -666,7 +666,7 @@ def _write_fix_guard_result(fp: Path, project_path: str, file_path: str, expecte
                 if _current_text.startswith("\ufeff"):
                     _current_text = _current_text[1:]
                 _current_read_hash = ct.hashlib.sha256(
-                    _current_text.encode("utf-8", errors="replace")
+                    _current_text.encode("utf-8", errors="replace"),
                 ).hexdigest()
             _hash_changed = bool(_read_hash and _current_read_hash != _read_hash)
             _mtime_changed = bool(_read_mtime and abs(_stat.st_mtime - _read_mtime) > 0.5)
@@ -784,7 +784,7 @@ def _boot_sweep_project_roots(extra_roots: list[str] | None = None) -> list[Path
                    FROM sessions
                    WHERE project_path IS NOT NULL AND project_path != ''
                    GROUP BY project_path
-                   ORDER BY rid DESC"""
+                   ORDER BY rid DESC""",
             ).fetchall()
         session_added = 0
         cap = _boot_sweep_max_session_roots()
@@ -1420,7 +1420,7 @@ skip_symbol_check :bool =False )->str :
         val_result =None 
         if fp .suffix .lower ()in _VALIDATE_EXTS :
             with ct.tempfile .NamedTemporaryFile (
-            suffix =fp .suffix ,delete =False ,mode ='w',encoding ='utf-8'
+            suffix =fp .suffix ,delete =False ,mode ='w',encoding ='utf-8',
             )as tmp :
                 tmp .write (built ["proposed"])
                 tmp_path =tmp .name 
@@ -1563,7 +1563,7 @@ skip_symbol_check :bool =False )->str :
                         if _after_text.startswith("﻿"):
                             _after_text = _after_text[1:]
                         _new_hash = ct.hashlib.sha256(
-                            _after_text.encode("utf-8", errors="replace")
+                            _after_text.encode("utf-8", errors="replace"),
                         ).hexdigest()
                         _resolved_root = str(ct.Path(_refresh_root).resolve())
                         _rel_path = str(fp.relative_to(ct.Path(_refresh_root).resolve())).replace("\\", "/")
@@ -1703,6 +1703,24 @@ skip_symbol_check :bool =False )->str :
             result ["guardrail_warning"]=(
             "project_root khong tim thay - conflict detection bi bo qua cho lan write nay."
             )
+
+        # Task 3 auto-chain rule 1: ruff_fix preview for .py files after successful write
+        if result.get("ok") and fp.suffix.lower() == ".py":
+            try:
+                import code_tools as _ct
+                ruff_raw = await _ct.validate_file(str(fp))
+                ruff_val = _ct.json.loads(ruff_raw) if isinstance(ruff_raw, str) else ruff_raw
+                if isinstance(ruff_val, dict) and ruff_val.get("ruff_fix_applicable"):
+                    result["ruff_preview"] = {
+                        "rules": ruff_val.get("ruff_rules_matched", []),
+                        "hint": ruff_val.get("ruff_fix_hint", "ruff_fix available"),
+                        "ca_next_action": "ruff_fix",
+                    }
+            except Exception:
+                pass  # non-fatal, don't block write result
+        # Task 4 auto-chain: hint git_stage after successful write
+        if result.get("ok"):
+            result["ca_hint_commit"] = "git_stage available to stage changes for commit"
 
     return ct.json .dumps (result )
 
@@ -2076,7 +2094,7 @@ skip_verify :bool =False )->str :
 
     # ─── Tool 8: delete_file ───────────────────────────────────────────────────────
 
-async def delete_file (file_path :str ,project_path :str ="",ephemeral :bool =False )->str :
+async def delete_file (file_path :str ,project_path :str ="",_ephemeral :bool =False )->str :
     import code_tools as ct
 # R83: ephemeral=true is a CLEANUP mode for temp/derived files (C:/temp, %TEMP%,
 # *.bak_*, .orchestrator_cache). When set AND the path is under such a root, the

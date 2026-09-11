@@ -351,7 +351,9 @@ async def regex_search(pattern: str = "", project_path: str = "", path: str = ""
                        flags: str = "i", max_results: int = 50,
                        max_context_lines: int = 0,
                        regex_deadline_seconds: float = 5.0, **aliases) -> str:
-    """Search files by regex. Convenience alias of search_code(mode='regex').
+    """DEPRECATED (Task 2 2026-09-10): use search_code(mode='regex') directly.
+
+    Search files by regex. Convenience alias of search_code(mode='regex').
 
     flags: 'i' case-insensitive (default), 'm' multiline, 's' dotall, '' none.
     Accepts `query` as alias for `pattern`.
@@ -390,7 +392,9 @@ async def regex_search(pattern: str = "", project_path: str = "", path: str = ""
 
 async def find_callers(symbol: str = "", project_path: str = "", context_lines: int = 0,
                        **aliases) -> str:
-    """Find all caller sites of `symbol` (excludes definition itself).
+    """DEPRECATED (Task 2 2026-09-10): use find_symbol(include='callers') directly.
+
+    Find all caller sites of `symbol` (excludes definition itself).
 
     V15 R8 B.1: convenience wrapper of find_symbol(include='callers').
     Accepts `query` as alias for `symbol`.
@@ -407,7 +411,9 @@ async def find_callers(symbol: str = "", project_path: str = "", context_lines: 
 
 async def find_definition_and_usage(symbol: str, project_path: str,
                                      context_lines: int = 0) -> str:
-    """One call: returns {definition, callers, usages} for `symbol`.
+    """DEPRECATED (Task 2 2026-09-10): use find_symbol(include='all') directly.
+
+    One call: returns {definition, callers, usages} for `symbol`.
 
     V15 R8 B.1: convenience wrapper of find_symbol(include='all').
     """

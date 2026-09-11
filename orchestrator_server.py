@@ -1458,6 +1458,15 @@ def _query_int(request, name: str, default: int) -> int:
         return default
 
 
+# ─── Deprecated tools (Task 2: tool redundancy cleanup 2026-09-10) ───────────
+# Thin wrappers retained for backwards compat. Response includes deprecation hint.
+# Agents should migrate: search→search_code/find_symbol, read→read_file_range.
+_DEPRECATED_TOOLS: dict[str, str] = {
+    "regex_search": "Use search_code(mode='regex', query=...) directly.",
+    "find_callers": "Use find_symbol(name=..., include='callers') directly.",
+    "find_definition_and_usage": "Use find_symbol(name=..., include='all') directly.",
+}
+
 # ─── Argument aliases (Fix 6: schema drift compat) ────────────────────────────
 # When agents call with the wrong key name, rename to the canonical one
 # instead of failing with a confusing TypeError.
@@ -11628,7 +11637,7 @@ _register_tool(
         "description": "Get/set/list a council worker's model (clau|codo|pic|ope|hermes|kilo) WITHOUT "
                        "the dashboard UI / Playwright DOM. Validates against curated "
                        ".council/ID_MODELS/<PROVIDER>.txt; applies at the next dispatch. "
-                       "ROUTE RULE SOT = Anh chỉ đạo. Benchmark 2026-07-25 table SUSPENDED. "
+                       "ROUTE RULE SOT = the user's live directive (Anh). Benchmark 2026-07-25 table SUSPENDED. "
                        "Set, then verify with action='get' before council_message. "
                        "Do not change provider/model to work around path/read/write failures; stage PiC files under "
                        "[A]\\.council\\tmp_* instead. Load leader-council-skill for full council routing rules.",
@@ -14261,6 +14270,21 @@ accepted_fields=sorted(accepted_fields),
         # FixA2407 P1-1: record a mutating call BEFORE it runs. The server always knows
         # whether the write landed; the caller that timed out does not.
         _op_id = await _write_ledger_begin_async(tool_name, body, _task_session_id)
+        # Task 3 auto-chain rule 6: git_commit pre-hook — auto-inject git_status staged hash
+        _git_commit_pre_hook = False
+        if tool_name == "git_commit" and isinstance(body, dict):
+            try:
+                _gs_pp = body.get("project_path", "")
+                if _gs_pp:
+                    _gs_raw = await git_status(project_path=_gs_pp)
+                    _gs = json.loads(_gs_raw) if isinstance(_gs_raw, str) else _gs_raw
+                    if isinstance(_gs, dict) and _gs.get("ok"):
+                        _staged_hash = _gs.get("staged_hash") or _gs.get("staged", {}).get("hash", "")
+                        if _staged_hash and not body.get("expected_staged_hash"):
+                            body["expected_staged_hash"] = _staged_hash
+                            _git_commit_pre_hook = True
+            except Exception:
+                pass  # non-fatal, don't block commit
         try:
             raw = await fn(**body)
         finally:
@@ -14285,6 +14309,43 @@ accepted_fields=sorted(accepted_fields),
         if isinstance(_result, dict) and _queue_wait_ms:
             _result.setdefault("queue_wait_ms", _queue_wait_ms)
         _status = "error" if _tool_result_failed(_result) else "ok"
+        # Task 3 auto-chain rule 6: git_commit post-hook — validate committed files
+        if tool_name == "git_commit" and _status == "ok" and isinstance(_result, dict):
+            try:
+                _committed = _result.get("committed_files") or []
+                if _committed:
+                    _validations = []
+                    for _cf in _committed[:10]:
+                        _cf_path = _cf if isinstance(_cf, str) else str(_cf)
+                        try:
+                            import code_tools as _ct_post
+                            _val_raw = await _ct_post.validate_file(_cf_path)
+                            _val = json.loads(_val_raw) if isinstance(_val_raw, str) else _val_raw
+                            _validations.append({
+                                "file": _cf_path,
+                                "ok": _val.get("ok", False),
+                                "error": _val.get("error", ""),
+                            })
+                        except Exception:
+                            _validations.append({"file": _cf_path, "ok": False, "error": "validation_unavailable"})
+                    if _validations:
+                        _result["post_commit_validation"] = {
+                            "validated": len(_validations),
+                            "all_ok": all(v["ok"] for v in _validations),
+                            "details": _validations,
+                        }
+            except Exception:
+                pass  # non-fatal, don't block commit result
+        # Task 4 auto-chain: git_status → git_commit hint when staged files exist
+        if tool_name == "git_status" and _status == "ok" and isinstance(_result, dict):
+            try:
+                _staged = _result.get("staged") or {}
+                _staged_count = _staged.get("count", 0) if isinstance(_staged, dict) else len(_staged)
+                if _staged_count and _staged_count > 0:
+                    _result["ca_hint"] = f"{_staged_count} staged file(s) ready — git_commit to commit"
+                    _result.setdefault("ca_next_action", "git_commit")
+            except Exception:
+                pass
         await _write_ledger_finish_async(_op_id, _result, _status)  # BK34: SQLite off-loop
         if _status == "error":
             err_text = str(_result.get("error") or _result.get("reason")
@@ -14328,6 +14389,10 @@ accepted_fields=sorted(accepted_fields),
             _result["canonical_replacements"] = _compat_meta.get("canonical_replacements", {})
             _result["compatibility_applied"] = _compat_meta.get("compatibility_applied", False)
             _result["removal_version"] = _compat_meta.get("removal_version", _SEARCH_COMPAT_REMOVAL_VERSION)
+        # Task 2 (2026-09-10): surface deprecation hint for wrapper tools.
+        if tool_name in _DEPRECATED_TOOLS and isinstance(_result, dict):
+            _result["deprecated"] = True
+            _result["deprecation_hint"] = _DEPRECATED_TOOLS[tool_name]
         # A15 (2026-08-16) FAIL-LOUD (7-RULE #7): when normalization silently
         # decided an internal `mode` from a boolean flag (regex/is_regex) the
         # caller must be told — otherwise a `regex: false` that got downgraded to
@@ -16507,12 +16572,16 @@ async def _run_server():
             await runner.cleanup()
         finally:
             try:
-                durable_shutdown = await asyncio.to_thread(
-                    _DURABLE_AUDIT.shutdown,
-                    10.0,
-                    drain=True,
-                )
-                if not durable_shutdown.ok:
+                if _DURABLE_AUDIT is None:
+                    logger.warning("Durable audit not initialized; skipping shutdown")
+                    durable_shutdown = None
+                else:
+                    durable_shutdown = await asyncio.to_thread(
+                        _DURABLE_AUDIT.shutdown,
+                        10.0,
+                        drain=True,
+                    )
+                if durable_shutdown is not None and not durable_shutdown.ok:
                     logger.critical(
                         "Durable audit process shutdown incomplete pending=%s "
                         "worker_stopped=%s timed_out=%s storage_error=%s",
@@ -16537,8 +16606,12 @@ if __name__ == "__main__":
             run_mcp_stdio()
         finally:
             try:
-                _mcp_durable_report = _DURABLE_AUDIT.shutdown(10.0, drain=True)
-                if not _mcp_durable_report.ok:
+                if _DURABLE_AUDIT is None:
+                    logger.warning("Durable audit not initialized; skipping MCP shutdown")
+                    _mcp_durable_report = None
+                else:
+                    _mcp_durable_report = _DURABLE_AUDIT.shutdown(10.0, drain=True)
+                if _mcp_durable_report is not None and not _mcp_durable_report.ok:
                     logger.critical(
                         "MCP durable audit cleanup incomplete pending=%s "
                         "worker_stopped=%s timed_out=%s storage_error=%s",

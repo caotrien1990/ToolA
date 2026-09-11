@@ -36,7 +36,7 @@ def _ok(payload: dict) -> str:
     return _json.dumps({"ok": True, "result": payload}, ensure_ascii=False)
 
 
-def _err(name: str, exc: Exception) -> str:
+def _err(_name: str, exc: Exception) -> str:
     return _json.dumps({"ok": False, "error_name": type(exc).__name__,
                         "error": str(exc)}, ensure_ascii=False)
 
@@ -54,6 +54,23 @@ def _clean_project_path(project_path: str) -> tuple[str, str | None]:
                     "(mangled backslash escape) — resend using forward slashes, e.g. D:/path/to/project")
     return project_path.replace("\\", "/"), None
 
+
+# ─── Auto-chain: graph freshness helper (Task 3 2026-09-10) ───────────────────
+# CBM tools that analyse the graph must not silently use stale data.
+# _ensure_graph_fresh() checks staleness and auto-indexes when needed.
+async def _ensure_graph_fresh(project_path: str) -> dict:
+    """Check graph freshness; auto-index if stale or missing. Returns metadata dict."""
+    try:
+        raw = await cbm_graph_status(project_path=project_path)
+        s = _json.loads(raw)
+        stale = int(s.get("stale_files", 0) or 0)
+        has_run = bool(s.get("last_run"))
+        if stale > 0 or not has_run:
+            await cbm_incremental_index(project_path=project_path)
+            return {"auto_indexed": True, "reason": "stale" if stale else "no_prior_run"}
+        return {"auto_indexed": False, "reason": "fresh"}
+    except Exception:
+        return {"auto_indexed": False, "reason": "check_failed"}
 
 
 _GRAPH_WRITE_LOCKS: dict = {}
@@ -112,7 +129,7 @@ def _graph_write_lock(project_path: str):
         lk = asyncio.Lock()
         _GRAPH_WRITE_LOCKS[project_path] = lk
     return lk
-async def cbm_index(project_path: str = "", scope: str = "core", **aliases) -> str:
+async def cbm_index(project_path: str = "", scope: str = "core", **aliases) -> str:  # noqa: ARG001
     """T1: index project scope into the graph DB (nodes/edges/FTS5). Read-only on source."""
     if not project_path:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
@@ -124,14 +141,14 @@ async def cbm_index(project_path: str = "", scope: str = "core", **aliases) -> s
     try:
         async with _graph_write_lock(project_path):
             result = await asyncio.to_thread(
-                _indexer.index_project, project_path, scope=scope, project_root=project_path
+                _indexer.index_project, project_path, scope=scope, project_root=project_path,
             )
         return _ok(result)
     except Exception as e:
         return _err("cbm_index", e)
 
 
-async def cbm_graph_status(project_path: str = "", **aliases) -> str:
+async def cbm_graph_status(project_path: str = "", **aliases) -> str:  # noqa: ARG001
     """T1: report graph freshness, counts, WAL state, stale files. Read-only."""
     if not project_path:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
@@ -150,6 +167,14 @@ async def cbm_graph_status(project_path: str = "", **aliases) -> str:
                            ensure_ascii=False)
     try:
         result = await asyncio.to_thread(_status.graph_status, project_path)
+        # Task 3 auto-chain: if graph not yet indexed, auto-index now
+        if isinstance(result, dict) and result.get("freshness") == "not_indexed":
+            try:
+                await cbm_incremental_index(project_path=project_path)
+                result = await asyncio.to_thread(_status.graph_status, project_path)
+                result["auto_index_result"] = {"auto_indexed": True, "reason": "was_not_indexed"}
+            except Exception:
+                result["auto_index_result"] = {"auto_indexed": False, "reason": "index_failed"}
         return _ok(result)
     except Exception as e:
         return _err("cbm_graph_status", e)
@@ -157,7 +182,7 @@ async def cbm_graph_status(project_path: str = "", **aliases) -> str:
 
 async def cbm_nodes_query(project_path: str = "", kind: str = "", name_prefix: str = "",
                            file_contains: str = "", limit: int = 100, offset: int = 0,
-                           **aliases) -> str:
+                           **aliases) -> str:  # noqa: ARG001
     """T1: browse/filter raw graph nodes (kind/name_prefix/file filter + cursor)."""
     if not project_path:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
@@ -177,7 +202,7 @@ async def cbm_nodes_query(project_path: str = "", kind: str = "", name_prefix: s
 
 async def cbm_edges_query(project_path: str = "", kind: str = "", source_contains: str = "",
                           target_contains: str = "", limit: int = 100, offset: int = 0,
-                          **aliases) -> str:
+                          **aliases) -> str:  # noqa: ARG001
     """T1: browse/filter raw graph edges (kind/source/target filter + cursor)."""
     if not project_path:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
@@ -196,7 +221,7 @@ async def cbm_edges_query(project_path: str = "", kind: str = "", source_contain
 
 
 async def cbm_trace_path(project_path: str = "", start_node_id: str = "",
-                         direction: str = "out", depth: int = 5, **aliases) -> str:
+                         direction: str = "out", depth: int = 5, **aliases) -> str:  # noqa: ARG001
     """T1: bounded graph traversal from a start node. depth<=5, node cap, timeout 2s. Fail-open."""
     if not project_path or not start_node_id:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
@@ -208,7 +233,7 @@ async def cbm_trace_path(project_path: str = "", start_node_id: str = "",
     try:
         result = await asyncio.to_thread(
             _query.cbm_trace_path, project_path, start_node_id,
-            direction=direction, depth=depth
+            direction=direction, depth=depth,
         )
         # B023: an unresolvable start node used to answer ok:true with edges:[],
         # truncated:false and error:null -- every field a caller guards on said
@@ -248,7 +273,7 @@ async def cbm_trace_path(project_path: str = "", start_node_id: str = "",
 async def cbm_template_query(project_path: str = "", template: str = "",
                              name: str = "", node_id: str = "", module: str = "",
                              depth: int = 2, limit: int = 50, offset: int = 0,
-                             **aliases) -> str:
+                             **aliases) -> str:  # noqa: ARG001
     """T1: named graph queries — callers|callees|imports|imported_by|orphan_symbols|module_deps|entry_points|impact_scope."""
     if not project_path or not template:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
@@ -270,7 +295,7 @@ async def cbm_template_query(project_path: str = "", template: str = "",
 
 async def cbm_get_architecture(project_path: str = "", max_files: int = 0,
                                max_symbols: int = 0, timeout_s: float = 0.0,
-                               **aliases) -> str:
+                               **aliases) -> str:  # noqa: ARG001
     """T1: bounded module-level architecture overview with exact file citations. Fail-open."""
     if not project_path:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
@@ -300,7 +325,7 @@ async def cbm_get_architecture(project_path: str = "", max_files: int = 0,
 
 async def cbm_dead_code(project_path: str = "", limit: int = 50,
                         scope: str = "full", file_filter: str = "",
-                        **aliases) -> str:
+                        **aliases) -> str:  # noqa: ARG001
     """T1: conservative dead-code candidates with confidence + reason. Advisory only."""
     if not project_path:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
@@ -310,15 +335,23 @@ async def cbm_dead_code(project_path: str = "", limit: int = 50,
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
                             "error": path_err}, ensure_ascii=False)
     try:
+        # Task 3 auto-chain: ensure fresh graph before dead-code analysis
+        _auto_idx = await _ensure_graph_fresh(project_path)
         result = await asyncio.to_thread(_cbm_dead_code_dispatch, project_path,
                                          limit=int(limit or 50), scope=scope,
                                          file_filter=file_filter)
+        result["auto_index_result"] = _auto_idx
+        # Task 4 auto-chain: hint write_fix when dead code found
+        _dead = result.get("dead") or result.get("dead_code") or []
+        if _dead:
+            result["ca_hint"] = "write_fix available to remove dead code entries"
+            result.setdefault("ca_next_action", "write_fix")
         return _ok(result)
     except Exception as e:
         return _err("cbm_dead_code", e)
 
 async def ruff_fix(project_path: str = "", path: str = ".", apply: bool = False,
-                   unsafe_fixes: bool = False, **aliases) -> str:
+                   unsafe_fixes: bool = False, **aliases) -> str:  # noqa: ARG001
     """Preview or apply Ruff fixes without accepting arbitrary command arguments."""
     if not project_path:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
@@ -367,7 +400,26 @@ async def ruff_fix(project_path: str = "", path: str = ".", apply: bool = False,
     )
     output = completed.stdout or ""
     changed = bool(output.strip()) if not apply else before != _snapshot(target)
-    return _ok({
+    # Task 3 auto-chain rule 12: validate files changed by ruff_fix
+    post_ruff_validation = None
+    if apply and changed:
+        try:
+            after_snap = _snapshot(target)
+            changed_files = [f for f in after_snap if f not in before or after_snap[f] != before.get(f)]
+            validations = []
+            for cf in changed_files[:10]:  # cap at 10 files
+                import code_tools as _ct
+                val_raw = await _ct.validate_file(cf)
+                val = _json.loads(val_raw) if isinstance(val_raw, str) else val_raw
+                validations.append({"file": os.path.relpath(cf, root).replace("\\", "/"),
+                                    "ok": val.get("ok", False),
+                                    "error": val.get("error", "")})
+            post_ruff_validation = {"validated": len(validations),
+                                    "all_ok": all(v["ok"] for v in validations),
+                                    "details": validations}
+        except Exception:
+            post_ruff_validation = {"validated": 0, "all_ok": False, "error": "validation_failed"}
+    resp = {
         "mode": "apply" if apply else "preview",
         "applied": bool(apply and completed.returncode in (0, 1)),
         "unsafe_fixes": bool(unsafe_fixes),
@@ -384,7 +436,10 @@ async def ruff_fix(project_path: str = "", path: str = ".", apply: bool = False,
         "config": "isolated" if "--isolated" in command else "project",
         "select": (command[command.index("--select") + 1]
                    if "--select" in command else "project-default"),
-    })
+    }
+    if post_ruff_validation:
+        resp["post_ruff_validation"] = post_ruff_validation
+    return _ok(resp)
 
 
 def _detect_majority_language(project_path: str) -> str:
@@ -534,7 +589,7 @@ def _cbm_dead_code_dispatch(project_path: str, *, limit: int = 50,
             str(item.get("file_path") or item.get("file") or ""),
             int(item.get("start_line") or item.get("line") or 0),
             str(item.get("symbol") or item.get("name") or ""),
-        )
+        ),
     )
     categories = {}
     for c in candidates:
@@ -567,7 +622,7 @@ def _cbm_dead_code_dispatch(project_path: str, *, limit: int = 50,
 
 
 async def cbm_incremental_index(project_path: str = "", scope: str = "full",
-                                **aliases) -> str:
+                                **aliases) -> str:  # noqa: ARG001
     """T1: incremental graph update — reindex only changed/added/deleted/renamed files."""
     if not project_path:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
@@ -586,7 +641,7 @@ async def cbm_incremental_index(project_path: str = "", scope: str = "full",
         return _err("cbm_incremental_index", e)
 
 
-async def cbm_cycle_point(project_path: str = "", **aliases) -> str:
+async def cbm_cycle_point(project_path: str = "", **aliases) -> str:  # noqa: ARG001
     """T1: dependency cycles + levelization + geometric-mean quality signal. Fail-open."""
     if not project_path:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
@@ -613,7 +668,7 @@ async def cbm_analysis_view(
     included_files: list | None = None,
     test_files: list | None = None,
     finalize_scope: bool = False,
-    **aliases,
+    **aliases,  # noqa: ARG001
 ) -> str:
     """T1 versioned extension: bounded readonly analysis_view. Does not take the write lock."""
     if not project_path:
@@ -674,7 +729,7 @@ async def cbm_test_gap(
     test_files: list | None = None,
     include_architecture: bool = False,
     per_test_maps: bool = False,
-    **aliases,
+    **aliases,  # noqa: ARG001
 ) -> str:
     """T1 advisory: static test-gap BFS. Opt-in architecture adds stability/entry."""
     if not project_path:
@@ -721,15 +776,17 @@ async def cbm_test_gap(
             payload["architecture"] = {
                 "stability": _stability.compute_stability(view_payload),
                 "entry_reach": _attack.compute_entry_reach(
-                    view_payload, included_files or []
+                    view_payload, included_files or [],
                 ),
             }
             payload["metric_notes"] = list(payload.get("metric_notes") or []) + [
-                "architecture_opt_in_stability_entry"
+                "architecture_opt_in_stability_entry",
             ]
         return payload
 
     try:
+        # Task 3 auto-chain: ensure fresh graph before test-gap analysis
+        _auto_idx = await _ensure_graph_fresh(project_path)
         result = await _analysis_service.run_analysis_view(
             project_path,
             included_files=included,
@@ -737,6 +794,13 @@ async def cbm_test_gap(
             finalize_scope=False,
             work_fn=_work,
         )
+        if isinstance(result, dict):
+            result["auto_index_result"] = _auto_idx
+            # Task 4 auto-chain: hint quality_gate after test_gap
+            _gaps = result.get("gaps") or result.get("uncovered") or []
+            if _gaps:
+                result["ca_hint"] = "cbm_quality_gate available to check coverage threshold"
+                result.setdefault("ca_next_action", "cbm_quality_gate")
         return _ok(result)
     except Exception as e:
         return _err("cbm_test_gap", e)
@@ -964,6 +1028,8 @@ async def cbm_what_if(
         return _whatif.simulate_sequence(view, parsed_ops, edge_kind=chosen_kind)
 
     try:
+        # Task 3 auto-chain: ensure fresh graph before what-if analysis
+        _auto_idx = await _ensure_graph_fresh(project_path)
         result = await _analysis_service.run_analysis_view(
             project_path,
             included_files=included,
@@ -974,6 +1040,7 @@ async def cbm_what_if(
         if isinstance(result, dict):
             result = dict(result)
             result["wrote"] = False
+            result["auto_index_result"] = _auto_idx
         return _ok(result)
     except Exception as e:
         return _err("cbm_what_if", e)
@@ -1029,7 +1096,7 @@ async def cbm_evolution(
         90,
     )
     cc_map = _as_complexity_map(
-        complexity_map if complexity_map is not None else aliases.get("cc_map")
+        complexity_map if complexity_map is not None else aliases.get("cc_map"),
     )
 
     def _work():
@@ -1121,7 +1188,7 @@ async def cbm_dsm(
 
 async def cbm_council_context(project_path: str = "", name: str = "",
                               depth: int = 2, file_path: str = "",
-                              **aliases) -> str:
+                              **aliases) -> str:  # noqa: ARG001
     """T1: bounded advisory council graph context pack (Step 21). Fail-open;
     the leader embeds the block in worker prompts explicitly — never auto-injected.
 
