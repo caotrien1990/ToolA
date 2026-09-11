@@ -45,9 +45,29 @@ async def read_file_range(
     try:
         fp = fo.resolve_project_file(project_path, file_path)
     except Exception as exc:
-        return fo.json_error(str(exc),
-                             hint="Use project_path with a relative file_path inside the project.")
+        # Fallback: if path is relative and project_path exists, try join
+        if project_path and not os.path.isabs(file_path):
+            try:
+                fp = (Path(project_path).resolve() / file_path).resolve()
+            except Exception:
+                return fo.json_error(str(exc),
+                                     hint="Use project_path with a relative file_path inside the project.")
+        else:
+            return fo.json_error(str(exc),
+                                 hint="Use project_path with a relative file_path inside the project.")
     if not fp.exists():
+        # CAN-053 soft fix: force_reseed=true after a cache miss should not
+        # keep serving the same stale FILE_NOT_FOUND. Clear the negative cache
+        # entry so the next probe re-resolves from disk instead of tripping the
+        # 3-miss circuit breaker on a path that now exists.
+        if force_reseed:
+            from .fs import _NEG_PATH_CACHE, _MISS_STREAK
+            _root_key = str(project_path or '').replace("\\", "/").rstrip("/").lower()
+            _rel_key = str(file_path).replace("\\", "/").lower()
+            _NEG_PATH_CACHE.pop((_root_key, _rel_key), None)
+            _streak = _MISS_STREAK.get(_root_key, [])
+            if _streak:
+                _MISS_STREAK[_root_key] = []
         return _missing_file_response(fp, file_path, project_path)
     # Use os.path.isdir rather than Path.is_dir: unstable-read tests replace
     # Path.stat with a minimal size/mtime record that intentionally has no st_mode.

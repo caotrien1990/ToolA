@@ -41,6 +41,8 @@ Routing table. Lookup only; do not read full skill bodies here.
 | Leader mode anti-drift / first-dispatch Q worker routing / council coordination skill | `leader-council-skill/` | high (R20260619) |
 | Broker worker task needs write outside cwd / bootstrap [A] for worker artifact writes | `broker-worker-bootstrap/` | high |
 | Council / `bat hoi dong Tr` / `hoi dong` legacy compatibility, `council_message` broker one-shot, `council_worker_model` PiC model routing | `leader-council-skill/` | high (D4 2026-08-11: 24_council_tr retired) |
+| Council brainstorm multi-worker artifact loop (rounds, synthesis, track-by-name) | `council-brainstorm-loop/` | high (R20260911) |
+| Project orchestrator fix-loop (targeted [A] edit + validate + commit cycle) | `project-orchestrator-fix-loop/` | high (R20260911) |
 | Council cron schedule CRUD/trigger/history, pinned worker+model and narrator+model | `council-cron-jobs/` | high |
 | Console/merge/audit/verify text artifacts, base+plug report update, zero-audit document loop (`council_console_loop` alias) | `council-console-loop/` | high |
 

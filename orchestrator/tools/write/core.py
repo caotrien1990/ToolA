@@ -694,7 +694,10 @@ def _write_fix_guard_result(fp: Path, project_path: str, _file_path: str, expect
             hint=(
                 "Call read_file_range(project_path, file_path, force_reseed=true), "
                 "then retry write_fix once. If the INDEX is still corrupt, use cache_delta. "
-                "Never refresh_project_map on a large root such as [A:P]."
+                "Never refresh_project_map on a large root such as [A:P]. "
+                "If the guardrail layer itself raises STALE_INDEX during write, [A] R37 "
+                "auto-runs cache_delta and retries the write once — the CA does NOT need "
+                "to call cache_delta manually unless this error persists."
             ),
             ca_next_action="read_file_range",
             fallback_sequence=["read_file_range", "cache_delta"],

@@ -63,6 +63,8 @@ async def _ensure_graph_fresh(project_path: str) -> dict:
     try:
         raw = await cbm_graph_status(project_path=project_path)
         s = _json.loads(raw)
+        # Unwrap _ok() wrapper: cbm_graph_status returns {ok:result:{...}}
+        s = s.get("result") or s
         stale = int(s.get("stale_files", 0) or 0)
         has_run = bool(s.get("last_run"))
         if stale > 0 or not has_run:

@@ -1,4 +1,4 @@
-# CORE_RULE T0 v4 (rulecore_loop 3-round + real-test 3-round + Anh audit — Clau 2026-07-10; FINAL candidate)
+# CORE_RULE T0 v6 (MCP dispatcher contract + campaign-1608 auto-chain — Clau 2026-09-11)
 
 Use-case: minimal bootstrap for every CA; details on-demand via T1 (tool desc/error response) + T2 (skill). User-typed trigger literals ("tiến hành", "bật hội đồng tr", "tien hanh chay workflow") stay verbatim.
 
@@ -13,6 +13,7 @@ POST [A:API]/api/call/get_rule_core_text {"agent_id":"<id>"} once per process/se
 
 ## TRANSPORT (HARD)
 HTTP /api/call/<tool> = canonical for all non-T4. Host task metadata (session_id, task_epoch, and prompt_hash) is transport-only and MUST identify the newest real user task; stale epochs fail loud. MCP is Clau/ClauC-only for T4 page-stateful. Worker CLI (C-suffix) = HTTP ONLY. Discovery: GET /api/tools/names | /api/tools/<tool>/schema (schema shows requires_session/requires_token per tool). fields= only when key known. 429→read Retry-After, 413→chunk payload.
+MCP DISPATCHER (HARD): window MCP is a thin wrapper, not 252 named MCP tools. Live MCP surface = call_tool + tool_names + tool_schema + a few shortcuts (get_rule_core_text, open_session, list_sessions, log_native_event, council_*). NEVER invent mcp__project-orchestrator__<tool> (e.g. mcp__project-orchestrator__read_file_range) — that name does not exist and fails No such tool available. Correct MCP call: call_tool(name=<tool>, payload={...}). call_tool itself is NOT an [A] catalog tool (tool_schema(name=call_tool) → UNKNOWN_TOOL is expected). Prefer HTTP /api/call/<tool> when both channels work; MCP call_tool is convenience for Clau/ClauLTN only.
 
 ## READ ROUTING (HARD — measured 2026-08-19, do not re-litigate)
 Native is ALLOWED for pure inspection only: grep/glob/`git status`/`git diff`/`git log`/plain file read. Measured on this repo: git_status 1542ms vs native 164ms; search_code 1199ms vs rg 229ms; regex_search HARD-FAILS (REGEX_SEARCH_TIMEOUT, 5s deadline) where rg answers in 229ms; on a 17GB repo rg is 147ms. Inspection mutates nothing, so it owes NO log_native_event — this is a routing choice, not a fallback.
@@ -40,6 +41,15 @@ EXECUTE STICKY (MUTATE ONLY): "tiến hành <action>" → ACTIVE_EXECUTE_SCOPE=<
 - Mission tools (mission_create/next/dispatch/report/status/gate, leader_bootstrap): long flows use mission_*, short commands use council_message; destructive task→mission_gate approve; artifact-first on timeout; state durable in missions.db (a new leader only needs mission_status+mission_next).
 - pytest: python console (NOT pythonw — WinError 6), --basetemp explicit dir under %TEMP%.
 
+## SCHEMA-FIRST (HARD — force CA to call tools correctly)
+Before EVERY tool call: GET /api/tools/<tool>/schema → use payload_example as template → send ONLY fields in schema.properties. This single rule prevents 90% of CA soft-data errors:
+- PowerShell malformed JSON → use payload_example, never hand-write JSON
+- git_stage/wrong field (paths[] not file_path) → schema shows array type; R36 alias now maps file_path→paths=[file_path] as fallback
+- search_code missing project_path → required=[] shows mandatory fields
+- open_session extra file_path → only send schema.properties fields
+- Bash single-quote mangle → use JSON array/file input, not shell concat
+On UNSUPPORTED_FIELD/SCHEMA_VIOLATION: read error.accepted_fields + corrected_payload, remove extras, retry once. If accepted_aliases present, apply alias mapping (no escalate). NEVER guess field names; trust schema.
+
 ## ERROR/RETRY
 Trust structured fields (error_name, ca_next_action, corrected_payload, accepted_aliases): identical deterministic payload failures may be blocked as DUPLICATE_RETRY_BLOCKED; UNSUPPORTED_FIELD/SCHEMA_VIOLATION→fix payload retry once; accepted_aliases present→retry with alias mapping (no escalate); 2nd retry still fails→report user with original+corrected payload, do NOT loop further. STALE_INDEX/FILE_CHANGED→read_file_range+cache_delta retry once (never refresh_project_map on large root). ACTIVE_SESSION_REQUIRED→open_session then retry. Bootstrap fail→STOP. UNC (WinError 1326/1219/1385/86/5)≠server-down: missing share auth→verify USER session|net use|copy local, do NOT retry unchanged. focus UIPI→NON-FATAL, do_not_retry_focus. Else: follow error response.
 
@@ -62,4 +72,20 @@ End reply with: 🔍 ANALYZE | EXC EXECUTE | ✅ VERIFY | ❓ ASK. Reply languag
 Council routing: no fixed cost chain; select workers by task fit and benchmark evidence. CodoC is a high-end judgement/audit/high-dev worker, not default leader. ClauC is outside normal routing order.
 
 ## TOOL SURFACE (minimal)
-Core 10 (do NOT memorize the rest — live surface is ~247 public tools; never rely on a memorized count): get_rule_core_text, open_session, read_file_range, search_code, write_fix, validate_file, council_message, manage_agent, desktop_screenshot, restart_orchestrator_via_bat. Any other need → tool_decision_hint(task_description=..., verbosity="terse") (Vietnamese OK) → ranked candidates + payload example; full schema = GET /api/tools/<tool>/schema. Never guess tool names; trust structured errors to self-correct.
+Core 10 (do NOT memorize the rest — live surface is ~252 public tools; never rely on a memorized count): get_rule_core_text, open_session, read_file_range, search_code, write_fix, validate_file, council_message, manage_agent, desktop_screenshot, restart_orchestrator_via_bat. Any other need → tool_decision_hint(task_description=..., verbosity="terse") (Vietnamese OK) → ranked candidates + payload example; full schema = GET /api/tools/<tool>/schema. Never guess tool names; trust structured errors to self-correct.
+
+## DEPRECATED (pointer)
+regex_search, find_callers, find_definition_and_usage, read_chunks are DEPRECATED. Use: search_code(mode='regex') for regex; search_code(mode='smart') for symbol/callers; read_file_range for chunk reads. Deprecated tools still respond but include deprecated:true + deprecation_hint. Do NOT use deprecated tools in new code.
+
+## AUTO-CHAIN (pointer)
+[A] auto-chains lightweight hints between tools to reduce round-trips. These are CA-level recommendations, NOT automatic execution. Fields: ca_chain_hint (description) + ca_chain_next (suggested tool). Key chains:
+- cbm_dead_code/test_gap/what_if → auto-index if graph stale (_ensure_graph_fresh)
+- write_fix (.py) → ruff_preview in response (lint preview, not auto-fix)
+- search_code → ca_hint for read_file_range when results have line numbers
+- search_code regex on root → ca_chain_hint to narrow scope
+- git_commit → pre-hook injects staged_hash, post-hook validates committed files
+- ruff_fix apply → post_ruff_validation in response
+- validate_file → ca_hint for ruff_fix when ruff_fix_applicable
+- git_status staged>0 → ca_hint for git_stage
+- write_fix ok → ca_hint_commit for git_stage
+Do NOT auto-execute chain_next without user go-ahead; present as suggestion.

@@ -26,9 +26,10 @@ Use [A] as the PRIMARY project channel instead of raw file ops.
 - Mode changes routing/reporting only; it never changes identity and never disables [A].
 
 ## Transport Policy
-- Canonical policy lives in CORE_RULE `[A] TRANSPORT POLICY`; this slim file keeps only bootstrap-safe reminders.
+- Canonical policy lives in CORE_RULE TRANSPORT; this slim file keeps only bootstrap-safe reminders.
 - HTTP `/api/call/<tool>` is default for non-T4 work; council workers use HTTP ONLY.
 - MCP is Clau/ClauC-only for explicit stateful T4 page sessions.
+- Window MCP is a thin dispatcher, not 252 named MCP tools. Live surface = `call_tool` + `tool_names` + `tool_schema` + shortcuts (`get_rule_core_text`, `open_session`, `list_sessions`, `log_native_event`, `council_*`). NEVER invent `mcp__project-orchestrator__<tool>` (e.g. `mcp__project-orchestrator__read_file_range`) — that name does not exist. Correct: `call_tool(name=<tool>, payload={...})`. Prefer HTTP when both work.
 
 ## Read Routing (measured 2026-08-19)
 - Native grep/glob/`git status`/`git diff`/plain read = ALLOWED for pure inspection, and is much faster ([A] git_status 1542ms vs 164ms; search_code 1199ms vs rg 229ms; regex_search hard-fails at its 5s deadline). Inspection mutates nothing → NO log_native_event owed.

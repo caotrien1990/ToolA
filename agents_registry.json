@@ -30,7 +30,8 @@
         ],
         "a_first": true,
         "http_only": false
-      }
+      },
+      "agent_transport_policy": "a_first_mcp_t4_ok"
     },
     "codo": {
       "id": "codo",
@@ -60,7 +61,8 @@
         ],
         "a_first": true,
         "http_only": false
-      }
+      },
+      "agent_transport_policy": "a_first_mcp_t4_ok"
     },
     "opencode": {
       "id": "opencode",
@@ -90,7 +92,8 @@
         ],
         "a_first": true,
         "http_only": false
-      }
+      },
+      "agent_transport_policy": "a_first_mcp_t4_ok"
     },
     "hermes": {
       "id": "hermes",
@@ -120,7 +123,8 @@
         ],
         "a_first": true,
         "http_only": false
-      }
+      },
+      "agent_transport_policy": "a_first_mcp_t4_ok"
     },
     "zcode": {
       "id": "zcode",
@@ -183,7 +187,8 @@
         ],
         "a_first": true,
         "http_only": false
-      }
+      },
+      "agent_transport_policy": "a_first_mcp_t4_ok"
     },
     "pic": {
       "id": "pic",
@@ -213,7 +218,8 @@
         ],
         "a_first": true,
         "http_only": true
-      }
+      },
+      "agent_transport_policy": "http_only"
     },
     "fbuf": {
       "id": "fbuf",
@@ -242,7 +248,8 @@
         ],
         "a_first": true,
         "http_only": true
-      }
+      },
+      "agent_transport_policy": "http_only"
     },
     "gro": {
       "id": "gro",
@@ -272,7 +279,8 @@
         ],
         "a_first": true,
         "http_only": false
-      }
+      },
+      "agent_transport_policy": "a_first_mcp_t4_ok"
     },
     "claultnai": {
       "id": "claultnai",
@@ -302,9 +310,10 @@
         ],
         "a_first": true,
         "http_only": false
-      }
+      },
+      "agent_transport_policy": "a_first_mcp_t4_ok"
     }
   },
-  "governance_normalized_at": "2026-07-15T01:39:02",
+  "governance_normalized_at": "2026-09-11T10:07:07",
   "governance_north_star": "CSLt"
 }

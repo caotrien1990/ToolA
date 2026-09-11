@@ -10579,7 +10579,13 @@ async def git_status(project_path=None, include_ignored=False, max_records=0): r
 async def git_stale_check(project_path=None, max_commit_age_hours=168, expected_state_hash=""): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.stale_check, project_path, max_commit_age_hours, expected_state_hash), ensure_ascii=False)
 async def git_diff(project_path=None, scope="worktree", paths=None, context_lines=3, max_chars=50000, check_whitespace=False): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.diff, project_path, scope, paths, context_lines, max_chars, check_whitespace), ensure_ascii=False)
 async def git_log(project_path=None, limit=20, ref="HEAD"): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.log, project_path, limit, ref), ensure_ascii=False)
-async def git_stage(project_path=None, paths=None, paths_file="", allow_all=False, expected_state_hash=""): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.stage, project_path, paths, paths_file, allow_all, expected_state_hash), ensure_ascii=False)
+async def git_stage(project_path=None, paths=None, paths_file="", allow_all=False, expected_state_hash="", file_path=None):
+    # R36 alias: CAs habitually send singular `file_path` instead of `paths`.
+    # Map it onto the canonical `paths=[file_path]` so the call actually stages
+    # the file instead of answering UNSUPPORTED_FIELD.
+    if file_path and not paths:
+        paths = [file_path]
+    return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.stage, project_path, paths, paths_file, allow_all, expected_state_hash), ensure_ascii=False)
 async def git_unstage(project_path=None, paths=None, paths_file="", allow_all=False, expected_staged_hash=""): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.unstage, project_path, paths, paths_file, allow_all, expected_staged_hash), ensure_ascii=False)
 async def git_commit(project_path=None, message=None, expected_staged_hash="", allow_empty=False, no_verify=False): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.commit, project_path, message, expected_staged_hash, allow_empty, no_verify), ensure_ascii=False)
 
