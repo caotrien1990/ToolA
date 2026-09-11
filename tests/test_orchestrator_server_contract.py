@@ -51,7 +51,16 @@ def _issued_checkpoint(session_key: str, checkpoint: dict):
         code_tools._sync_session_db_alias()
         _store._init_session_db()
         _store._task_checkpoint_save(session_key, checkpoint)
-        yield
+        try:
+            yield
+        finally:
+            # STT-27 (B032): _task_checkpoint_save lazily started the process-
+            # global SessionWriter against this ckpt_ temp DB. Release it (and
+            # the thread-local read conn) while the patch still points at db;
+            # otherwise its drain-loop sqlite conn pins sessions.db and the
+            # rmtree below silently fails on Windows (WinError 32), leaking two
+            # ckpt_* dirs per run.
+            _store.close_writer()
     code_tools._sync_session_db_alias()
     shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -1232,6 +1241,12 @@ process.stdout.write(JSON.stringify(snapshots));
                 _os.unlink(_tmp.name)
             except OSError:
                 pass
+            # STT-27 (B032): _council_runtime_write leaves a <file>.json.lock
+            # sidecar (orchestrator_server.py L4851) that is never removed.
+            try:
+                _os.unlink(Path(_tmp.name).with_suffix('.json.lock'))
+            except OSError:
+                pass
 
     def test_council_cleanup_broker_opencode_session(self):
         old_run = orchestrator_server.subprocess.run
@@ -1936,6 +1951,9 @@ process.stdout.write(JSON.stringify(snapshots));
                 self.assertEqual(code_tools._get_active_session_id(project, 'agent-a'), session_a)
                 self.assertIsNone(code_tools._get_active_session_id(project, 'agent-b'))
             finally:
+                # STT-27 (B032): release the process-global SessionWriter pinned
+                # to this temp DB before restoring the path (tmp* dir leak).
+                code_tools._session_store_module.close_writer()
                 code_tools._SESSIONS_DB = old_db
                 code_tools._sync_session_db_alias()
                 orchestrator_server.AUTO_WRITE_MODE = old_auto_write
@@ -2013,7 +2031,18 @@ process.stdout.write(JSON.stringify(snapshots));
                 self.assertIsNotNone(session_b)
                 self.assertNotEqual(session_b, session_a)
                 self.assertEqual(code_tools._get_active_session_id(project, 'agent-a'), session_a)
+                # STT-27: drain this test's deferred post-call accounting while
+                # the temp DB still owns the writer; otherwise its events leak
+                # into the NEXT test's session DB and persist against a
+                # schema-less file (observed: `no such table: events` +
+                # WinError 32 during test_clear_closed_sessions).
+                await orchestrator_server._flush_post_call_accounting(timeout=2.0)
             finally:
+                # STT-27: release the process-global SessionWriter bound to
+                # this temp DB before restoring the path — a stale writer
+                # outliving the swap is the bug documented in
+                # store._shutdown_session_writer.
+                code_tools._session_store_module.close_writer()
                 code_tools._SESSIONS_DB = old_db
                 code_tools._sync_session_db_alias()
                 orchestrator_server.AUTO_WRITE_MODE = old_auto_write
@@ -2090,6 +2119,9 @@ process.stdout.write(JSON.stringify(snapshots));
             finally:
                 writer.shutdown(timeout=2.0)
                 orchestrator_server._DURABLE_AUDIT = old_writer
+                # STT-27 (B032): release the process-global SessionWriter pinned
+                # to this temp DB before restoring the path (tmp* dir leak).
+                code_tools._session_store_module.close_writer()
                 code_tools._SESSIONS_DB = old_db
                 code_tools._sync_session_db_alias()
                 code_tools.TOOL_MAP.pop(tool_name, None)
@@ -2132,6 +2164,9 @@ process.stdout.write(JSON.stringify(snapshots));
                 self.assertEqual(event_sessions, [session_b])
                 self.assertNotIn(session_a, event_sessions)
             finally:
+                # STT-27 (B032): release the process-global SessionWriter pinned
+                # to this temp DB before restoring the path (tmp* dir leak).
+                code_tools._session_store_module.close_writer()
                 code_tools._SESSIONS_DB = old_db
                 code_tools._sync_session_db_alias()
 
@@ -2182,6 +2217,9 @@ process.stdout.write(JSON.stringify(snapshots));
             finally:
                 writer.shutdown(timeout=2.0)
                 orchestrator_server._DURABLE_AUDIT = old_writer
+                # STT-27 (B032): release the process-global SessionWriter pinned
+                # to this temp DB before restoring the path (tmp* dir leak).
+                code_tools._session_store_module.close_writer()
                 code_tools._SESSIONS_DB = old_db
                 code_tools._sync_session_db_alias()
 
@@ -2217,6 +2255,9 @@ process.stdout.write(JSON.stringify(snapshots));
                     ).fetchone()[0]
                 self.assertEqual(stored_agent, 'agent-header')
             finally:
+                # STT-27 (B032): release the process-global SessionWriter pinned
+                # to this temp DB before restoring the path (tmp* dir leak).
+                code_tools._session_store_module.close_writer()
                 code_tools._SESSIONS_DB = old_db
                 code_tools._sync_session_db_alias()
 
@@ -2328,6 +2369,9 @@ process.stdout.write(JSON.stringify(snapshots));
             finally:
                 writer.shutdown(timeout=2.0)
                 orchestrator_server._DURABLE_AUDIT = old_writer
+                # STT-27 (B032): release the process-global SessionWriter pinned
+                # to this temp DB before restoring the path (tmp* dir leak).
+                code_tools._session_store_module.close_writer()
                 code_tools._SESSIONS_DB = old_db
                 code_tools._sync_session_db_alias()
 

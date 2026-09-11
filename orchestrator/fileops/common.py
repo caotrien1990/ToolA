@@ -113,7 +113,7 @@ def resolve_project_file(project_path: str | None, file_path: str) -> Path:
             try:
                 resolved.relative_to(root)
             except ValueError:
-                raise ValueError(f"File path '{file_path}' is outside project root '{project_path}'.")
+                raise ValueError(f"File path '{file_path}' is outside project root '{project_path}'.") from None
         return resolved
     if not project_path:
         return fp.resolve()
@@ -122,7 +122,7 @@ def resolve_project_file(project_path: str | None, file_path: str) -> Path:
     try:
         resolved.relative_to(root)
     except ValueError:
-        raise ValueError(f"File path escapes project root: {file_path}")
+        raise ValueError(f"File path escapes project root: {file_path}") from None
     return resolved
 
 

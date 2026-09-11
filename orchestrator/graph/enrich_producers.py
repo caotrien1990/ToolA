@@ -270,7 +270,7 @@ def produce_council_pack(
         return {"warmed": False, "reason": "no_project", "payload": None}
     norm = root.replace("\\", "/").rstrip("/").lower()
     fp = hashlib.sha256(
-        f"council|{norm}|gen:{int(generation or 0)}".encode("utf-8")
+        f"council|{norm}|gen:{int(generation or 0)}".encode("utf-8"),
     ).hexdigest()[:32]
     hit = lookup_enrich(KIND_COUNCIL, fp, cache=cache)
     if hit.get("status") == "ok":

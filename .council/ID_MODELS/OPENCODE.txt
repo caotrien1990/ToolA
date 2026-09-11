@@ -14,6 +14,14 @@ openai-compatible/glm-5.2
 
 ID model:
 openai-compatible/deepseek-v4-pro
-
 ID model:
 openai-compatible/kimi-k2.7-code
+
+ID model:
+openai-compatible/ox-alpha
+
+ID model:
+openai-compatible/grok-4.6-build
+
+ID model:
+openai-compatible/minimax-m3

@@ -1,39 +1,39 @@
 # Project Map
 
 - Schema: 2
-- Generated: 2026-08-23T17:11:10
+- Generated: 2026-09-10T21:42:51
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator`
-- Files indexed: 1263
+- Files indexed: 1378
 
 ## Groups
 
-- `config`: 105 files, 30459 LOC
-- `doc`: 282 files, 36152 LOC
-- `entrypoint`: 3 files, 13910 LOC
+- `config`: 56 files, 30414 LOC
+- `doc`: 392 files, 43818 LOC
+- `entrypoint`: 3 files, 14089 LOC
 - `script`: 15 files, 1579 LOC
-- `source`: 422 files, 128375 LOC
-- `test`: 296 files, 45976 LOC
-- `ui`: 23 files, 1710 LOC
-- `unknown`: 117 files, 53919 LOC
+- `source`: 470 files, 163438 LOC
+- `test`: 288 files, 49057 LOC
+- `ui`: 22 files, 1708 LOC
+- `unknown`: 132 files, 54285 LOC
 
 ## Entrypoints
 
-- `orchestrator_server.py`: HTTP/MCP server that exposes project tools.
 - `research/CBM_CG/CBM/pkg/npm/package.json`: Application entrypoint.
 - `research/CBM_CG/CG/package.json`: Application entrypoint.
+- `orchestrator_server.py`: HTTP/MCP server that exposes project tools.
 
 ## Hotspots
 
-- `orchestrator_server.py`: complexity 3227, 13813 LOC, group `entrypoint`
-- `code_tools.py`: complexity 2927, 13628 LOC, group `source`
-- `tools_v15.py`: complexity 1735, 8103 LOC, group `source`
+- `orchestrator_server.py`: complexity 3267, 13992 LOC, group `entrypoint`
+- `.council/_r3_before/os_head.py`: complexity 3253, 13917 LOC, group `source`
+- `_baseline_orchestrator_server_20260827.py`: complexity 3228, 13811 LOC, group `source`
+- `code_tools.py`: complexity 2952, 13846 LOC, group `source`
+- `tools_v15.py`: complexity 1772, 8294 LOC, group `source`
 - `research/CBM_CG/CBM/docs/EVALUATION_PLAN.md`: complexity 751, 8802 LOC, group `doc`
 - `examples/mcp_175_tool_rag.html`: complexity 569, 5 LOC, group `ui`
-- `orchestrator/tools/write/core.py`: complexity 438, 1748 LOC, group `source`
-- `orchestrator/session/store.py`: complexity 307, 1749 LOC, group `source`
-- `orchestrator/search_snapshots.py`: complexity 299, 1270 LOC, group `source`
-- `research/CBM_CG/CBM/scripts/smoke-test.sh`: complexity 260, 1505 LOC, group `unknown`
-- `orchestrator/tools/search.py`: complexity 254, 954 LOC, group `source`
+- `orchestrator/tools/write/core.py`: complexity 457, 1793 LOC, group `source`
+- `.council/tmp_ahealthhung/GROC_FIX_SNAPSHOT_1315/orchestrator__tools__write__core.py`: complexity 445, 1762 LOC, group `source`
+- `orchestrator/session/store.py`: complexity 318, 1811 LOC, group `source`
 
 ## Agent Usage
 

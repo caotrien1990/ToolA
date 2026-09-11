@@ -3,8 +3,8 @@
 This file is generated for CA routing. Read it before opening source files.
 
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\.council`
-- Generated: 2026-08-09T18:01:57
-- Files indexed: 7
+- Generated: 2026-08-31T08:06:05
+- Files indexed: 5
 
 ## First Actions
 
@@ -26,31 +26,27 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 
 ## Groups
 
-- `config`: 2 files, 217 LOC
-- `unknown`: 5 files, 87 LOC
+- `config`: 2 files, 44 LOC
+- `doc`: 3 files, 320 LOC
 
 ## Highest Value Files
 
-- `council_config.json` | group `config` | lang `json` | LOC 187 | weight 3: metadata_first: search or read narrow ranges
-- `worker_models.json` | group `config` | lang `json` | LOC 30 | weight 1: small_context: full read acceptable if needed
-- `ID_MODELS/KILO.txt` | group `unknown` | lang `text` | LOC 20 | weight 1: metadata_first: search or read narrow ranges
-- `ID_MODELS/OPENCODE.txt` | group `unknown` | lang `text` | LOC 20 | weight 1: metadata_first: search or read narrow ranges
-- `ID_MODELS/PI.txt` | group `unknown` | lang `text` | LOC 20 | weight 1: metadata_first: search or read narrow ranges
-- `ID_MODELS/HERMES.txt` | group `unknown` | lang `text` | LOC 16 | weight 1: metadata_first: search or read narrow ranges
-- `ID_MODELS/GPT.txt` | group `unknown` | lang `text` | LOC 11 | weight 1: metadata_first: search or read narrow ranges
+- `worker_output/20260828_190715_clau_e1e9906d.md` | group `doc` | lang `markdown` | LOC 208 | weight 2: metadata_first: search or read narrow ranges
+- `worker_output/20260828_215622_clau_4cae89d3.md` | group `doc` | lang `markdown` | LOC 30 | weight 1: small_context: full read acceptable if needed
+- `rooms/room-20260830-toolq-ask-hold/ROOM.md` | group `doc` | lang `markdown` | LOC 82 | weight 1: small_context: full read acceptable if needed
+- `rooms/room-20260830-toolq-ask-hold/status.json` | group `config` | lang `json` | LOC 27 | weight 1: small_context: full read acceptable if needed
+- `rooms/room-20260830-toolq-ask-hold/room_meta.json` | group `config` | lang `json` | LOC 17 | weight 1: small_context: full read acceptable if needed
 
 ## Entrypoints
 
 
 ## Hotspots
 
-- `council_config.json`: complexity 26, 187 LOC, group `config`
-- `worker_models.json`: complexity 0, 30 LOC, group `config`
-- `ID_MODELS/KILO.txt`: complexity 0, 20 LOC, group `unknown`
-- `ID_MODELS/OPENCODE.txt`: complexity 0, 20 LOC, group `unknown`
-- `ID_MODELS/PI.txt`: complexity 0, 20 LOC, group `unknown`
-- `ID_MODELS/HERMES.txt`: complexity 0, 16 LOC, group `unknown`
-- `ID_MODELS/GPT.txt`: complexity 0, 11 LOC, group `unknown`
+- `worker_output/20260828_190715_clau_e1e9906d.md`: complexity 14, 208 LOC, group `doc`
+- `worker_output/20260828_215622_clau_4cae89d3.md`: complexity 2, 30 LOC, group `doc`
+- `rooms/room-20260830-toolq-ask-hold/ROOM.md`: complexity 0, 82 LOC, group `doc`
+- `rooms/room-20260830-toolq-ask-hold/status.json`: complexity 0, 27 LOC, group `config`
+- `rooms/room-20260830-toolq-ask-hold/room_meta.json`: complexity 0, 17 LOC, group `config`
 
 ## Deterministic Rules
 

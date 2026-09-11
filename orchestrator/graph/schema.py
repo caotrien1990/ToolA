@@ -206,7 +206,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     # Record schema version (lightweight, mirrors CG schema_versions pattern).
     cur.execute(
         "CREATE TABLE IF NOT EXISTS schema_versions ("
-        "version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL, description TEXT);"
+        "version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL, description TEXT);",
     )
     cur.execute(
         "INSERT OR IGNORE INTO schema_versions (version, applied_at, description) "

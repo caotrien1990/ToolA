@@ -213,7 +213,7 @@ def parse_git_log_z(blob: bytes) -> tuple[list[dict[str, Any]], dict[str, int]]:
                 "author_id": hash_author(email),
                 "files": files,
                 "rename_in_commit": renamed,
-            }
+            },
         )
         stats["records"] += 1
     return records, stats
@@ -290,7 +290,7 @@ def compute_from_records(
                 "file": file_display.get(key, key),
                 "commit_count": count,
                 "total_churn": count,
-            }
+            },
         )
     churn_rows.sort(key=lambda r: (-int(r["commit_count"]), r["file"].casefold()))
 
@@ -314,7 +314,7 @@ def compute_from_records(
                 "changes_a": ca if fa.casefold() <= fb.casefold() else cb,
                 "changes_b": cb if fa.casefold() <= fb.casefold() else ca,
                 "jaccard": strength,
-            }
+            },
         )
     # Recompute changes_* against the displayed order.
     fixed = []
@@ -330,7 +330,7 @@ def compute_from_records(
                     file_commits.get(a_key, 0),
                     file_commits.get(b_key, 0),
                 ),
-            }
+            },
         )
     coupling = fixed
     coupling.sort(
@@ -339,7 +339,7 @@ def compute_from_records(
             -int(r["co_change_count"]),
             r["file_a"].casefold(),
             r["file_b"].casefold(),
-        )
+        ),
     )
 
     author_rows = []
@@ -357,7 +357,7 @@ def compute_from_records(
                 "primary_author_id": primary_id,
                 "primary_ratio": (primary_n / total) if total else 1.0,
                 "author_ids": [aid for aid, _ in ranked],
-            }
+            },
         )
     author_rows.sort(key=lambda r: r["file"].casefold())
     total_files = len(author_rows)
@@ -401,7 +401,7 @@ def compute_from_records(
                 "churn_count": row["commit_count"],
                 "max_complexity": cc,
                 "risk_score": int(row["commit_count"]) * cc,
-            }
+            },
         )
     if complexity_map is None or missing_cc:
         notes.append("missing_cc_no_fake_hotspot")
@@ -464,7 +464,7 @@ def _probe_repo(root: str, git_bin: str, timeout: float) -> tuple[str | None, bo
     """Return (error_reason, shallow). error_reason None => usable work tree."""
     try:
         inside = _run_git(
-            root, ["rev-parse", "--is-inside-work-tree"], timeout=timeout, git_bin=git_bin
+            root, ["rev-parse", "--is-inside-work-tree"], timeout=timeout, git_bin=git_bin,
         )
     except FileNotFoundError:
         return "not_git_repository", False

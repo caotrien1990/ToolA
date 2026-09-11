@@ -207,7 +207,7 @@ def resolve_apply(project_path: str, *, sample: int = _DEFAULT_SAMPLE,
         conn = _get_rw_conn(project_path)
         try:
             cands = _load_candidates(conn, sample)
-        except Exception as e:
+        except Exception:
             conn.close()
             raise
         out["sample"] = len(cands)

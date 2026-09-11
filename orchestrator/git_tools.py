@@ -36,7 +36,7 @@ def _pathspecs(root, paths):
         if low=='.git' or low.startswith('.git/') or any(fnmatch.fnmatch(Path(low).name, pat) for pat in _SECRET_PATTERNS): raise GitToolError('PATHSPEC_DENYLISTED',value)
         candidate=(root/value).resolve()
         try: candidate.relative_to(root)
-        except ValueError: raise GitToolError('GIT_PATH_OUTSIDE_ROOT',value)
+        except ValueError: raise GitToolError('GIT_PATH_OUTSIDE_ROOT',value) from None
         result.append(value)
     return list(dict.fromkeys(result))
 
@@ -155,7 +155,7 @@ def _porcelain(root, include_ignored=False):
     # shift every hash at once and make every held lock read as a concurrent
     # modification that never happened. Tidying a payload must not be a protocol
     # change.
-    payload={'branch':branch,'records':[{**item,'raw':rec} for item,rec in zip(records,body)]}
+    payload={'branch':branch,'records':[{**item,'raw':rec} for item,rec in zip(records,body,strict=True)]}
     return records,hashlib.sha256(json.dumps(payload,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
 
 def _staged_hash(root):
@@ -332,7 +332,7 @@ def log(project_path, limit=20, ref='HEAD'):
     root=resolve_root(project_path); n=max(1,min(int(limit),200)); raw=_run(root,['log',f'-{n}','--date=iso-strict','--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%s',str(ref)])['stdout']; rows=[]
     for line in raw.splitlines():
         bits=line.split('\x1f')
-        if len(bits)==6: rows.append(dict(zip(['hash','short_hash','author','email','date','subject'],bits)))
+        if len(bits)==6: rows.append(dict(zip(['hash','short_hash','author','email','date','subject'],bits,strict=True)))
     return {'ok':True,'commits':rows,'ref':ref}
 
 def safe_call(fn,*args,**kwargs):

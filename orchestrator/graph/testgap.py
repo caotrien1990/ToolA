@@ -171,7 +171,7 @@ def _rank_gaps(
                 "fan_in": int(fan_in.get(key, 0)),
                 "max_complexity": None,
                 "rank_key": "fan_in",
-            }
+            },
         )
     rows.sort(key=lambda r: (-int(r["fan_in"]), str(r["file"]).casefold()))
     return rows
@@ -298,7 +298,7 @@ def compute_test_gap(
                     "test_file": test_path,
                     "covers": covers,
                     "truncated": bool(cut or len(covers) >= cap and cut),
-                }
+                },
             )
             truncated = truncated or bool(cut)
 

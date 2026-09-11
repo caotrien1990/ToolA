@@ -30,7 +30,7 @@ def atomic_write_text(path: str | os.PathLike[str], text: str, encoding: str = "
             return
         except OSError:
             if last_error is not None:
-                raise last_error
+                raise last_error from None
             raise
     finally:
         try:

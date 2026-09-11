@@ -264,7 +264,7 @@ def _clusters(
                 "files": names,
                 "internal_edges": internal,
                 "level": min(levels.get(k, 0) for k in group),
-            }
+            },
         )
     out.sort(key=lambda c: (-int(c["internal_edges"]), [f.casefold() for f in c["files"]]))
     return out

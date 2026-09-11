@@ -10,7 +10,7 @@ Use [A] as the PRIMARY project channel instead of raw file ops.
 - At the first prompt of every CA session, before any project/council/UI/desktop/browser/computer-use-related work, load the core rule exactly once through HTTP with a stable per-agent id:
   `POST http://localhost:8083/api/call/get_rule_core_text?fields=ok,already_fetched,text,sha256`
   body: `{"agent_id":"<clau|codo|gro|hermes|kilo|ope|pic>"}`
-  First fetch/force must include `text` because that is the full core rule. If the response says `already_fetched:true`, reuse the rule already in that agent's current context. If a rule upgrade is suspected, a new session may be stale, or Anh asks to verify latest rule, call again with "force":true (but do NOT call force routinely).
+  First fetch/force must include `text` because that is the full core rule. If `already_fetched:true`, reuse the slim already in context; missing `text` is the expected stub, not staleness. Compaction is NOT a new CA session and does NOT authorize `get_rule_core_text` or `force:true`. `CA session` = new process or new conversation, not a compacted continuation. Optional hash-check only (`fields=ok,already_fetched,sha256`); sha match → do not request `text`. `force:true` only when (a) Anh asks to verify, (b) sha mismatch / explicit rule-upgrade evidence, or (c) NEW [A] PID/generation and text is missing.
 - If a tool list/schema is needed, use HTTP:
   `GET http://localhost:8083/api/tools/names`
   `GET http://localhost:8083/api/tools/<tool>/schema`

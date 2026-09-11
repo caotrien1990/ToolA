@@ -29,7 +29,7 @@ import time
 from collections import deque
 
 from .config import (
-    graph_enabled, LIVE_CALL_CONFIDENCE, LIVE_REF_EXISTS_SQL, LIVE_REF_BINDS,
+    graph_enabled, LIVE_CALL_CONFIDENCE,
 )
 from . import store as _store
 from .liveness import dead_callables as _dead_callables
@@ -94,7 +94,7 @@ def _build_file_graph(conn) -> tuple[set[str], dict[str, list[str]], int, dict]:
         "WHERE e.kind = 'imports_module' AND e.is_external = 0 "
         "  AND s.file_path <> t.file_path "
         "GROUP BY s.file_path, t.file_path, e.line "
-        "ORDER BY s.file_path, t.file_path, e.line;"
+        "ORDER BY s.file_path, t.file_path, e.line;",
     ).fetchall()
 
     nodes: set[str] = set()
@@ -195,7 +195,7 @@ def tarjan_scc(nodes: set[str], adj: dict[str, list[str]]) -> list[list[str]]:
 # ── 2. levelization: Kahn over the SCC-collapsed DAG ──────────────────────────
 
 def kahn_levels(
-    nodes: set[str], adj: dict[str, list[str]], cycles: list[list[str]]
+    nodes: set[str], adj: dict[str, list[str]], cycles: list[list[str]],
 ) -> tuple[dict[str, int], int]:
     """Assign each file a dependency level (Lakos 1996).
 
@@ -386,7 +386,7 @@ def _symbol_sizes(conn) -> list[float]:
     """Line span of every function/method/class — the complexity proxy."""
     rows = conn.execute(
         "SELECT start_line, end_line FROM nodes "
-        "WHERE kind IN ('function','method','class');"
+        "WHERE kind IN ('function','method','class');",
     ).fetchall()
     return [float(max(1, (r["end_line"] or 0) - (r["start_line"] or 0) + 1)) for r in rows]
 
@@ -415,7 +415,7 @@ def _dead_ratio(conn) -> tuple[float, int, int]:
     Returns (ratio, dead_count, total_callables).
     """
     total = conn.execute(
-        "SELECT COUNT(*) FROM nodes WHERE kind IN ('function','method');"
+        "SELECT COUNT(*) FROM nodes WHERE kind IN ('function','method');",
     ).fetchone()[0]
     if not total:
         return 0.0, 0, 0
@@ -561,6 +561,10 @@ def compute_cycle_point(project_path: str) -> dict:
     Read-only on both the source tree and the graph DB. Fail-open: a disabled
     graph, a missing DB, or any query error returns a payload carrying the
     reason rather than raising.
+
+    Campaign P3 stability/entry stay on cbm_test_gap(include_architecture=True)
+    as service/context. This signature must not grow included_files,
+    include_extensions, or confidence.
     """
     t0 = time.monotonic()
     payload: dict = {

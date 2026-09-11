@@ -1,10 +1,7 @@
 GPT
 
 ID model:
+grok-4.6-build
+
+ID model:
 gpt-5.6-sol
-
-ID model:
-gpt-5.5
-
-ID model:
-gpt-5.4

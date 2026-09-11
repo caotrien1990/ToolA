@@ -267,7 +267,7 @@ def _validate_manifest_paths(records: list[dict[str, Any]]) -> None:
         previous = seen.get(key)
         if previous is not None:
             raise SnapshotPathCollision(
-                f"duplicate/colliding snapshot path after NFC+casefold normalization: {previous!r} vs {relative!r}"
+                f"duplicate/colliding snapshot path after NFC+casefold normalization: {previous!r} vs {relative!r}",
             )
         seen[key] = relative
         sort_key = (key, relative)
@@ -379,7 +379,7 @@ def _validate_index_against_records(
         missing = sorted(record_map.keys() - normalized_index.keys())[:10]
         extra = sorted(normalized_index.keys() - record_map.keys())[:10]
         raise SnapshotIntegrityError(
-            f"INDEX/manifest file set mismatch: missing={missing}, extra={extra}"
+            f"INDEX/manifest file set mismatch: missing={missing}, extra={extra}",
         )
     for key, (relative, info) in normalized_index.items():
         record = record_map[key]
@@ -554,7 +554,7 @@ def _exclusive_file_lease(
                     lease_path.unlink()
                 continue
             if time.monotonic() >= deadline:
-                raise SnapshotWriterBusy(f"snapshot lease is busy: {lease_path}")
+                raise SnapshotWriterBusy(f"snapshot lease is busy: {lease_path}") from None
             time.sleep(0.01)
     try:
         yield
@@ -728,7 +728,7 @@ def _recover_current_pointer(
                 continue
             _check_deadline(deadline_at, "snapshot manifest hash validation")
             manifest_sha256 = _sha256_bytes(
-                (generation / MANIFEST_FILENAME).read_bytes()
+                (generation / MANIFEST_FILENAME).read_bytes(),
             )
             publication_sequence = manifest.get("publication_sequence")
             if publication_sequence is None:
@@ -748,18 +748,18 @@ def _recover_current_pointer(
         newest = [candidate for candidate in sequenced if candidate[0] == highest_sequence]
         if len(newest) != 1:
             raise SnapshotUnrecoverableError(
-                f"CURRENT is corrupt and publication sequence {highest_sequence} is ambiguous"
+                f"CURRENT is corrupt and publication sequence {highest_sequence} is ambiguous",
             ) from pointer_error
         _, snapshot_id, manifest_sha256 = newest[0]
     elif len(legacy) == 1:
         snapshot_id, manifest_sha256 = legacy[0]
     elif len(legacy) > 1:
         raise SnapshotUnrecoverableError(
-            "CURRENT is corrupt and multiple legacy generations have no trustworthy publication order"
+            "CURRENT is corrupt and multiple legacy generations have no trustworthy publication order",
         ) from pointer_error
     else:
         raise SnapshotUnrecoverableError(
-            f"CURRENT is corrupt and no valid READY generation can recover it: {pointer_error}"
+            f"CURRENT is corrupt and no valid READY generation can recover it: {pointer_error}",
         ) from pointer_error
 
     _replace_current_pointer(store, snapshot_id, manifest_sha256)
@@ -882,7 +882,7 @@ def _load_manifest(
         raise SnapshotIntegrityError(f"snapshot manifest id mismatch: {snapshot_id}")
     if not isinstance(manifest.get("index_authoritative"), bool):
         raise SnapshotIntegrityError(
-            f"snapshot manifest index_authoritative is invalid: {snapshot_id}"
+            f"snapshot manifest index_authoritative is invalid: {snapshot_id}",
         )
     records = manifest.get("files")
     if not isinstance(records, list):
@@ -974,7 +974,7 @@ def publish_snapshot(
             if _cur_id:
                 try:
                     _cur_manifest = _load_manifest(
-                        store, _cur_id, verify_blobs=False, deadline_at=deadline_at
+                        store, _cur_id, verify_blobs=False, deadline_at=deadline_at,
                     )
                     _ps = _cur_manifest.get("publication_sequence")
                     if isinstance(_ps, int) and _ps > 0:
@@ -1227,7 +1227,7 @@ class SnapshotPin:
         payload = _blob_path(self.store, record["blob_sha256"]).read_bytes()
         if len(payload) != int(record["size"]) or _sha256_bytes(payload) != record["sha256"]:
             raise SnapshotIntegrityError(
-                f"snapshot blob verification failed: {self.snapshot_id}:{record['path']}"
+                f"snapshot blob verification failed: {self.snapshot_id}:{record['path']}",
             )
         return payload
 
@@ -1295,7 +1295,7 @@ def pin_current_snapshot(
                 snapshot_id = pointer["snapshot_id"]
                 if expected_id is not None and snapshot_id != expected_id:
                     raise SnapshotUnavailable(
-                        f"CURRENT changed: expected {expected_id}, found {snapshot_id}"
+                        f"CURRENT changed: expected {expected_id}, found {snapshot_id}",
                     )
                 lease_path = _acquire_reader_lease(store, snapshot_id)
 

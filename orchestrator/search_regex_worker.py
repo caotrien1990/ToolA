@@ -86,7 +86,7 @@ def validate_line_budget(payload: bytes) -> None:
 
 def _timeout(deadline_seconds: float) -> RegexSearchTimeout:
     return RegexSearchTimeout(
-        f"regex search exceeded hard deadline of {deadline_seconds:.3f}s"
+        f"regex search exceeded hard deadline of {deadline_seconds:.3f}s",
     )
 
 
@@ -111,7 +111,7 @@ def _materialize_records(
             raise RegexSearchError("regex record payload must be bytes")
         payload_bytes = bytes(payload)
         total_bytes = validate_next_record_budget(
-            len(materialized), total_bytes, len(payload_bytes)
+            len(materialized), total_bytes, len(payload_bytes),
         )
         validate_line_budget(payload_bytes)
         materialized.append((relative_path, label, payload_bytes))
@@ -237,18 +237,18 @@ def _run_isolated(payload: tuple, timeout_seconds: float) -> Any:
                 raise _timeout(timeout_seconds)
             if process.exitcode != 0:
                 raise RegexSearchError(
-                    f"regex helper exited with exit_code={process.exitcode}"
+                    f"regex helper exited with exit_code={process.exitcode}",
                 )
             try:
                 with open(output_path, "rb") as fh:
                     status, result = pickle.load(fh)
             except FileNotFoundError as exc:
                 raise RegexSearchError(
-                    f"regex helper produced no output (exit_code={process.exitcode})"
+                    f"regex helper produced no output (exit_code={process.exitcode})",
                 ) from exc
             except Exception as exc:
                 raise RegexSearchError(
-                    f"regex helper output corrupt (exit_code={process.exitcode}): {exc}"
+                    f"regex helper output corrupt (exit_code={process.exitcode}): {exc}",
                 ) from exc
             return _decode_worker_result(status, result)
         except BaseException as exc:

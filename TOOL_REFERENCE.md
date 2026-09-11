@@ -22,7 +22,14 @@ Use T1 before mutation: open a session, summarize the project, search indexes, l
 
 Representative tools: `open_session`, `get_project_summary`, `search_code`, `find_symbol`, `read_file_range`, `tool_decision_hint`, `progressive_matrix_check`.
 
-## Phase T2: Mutate / Verify / Refresh
+CBM campaign P3: `cbm_test_gap` is the new T1 advisory for static import-reach test gaps (`no_tests` => unavailable, not 0%). `include_architecture` defaults false; when true the same payload adds stability + entry reach (service/context — not extra public tools). Generic architecture/quality still routes via H1 to `cbm_cycle_point`. Do not add `include_extensions` or new params to legacy CBM tools.
+
+CBM campaign P4: `cbm_quality_gate` (T1) modes `rules` / `compare` / `snapshot`. Snapshot returns JSON only (`wrote=false`); persist only via later `write_new_file` overwrite=false under `.orchestrator_cache/cbm/baselines/<scope-hash>/<run-id>.json`. 13 keys; unknown key = invalid_config; `max_cc` / `no_god_files` unavailable v1. Named `cbm_quality_gate` is H1 C4 after registration; generic quality still `cbm_cycle_point`.
+
+CBM campaign P5: `cbm_what_if` (T1) RAM-clone simulation of `move_file`/`add_edge`/`remove_edge`/`remove_file`/`break_cycle`. Whole sequence is atomic (invalid/cap/deadline => `unavailable`, `ops_applied=0`, no silent truncate). Caps 20/2000/50000/2s. `break_cycle` is a heuristic (min target fan-in then src then dst), not min-cut. Named `cbm_what_if` is H1 after registration; generic quality still `cbm_cycle_point`. Never writes source/DB.
+
+CBM campaign P6: `cbm_evolution` (T1) argv-only git history (90d/1000 commits, no shell/network/git config). Jaccard=co/(a+b-co). Pair cap 50 files/commit (1225 pairs) + dropped count. Author IDs hashed by default (SHA256 email, full 64 hex; missing email unknown). Rename v1 = new path + `rename_history_partial`. No git => `unavailable:not_git_repository`. Missing CC never invents a hotspot. `cbm_dsm` (T1) RAM-only DSM: level = longest path toward sinks, order level then lexical, exact propagation N<=500, 501 sampled, 2001 truncated (lowest+highest 1000), page <=100x100 sparse cells only. Named `cbm_evolution` / `cbm_dsm` are H1 after registration; generic quality still `cbm_cycle_point`. No H4 stage/diff feed. Never writes source/DB.
+
 
 Use T2 for backup, write, delete, validation, cache refresh, bounded commands, and test profiles. Mutating T2 calls require `X-Orchestrator-Token` unless `run_project_command` is recognized as read-only.
 

@@ -46,10 +46,11 @@ Did I already get {"ok":true} from /health this turn or within the current task 
 
 ### Rule-core bootstrap is separate from health
 
-- After health succeeds, call `POST /api/call/get_rule_core_text {"agent_id":"<id>"}` exactly once per session.
-- After context compaction, reuse the cached rule core; **do not fetch it again** merely because context was compacted.
-- Re-fetch with `force` only when the user asks or staleness is genuinely suspected.
-- `already_fetched:true` means use cached state; it is not an error.
+- After health succeeds, call `POST /api/call/get_rule_core_text {"agent_id":"<id>"}` exactly once per **new process or new conversation**.
+- Compaction is NOT a new CA session and does NOT authorize `get_rule_core_text` or `force:true`.
+- After compaction: reuse slim already in context; optional hash-check only (`fields=ok,already_fetched,sha256`); sha match → do not request `text`.
+- `already_fetched:true` without `text` is the expected stub — not an error and not staleness.
+- `force:true` only when (a) Anh asks to verify, (b) sha mismatch / explicit rule-upgrade evidence, or (c) NEW [A] PID/generation and text is missing.
 - Do not substitute native project reads for this HTTP bootstrap.
 
 ## Health command (canonical)
@@ -83,7 +84,7 @@ OK output: `{"ok":true, "port":8083, ...}` (also note `generation` when present)
 ## After health OK
 
 - Enter DEFAULT T1 read-only mode (no token, no T2/T3)
-- Read super-core if not in prompt: `[A:P]\examples\CORE_RULE.txt` (≤ 4 KB V15)
+- After a genuinely new session, first/force `get_rule_core_text` must include `text`. After compaction, do not re-read `CORE_RULE.txt` or re-fetch merely because context shrank.
 - For non-trivial task, consult `.ToolA_Skill\SKILLS.md` router (Progressive Disclosure)
 - After restart waves that register tools: optional quick check that expected tool names appear in `/api/tools/names` (do not assume count alone)
 

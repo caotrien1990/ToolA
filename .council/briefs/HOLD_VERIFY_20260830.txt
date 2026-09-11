@@ -1,0 +1,70 @@
+Chao ClauC,
+
+TASK_ID: HOLD-VERIFY-20260830
+OBJECTIVE_CLASS: judgement / scoped bug-scan + validate + real-test
+RISK_LEVEL: mid
+DEV_LEVEL: mid
+LOAD_BUDGET_SOURCE: conservative-heuristic + Anh chi dao ClauC
+INDEPENDENT_QUESTIONS: 5
+FILES_SUBSYSTEMS: 8 files hold path
+EXPECTED_TOOL_CALLS: 10-18 ([A] HTTP: read_file_range, validate_file, search_code, run_project_test_script; NO MCP)
+EXPECTED_WRITES: 0 source/runtime; 1 RES outbox bat buoc
+DEPENDENCY_DEPTH: 1
+EXPECTED_END_MARKER: END_CLAUC_R1_HOLD-VERIFY-20260830
+
+VERIFY ONLY: no source/runtime edits; appending the required RES block to your own outbox is mandatory and allowed. KHONG restart :8082. KHONG kill PID. KHONG rewrite qnight_state.json. KHONG xoa .bak. KHONG write_fix/ruff_fix.
+If this task must write outside cwd, bootstrap [A] and use [A] write tools.
+
+OBJECTIVE: scan bug + validate + real-test chuc nang InteractiveHold (ask/query/pre_search pause qnight/qsleep/p5, xong thi resume). Verdict PASS/PARTIAL/FAIL + danh sach bug file:line. Khong doan; unknown/not verified neu thieu bang chung.
+
+WORK_SHAPE: focused dispatch. Round 1: khong peer score.
+
+CONTEXT leader da do (dung lai, dung doan sai):
+- Chuc nang moi tren DISK: bin\clm_lib\interactive_hold.py (hold/refresh/release/wait_clear/InteractiveHold CM + heartbeat 30s). KHONG ghi qnight_pause.json. Last holder until=0.
+- HTTP wrap tren DISK (clm_librarian_api.py L2820-2848): /pre_search /query /ask /ask_stream dung InteractiveHold CM.
+- touch_interactive_gate() con la shim hold() one-shot (L243-249).
+- Writers tren DISK: embed.py wait_clear + commit truoc wait (L581-588, L672-678). qnight_common wait_interactive_hold roi moi qpause (L51-61, L713-714). runner 4 site WAIT-then-qpause (~L1089, L1568, L1686, L1852). resident cycle wait roi paused(interactive) (L302-308).
+- loop_orchestrator._yield_to_interactive CHI doc until (tuong thich), max_wait default 300s roi TIEP distill du gate con active.
+- folder_watcher CHI nhuong foreign writer tren librarian.db; KHONG poll interactive_gate.
+- admission.interactive_active_fn da batch-yield in-process; khong sua.
+- qpause_requested CHI Path(qnight_pause.json).exists() — dung overload.
+- Pytest tests\test_interactive_hold.py: 8 passed in 0.06s (2026-08-30 leader).
+- LIVE CHUA load code moi (real-test 2026-08-30):
+  * librarian :8082 PID 29076 (python 3.11 clm_librarian_api.py, 2376 MB). POST /pre_search xong gate keys chi until/reason/ts, holders=null, ttl_sec=null, until_minus_now=+36.9s, live_format=old_oneshot.
+  * P5 embed PID 11688 (python3.12 clm_semantic_embed.py --db, 1687 MB, elapsed_s=9336, reason=live_pid). Slot occupied. KHONG spawn embed thu hai. KHONG kill.
+  * WAL RO: rag=601300 vec=416755 pct=69.31 gap95=154780.
+  * qnight_active=p5_embed. qsleep running=false.
+- [Q] /pre_search auto_queried=true nhung hits la backup resident cu (pause-signal), khong phai InteractiveHold moi — drop.
+
+SCOPE dung (full path, chi cac file nay):
+1) D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\21. ToolQ\bin\clm_lib\interactive_hold.py
+2) D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\21. ToolQ\bin\clm_librarian_api.py — CHI shim L235-249 + HTTP wrap L2810-2848
+3) D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\21. ToolQ\bin\clm_semantic_embed.py — CHI loop wait/commit L577-688
+4) D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\21. ToolQ\qsleep\bin\clm_qnight_common.py — CHI L35-71 va cluster wait L709-717
+5) D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\21. ToolQ\qsleep\bin\clm_qnight_runner.py — CHI 4 site wait_interactive_hold
+6) D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\21. ToolQ\qsleep\bin\clm_qnight_resident.py — CHI cycle L302-314
+7) D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\21. ToolQ\qsleep\controller\loop_orchestrator.py — CHI _yield_to_interactive L32-70
+8) D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\21. ToolQ\tests\test_interactive_hold.py
+9) Optional 1 file: D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\21. ToolQ\bin\clm_folder_watcher.py — CHI yield L2179-2238 (co poll hold khong)
+
+NGOAI SCOPE: Phase 1 schema, qnight_state.json, .bak, HF cache, leftover store.py/vector.py/q_agent, restart 8082, kill 11688/29076, BM25, Ask planner.
+
+ACCEPTANCE (binary):
+A1) validate_file 1+2+3+8 syntax/ruff (bao pre-existing, khong fix).
+A2) pytest tests\test_interactive_hold.py — chay lai, ghi exit+passed.
+A3) Real-test: doc qsleep\ledger\interactive_gate.json; POST /pre_search {} hop le 1 lan; bao keys/holders/ttl/until-now; ket luan live_format new_hold vs old_oneshot. KHONG hold lau, KHONG /ask dai.
+A4) 5 cau hoi bat buoc, moi cau VERIFIED hoac unknown:
+  Q1. Disk code: last release resume ngay (until=0) va khong ghi qnight_pause.json?
+  Q2. Live :8082 da load InteractiveHold CM chua? (real-test)
+  Q3. Live P5 11688 co wait_clear khi gate active khong? (khong attach process; suy ra tu code load)
+  Q4. Bug that su: holders race cross-process? wait_clear cap 600s vs ask dai? loop_orchestrator 300s roi tiep distill? folder_watcher bo qua hold? touch_interactive_gate leak holders?
+  Q5. Chuc nang moi PASS tren disk / PARTIAL live / FAIL contract?
+A5) Artifact + END marker.
+
+STOP: 2 lan fail tool thi dung + bao. Khong chon architecture moi. Khong sua code.
+
+OUTPUT CONTRACT:
+- Broker reply toi da 8 dong: verdict, 3 bug/gap file:line quan trong nhat, live_format, pytest, next (restart 29076? hay khong).
+- Artifact day du: D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\.council\tmp_hold_verify_20260830\CLAUC_HOLD_VERIFY.md
+- GRAPH_EVIDENCE: none (leader khong embed GRAPH_CONTEXT).
+- Het bang: END_CLAUC_R1_HOLD-VERIFY-20260830

@@ -43,9 +43,9 @@ Never dispatch broker prompts containing shorthand or conversational references 
 3. Dispatch workers with a short wrapper that includes concrete full Windows paths for prompt, inputs, support artifact, and output.
 4. Broker workers have no memory. Never send unresolved variables such as `$own`, `$promptFile`, `__OWN__`, or shorthand paths.
 5. Read only the allowed round window: stable DATA plus the immediately previous round unless Anh explicitly expands scope.
-6. Classify `RISK_LEVEL` and `DEV_LEVEL` using `leader-council-skill`, then route every dispatch by the live benchmark v3 table and verify with `council_worker_model set` then `get`; set only `action`, `agent`, and `model`, never `slot`. Use PiC+Qwen for architecture/logic, PiC+DeepSeek for adversarial evidence, KiloC+MiniMax for routine implementation/recovery, OpeC+Qwen for operational review, and CodoC+GPT-5.6 Sol for high-end judgement or final conflict resolution. Kimi K3 stays default-off.
-7. ClauC is outside normal routing; use only for explicit exceptional stateful T4/MCP or narrowly scoped work. CodoC may join independent work as a high-end worker, never as an automatic coordinator/fallback.
-8. Helpers are selected by task fit: bounded evidence = PiC+DeepSeek primary, OpeC/HermC+DeepSeek secondary; alternate inexpensive ideas/frontend = PiC/HermC+MiniMax; operational audit = OpeC+Qwen. Helpers are not scored brainstorm peers unless Anh explicitly promotes them.
+6. Classify `RISK_LEVEL` and `DEV_LEVEL` as measurement metadata only. The 2026-07-25 benchmark table is SUSPENDED. Route only when Anh names the worker/model or after `council_worker_model set` then `get` of the live pin; set only `action`, `agent`, and `model`, never `slot`.
+7. ClauC is outside normal routing; use only for explicit exceptional stateful T4/MCP or narrowly scoped work. CodoC may join independent work as a high-end worker when Anh names CodoC, never as an automatic coordinator/fallback.
+8. Helpers are selected only when Anh names them or a live pin already exists. Helpers are not scored brainstorm peers unless Anh explicitly promotes them.
 9. Parallelize only different logical agents with independent shards and disjoint output ownership. Model selection is per logical agent, so serialize model switches for the same agent. Different models provide cross-verification viewpoints, not duplicate workload clones.
 10. After each dispatch, inspect broker response and artifact status before moving on. Record enough state to know what happened; do not perform special session recovery unless Anh asks.
 11. If a worker is slow, continue independent safe work: artifact checks, HermC request consolidation, prompt prep, or state snapshots.
@@ -59,7 +59,7 @@ Never dispatch broker prompts containing shorthand or conversational references 
 
 - Inherit `leader-council-skill` Worker Load Budget Gate. Current benchmark has no validated per-worker task-count or file/tool-call capacity limit.
 - One brainstorm shard = one bounded question/POV, one allowed read window, and one exclusive output artifact. Split by evidence boundary when a prompt spans multiple subsystems, lifecycle stages, or more than three independent questions.
-- Record `LOAD_BUDGET_SOURCE`; currently use `conservative-heuristic` unless a specific observed-history record applies. Correct-method timeout -> inspect artifact -> shrink one boundary; second correct-method timeout -> reroute by task fit.
+- Record `LOAD_BUDGET_SOURCE`; currently use `conservative-heuristic` unless a specific observed-history record applies. Correct-method timeout -> inspect artifact -> shrink one boundary; second correct-method timeout -> stop and report; do not reroute from the suspended table.
 
 ## Quality Gates
 
@@ -67,7 +67,7 @@ Before next round:
 
 - Expected artifacts exist and are non-zero, or a failure artifact/ledger entry exists.
 - Broker response was inspected for `ok`, `returncode`, error text, model mismatch, placeholder leak, timeout, overload, or usage limit.
-- Each routed worker/model pair was verified immediately before dispatch via `council_worker_model set` then `get`; Kimi K3 and unavailable GPT cells were not silently substituted.
+- Each routed worker/model pair was verified immediately before dispatch via `council_worker_model set` then `get`; no silent substitution and no suspended-table default.
 - Helper artifacts are not scored.
 - Fallback is explicit and limited to the room when allowed.
 - No [A] source/rule/code edits occur in planning-only phases.

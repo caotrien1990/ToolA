@@ -24,7 +24,7 @@ Desktop CA, temporary council leader, and HTTP-only council workers may call the
 4. Schedules: schedule_type=interval with 60s..7d, or schedule_type=cron with five UTC fields.
 5. Prompt must be self-contained, use full paths, include stop conditions, and never assume prior worker memory.
 6. Create/update/trigger/delete need EXECUTE authorization when initiated by a CA. A user-authored active schedule may fire autonomously afterward.
-7. Classify `RISK_LEVEL` and `DEV_LEVEL` before saving the schedule. High-risk scheduled mutations require an encoded human/mission gate and independent high-end review; no cheap route may be sole authority. Choose worker/model by the live route table: PiC+DeepSeek for bounded scan, PiC+Qwen for architecture/logic, KiloC+MiniMax for routine implementation/recovery, OpeC+Qwen for operational review, CodoC+GPT-5.6 Sol for high-end judgement. ClauC is exceptional-only; Kimi K3 is default-off.
+7. Classify `RISK_LEVEL` and `DEV_LEVEL` as measurement metadata before saving the schedule. High-risk scheduled mutations require an encoded human/mission gate. Choose worker/model only from Anh's instruction or the live pin after SET+GET. The 2026-07-25 route table is SUSPENDED. ClauC is exceptional-only.
 8. A recurring job is one bounded acceptance objective with one output artifact. The current benchmark has no validated per-worker capacity limit, so split multi-stage or multi-subsystem schedules into dependency-ordered jobs and serialize overlapping writers.
 
 ## Safety

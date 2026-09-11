@@ -246,7 +246,7 @@ def evaluate_restart_guard(
             and busy_snapshot.get("requests_in_flight") == 1
             and not busy_snapshot.get("executor_in_flight")
             and not busy_snapshot.get("accounting_pending")
-            and not busy_snapshot.get("semaphores")
+            and not busy_snapshot.get("semaphores"),
         )
         hung_or_stale = bool(busy_snapshot.get("is_stale_or_hung"))
         if (
@@ -335,7 +335,7 @@ def evaluate_restart_guard(
     for dispatch_id in (set(dispatches) - replies):
         event = dispatches[dispatch_id]
         if not isinstance(event, Mapping) or not _dispatch_provably_stale(
-            event, now, stale_after_seconds=dispatch_stale_seconds, pid_alive=pid_alive
+            event, now, stale_after_seconds=dispatch_stale_seconds, pid_alive=pid_alive,
         ):
             reasons.append("BROKER_DISPATCH_UNMATCHED")
     return GuardDecision(not reasons, tuple(dict.fromkeys(reasons)), describe_blocking_guards(reasons))

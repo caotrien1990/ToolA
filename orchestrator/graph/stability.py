@@ -250,7 +250,7 @@ def compute_stability(
                 "instability": row["instability"],
                 "foundation": key in foundation,
                 "stable": key in stable,
-            }
+            },
         )
 
     return {

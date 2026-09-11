@@ -18,16 +18,16 @@ See `examples/CORE_RULE.txt` section `[A] TRANSPORT POLICY` for the canonical tr
 | HTTP 4xx (auth/method/schema/rate/body) | Fix payload/auth; respect `Retry-After`; no identical retry |
 | HTTP 5xx / conn-err after bootstrap | Retry once only if idempotent; otherwise report unknown/not verified |
 
-## Per-Agent Quick Ref — benchmark-calibrated
+## Per-Agent Quick Ref — Anh chỉ đạo (benchmark 2026-07-25 SUSPENDED)
 
-- CodoC: fixed `gpt-5.6-sol`; high-end worker for judgement, independent audit, high-difficulty development, builder/plan drafter/final conflict resolution; not default leader and not broad scanner.
-- PiC: `qwen3.7-max` primary design/logic; `deepseek-v4-pro` adversarial scan; `minimax-m3` alternate brainstorm/frontend review; Kimi K3 default-off.
-- KiloC: `ltnai/minimax-m3` default stable value route for routine implementation/recovery; Qwen secondary logic; DeepSeek narrow scan only; Kimi default-off.
-- OpeC: `openai-compatible/qwen3.7-max` operations/migration/observability reviewer; DeepSeek bounded scan; MiniMax alternate review; Kimi default-off.
-- HermC: MiniMax/Qwen/DeepSeek secondary evidence/review routes; higher harness fragility; Kimi default-off after HTTP 400.
-- GroC: LTNAI `xAI-grok-4.6-build` via Grok CLI; design/bugs-scan/code skills; not default leader and not T4/MCP.
-- ClauC: T4/stateful judgement and scoped fix with narrow evidence only.
-- Workers execute the assigned model/task; they do not reroute themselves. If the requested model/provider is unavailable, fail loud with the exact error and do not substitute. The current host/desktop CA that loads `leader-council-skill` is the temporary leader; no worker identity is hard-coded as leader. Risk floor: low-risk/low-dev may use routine routes; mid-risk requires an independent reviewer; high-risk requires high-end independent audit/judgement and operational review, with DeepSeek/MiniMax never acting as sole authority.
+- CodoC: live pin `grok-4.6-build` via CodexLTNAI; high-end worker when assigned; not the default leader and not broad scanner.
+- PiC: no Anh-directed default cell. Do not apply suspended Qwen/DeepSeek/MiniMax defaults.
+- KiloC: no Anh-directed default cell. Do not apply suspended MiniMax default.
+- OpeC: live pin `openai-compatible/grok-4.6-build`. Do not apply suspended Qwen default.
+- HermC: no Anh-directed default cell. Do not apply suspended MiniMax/Qwen/DeepSeek defaults.
+- GroC: LTNAI `grok-4.6-build` via Grok CLI; design/bugs-scan/code skills; not default leader and not T4/MCP.
+- ClauC: T4/stateful judgement and scoped fix with narrow evidence only; outside the normal routing order.
+- Workers execute the assigned model/task; they do not reroute themselves. If the requested model/provider is unavailable, fail loud with the exact error and do not substitute. The current host/desktop CA that loads `leader-council-skill` is the temporary leader; no worker identity is hard-coded as leader. RISK_LEVEL / DEV_LEVEL are measurement metadata, not a route table. Do not use a cost chain.
 ## Addressing + Report Rule
 
 - Direct user-facing reply: start `Chào Anh,`.
@@ -62,4 +62,4 @@ Use git_status/git_stale_check/git_diff/git_log for local evidence. git_stage/gi
 - **Investigating council/broker/dispatch/prompt/reply issues â†’ call the [A] tool `council_tracker` FIRST** (HTTP `POST /api/call/council_tracker`). It returns `output_path` to a full `council_live.txt` snapshot (BROKER FILTERED FULL / COUNCIL EVENTS FULL / LIVE RAW COMC FULL) and archives the previous one; read that path. Do NOT manually scrape `.council` raw logs unless `council_tracker` is unavailable or you need a deeper raw file after the snapshot.
 - Greet the target agent directly: `ChÃ o opeC,` / `ChÃ o codoC,` / `ChÃ o kiloC,` / `ChÃ o PiC,` / `ChÃ o clauC,`. Use `ChÃ o Anh,` only for the human user.
 
-Council routing order: no fixed chain; select by task fit. ClauC is excluded from normal routing order.
+Council routing order: no fixed chain; ROUTE RULE SOT = Anh chỉ đạo. ClauC is excluded from normal routing order.

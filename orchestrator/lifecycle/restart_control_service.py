@@ -540,7 +540,7 @@ def build_guard(root: Path, expected_generation: str, expected_request_id: str =
                 snapshot = _refresh_busy_snapshot(snapshot_path, snapshot)
                 livez = _probe_livez(livez_url)
                 publisher_alive = _snapshot_publisher_alive(
-                    snapshot, expected_generation, livez
+                    snapshot, expected_generation, livez,
                 )
         try:
             if not slots_path.exists():
@@ -609,7 +609,7 @@ def _probe_existing_controller(host: str, port: int, timeout: float = 0.5) -> bo
         return bool(
             payload.get("ok")
             and payload.get("service") == "restart-control"
-            and int(payload.get("port", -1)) == port
+            and int(payload.get("port", -1)) == port,
         )
     except Exception:
         return False
@@ -809,7 +809,6 @@ def _auto_heal_monitor(
     """
     import json as _json
     import urllib.request as _ur
-    import urllib.error as _ue
 
     def _probe(url: str, timeout: float) -> bool:
         try:
@@ -940,7 +939,7 @@ def main() -> int:
     controller = RestartController(
         scheduler=scheduler,
         guard=lambda request: build_guard(
-            root, request.expected_generation, request.request_id, livez_url=livez_url
+            root, request.expected_generation, request.request_id, livez_url=livez_url,
         )(),
         current_identity=lambda: _fetch_identity(livez_url),
         prove_stopped=lambda old: _wait_stopped(old, livez_url),
@@ -954,7 +953,7 @@ def main() -> int:
             secret_path=secret_path,
             current_generation=lambda: _fetch_identity(livez_url).generation,
             reload_guards=lambda: build_guard(
-                root, _fetch_identity(livez_url).generation, livez_url=livez_url
+                root, _fetch_identity(livez_url).generation, livez_url=livez_url,
             )(),
             port=args.port,
         )

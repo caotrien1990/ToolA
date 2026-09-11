@@ -819,6 +819,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
 
     regex_worker = None
     effective_regex_deadline = None
+    _narrow_warn = ""
     if mode == "regex":
         from orchestrator import search_regex_worker as regex_worker
 
@@ -828,6 +829,14 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
             else regex_worker.DEFAULT_DEADLINE_SECONDS,
         )
         regex_deadline_at = search_started_at + effective_regex_deadline
+        # Task 3 auto-chain fix: proactive narrow hint for regex on root
+        if (not file_pattern or file_pattern == "*") and not path:
+            _narrow_warn = (
+                "Regex on full repo may timeout. "
+                "Add file_pattern='*.py' or path='orchestrator/' to narrow."
+            )
+        else:
+            _narrow_warn = ""
         try:
             regex_worker.validate_pattern_budget(query)
         except regex_worker.RegexSearchBudgetExceeded as exc:
@@ -1121,10 +1130,11 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         else:  # pragma: no cover - loop either returns or raises
             raise search_snapshots.SnapshotUnavailable("snapshot changed during pin")
     except asyncio.TimeoutError:
-        return json.dumps(
-            _regex_timeout_payload(query, effective_regex_deadline, path, project_path, file_pattern),
-            ensure_ascii=False,
-        )
+        _timeout_resp = _regex_timeout_payload(query, effective_regex_deadline, path, project_path, file_pattern)
+        if _narrow_warn:
+            _timeout_resp["ca_chain_hint"] = _narrow_warn
+            _timeout_resp["ca_chain_next"] = "search_code with file_pattern or path"
+        return json.dumps(_timeout_resp, ensure_ascii=False)
     except Exception as exc:
         if regex_worker is not None and isinstance(exc, regex_worker.RegexSearchInvalid):
             return json.dumps({
@@ -1144,10 +1154,11 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         # divergent contracts (exactly A40 defect 2). Route it to the one shared
         # builder so the caller always gets query + corrected_payload + retry_sequence.
         if regex_worker is not None and isinstance(exc, regex_worker.RegexSearchTimeout):
-            return json.dumps(
-                _regex_timeout_payload(query, effective_regex_deadline, path, project_path, file_pattern),
-                ensure_ascii=False,
-            )
+            _rt_resp = _regex_timeout_payload(query, effective_regex_deadline, path, project_path, file_pattern)
+            if _narrow_warn:
+                _rt_resp["ca_chain_hint"] = _narrow_warn
+                _rt_resp["ca_chain_next"] = "search_code with file_pattern or path"
+            return json.dumps(_rt_resp, ensure_ascii=False)
         if regex_worker is not None and isinstance(exc, regex_worker.RegexSearchError):
             retryable = isinstance(
                 exc,
@@ -1196,6 +1207,10 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         "bounded": True,
         "snapshot_id": producer_payload["snapshot_id"],
     }
+    # Task 3 auto-chain fix: inject regex narrow warning into response
+    if mode == "regex" and _narrow_warn:
+        response["ca_chain_hint"] = _narrow_warn
+        response["ca_chain_next"] = "search_code with file_pattern or path"
     # B026: carry the cap report OUT. This matters most on count==0: the A03 rule below
     # says a 0-hit must never silently read as "not there", and a hit that lived inside a
     # capped file is exactly that shape. The caller sees what was left out and how to

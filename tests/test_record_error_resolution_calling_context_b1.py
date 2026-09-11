@@ -118,6 +118,13 @@ class CallingContextRoundTripTests(unittest.IsolatedAsyncioTestCase):
         orchestrator_server._DUPLICATE_FAILURE_STATE.clear()
         for patch in reversed(self._patches):
             patch.stop()
+        # STT-27 (B032): setUp wrote a real checkpoint row into self._tmpdir/
+        # sessions.db, which lazily started the process-global SessionWriter.
+        # Its drain-loop sqlite conn pins the file, so the rmtree below
+        # silently fails on Windows (WinError 32) and leaks 6 b1_* dirs per
+        # run. close_writer() also drops thread-local read conns — same
+        # contract as _swap_sessions_db in test_orchestrator_server_contract.
+        store.close_writer()
         code_tools._sync_session_db_alias()
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 

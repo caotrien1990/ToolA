@@ -324,7 +324,7 @@ class _Extractor(ast.NodeVisitor):
         makes dead code look alive forever.
         """
         for defs, nondef in zip(reversed(self._scope_defs),
-                                reversed(self._scope_nondef_binds)):
+                                reversed(self._scope_nondef_binds), strict=True):
             if name in nondef:
                 return None
             nid = defs.get(name)
@@ -561,7 +561,7 @@ class _Extractor(ast.NodeVisitor):
     visit_AsyncFunctionDef = visit_FunctionDef
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        nid = self._emit_class(node)
+        self._emit_class(node)
         self._class_stack.append(node.name)
         self._class_stack_lineno.append(node.lineno)
         self.generic_visit(node)
@@ -822,8 +822,8 @@ def extract(source: str, *, file_path: str, project_root: str | None = None,
     }
 
 
-def _extract_tree_sitter(source: str, *, file_path: str, module: str,
-                         source_hash: str) -> dict:
+def _extract_tree_sitter(source: str, *, file_path: str,  # noqa: ARG001
+                         module: str, source_hash: str) -> dict:  # noqa: ARG001
     """Optional tree-sitter path — NOT implemented (A5 deferred).
 
     Always raises ImportError, even when tree_sitter IS installed, so extract()
@@ -833,7 +833,7 @@ def _extract_tree_sitter(source: str, *, file_path: str, module: str,
         import tree_sitter  # noqa: F401
         import tree_sitter_python  # noqa: F401
     except ImportError as e:
-        raise ImportError(f"tree_sitter unavailable: {e}")
+        raise ImportError(f"tree_sitter unavailable: {e}") from e
     # Full tree-sitter extraction is deferred (A5). Force ast fallback for now.
     raise ImportError("tree_sitter extraction not implemented (A5 deferred)")
 

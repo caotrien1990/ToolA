@@ -165,7 +165,7 @@ def _block_or_fail(db_path: store.PathLike, task: dict[str, Any], reason: str) -
         new_state = "blocked"
     elif next_attempt > max_attempts:
         ok = store.cas_transition(
-            db_path, task_id, state, "failed", version, finished_at=datetime.now(timezone.utc).isoformat()
+            db_path, task_id, state, "failed", version, finished_at=datetime.now(timezone.utc).isoformat(),
         )
         kind = "reaper_failed"
         new_state = "failed"
@@ -262,7 +262,7 @@ def scan_once(
             SELECT * FROM tasks
             WHERE state IN ('dispatching','started','verifying')
             ORDER BY id
-            """
+            """,
         ).fetchall()
         tasks = [dict(r) for r in rows]
 

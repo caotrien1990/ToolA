@@ -146,9 +146,17 @@ def test_freshness_is_not_fresh_while_files_are_stale(tmp_path, monkeypatch):
     index_project(str(root), scope="full")
 
     # Make one file stale WITHOUT deleting it, so pruning cannot mask the case.
+    # STT-26: status._stale_count is stat-first now - a row whose size+mtime
+    # still match disk is never hashed, so corrupting content_hash ALONE no
+    # longer reads stale there (the indexer's detect_changes hashes the disk
+    # file and still catches any real drift on the next index run). Clear
+    # modified_at too so the cheap gate falls through to the authoritative
+    # hash comparison, which is what this test is about.
     conn = gstore.get_db(str(root))
     try:
-        conn.execute("UPDATE files SET content_hash='deadbeef' WHERE path='a.py';")
+        conn.execute(
+            "UPDATE files SET content_hash='deadbeef', modified_at=0 "
+            "WHERE path='a.py';")
         conn.commit()
     finally:
         conn.close()

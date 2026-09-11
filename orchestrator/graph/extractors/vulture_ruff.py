@@ -41,11 +41,11 @@ def _scan_env() -> dict:
 
 _VULTURE_RE = re.compile(
     r"^(?P<file>.+?):(?P<line>\d+):\s+"
-    r"(?P<message>.*?)\s+\((?P<confidence>\d+)% confidence\)\s*$"
+    r"(?P<message>.*?)\s+\((?P<confidence>\d+)% confidence\)\s*$",
 )
 _RUFF_RE = re.compile(
     r"^(?P<file>.+):(?P<line>\d+):(?P<col>\d+):\s+"
-    r"(?P<rule>[A-Z]+\d+)\s+(?P<body>.+?)\s*$"
+    r"(?P<rule>[A-Z]+\d+)\s+(?P<body>.+?)\s*$",
 )
 
 _RULE_CATEGORIES: dict[str, list[str]] = {

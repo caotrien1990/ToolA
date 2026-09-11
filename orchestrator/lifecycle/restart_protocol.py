@@ -116,7 +116,7 @@ class BusySnapshotPublisher:
             # restart_control_service._snapshot_publisher_alive.
             self.path.parent.mkdir(parents=True, exist_ok=True)
             temporary = self.path.with_name(
-                f"{self.path.name}.tmp.{os.getpid()}.{threading.get_ident()}.{secrets.token_hex(4)}"
+                f"{self.path.name}.tmp.{os.getpid()}.{threading.get_ident()}.{secrets.token_hex(4)}",
             )
             try:
                 with temporary.open("w", encoding="utf-8") as stream:

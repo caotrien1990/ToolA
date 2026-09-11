@@ -41,7 +41,7 @@ def get_db(project_path: str, *, readonly: bool = False) -> sqlite3.Connection:
         conn.execute("PRAGMA busy_timeout=15000;")
         # Lazy schema init on first open.
         exists = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='nodes' LIMIT 1;"
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='nodes' LIMIT 1;",
         ).fetchone()
         if not exists:
             _schema.init_schema(conn)
@@ -83,7 +83,7 @@ def reset_db(project_path: str) -> None:
             "DROP TABLE IF EXISTS nodes;"
             "DROP TABLE IF EXISTS files;"
             "DROP TABLE IF EXISTS index_runs;"
-            "DROP TABLE IF EXISTS schema_versions;"
+            "DROP TABLE IF EXISTS schema_versions;",
         )
         conn.commit()
         _schema.init_schema(conn)
@@ -394,7 +394,7 @@ def neighbors(conn: sqlite3.Connection, node_id: str, *, direction: str = "out",
         params.extend(kinds)
     params.append(limit)
     rows = conn.execute(
-        f"SELECT * FROM edges WHERE {where} LIMIT ?;", params
+        f"SELECT * FROM edges WHERE {where} LIMIT ?;", params,
     ).fetchall()
     return [dict(r) for r in rows]
 
@@ -425,7 +425,7 @@ def status_counts(conn: sqlite3.Connection) -> dict:
     f = conn.execute("SELECT COUNT(*) FROM files;").fetchone()[0]
     last = conn.execute(
         "SELECT id, started_at, finished_at, scope, status, node_count, edge_count, "
-        "file_count, duration_s FROM index_runs ORDER BY id DESC LIMIT 1;"
+        "file_count, duration_s FROM index_runs ORDER BY id DESC LIMIT 1;",
     ).fetchone()
     return {
         "nodes": n, "edges": e, "files": f,

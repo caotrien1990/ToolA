@@ -1,20 +1,20 @@
 # Project Map
 
 - Schema: 2
-- Generated: 2026-08-19T11:15:14
+- Generated: 2026-09-10T15:27:48
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\orchestrator`
 - Files indexed: 6
 
 ## Groups
 
-- `source`: 6 files, 5622 LOC
+- `source`: 6 files, 5742 LOC
 
 ## Entrypoints
 
 
 ## Hotspots
 
-- `session/store.py`: complexity 302, 1704 LOC, group `source`
+- `session/store.py`: complexity 324, 1824 LOC, group `source`
 - `search_snapshots.py`: complexity 246, 1003 LOC, group `source`
 - `tools/search.py`: complexity 166, 631 LOC, group `source`
 - `server/accounting.py`: complexity 54, 299 LOC, group `source`

@@ -130,7 +130,7 @@ async def list_structure(path: str = "", depth: int = 2, save_output: bool = Fal
 
 
 def _seed_read_token_detailed(fp: Path, project_path: str | None, text: str,
-                              stat_after, force_reseed: bool,
+                              stat_after, _force_reseed: bool,
                               precomputed_hash: str = "") -> tuple[bool, dict]:
     """Seed the write-freshness token, and say WHY when it does not.
 
@@ -179,7 +179,7 @@ def _seed_read_token_detailed(fp: Path, project_path: str | None, text: str,
         return False, {"reason": "upsert_failed", "error": f"{type(exc).__name__}: {exc}"}
 
 
-def _missing_file_response(fp: Path, file_path: str, project_path: str | None) -> str:
+def _missing_file_response(_fp: Path, file_path: str, project_path: str | None) -> str:
     """CAN-053 (codo P1): FILE_NOT_FOUND with negative-path cache, fuzzy
     suggestions from INDEX, and a 3-miss circuit breaker — stop blind probing."""
     import time as _t

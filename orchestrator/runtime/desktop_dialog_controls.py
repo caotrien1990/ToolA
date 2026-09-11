@@ -45,7 +45,7 @@ async def folder_dialog_snapshot(owner_pid: int = 0,
     Pure read — does NOT mutate. Pair with fill_folder_dialog(owner_pid=...) after.
     """
     try:
-        import win32gui
+        pass
     except Exception:
         return json.dumps({"ok": False, "error_name": "PYWIN32_MISSING",
                             "remediation": "pip install pywin32"})

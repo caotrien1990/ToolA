@@ -45,6 +45,16 @@ def use_graph_for(tool_name: str) -> bool:
 GRAPH_CONTEXT_MAX_FILES = int(os.environ.get("GRAPH_CONTEXT_MAX_FILES", "50"))
 GRAPH_CONTEXT_MAX_SYMBOLS = int(os.environ.get("GRAPH_CONTEXT_MAX_SYMBOLS", "200"))
 GRAPH_CONTEXT_TIMEOUT_S = float(os.environ.get("GRAPH_CONTEXT_TIMEOUT_S", "2.0"))
+# P2-S2 analysis_service bounds (Addendum B + L1). Latency contract is
+# deadline + join grace (2000+250=2250ms), not a 2s hard wall.
+ANALYSIS_GRAPH_DEADLINE_MS = int(os.environ.get("ANALYSIS_GRAPH_DEADLINE_MS", "2000"))
+ANALYSIS_EVOLUTION_DEADLINE_MS = int(os.environ.get("ANALYSIS_EVOLUTION_DEADLINE_MS", "5000"))
+ANALYSIS_JOIN_GRACE_MS = int(os.environ.get("ANALYSIS_JOIN_GRACE_MS", "250"))
+ANALYSIS_MAX_ACTIVE_WORKERS = int(os.environ.get("ANALYSIS_MAX_ACTIVE_WORKERS", "2"))
+ANALYSIS_CHECK_EVERY_UNITS = int(os.environ.get("ANALYSIS_CHECK_EVERY_UNITS", "64"))
+ANALYSIS_RESPONSE_MAX_BYTES = int(os.environ.get("ANALYSIS_RESPONSE_MAX_BYTES", "65536"))
+ANALYSIS_TOP_LIST_MAX = int(os.environ.get("ANALYSIS_TOP_LIST_MAX", "50"))
+ANALYSIS_QUEUE_ON_FULL = False
 COUNCIL_CONTEXT_MAX_FILES = int(os.environ.get("COUNCIL_CONTEXT_MAX_FILES", "10"))
 COUNCIL_CONTEXT_MAX_SYMBOLS = int(os.environ.get("COUNCIL_CONTEXT_MAX_SYMBOLS", "50"))
 # Hybrid auto-reindex guard: skip silent reindex when the stale set is larger
@@ -148,6 +158,31 @@ LIVE_REF_BINDS: tuple = (*LIVE_REF_KINDS, LIVE_CALL_CONFIDENCE)
 # store.stale_files) -- an extractor change and a version bump are one change.
 EXTRACTOR_VERSION = "ast-p0-v9-js-imports-are-modules"
 
+# --- P7 Heavy enrich (opt-in, default OFF, stay OFF after install) ---
+# Live env read, never frozen at import (same A13 reason as GRAPH_ENABLED).
+# Flag-OFF callers must not import hooks/status/parser/git/cache — only these
+# cheap readers are allowed on the hot path.
+
+
+def _env_flag(name: str, default: str = "0") -> bool:
+    return os.environ.get(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+
+def enrich_test_enabled() -> bool:
+    """CBM_ENRICH_TEST live flag (H2). Default 0."""
+    return _env_flag("CBM_ENRICH_TEST")
+
+
+def enrich_commit_enabled() -> bool:
+    """CBM_ENRICH_COMMIT live flag (H3). Default 0."""
+    return _env_flag("CBM_ENRICH_COMMIT")
+
+
+def enrich_council_enabled() -> bool:
+    """CBM_ENRICH_COUNCIL live flag (H5). Default 0."""
+    return _env_flag("CBM_ENRICH_COUNCIL")
+
+
 # --- Tree-sitter opt-in (A5 - aspirational, optional) ---
 CBM_USE_TREE_SITTER = os.environ.get("CBM_USE_TREE_SITTER", "0").strip().lower() in ("1", "true", "yes", "on")
 
@@ -173,12 +208,17 @@ def graph_db_path(project_path: str) -> str:
 __all__ = [
     "GRAPH_ENABLED", "graph_enabled", "use_graph_for",
     "GRAPH_CONTEXT_MAX_FILES", "GRAPH_CONTEXT_MAX_SYMBOLS", "GRAPH_CONTEXT_TIMEOUT_S",
+    "ANALYSIS_GRAPH_DEADLINE_MS", "ANALYSIS_EVOLUTION_DEADLINE_MS",
+    "ANALYSIS_JOIN_GRACE_MS", "ANALYSIS_MAX_ACTIVE_WORKERS",
+    "ANALYSIS_CHECK_EVERY_UNITS", "ANALYSIS_RESPONSE_MAX_BYTES",
+    "ANALYSIS_TOP_LIST_MAX", "ANALYSIS_QUEUE_ON_FULL",
     "COUNCIL_CONTEXT_MAX_FILES", "COUNCIL_CONTEXT_MAX_SYMBOLS", "CBM_AUTO_REINDEX_MAX_STALE",
     "INDEX_TIME_BUDGET_CORE_S", "INDEX_TIME_BUDGET_FULL_S", "INDEX_MIN_NODES", "INDEX_MIN_EDGES",
     "CBM_EXACT", "CBM_UNIQUE", "CBM_SAME_MODULE", "CBM_SUFFIX_LOW", "CBM_SUFFIX_HIGH",
     "CBM_LABEL_TO_NUMERIC", "CBM_USE_TREE_SITTER", "CBM_EXTRACT_JS", "graph_db_path",
     "CBM_NAME_LITERAL_MIN_LEN", "EXTRACTOR_VERSION",
     "LIVE_CALL_CONFIDENCE", "LIVE_REF_KINDS", "LIVE_REF_EXISTS_SQL", "LIVE_REF_BINDS",
+    "enrich_test_enabled", "enrich_commit_enabled", "enrich_council_enabled",
 ]
 
 

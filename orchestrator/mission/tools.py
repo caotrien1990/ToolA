@@ -546,7 +546,7 @@ async def leader_bootstrap():
             worker_models = json.loads(models_path.read_text(encoding="utf-8-sig"))
         with _connect(db_path) as conn:
             rows = conn.execute(
-                "SELECT * FROM missions WHERE state IN ('active','blocked') ORDER BY id"
+                "SELECT * FROM missions WHERE state IN ('active','blocked') ORDER BY id",
             ).fetchall()
         try:
             def _q() -> Any:

@@ -191,7 +191,7 @@ def matrix_path() -> str:
 def north_star(matrix: dict[str, Any] | None = None) -> dict[str, Any]:
     m = matrix or load_matrix()
     order = m.get("north_star") or [
-        "Correctness", "Save token", "Less context", "Time fee"
+        "Correctness", "Save token", "Less context", "Time fee",
     ]
     return {
         "acronym": m.get("acronym") or "CSLt",
@@ -418,7 +418,7 @@ def classify_action(
             "allow_readonly",
             "allow_with_log_native_event",
             "hybrid_upgrade_only",
-        )
+        ),
     )
     # hybrid_upgrade_only still requires log; treat as allowed-with-condition
     is_unclassified = not classified
@@ -687,7 +687,7 @@ def encode_classification_reason(base_reason: str, classification: dict) -> str:
 _CA_POL_RE = re.compile(
     r"\[CA_POL\s+task=(?P<task>\S+)\s+np=(?P<np>\S+)\s+tr=(?P<tr>\S+)\s+"
     r"forbid=(?P<forbid>[01])\s+allow=(?P<allow>[01])\s+via=(?P<via>[01])\s+"
-    r"uncls=(?P<uncls>[01])\]"
+    r"uncls=(?P<uncls>[01])\]",
 )
 
 
@@ -756,10 +756,10 @@ def aggregate_metrics_from_events(
     if time_window_hours is not None:
         cutoff = now - timedelta(hours=float(time_window_hours))
 
-    forbidden = allowed = via_a = unclassified = other = 0
+    forbidden = allowed = via_a = unclassified = 0
     by_class: dict[str, dict[str, int]] = defaultdict(
         lambda: {"forbidden_native_count": 0, "allowed_native_count": 0,
-                 "via_a_count": 0, "unclassified_count": 0, "total": 0}
+                 "via_a_count": 0, "unclassified_count": 0, "total": 0},
     )
     by_origin: dict[str, int] = defaultdict(int)
     samples: list[dict] = []
@@ -963,12 +963,12 @@ def query_session_metrics(
                 # fallback: all recent events
                 rows = conn.execute(
                     """SELECT tool_name, tool_origin, action_type, reason, created_at, target
-                       FROM events ORDER BY id DESC LIMIT 2000"""
+                       FROM events ORDER BY id DESC LIMIT 2000""",
                 ).fetchall()
         else:
             rows = conn.execute(
                 """SELECT tool_name, tool_origin, action_type, reason, created_at, target
-                   FROM events ORDER BY id DESC LIMIT 2000"""
+                   FROM events ORDER BY id DESC LIMIT 2000""",
             ).fetchall()
     finally:
         conn.close()

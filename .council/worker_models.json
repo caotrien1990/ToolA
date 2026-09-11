@@ -1,10 +1,26 @@
 {
   "clau": {
     "provider": "claude",
-    "model": "claude-opus-4-8"
+    "model": "claude-opus-5"
   },
   "pic": {
     "provider": "ltnai",
     "model": "deepseek-v4-pro"
+  },
+  "gro": {
+    "provider": "ltnai",
+    "model": "grok-4.6-build"
+  },
+  "ope": {
+    "provider": "openai-compatible",
+    "model": "openai-compatible/grok-4.6-build"
+  },
+  "codo": {
+    "provider": "codex",
+    "model": "grok-4.6-build"
+  },
+  "kilo": {
+    "provider": "ltnai",
+    "model": "ltnai/kimi-k2.7-code"
   }
 }

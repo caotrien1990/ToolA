@@ -105,15 +105,11 @@ Final:
 
 ## Helpers
 
-Task-fit helpers:
+Helpers:
 
-- PiC+DeepSeek: primary bounded evidence, bug, edge-case, and test-gap shard; not sole implementation authority.
-- PiC+Qwen: architecture, conflict analysis, and durable design brainstormer.
-- KiloC+MiniMax: routine implementation/recovery feasibility and bounded code reasoning.
-- OpeC+Qwen: migration, observability, and operational-risk reviewer.
-- HermC+MiniMax or PiC+MiniMax: alternate inexpensive ideas/frontend/failure-mode review; HermC remains secondary because of harness fragility.
-- CodoC+GPT-5.6 Sol: independent high-end judgement/final conflict resolution, not broad evidence gathering.
-- ClauC: exceptional stateful T4/MCP or narrow scoped work only. Kimi K3 remains default-off.
+- The 2026-07-25 helper table is SUSPENDED. Do not default to PiC+DeepSeek, PiC+Qwen, KiloC+MiniMax, OpeC+Qwen, HermC+MiniMax, or CodoC+GPT-5.6 Sol.
+- Dispatch a helper only when Anh names the worker/model or a live pin already exists after SET+GET.
+- ClauC: exceptional stateful T4/MCP or narrow scoped work only.
 - Model selection is per logical agent. Serialize switches for the same agent; parallelize only different agents with independent shards and disjoint artifacts.
 
 Fallback:

@@ -53,7 +53,7 @@ _MCP_PROXY_TIMEOUT_MARGIN = 30.0
 def _mcp_proxy_base_url(srv) -> str:
     port = getattr(srv, "PORT", 8083)
     return os.environ.get(
-        "ORCHESTRATOR_BASE_URL", f"http://127.0.0.1:{port}"
+        "ORCHESTRATOR_BASE_URL", f"http://127.0.0.1:{port}",
     ).rstrip("/")
 
 
@@ -208,7 +208,7 @@ def _mcp_probe_generation(srv) -> dict:
             file_error = f"{type(exc).__name__}: {exc}"
 
     base_url = os.environ.get(
-        "ORCHESTRATOR_BASE_URL", f"http://localhost:{port}"
+        "ORCHESTRATOR_BASE_URL", f"http://localhost:{port}",
     ).rstrip("/")
     try:
         with urllib.request.urlopen(f"{base_url}/health", timeout=2) as resp:
@@ -285,7 +285,7 @@ def _mcp_generation_gate(current_generation: str | None) -> dict | None:
         try:
             sys.stderr.write(
                 f"[mcp_stdio] daemon generation changed {previous} -> "
-                f"{current_generation}; re-baselined (self-heal, calls proxy to live daemon)\n"
+                f"{current_generation}; re-baselined (self-heal, calls proxy to live daemon)\n",
             )
         except Exception:
             pass
@@ -351,7 +351,6 @@ def _mcp_add_generation(text: str, generation) -> str:
 def _load_lessons(srv) -> list:
     """Load LESSONS_LOG.md rows (cached by mtime). Returns list of (keyword, fix)."""
     global _LESSONS_CACHE, _LESSONS_MTIME
-    import time as _time
     try:
         path = srv._HERE / ".council" / "LESSONS_LOG.md"
         if not path.exists():

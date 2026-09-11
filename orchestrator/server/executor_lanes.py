@@ -232,7 +232,7 @@ class ExecutorLane:
                     self._rejection_counts["caller_cancelled"] += 1
                     error = None
             if error is not None:
-                raise error
+                raise error from None
             future.cancel()
             raise
         finally:
@@ -392,7 +392,7 @@ async def shutdown_executor_lanes(*, drain_timeout: float = 10.0) -> list[dict[s
         return_exceptions=True,
     )
     rows: list[dict[str, Any]] = []
-    for lane, result in zip(lanes, results):
+    for lane, result in zip(lanes, results, strict=True):
         if isinstance(result, BaseException):
             row = lane.status()
             row.update({"drained": False, "shutdown_error": str(result)})
@@ -414,7 +414,7 @@ def _reset_executor_lanes_for_tests() -> None:
         if unsafe:
             raise RuntimeError(
                 "cannot reset executor lane registry before shutdown drains: "
-                + ", ".join(sorted(unsafe))
+                + ", ".join(sorted(unsafe)),
             )
         _LANES.clear()
         _LANES_CLOSING = False

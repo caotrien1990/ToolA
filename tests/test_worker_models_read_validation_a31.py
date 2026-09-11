@@ -39,6 +39,15 @@ class TestWorkerModelsReadValidationA31(unittest.TestCase):
     def _write(self, obj):
         self.wm.write_text(json.dumps(obj), encoding="utf-8")
 
+    def _valid_model(self, agent="clau", exclude="claude-opus-4-8"):
+        # STT-27: catalog-driven — the live curated ID_MODELS list is edited by
+        # the user (claude-sonet-5 → claude-sonnet-5 broke two hardcoded
+        # tests). Pick a valid id from the COPIED catalog at runtime so the
+        # test stays green across catalog edits.
+        ids = s._council_valid_models(agent) or []
+        assert ids, "copied ID_MODELS catalog is empty"
+        pick = next((m for m in ids if m != exclude), ids[0])
+        return pick
     # ── Branch A: invalid override -> fall back to config default ──────────────
     def test_garbage_override_falls_back_to_default(self):
         self._write(
@@ -64,16 +73,18 @@ class TestWorkerModelsReadValidationA31(unittest.TestCase):
 
     # ── Branch C: a valid override is still honored ────────────────────────────
     def test_valid_override_is_honored(self):
-        self._write({"clau": {"provider": "claude", "model": "claude-sonet-5"}})
+        pick = self._valid_model()
+        self._write({"clau": {"provider": "claude", "model": pick}})
         prov, model = s._council_worker_model("clau", "claude", "claude-opus-4-8")
-        self.assertEqual(model, "claude-sonet-5")
+        self.assertEqual(model, pick)
 
     def test_provider_mismatch_valid_model_still_honored(self):
         # PROVIDER_MODEL_MISMATCH is a warning (ok=True), NOT a rejection: a valid
         # curated model must not be discarded just because the provider label differs.
-        self._write({"clau": {"provider": "totally-wrong", "model": "claude-sonet-5"}})
+        pick = self._valid_model()
+        self._write({"clau": {"provider": "totally-wrong", "model": pick}})
         _prov, model = s._council_worker_model("clau", "claude", "claude-opus-4-8")
-        self.assertEqual(model, "claude-sonet-5")
+        self.assertEqual(model, pick)
 
     # ── Regression guards for pre-existing behavior ────────────────────────────
     def test_override_equal_to_default_is_honored(self):

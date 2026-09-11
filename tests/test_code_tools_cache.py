@@ -33,7 +33,33 @@ class TestCodeToolsCache(unittest.TestCase):
         )
 
     def tearDown(self):
+        # STT-27 (B032): several tests repoint code_tools._SESSIONS_DB at a
+        # file INSIDE self.tempdir; the process-global SessionWriter and
+        # thread-local read conns hold it open, so rmtree(ignore_errors=True)
+        # silently leaves the dir behind (WinError 32). Release every global
+        # sessions.db handle first — same teardown contract _swap_sessions_db
+        # uses in test_orchestrator_server_contract.py.
+        code_tools._session_store_module.close_writer()
         shutil.rmtree(self.tempdir, ignore_errors=True)
+        # STT-27 (B032): backup_project's default target is
+        # <root.parent>/_orchestrator_backups, i.e. a SIBLING of tempdir that
+        # nothing else cleans. Remove only this class's own archives
+        # (project_orchestrator_test_*), then the dir if empty — whitelist,
+        # never a blanket sibling delete.
+        backups = self.tempdir.parent / '_orchestrator_backups'
+        if backups.is_dir():
+            for item in backups.glob('project_orchestrator_test_*'):
+                if item.is_dir():
+                    shutil.rmtree(item, ignore_errors=True)
+                else:
+                    try:
+                        item.unlink()
+                    except OSError:
+                        pass
+            try:
+                backups.rmdir()
+            except OSError:
+                pass
 
     def test_generate_project_map_and_cache_status(self):
         result = json.loads(asyncio.run(code_tools.generate_project_map(str(self.project_path))))

@@ -13,7 +13,6 @@ production ``missions.db`` in-place without a migration script.
 from __future__ import annotations
 
 import hashlib
-import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -194,7 +193,6 @@ def create_task(db_path: PathLike, mission_id: int, **fields: Any) -> Dict[str, 
             artifact_path=str(fields.get("output_artifact_path") or ""),
         )
 
-    now = _utc_iso()
     with _tx(db_path) as conn:
         # Idempotent insert within the same tx.
         cur = conn.execute(
@@ -360,12 +358,12 @@ def get_schema_version(db_path: PathLike) -> int:
     with _tx(db_path) as conn:
         # Guard: meta table may not exist yet on an uninitialized db.
         exists = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='meta'"
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='meta'",
         ).fetchone()
         if exists is None:
             return 0
         row = conn.execute(
-            "SELECT value FROM meta WHERE key = ?", ("schema_version",)
+            "SELECT value FROM meta WHERE key = ?", ("schema_version",),
         ).fetchone()
         if row is None:
             return 0

@@ -1,0 +1,67 @@
+Chao ClauC,
+
+TASK_ID: ASK-PLANNER-VERIFY-20260830
+OBJECTIVE_CLASS: judgement / scoped bug-scan
+RISK_LEVEL: mid
+DEV_LEVEL: mid
+LOAD_BUDGET_SOURCE: Anh chi dao ClauC (model da SET+GET ngoai prompt)
+INDEPENDENT_QUESTIONS: 4
+FILES_SUBSYSTEMS: ask_planner + routes_read ask path + 3 test files
+EXPECTED_TOOL_CALLS: 8-15 ([A] HTTP only: read_file_range, validate, search_code; NO MCP)
+EXPECTED_WRITES: 0 source; 1 RES outbox bat buoc
+DEPENDENCY_DEPTH: 1
+EXPECTED_END_MARKER: <<END ASK-PLANNER-VERIFY-20260830>>
+
+VERIFY ONLY: no source/runtime edits; appending the required RES block to your own outbox is mandatory and allowed. Khong restart :8082. Khong dung PID. Khong doi DB. Khong ruff_fix. Khong write_fix.
+
+OBJECTIVE: verify buoc Ask planner JSON da lam tren disk; scan bug/code; dung validate [A]. Verdict PASS/PARTIAL/FAIL + danh sach bug file:line.
+
+CONTEXT (leader da do, dung lai, dung doan sai):
+- Host disk: D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\21. ToolQ\bin\clm_lib\ask_planner.py (325 dong, hash 53df0e6e30f0). API: planner_prompts, extract_json_obj, validate_plan, parse_planner_text, heuristic_plan, merge_hit_lists, build_ask_context, run_planned_retrieval.
+- Wired: routes_read.ask_prepare L2098-2141 va handle_ask L2144+ goi run_planned_retrieval. User zone thang plan. top_k = max(request, plan) clamp 1-32. zones=[] = moi zone. Heuristic _PHASE_RE mo rong p1_metadata..p5_embed, top_k=16, khong pin zone.
+- CHUA live tren :8082 (chua restart librarian). CHUA wire LLM first-pass (_ask_once(planner_prompts)) -- chi heuristic tru khi body.planner_text.
+- Tests: tests\test_ask_planner.py 7 case; test_q10_source_ref_provenance.test_legacy_ask_static_check grep ask_planner; test_backend_data_regressions L463 grep chunk_id. Pytest 15/15 truoc compact -- ban PHAI chay lai pytest 3 file nay neu muon claim PASS tests.
+
+[A] VALIDATE leader da chay (khong can lap file/symbols/encoding tru khi ban nghi stale):
+- ask_planner.py: validate file+symbols+encoding PASS; ruff sach; 11 symbols intact; utf-8; graph INDEX CHUA CO file nay (graph_used=false, symbol_not_found / file_not_found).
+- routes_read.py: syntax_ok; 8 ruff PRE-EXISTING (I001 x6, F841 distilled_live L1324, E401 L2928) -- NGOAI scope, KHONG fix. encoding mojibake_markers_present=true (A-circ) mojibake_confirmed=false. handle_ask graph EXACT L1947.
+- test_ask_planner.py: PASS sach.
+- test_q10: I001+F401 json unused -- pre-existing/nho, ngoai scope sua.
+- test_backend_data_regressions: I001 import -- ngoai scope.
+
+SCOPE dung (full path):
+1) D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\21. ToolQ\bin\clm_lib\ask_planner.py
+2) D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\21. ToolQ\bin\clm_lib\routes_read.py -- CHI ask_prepare + handle_ask + handle_pre_search clamp top_k (khoang L1462-1580 va L2098-2400). Khong audit toan file 3015 dong.
+3) D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\21. ToolQ\tests\test_ask_planner.py
+4) D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\21. ToolQ\tests\test_q10_source_ref_provenance.py -- test_legacy_ask_static_check
+5) D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\21. ToolQ\tests\test_backend_data_regressions.py -- test_ask_* thoi
+
+NGOAI SCOPE: Phase 1 UNIFIED, p5 embed, qnight_state.json, .bak, HF cache, leftover store.py/vector.py, ruff_fix routes_read, wire _ask_once planner, restart 8082.
+
+4 CAU HOI DOC LAP (tra loi tung cau, verified vs hypothesis):
+Q1. Host loop dung thiet ke khong: analyze/heuristic -> 1-3 query -> pre_search -> merge -> context [n]/[G] + source_ref -> handle_ask completion? Cho file:line.
+Q2. Bug that (crash, sai zone, mat gold Z5, clamp top_k, user-zone khong thang, empty hits ok:true no_context, graph swallow Exception, user zone khong validate Z1-Z5)?
+Q3. Test gap: host-loop khong goi LLM; live :8082 chua load; con lo nao khien "qnight gom nhung phase nao" van no_context sau restart?
+Q4. validate [A] con thieu gi (validate_encoding routes_read A-circ, graph stale ask_planner)? Khong rerun ruff_fix.
+
+ACCEPT: PASS chi khi Q1-Q4 co evidence file:line VA pytest 3 file that su chay (hoac PARTIAL + ly do skip). Khong doan -- unknown/not verified.
+
+STOP: 2 lan fail tool thi dung bao. Khong chon kien truc. Khong sua code.
+
+OUTPUT (broker <=5 dong tom tat + artifact neu dai):
+- VERDICT: PASS|PARTIAL|FAIL
+- BUGS: file:line -- 1 cau (hoac KHONG)
+- Q1..Q4 moi cau 1-3 cau + file:line
+- TESTS: command + so pass/fail
+- GRAPH_EVIDENCE: (bat buoc, xem block)
+- <<END ASK-PLANNER-VERIFY-20260830>>
+
+GRAPH_CONTEXT:
+graph_status=ok
+graph_used=mixed
+graph_degraded_reason=ask_planner.py not in index (symbol_not_found + file_not_found); routes_read.handle_ask EXACT
+symbols:
+- routes_read.handle_ask bin/clm_lib/routes_read.py:1947 confidence=1.0 EXACT role=target
+- routes_read.ask_prepare (validate_symbols, line ~2098; graph file-mode list co the lech so dong -- dung read_file_range)
+- routes_read.handle_pre_search bin/clm_lib/routes_read.py:1462 confidence=1.0 EXACT
+ask_planner.run_planned_retrieval: NOT IN GRAPH (new file). Do not cite ask_planner symbols as graph claims.

@@ -337,7 +337,7 @@ class DurableAuditWriter:
         self._bump("storage_busy_failures")
         error = AuditStorageBusy(
             f"{operation} exceeded SQLite busy budget "
-            f"({self.db_retry_attempts} attempts x {self.busy_timeout_ms}ms): {last}"
+            f"({self.db_retry_attempts} attempts x {self.busy_timeout_ms}ms): {last}",
         )
         self._set_last_error(error, kind="storage", context=operation)
         raise error from last
@@ -348,7 +348,7 @@ class DurableAuditWriter:
             mode = str(conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]).lower()
             if mode != "wal":
                 raise AuditSchemaMismatch(
-                    f"durable audit database requires WAL journal mode, got {mode!r}"
+                    f"durable audit database requires WAL journal mode, got {mode!r}",
                 )
             # Serialize schema discovery plus additive DDL at the database.
             # A process-local lock would not protect multiple orchestrators.
@@ -385,7 +385,7 @@ class DurableAuditWriter:
                 int(row["pk"]),
             )
             for row in conn.execute(
-                "PRAGMA table_info(durable_audit_outbox)"
+                "PRAGMA table_info(durable_audit_outbox)",
             ).fetchall()
         }
 
@@ -403,7 +403,7 @@ class DurableAuditWriter:
     def _validate_existing_base_schema(self, conn: sqlite3.Connection) -> None:
         actual = self._actual_columns(conn)
         base_names = set(self._EXPECTED_COLUMNS) - {
-            "lease_owner", "lease_until", "next_attempt_at"
+            "lease_owner", "lease_until", "next_attempt_at",
         }
         mismatches = []
         for name in base_names:
@@ -412,13 +412,13 @@ class DurableAuditWriter:
                 mismatches.append(f"missing column {name}")
             elif actual[name] != expected:
                 mismatches.append(
-                    f"column {name} expected {expected}, found {actual[name]}"
+                    f"column {name} expected {expected}, found {actual[name]}",
                 )
         if self._state_constraint_missing(conn):
             mismatches.append("state CHECK must allow only pending/applied")
         if mismatches:
             raise AuditSchemaMismatch(
-                f"{self.TABLE} schema mismatch: " + "; ".join(sorted(mismatches))
+                f"{self.TABLE} schema mismatch: " + "; ".join(sorted(mismatches)),
             )
 
     def _migrate_lease_columns(self, conn: sqlite3.Connection) -> None:
@@ -443,13 +443,13 @@ class DurableAuditWriter:
                 mismatches.append(f"missing column {name}")
             elif actual[name] != expected:
                 mismatches.append(
-                    f"column {name} expected {expected}, found {actual[name]}"
+                    f"column {name} expected {expected}, found {actual[name]}",
                 )
         if self._state_constraint_missing(conn):
             mismatches.append("state CHECK must allow only pending/applied")
         if mismatches:
             raise AuditSchemaMismatch(
-                f"{self.TABLE} schema mismatch: " + "; ".join(mismatches)
+                f"{self.TABLE} schema mismatch: " + "; ".join(mismatches),
             )
 
     def _validate_indexes(self, conn: sqlite3.Connection) -> None:
@@ -458,7 +458,7 @@ class DurableAuditWriter:
         expected_indexes = {
             self.INDEX: ["state", "created_at", "audit_id"],
             self.LEASE_INDEX: [
-                "state", "next_attempt_at", "lease_until", "created_at", "audit_id"
+                "state", "next_attempt_at", "lease_until", "created_at", "audit_id",
             ],
         }
         for index_name, expected in expected_indexes.items():
@@ -470,7 +470,7 @@ class DurableAuditWriter:
             ]
             if columns != expected:
                 raise AuditSchemaMismatch(
-                    f"{index_name} columns expected {expected}, found {columns}"
+                    f"{index_name} columns expected {expected}, found {columns}",
                 )
     @staticmethod
     def _canonical_payload(payload: Any) -> str:
@@ -500,7 +500,7 @@ class DurableAuditWriter:
         return audit_id, kind
 
     def _stage_transaction(
-        self, audit_id: str, kind: str, payload_json: str
+        self, audit_id: str, kind: str, payload_json: str,
     ) -> AuditAck | _CapacityFull:
         conn = self._connect()
         try:
@@ -516,7 +516,7 @@ class DurableAuditWriter:
                 ):
                     conn.execute("ROLLBACK")
                     raise AuditIdConflict(
-                        f"audit_id {audit_id!r} already exists with different content"
+                        f"audit_id {audit_id!r} already exists with different content",
                     )
                 state = str(existing["state"])
                 conn.execute("COMMIT")
@@ -524,8 +524,8 @@ class DurableAuditWriter:
 
             pending = int(
                 conn.execute(
-                    f"SELECT COUNT(*) FROM {self.TABLE} WHERE state='pending'"
-                ).fetchone()[0]
+                    f"SELECT COUNT(*) FROM {self.TABLE} WHERE state='pending'",
+                ).fetchone()[0],
             )
             if pending >= self.capacity:
                 conn.execute("ROLLBACK")
@@ -579,7 +579,7 @@ class DurableAuditWriter:
                 except AuditIdConflict as exc:
                     self._bump("id_conflicts_total")
                     self._set_last_error(
-                        exc, kind="id_conflict", context=audit_id
+                        exc, kind="id_conflict", context=audit_id,
                     )
                     raise
                 if not isinstance(result, _CapacityFull):
@@ -594,12 +594,12 @@ class DurableAuditWriter:
                     self._bump("capacity_rejections")
                     error = AuditCapacityError(
                         f"durable audit capacity {self.capacity} is full "
-                        f"({result.pending} pending); no event was dropped"
+                        f"({result.pending} pending); no event was dropped",
                     )
                     self._set_last_error(error)
                     raise error
                 self._condition.wait(
-                    timeout=min(remaining, self.poll_interval_s)
+                    timeout=min(remaining, self.poll_interval_s),
                 )
 
         if result.state == "pending":
@@ -656,7 +656,7 @@ class DurableAuditWriter:
                 )
                 if current is None:
                     raise AuditWriterError(
-                        f"staged audit row {audit_id!r} disappeared"
+                        f"staged audit row {audit_id!r} disappeared",
                     )
                 state, last_error = current
                 if state == "applied":
@@ -671,14 +671,14 @@ class DurableAuditWriter:
                     suffix = f"; last sink error: {last_error}" if last_error else ""
                     error = AuditApplyTimeout(
                         f"audit_id {audit_id!r} remains pending after {timeout:.3f}s"
-                        f"{suffix}"
+                        f"{suffix}",
                     )
                     self._set_last_error(
-                        error, kind="apply_timeout", context=audit_id
+                        error, kind="apply_timeout", context=audit_id,
                     )
                     raise error
                 self._condition.wait(
-                    timeout=min(remaining, self.poll_interval_s)
+                    timeout=min(remaining, self.poll_interval_s),
                 )
 
     def _claim_pending_batch(self) -> list[AuditRecord]:
@@ -758,7 +758,7 @@ class DurableAuditWriter:
                 payload = json.loads(str(row["payload_json"]))
             except json.JSONDecodeError as exc:
                 raise AuditSchemaMismatch(
-                    f"invalid payload_json for audit_id {row['audit_id']!r}: {exc}"
+                    f"invalid payload_json for audit_id {row['audit_id']!r}: {exc}",
                 ) from exc
             records.append(
                 AuditRecord(
@@ -767,7 +767,7 @@ class DurableAuditWriter:
                     payload=payload,
                     created_at=float(row["created_at"]),
                     attempt_count=int(row["attempt_count"]),
-                )
+                ),
             )
         return records
 
@@ -936,7 +936,7 @@ class DurableAuditWriter:
         if sink_error is not None:
             self._bump("apply_failures")
             self._set_last_error(
-                sink_error, kind="sink", context=record.audit_id
+                sink_error, kind="sink", context=record.audit_id,
             )
             try:
                 if not self._record_sink_failure(record, sink_error):
@@ -980,7 +980,7 @@ class DurableAuditWriter:
             while not self._stop.is_set():
                 try:
                     batch = self._retry_db(
-                        "claim pending audit batch", self._claim_pending_batch
+                        "claim pending audit batch", self._claim_pending_batch,
                     )
                 except AuditWriterError as exc:
                     self._set_last_error(exc)
@@ -1039,8 +1039,8 @@ class DurableAuditWriter:
             try:
                 return int(
                     conn.execute(
-                        f"SELECT COUNT(*) FROM {self.TABLE} WHERE state='pending'"
-                    ).fetchone()[0]
+                        f"SELECT COUNT(*) FROM {self.TABLE} WHERE state='pending'",
+                    ).fetchone()[0],
                 )
             finally:
                 conn.close()
@@ -1059,7 +1059,7 @@ class DurableAuditWriter:
                 if remaining <= 0:
                     return False
                 self._condition.wait(
-                    timeout=min(remaining, self.poll_interval_s)
+                    timeout=min(remaining, self.poll_interval_s),
                 )
 
     def metrics(self) -> dict[str, Any]:
@@ -1068,12 +1068,12 @@ class DurableAuditWriter:
             try:
                 counts: dict[str, Any] = {"pending": 0, "applied": 0}
                 for row in conn.execute(
-                    f"SELECT state, COUNT(*) AS n FROM {self.TABLE} GROUP BY state"
+                    f"SELECT state, COUNT(*) AS n FROM {self.TABLE} GROUP BY state",
                 ):
                     state = str(row["state"])
                     if state not in counts:
                         raise AuditSchemaMismatch(
-                            f"unexpected durable audit state {state!r}"
+                            f"unexpected durable audit state {state!r}",
                         )
                     counts[state] = int(row["n"])
                 now = time.time()
@@ -1116,11 +1116,11 @@ class DurableAuditWriter:
                     "capacity": self.capacity,
                     "admission_open": self._admission_open,
                     "worker_alive": bool(
-                        self._thread is not None and self._thread.is_alive()
+                        self._thread is not None and self._thread.is_alive(),
                     ),
                     "lease_duration_s": self.lease_duration_s,
                     "owner_token_suffix": self._owner_token[-8:],
-                }
+                },
             )
         return result
 
@@ -1143,7 +1143,7 @@ class DurableAuditWriter:
                         if remaining <= 0:
                             break
                         self._condition.wait(
-                            timeout=min(remaining, self.poll_interval_s)
+                            timeout=min(remaining, self.poll_interval_s),
                         )
                         pending = self.pending_count()
         except Exception as exc:

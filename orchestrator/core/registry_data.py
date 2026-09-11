@@ -970,7 +970,7 @@ V15_R8_SCHEMAS = [
 
 {"type": "function", "function": {"name": "hermes_host_gate_check", "description": "T1 READ: Hermes/peer host gate for project vs outside-project native ops (CSLt axis 3).", "parameters": {"type": "object", "properties": {"agent_id": {"type": "string", "default": "hermes"}, "project_path": {"type": "string"}, "target": {"type": "string"}, "scope": {"type": "string"}, "tool_name": {"type": "string"}, "action_type": {"type": "string"}, "transport": {"type": "string", "enum": ["native", "via_a"], "default": "native"}}}}},
 
-{"type": "function", "function": {"name": "normalize_ca_registration", "description": "T3 WRITE: normalize agents_registry.json — mode=A default + transport_policy (http_only for CLI C-suffix, a_first_mcp_t4_ok for desktop). dry_run default true.", "parameters": {"type": "object", "properties": {"dry_run": {"type": "boolean", "default": True}}}}}
+{"type": "function", "function": {"name": "normalize_ca_registration", "description": "T3 WRITE: normalize agents_registry.json — mode=A default + transport_policy (http_only for CLI C-suffix, a_first_mcp_t4_ok for desktop). dry_run default true.", "parameters": {"type": "object", "properties": {"dry_run": {"type": "boolean", "default": True}}}}},
 
 ]
 

@@ -449,7 +449,7 @@ def _schema_ok(conn) -> bool:
     names = {
         r[0]
         for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
+            "SELECT name FROM sqlite_master WHERE type='table'",
         ).fetchall()
     }
     return {"nodes", "edges", "files"}.issubset(names)
@@ -462,7 +462,7 @@ def _edge_rows(conn) -> list[dict[str, Any]]:
         "JOIN nodes s ON s.id = e.source "
         "JOIN nodes t ON t.id = e.target "
         "WHERE e.kind = 'imports_module' AND e.is_external = 0 "
-        "ORDER BY s.file_path, t.file_path, e.confidence DESC"
+        "ORDER BY s.file_path, t.file_path, e.confidence DESC",
     ).fetchall()
     out: list[dict[str, Any]] = []
     for r in rows:
@@ -660,7 +660,7 @@ def build_analysis_view(
             return payload
         raw_edges = _edge_rows(conn)
         file_hash_rows = conn.execute(
-            "SELECT path, content_hash FROM files ORDER BY path"
+            "SELECT path, content_hash FROM files ORDER BY path",
         ).fetchall()
     finally:
         conn.close()

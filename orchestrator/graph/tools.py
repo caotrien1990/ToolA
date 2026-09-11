@@ -344,8 +344,8 @@ async def cbm_dead_code(project_path: str = "", limit: int = 50,
         # Task 4 auto-chain: hint write_fix when dead code found
         _dead = result.get("dead") or result.get("dead_code") or []
         if _dead:
-            result["ca_hint"] = "write_fix available to remove dead code entries"
-            result.setdefault("ca_next_action", "write_fix")
+            result["ca_chain_hint"] = "write_fix available to remove dead code entries"
+            result["ca_chain_next"] = "write_fix"
         return _ok(result)
     except Exception as e:
         return _err("cbm_dead_code", e)
@@ -799,8 +799,8 @@ async def cbm_test_gap(
             # Task 4 auto-chain: hint quality_gate after test_gap
             _gaps = result.get("gaps") or result.get("uncovered") or []
             if _gaps:
-                result["ca_hint"] = "cbm_quality_gate available to check coverage threshold"
-                result.setdefault("ca_next_action", "cbm_quality_gate")
+                result["ca_chain_hint"] = "cbm_quality_gate available to check coverage threshold"
+                result["ca_chain_next"] = "cbm_quality_gate"
         return _ok(result)
     except Exception as e:
         return _err("cbm_test_gap", e)

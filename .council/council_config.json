@@ -1,43 +1,43 @@
 {
   "version": "3.2-route-measurement-20260725",
-  "_doc": "SINGLE SOURCE OF TRUTH for council config. Route by task fit and benchmark evidence, not by a cost chain. Edit here, then run council_config_sync when derived council docs change. Known CLIs keep built-in argv branches; optional argv overrides remain supported.",
+  "_doc": "SINGLE SOURCE OF TRUTH for council config. Route rule SOT = Anh chỉ đạo. Do not use a cost chain. The 2026-07-25 benchmark table is SUSPENDED. Edit here, then run council_config_sync when derived council docs change. Known CLIs keep built-in argv branches; optional argv overrides remain supported.",
   "agents": {
     "clau": {
       "label": "ClauC",
       "bridge": "clau",
       "enabled": true,
       "can_write_A": true,
-      "role": "Judgement and scoped bug-fix on existing code with a narrow evidence pack. Master dev only when the same issue has failed council retry more than 2 times. MCP only for explicit T4/runtime/DOM/CDP/browser stateful work. Not for broad scan/read/context gathering or new-code creation.",
+      "role": "Judgement and scoped bug-fix on existing code with a narrow evidence pack. Master dev only when the same issue has failed council retry more than 2 times. MCP only for explicit T4/runtime/DOM/CDP/browser stateful work. Not for broad scan/read/context gathering or new-code creation. Dispatch via claudeltnai with live LTNAI Claude Opus 5. Catalog also has claude-opus-4-8 and claude-sonnet-5.",
       "provider": "claude",
-      "model": "claude-opus-4-8",
+      "model": "claude-opus-5",
       "caps": {
         "broker": true,
         "context": false,
         "enabled": true
       },
-      "cli_channel": "claude --print --model claude-opus-4-8 -p \"<prompt>\"  [diagnostic only; dispatch via council_message; log .council\\log_clau.txt]"
+      "cli_channel": "claudeltnai --print --model claude-opus-5 -p \"<prompt>\"  [diagnostic only; dispatch via council_message; log .council\\log_clau.txt]"
     },
     "codo": {
       "label": "CodoC",
       "bridge": "codo",
       "enabled": true,
       "can_write_A": true,
-      "role": "High-end council worker fixed to GPT-5.6 Sol: judgement, independent audit, high-difficulty development, code building, plan drafting, and final conflict resolution. CodoC is not the default leader and is not for broad evidence scans.",
+      "role": "High-end council worker on CodexLTNAI grok-4.6-build when Anh names CodoC: judgement, independent audit, high-difficulty development, code building, plan drafting, and final conflict resolution. CodoC is not the default leader and is not for broad evidence scans. ox-alpha deferred. GPT Sol discontinued.",
       "provider": "codex",
-      "model": "gpt-5.6-sol",
+      "model": "grok-4.6-build",
       "caps": {
         "broker": true,
         "context": false,
         "enabled": true
       },
-      "cli_channel": "codex exec --ephemeral --model gpt-5.6-sol -c model_reasoning_effort=\"xhigh\" --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check \"<prompt>\"  [uses the active user CODEX_HOME/config; dispatch via council_message; log .council\\log_codo.txt]"
+      "cli_channel": "codexltnai exec --ephemeral --model grok-4.6-build -c model_reasoning_effort=\"xhigh\" --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check \"<prompt>\"  [uses CODEX_HOME=.codex-ltnai; dispatch via council_message; log .council\\log_codo.txt]"
     },
     "kilo": {
       "label": "KiloC",
       "bridge": "kilo",
       "enabled": true,
       "can_write_A": false,
-      "role": "Most stable basic harness observed. Default cost-effective route: ltnai/minimax-m3 for routine implementation reasoning, backend operational design, recovery, lease/fencing and bounded code work. Qwen for secondary logic review. DeepSeek only for narrow scans, not sole long-horizon design. Kimi K3 default-off; GPT-5.6 Sol unavailable in curated list.",
+      "role": "Kilo harness. No Anh-directed default route cell. Do not apply the suspended 2026-07-25 MiniMax/Qwen/DeepSeek defaults. Use only when Anh names KiloC or a live pin already exists after SET+GET.",
       "provider": "ltnai",
       "model": "ltnai/glm-5.2",
       "caps": {
@@ -52,7 +52,7 @@
       "bridge": "pic",
       "enabled": true,
       "can_write_A": false,
-      "role": "Benchmark-calibrated multi-model Pi harness. Primary: qwen3.7-max for complex logic/conflict/durable design. DeepSeek V4 Pro for cheap adversarial bug/edge scans. MiniMax M3 for alternate brainstorm/frontend review. GPT-5.6 Sol is available but expensive. Kimi K3 is DEFAULT-OFF after Round 0 transport failure.",
+      "role": "Pi harness. No Anh-directed default route cell. Do not apply the suspended 2026-07-25 Qwen/DeepSeek/MiniMax/Sol defaults. Use only when Anh names PiC or a live pin already exists after SET+GET.",
       "provider": "ltnai",
       "model": "deepseek-v4-pro",
       "caps": {
@@ -80,9 +80,9 @@
       "bridge": "ope",
       "enabled": true,
       "can_write_A": false,
-      "role": "Benchmark-calibrated OpenCode harness. Primary: openai-compatible/qwen3.7-max for operational, migration and observability review. DeepSeek V4 Pro for bounded evidence/bug scans. MiniMax M3 for cheap alternate review. Kimi K3 and GPT-5.6 Sol are not default routes.",
-      "provider": "opencode-zen",
-      "model": "opencode/deepseek-v4-flash-free",
+      "role": "OpenCode harness. Live pin openai-compatible/grok-4.6-build (LTNAI) until Anh changes it. Suspended 2026-07-25 Qwen/MiniMax/Sol/Kimi defaults are not live routes.",
+      "provider": "openai-compatible",
+      "model": "openai-compatible/grok-4.6-build",
       "caps": {
         "broker": true,
         "context": false,
@@ -95,7 +95,7 @@
       "bridge": "hermes",
       "enabled": true,
       "can_write_A": false,
-      "role": "Benchmark-calibrated Hermes harness. Use MiniMax M3 for bounded alternate failure-mode/frontend review; Qwen for secondary logic review; DeepSeek for evidence/bug scans. Harness has higher integration fragility. Kimi K3 is DEFAULT-OFF after HTTP 400; GPT-5.6 Sol unavailable in curated list.",
+      "role": "Hermes harness. No Anh-directed default route cell. Do not apply the suspended 2026-07-25 MiniMax/Qwen/DeepSeek defaults. Use only when Anh names HermC or a live pin already exists after SET+GET.",
       "provider": "ltnai",
       "model": "deepseek-v4-pro",
       "caps": {
@@ -110,15 +110,15 @@
       "bridge": "gro",
       "enabled": true,
       "can_write_A": false,
-      "role": "Grok CLI worker on LTNAI provider model xAI-grok-4.6-build. Grok-native reasoning plus loaded design/bugs-scan/code skills. Dispatch via council_message.",
+      "role": "Grok CLI worker on live LTNAI wire ID grok-4.6-build. Grok-native reasoning plus loaded design/bugs-scan/code skills. Dispatch via council_message.",
       "provider": "ltnai",
-      "model": "xAI-grok-4.6-build",
+      "model": "grok-4.6-build",
       "caps": {
         "broker": true,
         "context": false,
         "enabled": true
       },
-      "cli_channel": "C:\\Users\\ADMIN\\.grok\\bin\\grok.exe -p \"<prompt>\" -m xAI-grok-4.6-build --yolo  [diagnostic only; dispatch via council_message; log .council\\log_gro.txt]",
+      "cli_channel": "C:\\Users\\ADMIN\\.grok\\bin\\grok.exe -p \"<prompt>\" -m grok-4.6-build --yolo  [diagnostic only; dispatch via council_message; log .council\\log_gro.txt]",
       "argv": [
         "C:\\Users\\ADMIN\\.grok\\bin\\grok.exe",
         "-p",
@@ -148,37 +148,26 @@
     "gro",
     "user"
   ],
-  "coordination_rule": "The user-triggered desktop/current CA that loads leader-council-skill is the temporary leader; no CA identity is hard-coded as leader. Classify RISK_LEVEL and DEV_LEVEL before routing. Low-risk/low-dev may use KiloC+MiniMax for routine work or PiC+DeepSeek for bounded read-only scans. Mid-risk requires an independent reviewer. High-risk work requires PiC+Qwen design, CodoC independent high-end audit/judgement/high-dev, and OpeC+Qwen operational review as applicable; DeepSeek/MiniMax are never sole authority. CodoC is a worker route, not leader by default. No cost chain.",
-  "parallelism_rule": "The current leader CA may dispatch independent tasks in parallel when output ownership is disjoint. Serialize overlapping writes. RISK_LEVEL and DEV_LEVEL set the verification floor; high-risk shards require independent high-end review regardless of dev difficulty.",
-  "mission": "Route by task fit plus RISK_LEVEL x DEV_LEVEL. Low/low: routine bounded route. Mid risk: independent reviewer. High risk: PiC+Qwen design, CodoC independent audit/judgement/high-dev, OpeC+Qwen operational review; cheap models evidence-only. CodoC is a worker, ClauC exceptional-only, no cost chain.",
-  "guardrail_harness_rule": "The current CA reading leader-council-skill is leader. Classify RISK_LEVEL and DEV_LEVEL before exact harness+model routing. High-risk work cannot use DeepSeek/MiniMax as sole authority. CodoC is the high-end judgement/audit/high-dev worker, not a hard-coded leader.",
+  "coordination_rule": "The user-triggered desktop/current CA that loads leader-council-skill is the temporary leader; no CA identity is hard-coded as leader. ROUTE RULE SOT = Anh chỉ đạo. Classify RISK_LEVEL and DEV_LEVEL as measurement metadata only. Do not map them to the suspended 2026-07-25 table. Route only when Anh names the worker/model or after council_worker_model SET+GET of the live pin. CodoC is a worker route, not leader by default. ClauC is exceptional-only. No cost chain.",
+  "parallelism_rule": "The current leader CA may dispatch independent tasks in parallel when output ownership is disjoint. Serialize overlapping writes. RISK_LEVEL and DEV_LEVEL set the verification floor; they do not select a worker/model from the suspended table.",
+  "mission": "Route only from Anh chỉ đạo or the live pin after SET+GET. RISK_LEVEL x DEV_LEVEL is measurement metadata, not a route table. CodoC is a worker, ClauC exceptional-only, no cost chain. Benchmark 2026-07-25 table SUSPENDED.",
+  "guardrail_harness_rule": "The current CA reading leader-council-skill is leader. Do not apply the suspended benchmark table. CodoC is a high-end worker when Anh names CodoC, not a hard-coded leader. ClauC is excluded from normal routing order.",
   "task_routing": {
-    "complex_logic / conflict_analysis / architecture / durable_design": "PiC + qwen3.7-max primary design. KiloC + minimax-m3 cross-checks recovery. CodoC + gpt-5.6-sol provides high-end judgement or resolves high-risk conflicts.",
-    "routine_implementation / backend_operations / recovery / bounded_code": "KiloC + ltnai/minimax-m3 default cost-effective route; verify long-horizon gaps when risk is high.",
-    "bug_scan / edge_cases / adversarial_review / test_gaps": "PiC + deepseek-v4-pro primary cheap adversarial scanner. OpeC/HermC + DeepSeek may take bounded independent evidence shards. KiloC+DeepSeek is last scan fallback, never sole design authority.",
-    "migration / observability / operational_review": "OpeC + openai-compatible/qwen3.7-max secondary reviewer.",
-    "brainstorm / frontend_ui / alternate_failure_review": "PiC + minimax-m3 or HermC + minimax-m3; HermC remains secondary due harness fragility.",
-    "code_builder / plan_drafter / final_conflict": "CodoC + gpt-5.6-sol for difficult code building, plan drafting, judgement and final conflict resolution; worker route, not default leader; avoid broad scans.",
-    "kimi_k3": "DEFAULT_OFF_BENCHMARK_FAILED for PiC/HermC/OpeC/KiloC until transport/provider repair and fresh Round 0 PASS.",
-    "gpt_5_6_on_switchable_harness": "PiC only is currently verified; HermC/OpeC/KiloC unavailable until curated lists and Round 0 pass.",
-    "T4_runtime_DOM_browser": "ClauC only when explicit stateful T4/MCP is required; exceptional route outside normal routing order.",
-    "independent_audit / high_dev / judgement": "CodoC + gpt-5.6-sol for evidence-based independent audit, high-difficulty development and high-stakes judgement.",
-    "risk_low / dev_low": "KiloC+MiniMax for routine bounded implementation; PiC+DeepSeek for read-only adversarial scan; leader/[A] verifies reversible output.",
-    "risk_mid / dev_low_mid": "PiC+Qwen when logic changes; KiloC+MiniMax implementation; at least one independent reviewer, normally OpeC+Qwen for operations.",
-    "risk_mid / dev_high": "PiC+Qwen design + CodoC high-dev/judgement; OpeC+Qwen operations review; cross-verify before merge.",
-    "risk_high / any_dev": "PiC+Qwen design, CodoC independent high-end audit/judgement/high-dev, OpeC+Qwen operational review; explicit human/mission gate, rollback and failure tests; DeepSeek/MiniMax evidence-only."
+    "SOT": "Anh chỉ đạo. Benchmark 2026-07-25 table SUSPENDED. Do not use PiC+Qwen, KiloC+MiniMax, CodoC+ox-alpha, CodoC+GPT-5.6 Sol, PiC+DeepSeek, OpeC+Qwen, or Kimi DEFAULT_OFF as live defaults. Route only when Anh names the worker/model or after SET+GET of the live pin.",
+    "T4_runtime_DOM_browser": "ClauC only when explicit stateful T4/MCP is required; exceptional route outside normal routing order."
   },
-  "worker_routing_spec": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\17. Council_Tr\\context_pool_specs\\WORKER_ROUTING_SPEC_v3.md",
+  "worker_routing_spec": "SUSPENDED: D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\17. Council_Tr\\context_pool_specs\\WORKER_ROUTING_SPEC_v3.md is archive only. Live SOT = Anh chỉ đạo plus live pins.",
   "stale_memory_corrections": [
-    "Pre-benchmark model-only mission routing is obsolete as default; route by harness+model.",
-    "Kimi K3 is DEFAULT_OFF_BENCHMARK_FAILED on PiC/HermC/OpeC/KiloC.",
-    "Old GLM 5.2, Kimi K2.7, Mimo V2.5 and DeepSeek Flash defaults are historical and not current leader defaults.",
-    "CodoC fixed model is gpt-5.6-sol, not gpt-5.5.",
-    "Same-model workers are not interchangeable; benchmark quality and harness reliability differ.",
-    "Cost-chain routing is obsolete; route by task fit and benchmark evidence.",
-    "CodoC is a high-end worker for judgement, independent audit and high-difficulty development; it is not the default leader.",
-    "ClauC is excluded from normal routing order and used only for explicit exceptional T4/scoped work.",
-    "The benchmark used one correctness-sensitive idempotency case; low/mid/high risk routing is conservative policy, not independently benchmarked risk-tier evidence."
+    "Benchmark 2026-07-25 route table is SUSPENDED. Do not mix those cells while operating.",
+    "Route rule SOT = Anh chỉ đạo. No replacement table.",
+    "CodoC live pin is grok-4.6-build on CodexLTNAI. ox-alpha deferred. GPT Sol/Terra/Luna discontinued.",
+    "ClauC live pin is claude-opus-5 via claudeltnai. Catalog also claude-opus-4-8 and claude-sonnet-5.",
+    "OpeC and GroC live pin is grok-4.6-build until Anh changes it.",
+    "KiloC / PiC / HermC have no Anh-directed default cell.",
+    "Same-model workers are not interchangeable.",
+    "Cost-chain routing is obsolete.",
+    "CodoC is a high-end worker; it is not the default leader.",
+    "ClauC is excluded from normal routing order and used only for explicit exceptional T4/scoped work."
   ],
   "measurement_policy": {
     "schema_version": 1,

@@ -18,15 +18,13 @@ from typing import Optional
 from .config import (
     graph_enabled, GRAPH_CONTEXT_MAX_FILES, GRAPH_CONTEXT_MAX_SYMBOLS,
     GRAPH_CONTEXT_TIMEOUT_S, COUNCIL_CONTEXT_MAX_FILES, COUNCIL_CONTEXT_MAX_SYMBOLS,
-    CBM_AUTO_REINDEX_MAX_STALE, LIVE_REF_EXISTS_SQL, LIVE_REF_BINDS,
+    CBM_AUTO_REINDEX_MAX_STALE,
 )
 from . import store as _store
 from .indexer import incremental_index
 from .status import _stale_count
 from .liveness import (
     is_entry_point as _is_entry_point,
-    framework_dispatch_methods as _framework_dispatch_methods,
-    is_framework_dispatch as _is_framework_dispatch,
     dead_callables as _dead_callables,
 )
 
@@ -181,7 +179,7 @@ def cbm_trace_path(project_path: str, start_node_id: str, *,
         try:
             # validate start node exists
             start_row = conn.execute(
-                "SELECT id, file_path FROM nodes WHERE id=?;", (start_node_id,)
+                "SELECT id, file_path FROM nodes WHERE id=?;", (start_node_id,),
             ).fetchone()
             if not start_row:
                 # B023: `truncation_reason` is kept because
@@ -235,7 +233,7 @@ def cbm_trace_path(project_path: str, start_node_id: str, *,
                         visited.add(nxt)
                         # resolve node to track files
                         nrow = conn.execute(
-                            "SELECT file_path FROM nodes WHERE id=?;", (nxt,)
+                            "SELECT file_path FROM nodes WHERE id=?;", (nxt,),
                         ).fetchone()
                         if nrow:
                             if len(files_seen) >= max_files:
@@ -447,7 +445,7 @@ def template_query(project_path: str, template: str, *, name: str = "",
                     # Single query per edge + None-safe (BUG-1 fix: was 2x conn.execute
                     # per edge with unprotected fetchone()[0]).
                     rows = [conn.execute(
-                        "SELECT file_path FROM nodes WHERE id=?;", (e["source"],)
+                        "SELECT file_path FROM nodes WHERE id=?;", (e["source"],),
                     ).fetchone() for e in tr["edges"]]
                     files = sorted({r[0] for r in rows if r})
                     res = [{"start": node["id"], "affected_files": files,

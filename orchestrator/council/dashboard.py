@@ -24,7 +24,6 @@ def _server_module():
 def render_council_dashboard() -> str:
     srv = _server_module()
 
-    generated_at = srv.time.strftime('%Y-%m-%d %H:%M:%S')
     esc = __import__('html').escape
     cards = []
     for agent in srv._council_dashboard_agents():
@@ -2136,7 +2135,10 @@ def render_council_dashboard() -> str:
   <header>
     <div class="header-row">
       <h1>Council Dashboard</h1>
-      <button id="clear-council-session" class="clear-session-button" type="button">Clear session</button>
+      <div style="display:flex;align-items:center;gap:8px">
+        <a href="/council/glass" title="Open Liquid Glass theme (secondary)" style="align-self:center; text-decoration:none; color:var(--accent); border:1px solid var(--border); border-radius:6px; padding:6px 10px; font-size:12px; font-weight:600; background:var(--panel);">&#129695; Glass</a>
+        <button id="clear-council-session" class="clear-session-button" type="button">Clear session</button>
+      </div>
     </div>
   </header>
   <section class="broker">

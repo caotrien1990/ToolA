@@ -1,27 +1,25 @@
 # Project Map
 
 - Schema: 2
-- Generated: 2026-08-09T18:01:57
+- Generated: 2026-08-31T08:06:05
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\.council`
-- Files indexed: 7
+- Files indexed: 5
 
 ## Groups
 
-- `config`: 2 files, 217 LOC
-- `unknown`: 5 files, 87 LOC
+- `config`: 2 files, 44 LOC
+- `doc`: 3 files, 320 LOC
 
 ## Entrypoints
 
 
 ## Hotspots
 
-- `council_config.json`: complexity 26, 187 LOC, group `config`
-- `worker_models.json`: complexity 0, 30 LOC, group `config`
-- `ID_MODELS/KILO.txt`: complexity 0, 20 LOC, group `unknown`
-- `ID_MODELS/OPENCODE.txt`: complexity 0, 20 LOC, group `unknown`
-- `ID_MODELS/PI.txt`: complexity 0, 20 LOC, group `unknown`
-- `ID_MODELS/HERMES.txt`: complexity 0, 16 LOC, group `unknown`
-- `ID_MODELS/GPT.txt`: complexity 0, 11 LOC, group `unknown`
+- `worker_output/20260828_190715_clau_e1e9906d.md`: complexity 14, 208 LOC, group `doc`
+- `worker_output/20260828_215622_clau_4cae89d3.md`: complexity 2, 30 LOC, group `doc`
+- `rooms/room-20260830-toolq-ask-hold/ROOM.md`: complexity 0, 82 LOC, group `doc`
+- `rooms/room-20260830-toolq-ask-hold/status.json`: complexity 0, 27 LOC, group `config`
+- `rooms/room-20260830-toolq-ask-hold/room_meta.json`: complexity 0, 17 LOC, group `config`
 
 ## Agent Usage
 

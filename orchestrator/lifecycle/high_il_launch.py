@@ -21,8 +21,6 @@ from datetime import datetime
 from pathlib import Path
 
 from orchestrator.lifecycle.as_bat_helpers import (
-    CREATE_NO_WINDOW,
-    _startupinfo,
     cmd_probe_livez,
     run_hidden,
 )

@@ -217,7 +217,7 @@ def choose_cycle_group(nodes: list[str], pairs: list[tuple[str, str]], wanted: l
     return comps[0]
 
 
-def choose_break_edge(nodes: list[str], pairs: list[tuple[str, str]], group: list[str]) -> tuple[str, str] | None:
+def choose_break_edge(_nodes: list[str], pairs: list[tuple[str, str]], group: list[str]) -> tuple[str, str] | None:
     group_set = set(group)
     fan = _fan_in(pairs)
     candidates = [(src, dst) for src, dst in pairs if src in group_set and dst in group_set]

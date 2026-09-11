@@ -20,7 +20,7 @@ from typing import Any
 DEFAULT_OUT_ROOT = Path(r"D:/BR/_CSLt_plan/mcp_packs")
 DEFAULT_PYTHON = Path(
     r"D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/"
-    r"project-orchestrator/venv312/Scripts/python.exe"
+    r"project-orchestrator/venv312/Scripts/python.exe",
 )
 DEFAULT_HERMES_CONFIG = Path.home() / "AppData" / "Local" / "hermes" / "config.yaml"
 
@@ -729,9 +729,9 @@ def action_install_targets(
                         {
                             "ca_id": str(item.get("ca_id") or item.get("agent_id") or ""),
                             "hermes_config": str(
-                                item.get("hermes_config") or item.get("config") or ""
+                                item.get("hermes_config") or item.get("config") or "",
                             ),
-                        }
+                        },
                     )
     elif ca_id:
         targets = [{"ca_id": ca_id}]
@@ -968,9 +968,9 @@ def action_uninstall_targets(
                         {
                             "ca_id": str(item.get("ca_id") or item.get("agent_id") or ""),
                             "hermes_config": str(
-                                item.get("hermes_config") or item.get("config") or ""
+                                item.get("hermes_config") or item.get("config") or "",
                             ),
-                        }
+                        },
                     )
     elif ca_id:
         targets = [{"ca_id": ca_id}]
@@ -1037,7 +1037,7 @@ def mcp_pack_generate(
             res = action_list_packs(out_root=out_root)
         elif act in ("test", "test_pack"):
             res = action_test_pack(
-                pack_id=pack_id, ca_id=cid, out_root=out_root, python_exe=python_exe
+                pack_id=pack_id, ca_id=cid, out_root=out_root, python_exe=python_exe,
             )
         elif act in ("install_hermes", "install"):
             res = action_install_hermes(
@@ -1149,5 +1149,5 @@ if __name__ == "__main__":
             delete_files=bool(args.delete_files),
             keep_wire=bool(args.keep_wire),
             force=bool(args.force),
-        )
+        ),
     )

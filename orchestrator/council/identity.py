@@ -20,6 +20,6 @@ def assert_unique_canonical_ids(values: Iterable[object], *, label: str = "ident
         prior = seen.get(key)
         if prior is not None and prior != raw:
             raise AssertionError(
-                f"duplicate {label} after canonicalization: {prior!r} and {raw!r} -> {key!r}"
+                f"duplicate {label} after canonicalization: {prior!r} and {raw!r} -> {key!r}",
             )
         seen[key] = raw

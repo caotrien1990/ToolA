@@ -30,16 +30,9 @@ Do not use this skill for solution ideation, stress brainstorm, worker competiti
 
 ## Roles
 
-Default role pattern:
+Default role pattern: none. The 2026-07-25 role table is SUSPENDED.
 
-- `KiloC + MiniMax M3`: default console/merge/fix route for bounded routine text artifacts.
-- `PiC + DeepSeek V4 Pro`: adversarial source-gap scan for missing, wrong, duplicate, drift, and placeholder leaks; never the sole final authority.
-- `OpeC + Qwen 3.7 Max`: operational audit of paths, routes, dependencies, rollout, observability, and source mismatch.
-- `PiC + Qwen 3.7 Max`: high-judgement structural/logic verification when the document encodes architecture or durable protocols.
-- `CodoC + GPT-5.6 Sol`: independent final judgement/conflict resolution for high-risk or disputed results, not routine merging.
-- `ClauC`: outside normal routing; exceptional stateful T4/MCP or narrow scoped verification only. Kimi K3 remains default-off.
-
-Adjust roles only when Anh gives a different route. Helper outputs are evidence, not new source truth. First classify `RISK_LEVEL` and `DEV_LEVEL` using `leader-council-skill`: low-risk/low-dev may use the routine route; mid-risk requires an independent reviewer; high-risk work requires PiC+Qwen design, CodoC independent high-end audit/judgement/high-dev, OpeC+Qwen operational review, and no DeepSeek/MiniMax result as sole authority.
+Assign console/audit/verify workers only when Anh names them or a live pin already exists after SET+GET. Helper outputs are evidence, not new source truth. Classify `RISK_LEVEL` and `DEV_LEVEL` as measurement metadata only; do not map them to the suspended route table. ClauC remains outside normal routing.
 
 ## Load And Split Gate
 

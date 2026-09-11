@@ -2,7 +2,6 @@
 from __future__ import annotations
 import asyncio, contextvars, os, threading, time, uuid
 from dataclasses import dataclass
-from typing import Any
 
 _PRINCIPAL=contextvars.ContextVar('quota_principal',default='anonymous:localhost')
 _CONTROL=contextvars.ContextVar('quota_control',default=False)

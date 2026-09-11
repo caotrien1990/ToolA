@@ -87,6 +87,7 @@ NOT covered by exception:
 - ❌ Saying "Herm sẽ chờ yêu cầu tiếp theo" when a compaction handoff records unfinished authorized scope
 - ❌ Asking for "tiến hành" again when the exact go-ahead is already in the handoff and scope isn't terminal
 - ❌ Treating compaction summary labels like "reference only" as cancellation of active authorization
+- ❌ Treating compaction as a new CA session and calling `get_rule_core_text` / `force:true`
 - ❌ Pivoting to a different task (e.g. UI fix) when user says "fix đi" but the authorized core-rule scope is still unfinished
 - ❌ Carrying EXECUTE beyond its named scope after completion, blocker, abort, or task replacement
 - ❌ Using `apply_after_dry_run` without explicit user-confirmed `dry_run_id`
@@ -116,6 +117,7 @@ NOT covered by exception:
 2. Read newest user message for reverse/replace signals (dừng, stop, hủy, new conflicting task)
 3. If handoff has exact go-ahead + unfinished scope + no reverse signal → restore ACTIVE_EXECUTE_SCOPE
 4. If handoff says "waiting for next request" but scope is unfinished → that handoff was WRONG; restore anyway
+5. Do not reload CORE_RULE. Compaction is not a new CA session and does not authorize `get_rule_core_text` or `force:true`.
 
 ## Guardrails
 

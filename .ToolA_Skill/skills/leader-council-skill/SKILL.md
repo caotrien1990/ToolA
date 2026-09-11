@@ -93,7 +93,7 @@ After every reply/timeout, close the measurement loop:
 - Until a capacity benchmark exists, assign one worker one bounded acceptance objective and one exclusive output artifact. Count work units before dispatch: independent questions, file/subsystem scopes, expected tool calls, and output sections.
 - Default conservative split trigger: split when a shard has more than one lifecycle stage, more than one write owner, more than three independent questions, more than one subsystem, or an expected long multi-tool investigation. This is a safety heuristic, not a benchmark-derived numeric limit.
 - Record `LOAD_BUDGET_SOURCE: benchmark | observed-history | conservative-heuristic`. With current evidence, use `conservative-heuristic` except for measured latency evidence.
-- On the first correct-method timeout, inspect the artifact and reduce the next shard along one evidence boundary. After two correct-method timeouts, stop that route and reassign by task fit; do not keep shrinking indefinitely.
+- On the first correct-method timeout, inspect the artifact and reduce the next shard along one evidence boundary. After two correct-method timeouts, stop that route and report; do not reassign from the suspended route table.
 - A future capacity benchmark must vary at least: input bytes/files, independent questions, expected tool calls, output size, write count, and dependency depth; record completion rate, artifact validity, timeout rate, p50/p95 idle gap, wall time, and quality. Only that benchmark may publish per-route numeric load limits.
 
 ## Codex Desktop Snapshot Guard
@@ -111,80 +111,56 @@ After every reply/timeout, close the measurement loop:
 
 ## First-Dispatch Worker Routing Gate
 
-Before the first `council_message` in every leader session, query [Q] for the worker routing spec. Prefer the live canonical config and the benchmark evidence at `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\.council\BENCHMARK_4HARNESS_5MODEL\FINAL_BENCHMARK_REPORT.md`; older memory is advisory only.
+ROUTE RULE SOT = Anh chỉ đạo. Do not use a cost chain.
 
-Worker routing spec v3 (benchmark 2026-07-25): CodoC is a fixed `gpt-5.6-sol` high-end worker for judgement, independent audit, high-difficulty development, code building, plan drafting and final conflict resolution; CodoC is not the default leader; primary durable design = PiC + `qwen3.7-max`; routine cost-effective implementation/reasoning = KiloC + `minimax-m3`; cheap adversarial bug/edge scan = PiC + `deepseek-v4-pro`; operational/migration/observability review = OpeC + `qwen3.7-max`. Kimi K3 is DEFAULT-OFF on PiC/HermC/OpeC/KiloC until a fresh Round 0 transport test produces a valid artifact. GPT-5.6 Sol is currently verified only on PiC among the four switchable harnesses; do not assume it is available on HermC/OpeC/KiloC. Every route uses `council_worker_model set` then `get`; never send `slot`; never put provider/model names in the worker prompt.
+The 2026-07-25 benchmark route table is SUSPENDED. A live leader must not mix those cells. Suspended as live defaults: PiC+Qwen, KiloC+MiniMax, CodoC+ox-alpha, CodoC+GPT-5.6 Sol, PiC+DeepSeek as default scan, OpeC+Qwen as default ops, Kimi `DEFAULT_OFF` as a routing cell, the Risk×Dev default-route table, and `.council/council_config.json` `task_routing` map v3. `WORKER_ROUTING_SPEC_v3.md` and `BENCHMARK_4HARNESS_5MODEL` are archive evidence only.
 
-Use the bounded [Q] hit or the context-pool spec at `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\17. Council_Tr\context_pool_specs\WORKER_ROUTING_SPEC_v3.md` before choosing a worker. Route by task shape, benchmark evidence, reversibility, and runtime availability. Do not use a cost chain. A benchmark result is a default, not permission to skip full-path prompts, acceptance criteria, sandbox/write ownership, artifact verification, or cross-checks.
+Before the first `council_message`, query [Q] for Anh's latest routing instruction, then read live pins via `council_worker_model` GET and `.council/council_config.json`.
 
-## Benchmark-Calibrated Routing v3
+Route a worker/model only when:
+1. Anh names the worker/model in the current turn, or
+2. The live pin already set for that worker is used after `council_worker_model` SET then GET.
 
-- **CodoC + GPT-5.6 Sol**: high-end council worker for judgement, independent audit, high-difficulty development, code building, plan drafting, final conflict resolution and failed-route escalation. CodoC is not the default leader. Do not use it for broad scans.
-- **PiC + Qwen 3.7 Max**: primary for complex logic, conflict analysis, architecture trade-offs, durable design and high-judgement plans. Require an operational/transactional-outbox review before high-risk implementation.
-- **KiloC + MiniMax M3**: default cost-effective route for routine implementation reasoning, backend operational design, failure recovery, lease/fencing and bounded code work. KiloC is the most stable basic harness observed; verify long-horizon gaps for risky changes.
-- **PiC + DeepSeek V4 Pro**: cheap adversarial bug scan, edge-case discovery, fail-closed critique and test-gap finding. It is not the sole implementation authority; Qwen, Kilo+MiniMax or CodoC must review code/durable design.
-- **OpeC + Qwen 3.7 Max**: secondary reviewer for migration, observability, operational risks and implementation gaps.
-- **PiC + MiniMax M3 / HermC + MiniMax M3**: cheap brainstorm, frontend/UI ideation, alternate failure-mode review. HermC is not the default primary due to harness fragility.
-- **OpeC + DeepSeek V4 Pro / HermC + DeepSeek V4 Pro**: bounded evidence/bug scans only; weaker durable protocol design than the preferred routes.
-- **KiloC + DeepSeek V4 Pro**: narrow scan/fact extraction fallback, not sole architecture or long-horizon designer.
-- **Kimi K3 on PiC/HermC/OpeC/KiloC**: `DEFAULT_OFF_BENCHMARK_FAILED`; do not route until transport/provider compatibility is repaired and the exact harness-model cell passes Round 0 again.
-- **GPT-5.6 Sol on PiC**: available but expensive; use when Pi harness/tooling is needed with frontier reasoning. HermC/OpeC/KiloC + GPT-5.6 Sol remain unavailable until curated model lists and Round 0 both pass.
+Do not invent a replacement table. Do not reactivate a suspended cell from scorecard or old memory. Every route uses `council_worker_model` set then get; never send `slot`; never put provider/model names in the worker prompt.
+
+Live Anh-directed harness facts until Anh changes them:
+- ClauC via `claudeltnai`; live pin `claude-opus-5`; catalog also `claude-opus-4-8`, `claude-sonnet-5`. Outside the normal routing order; exceptional T4/scoped only.
+- CodoC via `codexltnai`; live pin `grok-4.6-build`. High-end worker, not the default leader, not a broad scanner.
+- OpeC live pin `openai-compatible/grok-4.6-build`.
+- GroC live pin `grok-4.6-build`; not default leader and not T4/MCP.
+- GPT Sol/Terra/Luna discontinued. ox-alpha deferred.
+- KiloC / PiC / HermC have no Anh-directed default cell. Do not apply the suspended 2026-07-25 defaults.
+
+## Benchmark-Calibrated Routing v3 — SUSPENDED
+
+Do not apply Benchmark-Calibrated Routing v3. That table is not a live route rule.
 
 ## Risk And Development Routing Gate
 
-Classify two independent axes before selecting a route:
+Classify `RISK_LEVEL` and `DEV_LEVEL` (`low | mid | high`) as measurement metadata in the dispatch envelope. Use the stricter axis as the verification floor.
 
-- `RISK_LEVEL`: `low | mid | high`, based on blast radius, reversibility, production/data/security impact, and authorization sensitivity.
-- `DEV_LEVEL`: `low | mid | high`, based on implementation/logic difficulty, subsystem count, concurrency/distributed-state complexity, and judgement required.
-- Use the stricter axis as the verification floor. A low-dev change in a high-risk surface still follows the high-risk route; a high-dev but low-risk prototype still needs a high-dev builder/reviewer.
-- The current benchmark used one correctness-sensitive idempotency case. It supports harness+model task-fit evidence, but it did not independently benchmark low/mid/high risk tiers. Therefore these risk gates are conservative policy, not measured benchmark scores.
-
-| Risk | Dev | Default route | Required check |
-|---|---|---|---|
-| low | low | KiloC+MiniMax for routine bounded implementation; PiC+DeepSeek for read-only adversarial scan | Leader/[A] bounded verification; one owner; reversible output |
-| low | mid/high | PiC+Qwen for design/logic, then KiloC+MiniMax or CodoC for implementation according to difficulty | Independent bounded review when DEV_LEVEL=high |
-| mid | low/mid | PiC+Qwen design when logic changes; KiloC+MiniMax implementation; OpeC+Qwen operational review | At least one independent reviewer; rollback and integration tests |
-| mid | high | PiC+Qwen design + CodoC high-dev/judgement; OpeC+Qwen for operations/migration | Cross-verification before merge |
-| high | any | PiC+Qwen design, CodoC independent high-end audit/judgement/high-dev, OpeC+Qwen operational review | No cheap model as sole authority; explicit gate, rollback, failure tests, final independent verdict |
-
-DeepSeek and MiniMax may gather evidence or challenge assumptions on high-risk work, but they are never the sole design, implementation, or approval authority. ClauC remains outside normal routing and is used only by its exceptional-route gate.
+Do not map RISK×DEV to a worker/model pair from the suspended table. Worker/model comes only from Anh or from the live pin after SET+GET. ClauC remains outside the normal routing order and is used only by its exceptional-route gate.
 
 ### Task-Fit Routing (No Cost Chain)
 
-There is no fixed worker cost chain or universal escalation order. Select the worker/model by task fit, benchmark evidence, runtime availability, and required independence.
-
-1. Use PiC+DeepSeek for bounded adversarial bug/edge/test-gap scans.
-2. Use KiloC+MiniMax for routine implementation, backend operations and recovery reasoning.
-3. Use PiC+Qwen for complex logic, architecture and durable design.
-4. Use OpeC+Qwen for migration, observability and operational review.
-5. Use CodoC+GPT-5.6 Sol as a high-end worker for judgement, independent audit, high-difficulty development, code building and final conflict resolution.
-6. ClauC is excluded from normal routing order; use only for explicit exceptional stateful T4/MCP or narrowly scoped work.
-7. Kimi K3 remains default-off while its benchmark cells fail.
+There is no fixed worker cost chain and no live default harness+model table. Select the worker/model only from Anh's current instruction or the verified live pin. ClauC is excluded from normal routing order.
 
 ## Mission Sharding Pattern
 
-Routing is now harness+model aware. Same-model workers are not interchangeable by default because benchmark quality and harness reliability differ.
+Same-model workers are not interchangeable by default.
 
 - Shard only independent scopes with disjoint output ownership.
-- For a large bug audit, PiC+DeepSeek is the primary shard; OpeC/HermC+DeepSeek may take bounded independent evidence shards; KiloC+DeepSeek is last scan fallback.
-- For design/implementation, prefer sequential cross-verification: PiC+Qwen designs -> KiloC+MiniMax challenges operational recovery -> CodoC performs high-end judgement/audit or resolves remaining conflicts when needed.
-- Reassign a failed shard according to the task routing table, not merely to another worker using the same model.
+- Do not assign shards from the suspended 2026-07-25 preferred chains.
+- Reassign a failed shard only when Anh names the next worker/model or a live pin already exists; never from the old `task_routing` table.
 - Different models are cross-verification POVs, not workload clones. Consolidation must cite artifacts and acceptance criteria.
 - Durable flows use `mission_create`, `mission_dispatch`, `mission_status`, and one explicit merge owner.
 
 ## `council_worker_model` Payload Guardrail
 
 - Valid fields only: `action`, `agent`, optional `provider`, and `model`; `slot` is forbidden.
-- Always `set` then `get` before dispatch. A model present in a curated list is necessary but not sufficient: the harness-model cell must not be benchmark-default-off.
-- Preferred switches:
-  - `{"action":"set","agent":"codo","model":"gpt-5.6-sol"}`
-  - `{"action":"set","agent":"pic","model":"qwen3.7-max"}`
-  - `{"action":"set","agent":"kilo","model":"ltnai/minimax-m3"}`
-  - `{"action":"set","agent":"pic","model":"deepseek-v4-pro"}`
-  - `{"action":"set","agent":"ope","model":"openai-compatible/qwen3.7-max"}`
-  - `{"action":"set","agent":"hermes","model":"minimax-m3"}` only for bounded alternate review
-  - then `{"action":"get","agent":"<agent>"}` and verify provider/model.
-- Do not route `kimi-k3` while default-off. Do not silently substitute a different model when a requested cell is unavailable.
+- Always `set` then `get` before dispatch. SET only the model Anh named, or keep the live pin already verified by GET.
+- Do not SET a suspended benchmark default (`qwen3.7-max`, `ltnai/minimax-m3`, `gpt-5.6-sol`, `stealth/ox-alpha`, `deepseek-v4-pro` as a default scan cell) unless Anh names that exact id in the current turn.
+- Do not silently substitute a different model when a requested cell is unavailable.
 - If the API returns `UNSUPPORTED_FIELD` or `INVALID_MODEL`, read the live schema/list, correct once, and report if still unavailable.
 ## Governed Git Operations
 
@@ -210,8 +186,8 @@ Routing is now harness+model aware. Same-model workers are not interchangeable b
 
 ## Failed-Route Retry Rule
 
-- If a worker route fails, inspect the artifact/error first and reroute the unchanged bounded shard according to task fit. Do not use retired slot identities or fall back automatically to the leader.
-- After two correct-method failures on the same bounded shard, stop and report or use CodoC only when the task itself needs high-end judgement/high-dev.
+- If a worker route fails, inspect the artifact/error first. Reroute the unchanged bounded shard only when Anh names the next worker/model or a live pin already exists. Do not use retired slot identities, the suspended route table, or an automatic leader fallback.
+- After two correct-method failures on the same bounded shard, stop and report. Do not auto-escalate to CodoC unless Anh names CodoC.
 
 ## Broker Worker Bootstrap Hint
 
@@ -230,7 +206,7 @@ Routing is now harness+model aware. Same-model workers are not interchangeable b
 - ClauC is outside the normal routing order. Use it only for explicit exceptional stateful T4/MCP or narrowly scoped tasks; never for broad scan/read work.
 - ClauC has normal roles only: judgement and scoped bug-fix on existing code with a narrow evidence pack.
 - ClauC may be used as master dev only after the same issue has failed council retry more than 2 times, and only with a narrow evidence pack.
-If context is insufficient, ask ClauC only what exact data/files/evidence are needed, then route bounded evidence by task fit (normally PiC+DeepSeek; OpeC/HermC+DeepSeek secondary) before calling ClauC again.
+If context is insufficient, ask ClauC only what exact data/files/evidence are needed, then gather bounded evidence only via a worker Anh named or a live pin after SET+GET before calling ClauC again.
 - Do not treat CodoC as an automatic fallback leader. Route CodoC only when the task itself needs high-end judgement, independent audit or high-difficulty development.
 
 ## Q Protocol
@@ -247,7 +223,7 @@ If context is insufficient, ask ClauC only what exact data/files/evidence are ne
 - Drop stale, low-relevance, duplicate, noisy, truncated, or context-free results.
 - On `no`, error, or timeout, continue normal leader rules with no retry loop.
 - Hard gate: after Q `no`, error, or timeout, the leader must not self-query session files, logs, history folders, or large local data. Report Q status and route any needed data gathering to a worker with bounded scope.
-For tasks like "find latest responses/session data", if Q has no usable context, dispatch a bounded evidence shard by task fit (normally PiC+DeepSeek; OpeC/HermC+DeepSeek as secondary scans) instead of leader-side filesystem scanning.
+For tasks like "find latest responses/session data", if Q has no usable context, dispatch a bounded evidence shard only to a worker Anh named or a live pin after SET+GET; do not leader-side filesystem-scan and do not default to the suspended PiC+DeepSeek cell.
 - For exact payload examples, read `references/q-protocol.md`.
 
 ## Council Dispatch

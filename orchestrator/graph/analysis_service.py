@@ -417,7 +417,7 @@ async def run_analysis_view(
             stop,
             deadline_mono,
             work_fn,
-        )
+        ),
     )
     _supervised.add(worker_task)
 

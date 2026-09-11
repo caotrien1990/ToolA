@@ -8,7 +8,6 @@ import time
 from pathlib import Path
 
 from orchestrator.lifecycle.console_warp import (
-    CREATE_NO_WINDOW,
     child_creationflags,
     child_startupinfo,
     ensure_hidden_console,

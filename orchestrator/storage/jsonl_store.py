@@ -156,7 +156,7 @@ def _exclusive_file_lock(target: Path, key: str,
                         if remaining <= 0:
                             raise TimeoutError(
                                 "could not lock %s within %.1fs; another process "
-                                "holds the JSONL lock byte" % (key, timeout)
+                                "holds the JSONL lock byte" % (key, timeout),
                             ) from None
                         time.sleep(min(delay, remaining))
                         delay = min(delay * 2, 0.05)

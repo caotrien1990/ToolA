@@ -143,7 +143,7 @@ def _auto_trim_log(log_path: Path, keep_sessions: int = 2):
     _atomic_write_text(
         log_path,
         "\n".join(json.dumps(e, ensure_ascii=False) for e in kept) + "\n",
-        encoding="utf-8"
+        encoding="utf-8",
     )
 
 
@@ -211,7 +211,7 @@ async def log_native(native: list = None) -> str:
         import sqlite3
         conn = sqlite3.connect(str(_SESSIONS_DB))
         row = conn.execute(
-            "SELECT session_id FROM sessions WHERE status='active' ORDER BY started_at DESC LIMIT 1"
+            "SELECT session_id FROM sessions WHERE status='active' ORDER BY started_at DESC LIMIT 1",
         ).fetchone()
         conn.close()
         if row:

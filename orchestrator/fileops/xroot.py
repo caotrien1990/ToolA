@@ -203,7 +203,7 @@ def is_outside_project_root(target_path: str | Path, project_root: str | Path | 
         return True
 
 
-def xroot_check(target_path: str | Path, caller_tool: str, session_id: str = "") -> dict[str, Any]:
+def xroot_check(target_path: str | Path, _caller_tool: str, _session_id: str = "") -> dict[str, Any]:
     """Return {allowed, group, reason} for absolute writes outside the project root."""
     p = _resolve_loose(target_path)
     policy_off = os.environ.get("ORCHESTRATOR_XROOT_POLICY", "").strip().lower() == "off"

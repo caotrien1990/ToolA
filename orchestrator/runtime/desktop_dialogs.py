@@ -363,7 +363,6 @@ async def fill_folder_dialog(title_pattern: str = "", folder_path: str = "",
         # R31: modern IFileDialog/Vista-style picker has no exposed Edit child.
         # Fallback: focus dialog → send Ctrl+L (address bar) → paste path → Enter.
         try:
-            import win32con as _wc
             # Focus + foreground
             try:
                 win32gui.SetForegroundWindow(target_hwnd)

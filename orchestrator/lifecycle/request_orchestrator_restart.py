@@ -108,7 +108,7 @@ def request_restart(
             status = None
         if status is not None:
             return status if status.get("terminal") else _poll_terminal(
-                url=url, secret=secret, request_id=request_id, deadline=deadline, opener=opener
+                url=url, secret=secret, request_id=request_id, deadline=deadline, opener=opener,
             )
         if health.get("reachable"):
             # Retry the identical id only; controller accept is idempotent.

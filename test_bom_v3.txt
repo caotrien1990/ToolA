@@ -1,0 +1,3 @@
+﻿Line 1: Test BOM
+Line 2: SECOND edit
+Line 3: Third line
