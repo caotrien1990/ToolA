@@ -103,6 +103,13 @@ def _materialize_records(
     deadline_at: float,
     deadline_seconds: float,
 ) -> list[tuple[str, str, bytes]]:
+    """Materialize all records with budget checks.
+
+    R38 OPTIMIZATION: Per-record line validation removed — the worker
+    subprocess already validates lines during regex matching. This
+    eliminates O(total_bytes) splitlines() work that previously consumed
+    most of the deadline before the subprocess even started.
+    """
     materialized: list[tuple[str, str, bytes]] = []
     total_bytes = 0
     for relative_path, label, payload in records:
@@ -113,7 +120,6 @@ def _materialize_records(
         total_bytes = validate_next_record_budget(
             len(materialized), total_bytes, len(payload_bytes),
         )
-        validate_line_budget(payload_bytes)
         materialized.append((relative_path, label, payload_bytes))
     _remaining(deadline_at, deadline_seconds)
     return materialized
