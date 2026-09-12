@@ -337,9 +337,11 @@ def _search_inline(
     return results
 
 
-# Threshold: inline when total materialized bytes < 4MB.
+# R40: inline when total materialized bytes < 16MB (= MAX_INPUT_BYTES).
 # Above this, subprocess isolation is safer for runaway patterns.
-INLINE_MAX_BYTES = 4 * 1024 * 1024
+# Most codebases fall under this threshold; the subprocess path is a
+# safety backstop for data repos with very large total source size.
+INLINE_MAX_BYTES = MAX_INPUT_BYTES
 
 
 def search_records(
