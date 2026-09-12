@@ -1130,7 +1130,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                         timeout=wait_timeout,
                     )
                     break  # success — exit retry loop
-                except asyncio.TimeoutError:
+                except (asyncio.TimeoutError, regex_worker.RegexSearchTimeout):
                     if _regex_retried or mode != "regex":
                         raise
                     _regex_retried = True
