@@ -1115,20 +1115,56 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                         f"regex search exceeded hard deadline of {effective_regex_deadline:.3f}s",
                     )
                 producer_deadline_at = regex_deadline_at
-            try:
-                producer_payload = await _run_search_singleflight(
-                    search_key,
-                    lambda: _search_snapshot(expected_snapshot_id, producer_deadline_at),
-                    owner_transfer=lambda: None,
-                    owner_done=lambda: None,
-                    timeout=wait_timeout,
+            # R39: adaptive retry — if first regex attempt times out, retry
+            # with extended deadline (up to MAX_DEADLINE_SECONDS). Prevents
+            # one-shot timeout on full-repo scans where subprocess overhead
+            # (pickle + spawn) is significant.
+            _regex_retried = False
+            for _rt_attempt in range(2):
+                try:
+                    producer_payload = await _run_search_singleflight(
+                        search_key,
+                        lambda: _search_snapshot(expected_snapshot_id, producer_deadline_at),
+                        owner_transfer=lambda: None,
+                        owner_done=lambda: None,
+                        timeout=wait_timeout,
+                    )
+                    break  # success — exit retry loop
+                except asyncio.TimeoutError:
+                    if _regex_retried or mode != "regex":
+                        raise
+                    _regex_retried = True
+                    effective_regex_deadline = min(
+                        effective_regex_deadline * 2.0,
+                        regex_worker.MAX_DEADLINE_SECONDS,
+                    )
+                    regex_deadline_at = search_started_at + effective_regex_deadline
+                    wait_timeout = regex_deadline_at - time.monotonic()
+                    producer_deadline_at = regex_deadline_at
+                    search_key = (
+                        snapshot_token,
+                        str(base_resolved).casefold(), pattern, re_flags, file_pattern,
+                        mode, effective_regex_deadline,
+                        effective_context, effective_max_results,
+                        text_record_cap,
+                    )
+                    _narrow_warn = (
+                        "Regex on full repo timed out at initial deadline; "
+                        "retrying with extended deadline. "
+                        "Add file_pattern='*.py' or path='orchestrator/' to narrow."
+                    )
+            else:
+                # inner loop exhausted without break — both attempts timed out.
+                # Re-raise as asyncio.TimeoutError to enter the outer handler.
+                raise asyncio.TimeoutError(
+                    f"regex search exceeded hard deadline of {effective_regex_deadline:.3f}s"
                 )
-                break
-            except search_snapshots.SnapshotUnavailable:
-                if pin_attempt or _search_snapshot_token(snapshot_root) == snapshot_token:
-                    raise
+            break  # success — exit outer snapshot loop
         else:  # pragma: no cover - loop either returns or raises
             raise search_snapshots.SnapshotUnavailable("snapshot changed during pin")
+    except search_snapshots.SnapshotUnavailable:
+        if pin_attempt or _search_snapshot_token(snapshot_root) == snapshot_token:
+            raise
     except asyncio.TimeoutError:
         _timeout_resp = _regex_timeout_payload(query, effective_regex_deadline, path, project_path, file_pattern)
         if _narrow_warn:
