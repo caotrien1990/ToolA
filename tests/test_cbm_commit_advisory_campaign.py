@@ -24,14 +24,15 @@ def _ok_commit():
     }
 
 
-def _apply_advisory(out, checked, staged_hash, cache=None, now=1.0):
+def _apply_advisory(out, checked, staged_hash, cache=None, now=1.0, root="D:/repo"):
     """Mirror git_tools.commit advisory block so tests stay off real git."""
     if not __import__("os").environ.get("CBM_ENRICH_COMMIT", "0").strip().lower() in (
         "1", "true", "yes", "on",
     ):
         return out
     try:
-        staged_key = checked if str(checked).lower() != "auto" else str(staged_hash or "")
+        staged_raw = checked if str(checked).lower() != "auto" else str(staged_hash or "")
+        staged_key = hooks.scoped_fingerprint(root, staged_raw) if staged_raw else ""
         if not staged_key or str(checked).lower() == "auto":
             out["advisory"] = {"status": "unavailable", "reason": "partial_stage", "payload": None}
             return out
@@ -128,7 +129,8 @@ class TestNoDuplicateCommitRetry:
     def test_hit_does_not_rerun_git(self, monkeypatch):
         monkeypatch.setenv("CBM_ENRICH_COMMIT", "1")
         cache: dict = {}
-        hooks.put_cache(hooks.KIND_COMMIT, "staged-abc", {"gate": "ok"}, stored_at=1.0, cache=cache)
+        key = hooks.scoped_fingerprint("D:/repo", "staged-abc")
+        hooks.put_cache(hooks.KIND_COMMIT, key, {"gate": "ok"}, stored_at=1.0, cache=cache)
         out = _apply_advisory(_ok_commit(), "staged-abc", "staged-abc", cache=cache, now=1.0)
         assert out["ok"] is True
         assert out["advisory"]["status"] == "ok"

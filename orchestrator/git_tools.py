@@ -286,14 +286,16 @@ def commit(project_path, message, expected_staged_hash, allow_empty=False, no_ve
     args=['commit','-m',msg]
     if allow_empty: args.append('--allow-empty')
     if no_verify: args.append('--no-verify')
+    committed_paths=[str(r.get('path')) for r in s.get('records',[]) if str(r.get('xy','.'))[:1] not in ('.',' ','?','!') and r.get('path')]
     res=_run(root,args,timeout=300); head=_run(root,['rev-parse','HEAD'])['stdout'].strip()
-    out={'ok':True,'commit':head,'stdout':res['stdout'],'stderr':res['stderr'],'status':status(str(root))}
+    out={'ok':True,'commit':head,'stdout':res['stdout'],'stderr':res['stderr'],'status':status(str(root)),'committed_files':committed_paths}
     # P7-S3 H3: advisory AFTER successful commit+hash, BEFORE return.
     # Flag-OFF = no hooks/graph/status/parser import. Throw cannot fail the commit.
     if os.environ.get("CBM_ENRICH_COMMIT", "0").strip().lower() in ("1", "true", "yes", "on"):
         try:
-            from orchestrator.graph.hooks import KIND_COMMIT, lookup_enrich
-            staged_key = checked if checked.lower() != "auto" else str(s.get("staged_hash") or "")
+            from orchestrator.graph.hooks import KIND_COMMIT, lookup_enrich, scoped_fingerprint
+            staged_raw = checked if checked.lower() != "auto" else str(s.get("staged_hash") or "")
+            staged_key = scoped_fingerprint(str(root), staged_raw) if staged_raw else ""
             if not staged_key or checked.lower() == "auto":
                 out["advisory"] = {"status": "unavailable", "reason": "partial_stage", "payload": None}
             else:
@@ -310,7 +312,7 @@ def commit(project_path, message, expected_staged_hash, allow_empty=False, no_ve
                 if _staged_paths:
                     try:
                         from orchestrator.graph.enrich_producers import produce_commit_advisory as _cbm_warm_commit
-                        _warm = _cbm_warm_commit(str(root), staged_key, _staged_paths)
+                        _warm = _cbm_warm_commit(str(root), staged_raw, _staged_paths)
                         if isinstance(_warm, dict):
                             out["advisory_warm"] = {"warmed": bool(_warm.get("warmed")),
                                                     "reason": _warm.get("reason")}

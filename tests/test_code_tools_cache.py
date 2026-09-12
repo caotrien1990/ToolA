@@ -418,6 +418,22 @@ class TestCodeToolsCache(unittest.TestCase):
         self.assertTrue(index_path.exists())
         self.assertGreater(result['files_indexed'], 0)
 
+    def test_refresh_project_map_preserves_snapshot_error_taxonomy(self):
+        with mock.patch.object(
+            code_tools.surgical_mapper,
+            'refresh_project_map',
+            side_effect=code_tools.search_snapshots.SnapshotIntegrityError(
+                'INDEX/content hash mismatch: qsleep/ledger/interactive_gate.json'
+            ),
+        ):
+            result = json.loads(asyncio.run(
+                code_tools.refresh_project_map(str(self.project_path), force=True)
+            ))
+
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['error_name'], 'SNAPSHOT_PUBLISH_FAILED')
+        self.assertEqual(result['ca_next_action'], 'inspect_snapshot_integrity')
+
     def test_write_fix_updates_cache_coordinates(self):
         # Initialize cache so write_fix can update the file cache on save.
         asyncio.run(code_tools.generate_project_map(str(self.project_path)))

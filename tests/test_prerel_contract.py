@@ -22,6 +22,12 @@ def test_retry_sequence_pre_release_errors_are_actionable():
         assert sequence, error_name
 
 
+def test_snapshot_json_filename_is_not_classified_as_wrong_arguments():
+    error = "INDEX/content hash mismatch: qsleep/ledger/interactive_gate.json"
+
+    assert orchestrator_server._infer_error_name("refresh_project_map", error) == "TOOL_ERROR"
+
+
 def test_generated_payload_example_uses_schema_types_and_descriptions(monkeypatch):
     tool_name = "prerel_schema_only_tool"
     schema = {

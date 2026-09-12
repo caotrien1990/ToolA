@@ -34,7 +34,7 @@ def _schema_row(name: str) -> dict:
 class TestRegistryParityP3:
     def test_cbm_test_gap_registered_and_schema_matches_handler(self):
         assert "cbm_test_gap" in code_tools.TOOL_MAP
-        assert code_tools.TOOL_PHASES.get("cbm_test_gap") == "T1"
+        assert code_tools.TOOL_PHASES.get("cbm_test_gap") == "T2"
         handler = code_tools.TOOL_MAP["cbm_test_gap"]
         sig = inspect.signature(handler)
         handler_params = {
@@ -212,7 +212,7 @@ class TestCountsReconcile:
 class TestRegistryParityP5:
     def test_cbm_what_if_registered_and_schema_matches_handler(self):
         assert "cbm_what_if" in code_tools.TOOL_MAP
-        assert code_tools.TOOL_PHASES.get("cbm_what_if") == "T1"
+        assert code_tools.TOOL_PHASES.get("cbm_what_if") == "T2"
         handler = code_tools.TOOL_MAP["cbm_what_if"]
         sig = inspect.signature(handler)
         handler_params = {

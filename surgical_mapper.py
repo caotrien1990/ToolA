@@ -341,6 +341,8 @@ def _is_generated_or_junk(file_path: Path) -> bool:
 # unknown .json is data. Config lives near the root by convention; nobody puts
 # tsconfig.json eight levels down inside a runs/ directory.
 DATA_JSON_MAX_DEPTH = 2
+RUNTIME_DATA_DIR_NAMES = {"ledger", "metrics", "dto", "benchmark_reports"}
+RUNTIME_DATA_EXTENSIONS = {".json", ".jsonl", ".lock"}
 CONFIG_JSON_NAMES = {
     "package.json", "package-lock.json", "tsconfig.json", "jsconfig.json",
     "composer.json", "manifest.json", "settings.json", "launch.json",
@@ -358,10 +360,15 @@ def _is_data_json(file_path: Path, depth: int | None = None) -> bool:
     depth = how many directories deep the file sits below the project root. It is
     unknown when the caller only has an absolute path with no root to compare against
     (e.g. the standalone validators), and in that case only the name is judged — the
-    conservative direction, since an unknown-depth config keeps being indexed."""
+    conservative direction, since an unknown-depth config keeps being indexed. JSON
+    under a known runtime-data directory is always produced state; source files and
+    human-readable reports beside it remain eligible through normal extension rules."""
     name = file_path.name.lower()
     if file_path.suffix.lower() == ".jsonl":
         return True  # line-delimited records; never a config format
+    if (file_path.suffix.lower() in RUNTIME_DATA_EXTENSIONS
+            and any(part.lower() in RUNTIME_DATA_DIR_NAMES for part in file_path.parent.parts)):
+        return True
     if name in CONFIG_JSON_NAMES:
         return False
     if any(hint in name for hint in CONFIG_JSON_HINTS):
@@ -387,6 +394,9 @@ def _skip_reason(file_path: Path, project_root: str | Path | None = None) -> str
         return "generated_archive_backup_or_internal_ai"
     if file_path.suffix.lower() not in SUPPORTED_EXTENSIONS:
         return "unsupported_extension"
+    if (file_path.suffix.lower() == ".lock"
+            and any(part.lower() in RUNTIME_DATA_DIR_NAMES for part in file_path.parent.parts)):
+        return "runtime_state_not_source"
     if file_path.suffix.lower() in (".json", ".jsonl") and _is_data_json(
         file_path, _depth_below_root(file_path, project_root)
     ):

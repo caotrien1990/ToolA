@@ -10,6 +10,8 @@ plus a reason, never a fabricated payload.
 """
 from __future__ import annotations
 
+import hashlib
+import os
 import time
 from typing import Any, Mapping, MutableMapping
 
@@ -30,6 +32,13 @@ PAYLOAD_VERSION = 1
 ALGORITHM_NAME = "hooks-cache-v1"
 
 _STORE: dict[Any, dict[str, Any]] = {}
+
+
+def scoped_fingerprint(project_root: str, fingerprint: str) -> str:
+    """Namespace Heavy cache keys by physical project root."""
+    root = os.path.normcase(os.path.realpath(str(project_root or "")))
+    raw = f"{root}\0{str(fingerprint or '').strip()}"
+    return hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()
 
 
 def _skipped(reason: str, **extra: Any) -> dict[str, Any]:
@@ -169,7 +178,7 @@ def enrich_test_result(
     if sel == "test_selection_unknown" or files is None:
         out["test_gap"] = _skipped("test_selection_unknown")
         return out
-    fp = str(result.get("script_hash") or "").strip()
+    fp = str(result.get("enrich_fingerprint") or result.get("script_hash") or "").strip()
     if not fp:
         out["test_gap"] = _skipped("cache_miss")
         return out
@@ -229,4 +238,5 @@ __all__ = [
     "enrich_test_result",
     "lookup_enrich",
     "put_cache",
+    "scoped_fingerprint",
 ]

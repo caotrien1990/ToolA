@@ -73,6 +73,21 @@ def test_a_changed_file_is_stale(tmp_path, monkeypatch):
         conn.close()
 
 
+def test_same_size_same_mtime_content_change_is_stale(tmp_path, monkeypatch):
+    root, conn = _indexed(tmp_path, monkeypatch, "same_meta", {
+        "m.py": "VALUE = 'aa'\n",
+    })
+    target = Path(root) / "m.py"
+    before = target.stat()
+    try:
+        target.write_text("VALUE = 'bb'\n", encoding="utf-8")
+        os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+        assert target.stat().st_size == before.st_size
+        assert gstatus._stale_count(conn, root) == 1
+    finally:
+        conn.close()
+
+
 def test_a_version_bump_makes_every_file_stale(tmp_path, monkeypatch):
     """The regression proper: content unchanged, extractor different.
 

@@ -11,10 +11,9 @@ Every entry point is:
   * fail-open -- returns a {"warmed": bool, "reason": str|None} dict, never
     raises, and a producer failure leaves the consumer on its honest
     skipped/cache_miss path;
-  * deadline-bounded -- the compute runs in a daemon thread with a hard join
-    deadline (CBM_ENRICH_PRODUCER_BUDGET_S, default 20s). An overrun thread
-    cannot block the caller; a late put_cache still lands and simply expires
-    by TTL.
+  * deadline-bounded -- compute runs in a supervised daemon thread with bounded
+    admission (CBM_ENRICH_PRODUCER_BUDGET_S, default 45s). Timed-out workers stay
+    accounted until exit and cannot publish a cache entry after the caller returns.
 
 Honesty rules inherited from hooks.py: test selection is NEVER scraped from
 stdout -- H2 fires only on caller-declared executed_test_files. Payloads that
@@ -28,7 +27,14 @@ import threading
 import time
 from typing import Any, Callable, Iterable, MutableMapping
 
-from .hooks import KIND_COMMIT, KIND_COUNCIL, KIND_TEST, lookup_enrich, put_cache
+from .hooks import (
+    KIND_COMMIT,
+    KIND_COUNCIL,
+    KIND_TEST,
+    lookup_enrich,
+    put_cache,
+    scoped_fingerprint,
+)
 
 BUDGET_ENV = "CBM_ENRICH_PRODUCER_BUDGET_S"
 # Measured cold build_test_gap on the 2025-file _refscale_p9 fixture (graph.db
@@ -41,6 +47,9 @@ DEFAULT_BUDGET_S = 45.0
 PRODUCER_VERSION = "enrich-producer-v1"
 _GIT_SCOPE_TIMEOUT_S = 5.0
 _GIT_SCOPE_MAX_FILES = 500
+_MAX_ACTIVE = 2
+_ACTIVE_LOCK = threading.Lock()
+_ACTIVE_THREADS: set[threading.Thread] = set()
 
 
 def _budget_s(deadline_s: float | None = None) -> float:
@@ -62,8 +71,13 @@ def _flag(env_name: str) -> bool:
     return os.environ.get(env_name, "0").strip().lower() in ("1", "true", "yes", "on")
 
 
+def active_producer_count() -> int:
+    with _ACTIVE_LOCK:
+        return len(_ACTIVE_THREADS)
+
+
 def _run_bounded(fn: Callable[[], Any], deadline_s: float) -> tuple[bool, Any]:
-    """Run fn on a daemon thread; hard-join at deadline. (done, value)."""
+    """Run fn on a supervised daemon thread. (done, value)."""
     box: dict[str, Any] = {}
 
     def _work() -> None:
@@ -73,13 +87,29 @@ def _run_bounded(fn: Callable[[], Any], deadline_s: float) -> tuple[bool, Any]:
         except Exception as exc:  # noqa: BLE001 -- fail-open by contract
             box["error"] = f"{type(exc).__name__}: {exc}"
             box["ok"] = False
+        finally:
+            with _ACTIVE_LOCK:
+                _ACTIVE_THREADS.discard(threading.current_thread())
 
     t = threading.Thread(target=_work, daemon=True)
+    with _ACTIVE_LOCK:
+        if len(_ACTIVE_THREADS) >= _MAX_ACTIVE:
+            return False, None
+        _ACTIVE_THREADS.add(t)
     t.start()
     t.join(deadline_s)
     if t.is_alive():
         return False, None
     return bool(box.get("ok")), box.get("value")
+
+
+async def run_producer_async(
+    fn: Callable[..., dict[str, Any]], *args: Any, **kwargs: Any,
+) -> dict[str, Any]:
+    """Execute a producer off the caller's event loop."""
+    import asyncio
+
+    return await asyncio.to_thread(fn, *args, **kwargs)
 
 
 def _checkpoint(end_mono: float) -> Callable[[str], bool]:
@@ -146,8 +176,8 @@ def produce_test_advisory(
     """
     if not _flag("CBM_ENRICH_TEST"):
         return {"warmed": False, "reason": "disabled"}
-    fp = str(script_hash or "").strip()
-    if not fp:
+    raw_fp = str(script_hash or "").strip()
+    if not raw_fp:
         return {"warmed": False, "reason": "no_fingerprint"}
     files = sorted({str(f).strip().replace("\\", "/")
                     for f in (test_files or []) if str(f).strip()})
@@ -156,6 +186,7 @@ def produce_test_advisory(
     root = str(project_root or "").strip()
     if not root or not os.path.isdir(root):
         return {"warmed": False, "reason": "no_root"}
+    fp = scoped_fingerprint(root, raw_fp)
     hit = lookup_enrich(KIND_TEST, fp, cache=cache)
     if hit.get("status") == "ok":
         return {"warmed": True, "reason": "already_cached"}
@@ -207,8 +238,8 @@ def produce_commit_advisory(
     """
     if not _flag("CBM_ENRICH_COMMIT"):
         return {"warmed": False, "reason": "disabled"}
-    fp = str(staged_hash or "").strip()
-    if not fp:
+    raw_fp = str(staged_hash or "").strip()
+    if not raw_fp:
         return {"warmed": False, "reason": "no_fingerprint"}
     files = sorted({str(f).strip().replace("\\", "/")
                     for f in (staged_files or []) if str(f).strip()})
@@ -217,6 +248,7 @@ def produce_commit_advisory(
     root = str(project_root or "").strip()
     if not root or not os.path.isdir(root):
         return {"warmed": False, "reason": "no_root"}
+    fp = scoped_fingerprint(root, raw_fp)
     hit = lookup_enrich(KIND_COMMIT, fp, cache=cache)
     if hit.get("status") == "ok":
         return {"warmed": True, "reason": "already_cached"}
@@ -305,6 +337,8 @@ __all__ = [
     "BUDGET_ENV",
     "DEFAULT_BUDGET_S",
     "PRODUCER_VERSION",
+    "active_producer_count",
+    "run_producer_async",
     "produce_commit_advisory",
     "produce_council_pack",
     "produce_test_advisory",

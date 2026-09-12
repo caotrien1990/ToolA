@@ -91,13 +91,15 @@ class TestProduceTestAdvisory:
         assert seen["checkpoint_callable"] is True
 
         # producer stamped its own metadata onto the payload
-        entry = cache[(hooks.KIND_TEST, fp)]
+        scoped = hooks.scoped_fingerprint(str(tmp_path), fp)
+        entry = cache[(hooks.KIND_TEST, scoped)]
         assert entry["payload"]["producer"] == ep.PRODUCER_VERSION
         assert entry["payload"]["included_scope"] in ("declared", "git_changed", "declared_tests_only")
 
         # consumer side now returns a real advisory, not skipped:cache_miss
         enriched = hooks.enrich_test_result(
-            {"script_hash": fp, "executed_test_files": ["tests/test_a.py"]}, cache=cache
+            {"script_hash": fp, "enrich_fingerprint": scoped,
+             "executed_test_files": ["tests/test_a.py"]}, cache=cache
         )
         assert enriched["test_gap"]["status"] == "ok"
         assert enriched["test_gap"]["payload"]["selection"] == "explicit"
@@ -131,7 +133,8 @@ class TestProduceTestAdvisory:
         cache: dict = {}
         r = ep.produce_test_advisory(str(tmp_path), "fp3", ["test_a.py"], cache=cache)
         assert r["warmed"] is False and r["reason"] == "unavailable_payload"
-        assert hooks.lookup_enrich(hooks.KIND_TEST, "fp3", cache=cache)["reason"] == "cache_miss"
+        scoped = hooks.scoped_fingerprint(str(tmp_path), "fp3")
+        assert hooks.lookup_enrich(hooks.KIND_TEST, scoped, cache=cache)["reason"] == "cache_miss"
 
     def test_deadline_overrun_fails_open(self, monkeypatch, tmp_path):
         monkeypatch.setenv("CBM_ENRICH_TEST", "1")
@@ -146,7 +149,8 @@ class TestProduceTestAdvisory:
         r = ep.produce_test_advisory(str(tmp_path), "fp4", ["test_a.py"], deadline_s=0.05, cache=cache)
         assert r["warmed"] is False and r["reason"] == "deadline"
         # an overrunning thread must not have written to the cache
-        assert hooks.lookup_enrich(hooks.KIND_TEST, "fp4", cache=cache)["reason"] == "cache_miss"
+        scoped = hooks.scoped_fingerprint(str(tmp_path), "fp4")
+        assert hooks.lookup_enrich(hooks.KIND_TEST, scoped, cache=cache)["reason"] == "cache_miss"
 
 
 # ── H3 produce_commit_advisory ──────────────────────────────────────────────
@@ -182,7 +186,8 @@ class TestProduceCommitAdvisory:
         assert seen["tests"] == ["test_helper.py", "tests/test_mod.py"]
         assert seen["included"] == ["pkg/mod.py", "pkg/util.py"]
         # consumer side: commit advisory lookup now hits
-        hit = hooks.lookup_enrich(hooks.KIND_COMMIT, "sh1", cache=cache)
+        hit = hooks.lookup_enrich(
+            hooks.KIND_COMMIT, hooks.scoped_fingerprint(str(tmp_path), "sh1"), cache=cache)
         assert hit["status"] == "ok"
         assert hit["payload"]["staged_files"] == sorted(staged)
         assert hit["payload"]["producer"] == ep.PRODUCER_VERSION
@@ -199,6 +204,24 @@ class TestProduceCommitAdvisory:
         r = ep.produce_commit_advisory(str(tmp_path), "sh2", ["a.py"], cache=cache)
         assert r["warmed"] is False and r["reason"] == "unavailable_payload"
         assert cache == {}
+
+    def test_same_hash_is_isolated_by_project(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("CBM_ENRICH_COMMIT", "1")
+        a, b = tmp_path / "a", tmp_path / "b"
+        a.mkdir(); b.mkdir()
+        seen = []
+
+        def _fake_build(root, **kw):
+            seen.append(root)
+            return _ok_payload()
+
+        from orchestrator.graph import testgap
+        monkeypatch.setattr(testgap, "build_test_gap", _fake_build)
+        cache = {}
+        ep.produce_commit_advisory(str(a), "same", ["x.py"], cache=cache)
+        ep.produce_commit_advisory(str(b), "same", ["x.py"], cache=cache)
+        assert len(seen) == 2
+        assert len(cache) == 2
 
 
 # ── H5 produce_council_pack ─────────────────────────────────────────────────
@@ -289,6 +312,17 @@ class TestHelpers:
         assert cp("tag") is True
         cp2 = ep._checkpoint(time.monotonic() + 10)
         assert cp2("tag") is False
+
+    def test_timed_out_thread_remains_accounted_until_exit(self):
+        deadline = time.time() + 1
+        while ep.active_producer_count() and time.time() < deadline:
+            time.sleep(0.01)
+        before = ep.active_producer_count()
+        done, _ = ep._run_bounded(lambda: time.sleep(0.15), 0.01)
+        assert done is False
+        assert ep.active_producer_count() == before + 1
+        time.sleep(0.2)
+        assert ep.active_producer_count() == 0
 
 
 if __name__ == "__main__":

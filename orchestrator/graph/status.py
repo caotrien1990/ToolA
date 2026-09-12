@@ -61,10 +61,8 @@ def _stale_count(conn: sqlite3.Connection, project_root: str) -> int:
             continue
         size = r["size"]
         mtime_ms = r["modified_at"]
-        if size is not None and mtime_ms:
-            if (int(st.st_size) == int(size)
-                    and int(st.st_mtime * 1000) == int(mtime_ms)):
-                continue
+        # Hash remains authoritative. Size+mtime equality is not proof: restore,
+        # checkout and copy tools can preserve both while replacing the bytes.
         try:
             with open(abs_p, "rb") as f:
                 chash = hashlib.sha256(f.read()).hexdigest()

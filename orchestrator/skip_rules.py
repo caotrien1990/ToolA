@@ -28,6 +28,10 @@ SKIP_DIRS = {
     # index and break regex/symbol search + cause INDEX/manifest scan-vs-walk drift: an
     # embedded venv, backup snapshots, staging clones, codex mission dirs, pytest temp.
     ".venv_bge_m3", "backups", "staging", ".codex", ".pytest_tmp",
+    # Runtime output and leaked pytest roots are derived state, not project source.
+    # In ToolQ, /ask rewrites logs/supervisor_state_*.json after every successful
+    # rebuild, making the next zero-hit search correctly report a stale INDEX.
+    "logs", "%temp%toolq_tests", "pytest_tmp_lintfix",
     # R82 2026-08-19: runtime/archival DATA trees. Measured on ToolQ: qsleep/runs
     # (19953 files) + qsleep/queue (8289) + archive/ (13470) made generate_project_map
     # scan 31608 files of which 31079 were .json runtime records and only 367 were .py

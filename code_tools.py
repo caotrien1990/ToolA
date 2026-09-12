@@ -240,6 +240,10 @@ PROTECTED_TOOL_NAMES = {
     # (spawns Chromium). In-process calls bypass the HTTP token gate, so these
     # wrappers must be origin/session-protected like what they wrap.
     "start_app", "stop_app", "browser_smoke_test",
+    # CBM derived-state writers. They never edit source, but they do write
+    # graph.db and must not be callable as ungated T1 reads.
+    "cbm_index", "cbm_incremental_index", "cbm_get_architecture",
+    "cbm_dead_code", "cbm_test_gap", "cbm_what_if", "cbm_cycle_point",
 }
 
 # Token gate (X-Orchestrator-Token) is DECOUPLED from mutating/session semantics.
@@ -337,6 +341,10 @@ _MUTATION_SCOPE_MAP = {
     "cbm_index": "derived_index",
     "cbm_incremental_index": "derived_index",
     "cbm_get_architecture": "derived_index",   # hybrid auto-reindex when stale
+    "cbm_dead_code": "derived_index",
+    "cbm_test_gap": "derived_index",
+    "cbm_what_if": "derived_index",
+    "cbm_cycle_point": "derived_index",
     # E-03 (2026-08-10): stateful workflow / mission tools. These do not edit
     # source files, but they DO mutate durable run-state (workflow_state/*.json,
     # missions.db) or trigger side effects (dispatch). Previously they were
@@ -1856,6 +1864,13 @@ async def _project_map_build(project_path: str, force: bool, builder) -> str:
         if isinstance(result, dict):
             result = {"ok": True, "skipped": False, "rebuilt": True, **result}
         return json.dumps(result, ensure_ascii=False)
+    except search_snapshots.SnapshotError as exc:
+        return json.dumps({
+            "ok": False,
+            "error": str(exc),
+            "error_name": "SNAPSHOT_PUBLISH_FAILED",
+            "ca_next_action": "inspect_snapshot_integrity",
+        }, ensure_ascii=False)
     except Exception as exc:
         return json.dumps({"ok": False, "error": str(exc)})
 
@@ -7841,8 +7856,13 @@ async def run_project_test_script(
         if _declared:
             result["executed_test_files"] = _declared
             try:
-                from orchestrator.graph.enrich_producers import produce_test_advisory as _cbm_warm_test
-                _warm = _cbm_warm_test(str(root), script_hash, _declared)
+                from orchestrator.graph.enrich_producers import (
+                    produce_test_advisory as _cbm_warm_test,
+                    run_producer_async as _cbm_run_async,
+                )
+                from orchestrator.graph.hooks import scoped_fingerprint as _cbm_scoped_fp
+                result["enrich_fingerprint"] = _cbm_scoped_fp(str(root), script_hash)
+                _warm = await _cbm_run_async(_cbm_warm_test, str(root), script_hash, _declared)
                 if isinstance(_warm, dict):
                     result["test_gap_warm"] = {
                         "warmed": bool(_warm.get("warmed")),
@@ -16065,13 +16085,13 @@ try:
     _register_cbm(
         name="cbm_index",
         handler=_cbm_index_handler,
-        phase="T1",
+        phase="T2",
         tool_map=TOOL_MAP,
         tool_schemas=TOOL_SCHEMAS,
         tool_phases=TOOL_PHASES,
         phase_labels=PHASE_LABELS,
         schema={
-            "description": "T1 read-only: index project scope into the CBM graph DB (nodes/edges/FTS5). Incremental by content_hash; records an index_runs row. Read-only on source files. scope=core (orchestrator/ only) or full (all .py).",
+            "description": "T2 derived-index write: index project scope into graph.db. Source files remain read-only.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -16172,13 +16192,13 @@ try:
     _register_cbm_p1(
         name="cbm_get_architecture",
         handler=_cbm_get_architecture_handler,
-        phase="T1",
+        phase="T2",
         tool_map=TOOL_MAP,
         tool_schemas=TOOL_SCHEMAS,
         tool_phases=TOOL_PHASES,
         phase_labels=PHASE_LABELS,
         schema={
-            "description": "T1 read-only: bounded module-level architecture overview citing exact files — module inventory with symbol counts + dependencies (imports_module edges) + entry points. Bounds: GRAPH_CONTEXT_MAX_FILES/MAX_SYMBOLS/TIMEOUT_S config constants; early-exit returns truncated=true + truncation_reason + files_seen/symbols_seen/elapsed_ms.",
+            "description": "T2 derived-index-aware architecture overview. May incrementally update graph.db before returning bounded module/dependency data.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -16195,13 +16215,13 @@ try:
     _register_cbm_p1(
         name="cbm_dead_code",
         handler=_cbm_dead_code_handler,
-        phase="T1",
+        phase="T2",
         tool_map=TOOL_MAP,
         tool_schemas=TOOL_SCHEMAS,
         tool_phases=TOOL_PHASES,
         phase_labels=PHASE_LABELS,
         schema={
-            "description": "T1 read-only: full-project health scan (dead_code + bug_risk + perf + complexity + code_smell + tech_debt + security). Engine depends on the repo's majority language and is reported in `engine` + `engine_reason`: a Python repo gets Ruff + Vulture; a JS/TS repo gets the graph AST engine (dead_code only — the other categories are Ruff-only, so they come back empty). Output grouped by category field. ADVISORY ONLY — never edit source from this list alone.",
+            "description": "T2 derived-index-aware health scan. May update graph.db; never edits source. Findings remain advisory.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -16240,13 +16260,13 @@ try:
     _register_cbm_p1(
         name="cbm_incremental_index",
         handler=_cbm_incremental_index_handler,
-        phase="T1",
+        phase="T2",
         tool_map=TOOL_MAP,
         tool_schemas=TOOL_SCHEMAS,
         tool_phases=TOOL_PHASES,
         phase_labels=PHASE_LABELS,
         schema={
-            "description": "T1 read-only-on-source: incremental graph update — SHA-256 detect_changes (added/modified/deleted/renamed), cascade delete stale rows (edges-first), re-extract changed files, rebuild imports_module dependency edges; one BEGIN IMMEDIATE transaction; full-reindex fallback on failure. scope=core|full (default full).",
+            "description": "T2 derived-index write: incrementally update graph.db from source hashes. Source files remain read-only.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -16284,13 +16304,13 @@ try:
     _register_cbm_p1(
         name="cbm_cycle_point",
         handler=_cbm_cycle_point_handler,
-        phase="T1",
+        phase="T2",
         tool_map=TOOL_MAP,
         tool_schemas=TOOL_SCHEMAS,
         tool_phases=TOOL_PHASES,
         phase_labels=PHASE_LABELS,
         schema={
-            "description": "T1 read-only: architectural health of the file dependency graph — circular dependencies (iterative Tarjan SCC), Lakos levelization with upward-violation count (Kahn over the SCC-collapsed DAG), longest dependency chain, and a geometric-mean quality_signal over five root causes (modularity via Newman Q, acyclicity, depth, equality via Gini, redundancy via dead symbols). Reads the existing graph.db — no re-scan. equality and redundancy are documented proxies (see metric_notes in the payload) because the extractor stores no per-function cyclomatic complexity and no body hash. Fail-open: GRAPH_ENABLED=0 or a missing DB returns a payload with the reason.",
+            "description": "T2 derived-index-aware architectural health: refresh graph.db if needed, then compute cycles, levelization, depth and quality signals. Never edits source.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -16377,13 +16397,13 @@ try:
     _register_cbm_p3(
         name="cbm_test_gap",
         handler=_cbm_test_gap_handler,
-        phase="T1",
+        phase="T2",
         tool_map=TOOL_MAP,
         tool_schemas=TOOL_SCHEMAS,
         tool_phases=TOOL_PHASES,
         phase_labels=PHASE_LABELS,
         schema={
-            "description": "T1 read-only advisory: static import-reach test gap (BFS from explicit test seeds over observed imports_module). Isolated production stays uncovered. no_tests => status=unavailable, coverage_ratio=null (not 0%). tests+zero source => ratio=1 vacuous. Missing CC is unavailable — rank by fan-in, never fabricate CC=1. include_architecture default false; when true, payload.architecture adds stability cascade + entry reach (service/context, not separate public tools). Not executed coverage.",
+            "description": "T2 derived-index-aware static import-reach test-gap advisory. May update graph.db; never edits source. Not executed coverage.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -16425,13 +16445,13 @@ try:
     _register_cbm_p3(
         name="cbm_what_if",
         handler=_cbm_what_if_handler,
-        phase="T1",
+        phase="T2",
         tool_map=TOOL_MAP,
         tool_schemas=TOOL_SCHEMAS,
         tool_phases=TOOL_PHASES,
         phase_labels=PHASE_LABELS,
         schema={
-            "description": "T1 read-only RAM what-if. Clone analysis_view; apply move_file|add_edge|remove_edge|remove_file|break_cycle atomically (invalid step rejects whole sequence, ops_applied=0). Caps 20 ops / 2000 nodes / 50000 pairs / 2s => unavailable (cap_ops/cap_nodes/cap_pairs/deadline). Never writes source/DB. break_cycle is a heuristic (min target fan-in then src then dst), not min-cut. Named cbm_what_if is H1 after registration; generic quality still cbm_cycle_point. Not include_extensions.",
+            "description": "T2 derived-index-aware RAM what-if. May refresh graph.db before cloning the analysis view; simulation itself never edits source/DB.",
             "parameters": {
                 "type": "object",
                 "properties": {

@@ -1056,8 +1056,20 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
             for record in pin.iter_records(base_resolved):
                 relative_path = str(record["path"])
                 relative = PurePosixPath(relative_path)
-                if not base_is_file and file_pattern != "*" and not fnmatch.fnmatch(relative.name, file_pattern):
-                    continue
+                if not base_is_file and file_pattern != "*":
+                    pattern_norm = str(file_pattern).replace("\\", "/")
+                    relative_norm = relative.as_posix()
+                    # A slash makes this a project-root-relative pattern. Do not
+                    # suffix-match it: "bin/x.py" must not also admit
+                    # "archive/copy/bin/x.py". Slash-free patterns retain the
+                    # long-standing basename behavior.
+                    pattern_matches = (
+                        fnmatch.fnmatch(relative_norm, pattern_norm)
+                        if "/" in pattern_norm
+                        else fnmatch.fnmatch(relative.name, pattern_norm)
+                    )
+                    if not pattern_matches:
+                        continue
                 if base_is_file:
                     label = base.name
                 elif base_prefix is None:

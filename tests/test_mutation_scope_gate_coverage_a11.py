@@ -74,6 +74,15 @@ class GatedToolsDeclareMutationScope(unittest.TestCase):
         phantom = sorted(n for n in ct._MUTATION_SCOPE_MAP if n not in ct.TOOL_MAP)
         self.assertEqual(phantom, [], f"mutation_scope declared for unknown tools: {phantom}")
 
+    def test_cbm_derived_writers_are_gated_t2(self):
+        for name in (
+            "cbm_index", "cbm_incremental_index", "cbm_get_architecture",
+            "cbm_dead_code", "cbm_test_gap", "cbm_what_if", "cbm_cycle_point",
+        ):
+            self.assertIn(name, ct.PROTECTED_TOOL_NAMES)
+            self.assertEqual(ct.tool_mutation_scope(name), "derived_index")
+            self.assertEqual(ct.TOOL_PHASES.get(name), "T2")
+
 
 if __name__ == "__main__":
     unittest.main()

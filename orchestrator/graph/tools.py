@@ -9,6 +9,8 @@ import glob
 import json as _json
 import os
 import subprocess
+import shutil
+import tempfile
 import time
 
 from . import analysis_service as _analysis_service
@@ -61,21 +63,33 @@ def _clean_project_path(project_path: str) -> tuple[str, str | None]:
 async def _ensure_graph_fresh(project_path: str) -> dict:
     """Check graph freshness; auto-index if stale or missing. Returns metadata dict."""
     try:
-        raw = await cbm_graph_status(project_path=project_path)
-        s = _json.loads(raw)
-        # Unwrap _ok() wrapper: cbm_graph_status returns {ok:result:{...}}
-        s = s.get("result") or s
-        stale = int(s.get("stale_files", 0) or 0)
-        has_run = bool(s.get("last_run"))
-        if stale > 0 or not has_run:
-            await cbm_incremental_index(project_path=project_path)
-            return {"auto_indexed": True, "reason": "stale" if stale else "no_prior_run"}
-        return {"auto_indexed": False, "reason": "fresh"}
-    except Exception:
-        return {"auto_indexed": False, "reason": "check_failed"}
+        async with _graph_refresh_lock(project_path):
+            status = await asyncio.to_thread(_status.graph_status, project_path)
+            stale = status.get("stale_files")
+            freshness = str(status.get("freshness") or "")
+            has_run = bool(status.get("last_run"))
+            if stale is None and freshness not in {"not_indexed"}:
+                return {"auto_indexed": False, "reason": "freshness_unknown"}
+            if int(stale or 0) > 0 or not has_run:
+                async with _graph_write_lock(project_path):
+                    result = await asyncio.to_thread(
+                        _indexer.incremental_index,
+                        project_path,
+                        scope="full",
+                        project_root=project_path,
+                    )
+                return {
+                    "auto_indexed": True,
+                    "reason": "stale" if int(stale or 0) > 0 else "no_prior_run",
+                    "index_result": result,
+                }
+            return {"auto_indexed": False, "reason": "fresh"}
+    except Exception as exc:
+        return {"auto_indexed": False, "reason": "check_failed", "error": type(exc).__name__}
 
 
 _GRAPH_WRITE_LOCKS: dict = {}
+_GRAPH_REFRESH_LOCKS: dict = {}
 
 # campaign-1608 (A24): ruff resolves its config by walking up from the TARGET,
 # so linting a file inside a project silently adopts that project's lint settings.
@@ -131,6 +145,15 @@ def _graph_write_lock(project_path: str):
         lk = asyncio.Lock()
         _GRAPH_WRITE_LOCKS[project_path] = lk
     return lk
+
+
+def _graph_refresh_lock(project_path: str):
+    key = os.path.normcase(os.path.realpath(project_path))
+    lock = _GRAPH_REFRESH_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _GRAPH_REFRESH_LOCKS[key] = lock
+    return lock
 async def cbm_index(project_path: str = "", scope: str = "core", **aliases) -> str:  # noqa: ARG001
     """T1: index project scope into the graph DB (nodes/edges/FTS5). Read-only on source."""
     if not project_path:
@@ -168,16 +191,7 @@ async def cbm_graph_status(project_path: str = "", **aliases) -> str:  # noqa: A
                             "error": f"project_path is not an existing directory: {project_path}"},
                            ensure_ascii=False)
     try:
-        result = await asyncio.to_thread(_status.graph_status, project_path)
-        # Task 3 auto-chain: if graph not yet indexed, auto-index now
-        if isinstance(result, dict) and result.get("freshness") == "not_indexed":
-            try:
-                await cbm_incremental_index(project_path=project_path)
-                result = await asyncio.to_thread(_status.graph_status, project_path)
-                result["auto_index_result"] = {"auto_indexed": True, "reason": "was_not_indexed"}
-            except Exception:
-                result["auto_index_result"] = {"auto_indexed": False, "reason": "index_failed"}
-        return _ok(result)
+        return _ok(await asyncio.to_thread(_status.graph_status, project_path))
     except Exception as e:
         return _err("cbm_graph_status", e)
 
@@ -298,7 +312,7 @@ async def cbm_template_query(project_path: str = "", template: str = "",
 async def cbm_get_architecture(project_path: str = "", max_files: int = 0,
                                max_symbols: int = 0, timeout_s: float = 0.0,
                                **aliases) -> str:  # noqa: ARG001
-    """T1: bounded module-level architecture overview with exact file citations. Fail-open."""
+    """T2: refresh derived graph state, then return a bounded architecture overview."""
     if not project_path:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
                             "error": "project_path required"}, ensure_ascii=False)
@@ -307,6 +321,7 @@ async def cbm_get_architecture(project_path: str = "", max_files: int = 0,
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
                             "error": path_err}, ensure_ascii=False)
     try:
+        _auto_idx = await _ensure_graph_fresh(project_path)
         # DOCS_GAP-6: optional bound overrides; 0/unset keeps config defaults.
         # P4 verify fix (STT-17): negative values are invalid — floor to 0 so
         # they keep the config default instead of causing immediate truncation
@@ -320,6 +335,7 @@ async def cbm_get_architecture(project_path: str = "", max_files: int = 0,
             kwargs["timeout_s"] = float(timeout_s)
         result = await asyncio.to_thread(
             _query.cbm_get_architecture, project_path, **kwargs)
+        result["auto_index_result"] = _auto_idx
         return _ok(result)
     except Exception as e:
         return _err("cbm_get_architecture", e)
@@ -328,7 +344,7 @@ async def cbm_get_architecture(project_path: str = "", max_files: int = 0,
 async def cbm_dead_code(project_path: str = "", limit: int = 50,
                         scope: str = "full", file_filter: str = "",
                         **aliases) -> str:  # noqa: ARG001
-    """T1: conservative dead-code candidates with confidence + reason. Advisory only."""
+    """T2: refresh derived graph state, then return conservative advisory findings."""
     if not project_path:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
                             "error": "project_path required"}, ensure_ascii=False)
@@ -384,6 +400,16 @@ async def ruff_fix(project_path: str = "", path: str = ".", apply: bool = False,
         return {file: (stat.st_size, stat.st_mtime_ns) for file in files for stat in [os.stat(file)]}
 
     before = _snapshot(target) if apply else None
+    backup_root = None
+    backup_files = {}
+    if apply:
+        backup_root = tempfile.mkdtemp(prefix="toola-ruff-backup-")
+        for source in before:
+            rel = os.path.relpath(source, root)
+            destination = os.path.join(backup_root, rel)
+            os.makedirs(os.path.dirname(destination), exist_ok=True)
+            shutil.copy2(source, destination)
+            backup_files[source] = destination
     # campaign-1608 (A24b): _console_python(), not sys.executable. Over HTTP the
     # daemon runs pythonw.exe (GUI subsystem, no stdout handle), so ruff.exe has
     # nothing to inherit: measured live as exit_code 1 with stdout, stderr AND
@@ -396,11 +422,35 @@ async def ruff_fix(project_path: str = "", path: str = ".", apply: bool = False,
         command.append("--diff")
     if unsafe_fixes:
         command.append("--unsafe-fixes")
-    completed = await asyncio.to_thread(
-        subprocess.run, command, cwd=root, capture_output=True, text=True,
-        encoding="utf-8", errors="replace", timeout=120, check=False,
-    )
+    try:
+        completed = await asyncio.to_thread(
+            subprocess.run, command, cwd=root, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=120, check=False,
+        )
+    except Exception as exc:
+        for source, backup in backup_files.items():
+            shutil.copy2(backup, source)
+        if backup_root:
+            shutil.rmtree(backup_root, ignore_errors=True)
+        return _json.dumps({
+            "ok": False,
+            "error_name": "RUFF_EXEC_FAILED",
+            "error": f"{type(exc).__name__}: {exc}",
+            "rollback_verified": bool(apply),
+        }, ensure_ascii=False)
     output = completed.stdout or ""
+    if completed.returncode not in (0, 1):
+        for source, backup in backup_files.items():
+            shutil.copy2(backup, source)
+        if backup_root:
+            shutil.rmtree(backup_root, ignore_errors=True)
+        return _json.dumps({
+            "ok": False,
+            "error_name": "RUFF_EXEC_FAILED",
+            "error": (completed.stderr or completed.stdout or "ruff failed")[:2000],
+            "exit_code": completed.returncode,
+            "rollback_verified": bool(apply),
+        }, ensure_ascii=False)
     changed = bool(output.strip()) if not apply else before != _snapshot(target)
     # Task 3 auto-chain rule 12: validate files changed by ruff_fix
     post_ruff_validation = None
@@ -409,7 +459,7 @@ async def ruff_fix(project_path: str = "", path: str = ".", apply: bool = False,
             after_snap = _snapshot(target)
             changed_files = [f for f in after_snap if f not in before or after_snap[f] != before.get(f)]
             validations = []
-            for cf in changed_files[:10]:  # cap at 10 files
+            for cf in changed_files:
                 import code_tools as _ct
                 val_raw = await _ct.validate_file(cf)
                 val = _json.loads(val_raw) if isinstance(val_raw, str) else val_raw
@@ -421,6 +471,18 @@ async def ruff_fix(project_path: str = "", path: str = ".", apply: bool = False,
                                     "details": validations}
         except Exception:
             post_ruff_validation = {"validated": 0, "all_ok": False, "error": "validation_failed"}
+        if not post_ruff_validation.get("all_ok"):
+            for source, backup in backup_files.items():
+                shutil.copy2(backup, source)
+            if backup_root:
+                shutil.rmtree(backup_root, ignore_errors=True)
+            return _json.dumps({
+                "ok": False,
+                "error_name": "RUFF_VALIDATION_FAILED_AUTO_REVERT",
+                "error": "Ruff changes failed validation and were reverted",
+                "post_ruff_validation": post_ruff_validation,
+                "rollback_verified": True,
+            }, ensure_ascii=False)
     resp = {
         "mode": "apply" if apply else "preview",
         "applied": bool(apply and completed.returncode in (0, 1)),
@@ -441,6 +503,8 @@ async def ruff_fix(project_path: str = "", path: str = ".", apply: bool = False,
     }
     if post_ruff_validation:
         resp["post_ruff_validation"] = post_ruff_validation
+    if backup_root:
+        shutil.rmtree(backup_root, ignore_errors=True)
     return _ok(resp)
 
 
@@ -644,7 +708,7 @@ async def cbm_incremental_index(project_path: str = "", scope: str = "full",
 
 
 async def cbm_cycle_point(project_path: str = "", **aliases) -> str:  # noqa: ARG001
-    """T1: dependency cycles + levelization + geometric-mean quality signal. Fail-open."""
+    """T2: refresh derived graph state, then compute cycle and quality signals."""
     if not project_path:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
                             "error": "project_path required"}, ensure_ascii=False)
@@ -659,7 +723,12 @@ async def cbm_cycle_point(project_path: str = "", **aliases) -> str:  # noqa: AR
                             "error": f"project_path is not an existing directory: {project_path}"},
                            ensure_ascii=False)
     try:
+        _auto_idx = await _ensure_graph_fresh(project_path)
+        if _auto_idx.get("reason") in {"freshness_unknown", "check_failed"}:
+            return _ok({"enabled": True, "error": "graph freshness unavailable",
+                        "freshness": "unknown", "auto_index_result": _auto_idx})
         result = await asyncio.to_thread(_cycle_point.compute_cycle_point, project_path)
+        result["auto_index_result"] = _auto_idx
         return _ok(result)
     except Exception as e:
         return _err("cbm_cycle_point", e)
@@ -733,7 +802,7 @@ async def cbm_test_gap(
     per_test_maps: bool = False,
     **aliases,  # noqa: ARG001
 ) -> str:
-    """T1 advisory: static test-gap BFS. Opt-in architecture adds stability/entry."""
+    """T2 derived-index-aware static test-gap advisory."""
     if not project_path:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
                             "error": "project_path required"}, ensure_ascii=False)
@@ -997,7 +1066,7 @@ async def cbm_what_if(
     edge_kind: str = "observed",
     **aliases,
 ) -> str:
-    """T1: RAM-only what-if over a cloned analysis_view. Never writes."""
+    """T2: refresh derived graph state, then run RAM-only what-if simulation."""
     if not project_path:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
                             "error": "project_path required"}, ensure_ascii=False)

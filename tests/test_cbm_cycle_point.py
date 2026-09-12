@@ -17,6 +17,8 @@ import os
 os.environ["GRAPH_ENABLED"] = "1"  # must precede orchestrator.graph.config import
 
 import shutil
+import asyncio
+import json
 import sys
 import tempfile
 import unittest
@@ -26,6 +28,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from orchestrator.graph.indexer import index_project
 from orchestrator.graph import cycle_point as cp
+
+
+def test_cycle_point_surfaces_freshness_gate(monkeypatch, tmp_path):
+    from orchestrator.graph import tools
+
+    async def fake_fresh(_root):
+        return {"auto_indexed": True, "reason": "stale"}
+
+    monkeypatch.setattr(tools, "_ensure_graph_fresh", fake_fresh)
+    monkeypatch.setattr(
+        tools._cycle_point, "compute_cycle_point",
+        lambda _root: {"enabled": True, "cycles": []},
+    )
+    payload = json.loads(asyncio.run(tools.cbm_cycle_point(str(tmp_path))))
+    assert payload["result"]["auto_index_result"]["auto_indexed"] is True
 
 # a <-> b is a genuine two-file import cycle; c depends on b but nothing
 # depends on c, so c is a root and b sits below it.

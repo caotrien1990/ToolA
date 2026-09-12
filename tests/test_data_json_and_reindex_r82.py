@@ -27,6 +27,36 @@ class TestDataJsonExclusion:
         f = _mk(tmp_path, "queue_item.jsonl", '{"a":1}\n')
         assert sm._should_scan_file(f, tmp_path) is False
 
+    def test_shallow_runtime_ledger_json_is_data(self, tmp_path):
+        f = _mk(tmp_path, "qsleep/ledger/interactive_gate.json")
+        assert sm._should_scan_file(f, tmp_path) is False
+        assert sm._skip_reason(f, tmp_path) == "data_json_not_source"
+
+    def test_generated_json_directories_are_data_at_shallow_depth(self, tmp_path):
+        for rel in (
+            "metrics/metrics.json",
+            "dto/current_graph.json",
+            "benchmark_reports/latest.json",
+        ):
+            f = _mk(tmp_path, rel)
+            assert sm._should_scan_file(f, tmp_path) is False, rel
+            assert sm._skip_reason(f, tmp_path) == "data_json_not_source", rel
+
+    def test_runtime_ledger_lock_is_not_source(self, tmp_path):
+        f = _mk(tmp_path, "qsleep/ledger/interactive_gate.json.lock", "0")
+        assert sm._should_scan_file(f, tmp_path) is False
+        assert sm._skip_reason(f, tmp_path) == "runtime_state_not_source"
+
+    def test_ledger_source_code_is_still_indexed(self, tmp_path):
+        for rel in (
+            "qsleep/ledger/lease_manager.py",
+            "metrics/generate.py",
+            "dto/schema.py",
+            "benchmark_reports/README.md",
+        ):
+            f = _mk(tmp_path, rel, "ACTIVE = True\n")
+            assert sm._should_scan_file(f, tmp_path) is True, rel
+
     def test_known_config_survives_at_any_depth(self, tmp_path):
         for rel in ("package.json", "a/b/c/d/e/package.json", "x/y/z/w/tsconfig.json"):
             f = _mk(tmp_path, rel)
@@ -52,7 +82,10 @@ class TestDataJsonExclusion:
         assert sm._should_scan_file(f, tmp_path) is True
 
     def test_runtime_dirs_are_skipped(self):
-        for name in ("runs", "queue", "archive", "_archive"):
+        for name in (
+            "runs", "queue", "archive", "_archive", "logs",
+            "%TEMP%toolq_tests", "pytest_tmp_lintfix",
+        ):
             assert sm.should_skip_dir(name) is True
 
 
@@ -116,3 +149,15 @@ class TestReindexIsNonDestructive:
         idx = json.loads((tmp_path / sm.CACHE_DIR_NAME / "INDEX.json").read_text(encoding="utf-8"))
         assert len(idx["files"]) == 1
         assert "app.py" in idx["files"]
+
+    def test_runtime_ledger_json_does_not_reach_index_or_snapshot(self, tmp_path):
+        _mk(tmp_path, "app.py", "A = 1\n")
+        _mk(tmp_path, "qsleep/ledger/interactive_gate.json", '{"active":true}')
+
+        sm.generate_project_map(str(tmp_path))
+
+        idx = json.loads((tmp_path / sm.CACHE_DIR_NAME / "INDEX.json").read_text(encoding="utf-8"))
+        assert "qsleep/ledger/interactive_gate.json" not in idx["files"]
+        with sm.search_snapshots.pin_current_snapshot(tmp_path) as pin:
+            paths = {record["path"] for record in pin.manifest["files"]}
+        assert "qsleep/ledger/interactive_gate.json" not in paths

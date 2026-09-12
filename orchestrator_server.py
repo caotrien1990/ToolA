@@ -3412,7 +3412,9 @@ def _infer_error_name(tool_name: str, error: str, body: dict | None = None) -> s
         return "UNSUPPORTED_FIELD"
     if "wrong arguments" in lower or "required positional argument" in lower:
         return "WRONG_ARGUMENTS"
-    if "json" in lower:
+    if any(marker in lower for marker in (
+        "json decode", "json parse", "json encoding", "invalid json payload",
+    )):
         return "WRONG_ARGUMENTS"
     return "TOOL_ERROR"
 
@@ -3652,8 +3654,10 @@ def _normalize_example_paths(payload: dict) -> dict:
         if isinstance(value, list):
             return [clean(key, v) for v in value]
         if isinstance(value, str) and key in _EXAMPLE_PATH_KEYS:
-            if value.startswith("D:/") or value.startswith("relative/"):
-                value = value.replace("/", "\\")
+            # R41: keep forward slashes — backslash paths break JSON when CA
+            # copies payload_example verbatim into a JSON body (\p, 	, 
+            # become invalid escapes). Forward slashes are valid on Windows
+            # and JSON-safe. Only strip control chars.
             if any(ch < " " for ch in value):
                 value = "".join(ch for ch in value if ch >= " ")
         return value
@@ -3689,9 +3693,9 @@ def _generated_payload_example(tool_name: str, fn_schema: dict) -> dict:
         if "const" in spec:
             return copy.deepcopy(spec["const"])
         if field == "project_path":
-            return r"D:\path\to\project"
+            return "D:/path/to/project"
         if field in {"file_path", "path"}:
-            return r"relative\file.py"
+            return "relative/file.py"
         kind = spec.get("type")
         if kind == "boolean":
             return False
@@ -3725,15 +3729,15 @@ def _generated_payload_example(tool_name: str, fn_schema: dict) -> dict:
 _PAYLOAD_EXAMPLE_OVERRIDES: dict[str, dict] = {
     "find_symbol": {
         "name": "my_function",
-        "project_path": r"D:\path\to\project",
+        "project_path": "D:/path/to/project",
     },
     "find_callers": {
         "symbol": "my_function",
-        "project_path": r"D:\path\to\project",
+        "project_path": "D:/path/to/project",
     },
     "search_code": {
         "query": "pattern to find",
-        "project_path": r"D:\path\to\project",
+        "project_path": "D:/path/to/project",
         # registry enum is text|regex|symbol|callers|...; "text" is the literal/plain-text
         # mode. Use "regex" for pattern matching. Do NOT use "literal" — not in enum.
         "mode": "text",
@@ -14276,21 +14280,6 @@ accepted_fields=sorted(accepted_fields),
         # FixA2407 P1-1: record a mutating call BEFORE it runs. The server always knows
         # whether the write landed; the caller that timed out does not.
         _op_id = await _write_ledger_begin_async(tool_name, body, _task_session_id)
-        # Task 3 auto-chain rule 6: git_commit pre-hook — auto-inject git_status staged hash
-        _git_commit_pre_hook = False
-        if tool_name == "git_commit" and isinstance(body, dict):
-            try:
-                _gs_pp = body.get("project_path", "")
-                if _gs_pp:
-                    _gs_raw = await git_status(project_path=_gs_pp)
-                    _gs = json.loads(_gs_raw) if isinstance(_gs_raw, str) else _gs_raw
-                    if isinstance(_gs, dict) and _gs.get("ok"):
-                        _staged_hash = _gs.get("staged_hash") or _gs.get("staged", {}).get("hash", "")
-                        if _staged_hash and not body.get("expected_staged_hash"):
-                            body["expected_staged_hash"] = _staged_hash
-                            _git_commit_pre_hook = True
-            except Exception:
-                pass  # non-fatal, don't block commit
         try:
             raw = await fn(**body)
         finally:
@@ -14318,14 +14307,15 @@ accepted_fields=sorted(accepted_fields),
         # Task 3 auto-chain rule 6: git_commit post-hook — validate committed files
         if tool_name == "git_commit" and _status == "ok" and isinstance(_result, dict):
             try:
-                _committed = _result.get("committed_files") or []
+                _committed = _result.get("committed_files") or _result.get("committed_paths") or []
                 if _committed:
                     _validations = []
                     for _cf in _committed[:10]:
                         _cf_path = _cf if isinstance(_cf, str) else str(_cf)
                         try:
                             import code_tools as _ct_post
-                            _val_raw = await _ct_post.validate_file(_cf_path)
+                            _val_raw = await _ct_post.validate_file(
+                                _cf_path, project_path=str(body.get("project_path") or ""))
                             _val = json.loads(_val_raw) if isinstance(_val_raw, str) else _val_raw
                             _validations.append({
                                 "file": _cf_path,
@@ -14346,7 +14336,10 @@ accepted_fields=sorted(accepted_fields),
         if tool_name == "git_status" and _status == "ok" and isinstance(_result, dict):
             try:
                 _staged = _result.get("staged") or {}
-                _staged_count = _staged.get("count", 0) if isinstance(_staged, dict) else len(_staged)
+                _staged_count = (
+                    _staged.get("count", 0) if isinstance(_staged, dict)
+                    else len(_staged)
+                ) or int((_result.get("counts") or {}).get("staged") or 0)
                 if _staged_count and _staged_count > 0:
                     _result["ca_hint"] = f"{_staged_count} staged file(s) ready — git_commit to commit"
                     _result.setdefault("ca_next_action", "git_commit")

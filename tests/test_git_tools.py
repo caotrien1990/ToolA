@@ -29,6 +29,10 @@ def test_status_staged_count_and_staged_hash_are_read_only():
  d,r=repo(); (r/'b.txt').write_text('b'); before=g.status(str(r)); g.stage(str(r),['b.txt']); after=g.status(str(r))
  assert before['counts']['staged']==0 and after['counts']['staged']==1 and after['staged_hash']; d.cleanup()
 
+
+def test_commit_reports_committed_files():
+ d,r=repo();(r/'b.txt').write_text('b');st=g.stage(str(r),['b.txt']);c=g.commit(str(r),'add b',st['after']['staged_hash']);assert c['committed_files']==['b.txt'];d.cleanup()
+
 def test_paths_file_stages_and_unstages_listed_files():
  d,r=repo(); (r/'b.txt').write_text('b'); (r/'c.txt').write_text('c')
  path_file=r/'batch.paths'; path_file.write_text('b.txt\nc.txt\n',encoding='utf-8')

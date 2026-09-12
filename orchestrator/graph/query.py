@@ -403,7 +403,7 @@ def template_query(project_path: str, template: str, *, name: str = "",
         # F003 fix (2026-07-11): template_query used to skip the staleness
         # check that cbm_get_architecture already ran — orphan/dead-code reads
         # silently served a stale graph after files changed on disk.
-        payload["auto_reindex"] = _auto_reindex_if_stale(project_path)
+        payload["auto_reindex"] = {"triggered": False, "reason": "t1_read_only"}
         conn = _store.get_db(project_path, readonly=True)
         try:
             res: list[dict] = []
@@ -676,8 +676,7 @@ def cbm_get_architecture(project_path: str, *,
         return payload
     try:
         # Hybrid auto-reindex: refresh graph only if a file actually changed.
-        ar = _auto_reindex_if_stale(project_path)
-        payload["auto_reindex"] = ar
+        payload["auto_reindex"] = {"triggered": False, "reason": "wrapper_governs_refresh"}
         conn = _store.get_db(project_path, readonly=True)
         try:
             mods = conn.execute(
@@ -771,7 +770,7 @@ def dead_code_candidates(project_path: str, *, limit: int = 50,
     payload["limit_applied"] = limit
     try:
         # F003 fix (2026-07-11): same staleness guard as cbm_get_architecture.
-        payload["auto_reindex"] = _auto_reindex_if_stale(project_path)
+        payload["auto_reindex"] = {"triggered": False, "reason": "wrapper_governs_refresh"}
         conn = _store.get_db(project_path, readonly=True)
         try:
             # F004 fix: ignore low-confidence heuristic call edges (< 0.7).
@@ -856,10 +855,7 @@ def council_graph_context(project_path: str, *, name: str = "",
             # (STT-5 redesign): refresh stale index BEFORE reading in symbol mode.
             # Safe here because symbol mode does not use detect_changes (no stale
             # state to preserve). Changes mode below intentionally skips this.
-            try:
-                _auto_reindex_if_stale(project_path)
-            except Exception:
-                pass  # fail-open — stale read is safer than blocking dispatch
+            # Council attachments are pure T1 reads; no hidden graph rewrite.
             hits = graph_find_symbol(
                 project_path, name,
                 limit=COUNCIL_CONTEXT_MAX_SYMBOLS).get("results") or []

@@ -1426,11 +1426,11 @@ _DECISION_RULES = [
       "why": "Encode UTF-8 explicitly; do not assume btoa exists in the host runtime."},
     # --- W0 (SYNTRUX-AU1/AU2, AUTO_USE_MATRIX muc 10): CBM quality tools — cụ thể hơn CAN-053 nên phải đứng trước ---
     {"re": r"\b(circular.?(dep\w*|import\w*|ref\w*|dependenc\w*)|cyclic\w*|\bcycles\b|import.?cycles?|vong.?phu.?thuoc|vong.?lap.?phu.?thuoc|tarjan|kosaraju|\bscc\b|leveliz\w*|upward.?violat\w*|quality.?signal|chat.?luong.?kien.?truc|kien.?truc.?chat.?luong|codebase.?health|arch\w*health)\b",
-     "tier": "T1", "tool": "cbm_cycle_point",
+     "tier": "T2", "tool": "cbm_cycle_point",
      "skill": "15_search_code_intel",
      "why": "graph-first: cycles (Tarjan SCC), levelization, geometric-mean quality_signal — 1 call cbm_cycle_point trên graph.db"},
     {"re": r"\b(dead.?code|dead.?call\w*|uncalled\w*|unused.?(code|func\w*|method\w*|symbol|class|callable\w*)|code.?chet|ham.?chet|khong.?(duoc|ai).?(su.?dung|goi))\b",
-     "tier": "T1", "tool": "cbm_dead_code",
+     "tier": "T2", "tool": "cbm_dead_code",
      "skill": "15_search_code_intel",
      "why": "graph-first: unreferenced callables + framework-dispatch suppression trong 1 call cbm_dead_code"},
     # --- W0b (AU3/AU4): fix route nhầm của lexical fallback (probe D/F 07/09) ---
@@ -1637,7 +1637,7 @@ def _campaign_routing_prepass(folded_raw: str, live_tools: set) -> list:
         )
         and "cbm_what_if" in live
     ):
-        _add("cbm_what_if", "T1", "15_search_code_intel",
+        _add("cbm_what_if", "T2", "15_search_code_intel",
              "P5 H1: explicit what-if / gia lap / break cycle after registration.")
     if (
         (
@@ -1676,7 +1676,7 @@ def _campaign_routing_prepass(folded_raw: str, live_tools: set) -> list:
         )
         and "cbm_test_gap" in live
     ):
-        _add("cbm_test_gap", "T1", "15_search_code_intel",
+        _add("cbm_test_gap", "T2", "15_search_code_intel",
              "P3 H1: explicit test-gap / uncovered files; run-tests still wins first.")
     if re.search(
         r"\b(dead[ _-]?code|dead[ _-]?callables?|"
@@ -1684,7 +1684,7 @@ def _campaign_routing_prepass(folded_raw: str, live_tools: set) -> list:
         r"ham[ _-]?chet|code[ _-]?chet)\b",
         folded_raw,
     ):
-        _add("cbm_dead_code", "T1", "15_search_code_intel",
+        _add("cbm_dead_code", "T2", "15_search_code_intel",
              "R2 C5: dead code / ham chet, before CAN-053 and find/search.")
     _strong_cycle = re.search(
         r"\b(circular[ _-]?(dependency|dependencies|imports?)|"
@@ -1696,7 +1696,7 @@ def _campaign_routing_prepass(folded_raw: str, live_tools: set) -> list:
         _generic_quality
         and _campaign_quality_has_code_context(folded_raw)
     ):
-        _add("cbm_cycle_point", "T1", "15_search_code_intel",
+        _add("cbm_cycle_point", "T2", "15_search_code_intel",
              "R2 C6: cycle / architecture quality, before CAN-053.")
     if (
         re.search(

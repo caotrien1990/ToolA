@@ -151,3 +151,42 @@ def test_ruff_fix_clean_file_reports_unchanged(tmp_path):
 
     assert payload["ok"] is True
     assert payload["result"]["changed"] is False
+
+
+def test_ruff_fix_nonstandard_exit_fails_loud(monkeypatch, tmp_path):
+    from orchestrator.graph import tools
+
+    source = tmp_path / "mod.py"
+    source.write_text("print('ok')\n", encoding="utf-8")
+    monkeypatch.setattr(
+        tools.subprocess,
+        "run",
+        lambda *a, **k: type("P", (), {"returncode": 2, "stdout": "", "stderr": "boom"})(),
+    )
+    payload = json.loads(asyncio.run(ruff_fix(
+        project_path=str(tmp_path), path="mod.py", apply=True,
+    )))
+    assert payload["ok"] is False
+    assert payload["error_name"] == "RUFF_EXEC_FAILED"
+    assert source.read_text(encoding="utf-8") == "print('ok')\n"
+
+
+def test_ruff_fix_validation_failure_reverts(monkeypatch, tmp_path):
+    from orchestrator.graph import tools
+    import code_tools
+
+    source = tmp_path / "mod.py"
+    original = "import os\nprint('ok')\n"
+    source.write_text(original, encoding="utf-8")
+    monkeypatch.setattr(
+        code_tools,
+        "validate_file",
+        lambda *_a, **_k: json.dumps({"ok": False, "error": "forced"}),
+    )
+    payload = json.loads(asyncio.run(tools.ruff_fix(
+        project_path=str(tmp_path), path="mod.py", apply=True,
+    )))
+    assert payload["ok"] is False
+    assert payload["error_name"] == "RUFF_VALIDATION_FAILED_AUTO_REVERT"
+    assert payload["rollback_verified"] is True
+    assert source.read_text(encoding="utf-8") == original
