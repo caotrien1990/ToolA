@@ -207,7 +207,7 @@ class TestSearchRegexBudget(unittest.IsolatedAsyncioTestCase):
             with mock.patch.object(search_module, "_run_search_singleflight", side_effect=capture):
                 await search_module.search_code(query="needle", path=str(root), mode="regex", regex_deadline_seconds=11.0)
                 await search_module.search_code(query="needle", path=str(root), mode="regex", regex_deadline_seconds=10.0)
-        self.assertEqual(keys[0][:7] + keys[0][8:], keys[1][:7] + keys[1][8:])
+        self.assertEqual(keys[0][:6] + keys[0][7:], keys[1][:6] + keys[1][7:])
 
     async def test_absolute_deadline_includes_singleflight_wait(self) -> None:
         observed_timeout = None

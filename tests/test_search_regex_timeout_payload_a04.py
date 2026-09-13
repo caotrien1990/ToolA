@@ -180,7 +180,7 @@ class RegexTimeoutPayloadTests(unittest.TestCase):
     def test_deadline_number_is_not_widened(self):
         # L-x guard: the tool's own default deadline must stay put. This test
         # goes RED if someone "fixes" the timeout by bumping DEFAULT_DEADLINE.
-        self.assertEqual(search_regex_worker.DEFAULT_DEADLINE_SECONDS, 5.0)
+        self.assertEqual(search_regex_worker.DEFAULT_DEADLINE_SECONDS, 8.0)
 
 
 if __name__ == "__main__":

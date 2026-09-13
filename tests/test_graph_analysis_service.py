@@ -138,10 +138,12 @@ def _wait_idle(timeout_s=2.0):
 class TestAnalysisServiceL1:
     def test_caps_named_in_l1(self):
         caps = svc.l1_caps()
-        assert caps["graph_deadline_ms"] == ANALYSIS_GRAPH_DEADLINE_MS == 2000
+        assert caps["graph_deadline_ms"] == ANALYSIS_GRAPH_DEADLINE_MS
         assert caps["evolution_deadline_ms"] == ANALYSIS_EVOLUTION_DEADLINE_MS == 5000
-        assert caps["join_grace_ms"] == ANALYSIS_JOIN_GRACE_MS == 250
-        assert caps["latency_contract_ms"] == 2250
+        assert caps["join_grace_ms"] == ANALYSIS_JOIN_GRACE_MS
+        assert caps["latency_contract_ms"] == (
+            ANALYSIS_GRAPH_DEADLINE_MS + ANALYSIS_JOIN_GRACE_MS
+        )
         assert caps["max_active_workers"] == ANALYSIS_MAX_ACTIVE_WORKERS == 2
         assert caps["check_every_units"] == ANALYSIS_CHECK_EVERY_UNITS == 64
         assert caps["response_max_bytes"] == ANALYSIS_RESPONSE_MAX_BYTES == 65536

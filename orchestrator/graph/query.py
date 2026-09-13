@@ -26,6 +26,8 @@ from .status import _stale_count
 from .liveness import (
     is_entry_point as _is_entry_point,
     dead_callables as _dead_callables,
+    framework_dispatch_methods as _framework_dispatch_methods,
+    is_framework_dispatch as _is_framework_dispatch,
 )
 
 DEFAULT_DEPTH = 5

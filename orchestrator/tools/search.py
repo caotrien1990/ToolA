@@ -742,6 +742,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
     import time
 
     search_started_at = time.monotonic()
+    snapshot_retry = int(aliases.pop("_snapshot_retry", 0) or 0)
 
     # TA-7 fix (2026-08-18): file_glob is a natural name callers reach for; it used
     # to fall into **aliases unmapped, so a file_glob="*.py" filter silently did
@@ -1142,8 +1143,9 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                         timeout=wait_timeout,
                     )
                     break  # success — exit retry loop
-                except (asyncio.TimeoutError, regex_worker.RegexSearchTimeout):
-                    if _regex_retried or mode != "regex":
+                except asyncio.TimeoutError:
+                    if (_regex_retried or mode != "regex"
+                            or regex_deadline_seconds is not None):
                         raise
                     _regex_retried = True
                     effective_regex_deadline = min(
@@ -1165,6 +1167,20 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                         "retrying with extended deadline. "
                         "Add file_pattern='*.py' or path='orchestrator/' to narrow."
                     )
+                except Exception as exc:
+                    if (regex_worker is None
+                            or not isinstance(exc, regex_worker.RegexSearchTimeout)
+                            or _regex_retried
+                            or regex_deadline_seconds is not None):
+                        raise
+                    _regex_retried = True
+                    effective_regex_deadline = min(
+                        effective_regex_deadline * 2.0,
+                        regex_worker.MAX_DEADLINE_SECONDS,
+                    )
+                    regex_deadline_at = search_started_at + effective_regex_deadline
+                    wait_timeout = regex_deadline_at - time.monotonic()
+                    producer_deadline_at = regex_deadline_at
             else:
                 # inner loop exhausted without break — both attempts timed out.
                 # Re-raise as asyncio.TimeoutError to enter the outer handler.
@@ -1175,8 +1191,26 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         else:  # pragma: no cover - loop either returns or raises
             raise search_snapshots.SnapshotUnavailable("snapshot changed during pin")
     except search_snapshots.SnapshotUnavailable:
-        if pin_attempt or _search_snapshot_token(snapshot_root) == snapshot_token:
+        if (snapshot_retry >= 1 or pin_attempt
+                or _search_snapshot_token(snapshot_root) == snapshot_token):
             raise
+        return await search_code(
+            query=query,
+            path=path,
+            project_path=project_path,
+            file_pattern=file_pattern,
+            literal_search=literal_search,
+            mode=mode,
+            query_encoding="plain",
+            max_context_lines=max_context_lines,
+            max_results=max_results,
+            flags=flags,
+            force=force,
+            include_impact=include_impact,
+            regex_deadline_seconds=regex_deadline_seconds,
+            _snapshot_retry=snapshot_retry + 1,
+            **aliases,
+        )
     except asyncio.TimeoutError:
         _timeout_resp = _regex_timeout_payload(query, effective_regex_deadline, path, project_path, file_pattern)
         if _narrow_warn:

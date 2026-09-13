@@ -18,6 +18,7 @@ from pathlib import Path
 
 from orchestrator.lifecycle.console_warp import (
     CREATE_NO_WINDOW,
+    STARTF_USESHOWWINDOW,
     child_creationflags,
     child_startupinfo,
 )

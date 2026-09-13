@@ -14,10 +14,12 @@ from orchestrator.session import store
 
 @pytest.fixture
 def session_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    store.close_writer()
     db_path = tmp_path / "sessions.db"
     monkeypatch.setattr(store, "_SESSIONS_DB", db_path)
     store._init_session_db()
-    return db_path
+    yield db_path
+    store.close_writer()
 
 
 def test_session_database_uses_wal_mode(session_db: Path) -> None:

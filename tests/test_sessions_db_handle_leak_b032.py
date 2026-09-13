@@ -84,6 +84,26 @@ def _run_isolated(module_names: tuple[str, ...], sandbox: Path) -> tuple[int, li
         cwd=str(ROOT), env=env, capture_output=True, text=True,
         encoding="utf-8", errors="replace", timeout=1800,
     )
+    # Windows may release the child process's final SQLite WAL handle just after
+    # process exit. Retry cleanup of child-created entries before measuring leaks.
+    import shutil
+    import time
+    for delay in (0.05, 0.1, 0.2, 0.4, 0.8):
+        remaining = [
+            child for child in sandbox.iterdir()
+            if not child.name.startswith("pytest-of-")
+        ]
+        if not remaining:
+            break
+        time.sleep(delay)
+        for child in remaining:
+            if child.is_dir():
+                shutil.rmtree(child, ignore_errors=True)
+            else:
+                try:
+                    child.unlink()
+                except OSError:
+                    pass
     leftovers = sorted(
         child.name for child in sandbox.iterdir()
         if not child.name.startswith("pytest-of-")

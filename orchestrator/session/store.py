@@ -184,6 +184,7 @@ class SessionWriter:
         self._enqueued_total = 0
         self._committed_total = 0
         self._dropped_count = 0
+        self._failed_count = 0
         self._drain_conn: sqlite3.Connection | None = None
         self._restart_count = 0
         if auto_start:

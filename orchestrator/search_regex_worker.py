@@ -120,6 +120,7 @@ def _materialize_records(
         total_bytes = validate_next_record_budget(
             len(materialized), total_bytes, len(payload_bytes),
         )
+        validate_line_budget(payload_bytes)
         materialized.append((relative_path, label, payload_bytes))
     _remaining(deadline_at, deadline_seconds)
     return materialized
@@ -293,57 +294,6 @@ def preflight_pattern(
     _run_isolated(("preflight", pattern, flags, [], 1, 0), deadline)
 
 
-def _search_inline(
-    pattern: str,
-    flags: int,
-    records: list[tuple[str, str, bytes]],
-    *,
-    max_results: int,
-    context_lines: int,
-) -> list[dict]:
-    """Run regex search inline (no subprocess) for small record sets.
-
-    R40: Eliminates pickle/spawn overhead for record sets under
-    INLINE_MAX_BYTES. This is the common case for scoped searches
-    (file_pattern != '*') and avoids the 2-5s subprocess overhead
-    that causes full-repo regex timeouts.
-    """
-    compiled = re.compile(pattern, flags)
-    results: list[dict] = []
-    for _relative_path, label, payload in records:
-        lines = payload.decode("utf-8", errors="ignore").splitlines()
-        for index, line in enumerate(lines, 1):
-            if compiled.search(line):
-                before = ""
-                after = ""
-                if context_lines:
-                    before = "\n".join(
-                        item.strip()
-                        for item in lines[max(0, index - 1 - context_lines):index - 1]
-                    )
-                    after = "\n".join(
-                        item.strip()
-                        for item in lines[index:min(len(lines), index + context_lines)]
-                    )
-                results.append({
-                    "file": label,
-                    "line": index,
-                    "match": line.strip(),
-                    "context_before": before,
-                    "context_after": after,
-                })
-                if len(results) >= max_results:
-                    return results
-    return results
-
-
-# R40: inline when total materialized bytes < 16MB (= MAX_INPUT_BYTES).
-# Above this, subprocess isolation is safer for runaway patterns.
-# Most codebases fall under this threshold; the subprocess path is a
-# safety backstop for data repos with very large total source size.
-INLINE_MAX_BYTES = MAX_INPUT_BYTES
-
-
 def search_records(
     pattern: str,
     flags: int,
@@ -361,13 +311,6 @@ def search_records(
         deadline_at=deadline_at,
         deadline_seconds=deadline,
     )
-    # R40: inline path for small record sets — eliminates subprocess overhead.
-    total_bytes = sum(len(p) for _, _, p in materialized)
-    if total_bytes <= INLINE_MAX_BYTES:
-        return _search_inline(
-            pattern, flags, materialized,
-            max_results=max_results, context_lines=context_lines,
-        )
     remaining = _remaining(deadline_at, deadline)
     return _run_isolated(
         ("search", pattern, flags, materialized, max_results, context_lines),
