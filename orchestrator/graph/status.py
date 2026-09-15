@@ -123,9 +123,9 @@ def graph_status(project_path: str) -> dict:
             payload["last_run"] = counts["last_run"]
             wal = conn.execute("PRAGMA journal_mode;").fetchone()
             payload["wal"] = wal[0] if wal else "unknown"
-            # CAN-053: stale-file count FIRST — freshness derives from actual
-            # drift. Incremental/hybrid reindex keeps the graph current without
-            # touching last_run, so 0 stale files IS fresh regardless of age.
+            # CAN-053: stale-file count FIRST - freshness derives from actual
+            # drift. Both full and incremental indexes record index_runs, so
+            # last_run is the most recent graph mutation rather than last full run.
             try:
                 payload["stale_files"] = _stale_count(conn, project_path)
             except Exception as e:

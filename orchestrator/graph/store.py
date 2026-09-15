@@ -401,6 +401,16 @@ def neighbors(conn: sqlite3.Connection, node_id: str, *, direction: str = "out",
 
 def start_index_run(conn: sqlite3.Connection, scope: str) -> int:
     now = int(time.time() * 1000)
+    # A process/client can disappear after recording a running attempt. Once a
+    # later run acquires the graph write transaction, older running rows cannot
+    # still be the current operation; close them instead of leaving permanent
+    # false "indexing" provenance.
+    conn.execute(
+        "UPDATE index_runs SET finished_at=?, status='abandoned', "
+        "error=COALESCE(error, 'superseded by a later index run') "
+        "WHERE status='running';",
+        (now,),
+    )
     cur = conn.execute(
         "INSERT INTO index_runs (started_at, scope, status) VALUES (?, ?, 'running');",
         (now, scope),

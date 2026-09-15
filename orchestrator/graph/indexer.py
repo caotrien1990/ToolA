@@ -882,6 +882,10 @@ def incremental_index(project_path: str, *, project_root: Optional[str] = None,
     try:
         changes = detect_changes(project_path, project_root=root, scope=scope, exts=exts)
         conn = _store.get_db(project_path)
+        # Persist attempt identity before the indexing transaction. If extraction
+        # rolls back, the run row survives and can still be closed as failed.
+        run_id = _store.start_index_run(conn, "incremental")
+        conn.commit()
         try:
             for attempt in range(4):
                 try:
@@ -927,9 +931,31 @@ def incremental_index(project_path: str, *, project_root: Optional[str] = None,
             orphan_after = conn.execute(
                 "SELECT COUNT(*) FROM edges e LEFT JOIN nodes n ON e.target=n.id "
                 "WHERE n.id IS NULL AND e.target NOT LIKE 'ext:%';").fetchone()[0]
+            counts = _store.status_counts(conn)
+            duration_s = round(time.monotonic() - t0, 2)
+            _store.finish_index_run(
+                conn, run_id, status="completed",
+                node_count=counts["nodes"], edge_count=counts["edges"],
+                file_count=counts["files"], duration_s=duration_s,
+                error="; ".join(f"{e['file']}: {e['error']}" for e in errors) or None,
+            )
             conn.commit()
         except Exception:
             conn.rollback()
+            if run_id is not None:
+                try:
+                    conn.execute("BEGIN IMMEDIATE;")
+                    counts = _store.status_counts(conn)
+                    _store.finish_index_run(
+                        conn, run_id, status="failed",
+                        node_count=counts["nodes"], edge_count=counts["edges"],
+                        file_count=counts["files"],
+                        duration_s=round(time.monotonic() - t0, 2),
+                        error="incremental_index_failed",
+                    )
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
             raise
         finally:
             conn.close()

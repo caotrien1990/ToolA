@@ -84,6 +84,15 @@ class P1AdvancedGraphSuite(unittest.TestCase):
         self.assertEqual(r["reindexed"], 0)
         self.assertEqual(r["skipped"], 2)
         self.assertLess(r["wall_ms"], 10_000)
+        conn = store.get_db(self.proj, readonly=True)
+        try:
+            last = store.status_counts(conn)["last_run"]
+        finally:
+            conn.close()
+        self.assertEqual(last["scope"], "incremental")
+        self.assertEqual(last["status"], "completed")
+        self.assertEqual(last["file_count"], 2)
+        self.assertAlmostEqual(last["duration_s"], r["wall_ms"] / 1000, delta=0.2)
 
     def test_incremental_edit_updates_and_removes_stale(self):
         (self.tempdir / "core.py").write_text(
@@ -132,6 +141,48 @@ class P1AdvancedGraphSuite(unittest.TestCase):
         self.assertTrue(r["fallback"])
         self.assertIn("fallback_reason", r)
         self.assertEqual(_orphans(self.proj), 0)
+
+    def test_incremental_failure_records_terminal_run(self):
+        from unittest import mock
+
+        with mock.patch(
+            "orchestrator.graph.indexer._build_dependency_edges",
+            side_effect=RuntimeError("injected dependency failure"),
+        ), mock.patch(
+            "orchestrator.graph.indexer.index_project",
+            side_effect=RuntimeError("injected fallback failure"),
+        ):
+            result = incremental_index(self.proj)
+        self.assertEqual(result["status"], "failed")
+        conn = store.get_db(self.proj, readonly=True)
+        try:
+            last = store.status_counts(conn)["last_run"]
+        finally:
+            conn.close()
+        self.assertEqual(last["scope"], "incremental")
+        self.assertEqual(last["status"], "failed")
+        self.assertIsNotNone(last["finished_at"])
+
+    def test_new_incremental_run_abandons_stale_running_rows(self):
+        conn = store.get_db(self.proj)
+        try:
+            stale_id = store.start_index_run(conn, "incremental")
+            conn.commit()
+        finally:
+            conn.close()
+        result = incremental_index(self.proj)
+        self.assertEqual(result["status"], "completed")
+        conn = store.get_db(self.proj, readonly=True)
+        try:
+            stale = conn.execute(
+                "SELECT status, finished_at FROM index_runs WHERE id=?", (stale_id,)
+            ).fetchone()
+            last = store.status_counts(conn)["last_run"]
+        finally:
+            conn.close()
+        self.assertEqual(stale["status"], "abandoned")
+        self.assertIsNotNone(stale["finished_at"])
+        self.assertEqual(last["status"], "completed")
 
     def test_dependency_edges_cross_file(self):
         conn = store.get_db(self.proj, readonly=True)
