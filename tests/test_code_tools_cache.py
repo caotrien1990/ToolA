@@ -1082,13 +1082,12 @@ class TestCodeToolsCache(unittest.TestCase):
         self.assertEqual(result.get('category'), 'stale_index')
         self.assertIn('refresh_project_map', result.get('error', ''))
 
-    def test_query_index_auto_refreshes_missing_index_by_default(self):
+    def test_query_index_requires_explicit_refresh_for_missing_index(self):
         result = json.loads(asyncio.run(code_tools.query_index(str(self.project_path), group='source')))
 
-        self.assertTrue(result.get('ok'), msg=result)
-        self.assertTrue(result.get('auto_refreshed'), msg=result)
-        self.assertTrue((self.project_path / '.orchestrator_cache' / 'INDEX.json').exists())
-        self.assertTrue(any(item.get('path') == 'sample.py' for item in result.get('files', [])), msg=result)
+        self.assertFalse(result.get('ok'), msg=result)
+        self.assertEqual(result.get('error_name'), 'INDEX_REFRESH_REQUIRED')
+        self.assertFalse((self.project_path / '.orchestrator_cache' / 'INDEX.json').exists())
 
     def test_create_folder_resolves_relative_path_via_project_path(self):
         rel = 'nested_via_project'

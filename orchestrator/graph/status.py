@@ -16,7 +16,7 @@ from . import store as _store
 # Re-exported here so `from .status import EXTRACTOR_VERSION` keeps working.
 
 
-def _stale_count(conn: sqlite3.Connection, project_root: str) -> int:
+def _stale_count(conn: sqlite3.Connection, project_root: str, *, budget_s: float | None = None) -> int | dict:
     """Count indexed files needing re-extraction, by the SAME rule the indexer uses.
 
     Staleness has one definition and it lives in `store.stale_files`: content
@@ -47,7 +47,12 @@ def _stale_count(conn: sqlite3.Connection, project_root: str) -> int:
         "FROM files;").fetchall()
     import hashlib
     stale = 0
-    for r in rows:
+    started = time.monotonic()
+    for position, r in enumerate(rows, 1):
+        if budget_s is not None and time.monotonic() - started >= budget_s:
+            return {"stale_files": stale, "files_checked": position - 1,
+                    "files_total": len(rows), "complete": False,
+                    "stop_reason": "response_budget"}
         # Cheapest clause first: version drift needs no filesystem touch.
         if r["extractor_version"] != EXTRACTOR_VERSION:
             stale += 1
@@ -64,14 +69,24 @@ def _stale_count(conn: sqlite3.Connection, project_root: str) -> int:
         # Hash remains authoritative. Size+mtime equality is not proof: restore,
         # checkout and copy tools can preserve both while replacing the bytes.
         try:
+            digest = hashlib.sha256()
             with open(abs_p, "rb") as f:
-                chash = hashlib.sha256(f.read()).hexdigest()
+                for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                    digest.update(chunk)
+                    if budget_s is not None and time.monotonic() - started >= budget_s:
+                        return {"stale_files": stale, "files_checked": position - 1,
+                                "files_total": len(rows), "complete": False,
+                                "stop_reason": "response_budget"}
+            chash = digest.hexdigest()
         except OSError:
             stale += 1
             continue
         if chash != r["content_hash"]:
             stale += 1
-    return stale
+    if budget_s is None:
+        return stale
+    return {"stale_files": stale, "files_checked": len(rows),
+            "files_total": len(rows), "complete": True, "stop_reason": None}
 
 
 def graph_status(project_path: str) -> dict:
@@ -127,7 +142,9 @@ def graph_status(project_path: str) -> dict:
             # drift. Both full and incremental indexes record index_runs, so
             # last_run is the most recent graph mutation rather than last full run.
             try:
-                payload["stale_files"] = _stale_count(conn, project_path)
+                stale_result = _stale_count(conn, project_path, budget_s=2.0)
+                payload["stale_files"] = stale_result["stale_files"]
+                payload["stale_scan"] = stale_result
             except Exception as e:
                 payload["stale_files"] = None
                 payload["error"] = f"stale_count_failed: {type(e).__name__}"
@@ -142,8 +159,11 @@ def graph_status(project_path: str) -> dict:
                 fin = counts["last_run"]["finished_at"]
                 if fin:
                     stale_n = payload.get("stale_files")
-                    if stale_n == 0:
+                    scan_complete = bool((payload.get("stale_scan") or {}).get("complete"))
+                    if stale_n == 0 and scan_complete:
                         payload["freshness"] = "fresh"
+                    elif not scan_complete:
+                        payload["freshness"] = "unknown"
                     elif stale_n is None:
                         # Count failed: age is not a freshness signal. Recent
                         # last_run must not become false-fresh (BUG-01 / AC-P1-S1).

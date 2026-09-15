@@ -179,6 +179,22 @@ def test_tool_missing_from_the_local_registry_still_reaches_the_daemon(
     assert payload.get("ok") is True, payload
 
 
+def test_progress_index_proxy_has_no_fixed_wall_clock(monkeypatch, tmp_path):
+    _isolate(monkeypatch)
+    seen = {}
+
+    def fake_urlopen(req, timeout=None):
+        seen["timeout"] = timeout
+        return _FakeResponse({"ok": True})
+
+    import urllib.request as ur
+    monkeypatch.setattr(ur, "urlopen", fake_urlopen)
+    response = asyncio.run(srv.dispatch_tool_call(
+        "cbm_incremental_index", {"project_path": str(tmp_path)}, transport="mcp"))
+    assert json.loads(response.body)["ok"]
+    assert seen["timeout"] is None
+
+
 def test_a_field_no_layer_knows_still_fails_loud(monkeypatch, tmp_path):
     """Deferring must not become "accept anything".
 

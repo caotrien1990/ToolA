@@ -165,8 +165,11 @@ async def cbm_index(project_path: str = "", scope: str = "core", **aliases) -> s
                             "error": path_err}, ensure_ascii=False)
     try:
         async with _graph_write_lock(project_path):
+            from orchestrator.progress_watchdog import current_watchdog
+            watchdog = current_watchdog()
             result = await asyncio.to_thread(
                 _indexer.index_project, project_path, scope=scope, project_root=project_path,
+                watchdog=watchdog,
             )
         return _ok(result)
     except Exception as e:
@@ -706,9 +709,11 @@ async def cbm_incremental_index(project_path: str = "", scope: str = "full",
                             "error": path_err}, ensure_ascii=False)
     try:
         async with _graph_write_lock(project_path):
+            from orchestrator.progress_watchdog import current_watchdog
+            watchdog = current_watchdog()
             result = await asyncio.to_thread(
                 _indexer.incremental_index, project_path, scope=scope,
-                project_root=project_path)
+                project_root=project_path, watchdog=watchdog)
         return _ok(result)
     except Exception as e:
         return _err("cbm_incremental_index", e)

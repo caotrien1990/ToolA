@@ -72,13 +72,17 @@ class TestQueryIndexSnapshots(unittest.TestCase):
         refresh.assert_not_awaited()
         self._assert_lease_released(snapshot_id)
 
-    def test_non_authoritative_snapshot_refreshes_and_repins(self):
+    def test_non_authoritative_snapshot_requires_explicit_refresh_and_repins(self):
         original_id = search_snapshots.publish_snapshot(self.root, index=None)
 
-        raw, payload = self._query(auto_refresh=True)
+        blocked_raw, blocked = self._query(auto_refresh=True)
+        self.assertFalse(blocked["ok"], msg=blocked)
+        self.assertEqual(blocked["error_name"], "INDEX_REFRESH_REQUIRED")
+        self._assert_single_snapshot_key(blocked_raw, blocked)
+        json.loads(asyncio.run(code_tools.refresh_project_map(str(self.root))))
+        raw, payload = self._query(auto_refresh=False)
 
         self.assertTrue(payload["ok"], msg=payload)
-        self.assertTrue(payload.get("auto_refreshed"), msg=payload)
         self.assertNotEqual(payload["snapshot_id"], original_id)
         self.assertEqual(
             search_snapshots.current_snapshot_id(self.root),
@@ -110,7 +114,7 @@ class TestQueryIndexSnapshots(unittest.TestCase):
         self.assertEqual(stale["category"], "stale_index")
         self._assert_single_snapshot_key(stale_raw, stale)
 
-    def test_old_pin_remains_readable_through_query_refresh_and_gc(self):
+    def test_old_pin_remains_readable_through_explicit_refresh_and_gc(self):
         generated = json.loads(asyncio.run(
             code_tools.generate_project_map(str(self.root))
         ))
@@ -120,7 +124,11 @@ class TestQueryIndexSnapshots(unittest.TestCase):
         old_generation = old_pin.generation_path
         try:
             self.sample.write_text("VALUE = 'GEN_B'\n", encoding="utf-8")
-            _raw, payload = self._query(auto_refresh=True)
+            blocked_raw, blocked = self._query(auto_refresh=True)
+            self.assertFalse(blocked["ok"], msg=blocked)
+            self.assertEqual(blocked["error_name"], "INDEX_REFRESH_REQUIRED")
+            json.loads(asyncio.run(code_tools.refresh_project_map(str(self.root))))
+            _raw, payload = self._query(auto_refresh=False)
             self.assertTrue(payload["ok"], msg=payload)
             self.assertNotEqual(payload["snapshot_id"], old_id)
 
@@ -152,11 +160,11 @@ class TestQueryIndexSnapshots(unittest.TestCase):
             raw, payload = self._query(auto_refresh=True)
 
         self.assertFalse(payload["ok"], msg=payload)
-        self.assertEqual(payload["error_name"], "AUTO_REFRESH_FAILED")
+        self.assertEqual(payload["error_name"], "INDEX_REFRESH_REQUIRED")
         self.assertEqual(payload["snapshot_id"], snapshot_id)
         self.assertNotIn("files", payload)
         self._assert_single_snapshot_key(raw, payload)
-        refresh.assert_awaited_once()
+        refresh.assert_not_awaited()
         self.assertEqual(
             search_snapshots.current_snapshot_id(self.root),
             snapshot_id,

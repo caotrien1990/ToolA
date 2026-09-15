@@ -95,3 +95,16 @@ def test_full_catalog_hint_tracks_live_count():
     full = srv._tool_names_payload(limit=total)
     assert full["returned_count"] == total
     assert full["bounded"] is False
+
+
+def test_progress_index_tools_have_no_proxy_wall_clock(monkeypatch):
+    seen = {}
+
+    def urlopen(request, timeout=None):
+        seen["timeout"] = timeout
+        return Response({"ok": True})
+
+    monkeypatch.setattr(ms.urllib.request, "urlopen", urlopen)
+    assert json.loads(ms._mcp_proxy_call(
+        "cbm_incremental_index", {"project_path": "D:/repo"}))["ok"]
+    assert seen["timeout"] is None

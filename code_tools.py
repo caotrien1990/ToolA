@@ -1862,7 +1862,8 @@ def _project_map_skipped_payload(project_path: str, freshness: dict) -> dict:
     return summary
 
 
-async def _project_map_build(project_path: str, force: bool, builder) -> str:
+async def _project_map_build(project_path: str, force: bool, builder,
+                             _operation_id: str = "", _cancel_event=None) -> str:
     if not force:
         freshness = await _project_map_freshness(project_path)
         if freshness.get("fresh"):
@@ -1870,7 +1871,9 @@ async def _project_map_build(project_path: str, force: bool, builder) -> str:
             return json.dumps(_project_map_skipped_payload(project_path, freshness),
                               ensure_ascii=False)
     try:
-        result = await asyncio.to_thread(builder, project_path)
+        from orchestrator.progress_watchdog import current_watchdog
+        watchdog = current_watchdog()
+        result = await asyncio.to_thread(builder, project_path, watchdog=watchdog)
         _mark_index_refreshed(project_path)
         if isinstance(result, dict):
             result = {"ok": True, "skipped": False, "rebuilt": True, **result}
@@ -1886,14 +1889,18 @@ async def _project_map_build(project_path: str, force: bool, builder) -> str:
         return json.dumps({"ok": False, "error": str(exc)})
 
 
-async def generate_project_map(project_path: str, force: bool = False) -> str:
-    return await _project_map_build(project_path, force, surgical_mapper.generate_project_map)
+async def generate_project_map(project_path: str, force: bool = False,
+                               _operation_id: str = "", _cancel_event=None) -> str:
+    return await _project_map_build(project_path, force, surgical_mapper.generate_project_map,
+                                    _operation_id, _cancel_event)
 
 
 # ─── Tool 11: refresh_project_map ───────────────────────────────────────────────────
 
-async def refresh_project_map(project_path: str, force: bool = False) -> str:
-    return await _project_map_build(project_path, force, surgical_mapper.refresh_project_map)
+async def refresh_project_map(project_path: str, force: bool = False,
+                              _operation_id: str = "", _cancel_event=None) -> str:
+    return await _project_map_build(project_path, force, surgical_mapper.refresh_project_map,
+                                    _operation_id, _cancel_event)
 
 
 # ─── Tool 12: update_file_cache ───────────────────────────────────────────────────
@@ -6161,33 +6168,17 @@ async def query_index(project_path: str, query: str = "", group: str = None, min
         )
 
     async def refresh_current(category: str, previous_snapshot_id: str | None) -> str | None:
-        try:
-            # P2-SRCH-01: bound the full project-map rebuild. On a cold index
-            # this is the stage that previously ran unbounded (build_index +
-            # publish_snapshot) and produced the observed 15s zero-response.
-            raw = await asyncio.wait_for(
-                asyncio.shield(refresh_project_map(str(root))),
-                timeout=max(0.001, seconds_left()),
-            )
-            payload = json.loads(raw)
-        except asyncio.TimeoutError:
-            return deadline_error("auto_refresh", previous_snapshot_id)
-        except Exception as exc:
-            return error_response(
-                f"auto_refresh failed: {exc}",
-                "AUTO_REFRESH_FAILED",
-                category,
-                previous_snapshot_id,
-            )
-        if not isinstance(payload, dict) or payload.get("error") or payload.get("ok") is False:
-            reason = payload.get("error") if isinstance(payload, dict) else "invalid refresh response"
-            return error_response(
-                f"auto_refresh failed: {reason}",
-                "AUTO_REFRESH_FAILED",
-                category,
-                previous_snapshot_id,
-            )
-        return None
+        # Interactive queries never own an O(repo) rebuild. A caller can launch
+        # generate/refresh explicitly and poll its operation watchdog; this read
+        # remains bounded and honest about the stale/missing snapshot.
+        return error_response(
+            "query_index requires an explicit project-map refresh; no inline long rebuild was started",
+            "INDEX_REFRESH_REQUIRED",
+            category,
+            previous_snapshot_id,
+            hint=("Run generate_project_map/refresh_project_map explicitly, poll write_status "
+                  "progress until committed, then retry query_index."),
+        )
 
     async def repin_after_refresh(category: str, previous_snapshot_id: str | None) -> str | None:
         nonlocal pin, index, auto_refreshed

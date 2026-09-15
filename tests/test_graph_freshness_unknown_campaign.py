@@ -57,7 +57,7 @@ def test_count_error_recent_index_is_unknown_not_fresh(tmp_path, monkeypatch):
     finally:
         conn.close()
 
-    def _boom(_conn, _root):
+    def _boom(_conn, _root, **_kwargs):
         raise sqlite3.OperationalError("campaign-forced stale_count failure")
 
     monkeypatch.setattr(gstatus, "_stale_count", _boom)

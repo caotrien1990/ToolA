@@ -20,6 +20,7 @@ from .config import (
     EXTRACTOR_VERSION,
 )
 from . import store as _store
+from orchestrator.progress_watchdog import OperationCancelled
 from .extractors.python import extract as _extract_python
 from .extractors import javascript as _extractor_js
 
@@ -178,17 +179,18 @@ def _language_for(path: str) -> str:
 
 def index_project(project_path: str, *, scope: str = "core",
                   project_root: Optional[str] = None,
-                  exts: tuple[str, ...] = DEFAULT_EXTS) -> dict:
+                  exts: tuple[str, ...] = DEFAULT_EXTS, watchdog=None) -> dict:
     """Index a project scope into the graph DB.
 
-    scope: "core" (orchestrator package only, <45s budget) or "full" (<150s budget).
+    scope: "core" (orchestrator package only) or "full" (all eligible source).
+    Explicit indexing has no work-duration ceiling; watchdog progress/cancellation
+    governs it while admission and lock waits remain bounded.
     project_root: base for dotted module names + relative paths. Defaults to project_path.
     Returns a result dict with counts, duration, status, and per-file errors.
     """
     root = project_root or project_path
     t0 = time.monotonic()
-    budget = INDEX_TIME_BUDGET_CORE_S if scope == "core" else INDEX_TIME_BUDGET_FULL_S
-    timeout = t0 + budget
+    budget = None  # explicit indexing is progress-watchdog governed, never wall-clock capped
 
     conn = _store.get_db(project_path)
     run_id = _store.start_index_run(conn, scope=scope)
@@ -201,6 +203,8 @@ def index_project(project_path: str, *, scope: str = "core",
                           if os.path.isdir(core_root) else [])
         else:
             candidates = _walk_files(root, exts=exts, overlay_root=root)
+        if watchdog:
+            watchdog.progress("discover", completed=0, total=len(candidates))
 
         parallel = _parallel_index_enabled()
         # Snapshot content hashes; detect stale (changed or new) files.
@@ -215,16 +219,14 @@ def index_project(project_path: str, *, scope: str = "core",
         files_unchanged = len(snapshots) - len(stale)
         errors: list[dict] = []
 
-        budget_hit = False
+        budget_hit = False  # compatibility field; explicit index no longer time-truncates
         stale_snapshots = [s for s in snapshots if s["path"] in stale_paths]
         extracted = _extract_snapshots(stale_snapshots, root, parallel=parallel)
-        for item in extracted:
+        for position, item in enumerate(extracted, 1):
             snap = item["snap"]
-            if time.monotonic() > timeout:
-                # budget exhausted — mark partial, keep what we have
-                budget_hit = True
-                errors.append({"file": snap["path"], "error": "budget_exhausted"})
-                continue
+            if watchdog:
+                watchdog.progress("extract", completed=position, total=len(extracted),
+                                  detail=snap["path"])
             if item["error"]:
                 errors.append({"file": snap["path"], "error": item["error"]})
                 continue
@@ -251,17 +253,25 @@ def index_project(project_path: str, *, scope: str = "core",
         # Prune BEFORE the dependency passes so no edge is built onto a node
         # that is about to be deleted.
         files_pruned = _prune_missing_files(conn, root)
+        if watchdog:
+            watchdog.progress("edges", completed=0, total=3)
 
         # BUG-3a: seed cross-file imports_module edges on full index too;
         # otherwise they only appear after the first incremental_index run.
         dep_stats = _build_dependency_edges(conn)
+        if watchdog:
+            watchdog.progress("edges", completed=1, total=3, detail="dependencies")
         dep_edges = dep_stats["edges"]
         # W5: same reasoning for dynamic (string-name) dispatch — the edges are
         # cross-file, so only this stage can build them.
         dyn_stats = _build_dynamic_ref_edges(conn)
+        if watchdog:
+            watchdog.progress("edges", completed=2, total=3, detail="dynamic_refs")
         # After BOTH passes above: this one reads `imports_module`, which
         # _build_dependency_edges has just rebuilt.
         imp_stats = _resolve_imported_calls(conn)
+        if watchdog:
+            watchdog.progress("edges", completed=3, total=3, detail="imported_calls")
         conn.commit()
         duration = round(time.monotonic() - t0, 2)
         # partial only when a stale file was actually skipped for budget —
@@ -295,7 +305,7 @@ def index_project(project_path: str, *, scope: str = "core",
             "imported_call_stats": imp_stats,
             "errors": errors,
             "meets_gates": {
-                "duration": duration <= budget,
+                "duration": True,
                 "min_nodes": counts["nodes"] >= INDEX_MIN_NODES,
                 "min_edges": counts["edges"] >= INDEX_MIN_EDGES,
                 "no_source_mutation": True,  # indexer is read-only on source
@@ -864,7 +874,8 @@ def _resolve_imported_calls(conn) -> dict:
 
 
 def incremental_index(project_path: str, *, project_root: Optional[str] = None,
-                      scope: str = "full", exts: tuple[str, ...] = DEFAULT_EXTS) -> dict:
+                      scope: str = "full", exts: tuple[str, ...] = DEFAULT_EXTS,
+                      watchdog=None) -> dict:
     """Update only changed files (Step 14): skip unchanged, cascade-delete stale,
     re-extract, rebuild dependency edges — all inside one BEGIN IMMEDIATE
     transaction. Falls back to a full reindex on any pipeline failure.
@@ -881,6 +892,10 @@ def incremental_index(project_path: str, *, project_root: Optional[str] = None,
     root = project_root or project_path
     try:
         changes = detect_changes(project_path, project_root=root, scope=scope, exts=exts)
+        if watchdog:
+            watchdog.progress("detect_changes", completed=0,
+                              total=(len(changes["added"]) + len(changes["modified"])
+                                     + len(changes["deleted"]) + len(changes["renamed"])))
         conn = _store.get_db(project_path)
         # Persist attempt identity before the indexing transaction. If extraction
         # rolls back, the run row survives and can still be closed as failed.
@@ -902,7 +917,10 @@ def incremental_index(project_path: str, *, project_root: Optional[str] = None,
             reindex_paths = (changes["added"] + changes["modified"]
                              + [n for _o, n in changes["renamed"]])
             errors: list[dict] = []
-            for rel in reindex_paths:
+            for position, rel in enumerate(reindex_paths, 1):
+                if watchdog:
+                    watchdog.progress("extract", completed=position,
+                                      total=len(reindex_paths), detail=rel)
                 abs_p = os.path.join(root, rel.replace("/", os.sep))
                 _delete_file_entries(conn, rel)
                 try:
@@ -925,9 +943,15 @@ def incremental_index(project_path: str, *, project_root: Optional[str] = None,
             # modules × imports). No-op skip would regress first-index dep edges,
             # so defer a smarter incremental-aware rebuild to Phase 4+ scale work.
             dep_stats = _build_dependency_edges(conn)
+            if watchdog:
+                watchdog.progress("edges", completed=1, total=3, detail="dependencies")
             dep_edges = dep_stats["edges"]
             dyn_stats = _build_dynamic_ref_edges(conn)
+            if watchdog:
+                watchdog.progress("edges", completed=2, total=3, detail="dynamic_refs")
             imp_stats = _resolve_imported_calls(conn)
+            if watchdog:
+                watchdog.progress("edges", completed=3, total=3, detail="imported_calls")
             orphan_after = conn.execute(
                 "SELECT COUNT(*) FROM edges e LEFT JOIN nodes n ON e.target=n.id "
                 "WHERE n.id IS NULL AND e.target NOT LIKE 'ext:%';").fetchone()[0]
@@ -970,6 +994,12 @@ def incremental_index(project_path: str, *, project_root: Optional[str] = None,
                 "orphan_after": orphan_after,
                 "errors": errors, "status": "completed", "fallback": False}
     except Exception as e:
+        if isinstance(e, OperationCancelled):
+            return {"wall_ms": round((time.monotonic() - t0) * 1000, 1),
+                    "status": "cancelled", "fallback": False,
+                    "reindexed": 0, "skipped": 0, "deleted": 0, "renamed": [],
+                    "dependency_edges": 0, "orphan_after": None,
+                    "errors": [{"error": str(e)}]}
         # hash corruption / DB failure -> full reindex remains the safety net;
         # if even that fails, report failed instead of raising (fail-open)
         try:

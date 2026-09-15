@@ -157,8 +157,17 @@ def _sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _read_file_bytes(path: Path) -> bytes:
-    return Path(path).read_bytes()
+def _read_file_bytes(path: Path, watchdog=None) -> bytes:
+    chunks = []
+    with Path(path).open("rb") as handle:
+        while True:
+            block = handle.read(1024 * 1024)
+            if not block:
+                break
+            chunks.append(block)
+            if watchdog:
+                watchdog.progress("snapshot_file_read", increment=1, detail=str(path))
+    return b"".join(chunks)
 
 
 def _write_fsynced(path: Path, payload: bytes) -> None:
@@ -291,6 +300,7 @@ def capture_stable_file(
     retries: int = _CAPTURE_RETRIES,
     *,
     deadline_at: float | None = None,
+    watchdog=None,
 ) -> CapturedFile:
     _check_deadline(deadline_at, "snapshot capture")
     root = Path(project_root).resolve()
@@ -310,13 +320,15 @@ def capture_stable_file(
 
     last_error = "source changed during capture"
     for _ in range(max(1, int(retries))):
+        if watchdog:
+            watchdog.checkpoint("snapshot_capture")
         _check_deadline(deadline_at, "snapshot capture")
         try:
             before = candidate.stat()
-            payload = _read_file_bytes(candidate)
+            payload = _read_file_bytes(candidate, watchdog)
             _check_deadline(deadline_at, "snapshot capture")
             middle = candidate.stat()
-            confirmation = _read_file_bytes(candidate)
+            confirmation = _read_file_bytes(candidate, watchdog)
             _check_deadline(deadline_at, "snapshot capture")
             after = candidate.stat()
         except (FileNotFoundError, PermissionError, OSError) as exc:
@@ -929,6 +941,7 @@ def publish_snapshot(
     index: dict[str, Any] | None = None,
     deadline_at: float | None = None,
     changed_paths: dict[str, str] | None = None,
+    watchdog=None,
 ) -> str:
     """Publish a content-addressed snapshot generation.
 
@@ -943,6 +956,8 @@ def publish_snapshot(
     """
     _check_deadline(deadline_at, "snapshot publication")
     root = Path(project_root).resolve()
+    if watchdog:
+        watchdog.progress("snapshot_prepare", completed=0)
     if not root.is_dir():
         raise FileNotFoundError(f"project root does not exist: {root}")
     include_file = include_file or (lambda path: path.is_file())
@@ -1024,7 +1039,10 @@ def publish_snapshot(
                         _normalize_relative_path(str(_r.get("path") or "")): dict(_r)
                         for _r in _prior_by_path.values()
                     }
-                    for _rel, _kind in changed_paths.items():
+                    for position, (_rel, _kind) in enumerate(changed_paths.items(), 1):
+                        if watchdog:
+                            watchdog.progress("snapshot_capture", completed=position,
+                                              total=len(changed_paths), detail=_rel)
                         _check_deadline(deadline_at, "snapshot incremental capture")
                         try:
                             _key = _normalize_relative_path(_rel)
@@ -1044,11 +1062,13 @@ def publish_snapshot(
                         except (OSError, ValueError):
                             _records_by_key.pop(_key, None)
                             continue
-                        _item = capture_stable_file(root, _cand, deadline_at=deadline_at)
+                        _item = capture_stable_file(root, _cand, deadline_at=deadline_at,
+                                                    watchdog=watchdog)
                         _write_blob(store, _item.record["blob_sha256"], _item.payload, deadline_at=deadline_at)
                         _fresh_blobs.add(_item.record["blob_sha256"])
                         _records_by_key[_normalize_relative_path(_item.record["path"])] = _item.record
                     captured = [CapturedFile(record=_r, payload=None) for _r in _records_by_key.values()]
+                walked = 0
                 for walk_root, dirs, files in ([] if _fast else os.walk(root, followlinks=False)):
                     _check_deadline(deadline_at, "snapshot tree walk")
                     walk_path = Path(walk_root)
@@ -1066,6 +1086,10 @@ def publish_snapshot(
                         safe_dirs.append(dirname)
                     dirs[:] = safe_dirs
                     for filename in sorted(files, key=lambda item: (item.casefold(), item)):
+                        walked += 1
+                        if watchdog:
+                            watchdog.progress("snapshot_walk", completed=walked,
+                                              detail=str(Path(walk_root) / filename))
                         _check_deadline(deadline_at, "snapshot file capture")
                         candidate = walk_path / filename
                         try:
@@ -1100,6 +1124,7 @@ def publish_snapshot(
                                 root,
                                 candidate,
                                 deadline_at=deadline_at,
+                                watchdog=watchdog,
                             )
                             _write_blob(
                                 store,
@@ -1379,7 +1404,7 @@ def _generation_has_live_lease(store: Path, snapshot_id: str) -> bool:
     return live
 
 
-def collect_garbage(project_root: str | Path, keep_last: int = 10) -> dict[str, Any]:
+def collect_garbage(project_root: str | Path, keep_last: int = 10, watchdog=None) -> dict[str, Any]:
     root = Path(project_root).resolve()
     store = snapshot_store_path(root)
     with _project_lock(root):
@@ -1409,6 +1434,9 @@ def collect_garbage(project_root: str | Path, keep_last: int = 10) -> dict[str, 
                 if current:
                     retained.add(current)
                 for generation in generations:
+                    if watchdog:
+                        watchdog.progress("snapshot_gc_generations", increment=1,
+                                          total=len(generations), detail=generation.name)
                     if generation.name in retained:
                         continue
                     if _generation_has_live_lease(store, generation.name):
@@ -1424,6 +1452,9 @@ def collect_garbage(project_root: str | Path, keep_last: int = 10) -> dict[str, 
 
             referenced_blobs: set[str] = set()
             for generation in (store / "generations").iterdir():
+                if watchdog:
+                    watchdog.progress("snapshot_gc_manifests", increment=1,
+                                      detail=generation.name)
                 if not generation.is_dir() or not _SNAPSHOT_ID_RE.fullmatch(generation.name):
                     continue
                 # Only the blob_sha256 reference list is needed to decide what to keep, so
@@ -1442,6 +1473,9 @@ def collect_garbage(project_root: str | Path, keep_last: int = 10) -> dict[str, 
                 if not prefix.is_dir():
                     continue
                 for blob in list(prefix.iterdir()):
+                    if watchdog:
+                        watchdog.progress("snapshot_gc_blobs", increment=1,
+                                          detail=blob.name)
                     if (
                         blob.is_file()
                         and re.fullmatch(r"[0-9a-f]{64}", blob.name)

@@ -1744,6 +1744,7 @@ _SEMAPHORE_WAITERS: dict[str, int] = {}
 _SEMAPHORE_WAITER_STARTED: dict[str, dict[str, float]] = {}
 _SEMAPHORE_REJECTED: dict[str, int] = {}
 _INFLIGHT_OPERATIONS: dict[str, asyncio.Task] = {}
+_OPERATION_CANCEL_EVENTS: dict[str, threading.Event] = {}
 _WRITE_SEM_TOOLS = {"write_fix", "write_fix_html", "write_new_file",
                     "write_transaction", "apply_after_dry_run", "delete_file"}
 
@@ -2071,6 +2072,7 @@ _WRITE_LEDGER_TTL_DAYS = max(
     1, min(365, int(os.environ.get("ORCHESTRATOR_WRITE_LEDGER_TTL_DAYS", "7")))
 )
 _WRITE_LEDGER_LAST_PURGE = 0.0
+_WRITE_LEDGER_PROGRESS_LOCK = threading.RLock()
 _WRITE_LEDGER_ASYNC_LOCK: asyncio.Lock | None = None
 _WRITE_LEDGER_ASYNC_LOCK_LOOP = None
 
@@ -2344,6 +2346,7 @@ def _write_ledger_finish(op_id: str, result: dict, status: str) -> None:
         target_status = "committed" if status == "ok" else "failed"
         if rec.get("status") == "committed" and target_status != "committed":
             return
+        final_progress = rec.get("progress")
         rec["status"] = target_status
         rec["finished_at"] = time.time()
         rec["updated_at"] = rec["finished_at"]
@@ -2356,10 +2359,30 @@ def _write_ledger_finish(op_id: str, result: dict, status: str) -> None:
             validation = result.get("validation")
             if isinstance(validation, dict):
                 summary["validation_ok"] = validation.get("ok")
+            if final_progress is not None:
+                summary["progress"] = final_progress
             rec["result"] = summary
         _write_ledger_db_upsert(rec)
     except Exception:
         pass
+
+
+def _write_ledger_heartbeat(op_id: str, progress: dict) -> None:
+    """Publish progress; periodically persist it for post-restart recovery."""
+    if not op_id:
+        return
+    with _WRITE_LEDGER_PROGRESS_LOCK:
+        rec = _WRITE_LEDGER.get(op_id)
+        if not rec or rec.get("status") != "in_flight":
+            return
+        rec["progress"] = dict(progress or {})
+        rec["last_progress_at"] = time.time()
+        rec["updated_at"] = rec["last_progress_at"]
+        last_persist = float(rec.get("last_progress_persist_at") or 0)
+        if rec["last_progress_at"] - last_persist >= 5.0:
+            rec["last_progress_persist_at"] = rec["last_progress_at"]
+            rec["result"] = {"progress": dict(progress or {})}
+            _write_ledger_db_upsert(rec)
 
 
 def _shape_tool_response_text(tool_name: str, raw: str, max_bytes: int | None = None) -> str:
@@ -14298,6 +14321,7 @@ accepted_fields=sorted(accepted_fields),
     _queue_wait_ms = 0
     _op_id = ""  # FixA2407 P1-1: write-ledger key; stays empty for non-mutating tools
     _request_op_id = str(request.headers.get("X-Operation-ID") or uuid.uuid4().hex)
+    _watchdog_token = None
     _admission_tokens = set_admission_identity(_principal_id, control_plane=False)
     _sem = None
     _sem_category = ""
@@ -14319,6 +14343,15 @@ accepted_fields=sorted(accepted_fields),
         # FixA2407 P1-1: record a mutating call BEFORE it runs. The server always knows
         # whether the write landed; the caller that timed out does not.
         _op_id = await _write_ledger_begin_async(tool_name, body, _task_session_id)
+        if _op_id:
+            from orchestrator.progress_watchdog import ProgressWatchdog, bind_watchdog
+            _cancel_event = threading.Event()
+            _OPERATION_CANCEL_EVENTS[_op_id] = _cancel_event
+            _watchdog_token = bind_watchdog(ProgressWatchdog(
+                operation_id=_op_id,
+                heartbeat=lambda p: _write_ledger_heartbeat(_op_id, p),
+                cancel_event=_cancel_event,
+            ))
         try:
             raw = await fn(**body)
         finally:
@@ -14617,6 +14650,14 @@ accepted_fields=sorted(accepted_fields),
         reset_admission_identity(_admission_tokens)
         if _INFLIGHT_OPERATIONS.get(_request_op_id) is _current_task:
             _INFLIGHT_OPERATIONS.pop(_request_op_id, None)
+        if _op_id:
+            _OPERATION_CANCEL_EVENTS.pop(_op_id, None)
+        if _watchdog_token is not None:
+            try:
+                from orchestrator.progress_watchdog import reset_watchdog
+                reset_watchdog(_watchdog_token)
+            except Exception:
+                pass
         _ms = int((time.time() - _t0) * 1000)
         # Capture error detail from result body when tool returns ok=False
         # (Fix 16: _log_usage was getting empty error for non-exception fails)
@@ -15112,7 +15153,10 @@ async def dispatch_tool_call(tool_name: str, body: dict | None = None,
             _preq = _ur.Request(
                 f"{_proxy_base}/api/call/{tool_name}", data=_pdata,
                 headers=_proxy_headers)
-            _timeout = float(os.environ.get("MCP_PROXY_HTTP_TIMEOUT", "180"))
+            _timeout = (None if tool_name in {
+                "cbm_index", "cbm_incremental_index",
+                "generate_project_map", "refresh_project_map",
+            } else float(os.environ.get("MCP_PROXY_HTTP_TIMEOUT", "180")))
             _pres = await asyncio.to_thread(
                 lambda: _ur.urlopen(_preq, timeout=_timeout).read()
             )
@@ -16198,11 +16242,22 @@ async def handle_write_status(request):
             "generation": SERVER_GENERATION,
         }, status=404, headers=cors)
     state = _write_ledger_commit_state(rec)
+    progress = rec.get("progress")
+    if progress is None and isinstance(rec.get("result"), dict):
+        progress = rec["result"].get("progress")
+    progress_state = state
+    if state == "in_flight" and isinstance(progress, dict):
+        idle = max(0.0, time.time() - float(rec.get("last_progress_at") or time.time()))
+        progress = {**progress, "seconds_since_progress": round(idle, 3)}
+        stall_window = max(30.0, float(os.environ.get(
+            "ORCHESTRATOR_OPERATION_STALL_SECONDS", "120") or 120))
+        progress_state = "stalled" if idle >= stall_window else "running"
     return web.json_response({
         "ok": True,
         "lookup": lookup,
         "ledger_source": ledger_source,
         "commit_state": state,
+        "operation_state": progress_state,
         "safe_to_retry": state == "not_committed",
         "ca_next_action": {
             "committed": "do_not_retry_write_already_committed",
@@ -16212,8 +16267,9 @@ async def handle_write_status(request):
         **{k: rec.get(k) for k in ("operation_id", "tool", "status", "project_path",
                                    "file_path", "session_id", "started_at", "finished_at",
                                    "duration_ms", "attempts", "result",
-                                   "origin_generation")},
+                                   "origin_generation", "progress", "last_progress_at")},
         "generation": SERVER_GENERATION,
+        "progress": progress,
     }, headers=cors, dumps=lambda x: json.dumps(x, ensure_ascii=False))
 
 
@@ -16261,15 +16317,20 @@ async def handle_cancel_operation(request):
     except Exception:
         body = {}
     operation_id = str((body or {}).get("operation_id") or "").strip()
-    task = _INFLIGHT_OPERATIONS.get(operation_id)
+    cancel_event = _OPERATION_CANCEL_EVENTS.get(operation_id)
+    request_id = str((body or {}).get("request_operation_id") or "").strip()
+    task = _INFLIGHT_OPERATIONS.get(request_id) if request_id else None
     if not operation_id:
         return web.json_response({"ok": False, "error_name": "OPERATION_ID_REQUIRED",
                                   "error": "operation_id is required"}, status=400, headers=cors)
-    if task is None or task.done():
+    if (task is None or task.done()) and cancel_event is None:
         return web.json_response({"ok": False, "operation_id": operation_id,
                                   "cancelled": False, "error_name": "OPERATION_NOT_IN_FLIGHT",
                                   "error": "operation is not in flight"}, status=404, headers=cors)
-    task.cancel()
+    if cancel_event is not None:
+        cancel_event.set()
+    if task is not None and not task.done() and cancel_event is None:
+        task.cancel()
     return web.json_response({"ok": True, "operation_id": operation_id, "cancelled": True,
                               "generation": SERVER_GENERATION}, headers=cors)
 

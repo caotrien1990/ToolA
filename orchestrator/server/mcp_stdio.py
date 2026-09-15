@@ -49,6 +49,10 @@ _MCP_PROXY_DEFAULT_TIMEOUT = float(os.environ.get("MCP_PROXY_HTTP_TIMEOUT", "180
 # work the daemon is doing (otherwise the proxy times out on a call that is still
 # legitimately running).
 _MCP_PROXY_TIMEOUT_MARGIN = 30.0
+_MCP_PROGRESS_TOOLS = {
+    "cbm_index", "cbm_incremental_index",
+    "generate_project_map", "refresh_project_map",
+}
 
 
 def _mcp_proxy_base_url(srv) -> str:
@@ -107,6 +111,11 @@ def _mcp_proxy_call(name: str, payload: dict | None = None,
                            float(timeout_override) + _MCP_PROXY_TIMEOUT_MARGIN)
     else:
         http_timeout = _MCP_PROXY_DEFAULT_TIMEOUT
+    # Long explicit indexing is governed by server-side progress/cancellation,
+    # not a fixed proxy wall clock. Passing None lets urllib wait for the terminal
+    # response; callers can use operation status/cancel from another connection.
+    if name in _MCP_PROGRESS_TOOLS:
+        http_timeout = None
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     headers = {
         "Content-Type": "application/json",

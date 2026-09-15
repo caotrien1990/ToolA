@@ -178,7 +178,7 @@ def _publish_snapshot_deadline_seconds() -> float:
 
 
 def _publish_search_snapshot(project_root: Path, index: dict, changed_paths: dict | None = None,
-                             allow_full_walk: bool = True) -> str:
+                             allow_full_walk: bool = True, watchdog=None) -> str:
     # Each attempt gets its OWN fresh budget window (a wall-clock deadline
     # computed at call time), so the authoritative full-walk fallback below is
     # NOT starved by whatever the fast path already spent. Sharing one deadline
@@ -186,7 +186,7 @@ def _publish_search_snapshot(project_root: Path, index: dict, changed_paths: dic
     # with an already-expired deadline and fails instantly — defeating the
     # self-heal. Separate windows keep both attempts individually bounded.
     def _publish(cp):
-        deadline_at = time.monotonic() + _publish_snapshot_deadline_seconds()
+        deadline_at = None if watchdog is not None else time.monotonic() + _publish_snapshot_deadline_seconds()
         # R82: bind project_root so the snapshot walk applies the SAME data-JSON rule
         # as the index scan. An unbound _should_scan_file would judge depth as unknown,
         # keep deep data .json files, and reopen the INDEX/manifest set mismatch.
@@ -202,6 +202,7 @@ def _publish_search_snapshot(project_root: Path, index: dict, changed_paths: dic
             index=index,
             changed_paths=cp,
             deadline_at=deadline_at,
+            watchdog=watchdog,
         )
     try:
         snapshot_id = _publish(changed_paths)
@@ -234,7 +235,7 @@ def _publish_search_snapshot(project_root: Path, index: dict, changed_paths: dic
     # Same hang class as the full walk: first-publish GC of a mislocated store
     # must not run on the write hot path.
     if allow_full_walk and _snapshot_should_gc(Path(project_root).resolve()):
-        search_snapshots.collect_garbage(project_root, keep_last=10)
+        search_snapshots.collect_garbage(project_root, keep_last=10, watchdog=watchdog)
     return snapshot_id
 
 
@@ -909,18 +910,9 @@ def _index_finalize_aggregates(index: dict) -> None:
     ]
 
 
-def build_index(project_root: str, timeout_s: float | None = None) -> dict:
-    # CAN-040: bound the cache-assembly walk so a pathological / very large cache tree
-    # cannot hang the daemon (build_index runs on every write via update_file_cache).
-    # On exceed we raise BEFORE the INDEX.json write below, so the previous valid index
-    # is preserved; callers' try/except surface a controlled error, not a hang. Generous
-    # default (cache reads are JSON, normally <1s); env-tunable.
-    if timeout_s is None:
-        try:
-            timeout_s = float(os.environ.get("ORCHESTRATOR_BUILD_INDEX_TIMEOUT_SEC", "30") or 30)
-        except Exception:
-            timeout_s = 30.0
-    _bi_deadline = time.monotonic() + max(1.0, timeout_s)
+def build_index(project_root: str, timeout_s: float | None = None, watchdog=None) -> dict:
+    # Explicit cache assembly is progress-watchdog governed. timeout_s remains a
+    # compatibility argument but is not a work ceiling for large repositories.
     project_root = Path(project_root).resolve()
     cache_root = project_root / CACHE_DIR_NAME
     index = _new_index_skeleton(project_root)
@@ -930,14 +922,13 @@ def build_index(project_root: str, timeout_s: float | None = None) -> dict:
 
     # F9: Collect corrupt cache files instead of silently skipping
     _corrupt_cache_files: list[str] = []
-    for json_file in _iter_cache_json_files(cache_root):
-        if time.monotonic() > _bi_deadline:
-            # CAN-040: controlled timeout — raise before any INDEX.json write so the
-            # previous index is preserved (callers catch and keep the old cache).
-            raise TimeoutError(
-                f"build_index exceeded {timeout_s}s for {project_root} "
-                f"(cache too large/pathological); previous INDEX.json preserved"
-            )
+    cache_files = list(_iter_cache_json_files(cache_root))
+    if watchdog:
+        watchdog.progress("build_index", completed=0, total=len(cache_files))
+    for position, json_file in enumerate(cache_files, 1):
+        if watchdog:
+            watchdog.progress("build_index", completed=position, total=len(cache_files),
+                              detail=str(json_file.relative_to(cache_root)))
         try:
             data = json.loads(json_file.read_text(encoding="utf-8"))
         except Exception as _exc:
@@ -1191,7 +1182,7 @@ def _pmap_lock(project_root) -> "_threading.RLock":
         return lk
 
 
-def _reindex_from_disk(project_root: Path) -> dict:
+def _reindex_from_disk(project_root: Path, watchdog=None) -> dict:
     """Authoritative reconcile: rebuild the whole cache tree + INDEX from disk, so both
     reflect the CURRENT on-disk content — including files changed/deleted OUTSIDE [A]'s
     write pipeline (native edit / git checkout / IDE). Wiping the non-preserved cache
@@ -1216,10 +1207,15 @@ def _reindex_from_disk(project_root: Path) -> dict:
         # produce reconciles external deletes exactly as before, but a partial run now
         # degrades to a stale cache instead of no cache.
         written: set[str] = set()
+        scanned = 0
         for root, dirs, files in os.walk(project_root):
             dirs[:] = [d for d in dirs if not should_skip_dir(d, project_root)]
 
             for fn in files:
+                scanned += 1
+                if watchdog:
+                    watchdog.progress("project_walk", completed=scanned,
+                                      detail=str(Path(root) / fn))
                 fp = Path(root) / fn
                 if _should_scan_file(fp, project_root):
                     write_file_cache(str(fp), str(project_root))
@@ -1252,29 +1248,29 @@ def _reindex_from_disk(project_root: Path) -> dict:
                     except OSError:
                         pass
 
-        return build_index(str(project_root))
+        return build_index(str(project_root), watchdog=watchdog)
 
 
-def generate_project_map(project_path: str) -> dict:
+def generate_project_map(project_path: str, watchdog=None) -> dict:
     project_root = Path(project_path).resolve()
     if not project_root.exists() or not project_root.is_dir():
         raise FileNotFoundError(f"Project path not found: {project_path}")
 
     with _pmap_lock(project_root):
-        index = _reindex_from_disk(project_root)
+        index = _reindex_from_disk(project_root, watchdog=watchdog)
         _write_project_map_markdown(project_root, index)
         _write_project_context_markdown(project_root, index)
-        snapshot_id = _publish_search_snapshot(project_root, index)
+        snapshot_id = _publish_search_snapshot(project_root, index, watchdog=watchdog)
         summary = summarize_index(index)
         summary["snapshot_id"] = snapshot_id
         return summary
 
 
-def refresh_project_map(project_path: str) -> dict:
+def refresh_project_map(project_path: str, watchdog=None) -> dict:
     # R49: refresh IS a full rebuild. generate_project_map already deletes the cache
     # before rebuilding, so the old separate delete loop here was redundant AND a second
     # concurrent collision point. Delegate under the same per-project lock.
-    return generate_project_map(project_path)
+    return generate_project_map(project_path, watchdog=watchdog)
 
 
 # Per-write snapshot uses the O(changed) walk-avoidance fast path (see publish_snapshot).
@@ -1302,29 +1298,33 @@ def _snapshot_should_gc(project_root: Path) -> bool:
     return (n % _SNAPSHOT_GC_EVERY) == 1  # run on the 1st publish of each project, then every 10th
 
 
-def _reconcile_external_files(project_root: Path, index: dict, changed_paths: dict) -> dict:
+def _reconcile_external_files(project_root: Path, index: dict, changed_paths: dict, watchdog=None) -> dict:
     """Discover disk drift before incremental publication; hash even equal-stat edits.
 
     Discovery is O(repo), deliberately: correctness takes precedence over the old
     O(changed) latency contract. Only changed sources are re-analysed. A failure
     leaves the previous immutable snapshot available and propagates to the writer.
     """
-    deadline = time.monotonic() + _publish_snapshot_deadline_seconds()
     known = index.get("files", {})
     seen = set()
 
     def check_deadline():
-        if time.monotonic() >= deadline:
-            raise search_snapshots.SnapshotDeadlineExceeded("external reconcile deadline exceeded")
+        if watchdog:
+            watchdog.checkpoint("external_reconcile")
 
     def walk_error(error):
         raise error
 
+    scanned = 0
     for walk_root, dirs, files in os.walk(project_root, onerror=walk_error, followlinks=False):
         check_deadline()
         dirs[:] = [d for d in dirs if not should_skip_dir(d, project_root)
                    and not (Path(walk_root) / d).is_symlink()]
         for name in files:
+            scanned += 1
+            if watchdog:
+                watchdog.progress("external_reconcile", completed=scanned,
+                                  detail=str(Path(walk_root) / name))
             check_deadline()
             path = Path(walk_root) / name
             if path.is_symlink() or not _should_scan_file(path, project_root):
@@ -1435,17 +1435,23 @@ def _update_file_cache_locked(file_path: str, project_root: str) -> dict:
     rel_for_snapshot = metadata.get("file")
     full_refresh = bool(rel_for_snapshot) and _snapshot_needs_full_refresh(resolved_root)
     if index_existed and (full_refresh or not rel_for_snapshot):
-        index = _reindex_from_disk(resolved_root)
+        from orchestrator.progress_watchdog import current_watchdog
+        _watchdog = current_watchdog()
+        index = _reindex_from_disk(resolved_root, watchdog=_watchdog)
         changed_paths = None
     else:
         changed_paths = {rel_for_snapshot: "removed" if removed else "modified"} if rel_for_snapshot else None
         if index_existed and changed_paths is not None:
-            index = _reconcile_external_files(resolved_root, index, changed_paths)
+            from orchestrator.progress_watchdog import current_watchdog
+            _watchdog = current_watchdog()
+            index = _reconcile_external_files(resolved_root, index, changed_paths,
+                                              watchdog=_watchdog)
             changed_paths = _snapshot_pending_changes(resolved_root, index, changed_paths)
     _write_project_map_markdown(resolved_root, index)
     _write_project_context_markdown(resolved_root, index)
     metadata["snapshot_id"] = _publish_search_snapshot(
-        resolved_root, index, changed_paths, allow_full_walk=index_existed)
+        resolved_root, index, changed_paths, allow_full_walk=index_existed,
+        watchdog=locals().get("_watchdog"))
     return metadata
 
 
