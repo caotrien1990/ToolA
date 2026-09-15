@@ -51,7 +51,7 @@ TOOL validate_encoding | T2 | required: file_path | Validate UTF-8, BOM, mojibak
 TOOL post_write_batch_verify | T2 | required: project_path, changed_files | Run the standard non-mutating post-write verification bundle for changed files.
 TOOL write_fix_html | T2 | required: file_path, start_line, end_line, new_content | Edit a range inside an .html file with base64, encoding_check, and diff_preview; performs delimiter safety checks before writing.
 TOOL apply_after_dry_run | T2 | required: project_path, dry_run_id | Apply an exact previously previewed dry-run payload by dry_run_id; rejects stale target files and expired previews.
-TOOL open_session | T1 | required: - | Open or resume the active CA session for a project.
+TOOL open_session | T1 | required: - | Open or resume one active session per project and agent. Resume preserves title and mode; use rename_session for a new title. Opt-in apply_requested_title renames in place; force_new_session closes then creates atomically and refuses pending writes, drafts or audits. Both default
 TOOL close_session | T3 | required: - | Close the active CA session after log_native(native=[...]) has been recorded.
 TOOL rename_session | T3 | required: project_path, new_title | Rename the active session. Closed sessions cannot be renamed.
 TOOL clear_closed_sessions | T3 | required: project_path | Delete all closed sessions and their events for a project; active session is preserved.
@@ -108,8 +108,8 @@ TOOL read_network_errors | T4 | required: page_id | T4a: failed/4xx/5xx requests
 TOOL screenshot_page | T4 | required: page_id | T4a: PNG screenshot to .orchestrator_cache/screenshots/.
 TOOL wait_for_selector | T4 | required: page_id, selector | T4a: wait for visibility (timeout_ms).
 TOOL compare_dom_snapshot | T4 | required: page_id_a, page_id_b | T4a: unified diff of selector text between two pages.
-TOOL server_lifecycle_status | T4 | required: port | V15 R8 B.4 T4c: psutil port owner + can_kill probe.
-TOOL port_owner_inspect | T4 | required: port | T4c: light: PID + name only.
+TOOL server_lifecycle_status | T4 | required: port | T4 read-only: shared cached psutil port-owner scan. listening may be true, false or null (unknown); owner details may be absent/null. can_kill and requires_admin are username-based estimates, not permission probes. Includes family, laddr and scan/cache evidence when available.
+TOOL port_owner_inspect | T4 | required: port | T4 read-only: compact output using server_lifecycle_status scan/cache. Success returns port, listening (boolean or null when unknown), pid (integer or null), process_name (string or null), plus response metadata. It is output-light, not a separate cheaper scan. Errors pass throug
 TOOL detect_stale_server | T4 | required: port | T4c: inspect localhost:<port> ownership and optional bundle version drift. This contract accepts port and expected_bundle_version only; use static_asset_cache_check or bundle_version_check for URL probes.
 TOOL static_asset_cache_check | T4 | required: url | T4c: HEAD + 2 GET hash compare.
 TOOL bundle_version_check | T4 | required: html_url | T4c: extract a build/version marker from HTML. marker_regex must contain at least one capturing group around the version value; the default supports name="version" content="..." and ?v=... patterns.
@@ -192,7 +192,7 @@ TOOL desktop_screenshot | T4 | required: - | T4d: PIL.ImageGrab. Default capture
 TOOL desktop_send_text | T4 | required: text, project_path | V15 R92 T4d: focus a desktop window and send short text via clipboard paste, optionally submitting with Enter.
 TOOL electron_devtools_log | T4 | required: - | ⚠️ DEPRECATED R41 — DO NOT USE. Use `list_cdp_targets` for CDP target enumeration, `read_console_errors` for console messages, or `evaluate_js` for log inspection. This tool will be removed in R42+. Reason: confusing name (it's enumeration not log read), overlaps with list_cdp_ta
 TOOL list_cdp_targets | T4 | required: - | T4 read-only: query Chromium DevTools Protocol targets through [A] without leaving the orchestrator audit boundary.
-TOOL process_tree_inspect | T4 | required: name_pattern | T4d: psutil process tree from root_pid or name_pattern. name_pattern is a case-insensitive substring, not regex; pass 'electron' rather than 'electron|node'.
+TOOL process_tree_inspect | T4 | required: - | T4d: psutil process tree from root_pid or name_pattern. root_pid takes precedence when both are supplied. name_pattern is a case-insensitive process-name or cmdline substring, not regex; pass 'electron' rather than 'electron|node'.
 TOOL run_playwright_test | T4 | required: test_script_path | V15 R8 B.6: Node Playwright runner; .js/.mjs/.cjs only; requires Playwright dependency. Python uses run_project_test_script.
 TOOL record_ui_flow | T4 | required: page_id | T4 test: Playwright tracing stub. Use output_path for the intended trace path.
 TOOL assert_text_visible | T4 | required: page_id, text | T4 test: wait for text visible.
@@ -210,10 +210,11 @@ TOOL query_sqlite | T1 | required: db_path | T1 READ-ONLY: inspect a SQLite DB (
 TOOL file_profile | T1 | required: file_path | T1 READ-ONLY: type/size/encoding/line_count/binary-or-text/language of a file WITHOUT dumping its content.
 TOOL sample_data_file | T1 | required: file_path | T1 READ-ONLY: first/last/random N rows for CSV/TSV/JSONL/log/text files without full dump.
 TOOL read_chunks | T1 | required: file_path | T1 READ-ONLY: bounded chunk read by line or byte; never returns the whole file by default.
-TOOL start_app | T2 | required: project_path | T2 MUTATING (process): launch an app as a detached background process and verify readiness. Reuses run_project_command keep_alive infra (health_url / expected_port readiness protocols). Requires session + token for arbitrary shell. Mutating tool.
+TOOL start_app | T2 | required: project_path | T2 MUTATING (process): launch an app and verify readiness via health_url / expected_port. command takes precedence over app; returns command_source and app_ignored. PowerShell scripts require -File directly; -Command -File (including quoted wrappers) is rejected. An already-healt
 TOOL stop_app | T2 | required: - | T2 MUTATING (process): stop an app by PID or process name, including its descendants. Reuses kill_process. Refuses when neither pid nor process_name is given. Mutating tool.
-TOOL http_check | T2 | required: url | T2 READ/PROBE: bounded HTTP request against a url. Returns status, elapsed, content-type and a bounded body snippet. ok=false unless status matches expect_status and text_contains (when given) appears in the body.
+TOOL http_check | T2 | required: url | T2 READ/PROBE: bounded HTTP request off the event loop, including self-health calls. Returns status, elapsed, content-type and bounded body snippet. ok=false unless status matches expect_status and text_contains (when given) appears in the body. json_body={} sends an empty JSON o
 TOOL browser_smoke_test | T2 | required: url, project_path | T2 READ/PROBE (CDP): load a url in a headless Chromium (Playwright), report title + body text, and verify optional expect_text. Closes the browser afterwards. Requires playwright + chromium installed.
+TOOL file_sha256 | T1 | required: file_path | T1 read-only streaming SHA-256 of raw file bytes; optional expected digest comparison. Does not seed a write token.
 TOOL soft_data_reconcile | T1 | required: - | T1 READ-ONLY: cross-layer tool-surface overlap/bloat/conflict report for [A] (schema/param + alias + see_also + skill + function + usage). ADVISORY, never edits. Engine = scripts/soft_data_reconcile.py.
 TOOL rule_drift_check | T1 | required: - | T1 audit: detect DRIFT between rule files (CORE_RULE/SLIM_RULE/SLIM_RULE_INLINE) and live code (TOOL_MAP + enforcement sets + council_config). Read-only. Surfaces rule refs to missing tools, agent-list mismatches, and behavior-set inconsistencies (phantom/orphan/coverage). Use af
 TOOL cbm_index | T2 | required: project_path | T2 derived-index write: index project scope into graph.db. Source files remain read-only.
@@ -254,3 +255,4 @@ TOOL memory_recall_cluster | T1 | required: - | Recall a grounded memory cluster
 TOOL memory_capture | T1 | required: session_id, turns | Capture [A] session turns into long-term memory (ToolQ /capture, writer='A', content-hash dedup). Fail-soft; candidate-only memory write.
 TOOL memory_ingest_path | T1 | required: source_type | P2 bridge: ingest raw content, file path, or folder path into ToolQ librarian (/ingest_path). source_type=manual_text needs content; source_type=file/folder needs path. All take optional zone (Z1|Z2|Z3), subzone (Z1=meta/plan, Z2=rules/skills/schema/aliases/regex, Z3=docs/code/ma
 TOOL mcp_pack_generate | T2 | required: - | CSLt P3: generate MCP pack artifacts (stdio server + hermes_fragment + pack.json). Actions: generate|list_packs|test_pack|install_hermes|install_targets|uninstall_hermes|remove_pack|uninstall_targets. dry_run default true. ca_id/agent_id -> per-CA MCP key (<pack>__<ca>) for isola
+TOOL write_status | T1 | required: - | Read write commit truth after timeout by operation_id or project_path+file_path. Same ledger as GET /api/write_status; unknown is not safe to replay.

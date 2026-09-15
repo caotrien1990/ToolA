@@ -18,6 +18,7 @@ import secrets
 import uuid as _uuid
 import urllib.error
 import urllib.request
+import urllib.parse
 from pathlib import Path
 
 _LESSONS_CACHE: list = []
@@ -150,12 +151,25 @@ def _mcp_proxy_call(name: str, payload: dict | None = None,
             "hint": "Daemon returned an HTTP error for a proxied tool call.",
         }, ensure_ascii=False)
     except Exception as exc:
+        # Match dispatcher recovery: timeout can lose only the response after
+        # commit. Never turn that into an invitation to replay a mutation.
+        failure_builder = getattr(srv, "_mcp_proxy_failure_payload", None)
+        if failure_builder is not None:
+            failure = failure_builder(name, payload, exc)
+            failure["tool"] = name
+            failure["base_url"] = base
+            reason = getattr(exc, "reason", None)
+            if isinstance(exc, ConnectionRefusedError) or isinstance(reason, ConnectionRefusedError):
+                failure["error_name"] = "MCP_PROXY_UNREACHABLE"
+            return json.dumps(failure, ensure_ascii=False)
         return json.dumps({
             "ok": False,
             "error_name": "MCP_PROXY_UNREACHABLE",
             "tool": name,
             "error": f"{type(exc).__name__}: {exc}",
             "base_url": base,
+            "commit_state": "unknown", "safe_to_retry": False,
+            "ca_next_action": "inspect_write_status_before_retry",
             "hint": "The [A] daemon on 8083 could not be reached; MCP does NOT fall "
                     "back to in-process execution (single-writer invariant).",
         }, ensure_ascii=False)
@@ -169,6 +183,40 @@ def _mcp_proxy_call(name: str, payload: dict | None = None,
     except Exception:
         pass
     return body
+
+
+def _mcp_live_discovery(endpoint: str, query: dict | None = None) -> str:
+    """Discovery must share the daemon registry used by proxied calls."""
+    import sys
+    srv = sys.modules.get("__main__")
+    if srv is None or not hasattr(srv, "PORT"):
+        import orchestrator_server as srv
+    url = _mcp_proxy_base_url(srv) + endpoint
+    if query:
+        encoded = {}
+        for k, v in query.items():
+            if v is None or v == "":
+                continue
+            if isinstance(v, bool):
+                encoded[k] = "true" if v else "false"
+            else:
+                encoded[k] = v
+        if encoded:
+            url += "?" + urllib.parse.urlencode(encoded)
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            return response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8") if exc.fp else ""
+        if body:
+            return body
+        return json.dumps({"ok": False, "error_name": "MCP_DISCOVERY_HTTP_ERROR",
+                           "http_status": exc.code, "ca_next_action": "inspect_daemon_discovery"})
+    except Exception as exc:
+        return json.dumps({"ok": False, "error_name": "MCP_DISCOVERY_UNAVAILABLE",
+                           "error": f"{type(exc).__name__}: {exc}",
+                           "ca_next_action": "inspect_daemon_discovery",
+                           "local_schema_fallback": False})
 
 
 def _mcp_generation_file_path(srv) -> Path | None:
@@ -425,13 +473,15 @@ def run_mcp_stdio() -> None:
         # ── T3: Session ────────────────────────────────────────────
         @_mcp.tool
         def open_session(session_title: str = "", project_path: str = ".", mode: str = "T1",
-                         agent_id: str = "") -> str:
+                         agent_id: str = "", force_new_session: bool = False,
+                         apply_requested_title: bool = False) -> str:
             """Open or resume an agent-scoped project session."""
             resolved_agent_id = ((agent_id or "").strip()
                                  or (os.environ.get("COUNCIL_AGENT_ID") or "").strip())
             return _mcp_guard_response(lambda: asyncio.run(srv.ct.open_session(
                 session_title=session_title, project_path=project_path, mode=mode,
-                agent_id=resolved_agent_id)))
+                agent_id=resolved_agent_id, force_new_session=force_new_session,
+                apply_requested_title=apply_requested_title)))
 
         @_mcp.tool
         def log_native_event(action_type: str, tool_name: str, target: str,
@@ -455,12 +505,14 @@ def run_mcp_stdio() -> None:
 
         @_mcp.tool
         def prepare_ca_session(project_path: str, mode: str = "T1", idea: str = "",
-                               agent_id: str = "", host_session_id: str = "") -> str:
+                               agent_id: str = "", host_session_id: str = "",
+                               owner_claim_id: str = "") -> str:
             """Prepare, open/resume, and bootstrap an agent-scoped CA session."""
             canonical_agent_id = agent_id or os.environ.get("COUNCIL_AGENT_ID", "")
             return _mcp_guard_response(lambda: asyncio.run(srv.ct.prepare_ca_session(
                 project_path=project_path, mode=mode, idea=idea,
-                agent_id=canonical_agent_id, host_session_id=host_session_id)))
+                agent_id=canonical_agent_id, host_session_id=host_session_id,
+                owner_claim_id=owner_claim_id)))
 
         @_mcp.tool
         def get_rule_core_text(agent_id: str = "", force: bool = False) -> str:
@@ -470,16 +522,14 @@ def run_mcp_stdio() -> None:
 
         @_mcp.tool
         def bootstrap_session(project_path: str = "", session_id: str = "",
-                              agent_id: str = "", owner_claim_id: str = "") -> str:
+                              agent_id: str = "", owner_claim_id: str = "",
+                              verbosity: str = "terse", include_discovery: bool = False) -> str:
             """Return the session-scoped canonical lifecycle bootstrap."""
-            claim_key = (str(session_id).strip(), str(agent_id).strip())
-            claim_id = owner_claim_id or _MCP_OWNER_CLAIMS.get(claim_key)
-            if not claim_id:
-                claim_id = secrets.token_urlsafe(32)
-                _MCP_OWNER_CLAIMS[claim_key] = claim_id
             return _mcp_guard_response(lambda: asyncio.run(
-                srv.ct.bootstrap_session(
-                    project_path, session_id, agent_id, claim_id)))
+                srv.ct._bootstrap_with_cached_owner_claim(
+                    project_path, session_id, agent_id, owner_claim_id,
+                    claim_cache=_MCP_OWNER_CLAIMS, verbosity=verbosity,
+                    include_discovery=include_discovery)))
 
         @_mcp.tool
         def begin_task(session_id: str, prompt: str, agent_id: str = "",
@@ -524,18 +574,17 @@ def run_mcp_stdio() -> None:
                 srv._run_mcp_coro(srv.dispatch_tool_call(name, payload or {}, transport="mcp"))))
 
         @_mcp.tool
-        def tool_names(tier: str = "", name_contains: str = "", category: str = "") -> str:
+        def tool_names(tier: str = "", name_contains: str = "", category: str = "",
+                       limit: int = 0, suppress_hints: bool = False) -> str:
             """Compact MCP discovery. Filter by tier/name/category; call tool_schema before call_tool."""
-            return _mcp_guard_response(
-                lambda: json.dumps(srv._tool_names_payload(tier, name_contains, category), ensure_ascii=False))
+            return _mcp_live_discovery("/api/tools/names", {
+                "tier": tier, "name_contains": name_contains, "category": category,
+                "limit": limit, "suppress_hints": suppress_hints})
 
         @_mcp.tool
         def tool_schema(name: str) -> str:
             """Return enriched schema for exactly one [A] tool."""
-            def _produce() -> str:
-                payload, _status = srv._tool_schema_payload(name)
-                return json.dumps(payload, ensure_ascii=False)
-            return _mcp_guard_response(_produce)
+            return _mcp_live_discovery("/api/tools/" + urllib.parse.quote(name, safe="") + "/schema")
 
         @_mcp.tool
         def call_tool(name: str, payload: dict = None) -> str:

@@ -104,6 +104,27 @@ class ToolsNamesValidParamStillWorks(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(payload["filtered"])
         self.assertEqual(payload.get("ignored_query_params"), ["curated"])
 
+    async def test_suppress_hints_is_known_and_default_still_emits(self):
+        payload = await _call("/api/tools/names")
+        self.assertNotIn("ignored_query_params", payload)
+        self.assertGreaterEqual(len(payload.get("must_know_hints") or []), 6)
+        self.assertTrue(payload.get("ca_hint"))
+
+    async def test_suppress_hints_true_clears_repeat_hints(self):
+        payload = await _call("/api/tools/names?suppress_hints=true")
+        self.assertNotIn("ignored_query_params", payload)
+        self.assertEqual(payload.get("must_know_hints"), [])
+        self.assertEqual(payload.get("ca_hint"), "")
+        self.assertTrue(payload.get("hints_suppressed"))
+        self.assertIn("tools", payload)
+        self.assertGreater(payload.get("count") or 0, 0)
+
+    async def test_suppress_hints_false_keeps_default_hints(self):
+        payload = await _call("/api/tools/names?suppress_hints=false")
+        self.assertNotIn("ignored_query_params", payload)
+        self.assertGreaterEqual(len(payload.get("must_know_hints") or []), 6)
+        self.assertFalse(payload.get("hints_suppressed"))
+
 
 # ---------------------------------------------------------------------------
 # Added during independent verification (ClauLTN). The tests above all feed a

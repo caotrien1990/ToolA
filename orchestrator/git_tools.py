@@ -162,7 +162,7 @@ def _staged_hash(root):
     raw=_run(root,['ls-files','--stage','-z'])['stdout']
     return hashlib.sha256(raw.encode()).hexdigest()
 
-def status(project_path, include_ignored=False, max_records=0):
+def status(project_path, include_ignored=False, max_records=0, compact_untracked=False):
     root=resolve_root(project_path); records,state_hash=_porcelain(root,include_ignored)
     b=_run(root,['status','--porcelain=v2','--branch','--untracked-files=no'])['stdout']; ahead=behind=0
     m=re.search(r'^# branch\.ab \+(\d+) -(\d+)$',b,re.M)
@@ -185,9 +185,25 @@ def status(project_path, include_ignored=False, max_records=0):
     # max_records, or reads paths from git_diff. 0 = uncapped, which keeps the old
     # behaviour for the in-process callers that walk records.
     total=len(records)
+    display_records=records
+    if compact_untracked:
+        # Presentation only: preserve all-record counts/hashes for optimistic locks.
+        display_records=[]
+        groups={}
+        for record in records:
+            path=str(record.get('path') or '').replace('\\','/')
+            if record.get('record_type')=='?' and '/' in path:
+                prefix=path.split('/',1)[0]+'/'
+                if prefix not in groups:
+                    groups[prefix]={'record_type':'?','xy':'??','path':prefix,
+                                    'aggregated':True,'untracked_count':0}
+                    display_records.append(groups[prefix])
+                groups[prefix]['untracked_count']+=1
+            else:
+                display_records.append(record)
     cap=max(0,int(max_records or 0))
-    shown=records if not cap else records[:cap]
-    return {'ok':True,'git_root':str(root),'branch':branch,'detached':not bool(branch),'head':head['stdout'].strip(),'ahead':ahead,'behind':behind,'state_hash':state_hash,'staged_hash':_staged_hash(root),'counts':counts,'clean':not records,'records_total':total,'records_truncated':bool(cap and total>cap),'records':shown}
+    shown=display_records if not cap else display_records[:cap]
+    return {'ok':True,'git_root':str(root),'branch':branch,'detached':not bool(branch),'head':head['stdout'].strip(),'ahead':ahead,'behind':behind,'state_hash':state_hash,'staged_hash':_staged_hash(root),'counts':counts,'clean':not records,'records_total':total,'records_truncated':bool(cap and len(display_records)>cap),'records_grouped':bool(compact_untracked),'display_records_total':len(display_records),'records':shown}
 
 def stale_check(project_path, max_commit_age_hours=168, expected_state_hash=''):
     root=resolve_root(project_path); s=status(str(root)); git=root/'.git'; states=[n for n in ['MERGE_HEAD','CHERRY_PICK_HEAD','REVERT_HEAD','BISECT_LOG','rebase-merge','rebase-apply'] if (git/n).exists()]

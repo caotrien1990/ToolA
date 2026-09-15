@@ -1948,6 +1948,59 @@ async def tool_decision_hint(task_description: str = "", scope_hint: str = "",
     # folded specific match. A07 must not revoke a confirmed campaign primary.
     folded_raw = _wt_campaign_fold_raw(task)
     _campaign = _campaign_routing_prepass(folded_raw, live_tools)
+    # Exact LOOK intents must never fall through to lexical write-tool matches.
+    look_tool = ""
+    if not _campaign:
+        if re.search(r"\b(?:sha256|file_sha256|file hash|file digest)\b", folded_raw):
+            look_tool = "file_sha256"
+        elif re.search(r"\b(?:write_status|write status|write timeout|commit state)\b", folded_raw):
+            look_tool = "write_status"
+    if look_tool and look_tool in live_tools:
+        example = ({"file_path": "D:/path/file", "expected_sha256": ""}
+                   if look_tool == "file_sha256" else {"operation_id": "<from write response>"})
+        return _ok(_apply_verbosity({
+            "recommended_tier": "T1", "recommended_tool": look_tool,
+            "all_recommended_tools_live": True,
+            "suggestion": {"tool": look_tool, "tier": "T1", "payload_example": example,
+                           "reason": "Read-only evidence without executing a script or editing files."},
+        }, verbosity, "decision_hint"))
+    recycle_intent = (
+        re.search(r"\b(?:recycle|restart|relaunch|khoi dong lai)\b", folded_raw)
+        and re.search(r"\b(?:process|app|application|server|service|tien trinh|ung dung|orchestrator|toola)\b", folded_raw)
+    )
+    if recycle_intent and not _campaign:
+        own_server = bool(re.search(r"\b(?:orchestrator|toola)\b", folded_raw))
+        steps = [
+            {"tool": "server_lifecycle_status", "action": "Inspect the target port and confirm its owner."},
+        ]
+        if own_server:
+            steps.append({"tool": "restart_orchestrator_via_bat",
+                          "action": "Use the dedicated orchestrator restart after explicit restart authorization."})
+        else:
+            steps.extend([
+                {"tool": "stop_app", "action": "Stop only the inspected and explicitly approved PID."},
+                {"tool": "start_app", "action": "Launch the intended command with expected_port or health_url readiness."},
+            ])
+        steps.append({"tool": "server_lifecycle_status",
+                      "action": "Reinspect after the scan-cache TTL; verify a new owner PID and application readiness. For orchestrator also verify a new /health generation."})
+        missing = sorted({step["tool"] for step in steps} - live_tools)
+        if missing:
+            return _err("Lifecycle recipe unavailable in this catalog.",
+                        error_name="RECIPE_TOOL_UNAVAILABLE", missing_tools=missing,
+                        ca_next_action="inspect_live_catalog")
+        resp = {
+            "recommended_tier": "T4", "recommended_tool": "server_lifecycle_status",
+            "recommended_skill": "16_server_lifecycle",
+            "recipe": {"name": "restart_orchestrator" if own_server else "recycle_application",
+                       "advisory_only": True, "steps": steps,
+                       "execution_note": "This hint executes nothing. Stop/restart needs explicit authorization for the identified target; never infer a PID or launch command."},
+            "suggestion": {"tool": "server_lifecycle_status", "tier": "T4",
+                           "payload_example": _examples_for(["server_lifecycle_status"]).get("server_lifecycle_status", {}),
+                           "reason": "Recycling requires inspection, replacement and verification, not just termination."},
+            "all_recommended_tools_live": True,
+        }
+        return _ok(_apply_verbosity(resp, verbosity, "decision_hint"))
+    # The campaign prepass above retains priority for explicit test/audit intents.
     task_expanded = _wt_vn_expand(task)
     _matched = []
     _seen_tools = set()
@@ -6575,7 +6628,12 @@ async def server_lifecycle_status(port: int = 0) -> str:
 
 
 async def port_owner_inspect(port: int) -> str:
-    """Lighter than server_lifecycle_status: just PID + name."""
+    """Compact output from the shared lifecycle scan/cache, not a cheaper scan.
+
+    Success: port, listening (true/false/null), pid (integer/null),
+    process_name (string/null), plus the standard response envelope.
+    listening=null means unknown, not a confirmed free port. Errors pass through.
+    """
     raw = await server_lifecycle_status(port)
     data = json.loads(raw)
     if not data.get("ok"):
@@ -8880,7 +8938,7 @@ async def electron_devtools_log(cdp_port: int = 9223, max_messages: int = 50) ->
 
 async def process_tree_inspect(root_pid: int = 0, name_pattern: str = "",
                                  max_depth: int = 3) -> str:
-    """V15 R8 B.5: psutil process tree from root_pid or matching name."""
+    """V15 R8 B.5: psutil process tree from root_pid or name/cmdline substring."""
     if not _psutil_available():
         return _missing_dep("psutil", "pip install psutil")
     import psutil
@@ -8898,7 +8956,7 @@ async def process_tree_inspect(root_pid: int = 0, name_pattern: str = "",
                 "memory_mb": round(p.memory_info().rss / 1024 / 1024, 1),
                 "children": children,
             }
-        except (psutil.NoSuchProcess, psutil.AccessDenied) as exc:
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as exc:
             return {"pid": pid, "error": str(exc)}
 
     if root_pid:
@@ -8906,13 +8964,27 @@ async def process_tree_inspect(root_pid: int = 0, name_pattern: str = "",
         return _ok({"root_pid": root_pid, "tree": tree})
 
     if not name_pattern:
-        return _err("root_pid or name_pattern required", error_name="MISSING_REQUIRED_FIELD")
+        return _err(
+            "root_pid or name_pattern required", error_name="MISSING_REQUIRED_FIELD",
+            accepted_fields=["root_pid", "name_pattern", "max_depth"],
+            payload_examples=[{"root_pid": 1234, "max_depth": 3},
+                              {"name_pattern": "server.py", "max_depth": 3}],
+            ca_next_action="pass_root_pid_or_name_pattern",
+        )
 
     def _by_name() -> list:
         matches = []
-        for p in psutil.process_iter(["pid", "name"]):
-            if name_pattern.lower() in (p.info["name"] or "").lower():
-                matches.append(p.info["pid"])
+        needle = name_pattern.casefold()
+        for p in psutil.process_iter(["pid", "name", "cmdline"]):
+            try:
+                name = p.info.get("name") or ""
+                cmdline = " ".join(p.info.get("cmdline") or [])
+                if needle in name.casefold() or needle in cmdline.casefold():
+                    matches.append(p.info["pid"])
+                    if len(matches) >= 10:
+                        break
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
         return [_walk(pid) for pid in matches[:10]]
 
     trees = await asyncio.to_thread(_by_name)

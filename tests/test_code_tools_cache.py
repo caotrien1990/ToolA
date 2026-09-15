@@ -937,7 +937,7 @@ class TestCodeToolsCache(unittest.TestCase):
         with mock.patch.object(code_tools, 'open_session', mock.AsyncMock(return_value=failed)), \
                 mock.patch.object(code_tools, 'bootstrap_session', bootstrap):
             result = json.loads(asyncio.run(code_tools.prepare_ca_session(
-                str(self.project_path), agent_id='agent-a', host_session_id='host-a',
+                str(self.project_path), agent_id='', host_session_id='',
             )))
 
         self.assertFalse(result.get('ok'), msg=result)
@@ -957,9 +957,11 @@ class TestCodeToolsCache(unittest.TestCase):
             'ok': False, 'error': 'bootstrap unavailable',
             'error_name': 'BOOTSTRAP_FAILED',
         })
-        with mock.patch.object(code_tools, 'bootstrap_session', mock.AsyncMock(return_value=failed)):
+        with mock.patch.object(code_tools, '_bootstrap_with_cached_owner_claim',
+                               mock.AsyncMock(return_value=failed)):
             result = json.loads(asyncio.run(code_tools.prepare_ca_session(
                 str(self.project_path), agent_id='agent-a', host_session_id='host-a',
+                owner_claim_id='prepare-failure-0123456789abcdef0123456789abcdef',
             )))
 
         self.assertFalse(result.get('ok'), msg=result)

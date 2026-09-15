@@ -108,7 +108,7 @@ class TestHarmlessIgnoreNotInSchema(unittest.TestCase):
 
     def test_harmless_ignore_count_is_46(self):
         total = sum(len(v) for v in srv._HARMLESS_IGNORE_FIELDS.values())
-        self.assertEqual(total, 46, f"Expected 46 harmless-ignore fields, got {total}")
+        self.assertEqual(total, 45, f"Expected 45 harmless-ignore fields, got {total}")
 
     def test_known_exception_is_documented(self):
         """The get_token_meter.project_path exception must still exist (if removed,

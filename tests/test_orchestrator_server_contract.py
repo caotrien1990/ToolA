@@ -2266,7 +2266,8 @@ process.stdout.write(JSON.stringify(snapshots));
 
         self.assertEqual(call, mock.call(
             session_title='Session A', project_path='C:/repo', mode='T2',
-            agent_id='agent-explicit',
+            agent_id='agent-explicit', force_new_session=False,
+            apply_requested_title=False,
         ))
 
     async def test_mcp_open_session_uses_environment_agent_fallback(self):
@@ -2274,7 +2275,8 @@ process.stdout.write(JSON.stringify(snapshots));
 
         self.assertEqual(call, mock.call(
             session_title='Session A', project_path='C:/repo', mode='T2',
-            agent_id='agent-env',
+            agent_id='agent-env', force_new_session=False,
+            apply_requested_title=False,
         ))
 
     async def test_mcp_open_session_without_environment_forwards_blank_legacy_agent(self):
@@ -2282,7 +2284,8 @@ process.stdout.write(JSON.stringify(snapshots));
 
         self.assertEqual(call, mock.call(
             session_title='Session A', project_path='C:/repo', mode='T2',
-            agent_id='',
+            agent_id='', force_new_session=False,
+            apply_requested_title=False,
         ))
 
     async def test_mcp_prepare_ca_session_forwards_scope_keywords_and_env_agent_fallback(self):
@@ -2319,9 +2322,9 @@ process.stdout.write(JSON.stringify(snapshots));
 
         self.assertEqual(prepare.await_args_list, [
             mock.call(project_path='C:/repo', mode='T2', idea='Build CRM',
-                      agent_id='agent-explicit', host_session_id='host-a'),
+                      agent_id='agent-explicit', host_session_id='host-a', owner_claim_id=''),
             mock.call(project_path='D:/repo', mode='T1', idea='',
-                      agent_id='agent-env', host_session_id='host-b'),
+                      agent_id='agent-env', host_session_id='host-b', owner_claim_id=''),
         ])
 
     async def test_open_session_environment_agent_fallback_for_response_store_and_event(self):

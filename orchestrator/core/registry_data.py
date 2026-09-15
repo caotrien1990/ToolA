@@ -193,8 +193,8 @@ BASE_TOOL_SCHEMAS = [
 				"properties": {
 					"file_path": {"type": "string", "description": "File path, absolute or relative to project_path."},
 					"project_path": {"type": "string", "description": "Absolute project root for relative file_path."},
-					"start_line": {"type": "integer", "description": "Legacy 1-based range start or structural anchor.", "default": 1},
-					"end_line": {"type": "integer", "description": "Legacy inclusive range end. Explicit ranges keep legacy behavior."},
+					"start_line": {"type": "integer", "description": "1-based range start or structural anchor. For scope=range must be >= 1.", "default": 1},
+					"end_line": {"type": "integer", "description": "Inclusive range end; for scope=range must be >= start_line when supplied. Equal bounds read one line; omit for default bounded reading. Reversed bounds return INVALID_RANGE without seeding a token; correct the bounds, not force_reseed."},
 					"max_lines": {"type": "integer", "default": 200, "description": "Maximum returned lines, backend-capped."},
 					"force_reseed": {"type": "boolean", "default": False, "description": "Force read-token reseed on unstable read; audited."},
 					"scope": {"type": "string", "enum": ["range", "function", "class", "section", "file_summary"], "default": "range"},
@@ -386,7 +386,7 @@ BASE_TOOL_SCHEMAS = [
 
 					"content_encoding": {"type": "string", "default": "none", "description": "'none' (default) or 'base64' if new_content is base64-encoded. RECOMMENDED: use 'base64' (UTF-8) whenever new_content is multiline or contains backslashes (Windows paths, regex escapes), double quotes, or non-ASCII/Vietnamese - plain JSON transport can corrupt these."},
 
-					"expected_hash": {"type": "string", "default": "", "description": "R43 P0 #3-A: pass new_hash from previous write_fix response to bypass FILE_CHANGED guardrail in sequential same-file writes. Backend verifies disk hash matches before allowing bypass."},
+					"expected_hash": {"type": "string", "default": "", "description": "Optional raw-byte SHA256 from the previous successful write_fix.new_hash for sequential writes to the same file. For normal read_file_range -> write_fix, OMIT this field and use the seeded read token. NEVER pass read_file_range.content_hash: it hashes normalized text and differs for CRLF/BOM files. An explicit mismatch is rejected; force_reseed does not override it."},
 
 					"backup_override": {"type": "boolean", "default": False, "description": "Skip the pre-write project backup gate after explicit user approval. Use only for tiny/temp/derived files."},
 
@@ -800,7 +800,7 @@ EXTRA_TOOL_SCHEMAS = [
 
 EXTRA_TOOL_SCHEMAS_R43 = [
 
-		{"type": "function", "function": {"name": "open_session", "description": "Open or resume the active session for a project and optional agent identity. Distinct non-empty agent_id values may hold concurrent active sessions on one project. R22 verbosity ∈ {full|terse|ref}; drift auto-forces full.", "parameters": {"type": "object", "properties": {"session_title": {"type": "string", "default": "", "description": "Session title (if empty -> 'Untitled Session {time}')"}, "project_path": {"type": "string", "default": ".", "description": "Project root (default '.')"}, "mode": {"type": "string", "default": "T1"}, "verbosity": {"type": "string", "enum": ["full", "terse", "ref"], "default": "full", "description": "R22: terse compresses metadata; drift auto-forces full."}, "agent_id": {"type": "string", "default": "", "description": "Stable agent identity used to isolate concurrent active sessions"}}}}},
+		{"type": "function", "function": {"name": "open_session", "description": "Open or resume the active session for a project and optional agent identity. Resume preserves title and mode by default; call rename_session to apply a different title. Opt-in force_new_session closes then creates atomically and refuses pending writes, drafts or audits; apply_requested_title renames in place without changing mode. Flags are mutually exclusive and require agent_id. Distinct non-empty agent_id values may hold concurrent active sessions on one project. R22 verbosity ∈ {full|terse|ref}; drift auto-forces full.", "parameters": {"type": "object", "properties": {"session_title": {"type": "string", "default": "", "description": "Session title (if empty -> 'Untitled Session {time}')"}, "project_path": {"type": "string", "default": ".", "description": "Project root (default '.')"}, "mode": {"type": "string", "enum": ["T1", "T2", "T1_FIX", "T1_EXISTING_APP", "T2_BUILD", "T2_NEW_APP"], "default": "T1", "description": "Workflow mode T1 or T2 (aliases T1_FIX/T1_EXISTING_APP/T2_BUILD/T2_NEW_APP). execute is not valid. Resume ignores mode; change an open session via set_workflow_mode."}, "verbosity": {"type": "string", "enum": ["full", "terse", "ref"], "default": "full", "description": "R22: terse compresses metadata; drift auto-forces full."}, "agent_id": {"type": "string", "default": "", "description": "Stable agent identity used to isolate concurrent active sessions"}, "force_new_session": {"type": "boolean", "default": False, "description": "Explicitly close the active session before creating a new one; returns closed_session_id. Refuses pending work. Cannot combine with apply_requested_title."}, "apply_requested_title": {"type": "boolean", "default": False, "description": "Explicitly apply a non-empty requested title on resume. Preserves session_id, mode and events; returns old_title, new_title and renamed."}}}}},
 
 	{"type": "function", "function": {"name": "close_session", "description": "Close the active session after log_native(native=[...]) has been called. V15 R64-D: now accepts either project_path (primary session lookup) OR session_id (direct lookup for sub-sessions like [Ac]/[Ad] opened mid-workflow). At least one of the two MUST be provided.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string", "default": "", "description": "Project root of the session to close. Use for the primary [Ab] session."}, "session_id": {"type": "string", "default": "", "description": "V15 R64-D: direct session_id lookup. Use when you opened multiple sessions (e.g. [Ac], [Ad] sub-sessions) and need to close a specific one without re-deriving its project_path. Pulled from open_session's response."}, "agent_id": {"type": "string", "default": "", "description": "Stable agent identity; scopes active-session selection when non-empty."}}}}},
 
@@ -1917,13 +1917,13 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["page_id_a", "page_id_b"]),
 
-    ('server_lifecycle_status', 'V15 R8 B.4 T4c: psutil port owner + can_kill probe.', {
+    ("server_lifecycle_status", "T4 read-only: shared cached psutil port-owner scan. listening may be true, false or null (unknown); owner details may be absent/null. can_kill and requires_admin are username-based estimates, not permission probes. Includes family, laddr and scan/cache evidence when available.", {
 
             "port": {"type": "integer"},
 
         }, ["port"]),
 
-    ('port_owner_inspect', 'T4c: light: PID + name only.', {
+    ("port_owner_inspect", "T4 read-only: compact output using server_lifecycle_status scan/cache. Success returns port, listening (boolean or null when unknown), pid (integer or null), process_name (string or null), plus response metadata. It is output-light, not a separate cheaper scan. Errors pass through.", {
 
             "port": {"type": "integer"},
 
@@ -2583,6 +2583,10 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "owner_claim_id": {"type": "string", "description": "Required caller-generated high-entropy claim id (minimum 32 bytes). Persist locally until begin_task confirms ownership."},
 
+            "verbosity": {"type": "string", "enum": ["terse", "compact", "ref", "full"], "default": "terse", "description": "Ownership-first compact response by default; full opts into discovery catalogs."},
+
+            "include_discovery": {"type": "boolean", "default": False, "description": "Include tool, workflow and skill discovery after the ownership fields."},
+
         }, ["session_id", "agent_id", "owner_claim_id"]),
 
     ('run_project_test_script', 'V15 R43 P1 #5 T2: script-file transport for node|python|powershell|sh. Python selects the first interpreter satisfying required_python_modules; otherwise returns INTERPRETER_CAPABILITY_MISSING without installing packages. Results include runtime_used, script metadata, and stdout_metadata/stderr_metadata with full-stream hashes and truncation state. Execution failures use SCRIPT_EXEC_FAILED; unsafe inline callers should route here instead of retrying COMMAND_TRANSPORT_UNSAFE or SCRIPT_RUNTIME_REQUIRED. CASE-2008 destructive guard (all runtimes): a body containing a delete/move/truncate statement refuses to run until confirm_destructive equals the scanned count, takes a project backup first, and returns untruncated output; dry_run=true previews without executing. A PowerShell -Include paired with -LiteralPath is REFUSED outright (DESTRUCTIVE_SCRIPT_FOOTGUN) because PowerShell silently discards the filter and removes the whole target.', {
@@ -3031,15 +3035,15 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, []),
 
-    ('process_tree_inspect', "T4d: psutil process tree from root_pid or name_pattern. name_pattern is a case-insensitive substring, not regex; pass 'electron' rather than 'electron|node'.", {
+    ('process_tree_inspect', "T4d: psutil process tree from root_pid or name_pattern. root_pid takes precedence when both are supplied. name_pattern is a case-insensitive process-name or cmdline substring, not regex; pass 'electron' rather than 'electron|node'.", {
 
             "root_pid": {"type": "integer", "default": 0, "description": "Process ID to inspect. Required if name_pattern not provided."},
 
-            "name_pattern": {"type": "string", "default": "", "description": "Case-insensitive substring to find process. Required if root_pid not provided."},
+            "name_pattern": {"type": "string", "default": "", "description": "Case-insensitive substring matched against process name or full cmdline. Required if root_pid not provided; not regex."},
 
             "max_depth": {"type": "integer", "default": 3},
 
-        }, ["name_pattern"]),
+        }, []),
 
     ('run_playwright_test', 'V15 R8 B.6: Node Playwright runner; .js/.mjs/.cjs only; requires Playwright dependency. Python uses run_project_test_script.', {
 

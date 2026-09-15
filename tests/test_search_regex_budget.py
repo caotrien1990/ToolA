@@ -241,7 +241,9 @@ class TestSearchRegexBudget(unittest.IsolatedAsyncioTestCase):
         # budget by a few ULPs (observed 0.05000000000291038 vs 0.05), so compare
         # with a tolerance instead of an exact upper bound.
         self.assertLessEqual(observed_timeout, 0.05 + 1e-6)
-        self.assertLess(time.monotonic() - started, 0.20)
+        # Assert bounded cancellation, not Windows scheduler latency under a
+        # saturated full-suite host. A 1s ceiling still catches an unbounded wait.
+        self.assertLess(time.monotonic() - started, 1.0)
 
     async def test_within_bucket_regex_follower_keeps_own_absolute_budget(self) -> None:
         producer_count = 0

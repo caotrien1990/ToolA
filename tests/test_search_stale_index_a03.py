@@ -156,18 +156,6 @@ class TestSearchStaleIndexA03(unittest.IsolatedAsyncioTestCase):
 
     # ---- Layer 2 (documented NOT-DONE; see report) ------------------------
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "A03 Layer 2 not implemented: the literal spec (wire cache_delta.modified "
-            "into changed_paths) raises SnapshotIntegrityError 'INDEX/content hash "
-            "mismatch' because the INDEX is ALSO stale for external edits -- a correct "
-            "root fix must re-index (write_file_cache) the externally-changed files "
-            "before publishing, AND discovering them is inherently O(repo), which "
-            "violates the O(changed) constraint. Layer 1 covers the user-visible "
-            "defect. Kept as strict xfail so it flips loud the day Layer 2 lands."
-        ),
-    )
     async def test_incremental_publish_reconciles_external_edit(self) -> None:
         """After ANY incremental publish, a file edited outside [A] must stop being a
         phantom: its new content must appear in the served snapshot."""

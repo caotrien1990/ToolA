@@ -109,6 +109,7 @@ SERVER_PATH = str(Path(__file__).resolve())
 PORT = int(os.environ.get("ORCHESTRATOR_PORT", "8083"))
 SERVICE_NAME = "project-orchestrator"
 SERVER_STARTED_AT = time.time()
+SERVER_STARTED_MONOTONIC = time.monotonic()
 SERVER_GENERATION = uuid.uuid4().hex[:12]
 SERVER_GENERATION_FILE = Path(
     os.environ.get("ORCHESTRATOR_GENERATION_FILE")
@@ -2430,7 +2431,7 @@ _HARMLESS_IGNORE_FIELDS = {
     'parse_log_section':        {'project_path'},
     'assert_target_idle':       {'verbosity'},
     'wait_for_idle':            {'verbosity'},
-    'bootstrap_session':        {'verbosity'},
+    'bootstrap_session':        set(),
     # R42 — alias_contract_test called internally by acceptance_dashboard with project_path
     'alias_contract_test':      {'project_path', 'verbosity'},
 }
@@ -3473,6 +3474,14 @@ def _error_contract_meta(error_name: str, status: int) -> dict:
 def _retry_sequence(tool_name: str, error_name: str, body: dict | None) -> list[dict]:
     body = dict(body or {})
     project_path = body.get("project_path") or "D:/path/to/project"
+    if tool_name == "read_file_range" and error_name == "INVALID_RANGE":
+        return [
+            {"action": "choose_intended_range",
+             "note": "Choose start_line >= 1 and intended count N >= 1; do not infer N from an invalid end_line or swap bounds."},
+            {"action": "retry_with_corrected_range", "tool": "read_file_range",
+             "payload_example": _invalid_range_payload_example(body),
+             "note": "Example only: replace start_line/max_lines with intended values and omit end_line. Alternatively choose inclusive end_line >= start_line. No force_reseed needed."},
+        ]
     if error_name in ("MUTATION_TOKEN_REQUIRED", "MUTATION_TOKEN_EXPIRED"):
         return [
             {"method": "GET", "url": os.environ.get("ORCHESTRATOR_BASE_URL", f"http://localhost:{PORT}") + "/api/token"},
@@ -3979,12 +3988,24 @@ _TOOL_PROMPT_RULES: dict[str, str] = {
     "run_playwright_test": "Node-only .js/.mjs/.cjs; preflight playwright dependency; Python uses run_project_test_script(runtime=python)",
     "write_draft_patch": "Use only draft_id/failed_parts from a write failure; clean draft auto-ships, but A must not invent replacement content",
 }
+def _invalid_range_payload_example(body: dict | None) -> dict:
+    """An illustrative bounded read, never an inferred repair of reversed bounds."""
+    body = body or {}
+    return {
+        "project_path": body.get("project_path") or "D:/path/to/project",
+        "file_path": body.get("file_path") or "relative/file.py",
+        "scope": "range", "start_line": 1, "max_lines": 40,
+    }
+
+
 def _ca_guidance(tool_name: str, error: str = "", body: dict | None = None,
                  error_name: str | None = None) -> dict:
     """Return compact, actionable guidance for coding agents."""
     error_name = error_name or _infer_error_name(tool_name, error, body)
     # Registry schema is the single owner of remediation examples and requiredness.
     example = _payload_example_for_tool(tool_name, _schema_for_tool(tool_name))
+    if tool_name == "read_file_range" and error_name == "INVALID_RANGE":
+        example = _invalid_range_payload_example(body)
     required = _tool_required_fields(tool_name)
 
     _base = os.environ.get("ORCHESTRATOR_BASE_URL", f"http://localhost:{PORT}")
@@ -4016,7 +4037,7 @@ def _ca_guidance(tool_name: str, error: str = "", body: dict | None = None,
         "phase": ct.tool_phase(tool_name),
         "phase_label": ct.PHASE_LABELS.get(ct.tool_phase(tool_name), "Session / Audit / Auxiliary"),
         "error_name": error_name,
-        "ca_next_action": _ca_next_action(error_name, tool_name),
+        "ca_next_action": "correct_range" if tool_name == "read_file_range" and error_name == "INVALID_RANGE" else _ca_next_action(error_name, tool_name),
         "call_pattern": (
             "$body = @{ ... } | ConvertTo-Json -Depth 20\n"
             f"Invoke-RestMethod -Method Post -Uri \"{_base}/api/call/{tool_name}\" "
@@ -4281,6 +4302,19 @@ def _error_response(tool_name: str, error: str, status: int, headers: dict,
         "ca_guidance": guidance,
         **extra,
     }
+    if error_name == "UNKNOWN_TOOL":
+        discovery = _unknown_tool_payload(tool_name)
+        payload.update(discovery)
+        payload.pop("available", None)
+        payload["payload_example"] = {"discovery_url": discovery["discovery_url"]}
+        payload["ca_guidance"] = {
+            "error_name": error_name, "ca_next_action": "filter_tool_names",
+            "call_pattern": "GET " + discovery["discovery_url"],
+            "payload_example": payload["payload_example"],
+            "suggested_alternative_tool": {},
+            "see_also": {name: "/api/tools/" + name + "/schema"
+                         for name in discovery["suggestions"]},
+        }
     payload = _r101_filter(payload, _R101_FIELDS.get())
     logger.warning(json.dumps({
         "event": "tool_error",
@@ -7530,9 +7564,13 @@ def _council_agent_command(agent: str, prompt: str, *, mode: str = "broker",
         base += ["-p", prompt]
         return base
     if agent == "ope":
-        _, _model = _council_worker_model(
+        _provider, _model = _council_worker_model(
             "ope", "", _COUNCIL_DEFAULT_MODELS.get("ope", {}).get("model") or "openai-compatible/grok-4.6-build",
             provider_override, model_override)
+        # Curated IDs may be bare API model IDs; OpenCode CLI requires provider/model.
+        # Preserve the selected model and already-qualified IDs.
+        if "/" not in _model and _provider:
+            _model = f"{'opencode' if _provider == 'opencode-zen' else _provider}/{_model}"
         _ope_thinking = _model.endswith("glm-5.2")
         base = [
             cli("opencode"), "run", "--dir", str(cwd), "--model", _model,
@@ -10579,7 +10617,7 @@ async def handle_council_room_status(request):
     }, headers=cors)
 from orchestrator import git_tools as _git_tools
 
-async def git_status(project_path=None, include_ignored=False, max_records=0): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.status, project_path, include_ignored, max_records), ensure_ascii=False)
+async def git_status(project_path=None, include_ignored=False, max_records=100, compact_untracked=True): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.status, project_path, include_ignored, max_records, compact_untracked), ensure_ascii=False)
 async def git_stale_check(project_path=None, max_commit_age_hours=168, expected_state_hash=""): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.stale_check, project_path, max_commit_age_hours, expected_state_hash), ensure_ascii=False)
 async def git_diff(project_path=None, scope="worktree", paths=None, context_lines=3, max_chars=50000, check_whitespace=False): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.diff, project_path, scope, paths, context_lines, max_chars, check_whitespace), ensure_ascii=False)
 async def git_log(project_path=None, limit=20, ref="HEAD"): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.log, project_path, limit, ref), ensure_ascii=False)
@@ -10597,7 +10635,7 @@ from orchestrator.core.registry import register_tool as _register_tool
 
 ct.PROTECTED_TOOL_NAMES.update({"git_stage", "git_unstage", "git_commit"})
 _GIT_TOOL_SPECS = [
-("git_status",git_status,"T1",False,False,"none",{}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"include_ignored":{"type":"boolean","description":"Include ignored records","default":False},"max_records":{"type":"integer","description":"Cap the records list (0=all). The response reports records_total/records_truncated; counts, state_hash and staged_hash are always computed over every record, so the optimistic lock stays exact even when records is capped. Use it when a large dirty tree pushes the response past the transport limit.","default":0}},["project_path"]),
+("git_status",git_status,"T1",False,False,"none",{}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"include_ignored":{"type":"boolean","description":"Include ignored records","default":False},"max_records":{"type":"integer","description":"Cap displayed records (default 100; 0=all displayed rows). Counts/state_hash/staged_hash always cover all files. For every individual path use compact_untracked=false,max_records=0.","default":100},"compact_untracked":{"type":"boolean","description":"Group untracked descendants by top-level directory with untracked_count; presentation only, no ignore rules or file changes. Set false for individual paths.","default":True}},["project_path"]),
 ("git_stale_check",git_stale_check,"T1",False,False,"none",{}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"max_commit_age_hours":{"type":"number","description":"Old HEAD threshold in hours","default":168},"expected_state_hash":{"type":"string","description":"Prior git_status state_hash for drift detection"}},["project_path"]),
 ("git_diff",git_diff,"T1",False,False,"none",{"files":"paths"}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"scope":{"type":"string","enum":["worktree","staged","both"],"description":"Diff scope","default":"worktree"},"paths":{"type":"array","items":{"type":"string"},"description":"Relative pathspec allowlist"},"context_lines":{"type":"integer","description":"Unified context lines","default":3},"max_chars":{"type":"integer","description":"Output cap","default":50000},"check_whitespace":{"type":"boolean","description":"Run git diff --check semantics","default":False}},["project_path"]),
 ("git_log",git_log,"T1",False,False,"none",{}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"limit":{"type":"integer","description":"Maximum commits","default":20},"ref":{"type":"string","description":"Revision reference","default":"HEAD"}},["project_path"]),
@@ -12764,6 +12802,10 @@ def _apply_health_view(payload: dict, request) -> dict:
     missing = sorted(set(fields) - set(filtered))
     if missing:
         filtered["omitted_unknown_fields"] = missing
+    notes = {key: value for key, value in (payload.get("field_notes") or {}).items()
+             if key in fields}
+    if notes:
+        filtered["field_notes"] = notes
     filtered["health_fields_filtered"] = True
     return filtered
 
@@ -12811,6 +12853,12 @@ async def handle_health(request):
         "port": PORT,
         "generation": SERVER_GENERATION,
         "started_at": SERVER_STARTED_AT,
+        "uptime_s": round(max(0.0, time.monotonic() - SERVER_STARTED_MONOTONIC), 3),
+        "mcp_generation": None,
+        "field_notes": {"mcp_generation": (
+            "Unavailable on HTTP daemon: each MCP process has its own identity. "
+            "Read mcp_generation on that MCP response; generation here identifies the daemon."
+        )},
         "livez_protocol": LIVEZ_PROTOCOL,
         "livez_url": f"http://127.0.0.1:{LIVEZ_PORT}/livez",
         # NOT `controller_health(...)` inline: it is a blocking urlopen, and a
@@ -12924,7 +12972,7 @@ async def handle_config(request):
 # documented alias of `tier`. Anything else is surfaced via ignored_query_params
 # rather than silently swallowed.
 _TOOL_NAMES_KNOWN_QUERY_PARAMS = frozenset({
-    "tier", "phase", "name_contains", "category", "limit",
+    "tier", "phase", "name_contains", "category", "limit", "suppress_hints",
 })
 
 
@@ -12944,7 +12992,9 @@ async def handle_tools_names(request):
         limit = int(request.query.get("limit") or 0)
     except (TypeError, ValueError):
         limit = 0
-    payload = _tool_names_payload(tier_filter, name_contains, category, limit)
+    suppress_hints = _health_query_truthy(request.query, "suppress_hints")
+    payload = _tool_names_payload(tier_filter, name_contains, category, limit,
+                                  suppress_hints=suppress_hints)
     # A09: this GET used to swallow unknown query params (curated/all/bounded/…)
     # silently, so `?curated=0` and `?bogus=1` were indistinguishable from the
     # baseline. Mirror the A17 precedent (surface what was dropped, don't swallow)
@@ -12968,7 +13018,7 @@ async def handle_tools_names(request):
         payload["ignored_query_params_hint"] = (
             "These query params are not supported by /api/tools/names and were "
             "ignored. Supported: " + ", ".join(sorted(_TOOL_NAMES_KNOWN_QUERY_PARAMS))
-            + ". The unfiltered default is the curated core; pass limit=250 for the "
+            + f". The unfiltered default is the curated core; pass limit={len(ct.TOOL_MAP)} for the "
             "full catalog."
         )
     return web.json_response(
@@ -13169,14 +13219,9 @@ async def handle_tool_describe(request):
     """
     name = (request.match_info.get('tool_name') or '').strip()
     if name not in ct.TOOL_MAP:
-        # suggest near matches (substring or shared prefix)
-        low = name.lower()
-        suggestions = [n for n in ct.TOOL_MAP.keys() if low and (low in n.lower() or n.lower() in low)][:8]
         return web.json_response(
-            {"ok": False, "error": f"Unknown tool '{name}'", "error_name": "UNKNOWN_TOOL",
-             "suggestions": suggestions,
-             "hint": "Use GET /api/tools/names for the full list, or /api/tools?name_contains=<substr>."},
-            status=404, headers=_cors(request.headers.get('Origin')),
+            _unknown_tool_payload(name), status=404,
+            headers=_cors(request.headers.get("Origin")),
         )
     for schema in ct.TOOL_SCHEMAS:
         fn = schema.get("function", {})
@@ -13233,14 +13278,8 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
     fn = ct.TOOL_MAP.get(tool_name)
     if fn is None:
         return _error_response(
-            tool_name,
-            f"Unknown tool '{tool_name}'",
-            404,
-            cors,
-            {},
+            tool_name, f"Unknown tool {tool_name!r}", 404, cors, {},
             error_name="UNKNOWN_TOOL",
-            available=list(ct.TOOL_MAP.keys()),
-            hint="Use GET /api/tools to choose a registered tool name.",
         )
 
     # F3: Differentiate between empty body (allowed fallback) and corrupt JSON (400)
@@ -14367,6 +14406,12 @@ accepted_fields=sorted(accepted_fields),
             _result.setdefault("payload_example", _PAYLOAD_EXAMPLES.get(tool_name, {"project_path": "D:/path/to/project"}))
             _result.setdefault("retry_sequence", _retry_sequence(tool_name, err_name, body))
             _result.setdefault("ca_guidance", _ca_guidance(tool_name, err_text, body, err_name))
+            if tool_name == "read_file_range" and err_name == "INVALID_RANGE":
+                # Error-specific range example wins over the generic function example.
+                _range_example = _invalid_range_payload_example(body)
+                _result["payload_example"] = _range_example
+                _result["ca_guidance"]["payload_example"] = dict(_range_example)
+                _result["ca_guidance"]["ca_next_action"] = "correct_range"
             # V15 R49 — phase taxonomy for tool-body errors (path bypasses
             # _error_response which already adds phase). Idempotent: if the
             # tool's own _err/_json_error already set phase, setdefault keeps it.
@@ -14726,7 +14771,8 @@ def _bound_tool_result(payload: dict, max_bytes: int = 4_000) -> dict:
     return bounded
 
 
-def _tool_names_payload(tier: str = "", name_contains: str = "", category: str = "", limit: int = 0) -> dict:
+def _tool_names_payload(tier: str = "", name_contains: str = "", category: str = "",
+                        limit: int = 0, suppress_hints: bool = False) -> dict:
     """Compact discovery payload shared by HTTP names endpoint and MCP."""
     tier_filter = (tier or "").strip().upper()
     name_filter = (name_contains or "").strip().lower()
@@ -14775,7 +14821,7 @@ def _tool_names_payload(tier: str = "", name_contains: str = "", category: str =
         curated = [t for t in tools if t["name"] in _curated_set]
         curated_default = bool(curated)
         returned = curated if curated else tools[:max(1, _TOOL_CATALOG_DEFAULT_LIMIT)]
-    return {
+    payload = {
         "ok": True,
         "count": len(returned),
         "returned_count": len(returned),
@@ -14787,17 +14833,17 @@ def _tool_names_payload(tier: str = "", name_contains: str = "", category: str =
         "tools": returned,
         "next_query_hint": (
             "Unfiltered /api/tools/names returns curated core only. "
-            "Filter by name_contains/tier/category, or pass limit=250 for the full catalog. "
+            f"Filter by name_contains/tier/category, or pass limit={total} for the full catalog. "
             "ruff_fix field is path (file_path is an alias)."
         ) if len(returned) < total else "",
-        "ca_next_action": "filter_or_limit_250_or_bootstrap_session" if len(returned) < total else "",
+        "ca_next_action": "filter_or_use_total_available_as_limit" if len(returned) < total else "",
         "ca_hint": (
             "MUST-KNOW: 1) After a NEW [A] PID/generation, first get_rule_core_text MUST include text "
             "(force=true if already_fetched and text is missing). "
             "2) FILE_CHANGED / STALE_INDEX on a large root such as [A:P] => "
             "read_file_range + project_path + force_reseed, then retry write_fix once; "
             "NEVER refresh_project_map. "
-            "3) /api/tools/names default is curated; use limit=250 for the full catalog. "
+            f"3) /api/tools/names default is curated; use limit={total} for the full catalog. "
             "4) ruff_fix canonical field is path, not file_path. "
             "5) list_structure uses depth/path (max_depth/file_path are aliases). "
             "6) GET /health default is compact; use ?fields= or ?verbose=1 for more."
@@ -14805,29 +14851,58 @@ def _tool_names_payload(tier: str = "", name_contains: str = "", category: str =
         "must_know_hints": [
             "first get_rule_core_text after new process must include text",
             "FILE_CHANGED on [A:P]: read_file_range + force_reseed; never refresh_project_map",
-            "names default is curated; pass limit=250 for full catalog",
+            f"names default is curated; pass limit={total} for full catalog",
             "ruff_fix field is path (file_path alias accepted)",
             "list_structure uses depth not max_depth; file_path aliases to path",
             "GET /health default compact; ?fields= subset, ?verbose=1 full lanes",
         ],
         "hint": _R102_CATEGORY_HINT,
     }
+    if suppress_hints:
+        payload["ca_hint"] = ""
+        payload["must_know_hints"] = []
+        payload["hints_suppressed"] = True
+    return payload
+
+
+def _unknown_tool_payload(name: str) -> dict:
+    """Bounded discovery shared by GET schema, MCP schema and POST dispatch."""
+    from difflib import SequenceMatcher
+    from urllib.parse import urlencode
+
+    low = (name or "").strip().lower()[:200]
+    if low == "call_tool":
+        return {"ok": False, "error_name": "UNKNOWN_TOOL",
+                "error": "call_tool is the MCP transport dispatcher, not an HTTP catalog tool",
+                "surface": "mcp_dispatcher", "suggestions": [],
+                "ca_next_action": "use_mcp_call_tool_or_http_catalog_tool",
+                "payload_example": {"name": "read_file_range", "payload": {"file_path": "D:/path/file"}},
+                "http_equivalent": "POST /api/call/read_file_range",
+                "hint": "Discover names with tool_names and schemas with tool_schema(name=<catalog tool>). Do not invent named MCP tools."}
+    words = set(re.findall(r"[a-z0-9]+", low))
+    ranked = []
+    for candidate in ct.TOOL_MAP:
+        target = candidate.lower()
+        parts = set(target.split("_"))
+        substring = bool(low and (low in target or target in low))
+        overlap = len(words & parts) / max(1, len(words | parts))
+        similarity = SequenceMatcher(None, low, target).ratio() if low else 0.0
+        if substring or overlap >= 0.5 or (len(low) >= 5 and similarity >= 0.68):
+            ranked.append((0 if substring else 1, -overlap, -similarity, candidate))
+    suggestions = [item[-1] for item in sorted(ranked)[:8]]
+    token = max(sorted(words), key=len, default="")
+    discovery_url = "/api/tools/names" + ("?" + urlencode({"name_contains": token}) if token else "")
+    return {"ok": False, "error": f"Unknown tool {name!r}",
+            "error_name": "UNKNOWN_TOOL", "suggestions": suggestions,
+            "hint": "Use GET /api/tools/names or MCP tool_names for discovery; suggestions are not aliases.",
+            "ca_next_action": "filter_tool_names", "discovery_url": discovery_url}
 
 
 def _tool_schema_payload(name: str) -> tuple[dict, int]:
     """Single-tool enriched schema payload shared by HTTP and MCP."""
     name = (name or "").strip()
     if name not in ct.TOOL_MAP:
-        low = name.lower()
-        suggestions = [n for n in ct.TOOL_MAP.keys() if low and (low in n.lower() or n.lower() in low)][:8]
-        return {
-            "ok": False,
-            "error": f"Unknown tool '{name}'",
-            "error_name": "UNKNOWN_TOOL",
-            "suggestions": suggestions,
-            "hint": "Use tool_names() or GET /api/tools/names for discovery.",
-            "ca_next_action": "filter_tool_names",
-        }, 404
+        return _unknown_tool_payload(name), 404
     for schema in ct.TOOL_SCHEMAS:
         fn = schema.get("function", {})
         if fn.get("name") != name:
@@ -16140,6 +16215,30 @@ async def handle_write_status(request):
                                    "origin_generation")},
         "generation": SERVER_GENERATION,
     }, headers=cors, dumps=lambda x: json.dumps(x, ensure_ascii=False))
+
+
+async def write_status(operation_id: str = "", project_path: str = "",
+                       file_path: str = "") -> str:
+    """Catalog/MCP access to the exact same write-commit ledger as HTTP GET."""
+    from types import SimpleNamespace
+    request = SimpleNamespace(headers={}, query={
+        "operation_id": operation_id, "project_path": project_path, "file_path": file_path,
+    })
+    response = await handle_write_status(request)
+    return response.text
+
+
+_register_tool(
+    name="write_status", handler=write_status, phase="T1",
+    tool_map=ct.TOOL_MAP, tool_schemas=ct.TOOL_SCHEMAS, tool_phases=ct.TOOL_PHASES,
+    arg_aliases=_ARG_ALIASES, phase_labels=ct.PHASE_LABELS,
+    schema={"description": "Read write commit truth after timeout by operation_id or project_path+file_path. Same ledger as GET /api/write_status; unknown is not safe to replay.",
+            "parameters": {"type": "object", "properties": {
+                "operation_id": {"type": "string", "default": "", "description": "ID returned by the write response."},
+                "project_path": {"type": "string", "default": "", "description": "Explicit project root for target lookup."},
+                "file_path": {"type": "string", "default": "", "description": "Target file when operation_id is unavailable."},
+            }, "required": []}},
+)
 
 
 async def handle_semaphores(request):

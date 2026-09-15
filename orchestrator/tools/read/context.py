@@ -122,6 +122,7 @@ async def read_file_range(
                 if project_path else None, "content_hash": doc.content_hash,
                 "cache_hit": cache_meta["cache_hit"],
                 "total_lines": len(doc.lines),
+                "read_token_seeded": False, "derived_state_touched": False,
             })
             return selection
 
@@ -270,6 +271,14 @@ async def read_file_range(
                 "truncated": truncated, "next_ranges": next_ranges,
                 "read_token_seeded": reseeded, "derived_state_touched": False,
             }
+            if total == 0:
+                # A genuinely empty file is a valid read, not an inverted range.
+                # Its token still protects the observed empty file from stale writes.
+                response.update({
+                    "empty_file": True, "shown": "empty_file",
+                    "range_id": f"{fp.name}:empty", "range_ref": None,
+                    "selection": {**selection, "start_line": None, "end_line": None},
+                })
         if cache_meta["content_hash_mismatch"]:
             response["content_hash_mismatch"] = True
             response["warn"] = "supplied_content_hash_stale"

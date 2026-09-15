@@ -104,7 +104,7 @@ class TestWriteTransactionHashChain(unittest.TestCase):
         self.assertTrue(result.get('auto_reverted'), msg=result)
         inner = (result.get('apply_results') or [{}])[-1]
         self.assertEqual(inner.get('error_name'),
-                         'FILE_CHANGED_OUTSIDE_ORCHESTRATOR', msg=result)
+                         'EXPECTED_HASH_MISMATCH', msg=result)
         self.assertEqual(fp.read_text(encoding='utf-8'), original)
 
     def test_middle_hunk_real_error_restores_pre_transaction_state(self):

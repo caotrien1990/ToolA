@@ -98,11 +98,15 @@ class GuardKeepsThickRuleMatches(unittest.TestCase):
         self.assertFalse(v._a07_should_defer("audit", rule, lex))
 
     def test_expanded_vocabulary_cannot_inflate_the_overlap(self):
-        """Overlap is counted over RAW words. VN expansion injects tool
-        vocabulary the user never typed; counting it would let "open a work
-        session" claim to name `open_session` by luck."""
-        rule, _h, _o, lex = _measure("open a work session")
+        """A lexical candidate may contain expansion-only words absent from RAW.
+
+        Fix the candidate: live description changes must not turn this unit
+        test into an assertion about unrelated lexical ranking.
+        """
+        rule = {"re": r"session"}
+        lex = [(10.0, "workflow_session", {}, "T3")]
         self.assertFalse(v._a07_should_defer("open a work session", rule, lex))
+        self.assertTrue(v._a07_should_defer("open workflow session", rule, lex))
 
 
 class GuardIsScaleFree(unittest.TestCase):

@@ -1687,17 +1687,56 @@ def _session_id_unique_tail() -> str:
     rather than borrow it from the clock.
     """
     return secrets.token_hex(6)
+def _rename_session_title(conn, session_id: str, new_title: str):
+    """Shared writer-only title update; never rename a closed session."""
+    row = conn.execute(
+        "SELECT session_title FROM sessions WHERE session_id=? AND status='active'",
+        (session_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    conn.execute(
+        "UPDATE sessions SET session_title=? WHERE session_id=? AND status='active'",
+        (new_title, session_id),
+    )
+    return {"old_title": row[0], "new_title": new_title, "renamed": row[0] != new_title}
+
+
+def _session_rotation_blockers(conn, project_path: str, session_id: str):
+    """Check durable work and project-scoped drafts inside the writer transaction."""
+    from orchestrator.tools.write import draft
+
+    operations = conn.execute(
+        "SELECT operation_id FROM write_operations WHERE status='in_flight' "
+        "AND (session_id=? OR project_path=?)",
+        (session_id, project_path),
+    ).fetchall()
+    pending = conn.execute(
+        "SELECT pending_audit_id FROM pending_audits "
+        "WHERE sync_status='pending' AND (session_id=? OR project_path=?)",
+        (session_id, project_path),
+    ).fetchall()
+    with draft._LOCK:
+        drafts = [key for key, item in draft._DRAFTS.items()
+                  if item.get("expires_at_epoch", 0) > time.time()
+                  and _session_project_key(item.get("project_path") or
+                                           str(Path(item["target_file"]).parent)) == project_path]
+    return {"in_flight_operation_ids": [row[0] for row in operations],
+            "pending_audit_ids": [row[0] for row in pending], "draft_ids": drafts}
+
+
 def _open_or_resume_session(project_path: str, session_title: str, mode: str,
-                            agent_id: str | None = None) -> tuple[dict, bool]:
-    """Atomically return an active session in scope, creating it if absent."""
+                            agent_id: str | None = None, *,
+                            force_new_session: bool = False,
+                            apply_requested_title: bool = False) -> tuple[dict, bool]:
+    """Serialize resume, opt-in rename, or close-then-create in one transaction."""
     norm = _session_project_key(project_path)
     now = datetime.now().isoformat(timespec="seconds")
 
     def _open(conn):
         rows = conn.execute(
             "SELECT session_id, started_at FROM sessions "
-            "WHERE project_path=? AND status='active'",
-            (norm,),
+            "WHERE project_path=? AND status='active'", (norm,),
         ).fetchall()
         stale_ids = [sid for sid, started_at in rows if not _session_started_today(started_at)]
         if stale_ids:
@@ -1705,23 +1744,32 @@ def _open_or_resume_session(project_path: str, session_title: str, mode: str,
                 "UPDATE sessions SET status='closed', ended_at=? WHERE session_id=?",
                 [(now, sid) for sid in stale_ids],
             )
-
-        sql = (
-            "SELECT session_id, session_title, started_at FROM sessions "
-            "WHERE project_path=? AND status='active'"
-        )
-        params: tuple[str, ...] = (norm,)
+        sql = ("SELECT session_id, session_title, started_at, mode FROM sessions "
+               "WHERE project_path=? AND status='active'")
+        params = (norm,)
         if agent_id:
             sql += " AND agent_id=?"
             params += (agent_id,)
         sql += " ORDER BY started_at DESC, session_id DESC LIMIT 1"
         existing = conn.execute(sql, params).fetchone()
-        if existing:
-            return {
-                "session_id": existing[0],
-                "session_title": existing[1],
-                "started_at": existing[2],
-            }, False
+        closed_session_id = None
+        if existing and force_new_session:
+            blockers = _session_rotation_blockers(conn, norm, existing[0])
+            if any(blockers.values()):
+                return {"ok": False, "error_name": "SESSION_ROTATION_BUSY",
+                        "error": "Finish pending work before replacing this session.",
+                        "session_id": existing[0], "blockers": blockers,
+                        "retryable": True, "ca_next_action": "finish_pending_work_then_retry"}, False
+            conn.execute("UPDATE sessions SET status='closed', ended_at=? WHERE session_id=?",
+                         (now, existing[0]))
+            closed_session_id = existing[0]
+        elif existing:
+            result = {"session_id": existing[0], "session_title": existing[1],
+                      "started_at": existing[2], "mode": existing[3]}
+            if apply_requested_title:
+                result.update(_rename_session_title(conn, existing[0], session_title))
+                result["session_title"] = session_title
+            return result, False
 
         sid = re.sub(r"[^a-z0-9]+", "-", session_title.lower()).strip("-")[:40]
         if agent_id:
@@ -1730,15 +1778,14 @@ def _open_or_resume_session(project_path: str, session_title: str, mode: str,
         conn.execute(
             """INSERT INTO sessions
                (session_id, session_title, project_path, mode, status,
-                coverage, started_at, agent_id)
-               VALUES (?,?,?,?,?,?,?,?)""",
+                coverage, started_at, agent_id) VALUES (?,?,?,?,?,?,?,?)""",
             (sid, session_title, norm, mode, "active", "A-only", now, agent_id),
         )
-        return {
-            "session_id": sid,
-            "session_title": session_title,
-            "started_at": now,
-        }, True
+        result = {"session_id": sid, "session_title": session_title,
+                  "started_at": now, "mode": mode}
+        if closed_session_id:
+            result["closed_session_id"] = closed_session_id
+        return result, True
 
     return _run_session_write("open or resume session", _open)
 

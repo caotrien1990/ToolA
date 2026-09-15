@@ -36,7 +36,7 @@ class BoundedDiscoveryTests(unittest.TestCase):
         # Materially smaller: a "bounded" catalog that returned 240 of 246 would
         # satisfy the assertion above while defeating the purpose.
         self.assertLess(payload["returned_count"], payload["total_available"] // 2)
-        self.assertIn("bootstrap_session", payload["ca_next_action"])
+        self.assertEqual(payload["ca_next_action"], "filter_or_use_total_available_as_limit")
 
     def test_bounded_and_curated_flags_describe_the_actual_payload(self):
         # Sabotage found both of these: hardcoding `bounded: True`, and letting
@@ -75,6 +75,7 @@ class BootstrapContractTests(unittest.TestCase):
         payload = json.loads(asyncio.run(code_tools.bootstrap_session(
             "", session_id="host-1", agent_id="hermes",
             owner_claim_id="antidrift-host-1-0123456789abcdef0123456789abcdef",
+            verbosity="full",
         )))
         encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         # Bootstrap carries generation, scoped fingerprints, and runtime hints.
@@ -119,6 +120,7 @@ class BootstrapContractTests(unittest.TestCase):
         payload = json.loads(asyncio.run(code_tools.bootstrap_session(
             "", session_id="host-1", agent_id="hermes",
             owner_claim_id="antidrift-host-1-0123456789abcdef0123456789abcdef",
+            verbosity="full",
         )))
         index = payload["active_skills_index"]
         self.assertGreater(len(index), 0)

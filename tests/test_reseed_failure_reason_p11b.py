@@ -111,7 +111,8 @@ class ReseedFailureReasonTests(unittest.TestCase):
         import shutil
 
         shutil.rmtree(self.tmp / ".git")
-        result = _read(self.file, force_reseed=True)
+        with mock.patch.object(code_tools, "find_project_root", return_value=None):
+            result = _read(self.file, force_reseed=True)
 
         self.assertFalse(result.get("ok"), msg=result)
         self.assertEqual(result.get("error_name"), "RESEED_FAILED", msg=result)

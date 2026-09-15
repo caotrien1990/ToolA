@@ -369,7 +369,8 @@ async def cbm_dead_code(project_path: str = "", limit: int = 50,
         return _err("cbm_dead_code", e)
 
 async def ruff_fix(project_path: str = "", path: str = ".", apply: bool = False,
-                   unsafe_fixes: bool = False, **aliases) -> str:  # noqa: ARG001
+                   unsafe_fixes: bool = False, preserve_hash: bool = False,
+                   **aliases) -> str:  # noqa: ARG001
     """Preview or apply Ruff fixes without accepting arbitrary command arguments."""
     if not project_path:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
@@ -389,6 +390,10 @@ async def ruff_fix(project_path: str = "", path: str = ".", apply: bool = False,
     if not os.path.exists(target):
         return _json.dumps({"ok": False, "error_name": "FILE_NOT_FOUND",
                             "error": f"path not found: {path}"}, ensure_ascii=False)
+    if apply and preserve_hash:
+        return _json.dumps({"ok": False, "error_name": "HASH_PINNED_TARGET",
+                            "error": "Ruff apply would invalidate the pinned artifact hash",
+                            "applied": False, "ca_next_action": "use_preview_only_for_pinned_artifact"})
 
     def _snapshot(candidate: str):
         files = [candidate] if os.path.isfile(candidate) else []
@@ -487,6 +492,8 @@ async def ruff_fix(project_path: str = "", path: str = ".", apply: bool = False,
         "mode": "apply" if apply else "preview",
         "applied": bool(apply and completed.returncode in (0, 1)),
         "unsafe_fixes": bool(unsafe_fixes),
+        "preserve_hash": bool(preserve_hash),
+        "hash_pin_note": "Any applied fix, including I001/F401, can change bytes. For hold/pinned artifacts pass preserve_hash=true and use preview only.",
         "path": os.path.relpath(target, root).replace("\\", "/"),
         "diff": output if not apply else "",
         "stdout": output if apply else "",

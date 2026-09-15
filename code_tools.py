@@ -532,7 +532,7 @@ def _resolve_project_path_payload(input_path: str, preferred_root: str = "", mod
             notes.append("preferred_root ignored because input_path is outside it")
 
     if project_root is None:
-        if exists and is_dir and _looks_like_project_root(path):
+        if exists and is_dir and (mode == "folder" or _looks_like_project_root(path)):
             project_root = path
             notes.append("input_path is a project root")
         elif exists and is_dir:
@@ -1133,6 +1133,13 @@ def _decode_text_payload(raw_content: str, content_encoding: str | None) -> tupl
                 "severity": "error",
                 "retryable": False,
                 "reason": "new_content is not valid base64 UTF-8",
+                "encoding_error_stage": "utf8_decode" if isinstance(exc, UnicodeDecodeError) else "base64_decode",
+                "hint": (
+                    "Generate base64 programmatically from the intended UTF-8 bytes; "
+                    "do not compose or repair base64 by hand. Decode locally with strict UTF-8 "
+                    "and compare to the intended text before retrying once. This error identifies "
+                    "invalid received content, not which transport or caller changed it."
+                ),
                 "accepted_fields": accepted_payload_fields,
                 "payload_example": {
                     "content_encoding": "base64",
@@ -1418,7 +1425,7 @@ _ENGLISH_TOOL_DESCRIPTIONS = {
     "post_write_batch_verify": "Run the standard non-mutating post-write verification bundle for changed files.",
     "write_fix_html": "Edit a range inside an .html file with base64, encoding_check, and diff_preview; performs delimiter safety checks before writing.",
     "apply_after_dry_run": "Apply an exact previously previewed dry-run payload by dry_run_id; rejects stale target files and expired previews.",
-    "open_session": "Open or resume the active CA session for a project.",
+    "open_session": "Open or resume one active session per project and agent. Resume preserves title and mode; use rename_session for a new title. Opt-in apply_requested_title renames in place; force_new_session closes then creates atomically and refuses pending writes, drafts or audits. Both default false, require agent_id, and are mutually exclusive.",
     "close_session": "Close the active CA session after log_native(native=[...]) has been recorded.",
     "rename_session": "Rename the active session. Closed sessions cannot be renamed.",
     "clear_closed_sessions": "Delete all closed sessions and their events for a project; active session is preserved.",
@@ -1515,6 +1522,10 @@ for schema in TOOL_SCHEMAS:
         fn["description"] = _ENGLISH_TOOL_DESCRIPTIONS[name]
     props = fn.get("parameters", {}).get("properties", {})
     for prop_name, prop_schema in props.items():
+        # Preserve the read tool's range-validation contract from registry_data;
+        # generic English labels otherwise erase its actionable INVALID_RANGE guidance.
+        if name == "read_file_range" and prop_name in {"start_line", "end_line"}:
+            continue
         if isinstance(prop_schema, dict) and prop_name in _ENGLISH_PROPERTY_DESCRIPTIONS:
             prop_schema["description"] = _ENGLISH_PROPERTY_DESCRIPTIONS[prop_name]
 
@@ -2109,11 +2120,41 @@ _MODE_ALIASES = {
     "T2_BUILD": "T2",
     "T2": "T2",
 }
+_VALID_WORKFLOW_MODES = frozenset({"T1", "T2"})
 
 def _canon_mode(mode: str) -> str:
     if not mode:
         return "T1"
     return _MODE_ALIASES.get(mode.upper(), mode.upper())
+
+def _invalid_mode_error(requested_mode: str, canon: str) -> str:
+    return _json_error(
+        f"Unknown open_session mode {requested_mode!r} (canonicalized to {canon!r}). "
+        "mode is workflow T1/T2, not an execution verb. execute is not valid.",
+        error_name="INVALID_MODE",
+        requested_mode=requested_mode,
+        canonical_mode=canon,
+        accepted_modes=["T1", "T2"],
+        accepted_aliases=sorted(_MODE_ALIASES.keys()),
+        ca_next_action="use_T1_or_T2_or_set_workflow_mode",
+        hint="Pass mode=T1 or mode=T2 (aliases T1_FIX/T1_EXISTING_APP/T2_BUILD/T2_NEW_APP). "
+             "To change an already-open session, call set_workflow_mode.",
+    )
+
+def _open_session_mode_fields(requested_mode: str, canon_mode: str,
+                              session_row: dict, created: bool) -> dict:
+    persisted = (session_row or {}).get("mode") or (canon_mode if created else "")
+    fields = {
+        "requested_mode": requested_mode or "T1",
+        "effective_mode": persisted or canon_mode,
+        "mode_applied": bool(created),
+    }
+    if not created:
+        fields["mode_ignored_on_resume"] = True
+        fields["mode_change_hint"] = (
+            "Resume does not change persisted workflow mode. Call set_workflow_mode."
+        )
+    return fields
 
 
 def _default_workflow_state(project_path: str, mode: str, idea: str = "",
@@ -2190,6 +2231,21 @@ async def prepare_ca_session(project_path: str, mode: str = "T1", idea: str = ""
     root = Path(project_path).resolve()
     if not root.exists():
         return _json_error(f"Project path not found: {project_path}")
+
+    # Resolve ownership before project preparation can write any artifacts.
+    canonical = None
+    if host_session_id and agent_id:
+        claim_key = (str(host_session_id).strip(), str(agent_id).strip())
+        if not owner_claim_id and not _PREPARE_OWNER_CLAIMS.get(claim_key):
+            try:
+                previous = await asyncio.to_thread(_task_checkpoint_load, claim_key[0]) or {}
+            except TaskCheckpointStorageError as exc:
+                return _json_error(str(exc), error_name=exc.error_name,
+                                   ca_next_action="repair_task_checkpoint_storage_then_retry")
+            if previous.get("owner_capability_sha256") or previous.get("owner_claim_sha256"):
+                return _json_error("Persisted ownership requires the original owner_claim_id",
+                                   error_name="TASK_OWNER_MISMATCH",
+                                   ca_next_action="retry_with_the_original_owner_claim_id")
 
     def _prepare():
         if not (_project_cache_dir(str(root)) / "INDEX.json").exists():
@@ -2306,19 +2362,14 @@ async def prepare_ca_session(project_path: str, mode: str = "T1", idea: str = ""
         return json.dumps(r, ensure_ascii=False)
 
     if host_session_id and agent_id:
-        claim_key = (str(host_session_id).strip(), str(agent_id).strip())
-        claim_id = owner_claim_id or _PREPARE_OWNER_CLAIMS.get(claim_key)
-        if not claim_id:
-            claim_id = secrets.token_urlsafe(32)
-            _PREPARE_OWNER_CLAIMS[claim_key] = claim_id
         try:
-            canonical = json.loads(await bootstrap_session(
-                str(root), session_id=host_session_id, agent_id=agent_id,
-                owner_claim_id=claim_id,
+            canonical = json.loads(await _bootstrap_with_cached_owner_claim(
+                str(root), host_session_id, agent_id, owner_claim_id,
+                claim_cache=_PREPARE_OWNER_CLAIMS,
             ))
         except Exception as exc:
-            canonical = {"ok": False, "error": str(exc),
-                         "error_name": "BOOTSTRAP_FAILED"}
+            canonical = {"ok": False, "error": str(exc), "error_name": "BOOTSTRAP_FAILED"}
+        claim_id = canonical.get("owner_claim_id", owner_claim_id)
         if not canonical.get("ok"):
             r["ok"] = False
             r["bootstrap"] = {
@@ -2328,6 +2379,9 @@ async def prepare_ca_session(project_path: str, mode: str = "T1", idea: str = ""
             }
             r["error"] = canonical.get("error") or "bootstrap_session failed"
             r["error_name"] = canonical.get("error_name") or "BOOTSTRAP_FAILED"
+            for field in ("ca_next_action", "accepted_fields", "payload_example"):
+                if field in canonical:
+                    r[field] = canonical[field]
             return json.dumps(r, ensure_ascii=False)
         r["bootstrap"] = {
             "status": "ready", "bootstrap_ref": canonical.get("bootstrap_ref"),
@@ -2337,6 +2391,12 @@ async def prepare_ca_session(project_path: str, mode: str = "T1", idea: str = ""
         if canonical.get("owner_capability"):
             r["bootstrap"]["owner_capability"] = canonical["owner_capability"]
         r["bootstrap_ref"] = canonical.get("bootstrap_ref")
+        # Keep credentials ahead of the potentially large generated prompt.
+        r = {**{key: canonical[key] for key in (
+            "ok", "session_scope", "owner_capability", "owner_claim_id",
+            "owner_claim_status", "owner_claim_recovered",
+            "owner_claim_expires_in_seconds", "ca_next_action", "bootstrap_ref",
+        ) if key in canonical}, **r}
     else:
         r["bootstrap"] = {
             "status": "skipped", "bootstrap_ref": None,
@@ -4976,9 +5036,52 @@ async def run_project_command(
             "root_causes": ["PATH_WITH_SPACES_UNQUOTED"],
         }
 
+    def _unquoted_absolute_script_path() -> str:
+        """Return an unquoted absolute executable/script prefix, or empty.
+
+        Deliberately narrow: ordinary commands with spaced arguments are valid;
+        only a command that STARTS like an absolute Windows/UNC path and reaches a
+        known executable/script extension after whitespace is rejected.
+        """
+        if not isinstance(command_received, str):
+            return ""
+        text = command_received.strip()
+        if not text or text[0] in {'"', "'"}:
+            return ""
+        lower = text.lower()
+        if not (re.match(r"^[a-z]:[\\/]", lower) or lower.startswith("\\\\")):
+            return ""
+        for ext in (".exe", ".bat", ".cmd", ".ps1"):
+            end = lower.find(ext)
+            if end >= 0:
+                prefix = text[:end + len(ext)]
+                return prefix if any(ch.isspace() for ch in prefix) else ""
+        return ""
+
     def _run():
         start = time.time()
         try:
+            unquoted_path = _unquoted_absolute_script_path()
+            if unquoted_path:
+                return _r43_apply_command_filter({
+                    "ok": False, "project_path": str(root),
+                    "command_received": command_received,
+                    "command": args, "command_executed": [], "shell": shell_name,
+                    "shell_mode_requested": sm, "shell_mode_resolved": resolved_mode,
+                    "cwd": str(root), "returncode": None, "exit_code": None,
+                    "duration_seconds": round(time.time() - start, 3),
+                    "stdout": "", "stderr": "", "timed_out": False,
+                    "keep_alive": bool(keep_alive), "background": bool(background),
+                    "interactive": bool(interactive), "elevated": bool(elevated),
+                    "spawn_attempted": False, "write_performed": False,
+                    "error_name": "PATH_QUOTING_ERROR",
+                    "error": "Command starts with an unquoted absolute executable/script path containing spaces.",
+                    "unquoted_path": unquoted_path,
+                    "suggestion": "wrap path in double quotes",
+                    "ca_next_action": "retry_with_quoted_path_or_path_quote_helper",
+                    "suggested_helper": "path_quote_helper",
+                    "root_causes": ["PATH_WITH_SPACES_UNQUOTED"],
+                })
             if elevated:
                 if not _is_win:
                     return {
@@ -5696,10 +5799,10 @@ def _auto_open_session(project_path: str, body: dict,
 
 
 def _open_or_resume_session(project_path: str, session_title: str, mode: str,
-                            agent_id=None):
+                            agent_id=None, **options):
     _sync_session_db_alias()
     return _session_store_module._open_or_resume_session(
-        project_path, session_title, mode, agent_id=agent_id)
+        project_path, session_title, mode, agent_id=agent_id, **options)
 
 
 def _log_session_event(session_id: str, tool_name: str, body: dict, result: dict,
@@ -7950,6 +8053,16 @@ async def begin_task(session_id: str, prompt: str, agent_id: str = "", max_chars
     def cap_hash(value):
         return hashlib.sha256(str(value or "").encode()).hexdigest()
     def reject(message, name, **extra):
+        if name in {"TASK_OWNER_REQUIRED", "TASK_OWNER_MISMATCH", "OWNER_CLAIM_EXPIRED"}:
+            extra.setdefault("accepted_fields", [
+                "session_id", "prompt", "agent_id", "owner_capability",
+                "owner_claim_id", "delegation_capability", "delegate_agent_id",
+            ])
+            extra.setdefault("payload_example", {
+                "session_id": session_key, "prompt": "<newest real user prompt>",
+                "agent_id": incoming, "owner_capability": "<from bootstrap_session>",
+                "owner_claim_id": "<original persisted owner_claim_id>",
+            })
         return None, _json_error(message, error_name=name, **extra)
     def update(previous):
         root = str(previous.get("agent_id") or "")
@@ -8406,8 +8519,40 @@ async def get_task_checkpoint(session_id: str, include_owner_status: bool = Fals
 
 # ─── V15 R42 NEW TOOLS: bootstrap_session, check_server_path, wait_for_idle, parse_log_section, workflow_goto_step ─────
 
+async def _bootstrap_with_cached_owner_claim(
+        project_path: str, session_id: str, agent_id: str, owner_claim_id: str = "",
+        *, claim_cache: dict | None = None, verbosity: str = "terse",
+        include_discovery: bool = False) -> str:
+    """Shortcut compatibility: never mint over a durable owner after reconnect."""
+    cache = _PREPARE_OWNER_CLAIMS if claim_cache is None else claim_cache
+    key = (str(session_id).strip(), str(agent_id).strip())
+    claim = owner_claim_id or cache.get(key, "")
+    if not claim:
+        try:
+            checkpoint = await asyncio.to_thread(_task_checkpoint_load, key[0]) or {}
+        except TaskCheckpointStorageError as exc:
+            return _json_error(str(exc), error_name=exc.error_name, retryable=False,
+                               ca_next_action="repair_task_checkpoint_storage_then_retry")
+        if checkpoint.get("owner_capability_sha256") or checkpoint.get("owner_claim_sha256"):
+            return _json_error(
+                "Persisted ownership requires the original owner_claim_id; no replacement was minted",
+                error_name="TASK_OWNER_MISMATCH",
+                ca_next_action="retry_with_the_original_owner_claim_id",
+                accepted_fields=["session_id", "agent_id", "owner_claim_id"],
+                payload_example={"session_id": key[0], "agent_id": key[1],
+                                 "owner_claim_id": "<original persisted owner_claim_id>"},
+            )
+        claim = secrets.token_urlsafe(32)
+    result = await bootstrap_session(project_path, key[0], key[1], claim,
+                                     verbosity=verbosity, include_discovery=include_discovery)
+    if json.loads(result).get("ok"):
+        cache[key] = claim
+    return result
+
+
 async def bootstrap_session(project_path: str = "", session_id: str = "",
-                            agent_id: str = "", owner_claim_id: str = "") -> str:
+                            agent_id: str = "", owner_claim_id: str = "",
+                            verbosity: str = "terse", include_discovery: bool = False) -> str:
     """V15 R42 T1: compact discovery entry — first-call CA does to avoid 17% schema driff.
 
     Returns:
@@ -8419,6 +8564,8 @@ async def bootstrap_session(project_path: str = "", session_id: str = "",
       - see_also_macros (other 1-shot discovery endpoints)
     """
     import json as _json_bs
+    if verbosity not in {"terse", "compact", "full", "ref"}:
+        return _json_error("Use terse, compact, ref or full", error_name="INVALID_VERBOSITY")
     session_key = (session_id or "").strip()
     agent_key = (agent_id or "").strip()
     if not session_key or not agent_key:
@@ -8686,6 +8833,20 @@ async def bootstrap_session(project_path: str = "", session_id: str = "",
 
     response = {
         "ok": True,
+        "session_scope": scope,
+    }
+    if issued_owner_capability:
+        response.update({
+            "owner_capability": issued_owner_capability,
+            "owner_claim_id": owner_claim_id,
+            "owner_claim_status": str(checkpoint.get("owner_claim_status") or ""),
+            "owner_claim_recovered": claim_recovered,
+        })
+        if response["owner_claim_status"] == "pending":
+            response["owner_claim_expires_in_seconds"] = max(
+                0, int(float(checkpoint.get("owner_claim_expires_at") or now) - time.time()))
+    response.update({
+        "ca_next_action": "call_begin_task_with_owner_capability",
         "bootstrap_ref": bootstrap_ref,
         "ruleset_sha256": ruleset_sha256,
         "rule_source_sha256": rule_meta["sha256"],
@@ -8699,25 +8860,12 @@ async def bootstrap_session(project_path: str = "", session_id: str = "",
             "call": "HTTP /api/call/<tool>",
         },
         "orchestrator_health": health,
-        "active_workflow": active_wf,
-        "key_tools_compact": key_tools_compact,
-        "common_pitfalls": common_pitfalls,
-        "active_skills_index": active_skills_index,
         "task_contract": task_contract,
-        "ca_next_action": "proceed_with_task",
         "hint": "First-call lifecycle macro; reuse bootstrap_ref for this generation.",
-    }
-    if issued_owner_capability:
-        response["owner_capability"] = issued_owner_capability
-        if owner_claim_id:
-            actual_claim_status = str(checkpoint.get("owner_claim_status") or "")
-            response["owner_claim_status"] = actual_claim_status
-            response["owner_claim_recovered"] = claim_recovered
-            if actual_claim_status == "pending":
-                response["owner_claim_expires_in_seconds"] = max(
-                    0, int(float(checkpoint.get("owner_claim_expires_at") or now) - now)
-                )
-        response["ca_next_action"] = "call_begin_task_with_owner_capability"
+    })
+    if verbosity == "full" or include_discovery:
+        response.update({"active_workflow": active_wf, "key_tools_compact": key_tools_compact,
+                         "common_pitfalls": common_pitfalls, "active_skills_index": active_skills_index})
     return json.dumps(response, ensure_ascii=False)
 
 
@@ -13136,8 +13284,15 @@ def _transport_policy_payload() -> dict:
 
 
 async def open_session(session_title: str = "", project_path: str = ".", mode: str = "T1",
-                        verbosity: str = "full", agent_id: str = "") -> str:
-    """Open or resume the active CA session for a project.
+                        verbosity: str = "full", agent_id: str = "",
+                        force_new_session: bool = False,
+                        apply_requested_title: bool = False) -> str:
+    """Open or resume one active session per project and agent.
+
+    Resume keeps its title and mode by default; use rename_session to rename.
+    apply_requested_title explicitly renames in place; force_new_session closes
+    the old row and creates a new one atomically, refusing pending work.
+    Both flags default false and cannot be combined in a single call.
 
     V15 R22: `verbosity` ∈ {full|terse|ref} — terse compresses matrix_audit to
     {drift_count, alias_drift_count, progressive_gap_count} and drops
@@ -13151,7 +13306,17 @@ async def open_session(session_title: str = "", project_path: str = ".", mode: s
     memory. Enforcement lives in run_project_command (POWERSHELL_INLINE_FORBIDDEN).
     """
     try:
+        if type(force_new_session) is not bool or type(apply_requested_title) is not bool:
+            return _json_error("Session options must be booleans.", error_name="INVALID_SESSION_OPTIONS")
+        if force_new_session and apply_requested_title:
+            return _json_error("Choose force_new_session or apply_requested_title per call.",
+                               error_name="CONFLICTING_SESSION_OPTIONS")
+        if (force_new_session or apply_requested_title) and not agent_id.strip():
+            return _json_error("Opt-in session changes require agent_id.", error_name="AGENT_ID_REQUIRED")
+        if apply_requested_title and not session_title.strip():
+            return _json_error("apply_requested_title requires a non-empty title.", error_name="SESSION_TITLE_REQUIRED")
         await asyncio.to_thread(_init_session_db)
+        requested_session_title = session_title
         if not session_title:
             session_title = f"Untitled Session {datetime.now().strftime('%Y-%m-%d %H:%M')}"
         resolution = _resolve_project_path_payload(project_path, mode="folder")
@@ -13178,13 +13343,24 @@ async def open_session(session_title: str = "", project_path: str = ".", mode: s
             project_path_confirmed = True
             resolved_from = ""
         norm = _session_project_key(project_path)
+        requested_mode = mode or "T1"
+        canon_mode = _canon_mode(requested_mode)
+        if canon_mode not in _VALID_WORKFLOW_MODES:
+            return _invalid_mode_error(requested_mode, canon_mode)
         # Anh 2026-08-11: run the session upsert OFF the event loop. _open_or_resume_session
         # goes through the SessionWriter and blocks on a durable-commit Future; calling it
         # synchronously here pinned the loop for the write (up to the 5s stall budget under
         # contention) — a hang vector for large/concurrent open_session bootstraps.
+        options = {}
+        if force_new_session or apply_requested_title:
+            options = {"force_new_session": force_new_session,
+                       "apply_requested_title": apply_requested_title}
         session_row, created = await asyncio.to_thread(
-            _open_or_resume_session, norm, session_title, _canon_mode(mode), agent_id or None
+            _open_or_resume_session, norm, session_title, canon_mode, agent_id or None,
+            **options,
         )
+        if session_row.get("ok") is False:
+            return json.dumps(session_row, ensure_ascii=False)
         existing = None if created else (
             session_row["session_id"],
             session_row["session_title"],
@@ -13231,9 +13407,24 @@ async def open_session(session_title: str = "", project_path: str = ".", mode: s
                     "project_switch_context": _r43_project_switch_context(norm),
                     # V15 R46 — machine-readable transport policy (resumed branch)
                     "transport_policy": _transport_policy_payload(),
-                "cslt_policy": __import__("orchestrator.core.ca_policy_matrix", fromlist=["open_session_policy_payload"]).open_session_policy_payload(agent_id=agent_id, project_path=project_path),
+                    "cslt_policy": __import__("orchestrator.core.ca_policy_matrix", fromlist=["open_session_policy_payload"]).open_session_policy_payload(agent_id=agent_id, project_path=project_path),
                     }
-            # V15 F4 (D4) — severity-aware drift verbosity (shared decision fn)
+            resp.update(_open_session_mode_fields(requested_mode, canon_mode, session_row, created=False))
+            if apply_requested_title:
+                resp.update({key: session_row[key] for key in ("old_title", "new_title", "renamed")})
+            if requested_session_title and requested_session_title != existing[1]:
+                resp.update({
+                    "requested_session_title": requested_session_title,
+                    "effective_session_title": existing[1],
+                    "session_title_mismatch": True,
+                    "resume_policy": "active_session_by_project_and_agent",
+                    "ca_next_action": "rename_session_if_requested_title_is_intended",
+                    "rename_session_payload": {
+                        "project_path": project_path, "new_title": requested_session_title,
+                        "agent_id": agent_id,
+                    },
+                })
+            # V15 F4 (D4) - severity-aware drift verbosity (shared decision fn)
             _eff_verbosity = _open_session_drift_decision(resp, _mx, verbosity)
             try:
                 import tools_v15 as _v15
@@ -13283,6 +13474,9 @@ async def open_session(session_title: str = "", project_path: str = ".", mode: s
                 "transport_policy": _transport_policy_payload(),
                 "cslt_policy": __import__("orchestrator.core.ca_policy_matrix", fromlist=["open_session_policy_payload"]).open_session_policy_payload(agent_id=agent_id, project_path=project_path),
                 }
+        resp.update(_open_session_mode_fields(requested_mode, canon_mode, session_row, created=True))
+        if "closed_session_id" in session_row:
+            resp["closed_session_id"] = session_row["closed_session_id"]
         # V15 F4 (D4) — severity-aware drift verbosity (shared decision fn)
         _eff_verbosity = _open_session_drift_decision(resp, _mx, verbosity)
         try:
@@ -13522,14 +13716,12 @@ async def rename_session(project_path: str, new_title: str,
                     ).fetchone()
             if not row:
                 return None
-            _run_session_write(
+            renamed = _run_session_write(
                 "rename session",
-                lambda write_conn: write_conn.execute(
-                    "UPDATE sessions SET session_title=? WHERE session_id=?",
-                    (new_title, row[0]),
-                ),
+                lambda write_conn: _session_store_module._rename_session_title(
+                    write_conn, row[0], new_title),
             )
-            return row[0]
+            return row[0] if renamed is not None else None
         _sid = await asyncio.to_thread(_do_rename)
         if _sid is None:
             # PC1-SESSION (2026-08-11): contract is "Closed sessions cannot be
@@ -15901,17 +16093,19 @@ try:
         "start_app": _p5.start_app,
         "stop_app": _p5.stop_app,
         "http_check": _p5.http_check,
+        "file_sha256": _p5.file_sha256,
         "browser_smoke_test": _p5.browser_smoke_test,
     }
     TOOL_MAP.update(_P5_FUNCS)
     TOOL_PHASES.update({_p5_name: "T2" for _p5_name in _P5_FUNCS})
+    TOOL_PHASES["file_sha256"] = "T1"
     _P5_SCHEMAS = [
         {"type": "function", "function": {
             "name": _p5_n, "description": _p5_d,
             "parameters": {"type": "object", "properties": _p5_props,
                            "required": _p5_req},
         }}
-        for _p5_n, _p5_d, _p5_props, _p5_req in _p5.UPGRADE_P5_SCHEMA_SPECS
+        for _p5_n, _p5_d, _p5_props, _p5_req in (_p5.UPGRADE_P5_SCHEMA_SPECS + _p5.READ_EVIDENCE_SCHEMA_SPECS)
     ]
     TOOL_SCHEMAS = TOOL_SCHEMAS + _P5_SCHEMAS
 except Exception as _p5_exc:
@@ -16252,6 +16446,7 @@ try:
                     "path": {"type": "string", "default": ".", "description": "Project-relative file or folder. Must stay inside project_path."},
                     "apply": {"type": "boolean", "default": False, "description": "False previews the fix diff; true applies fixes."},
                     "unsafe_fixes": {"type": "boolean", "default": False, "description": "Opt in to Ruff unsafe fixes."},
+                    "preserve_hash": {"type": "boolean", "default": False, "description": "Declare a hold/hash-pinned artifact. Refuses apply=true; preview remains allowed. All fixes including I001/F401 may break a pin."},
                 },
                 "required": ["project_path"],
             },

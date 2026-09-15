@@ -100,12 +100,9 @@ class CouncilTabOptInGuardTests(unittest.TestCase):
         }
         self.assertNotIn("webbrowser.open", attr_calls)
 
-    def test_user_launch_path_and_server_guard_agree(self):
-        # Producer/consumer coupling: high_il_launch.launch_server is the REAL
-        # user launch path (start_orchestrator.bat -> Task Scheduler -> here).
-        # Capture the environment it hands the child, then feed that exact env
-        # into the REAL server guard and assert the tab opens. This couples the
-        # two sides: renaming the opt-in flag on only one side breaks this test.
+    def test_lifecycle_launch_path_never_opts_into_browser_navigation(self):
+        # Scheduled/logon/manual server starts share this lifecycle path. None may
+        # steal focus by opening a browser tab as a side effect.
         captured = {}
 
         def fake_run(**kwargs):
@@ -118,14 +115,14 @@ class CouncilTabOptInGuardTests(unittest.TestCase):
                                               high_il_launch.py_exes(
                                                   high_il_launch.root_dir())[1])
         self.assertEqual(rc, 0)
-        self.assertIn(srv.COUNCIL_TAB_ENV, captured)
+        self.assertNotIn(srv.COUNCIL_TAB_ENV, captured)
 
-        # Now the consumer, driven by exactly what the producer set.
+        # The consumer remains safely disabled for that launch environment.
         with mock.patch.dict(srv.os.environ, captured, clear=True), \
                 mock.patch.object(srv.webbrowser, "open") as m_open:
             opened = srv._maybe_open_council_tab()
-        self.assertTrue(opened)
-        m_open.assert_called_once()
+        self.assertFalse(opened)
+        m_open.assert_not_called()
 
 
 if __name__ == "__main__":

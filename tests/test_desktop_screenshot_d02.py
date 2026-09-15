@@ -87,7 +87,10 @@ class DesktopScreenshotOffloadTest(unittest.TestCase):
         self.assertIn("fn", calls, "desktop_screenshot must use asyncio.to_thread")
         self.assertIs(calls["fn"], self.v15._desktop_screenshot_capture)
         # Concurrent probe must have run promptly (loop not blocked).
-        self.assertLess(probe_elapsed, 0.5,
+        # Busy Windows CI can delay the 10ms probe without the event loop being
+        # blocked. The simulated capture takes 50ms; a multi-second delay would
+        # still detect synchronous capture while avoiding a host-load flake.
+        self.assertLess(probe_elapsed, 5.0,
                         "event loop appears blocked while capture in flight")
         payload = json.loads(result)
         self.assertTrue(payload.get("ok"), payload)

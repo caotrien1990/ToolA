@@ -15,6 +15,51 @@ from __future__ import annotations
 import json
 
 
+async def file_sha256(file_path: str, project_path: str = "", expected_sha256: str = "") -> str:
+    """Hash raw file bytes off-loop; never normalize text or seed edit authority."""
+    import asyncio
+    import hashlib
+    import hmac
+    import os
+    import re
+    from pathlib import Path
+
+    if expected_sha256 and not re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha256):
+        return _err("expected_sha256 must be a full SHA-256 digest", error_name="INVALID_SHA256")
+    path = Path(file_path)
+    if not path.is_absolute():
+        if not project_path or not Path(project_path).is_absolute():
+            return _err("Relative file_path requires absolute project_path", error_name="PROJECT_PATH_REQUIRED")
+        path = Path(project_path) / path
+    path = path.resolve()
+
+    def hash_bytes():
+        digest = hashlib.sha256()
+        count = 0
+        with path.open("rb") as stream:
+            before = os.fstat(stream.fileno())
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+                count += len(block)
+            after = os.fstat(stream.fileno())
+        current = path.stat()
+        signature = lambda stat: (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
+        if signature(before) != signature(after) or signature(after) != signature(current) or count != after.st_size:
+            return _err("File changed while hashing", error_name="FILE_CHANGED_DURING_HASH",
+                        ca_next_action="retry_hash_after_writer_finishes")
+        sha = digest.hexdigest()
+        result = {"file_path": str(path), "sha256": sha, "bytes": count,
+                  "hash_domain": "raw_file_bytes", "mtime_ns": after.st_mtime_ns,
+                  "read_token_seeded": False}
+        if expected_sha256:
+            result["matches_expected"] = hmac.compare_digest(sha, expected_sha256.lower())
+        return _ok(**result)
+    try:
+        return await asyncio.to_thread(hash_bytes)
+    except OSError as exc:
+        return _err(str(exc), error_name="FILE_HASH_FAILED", file_path=str(path))
+
+
 def _err(msg: str, **extra) -> str:
     d = {"ok": False, "result": "error", "error": msg}
     d.update(extra)
@@ -35,7 +80,8 @@ async def start_app(app: str = "", command: str = "", project_path: str = "",
     """T2 MUTATING (process): launch an app as a detached background process and
     verify readiness (HTTP health_url and/or expected_port). Reuses
     run_project_command keep_alive infra. `app` may be a name or path; `command` is
-    a raw shell command. Returns spawned_pid + readiness evidence."""
+    a raw shell command taking precedence over app. Returns spawned_pid,
+    readiness evidence, command_source and app_ignored; existing result fields survive."""
     try:
         import code_tools as ct
         if not app and not command:
@@ -43,6 +89,15 @@ async def start_app(app: str = "", command: str = "", project_path: str = "",
                         accepted_fields=["app", "command", "project_path", "health_url",
                                          "expected_port", "timeout"])
         command_ = command or app
+        import re
+        if re.search(
+                r"\b(?:powershell|pwsh)(?:\.exe)?\b[^\r\n]*?"
+                r"-(?:Command|c)\b\s+[\"']?\s*-File\b", command_, re.I):
+            return _err("PowerShell script launch must use -File directly, not -Command -File",
+                        error_name="INVALID_POWERSHELL_FILE_LAUNCH",
+                        ca_next_action="use_powershell_File_directly",
+                        payload_example={"project_path": project_path,
+                                         "command": 'powershell.exe -NoProfile -File "D:/path/runner.ps1"'})
         raw = await ct.run_project_command(
             project_path=project_path or "",
             command=command_,
@@ -58,6 +113,10 @@ async def start_app(app: str = "", command: str = "", project_path: str = "",
         result = json.loads(raw)
         result["app"] = app or ""
         result["command"] = command_
+        result["command_source"] = "command" if command else "app"
+        result["app_ignored"] = bool(app and command)
+        result["restart_verified"] = False
+        result["lifecycle_note"] = "Launch/readiness does not prove replacement; an already-healthy runner may exit 0. Verify owner PID/generation before and after an authorized recycle."
         return json.dumps(result, ensure_ascii=False)
     except Exception as exc:
         return _err(f"{type(exc).__name__}: {exc}", error_name="START_APP_ERROR")
@@ -156,7 +215,17 @@ async def stop_app(pid: int = 0, process_name: str = "", force: bool = True,
 
 async def http_check(url: str, expect_status: int = 200, timeout: int = 10,
                      method: str = "GET", text_contains: str = "",
+                     json_body: dict | None = None,
                      **_kw) -> str:
+    """Keep all blocking socket I/O off the server loop, including self-probes."""
+    import asyncio
+    return await asyncio.to_thread(
+        _http_check_sync, url, expect_status, timeout, method, text_contains, json_body)
+
+
+def _http_check_sync(url: str, expect_status: int = 200, timeout: int = 10,
+                     method: str = "GET", text_contains: str = "",
+                     json_body: dict | None = None) -> str:
     """T2 READ/PROBE: bounded HTTP request against url; returns status, duration,
     content-type and (bounded) body snippet. ok=false unless status matches
     expect_status (and text_contains, when given, appears in the body)."""
@@ -168,8 +237,10 @@ async def http_check(url: str, expect_status: int = 200, timeout: int = 10,
         import urllib.error as _ue
         import urllib.request as _ur
         method = (method or "GET").upper()
-        start = time.time()
-        req = _ur.Request(url, method=method)
+        start = time.monotonic()
+        data = json.dumps(json_body, ensure_ascii=False).encode("utf-8") if json_body is not None else None
+        req = _ur.Request(url, method=method, data=data,
+                          headers={"Content-Type": "application/json"} if data is not None else {})
         body_text = ""
         content_type = ""
         try:
@@ -188,13 +259,15 @@ async def http_check(url: str, expect_status: int = 200, timeout: int = 10,
         except Exception as exc:
             return _err(f"request failed: {exc}", error_name="HTTP_CHECK_FAILED",
                         url=url, method=method, timeout=int(timeout or 10))
-        elapsed = round(time.time() - start, 3)
+        elapsed = round(time.monotonic() - start, 3)
         ok = status == int(expect_status or 200)
         if ok and text_contains:
             ok = str(text_contains) in body_text
         return json.dumps({
             "ok": ok,
             "url": url, "method": method, "status": status,
+            "request_body_sent": data is not None,
+            "request_body_bytes": len(data) if data is not None else 0,
             "expect_status": int(expect_status or 200),
             "elapsed_seconds": elapsed, "content_type": content_type,
             "body_length": len(body_text),
@@ -247,9 +320,9 @@ async def browser_smoke_test(url: str, expect_text: str = "",
 
 UPGRADE_P5_SCHEMA_SPECS = [
     ("start_app",
-     "T2 MUTATING (process): launch an app as a detached background process and verify readiness. Reuses run_project_command keep_alive infra (health_url / expected_port readiness protocols). Requires session + token for arbitrary shell. Mutating tool.",
+     "T2 MUTATING (process): launch an app and verify readiness via health_url / expected_port. command takes precedence over app; returns command_source and app_ignored. PowerShell scripts require -File directly; -Command -File (including quoted wrappers) is rejected. An already-healthy runner can exit 0 without replacing the process: restart_verified=false; inspect PID/generation before and after an authorized recycle. Requires session + token for arbitrary shell.",
      {"app": {"type": "string", "default": "", "description": "App name/path (used as the command when command is empty)."},
-      "command": {"type": "string", "default": "", "description": "Raw shell command to run (takes precedence over app)."},
+      "command": {"type": "string", "default": "", "description": "Raw shell command (takes precedence over app). PowerShell: powershell.exe -NoProfile -File runner.ps1, never -Command -File. Exit 0/readiness does not prove recycle."},
       "project_path": {"type": "string", "default": "", "description": "Working directory / project root."},
       "health_url": {"type": "string", "default": "", "description": "HTTP readiness URL to probe after launch."},
       "expected_port": {"type": "integer", "default": 0, "description": "TCP port to probe after launch."},
@@ -267,11 +340,12 @@ UPGRADE_P5_SCHEMA_SPECS = [
       "include_children": {"type": "boolean", "default": True, "description": "Also kill descendants. Required for apps started by start_app, whose spawned_pid is the cmd.exe wrapper, not the app itself."}},
      []),
     ("http_check",
-     "T2 READ/PROBE: bounded HTTP request against a url. Returns status, elapsed, content-type and a bounded body snippet. ok=false unless status matches expect_status and text_contains (when given) appears in the body.",
+     "T2 READ/PROBE: bounded HTTP request off the event loop, including self-health calls. Returns status, elapsed, content-type and bounded body snippet. ok=false unless status matches expect_status and text_contains (when given) appears in the body. json_body={} sends an empty JSON object for POST.",
      {"url": {"type": "string", "description": "HTTP URL to probe."},
       "expect_status": {"type": "integer", "default": 200, "description": "Expected HTTP status."},
       "timeout": {"type": "integer", "default": 10, "description": "Request timeout (seconds)."},
       "method": {"type": "string", "default": "GET", "enum": ["GET", "HEAD", "POST"], "description": "HTTP method."},
+      "json_body": {"type": "object", "description": "Optional JSON request body. Pass {} for POST endpoints requiring an empty JSON object; omitted sends no body. Endpoint paths/methods are never rewritten."},
       "text_contains": {"type": "string", "default": "", "description": "Optional substring the body must contain."}},
      ["url"]),
     ("browser_smoke_test",
@@ -292,3 +366,11 @@ UPGRADE_P5_SCHEMA_SPECS = [
       "project_path": {"type": "string", "description": "Project root for session/scope resolution (required by the process-scope gate)."}},
      ["url", "project_path"]),  # W7 (F020): B5 declared the field but left it out of `required`, so a schema-built payload still 400d.
 ]
+
+READ_EVIDENCE_SCHEMA_SPECS = [(
+    "file_sha256", "T1 read-only streaming SHA-256 of raw file bytes; optional expected digest comparison. Does not seed a write token.",
+    {"file_path": {"type": "string", "description": "Absolute file path or path relative to explicit project_path."},
+     "project_path": {"type": "string", "default": "", "description": "Absolute base for relative file_path."},
+     "expected_sha256": {"type": "string", "default": "", "description": "Optional complete 64-character digest to compare."}},
+    ["file_path"],
+)]

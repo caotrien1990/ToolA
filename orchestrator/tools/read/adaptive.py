@@ -314,7 +314,21 @@ def resolve_selection(doc: Document, *, scope: str, start_line: int,
                 "ca_next_action": "choose_scope_from_accepted_values"}
     total = len(doc.lines)
     if scope == "range":
-        start = max(1, int(start_line or 1))
+        start = int(start_line) if start_line is not None else 1
+        requested_end = int(end_line) if end_line is not None else None
+        if start < 1 or (requested_end is not None and requested_end < start):
+            return {
+                "ok": False, "error_name": "INVALID_RANGE",
+                "error": "Range requires 1 <= start_line <= end_line when end_line is supplied.",
+                "requested_start_line": start_line, "requested_end_line": end_line,
+                "read_token_seeded": False, "derived_state_touched": False,
+                "action_required": "correct_range", "ca_next_action": "correct_range",
+                "hint": "Choose the intended range with start_line >= 1 and end_line >= start_line, "
+                        "or omit end_line. Bounds are inclusive; start_line=end_line reads one line. "
+                        "For up to N lines, use start_line + max_lines=N and omit end_line "
+                        "(subject to EOF and backend/token caps). "
+                        "Do not blindly swap bounds. force_reseed does not repair an invalid range.",
+            }
         if total == 0:
             if start > 1:
                 return {
@@ -342,9 +356,9 @@ def resolve_selection(doc: Document, *, scope: str, start_line: int,
                     "native editor line numbers are not accepted."
                 ),
             }
-        end = min(total, int(end_line)) if end_line is not None else total
+        end = min(total, requested_end) if requested_end is not None else total
         return {"ok": True, "scope": "range", "name": None,
-                "start_line": start, "end_line": max(start - 1, end),
+                "start_line": start, "end_line": end,
                 "source": "line_range"}
     analysis = analyze_document(doc)
     if scope == "file_summary":

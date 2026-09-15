@@ -1302,7 +1302,88 @@ def _snapshot_should_gc(project_root: Path) -> bool:
     return (n % _SNAPSHOT_GC_EVERY) == 1  # run on the 1st publish of each project, then every 10th
 
 
+def _reconcile_external_files(project_root: Path, index: dict, changed_paths: dict) -> dict:
+    """Discover disk drift before incremental publication; hash even equal-stat edits.
+
+    Discovery is O(repo), deliberately: correctness takes precedence over the old
+    O(changed) latency contract. Only changed sources are re-analysed. A failure
+    leaves the previous immutable snapshot available and propagates to the writer.
+    """
+    deadline = time.monotonic() + _publish_snapshot_deadline_seconds()
+    known = index.get("files", {})
+    seen = set()
+
+    def check_deadline():
+        if time.monotonic() >= deadline:
+            raise search_snapshots.SnapshotDeadlineExceeded("external reconcile deadline exceeded")
+
+    def walk_error(error):
+        raise error
+
+    for walk_root, dirs, files in os.walk(project_root, onerror=walk_error, followlinks=False):
+        check_deadline()
+        dirs[:] = [d for d in dirs if not should_skip_dir(d, project_root)
+                   and not (Path(walk_root) / d).is_symlink()]
+        for name in files:
+            check_deadline()
+            path = Path(walk_root) / name
+            if path.is_symlink() or not _should_scan_file(path, project_root):
+                continue
+            rel = _rel_path(str(path), str(project_root))
+            seen.add(rel)
+            prior = known.get(rel, {})
+            stat = path.stat()
+            if rel in changed_paths:
+                continue
+            if (prior.get("hash") == get_file_hash(str(path))
+                    and prior.get("size_bytes") == stat.st_size
+                    and abs(float(prior.get("mtime") or 0) - stat.st_mtime) <= 1e-6):
+                continue
+            metadata = write_file_cache(str(path), str(project_root))
+            if metadata.get("error") or not metadata.get("hash"):
+                raise search_snapshots.SnapshotIntegrityError(f"external reconcile failed: {rel}")
+            index = update_index_incremental(project_root, metadata, removed=False)
+            changed_paths[rel] = "modified"
+    for rel in set(known) - seen:
+        check_deadline()
+        remove_file_cache(str(project_root / rel), str(project_root))
+        index = update_index_incremental(project_root, {"file": rel}, removed=True)
+        changed_paths[rel] = "removed"
+    return index
+
+
+def _snapshot_pending_changes(project_root: Path, index: dict, changed_paths: dict) -> dict:
+    """Retry from the last PUBLISHED generation, not only the already-updated INDEX.
+
+    Cache writes may succeed before publication fails. On retry disk and INDEX
+    then agree, but CURRENT still needs those captures/removals. Preserve the
+    previous generation until normal publication validators accept the repair.
+    """
+    try:
+        with search_snapshots.pin_current_snapshot(
+                project_root, deadline_at=time.monotonic() + _publish_snapshot_deadline_seconds()) as pin:
+            records = {r["path"]: r for r in pin.manifest["files"]}
+    except search_snapshots.SnapshotUnavailable:
+        return changed_paths
+    for rel, info in index.get("files", {}).items():
+        record = records.get(rel)
+        if (record is None
+                or str(info.get("hash") or "") not in {record.get("index_hash"), record.get("sha256")}
+                or info.get("size_bytes") != record.get("size")
+                or abs(float(info.get("mtime") or 0) - float(record.get("mtime") or 0)) > 1e-6):
+            changed_paths[rel] = "modified"
+    for rel in records.keys() - index.get("files", {}).keys():
+        changed_paths[rel] = "removed"
+    return changed_paths
+
+
 def update_file_cache(file_path: str, project_root: str) -> dict:
+    # Serialize discovery, INDEX changes and publication as one project operation.
+    with _pmap_lock(Path(project_root).resolve()):
+        return _update_file_cache_locked(file_path, project_root)
+
+
+def _update_file_cache_locked(file_path: str, project_root: str) -> dict:
     """Write/remove ONE file's cache entry, then rebuild the project INDEX.
 
     CAN-039 (decision D5 = document, no delta rework): the per-file cache write is
@@ -1358,6 +1439,9 @@ def update_file_cache(file_path: str, project_root: str) -> dict:
         changed_paths = None
     else:
         changed_paths = {rel_for_snapshot: "removed" if removed else "modified"} if rel_for_snapshot else None
+        if index_existed and changed_paths is not None:
+            index = _reconcile_external_files(resolved_root, index, changed_paths)
+            changed_paths = _snapshot_pending_changes(resolved_root, index, changed_paths)
     _write_project_map_markdown(resolved_root, index)
     _write_project_context_markdown(resolved_root, index)
     metadata["snapshot_id"] = _publish_search_snapshot(

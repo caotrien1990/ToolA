@@ -126,9 +126,8 @@ class TestPeriodicRefreshA30(unittest.TestCase):
             paths = {r["path"] for r in pin.manifest["files"]}
         self.assertNotIn("extra.py", paths)
 
-    def test_fast_path_write_still_incremental(self) -> None:
-        """A non-refresh (fast-path) write must NOT trigger a full reconcile: it keeps the
-        O(changed) behaviour and does not re-capture unrelated external edits."""
+    def test_incremental_write_reconciles_external_edits(self) -> None:
+        """CSLt: incremental publication must also reconcile unrelated disk edits."""
         self._edit_outside_orchestrator(
             "target.py", "def brand_new_symbol_xyz():\n    return 'NEW'\n"
         )
@@ -138,8 +137,8 @@ class TestPeriodicRefreshA30(unittest.TestCase):
         sm.update_file_cache(str(self.root / "keep.py"), str(self.root))
         with search_snapshots.pin_current_snapshot(self.root) as pin:
             served = pin.read_bytes("target.py").decode("utf-8")
-        # fast path is O(changed): it must NOT have re-captured target.py
-        self.assertIn("old_symbol", served)
+        self.assertIn("brand_new_symbol_xyz", served)
+        self.assertNotIn("old_symbol", served)
 
 
 if __name__ == "__main__":

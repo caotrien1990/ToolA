@@ -23,6 +23,7 @@ import json
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -76,9 +77,10 @@ class P11ForceReseedFailsLoudOrWorksTests(unittest.TestCase):
         """
         # No generate_project_map => no .orchestrator_cache marker; temp lives
         # under HOME so find_project_root returns None.
-        result = json.loads(asyncio.run(code_tools.read_file_range(
-            str(self.sample_file), 1, 4, force_reseed=True,
-        )))
+        with mock.patch.object(code_tools, "find_project_root", return_value=None):
+            result = json.loads(asyncio.run(code_tools.read_file_range(
+                str(self.sample_file), 1, 4, force_reseed=True,
+            )))
 
         self.assertFalse(
             result.get("ok"),

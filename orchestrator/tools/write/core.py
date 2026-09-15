@@ -653,7 +653,7 @@ def _write_fix_guard_result(fp: Path, project_path: str, _file_path: str, expect
         # the read_token check, which may mask the mismatch after a
         # same-file hash-chain write in write_transaction.
         if expected_hash and _current_hash and _current_hash != expected_hash:
-            return True, _file_changed_error(ct, fp), True
+            return True, _expected_hash_error(ct, fp), True
 
         _read_hash = _tok.get("read_hash") or _entry.get("read_hash")
         _read_mtime = float(_tok.get("read_mtime") or _entry.get("read_mtime") or 0)
@@ -708,6 +708,32 @@ def _write_fix_guard_result(fp: Path, project_path: str, _file_path: str, expect
     return True, {}, False
 
 
+def _expected_hash_error(ct, fp: Path) -> dict:
+    """Explicit byte-hash conflicts require a corrected payload, not blind reseeding."""
+    return ct.json.loads(ct._json_error(
+        "expected_hash does not match the file's raw-byte SHA256. "
+        "This does not by itself prove an external edit.",
+        error_name="EXPECTED_HASH_MISMATCH",
+        mismatch_field="expected_hash",
+        expected_hash_kind="raw_bytes_sha256",
+        expected_hash_source="write_fix.new_hash",
+        incompatible_hash_source="read_file_range.content_hash",
+        file_path=str(fp),
+        action_required="reread_and_review_patch",
+        ca_next_action="reread_and_review_patch",
+        hint=(
+            "NEVER pass read_file_range.content_hash as expected_hash: it hashes "
+            "normalized text, which differs for CRLF/BOM files. Read the current file "
+            "with read_file_range(force_reseed=true), review/rebuild the patch against "
+            "that content, then omit expected_hash for a normal read-token write. "
+            "For a sequential write chain, use the prior successful write_fix.new_hash. "
+            "Do not blindly drop a stale hash and replay an old patch."
+        ),
+        reseed_overrides_expected_hash=False,
+        retryable=False,
+    ))
+
+
 def _file_changed_error(ct, fp: Path) -> dict:
     return ct.json.loads(ct._json_error(
         "File modified outside Orchestrator since last read token. Re-read file before writing.",
@@ -726,7 +752,9 @@ def _file_changed_error(ct, fp: Path) -> dict:
         bypass_hint=(
             "R43 P0 #3-A: if YOU wrote this file in a prior "
             "write_fix this round, pass expected_hash from "
-            "that response's new_hash field to skip this guard."
+            "that response's new_hash field to skip this guard. "
+            "Never substitute read_file_range.content_hash; omit expected_hash "
+            "for a normal read-token write."
         ),
     ))
 
@@ -1314,6 +1342,27 @@ def _resolve_mutable_target(
     return fp, managed, policy, None
 
 
+def _markdown_pin_warnings(file_path, original, new_content):
+    """A digest embedded in its own file can only describe a prior revision."""
+    import hashlib
+    import re
+    if file_path.suffix.lower() not in {".md", ".markdown"}:
+        return []
+    digest = hashlib.sha256(original.encode("utf-8")).hexdigest()
+    tokens = re.findall(r"(?<![0-9a-fA-F])[0-9a-fA-F]{8,64}(?![0-9a-fA-F])", new_content)
+    if any(digest.startswith(token.lower()) for token in tokens):
+        return ["SELF_HASH_PIN_STALE_AFTER_WRITE: embedded digest matches this file's prior revision; use the returned new_hash or an external manifest for current bytes."]
+    # Also disclose an explicitly labelled historical self-pin already in the
+    # proposed document; changing a banner does not refresh its section 9 pin.
+    for line in new_content.splitlines():
+        own_file = re.search(r"(?<![\w.-])" + re.escape(file_path.name) + r"(?![\w.-])", line, re.I)
+        self_label = re.search(r"\b(?:self[-_ ]hash|this file|current file)\b", line, re.I)
+        if (own_file or self_label) and re.search(r"\b(?:sha256|sha-256|hash|digest)\b", line, re.I):
+            if re.search(r"(?<![0-9a-fA-F])[0-9a-fA-F]{8,64}(?![0-9a-fA-F])", line):
+                return ["SELF_HASH_PIN_REQUIRES_EXTERNAL_VERIFICATION: document retains an explicitly labelled self hash; it describes a prior revision. Use returned new_hash or an external manifest."]
+    return []
+
+
 async def write_fix (file_path :str ,start_line :int ,end_line :int ,new_content :str ,
 project_path :str ="",dry_run :bool =False ,
 content_encoding :str ="none",
@@ -1364,7 +1413,8 @@ skip_symbol_check :bool =False )->str :
         # Read BYTES (not read_text) so CRLF line endings survive: read_text's
         # universal-newline mode silently rewrites \r\n -> \n, which corrupts
         # .bat/.ps1 files on edit. Detect the file's dominant ending and keep it.
-        original =fp .read_bytes ().decode ('utf-8',errors ='replace')
+        original_bytes = fp.read_bytes()
+        original = original_bytes.decode('utf-8', errors='replace')
         _crlf =original .count ('\r\n')
         _lone_lf =original .count ('\n')-_crlf
         _eol ='\r\n' if _crlf and _crlf >=_lone_lf else '\n'
@@ -1389,12 +1439,22 @@ skip_symbol_check :bool =False )->str :
         if _eol !='\n':
             _nc =_nc .replace ('\n',_eol )
         new_lines =_nc .splitlines (keepends =True )
+        # A banner replacement must not swallow the following Markdown sections.
+        # Detect the dangerous shape, not a campaign-specific hardcoded line 7.
+        if fp.suffix.lower() in {".md", ".markdown"} and len([line for line in new_lines if line.strip()]) == 1 and end > start_line:
+            import re
+            if any(
+                    re.match(r"^\s{0,3}#{1,6}\s", line) for line in lines[start_line:end]):
+                return {"error": "Single-line banner replacement crosses Markdown section headings",
+                        "error_name": "BANNER_RANGE_CROSSES_SECTION",
+                        "ca_next_action": "use_start_line_equal_end_line_for_banner"}
         if new_lines and not new_lines [-1 ].endswith (('\n','\r')):
             new_lines [-1 ]+=_eol
         proposed =''.join (lines [:start_line -1 ]+new_lines +lines [end :])
         span =(end -start_line )+len (new_lines )
         return {
         "original":original ,
+        "base_hash":ct.hashlib.sha256(original_bytes).hexdigest(),
         "proposed":proposed ,
         "lines_removed":[l .rstrip ('\r\n')for l in lines [start_line -1 :end ]],
         "lines_added":[l .rstrip ('\r\n')for l in new_lines ],
@@ -1412,6 +1472,7 @@ skip_symbol_check :bool =False )->str :
 
     end =built ["end"]
     span =built ["span"]
+    pin_warnings = _markdown_pin_warnings(fp, built["original"], built["proposed"])
     # DRY RUN: validate proposed, tra preview + diff, KHONG ghi file
     if dry_run :
         # TOOLA-AHEALTHHUNG-R1: missing INDEX is no longer a hard blocker.
@@ -1466,13 +1527,14 @@ skip_symbol_check :bool =False )->str :
             "target_file":str (fp ),
             "target_file_hash":ct._sha256_file (fp ),
             "requires_confirm":False ,
-            "warnings":(["index_auto_seed_pending"] if _index_auto_seed_pending else []),
+            "warnings":(["index_auto_seed_pending"] if _index_auto_seed_pending else []) + pin_warnings,
             }
             dry_run_meta =ct._store_dry_run (str (ct.Path (_root_for_dry ).resolve ()),dry_payload )
         return ct.json .dumps ({
         "ok":True ,
         "dry_run":True ,
         "file":str (fp ),
+        "warnings":pin_warnings,
         "preview":{
         "range":f"{start_line}-{end}",
         "lines_removed":built ["lines_removed"],
@@ -1525,6 +1587,17 @@ skip_symbol_check :bool =False )->str :
             _guardrail_active = True
         if guard_error:
             return guard_error
+        # A concurrent writer may refresh the shared read token after our patch
+        # was built. Check this call's own base, under the path gate, before commit.
+        if ct._sha256_file(fp) != built["base_hash"]:
+            return ct.json.loads(ct._json_error(
+                "File changed after this patch was prepared; the stale patch was not written.",
+                error_name="WRITE_BASE_CHANGED", write_performed=False,
+                ca_next_action="reread_and_rebuild_patch",
+                hint="Re-read and rebuild against current lines. For multiple edits to one file, "
+                     "use write_transaction or sequential write_fix with prior new_hash; "
+                     "do not dispatch same-file patches in parallel.",
+            ))
         backup_path =fp .with_suffix (fp .suffix +'.bak')
         # A02 WAL: journal the backup BEFORE it exists on disk, so boot recovery
         # can find it in O(backups) instead of walking every indexed file. Intent
@@ -1537,6 +1610,7 @@ skip_symbol_check :bool =False )->str :
         "ok":True ,
         "file":str (fp ),
         "replaced_lines":f"{start_line}-{end}",
+        "warnings":pin_warnings,
         "new_lines_count":len (built ["new_lines"]),
         "backup":str (backup_path ),
         "write_mode":write_mode ,
@@ -1978,6 +2052,13 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
         synced =await ct.asyncio .to_thread (ct._update_cache_after_write ,str (fp ),project_path )
         result ["cache_synced"]=synced
         if not synced :
+            result["write_performed"] = True
+            result["cache_sync_status"] = "pending_or_failed"
+            result["cache_sync_note"] = (
+                "File write succeeded but index synchronization did not. Do not repeat "
+                "write_new_file. cache_delta diagnoses drift; read_file_range permits "
+                "direct inspection/token reseed but does not publish a search snapshot."
+            )
             # Same double-bind as the write_fix path above: route to cache_delta, not
             # a full refresh of a large root.
             result ["cache_sync_warning"]=(

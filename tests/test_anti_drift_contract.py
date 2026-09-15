@@ -31,7 +31,7 @@ class AntiDriftContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(payload["returned_count"] * 3, payload["total_available"])
         self.assertGreater(payload["total_available"], payload["returned_count"])
         self.assertEqual(
-            payload["ca_next_action"], "filter_or_limit_250_or_bootstrap_session"
+            payload["ca_next_action"], "filter_or_use_total_available_as_limit"
         )
 
     def test_filtered_tool_catalog_returns_matches(self):

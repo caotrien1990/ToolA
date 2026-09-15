@@ -95,6 +95,7 @@ class AdaptiveReadContractTests(unittest.TestCase):
             payload = json.loads(asyncio.run(code_tools.bootstrap_session(
                 folder, session_id="adaptive-read-test", agent_id="test-agent",
                 owner_claim_id="adaptive-read-0123456789abcdef0123456789abcdef",
+                verbosity="full",
             )))
         tools = {item["name"]: item for item in payload["key_tools_compact"]}
         self.assertEqual(tools["read_file_range"]["required"], ["file_path"])
