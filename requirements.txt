@@ -20,4 +20,4 @@ jsonschema
 pydantic
 pydantic-settings
 vulture>=2.16
-ruff>=0.16,<0.17
+ruff>=0.16.7,<0.17

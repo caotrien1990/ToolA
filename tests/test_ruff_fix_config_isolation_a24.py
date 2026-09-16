@@ -264,3 +264,57 @@ def test_clean_file_is_still_reported_clean(tmp_path):
 
     assert result["changed"] is False
     assert source.read_text(encoding="utf-8") == "print('ok')\n"
+
+
+# --- A30-P4: ruff 0.16.7 -----------------------------------------------------
+# 0.16.7 carries a known upstream PANIC in `ruff format --check` on a file that
+# combines a UTF-8 BOM with mixed line endings ("Annotation range 0..429 is
+# beyond the end of buffer 427"). The upgrade was judged safe because [A] never
+# runs that subcommand -- true when said, and worth nothing unless something
+# fails the day it stops being true. These two are that something.
+
+
+def test_ruff_fix_only_ever_runs_the_check_subcommand(tmp_path, monkeypatch):
+    from orchestrator.graph import tools as graph_tools
+
+    seen: list[list[str]] = []
+    real_run = graph_tools.subprocess.run
+
+    def spy(command, *args, **kwargs):
+        seen.append(list(command))
+        return real_run(command, *args, **kwargs)
+
+    monkeypatch.setattr(graph_tools.subprocess, "run", spy)
+    (tmp_path / "mod.py").write_text(UNUSED_IMPORT, encoding="utf-8")
+
+    _run(project_path=str(tmp_path), path="mod.py", apply=True)
+
+    assert seen, "ruff was never invoked"
+    for command in seen:
+        assert "check" in command, f"not a check invocation: {command}"
+        assert "format" not in command, (
+            f"ruff format reached a subprocess: {command} -- 0.16.7 panics on "
+            "BOM + mixed EOL, so this is not a style preference"
+        )
+
+
+def test_no_validate_or_scan_call_site_spells_ruff_format():
+    # The behavioural test above only covers ruff_fix. validate_file and
+    # scan_ruff build their own commands, and B029a is the precedent: the A24
+    # survey enumerated one call site and the second one went unfixed for a
+    # whole round. So pin the source text of all three. Whitespace is stripped
+    # first because this tree's formatting puts spaces in odd places.
+    root = Path(__file__).resolve().parents[1]
+    targets = (
+        root / "code_tools.py",
+        root / "orchestrator" / "graph" / "tools.py",
+        root / "orchestrator" / "graph" / "extractors" / "vulture_ruff.py",
+    )
+    forbidden = ('"ruff","format"', "'ruff','format'", "-mruffformat")
+    for target in targets:
+        assert target.is_file(), f"moved or renamed: {target}"
+        compact = "".join(target.read_text(encoding="utf-8").split())
+        for spelling in forbidden:
+            assert spelling not in compact, (
+                f"{target.name} now builds a ruff format command: {spelling!r}"
+            )

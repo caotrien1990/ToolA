@@ -1589,11 +1589,28 @@ skip_symbol_check :bool =False )->str :
             return guard_error
         # A concurrent writer may refresh the shared read token after our patch
         # was built. Check this call's own base, under the path gate, before commit.
-        if ct._sha256_file(fp) != built["base_hash"]:
+        _current_base =ct._sha256_file (fp )
+        if _current_base !=built ["base_hash"]:
+            # A30-P2: the old refusal said only "not written", which left the
+            # caller unable to tell this apart from a write whose result never
+            # came back -- the timeout case, where the content may well BE
+            # committed (a 10MB write_fix once committed 54s after a 4s client
+            # timeout). Those two need opposite reactions, so the refusal now
+            # carries the same (commit_state, safe_to_retry, retryable) triple
+            # orchestrator_server.py already classifies transport failures with.
+            # Reused vocabulary on purpose: a new field name here would be one
+            # more thing the caller has to learn before it can act.
             return ct.json.loads(ct._json_error(
                 "File changed after this patch was prepared; the stale patch was not written.",
                 error_name="WRITE_BASE_CHANGED", write_performed=False,
                 ca_next_action="reread_and_rebuild_patch",
+                commit_state="not_committed", safe_to_retry=True, retryable=True,
+                retry_sequence=["read_file_range", "write_fix"],
+                # Both hashes, so a caller that re-reads can tell "someone else
+                # moved the file" from "my own prior write in this chain did"
+                # instead of guessing from a timestamp.
+                expected_base_hash=built["base_hash"],
+                current_base_hash=_current_base,
                 hint="Re-read and rebuild against current lines. For multiple edits to one file, "
                      "use write_transaction or sequential write_fix with prior new_hash; "
                      "do not dispatch same-file patches in parallel.",
@@ -2118,8 +2135,34 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
             result ["fallback_sequence"]=["cache_delta","read_file_range"]
         if _cache_warning :
             result ["warning"]=_cache_warning
+        # A30-P1 auto-chain rule 1, mirrored from the identical block in
+        # write_fix: a NEW .py file now gets the post-write ruff check an EDITED
+        # one already got. The old design hooked only write_fix, so probing
+        # write_new_file read `ruff_preview: null` and the feature looked dead
+        # rather than unhooked. Both early returns above -- dry_run and the
+        # validation-failed auto-revert -- skip this on purpose: neither leaves
+        # a committed file worth linting.
+        if fp .suffix .lower ()==".py":
+            try :
+                # The post-write validate above already ran ruff for a
+                # _VALIDATE_EXTS file; reuse its result instead of paying for a
+                # second subprocess. skip_pre_write_check (or an ext outside
+                # _VALIDATE_EXTS) leaves no `validation` key -- fall back then.
+                ruff_val =result .get ("validation")
+                if not isinstance (ruff_val ,dict ):
+                    ruff_raw =await ct.validate_file (str (fp ))
+                    ruff_val =ct.json .loads (ruff_raw )if isinstance (ruff_raw ,str )else ruff_raw
+                result ["ruff_preview"]=_ruff_preview_from_validation (ruff_val ,str (fp ))
+            except Exception as _ruff_exc :
+                # Non-fatal, but a dead check must say so instead of being
+                # indistinguishable from a clean file.
+                result ["ruff_preview"]={
+                "state":"unknown","applicable":False ,"checked":False ,
+                "reason":f"{type(_ruff_exc).__name__}: {_ruff_exc}"[:300 ],
+                }
+        # A30-P1 auto-chain rule 4: the same git_stage hint write_fix emits.
+        result ["ca_hint_commit"]="git_stage available to stage changes for commit"
     return ct.json .dumps (result )
-
 
     # ─── Tool: apply_after_dry_run ────────────────────────────────────────────────
 

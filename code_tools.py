@@ -16749,6 +16749,105 @@ except Exception as _cbm_p1_exc:
     import logging as _cbm_p1_log
     _cbm_p1_log.warning(f"CBM graph P1 tool registration failed: {_cbm_p1_exc}")
 
+# --- A30-P5: OCR (open-code-review) delegation tools ---
+# Its OWN try/except island on purpose. The CBM P1 block above ends at the line
+# right before this comment; folding OCR into that block would mean one missing
+# npm install could take every CBM graph tool offline with it.
+# phase="T2" follows the ruff_fix template even though delegate mode mutates
+# nothing (it only reads git diff): ocr_scan with preview_only=false is the one
+# call in this family that reaches an external provider, so the family is gated
+# at the tier of its most expensive member.
+try:
+    from orchestrator.tools.ocr_review import (
+        ocr_review as _ocr_review_handler,
+        ocr_rule as _ocr_rule_handler,
+        ocr_scan as _ocr_scan_handler,
+    )
+    from orchestrator.core.registry import register_tool as _register_ocr_p5
+
+    _register_ocr_p5(
+        name="ocr_review",
+        handler=_ocr_review_handler,
+        phase="T2",
+        tool_map=TOOL_MAP,
+        tool_schemas=TOOL_SCHEMAS,
+        tool_phases=TOOL_PHASES,
+        phase_labels=PHASE_LABELS,
+        schema={
+            "description": "Semantic review layer beside ruff: open-code-review delegate preview lists which changed files are worth reviewing. Needs no LLM, costs 0 tokens, mutates nothing.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_path": {"type": "string", "description": "Absolute repo root to review."},
+                    "from_ref": {"type": "string", "default": "", "description": "Git ref to diff from. Mutually exclusive with commit."},
+                    "to_ref": {"type": "string", "default": "", "description": "Git ref to diff to. Mutually exclusive with commit."},
+                    "commit": {"type": "string", "default": "", "description": "Single commit to review instead of a from/to range."},
+                    "exclude": {"type": "string", "default": "", "description": "Comma-separated gitignore-style patterns to skip."},
+                    "include_background": {"type": "boolean", "default": False, "description": "False reports the background field as a byte count; it inlines the whole commit message (~2KB measured)."},
+                    "timeout": {"type": "integer", "default": 120, "description": "Subprocess timeout in seconds. Kept under the MCP proxy ceiling."},
+                },
+                "required": ["project_path"],
+            },
+        },
+    )
+
+    _register_ocr_p5(
+        name="ocr_rule",
+        handler=_ocr_rule_handler,
+        phase="T2",
+        tool_map=TOOL_MAP,
+        tool_schemas=TOOL_SCHEMAS,
+        tool_phases=TOOL_PHASES,
+        phase_labels=PHASE_LABELS,
+        schema={
+            "description": "open-code-review delegate rule: which review rule applies to given files. Needs no LLM. Large rule bodies are reported as byte counts unless include_rule_text=true.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_path": {"type": "string", "description": "Absolute repo root."},
+                    "paths": {"type": "array", "items": {"type": "string"}, "description": "Repo-relative files. A comma-separated string is also accepted. Must stay inside project_path."},
+                    "commit": {"type": "string", "default": "", "description": "Single commit context. Mutually exclusive with from_ref/to_ref."},
+                    "from_ref": {"type": "string", "default": "", "description": "Git ref to diff from."},
+                    "to_ref": {"type": "string", "default": "", "description": "Git ref to diff to."},
+                    "include_rule_text": {"type": "boolean", "default": False, "description": "False omits rule bodies over 512 bytes (one .py measured 7886 bytes) and reports rule_bytes instead."},
+                    "timeout": {"type": "integer", "default": 120, "description": "Subprocess timeout in seconds."},
+                },
+                "required": ["project_path", "paths"],
+            },
+        },
+    )
+
+    _register_ocr_p5(
+        name="ocr_scan",
+        handler=_ocr_scan_handler,
+        phase="T2",
+        tool_map=TOOL_MAP,
+        tool_schemas=TOOL_SCHEMAS,
+        tool_phases=TOOL_PHASES,
+        phase_labels=PHASE_LABELS,
+        schema={
+            "description": "open-code-review scan. preview_only=true (default) plans the review with no LLM and no token cost. preview_only=false needs a configured provider and refuses with OCR_LLM_NOT_CONFIGURED when none is set, instead of spending a call to find out.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_path": {"type": "string", "description": "Absolute repo root."},
+                    "path": {"type": "string", "default": "", "description": "Repo-relative dir or file to limit the scan to. Must stay inside project_path."},
+                    "exclude": {"type": "string", "default": "", "description": "Comma-separated gitignore-style patterns to skip."},
+                    "preview_only": {"type": "boolean", "default": True, "description": "True passes --preview: planning only, no LLM, no token cost."},
+                    "audience": {"type": "string", "default": "agent", "description": "human or agent."},
+                    "output_format": {"type": "string", "default": "json", "description": "text, json or sarif. Maps to the CLI --format flag."},
+                    "provider": {"type": "string", "default": "", "description": "Override the configured LLM provider. Ignored while preview_only=true."},
+                    "model": {"type": "string", "default": "", "description": "Override the configured model. Ignored while preview_only=true."},
+                    "timeout": {"type": "integer", "default": 150, "description": "Subprocess timeout in seconds. Kept under the MCP proxy ceiling."},
+                },
+                "required": ["project_path"],
+            },
+        },
+    )
+except Exception as _ocr_p5_exc:
+    import logging as _ocr_p5_log
+    _ocr_p5_log.warning(f"OCR P5 tool registration failed: {_ocr_p5_exc}")
+
 # ── CAN-053 P2: raw graph browse tools (codo: no public API to browse nodes) ──
 try:
     from orchestrator.graph.tools import (

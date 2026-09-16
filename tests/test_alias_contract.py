@@ -75,15 +75,26 @@ class TestAliasCanonicalFieldsExist(unittest.TestCase):
         # Re-based 2026-08-19: +2 TA-7 search_code (file_glob/glob -> file_pattern),
         # added at the alias-registry layer because the S4 validator rejects unknown
         # fields before the tool function is ever entered.
-        self.assertEqual(total, 207, f"Expected 207 aliases, got {total}")
+        # Re-based 2026-09-16 (A30-P5): +14 for the three OCR tools -- ocr_review 3
+        # (from -> from_ref, to -> to_ref, repo -> project_path), ocr_rule 7 (the same
+        # three plus path/file/file_path/files all folding into the LIST field `paths`),
+        # ocr_scan 4 (repo -> project_path, file/file_path -> path, format ->
+        # output_format). `from` is why this layer is not optional: it is a Python
+        # keyword, so the handler cannot declare it and only the alias registry can
+        # accept the spelling the OCR CLI itself uses.
+        self.assertEqual(total, 221, f"Expected 221 aliases, got {total}")
 
     def test_alias_tool_count_is_42(self):
         # Re-based 2026-08-11: R44 result-cap family added 14 new aliased tools.
         # Re-based 2026-08-12: R46 write-content family (+3 tools).
         # Re-based 2026-08-14: +1 ruff_fix (file_path/file -> path).
         # Re-based 2026-08-14 leftover: +1 list_structure (max_depth/file_path/folder/folder_path).
-        self.assertEqual(len(srv._ARG_ALIASES), 69,
-                         f"Expected 69 aliased tools, got {len(srv._ARG_ALIASES)}")
+        # Re-based 2026-09-16 (A30-P5): +3 OCR delegation tools -- ocr_review,
+        # ocr_rule, ocr_scan. The method name says 42 and the docstring above says
+        # 113; both are historical and were already stale before this re-base. The
+        # assert is the contract, the name is not.
+        self.assertEqual(len(srv._ARG_ALIASES), 72,
+                         f"Expected 72 aliased tools, got {len(srv._ARG_ALIASES)}")
 
 
 # ── 2. Harmless-ignore fields are NOT schema properties ──────────────────────

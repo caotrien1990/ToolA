@@ -399,5 +399,107 @@ class RuffRuleSetsMustNotDrift(unittest.TestCase):
         self.assertIn("F821", preview["lint_warning"])
 
 
+class WriteNewFileGetsTheSameAutoChainAsWriteFix(unittest.TestCase):
+    """A30-P1: the ruff auto-chain was hooked into write_fix ONLY.
+
+    Probing write_new_file therefore read `ruff_preview: null`, which looks
+    exactly like a dead feature rather than an unhooked one -- a measurement
+    trap that cost real time in the campaign before this one. These tests pin
+    the PARITY, not the implementation: whatever write_fix attaches on a
+    successful .py write, write_new_file must attach too -- and the two early
+    returns above it (dry_run, validation-failed auto-revert) must still
+    attach nothing, because neither leaves a committed file to lint.
+    """
+
+    DIRTY = "import os\nimport sys\n\nprint(sys.path)\n"
+
+    def setUp(self):
+        import tempfile
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = tmp.name
+
+    def _new(self, name, body, **kw):
+        import asyncio
+        import json
+
+        import code_tools as ct
+
+        return json.loads(asyncio.run(ct.write_new_file(
+            name, project_path=self.root, new_content=body, **kw)))
+
+    def test_a_dirty_new_py_file_is_told_it_is_fixable(self):
+        out = self._new("dirty.py", self.DIRTY)
+        self.assertTrue(out.get("ok"), msg=out)
+        preview = out["ruff_preview"]
+        self.assertEqual(preview["state"], "fixable")
+        self.assertIn("F401", preview["rules"])
+        self.assertEqual(preview["ca_next_action"], "ruff_fix")
+        self.assertTrue(preview["apply_payload"]["apply"])
+
+    def test_a_clean_new_py_file_says_clean_not_silence(self):
+        out = self._new("clean.py", "VALUE = 1\n")
+        self.assertTrue(out.get("ok"), msg=out)
+        self.assertEqual(out["ruff_preview"]["state"], "clean")
+        self.assertTrue(out["ruff_preview"]["checked"])
+
+    def test_a_dry_run_attaches_nothing_because_no_file_exists(self):
+        out = self._new("ghost.py", self.DIRTY, dry_run=True)
+        self.assertTrue(out.get("ok") and out.get("dry_run"), msg=out)
+        self.assertNotIn("ruff_preview", out)
+        self.assertNotIn("ca_hint_commit", out)
+
+    def test_a_non_python_file_is_not_given_a_ruff_verdict(self):
+        out = self._new("notes.txt", "hello\n")
+        self.assertTrue(out.get("ok"), msg=out)
+        self.assertNotIn("ruff_preview", out)
+        self.assertIn("ca_hint_commit", out)
+
+    def test_an_auto_reverted_write_is_not_given_a_preview(self):
+        # The file is unlinked before we reach the auto-chain, so a preview
+        # here would describe something that no longer exists.
+        import asyncio
+        import json
+        from unittest import mock
+
+        import code_tools as ct
+
+        with mock.patch.object(ct, "validate_file", new=mock.AsyncMock(
+                return_value=json.dumps({"ok": False, "error": "forced"}))):
+            out = json.loads(asyncio.run(ct.write_new_file(
+                "reverted.py", project_path=self.root,
+                new_content="VALUE = 1\n")))
+        self.assertFalse(out.get("ok"), msg=out)
+        self.assertNotIn("ruff_preview", out)
+
+    def test_write_fix_and_write_new_file_agree_key_for_key(self):
+        # The actual contract: the same dirty content must get the same
+        # verdict whichever tool put it on disk, with the same commit hint.
+        import asyncio
+        import json
+
+        import code_tools as ct
+
+        created = self._new("parity.py", "VALUE = 1\n")
+        self.assertTrue(created.get("ok"), msg=created)
+
+        async def _edit():
+            await ct.read_file_range(
+                "parity.py", 1, 1, project_path=self.root)
+            return await ct.write_fix(
+                "parity.py", 1, 1, self.DIRTY, project_path=self.root)
+
+        edited = json.loads(asyncio.run(_edit()))
+        self.assertTrue(edited.get("ok"), msg=edited)
+
+        fresh = self._new("parity2.py", self.DIRTY)
+        self.assertEqual(fresh["ruff_preview"]["state"],
+                         edited["ruff_preview"]["state"])
+        self.assertEqual(fresh["ruff_preview"]["rules"],
+                         edited["ruff_preview"]["rules"])
+        self.assertEqual(fresh["ca_hint_commit"], edited["ca_hint_commit"])
+
+
 if __name__ == "__main__":
     unittest.main()

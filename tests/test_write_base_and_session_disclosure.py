@@ -36,6 +36,17 @@ def test_parallel_same_file_never_reports_two_successful_lost_updates(tmp_path):
     failure = next(r for r in results if not r.get("ok"))
     assert failure["error_name"] == "WRITE_BASE_CHANGED"
     assert failure["write_performed"] is False
+    # A30-P2: "not written" alone reads the same as a write whose reply never
+    # came back -- and there the content may well BE committed. Opposite
+    # reactions, so the refusal has to say which one this is.
+    assert failure["commit_state"] == "not_committed"
+    assert failure["safe_to_retry"] is True
+    assert failure["retryable"] is True
+    assert failure["retry_sequence"] == ["read_file_range", "write_fix"]
+    # Both hashes, so a re-read can tell "someone else moved the file" from
+    # "my own prior write in this chain did" without guessing from an mtime.
+    assert len(failure["current_base_hash"]) == 64
+    assert failure["current_base_hash"] != failure["expected_base_hash"]
     assert fp.read_text() in ("FIRST\nsecond\n", "first\nSECOND\n")
 
 

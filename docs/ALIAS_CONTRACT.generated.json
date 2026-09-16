@@ -168,6 +168,12 @@
     "max_results": "limit",
     "top_k": "limit"
   },
+  "list_structure": {
+    "file_path": "path",
+    "folder": "path",
+    "folder_path": "path",
+    "max_depth": "depth"
+  },
   "mcp_pack_generate": {
     "agent": "agent_id",
     "ca": "ca_id",
@@ -186,6 +192,26 @@
     "max_items": "top_k",
     "max_results": "top_k",
     "q": "query"
+  },
+  "ocr_review": {
+    "from": "from_ref",
+    "repo": "project_path",
+    "to": "to_ref"
+  },
+  "ocr_rule": {
+    "file": "paths",
+    "file_path": "paths",
+    "files": "paths",
+    "from": "from_ref",
+    "path": "paths",
+    "repo": "project_path",
+    "to": "to_ref"
+  },
+  "ocr_scan": {
+    "file": "path",
+    "file_path": "path",
+    "format": "output_format",
+    "repo": "project_path"
   },
   "open_browser_page": {
     "timeout": "timeout_ms",
@@ -266,6 +292,10 @@
     "delay": "delay_seconds",
     "delay_sec": "delay_seconds"
   },
+  "ruff_fix": {
+    "file": "path",
+    "file_path": "path"
+  },
   "run_script": {
     "code": "script_inline",
     "expression": "script_inline",
@@ -277,7 +307,9 @@
     "title": "section_title"
   },
   "search_code": {
+    "file_glob": "file_pattern",
     "file_path": "path",
+    "glob": "file_pattern",
     "pattern": "query",
     "q": "query",
     "regex": "query"

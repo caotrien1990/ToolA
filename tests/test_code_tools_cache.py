@@ -2525,6 +2525,21 @@ class TestCodeToolsCache(unittest.TestCase):
                                  msg=f'Refused write must not touch the file: {good}')
                 self.assertEqual(good.get('ca_next_action'),
                                  'reread_and_rebuild_patch')
+                # A30-P2: this refusal is safe to redo -- nothing was written
+                # and the rollback already put the original base back. Say so
+                # in the same (commit_state, safe_to_retry, retryable)
+                # vocabulary orchestrator_server.py uses for transport
+                # failures, or a caller cannot tell this apart from a write
+                # whose reply never came back -- and there the content may
+                # well BE committed.
+                self.assertEqual(good.get('commit_state'), 'not_committed')
+                self.assertIs(good.get('safe_to_retry'), True)
+                self.assertIs(good.get('retryable'), True)
+                self.assertEqual(good.get('retry_sequence'),
+                                 ['read_file_range', 'write_fix'])
+                self.assertEqual(len(good.get('current_base_hash', '')), 64)
+                self.assertNotEqual(good.get('current_base_hash'),
+                                    good.get('expected_base_hash'))
                 self.assertNotIn('# bad write',
                                  self.sample_file.read_text(encoding='utf-8'))
                 good = json.loads(asyncio.run(asyncio.wait_for(

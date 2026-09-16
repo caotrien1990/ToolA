@@ -2,8 +2,8 @@
 
 Generated from runtime `orchestrator_server._ARG_ALIASES`.
 
-- Tools with aliases: 67
-- Total aliases: 199
+- Tools with aliases: 72
+- Total aliases: 221
 - Source of truth: `orchestrator_server.py:_ARG_ALIASES` plus runtime `register_tool(aliases=...)` updates
 
 | Tool | Alias | Canonical |
@@ -103,6 +103,10 @@ Generated from runtime `orchestrator_server._ARG_ALIASES`.
 | `list_sessions` | `max_items` | `limit` |
 | `list_sessions` | `max_results` | `limit` |
 | `list_sessions` | `top_k` | `limit` |
+| `list_structure` | `file_path` | `path` |
+| `list_structure` | `folder` | `path` |
+| `list_structure` | `folder_path` | `path` |
+| `list_structure` | `max_depth` | `depth` |
 | `mcp_pack_generate` | `agent` | `agent_id` |
 | `mcp_pack_generate` | `ca` | `ca_id` |
 | `mcp_pack_generate` | `catalog` | `catalog_json` |
@@ -116,6 +120,20 @@ Generated from runtime `orchestrator_server._ARG_ALIASES`.
 | `memory_query` | `max_items` | `top_k` |
 | `memory_query` | `max_results` | `top_k` |
 | `memory_query` | `q` | `query` |
+| `ocr_review` | `from` | `from_ref` |
+| `ocr_review` | `repo` | `project_path` |
+| `ocr_review` | `to` | `to_ref` |
+| `ocr_rule` | `file` | `paths` |
+| `ocr_rule` | `file_path` | `paths` |
+| `ocr_rule` | `files` | `paths` |
+| `ocr_rule` | `from` | `from_ref` |
+| `ocr_rule` | `path` | `paths` |
+| `ocr_rule` | `repo` | `project_path` |
+| `ocr_rule` | `to` | `to_ref` |
+| `ocr_scan` | `file` | `path` |
+| `ocr_scan` | `file_path` | `path` |
+| `ocr_scan` | `format` | `output_format` |
+| `ocr_scan` | `repo` | `project_path` |
 | `open_browser_page` | `timeout` | `timeout_ms` |
 | `open_browser_page` | `wait_until` | `wait_for` |
 | `open_session` | `description` | `session_title` |
@@ -167,13 +185,17 @@ Generated from runtime `orchestrator_server._ARG_ALIASES`.
 | `replace_between_anchors` | `replacement` | `new_content` |
 | `restart_orchestrator_via_bat` | `delay` | `delay_seconds` |
 | `restart_orchestrator_via_bat` | `delay_sec` | `delay_seconds` |
+| `ruff_fix` | `file` | `path` |
+| `ruff_fix` | `file_path` | `path` |
 | `run_script` | `code` | `script_inline` |
 | `run_script` | `expression` | `script_inline` |
 | `run_script` | `inline` | `script_inline` |
 | `run_script` | `script` | `script_inline` |
 | `save_log_snapshot` | `log_selector` | `selector` |
 | `save_log_snapshot` | `title` | `section_title` |
+| `search_code` | `file_glob` | `file_pattern` |
 | `search_code` | `file_path` | `path` |
+| `search_code` | `glob` | `file_pattern` |
 | `search_code` | `pattern` | `query` |
 | `search_code` | `q` | `query` |
 | `search_code` | `regex` | `query` |

@@ -1601,6 +1601,14 @@ _ARG_ALIASES.setdefault('regex_search', {}).update({'limit': 'max_results', 'max
 _ARG_ALIASES.setdefault('sync_pending_audit', {}).update({'max_results': 'limit', 'max_items': 'limit', 'top_k': 'limit'})
 # CA habit: ruff_fix schema field is `path`; file_path/file must remap before S4.
 _ARG_ALIASES.setdefault('ruff_fix', {}).update({'file_path': 'path', 'file': 'path'})
+# A30-P5: OCR tools. `from`/`to` are the CLI flag names a CA will copy from
+# `ocr delegate preview --help`, but `from` is a Python keyword so the handler
+# params are from_ref/to_ref. `repo` is OCR's own flag for the repository root,
+# which is project_path here. These are habit-remaps of the SAME value, not the
+# file/folder/project_path family the R46 comment below refuses to alias.
+_ARG_ALIASES.setdefault('ocr_review', {}).update({'from': 'from_ref', 'to': 'to_ref', 'repo': 'project_path'})
+_ARG_ALIASES.setdefault('ocr_rule', {}).update({'from': 'from_ref', 'to': 'to_ref', 'repo': 'project_path', 'path': 'paths', 'file': 'paths', 'file_path': 'paths', 'files': 'paths'})
+_ARG_ALIASES.setdefault('ocr_scan', {}).update({'repo': 'project_path', 'file': 'path', 'file_path': 'path', 'format': 'output_format'})
 # CA habit: list_structure uses depth/path. max_depth/file_path were 400 UNSUPPORTED_FIELD.
 _ARG_ALIASES.setdefault('list_structure', {}).update({
     'max_depth': 'depth',
