@@ -1687,6 +1687,30 @@ def _session_id_unique_tail() -> str:
     rather than borrow it from the clock.
     """
     return secrets.token_hex(6)
+def _set_session_mode(conn, session_id: str, new_mode: str):
+    """Shared writer-only workflow-mode update; never re-mode a closed session.
+
+    ISS-13: `sessions.mode` was write-once at open time. open_session on resume
+    answered `mode_ignored_on_resume: true` and pointed the caller at
+    set_workflow_mode -- but set_workflow_mode only rewrote WORKFLOW_STATE.json,
+    so the persisted session row kept the mode it was born with. The two records
+    then disagreed permanently, and the T1/T2 gate reads the SESSION row: a
+    caller told "call set_workflow_mode to switch to T2" stayed on T1 forever
+    with no error anywhere. This closes the loop the hint already promised.
+    """
+    row = conn.execute(
+        "SELECT mode FROM sessions WHERE session_id=? AND status='active'",
+        (session_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    conn.execute(
+        "UPDATE sessions SET mode=? WHERE session_id=? AND status='active'",
+        (new_mode, session_id),
+    )
+    return {"old_mode": row[0], "new_mode": new_mode, "mode_changed": row[0] != new_mode}
+
+
 def _rename_session_title(conn, session_id: str, new_title: str):
     """Shared writer-only title update; never rename a closed session."""
     row = conn.execute(

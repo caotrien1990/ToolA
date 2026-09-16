@@ -162,10 +162,8 @@ class TestQueryIndexCommitB(unittest.TestCase):
         # Real pin restored — sanity that the mock did not leak.
         self.assertIs(code_tools.search_snapshots.pin_current_snapshot, real_pin)
 
-    def test_refresh_deadline_returns_structured_timeout_on_cold_index(self):
-        """Cold index + auto_refresh: the full project-map rebuild is bounded;
-        on expiry the response is a structured degraded state (not a bare
-        client timeout, not matched:0)."""
+    def test_cold_index_requires_explicit_long_refresh(self):
+        """Interactive query never starts a repository-scale rebuild."""
         # No generate_project_map: snapshot missing -> refresh path.
         def slow_refresh(_root):
             time.sleep(3.0)
@@ -176,16 +174,17 @@ class TestQueryIndexCommitB(unittest.TestCase):
                 code_tools,
                 "refresh_project_map",
                 mock.AsyncMock(side_effect=slow_refresh),
-            ):
+            ) as refresh:
                 started = time.monotonic()
                 _raw, payload = self._query(auto_refresh=True)
                 elapsed = time.monotonic() - started
 
         self.assertFalse(payload["ok"], msg=payload)
-        self.assertEqual(payload["error_name"], "INDEX_QUERY_TIMEOUT", msg=payload)
-        self.assertEqual(payload["category"], "index_not_ready", msg=payload)
+        self.assertEqual(payload["error_name"], "INDEX_REFRESH_REQUIRED", msg=payload)
+        self.assertEqual(payload["category"], "missing_index", msg=payload)
         self.assertNotIn("matched", payload, msg=payload)
         self.assertLess(elapsed, 14.0, msg=f"exceeded client-observed timeout: {elapsed:.1f}s")
+        refresh.assert_not_awaited()
 
     def test_healthy_warm_index_query_is_fast_and_hit(self):
         """Warm index: a known-symbol query returns a real hit quickly — the
@@ -200,13 +199,14 @@ class TestQueryIndexCommitB(unittest.TestCase):
         self.assertGreaterEqual(payload["matched"], 1, msg=payload)
         self.assertLess(elapsed, 5.0, msg=f"warm query too slow: {elapsed:.1f}s")
 
-    def test_refresh_in_progress_then_retry_returns_hit_or_degraded(self):
-        """Cold -> refresh -> retry sequence: the retry after a completed
-        refresh must return a genuine hit for the known symbol (the original
-        P2-SRCH-01 observation was matched:0 on retry)."""
+    def test_explicit_refresh_then_retry_returns_hit(self):
+        """Cold query refuses long work; explicit refresh makes retry truthful."""
         _raw, first = self._query(query="search_code", auto_refresh=True)
-        self.assertTrue(first["ok"], msg=first)
-        self.assertTrue(first.get("auto_refreshed"), msg=first)
+        self.assertFalse(first["ok"], msg=first)
+        self.assertEqual(first["error_name"], "INDEX_REFRESH_REQUIRED")
+
+        refreshed = json.loads(asyncio.run(code_tools.refresh_project_map(str(self.root))))
+        self.assertTrue(refreshed["ok"], msg=refreshed)
 
         _raw, retry = self._query(query="search_code", auto_refresh=False)
         self.assertTrue(retry["ok"], msg=retry)

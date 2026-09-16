@@ -4089,8 +4089,16 @@ class TestCacheRootRestart(unittest.IsolatedAsyncioTestCase):
 
 
 class TestBuildIndex(unittest.IsolatedAsyncioTestCase):
-    """Phase 5 — CAN-040 (build_index timeout raises before write -> previous INDEX
-    preserved) and CAN-039 (full-rebuild kept = correct; D5/D8 documented)."""
+    """Phase 5 — CAN-040 (build_index never clobbers the previous INDEX, and its
+    timeout_s is compatibility-only) and CAN-039 (full-rebuild kept = correct;
+    D5/D8 documented).
+
+    CAN-040 originally asserted `timeout_s` raised TimeoutError mid-assembly. The
+    progress-watchdog redesign deliberately removed that ceiling -- explicit cache
+    assembly on a large repository is governed by progress and cooperative cancel,
+    never by elapsed wall-clock -- so the surviving invariant is that a caller's
+    clock cannot truncate the work, and the previous INDEX stays intact either way.
+    """
 
     def _make_cache(self, root):
         import surgical_mapper as sm
@@ -4110,22 +4118,42 @@ class TestBuildIndex(unittest.IsolatedAsyncioTestCase):
             self.assertIn('a.py', idx['files'])
             self.assertEqual(idx['schema_version'], sm.MAP_SCHEMA_VERSION)
 
-    def test_can040_build_index_timeout_preserves_previous_index(self):
+    def test_can040_build_index_timeout_s_is_not_a_ceiling(self):
         import surgical_mapper as sm
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             cache = self._make_cache(root)
             index_path = cache / sm.INDEX_FILENAME
-            index_path.write_text('{"sentinel": true}', encoding='utf-8')  # previous INDEX
             orig = sm.time.monotonic
-            seq = iter([1000.0, 9999.0])  # init deadline=1010; first loop check 9999 -> exceed
+            # A clock that jumps ~9000s past a nominal 10s deadline: under the old
+            # contract this aborted the assembly on the first loop check.
+            seq = iter([1000.0, 9999.0])
             sm.time.monotonic = lambda: next(seq, 9999.0)
             try:
-                with self.assertRaises(TimeoutError):
-                    sm.build_index(str(root), timeout_s=10)
+                idx = sm.build_index(str(root), timeout_s=10)
             finally:
                 sm.time.monotonic = orig
-            # raised before the INDEX.json write -> previous index untouched
+            # The work ran to completion instead of being truncated by elapsed
+            # time, and what landed on disk is the COMPLETE index. A partial
+            # publish is the failure mode CAN-040 exists to catch.
+            self.assertIn('a.py', idx['files'])
+            self.assertIn('a.py', json.loads(index_path.read_text(encoding='utf-8'))['files'])
+
+    def test_can040_cooperative_cancel_leaves_previous_index_intact(self):
+        import surgical_mapper as sm
+        from orchestrator.progress_watchdog import OperationCancelled, ProgressWatchdog
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cache = self._make_cache(root)
+            index_path = cache / sm.INDEX_FILENAME
+            index_path.write_text('{"sentinel": true}', encoding='utf-8')  # previous INDEX
+            event = threading.Event()
+            event.set()
+            with self.assertRaises(OperationCancelled):
+                sm.build_index(str(root), watchdog=ProgressWatchdog(cancel_event=event))
+            # Cancel -- not elapsed time -- is what aborts assembly now, and it has
+            # to abort BEFORE _write_index_atomic, or an aborted run would replace a
+            # good INDEX with nothing. That is the invariant CAN-040 always meant.
             self.assertEqual(json.loads(index_path.read_text(encoding='utf-8')), {'sentinel': True})
 
 

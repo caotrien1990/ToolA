@@ -55,12 +55,19 @@ def _auto_reindex_if_stale(project_path: str, *, budget_s: float = 2.0) -> dict:
     try:
         conn = _store.get_db(project_path, readonly=True)
         try:
-            stale = _stale_count(conn, project_path)
+            scan = _stale_count(conn, project_path, budget_s=budget_s)
         finally:
             try:
                 conn.close()
             except Exception:
                 pass
+        if not scan.get("complete"):
+            out["skipped"] = int(scan.get("stale_files") or 0)
+            out["error"] = "stale_scan_incomplete"
+            out["stale_scan"] = scan
+            return out
+        stale = int(scan.get("stale_files") or 0)
+        out["stale_scan"] = scan
         if stale <= 0:
             return out
         if stale > CBM_AUTO_REINDEX_MAX_STALE:

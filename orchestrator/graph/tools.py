@@ -60,6 +60,38 @@ def _clean_project_path(project_path: str) -> tuple[str, str | None]:
 # ─── Auto-chain: graph freshness helper (Task 3 2026-09-10) ───────────────────
 # CBM tools that analyse the graph must not silently use stale data.
 # _ensure_graph_fresh() checks staleness and auto-indexes when needed.
+
+# ISS-04: reasons that mean "the graph's freshness is NOT established". A bounded
+# CBM caller must refuse on any of these instead of analysing the graph anyway.
+# Before this set existed, a budget-truncated scan reported stale_files=0 with
+# complete=false, `stale is None` was False, and the helper answered
+# reason="fresh" -- so cbm_dead_code/dsm/what_if/quality_gate happily analysed a
+# graph nobody had verified, while analysis_view refused the very same state with
+# status=unavailable. One contract, two answers.
+_FRESHNESS_NOT_ESTABLISHED = {
+    "freshness_unknown", "check_failed", "stale_scan_incomplete",
+}
+
+
+def _freshness_refusal(auto_idx: dict) -> dict | None:
+    """Return the refusal body when freshness was not established, else None."""
+    reason = str((auto_idx or {}).get("reason") or "")
+    if reason not in _FRESHNESS_NOT_ESTABLISHED:
+        return None
+    return {
+        "enabled": True,
+        "status": "unavailable",
+        "error": "graph freshness unavailable",
+        "freshness": "unknown",
+        "reason": f"freshness:{reason}",
+        "auto_index_result": auto_idx,
+        "ca_next_action": "run_cbm_incremental_index_then_retry",
+        "hint": ("Freshness could not be established within the interactive "
+                 "response budget. Run cbm_incremental_index explicitly, poll "
+                 "write_status with its operation_id until terminal, then retry."),
+    }
+
+
 async def _ensure_graph_fresh(project_path: str) -> dict:
     """Check graph freshness; auto-index if stale or missing. Returns metadata dict."""
     try:
@@ -68,6 +100,13 @@ async def _ensure_graph_fresh(project_path: str) -> dict:
             stale = status.get("stale_files")
             freshness = str(status.get("freshness") or "")
             has_run = bool(status.get("last_run"))
+            scan = status.get("stale_scan") or {}
+            # A truncated scan carries a PARTIAL count, not None: trusting the
+            # number here is how a 25-of-424 sample became "fresh". Refuse, and
+            # do NOT start an unbounded index from inside a bounded call.
+            if scan and not scan.get("complete"):
+                return {"auto_indexed": False, "reason": "stale_scan_incomplete",
+                        "stale_scan": scan, "freshness": freshness or "unknown"}
             if stale is None and freshness not in {"not_indexed"}:
                 return {"auto_indexed": False, "reason": "freshness_unknown"}
             if int(stale or 0) > 0 or not has_run:
@@ -325,6 +364,9 @@ async def cbm_get_architecture(project_path: str = "", max_files: int = 0,
                             "error": path_err}, ensure_ascii=False)
     try:
         _auto_idx = await _ensure_graph_fresh(project_path)
+        _refusal = _freshness_refusal(_auto_idx)
+        if _refusal is not None:
+            return _ok(_refusal)
         # DOCS_GAP-6: optional bound overrides; 0/unset keeps config defaults.
         # P4 verify fix (STT-17): negative values are invalid — floor to 0 so
         # they keep the config default instead of causing immediate truncation
@@ -358,6 +400,9 @@ async def cbm_dead_code(project_path: str = "", limit: int = 50,
     try:
         # Task 3 auto-chain: ensure fresh graph before dead-code analysis
         _auto_idx = await _ensure_graph_fresh(project_path)
+        _refusal = _freshness_refusal(_auto_idx)
+        if _refusal is not None:
+            return _ok(_refusal)
         result = await asyncio.to_thread(_cbm_dead_code_dispatch, project_path,
                                          limit=int(limit or 50), scope=scope,
                                          file_filter=file_filter)
@@ -736,9 +781,9 @@ async def cbm_cycle_point(project_path: str = "", **aliases) -> str:  # noqa: AR
                            ensure_ascii=False)
     try:
         _auto_idx = await _ensure_graph_fresh(project_path)
-        if _auto_idx.get("reason") in {"freshness_unknown", "check_failed"}:
-            return _ok({"enabled": True, "error": "graph freshness unavailable",
-                        "freshness": "unknown", "auto_index_result": _auto_idx})
+        _refusal = _freshness_refusal(_auto_idx)
+        if _refusal is not None:
+            return _ok(_refusal)
         result = await asyncio.to_thread(_cycle_point.compute_cycle_point, project_path)
         result["auto_index_result"] = _auto_idx
         return _ok(result)
@@ -870,6 +915,9 @@ async def cbm_test_gap(
     try:
         # Task 3 auto-chain: ensure fresh graph before test-gap analysis
         _auto_idx = await _ensure_graph_fresh(project_path)
+        _refusal = _freshness_refusal(_auto_idx)
+        if _refusal is not None:
+            return _ok(_refusal)
         result = await _analysis_service.run_analysis_view(
             project_path,
             included_files=included,
@@ -1113,6 +1161,9 @@ async def cbm_what_if(
     try:
         # Task 3 auto-chain: ensure fresh graph before what-if analysis
         _auto_idx = await _ensure_graph_fresh(project_path)
+        _refusal = _freshness_refusal(_auto_idx)
+        if _refusal is not None:
+            return _ok(_refusal)
         result = await _analysis_service.run_analysis_view(
             project_path,
             included_files=included,

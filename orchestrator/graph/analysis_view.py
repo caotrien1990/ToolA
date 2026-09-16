@@ -631,8 +631,17 @@ def build_analysis_view(
             return payload
         counts_row = _store.status_counts(conn)
         last_run = counts_row.get("last_run") or {}
+        # `scan` must exist before the try: the unavailable payload below reports
+        # it, and reading it back through locals() made the field silently vanish
+        # whenever _stale_count raised — the caller then saw freshness:unknown
+        # with no partial-scan evidence to act on.
+        scan: dict | None = None
         try:
-            stale_n = _status._stale_count(conn, root)
+            scan = _status._stale_count(conn, root, budget_s=0.5)
+            stale_n = scan["stale_files"]
+            if not scan.get("complete"):
+                status_error = "stale_scan_incomplete"
+                stale_n = None
         except Exception as exc:
             stale_n = None
             status_error = f"stale_count_failed: {type(exc).__name__}"
@@ -652,7 +661,8 @@ def build_analysis_view(
             payload = _unavailable(
                 f"freshness:{freshness}",
                 root=root,
-                extra={"freshness": freshness, "status_error": status_error},
+                extra={"freshness": freshness, "status_error": status_error,
+                       "stale_scan": scan},
             )
             payload["elapsed_ms"] = round((time.monotonic() - t0) * 1000, 1)
             payload["created_missing_db"] = False

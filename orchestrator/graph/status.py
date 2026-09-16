@@ -7,17 +7,38 @@ rather than raising — callers must never crash on a status probe.
 import os
 import sqlite3
 import time
+from typing import overload
 
 from .config import graph_enabled, CBM_USE_TREE_SITTER, EXTRACTOR_VERSION
 from . import store as _store
+
+# STT-26/ISS-05: floor for the staleness scan's share of a bounded status call.
+# The scan budget used to be whatever was left of the response budget AFTER the
+# integrity probe, so on an HDD the probe alone could leave ~0ms and every
+# status answer degraded to freshness=unknown at files_checked=25/424. The scan
+# now always gets at least this much wall clock, and the payload reports the
+# split so a slow probe is visible instead of being blamed on the scan.
+CBM_STATUS_SCAN_MIN_BUDGET_S = float(
+    os.environ.get("CBM_STATUS_SCAN_MIN_BUDGET_S", "1.0"))
 
 # EXTRACTOR_VERSION moved to config (W5): the indexer and store need it to
 # decide staleness, and they cannot import status.py (it imports store).
 # Re-exported here so `from .status import EXTRACTOR_VERSION` keeps working.
 
 
+@overload
+def _stale_count(conn: sqlite3.Connection, project_root: str, *,
+                 budget_s: None = None) -> int: ...
+@overload
+def _stale_count(conn: sqlite3.Connection, project_root: str, *,
+                 budget_s: float) -> dict: ...
 def _stale_count(conn: sqlite3.Connection, project_root: str, *, budget_s: float | None = None) -> int | dict:
     """Count indexed files needing re-extraction, by the SAME rule the indexer uses.
+
+    Return shape depends on `budget_s`: omit it for the unbounded legacy `int`,
+    pass a budget for the bounded `stale_scan` dict. The two overloads above
+    exist so callers of the bounded form get a `dict` statically -- the union
+    return type used to force every caller into `locals()`/cast workarounds.
 
     Staleness has one definition and it lives in `store.stale_files`: content
     changed, never indexed, OR indexed by a different EXTRACTOR_VERSION. This
@@ -98,6 +119,7 @@ def graph_status(project_path: str) -> dict:
     Fail-open: any DB error returns enabled=False + error (no raise).
     """
     t0 = time.monotonic()
+    response_budget_s = 2.0
     payload = {
         "enabled": graph_enabled(),
         "db_present": False,
@@ -125,11 +147,24 @@ def graph_status(project_path: str) -> dict:
     try:
         conn = _store.get_db(project_path, readonly=True)
         try:
-            ic = _store.integrity_check(project_path)
+            # ISS-05: probe on the connection we already hold, with quick_check
+            # instead of integrity_check. `_store.integrity_check` opens a SECOND
+            # read-only connection to the same DB and runs the full check; on an
+            # HDD that pair cost more than the entire response budget, so the
+            # staleness scan that follows started with ~0ms left and every answer
+            # degraded to freshness=unknown. quick_check rejects the same
+            # structural corruption (verified on a page-scrambled copy);
+            # integrity_check only adds index-content cross-checks that
+            # init/migrate already cover.
+            _t_ic = time.monotonic()
+            _ic_row = conn.execute("PRAGMA quick_check;").fetchone()
+            ic = (_ic_row[0] if _ic_row else "unknown")
             payload["integrity"] = ic
+            payload["integrity_probe"] = "quick_check"
+            payload["integrity_ms"] = round((time.monotonic() - _t_ic) * 1000, 1)
             if ic != "ok":
                 payload["freshness"] = "corrupt"
-                payload["error"] = f"integrity_check: {ic}"
+                payload["error"] = f"quick_check: {ic}"
                 return payload
             counts = _store.status_counts(conn)
             payload["nodes"] = counts["nodes"]
@@ -142,9 +177,21 @@ def graph_status(project_path: str) -> dict:
             # drift. Both full and incremental indexes record index_runs, so
             # last_run is the most recent graph mutation rather than last full run.
             try:
-                stale_result = _stale_count(conn, project_path, budget_s=2.0)
+                # The scan gets whatever is left of the response budget, but
+                # never less than CBM_STATUS_SCAN_MIN_BUDGET_S: a slow probe
+                # must show up as integrity_ms, not silently starve the scan
+                # into a permanent freshness=unknown.
+                _pre_scan_ms = (time.monotonic() - t0) * 1000
+                scan_budget = max(CBM_STATUS_SCAN_MIN_BUDGET_S,
+                                  response_budget_s - (time.monotonic() - t0))
+                _t_scan = time.monotonic()
+                stale_result = _stale_count(conn, project_path, budget_s=scan_budget)
                 payload["stale_files"] = stale_result["stale_files"]
+                stale_result["budget_s"] = round(scan_budget, 3)
+                stale_result["scan_ms"] = round((time.monotonic() - _t_scan) * 1000, 1)
+                stale_result["pre_scan_ms"] = round(_pre_scan_ms, 1)
                 payload["stale_scan"] = stale_result
+                payload["scan_ms"] = stale_result["scan_ms"]
             except Exception as e:
                 payload["stale_files"] = None
                 payload["error"] = f"stale_count_failed: {type(e).__name__}"

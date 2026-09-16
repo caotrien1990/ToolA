@@ -622,8 +622,56 @@ def _regex_timeout_query_echo(query: str) -> str:
     return q
 
 
+def _attach_regex_partials(resp: dict, partial_source: object | None) -> dict:
+    """ISS-12: carry the work the deadline interrupted, instead of burning it.
+
+    The worker accumulated its matches inside a spawned child and pickled them
+    only after the WHOLE scan finished, so a deadline on a large repo killed the
+    child and answered a bare REGEX_SEARCH_TIMEOUT -- every file already scanned
+    was thrown away and the caller had no way to tell "nothing matches" from
+    "we never got there". The worker now checkpoints between files and
+    _run_isolated salvages the last checkpoint after reaping, so a timeout can
+    report a whole-file PREFIX of the scan.
+
+    Deliberately unchanged: ok stays False and error_name stays
+    REGEX_SEARCH_TIMEOUT. The scan did NOT complete, and a partial hit list must
+    never be mistaken for the full one -- that is the B012/F021 shape (nothing
+    errors, results are right there, the caller trusts them). Nothing is added
+    at all when no match was salvaged: an empty `results` on a scan that never
+    finished would read as a confident "not found", which is the same lie in the
+    other direction (this is also why the ReDoS budget tests keep their exact
+    old shape -- those patterns match nothing).
+    """
+    rows = list(getattr(partial_source, "partial_results", None) or [])
+    if not rows:
+        return resp
+    scanned = int(getattr(partial_source, "records_scanned", 0) or 0)
+    total = int(getattr(partial_source, "records_total", 0) or 0)
+    resp["results"] = rows
+    resp["count"] = len(rows)
+    resp["partial"] = True
+    resp["truncated_by_deadline"] = True
+    resp["partial_files_scanned"] = scanned
+    resp["partial_files_total"] = total
+    if total > 0 and 0 <= scanned <= total:
+        resp["partial_files_remaining"] = total - scanned
+    age_ms = getattr(partial_source, "partial_checkpoint_age_ms", None)
+    if isinstance(age_ms, int):
+        resp["partial_checkpoint_age_ms"] = age_ms
+    resp["partial_hint"] = (
+        f"These {len(rows)} match(es) are a COMPLETE prefix of the scan "
+        f"({scanned} of {total or 'unknown'} candidate files), not the full "
+        "result set: the remaining files were never read, so absence of a "
+        "symbol here proves nothing. Re-run with the narrowing payload above "
+        "to finish the scan."
+    )
+    resp["ca_next_action"] = "use_partial_then_narrow_regex_scope"
+    return resp
+
+
 def _regex_timeout_payload(query: str, effective_regex_deadline: float | None,
-                           path: str, project_path: str, file_pattern: str) -> dict:
+                           path: str, project_path: str, file_pattern: str,
+                           partial_source: object | None = None) -> dict:
     from orchestrator import search_regex_worker as _rw
     q_echo = _regex_timeout_query_echo(query)
     if effective_regex_deadline is not None:
@@ -644,7 +692,7 @@ def _regex_timeout_payload(query: str, effective_regex_deadline: float | None,
         payload_example[loc_key] = loc
     if file_pattern and file_pattern != "*":
         payload_example["file_pattern"] = file_pattern
-    return {
+    return _attach_regex_partials({
         "ok": False,
         "error": f"regex search exceeded hard deadline of {deadline_txt}s",
         "error_name": "REGEX_SEARCH_TIMEOUT",
@@ -665,7 +713,7 @@ def _regex_timeout_payload(query: str, effective_regex_deadline: float | None,
                 "much input). Resend with mode='text' for a literal search, and/or add "
                 "a file_pattern to shrink the input.",
         "ca_next_action": "narrow_or_simplify_regex",
-    }
+    }, partial_source)
 
 
 def _regex_budget_payload(query: str, path: str, project_path: str,
@@ -821,6 +869,12 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
     regex_worker = None
     effective_regex_deadline = None
     _narrow_warn = ""
+    # ISS-12: the RegexSearchTimeout instance that carries the salvaged partial
+    # matches. It has to be held here because the R39 adaptive-retry loop below
+    # re-raises a BRAND NEW asyncio.TimeoutError when both attempts run out of
+    # budget -- the original exception, and with it every match already found,
+    # would otherwise be dropped on the floor before any handler sees it.
+    _last_regex_timeout = None
     if mode == "regex":
         from orchestrator import search_regex_worker as regex_worker
 
@@ -1168,6 +1222,13 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                         "Add file_pattern='*.py' or path='orchestrator/' to narrow."
                     )
                 except Exception as exc:
+                    if (regex_worker is not None
+                            and isinstance(exc, regex_worker.RegexSearchTimeout)):
+                        # ISS-12: keep it BEFORE the re-raise decision -- both
+                        # the `raise` here and the loop's else-branch discard
+                        # this instance, and its partial_results are the only
+                        # copy that survived the child being killed.
+                        _last_regex_timeout = exc
                     if (regex_worker is None
                             or not isinstance(exc, regex_worker.RegexSearchTimeout)
                             or _regex_retried
@@ -1212,7 +1273,10 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
             **aliases,
         )
     except asyncio.TimeoutError:
-        _timeout_resp = _regex_timeout_payload(query, effective_regex_deadline, path, project_path, file_pattern)
+        # ISS-12: _last_regex_timeout, not the asyncio.TimeoutError we are
+        # holding -- that one is a synthetic re-raise and carries no matches.
+        _timeout_resp = _regex_timeout_payload(query, effective_regex_deadline, path, project_path, file_pattern,
+                                              partial_source=_last_regex_timeout)
         if _narrow_warn:
             _timeout_resp["ca_chain_hint"] = _narrow_warn
             _timeout_resp["ca_chain_next"] = "search_code with file_pattern or path"
@@ -1236,7 +1300,8 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         # divergent contracts (exactly A40 defect 2). Route it to the one shared
         # builder so the caller always gets query + corrected_payload + retry_sequence.
         if regex_worker is not None and isinstance(exc, regex_worker.RegexSearchTimeout):
-            _rt_resp = _regex_timeout_payload(query, effective_regex_deadline, path, project_path, file_pattern)
+            _rt_resp = _regex_timeout_payload(query, effective_regex_deadline, path, project_path, file_pattern,
+                                              partial_source=exc)
             if _narrow_warn:
                 _rt_resp["ca_chain_hint"] = _narrow_warn
                 _rt_resp["ca_chain_next"] = "search_code with file_pattern or path"

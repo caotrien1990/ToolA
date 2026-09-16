@@ -2,8 +2,13 @@
 
 Orchestrates: file walk (SKIP_DIRS-aware) -> extractor -> store. Records an
 index_runs row per run. Incremental: only re-extracts files whose content_hash
-changed. Verify gates (plan line 91): core scope <45s / full <150s, node_count>500,
-edge_count>1000, no source mutation, rerun parses 0 unchanged files.
+changed. Verify gates (plan line 91): node_count>500, edge_count>1000, no source
+mutation, rerun parses 0 unchanged files. ISS-09: the original gates also carried
+wall-clock ceilings (core <45s / full <150s). Those are gone — explicit indexing
+is governed by the progress watchdog and cooperative cancel, never truncated on
+elapsed time, so `budget_s` is None and the duration gate always passes. The
+INDEX_TIME_BUDGET_* constants survive only as module attributes the contract test
+monkeypatches to prove no ceiling is applied.
 """
 from concurrent.futures import ProcessPoolExecutor
 import hashlib
@@ -15,7 +20,12 @@ import time
 from typing import Optional
 
 from .config import (
-    INDEX_TIME_BUDGET_CORE_S, INDEX_TIME_BUDGET_FULL_S,
+    # ISS-09: intentionally imported but NOT read. index_project applies no
+    # wall-clock ceiling any more; these stay module attributes so
+    # tests/test_progress_watchdog_contract.py can monkeypatch them to 0 and
+    # prove a run still completes. Deleting the import breaks that test with
+    # AttributeError, which is exactly the regression it guards.
+    INDEX_TIME_BUDGET_CORE_S, INDEX_TIME_BUDGET_FULL_S,  # noqa: F401
     INDEX_MIN_NODES, INDEX_MIN_EDGES, CBM_EXTRACT_JS, CBM_SAME_MODULE,
     EXTRACTOR_VERSION,
 )

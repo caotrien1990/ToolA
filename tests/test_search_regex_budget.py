@@ -383,9 +383,13 @@ class TestSearchRegexBudget(unittest.IsolatedAsyncioTestCase):
         helper_started = False
         real_read = search_module.search_snapshots._read_file_bytes
 
-        def slow_read(path):
+        # capture_stable_file passes the ProgressWatchdog positionally
+        # (_read_file_bytes(candidate, watchdog)), so a 1-arg stub raised
+        # TypeError inside the mock and the test failed on its own scaffolding
+        # instead of on the behaviour it pins. Forward it untouched.
+        def slow_read(path, watchdog=None):
             time.sleep(0.15)
-            return real_read(path)
+            return real_read(path, watchdog)
 
         def helper(*args, **kwargs):
             nonlocal helper_started

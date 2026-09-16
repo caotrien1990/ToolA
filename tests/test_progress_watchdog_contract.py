@@ -35,11 +35,19 @@ def test_graph_status_partial_scan_never_claims_fresh(tmp_path, monkeypatch):
     fake = {"nodes": 1, "edges": 0, "files": 5,
             "last_run": {"finished_at": 1, "status": "completed"}}
     conn = mock.MagicMock()
-    conn.execute.return_value.fetchone.return_value = ("wal",)
+
+    # ISS-05: the integrity probe is now `PRAGMA quick_check` on the connection
+    # we already hold, not a second connection through _store.integrity_check.
+    # One blanket fetchone would answer "wal" to quick_check and send the whole
+    # call down the freshness=corrupt branch, so route by statement.
+    def _execute(sql, *_args, **_kwargs):
+        row = ("ok",) if "quick_check" in str(sql).lower() else ("wal",)
+        return mock.MagicMock(fetchone=mock.MagicMock(return_value=row))
+
+    conn.execute.side_effect = _execute
     monkeypatch.setattr(graph_status._store, "graph_db_path", lambda _: str(tmp_path / "graph.db"))
     (tmp_path / "graph.db").write_bytes(b"x")
     monkeypatch.setattr(graph_status._store, "get_db", lambda *a, **k: conn)
-    monkeypatch.setattr(graph_status._store, "integrity_check", lambda *_: "ok")
     monkeypatch.setattr(graph_status._store, "status_counts", lambda *_: fake)
     monkeypatch.setattr(graph_status, "_stale_count", lambda *a, **k: {
         "stale_files": 0, "files_checked": 1, "files_total": 5,
@@ -47,6 +55,39 @@ def test_graph_status_partial_scan_never_claims_fresh(tmp_path, monkeypatch):
     result = graph_status.graph_status(str(tmp_path))
     assert result["freshness"] == "unknown"
     assert result["stale_scan"]["complete"] is False
+    # ISS-05: the probe is disclosed, and the scan keeps a floor budget instead of
+    # inheriting whatever a slow integrity check left behind (which on an HDD was
+    # ~0ms, turning every answer into a permanent freshness=unknown).
+    assert result["integrity_probe"] == "quick_check"
+    assert result["stale_scan"]["budget_s"] >= graph_status.CBM_STATUS_SCAN_MIN_BUDGET_S
+    assert "pre_scan_ms" in result["stale_scan"]
+
+
+def test_auto_reindex_skips_incomplete_stale_scan(monkeypatch):
+    from orchestrator.graph import query
+    conn = mock.MagicMock()
+    monkeypatch.setattr(query._store, "get_db", lambda *a, **k: conn)
+    monkeypatch.setattr(query, "_stale_count", lambda *a, **k: {
+        "stale_files": 2, "files_checked": 5, "files_total": 100,
+        "complete": False, "stop_reason": "response_budget"})
+    with mock.patch.object(query, "incremental_index") as index:
+        result = query._auto_reindex_if_stale("D:/repo", budget_s=0.01)
+    index.assert_not_called()
+    assert result["error"] == "stale_scan_incomplete"
+
+
+def test_analysis_view_incomplete_stale_scan_is_unavailable(tmp_path, monkeypatch):
+    from orchestrator.graph import analysis_view
+    from orchestrator.graph import indexer
+    (tmp_path / "a.py").write_text("def a():\n    return 1\n")
+    indexer.index_project(str(tmp_path), scope="full")
+    monkeypatch.setattr(analysis_view._status, "_stale_count", lambda *a, **k: {
+        "stale_files": 0, "files_checked": 0, "files_total": 1,
+        "complete": False, "stop_reason": "response_budget"})
+    result = analysis_view.build_analysis_view(str(tmp_path))
+    assert result["status"] == "unavailable"
+    assert result["freshness"] == "unknown"
+    assert result["status_error"] == "stale_scan_incomplete"
 
 
 def test_write_status_surfaces_progress():

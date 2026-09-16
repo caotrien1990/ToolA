@@ -2066,7 +2066,16 @@ def _result_ref_store(ref: str, raw_text: str) -> None:
 # server. Without a record the caller cannot tell committed from not_committed, so it
 # either retries (duplicate write) or spends a read-back proving what the server knew.
 _WRITE_LEDGER: dict = {}            # operation_id -> record (insertion-ordered)
-_WRITE_LEDGER_BY_TARGET: dict = {}  # (project_path, file_path) -> operation_id
+# ISS-01: (project_path, file_path) -> LIST of operation_ids, oldest first.
+# This used to hold a single op id. Index/script tools carry file_path="", so
+# every non-file-scoped mutating tool on one root shared the key
+# (project_path, "") and the newest call silently overwrote the previous one:
+# polling write_status by project_path for a cbm_incremental_index returned the
+# ledger of an unrelated run_project_command instead -- a different tool's
+# commit_state answering "did my index commit?". The list keeps every candidate
+# so the lookup can disambiguate or refuse instead of guessing.
+_WRITE_LEDGER_BY_TARGET: dict = {}
+_WRITE_LEDGER_TARGET_MAX = 20       # candidates kept per target key
 _WRITE_LEDGER_MAX = max(50, int(os.environ.get("ORCHESTRATOR_WRITE_LEDGER_MAX", "300")))
 _WRITE_LEDGER_TTL_DAYS = max(
     1, min(365, int(os.environ.get("ORCHESTRATOR_WRITE_LEDGER_TTL_DAYS", "7")))
@@ -2107,6 +2116,71 @@ async def _write_ledger_db_get_async(
     """Keep write-status SQLite fallback reads off the event loop too."""
     async with _write_ledger_async_lock():
         return await asyncio.to_thread(_write_ledger_db_get, operation_id, target)
+
+
+async def _write_ledger_db_list_async(target: tuple[str, str], limit: int = 20):
+    """ISS-01: every ledger row for one target, newest first (not just LIMIT 1)."""
+    async with _write_ledger_async_lock():
+        return await asyncio.to_thread(_write_ledger_db_list, target, limit)
+
+def _write_ledger_target_remember(pp: str, fp: str, op_id: str) -> None:
+    """Append op_id to the target's candidate list (most recent last, deduped)."""
+    if not (pp or fp) or not op_id:
+        return
+    key = (pp, fp)
+    ids = _WRITE_LEDGER_BY_TARGET.get(key)
+    if not isinstance(ids, list):
+        # Tolerate a legacy single-string value from an older generation.
+        ids = [ids] if isinstance(ids, str) and ids else []
+    if op_id in ids:
+        ids.remove(op_id)
+    ids.append(op_id)
+    del ids[:-_WRITE_LEDGER_TARGET_MAX]
+    _WRITE_LEDGER_BY_TARGET[key] = ids
+
+
+def _write_ledger_target_ids(pp: str, fp: str) -> list:
+    ids = _WRITE_LEDGER_BY_TARGET.get((pp, fp))
+    if isinstance(ids, list):
+        return list(ids)
+    if isinstance(ids, str) and ids:
+        return [ids]
+    return []
+
+
+def _write_ledger_candidate_summary(rec: dict) -> dict:
+    return {k: rec.get(k) for k in ("operation_id", "tool", "status", "started_at",
+                                    "finished_at", "updated_at")}
+
+
+def _write_ledger_pick_candidate(records: list, tool_filter: str = "") -> tuple:
+    """Resolve a target lookup to ONE record, or report the ambiguity.
+
+    Returns (record | None, candidates, ambiguous). A target with several
+    distinct tools is only answered when exactly one candidate is still
+    in_flight (that is unambiguously "the operation you are waiting on") or when
+    the caller named a tool. Otherwise the caller gets the candidate list and
+    must pass operation_id -- silently returning the newest row is what made a
+    run_project_command answer for a cbm_incremental_index.
+    """
+    records = [r for r in records if isinstance(r, dict)]
+    if tool_filter:
+        records = [r for r in records if str(r.get("tool") or "") == tool_filter]
+    if not records:
+        return None, [], False
+    if len(records) == 1:
+        return records[0], [_write_ledger_candidate_summary(records[0])], False
+    tools = {str(r.get("tool") or "") for r in records}
+    if len(tools) == 1:
+        # Same tool, several payloads: newest is a meaningful answer.
+        newest = max(records, key=lambda r: float(r.get("updated_at") or 0.0))
+        return newest, [_write_ledger_candidate_summary(r) for r in records], False
+    in_flight = [r for r in records if str(r.get("status") or "") == "in_flight"]
+    candidates = [_write_ledger_candidate_summary(r) for r in records]
+    if len(in_flight) == 1:
+        return in_flight[0], candidates, False
+    return None, candidates, True
+
 
 def _write_ledger_target(body: dict) -> tuple[str, str]:
     """Normalised (project_path, file_path) key so lookup survives slash/case variance."""
@@ -2229,6 +2303,51 @@ def _write_ledger_db_get(operation_id: str = "", target: tuple[str, str] | None 
         return None
 
 
+def _write_ledger_db_list(target: tuple[str, str], limit: int = 20) -> list:
+    """ISS-01: all ledger rows for one target, newest first.
+
+    `_write_ledger_db_get(target=...)` answers with ORDER BY updated_at DESC
+    LIMIT 1, which is exactly the silent swap the memory map had: the newest
+    mutating tool on the root wins regardless of which tool the caller asked
+    about. Callers that need to disambiguate need the whole set.
+    """
+    try:
+        columns = (
+            "operation_id, tool, status, project_path, file_path, session_id, "
+            "started_at, finished_at, duration_ms, attempts, previous_status, "
+            "result_json, origin_generation, updated_at"
+        )
+        conn = sqlite3.connect(str(ct._SESSIONS_DB), timeout=0.1)
+        try:
+            conn.execute("PRAGMA busy_timeout=100")
+            rows = conn.execute(
+                f"""SELECT {columns} FROM write_operations
+                    WHERE project_path=? AND file_path=?
+                    ORDER BY updated_at DESC LIMIT ?""",
+                (target[0], target[1], max(1, int(limit))),
+            ).fetchall()
+        finally:
+            conn.close()
+        keys = [
+            "operation_id", "tool", "status", "project_path", "file_path",
+            "session_id", "started_at", "finished_at", "duration_ms", "attempts",
+            "previous_status", "result_json", "origin_generation", "updated_at",
+        ]
+        out = []
+        for row in rows or []:
+            rec = dict(zip(keys, row))
+            raw_result = rec.pop("result_json", None)
+            try:
+                rec["result"] = json.loads(raw_result) if raw_result else None
+            except (TypeError, json.JSONDecodeError):
+                rec["result"] = None
+            out.append(rec)
+        return out
+    except Exception as exc:
+        logger.warning("write ledger list failed: %s", exc)
+        return []
+
+
 def _write_ledger_choose(memory_rec: dict | None, disk_rec: dict | None) -> tuple[dict, str]:
     """Prefer irrevocable committed truth, then the newest non-terminal attempt."""
     memory = dict(memory_rec or {})
@@ -2305,8 +2424,7 @@ def _write_ledger_begin(tool_name: str, body: dict, session_id: str = "") -> str
         if prior.get("status") == "committed":
             # A deterministic retry cannot make an already-committed operation in-flight.
             _WRITE_LEDGER[op_id] = prior
-            if pp or fp:
-                _WRITE_LEDGER_BY_TARGET[(pp, fp)] = op_id
+            _write_ledger_target_remember(pp, fp, op_id)
             return op_id
         now = time.time()
         rec = {
@@ -2326,8 +2444,7 @@ def _write_ledger_begin(tool_name: str, body: dict, session_id: str = "") -> str
             "updated_at": now,
         }
         _WRITE_LEDGER[op_id] = rec
-        if pp or fp:
-            _WRITE_LEDGER_BY_TARGET[(pp, fp)] = op_id
+        _write_ledger_target_remember(pp, fp, op_id)
         while len(_WRITE_LEDGER) > _WRITE_LEDGER_MAX:
             _WRITE_LEDGER.pop(next(iter(_WRITE_LEDGER)), None)
         if _write_ledger_db_upsert(rec):
@@ -2335,6 +2452,44 @@ def _write_ledger_begin(tool_name: str, body: dict, session_id: str = "") -> str
         return op_id
     except Exception:
         return ""  # the ledger is an observability aid; it must never break a write
+
+
+# ISS-10: evidence keys the ledger keeps from a finished tool result. The first
+# group is write_fix's (the only family the original list covered); the rest let
+# a caller polling write_status see what an index / command / git / session
+# mutation actually did instead of a bare {"ok": true}. Kept to small scalars on
+# purpose -- this row is persisted per operation and read on every poll.
+_WRITE_LEDGER_RESULT_KEYS = (
+    # write family
+    "ok", "error", "error_name", "write_performed", "applied", "file",
+    "replaced_lines", "bytes_written", "new_hash", "file_sha256",
+    # derived-index / graph family
+    "run_id", "scope", "status", "files_indexed", "files_unchanged",
+    "files_total", "nodes", "edges", "nodes_added", "edges_added",
+    "stale_files", "duration_s", "cancelled", "partial",
+    # command / script family
+    "exit_code", "returncode", "executed", "timed_out", "destructive_count",
+    # git family
+    "commit_hash", "committed", "staged_count", "branch",
+    # routing
+    "ca_next_action", "operation_id",
+)
+_WRITE_LEDGER_SCALAR_MAX = 240
+
+
+def _write_ledger_scalar(value):
+    """Coerce one evidence field to something small enough to persist per poll."""
+    if isinstance(value, (bool, int, float)) or value is None:
+        return value
+    if isinstance(value, str):
+        return value if len(value) <= _WRITE_LEDGER_SCALAR_MAX else (
+            value[:_WRITE_LEDGER_SCALAR_MAX] + "…[truncated]")
+    if isinstance(value, (list, tuple, set)):
+        return {"count": len(value)}
+    if isinstance(value, dict):
+        return {"keys": sorted(str(k) for k in list(value.keys())[:8])}
+    text = str(value)
+    return text[:_WRITE_LEDGER_SCALAR_MAX]
 
 
 def _write_ledger_finish(op_id: str, result: dict, status: str) -> None:
@@ -2352,15 +2507,27 @@ def _write_ledger_finish(op_id: str, result: dict, status: str) -> None:
         rec["updated_at"] = rec["finished_at"]
         rec["duration_ms"] = int((rec["finished_at"] - float(rec["started_at"])) * 1000)
         if isinstance(result, dict):
-            summary = {k: result.get(k) for k in
-                       ("ok", "error_name", "write_performed", "applied", "file",
-                        "replaced_lines", "bytes_written", "new_hash")
-                       if k in result}
+            summary = {k: _write_ledger_scalar(result.get(k))
+                       for k in _WRITE_LEDGER_RESULT_KEYS if k in result}
             validation = result.get("validation")
             if isinstance(validation, dict):
                 summary["validation_ok"] = validation.get("ok")
+            gates = result.get("meets_gates")
+            if isinstance(gates, dict):
+                summary["meets_gates"] = {k: bool(v) for k, v in list(gates.items())[:8]}
             if final_progress is not None:
                 summary["progress"] = final_progress
+            # ISS-10: a summary of only {"ok": true} is what every wrapper tool
+            # used to store, because the key list above was written for write_fix
+            # and matched nothing else. A caller polling write_status for a
+            # cbm_incremental_index then got commit_state=committed with zero
+            # evidence of WHAT committed -- indistinguishable from a no-op run.
+            # When no evidence key matched, record the result's own top-level key
+            # names so the ledger at least says where the evidence lives.
+            if set(summary) <= {"ok", "progress"}:
+                summary["result_keys"] = sorted(str(k) for k in list(result.keys())[:24])
+                summary["summary_note"] = ("no known evidence field on this tool's result; "
+                                           "listing top-level keys instead")
             rec["result"] = summary
         _write_ledger_db_upsert(rec)
     except Exception:
@@ -4214,6 +4381,15 @@ def _r40_suggest_alternative(tool_name: str, error_name: str) -> dict:
 # success path and every _error_response return can filter without rewriting call sites.
 _R101_FIELDS = contextvars.ContextVar("_r101_fields", default=None)
 _R101_ALWAYS_KEEP = {"ok", "error", "error_name"}
+# ISS-14: keys a projection must never be able to hide, because dropping them
+# turns a correct answer into a dangerous one. `hash_domain` and
+# `read_token_seeded` are file_sha256's ONLY defence against its raw-byte digest
+# being mistaken for a read_file_range content_hash and pasted into
+# write_fix.expected_hash -- the two hash domains are indistinguishable by shape,
+# so `fields=ok,sha256` used to hand back a bare 64-hex string with no domain and
+# no "this seeds no edit authority" marker. Force-kept, and the rescue is
+# announced, so a caller cannot silently receive the ambiguous half.
+_R101_SAFETY_KEEP = {"hash_domain", "read_token_seeded"}
 
 
 def _r101_parse_fields(value) -> set:
@@ -4227,8 +4403,21 @@ def _r101_parse_fields(value) -> set:
 def _r101_filter(payload, fields):
     if not fields or not isinstance(payload, dict):
         return payload
-    keep = set(fields) | _R101_ALWAYS_KEEP
+    keep = set(fields) | _R101_ALWAYS_KEEP | _R101_SAFETY_KEEP
     out = {k: v for k, v in payload.items() if k in keep}
+    dropped = len(payload) - len(out)
+    rescued = sorted((set(payload) & _R101_SAFETY_KEEP) - set(fields))
+    if rescued:
+        # Not error_name: this is a successful response whose projection was
+        # unsafe, and poisoning error_name would make every ok:true call look
+        # failed to existing callers.
+        out["response_incomplete"] = "RESPONSE_INCOMPLETE"
+        out["fields_force_kept"] = rescued
+        out["fields_force_kept_hint"] = (
+            "fields= would have hidden these hash-domain markers. Read them: a "
+            "raw_file_bytes digest is NOT a read_file_range content_hash and "
+            "seeds no edit authority, so it must not be passed as "
+            "write_fix.expected_hash.")
     # A23-P2: name the keys we could not honour. Without this a typo in
     # `fields=` is indistinguishable from an empty result -- `fields=result`
     # instead of `results` returned a bare envelope and read as "the tool
@@ -4243,6 +4432,15 @@ def _r101_filter(payload, fields):
             "These fields= keys are not in this tool's response and were "
             "ignored; the result is NOT empty because of them. Check spelling "
             "(e.g. 'results' not 'result') or omit fields= to see every key.")
+    # ISS-14: say that this response IS a projection -- but only when the
+    # projection was already problematic. A23-P2 pinned the negative case
+    # (`CorrectFilterStaysClean`): a marker present on every filtered response
+    # carries no information, and the whole point of fields= is fewer tokens.
+    # So these two keys ride along with a rescue or an unhonoured key, never on
+    # a clean subset the caller asked for exactly.
+    if dropped > 0 and (rescued or unknown):
+        out["response_truncated"] = True
+        out["fields_dropped_count"] = dropped
     return out
 
 
@@ -16213,19 +16411,51 @@ async def handle_write_status(request):
     if rec is None and op_id:
         rec = await _write_ledger_db_get_async(operation_id=op_id)
     lookup = "operation_id"
+    candidates: list = []
     if rec is None:
         pp, fp = _write_ledger_target({
             "project_path": request.query.get("project_path", ""),
             "file_path": request.query.get("file_path", "") or request.query.get("path", ""),
         })
+        tool_filter = (request.query.get("tool") or "").strip()
         if pp or fp:
             lookup = "target"
-            rec = _WRITE_LEDGER.get(_WRITE_LEDGER_BY_TARGET.get((pp, fp), ""))
-            if rec is not None:
+            mem = [_WRITE_LEDGER[i] for i in _write_ledger_target_ids(pp, fp)
+                   if i in _WRITE_LEDGER]
+            rec, candidates, ambiguous = _write_ledger_pick_candidate(mem, tool_filter)
+            if rec is not None or ambiguous:
                 ledger_source = "memory"
             else:
-                rec = await _write_ledger_db_get_async(target=(pp, fp))
+                rows = await _write_ledger_db_list_async((pp, fp))
+                rec, candidates, ambiguous = _write_ledger_pick_candidate(rows, tool_filter)
                 ledger_source = "sqlite"
+            if ambiguous:
+                # ISS-01: several DIFFERENT tools share this target key and none
+                # is uniquely in flight. Answering with the newest row is how a
+                # run_project_command ledger became the answer to "did my
+                # cbm_incremental_index commit?".
+                return web.json_response({
+                    "ok": False,
+                    "error": ("this project_path/file_path matches several mutating "
+                              "operations from different tools"),
+                    "error_name": "WRITE_STATUS_AMBIGUOUS_TARGET",
+                    "commit_state": "unknown",
+                    "operation_state": "unknown",
+                    "safe_to_retry": False,
+                    "retryable": False,
+                    "lookup": "target",
+                    "ledger_source": ledger_source,
+                    "project_path": pp,
+                    "file_path": fp,
+                    "candidates": candidates,
+                    "tools": sorted({str(c.get("tool") or "") for c in candidates}),
+                    "ca_next_action": "retry_with_operation_id",
+                    "hint": ("Pass operation_id from the tool response, or narrow with "
+                             "&tool=<tool_name>. Index/script tools all record "
+                             "file_path=\"\", so one root can hold several unrelated "
+                             "operations at once."),
+                    "generation": SERVER_GENERATION,
+                }, status=409, headers=cors)
     if rec is None:
         return web.json_response({
             "ok": False,
@@ -16270,15 +16500,20 @@ async def handle_write_status(request):
                                    "origin_generation", "progress", "last_progress_at")},
         "generation": SERVER_GENERATION,
         "progress": progress,
+        # ISS-01: what else shares this target key. Present on every target
+        # lookup so a caller can see the swap risk even when one candidate was
+        # resolvable, instead of discovering it from a mismatched tool name.
+        "candidates": candidates,
     }, headers=cors, dumps=lambda x: json.dumps(x, ensure_ascii=False))
 
 
 async def write_status(operation_id: str = "", project_path: str = "",
-                       file_path: str = "") -> str:
+                       file_path: str = "", tool: str = "") -> str:
     """Catalog/MCP access to the exact same write-commit ledger as HTTP GET."""
     from types import SimpleNamespace
     request = SimpleNamespace(headers={}, query={
-        "operation_id": operation_id, "project_path": project_path, "file_path": file_path,
+        "operation_id": operation_id, "project_path": project_path,
+        "file_path": file_path, "tool": tool,
     })
     response = await handle_write_status(request)
     return response.text
@@ -16288,11 +16523,12 @@ _register_tool(
     name="write_status", handler=write_status, phase="T1",
     tool_map=ct.TOOL_MAP, tool_schemas=ct.TOOL_SCHEMAS, tool_phases=ct.TOOL_PHASES,
     arg_aliases=_ARG_ALIASES, phase_labels=ct.PHASE_LABELS,
-    schema={"description": "Read write commit truth after timeout by operation_id or project_path+file_path. Same ledger as GET /api/write_status; unknown is not safe to replay.",
+    schema={"description": "Read write commit truth after timeout by operation_id or project_path+file_path. Same ledger as GET /api/write_status; unknown is not safe to replay. Target lookup returns WRITE_STATUS_AMBIGUOUS_TARGET when several tools share the root (index/script tools all record file_path=\"\") - pass operation_id or tool to disambiguate.",
             "parameters": {"type": "object", "properties": {
-                "operation_id": {"type": "string", "default": "", "description": "ID returned by the write response."},
+                "operation_id": {"type": "string", "default": "", "description": "ID returned by the write response. The only lookup that cannot be swapped for another tool's entry."},
                 "project_path": {"type": "string", "default": "", "description": "Explicit project root for target lookup."},
                 "file_path": {"type": "string", "default": "", "description": "Target file when operation_id is unavailable."},
+                "tool": {"type": "string", "default": "", "description": "Narrow a target lookup to one tool name (e.g. cbm_incremental_index) when the root holds several concurrent operations."},
             }, "required": []}},
 )
 
@@ -16318,7 +16554,13 @@ async def handle_cancel_operation(request):
         body = {}
     operation_id = str((body or {}).get("operation_id") or "").strip()
     cancel_event = _OPERATION_CANCEL_EVENTS.get(operation_id)
-    request_id = str((body or {}).get("request_operation_id") or "").strip()
+    # For a plain tool call the ledger operation_id IS the request op id, so it
+    # must resolve a task on its own; request_operation_id only overrides the
+    # two-id case (a write whose ledger id differs from the request that started
+    # it). Without this fallback /api/cancel answered OPERATION_NOT_IN_FLIGHT for
+    # every asyncio task it existed to cancel.
+    request_id = (str((body or {}).get("request_operation_id") or "").strip()
+                  or operation_id)
     task = _INFLIGHT_OPERATIONS.get(request_id) if request_id else None
     if not operation_id:
         return web.json_response({"ok": False, "error_name": "OPERATION_ID_REQUIRED",

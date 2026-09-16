@@ -841,7 +841,8 @@ def _pin_snapshot_index_with_deadline(project_root: str | Path, deadline_at: flo
     Threads deadline_at into pin_current_snapshot so a contended state lease
     raises SnapshotDeadlineExceeded instead of blocking through the client's
     HTTP timeout; the async caller converts that into a structured degraded
-    response (INDEX_QUERY_TIMEOUT) rather than a misleading matched:0.
+    response (INDEX_QUERY_TIMEOUT, category index_not_ready — a lease is
+    contended, not a stale index) rather than a misleading matched:0.
     """
     pin = search_snapshots.pin_current_snapshot(project_root, deadline_at=deadline_at)
     try:
@@ -1398,7 +1399,8 @@ _ENGLISH_TOOL_DESCRIPTIONS = {
     "get_rule_core_text": "Return rendered CORE_RULE text + runtime metadata. HTTP bootstrap; pass stable agent_id.",
     "audit_tool_matrix": "V15 R13 — Cross-check TOOL_MAP/schemas/skills/router/tool surface reference; reports drift + writes matrix_log.jsonl. Auto-invoked on session open/prepare.",
     "prepare_ca_session": "Create a one-paste CA bootstrap prompt for T1/T2 workflows. V15 R13: minimal dedup-safe session prompt.",
-    "set_workflow_mode": "Set workflow mode in WORKFLOW_STATE.json.",
+    "set_workflow_mode": ("Set workflow mode in WORKFLOW_STATE.json AND on the active session row "
+                          "(sessions.mode) — read session_mode.applied in the response."),
     "workflow_status_registry": "R43.2 C2: T1 registry inspector — cache/drift/mode/backup state from .orchestrator_cache. Renamed to disambiguate from MD workflow runner.",
     "update_workflow_state": "Update WORKFLOW_STATE.json.",
     "next_recommended_action": "Return the next deterministic workflow action.",
@@ -2149,18 +2151,55 @@ def _invalid_mode_error(requested_mode: str, canon: str) -> str:
     )
 
 def _open_session_mode_fields(requested_mode: str, canon_mode: str,
-                              session_row: dict, created: bool) -> dict:
+                              session_row: dict, created: bool,
+                              project_path: str = "", agent_id: str = "") -> dict:
+    """Disclose requested-vs-persisted workflow mode on open/resume.
+
+    ISS-08: this used to raise `mode_ignored_on_resume: true` on EVERY resume,
+    including the overwhelmingly common case where the requested mode already
+    equalled the persisted one -- nothing was ignored, but the caller was told
+    something was. A flag that fires when nothing is wrong is a flag nobody
+    reads, so the one resume that DID silently drop a T1->T2 request looked
+    identical to the hundreds that did not. The flag now fires only on real
+    divergence, and when it does it carries the same shape the title-mismatch
+    branch already provides: what was asked, what is in force, and the exact
+    payloads for the two ways out (re-mode the session, or start a new one).
+    """
     persisted = (session_row or {}).get("mode") or (canon_mode if created else "")
+    effective = persisted or canon_mode
     fields = {
         "requested_mode": requested_mode or "T1",
-        "effective_mode": persisted or canon_mode,
+        "effective_mode": effective,
         "mode_applied": bool(created),
     }
-    if not created:
-        fields["mode_ignored_on_resume"] = True
-        fields["mode_change_hint"] = (
-            "Resume does not change persisted workflow mode. Call set_workflow_mode."
-        )
+    if created:
+        return fields
+    diverged = bool(canon_mode) and bool(effective) and canon_mode != effective
+    fields["mode_matches_persisted"] = not diverged
+    fields["mode_ignored_on_resume"] = diverged
+    if not diverged:
+        return fields
+    fields["mode_conflict"] = {
+        "requested_mode": canon_mode,
+        "persisted_mode": effective,
+        "in_force": effective,
+        "note": ("The PERSISTED mode governs the T1/T2 gate. The requested mode was "
+                 "NOT applied, so nothing silently ran at the requested tier."),
+    }
+    fields["set_workflow_mode_payload"] = {
+        "project_path": project_path, "mode": canon_mode,
+    }
+    fields["force_new_session_payload"] = {
+        "project_path": project_path, "mode": canon_mode,
+        "agent_id": agent_id, "force_new_session": True,
+    }
+    fields["ca_next_action"] = "set_workflow_mode_if_requested_mode_is_intended"
+    fields["mode_change_hint"] = (
+        f"Resume kept the persisted mode {effective!r} and did not apply the requested "
+        f"{canon_mode!r}. Call set_workflow_mode (it writes sessions.mode as well as "
+        "WORKFLOW_STATE.json — check session_mode.applied in its response), or "
+        "open_session with force_new_session=true for a clean session at the new mode."
+    )
     return fields
 
 
@@ -3162,7 +3201,59 @@ async def audit_tool_matrix(project_path: str = "", include_coverage: bool = Fal
 
 
 async def set_workflow_mode(project_path: str, mode: str, idea: str = "") -> str:
-    return await update_workflow_state(project_path, mode=mode, idea=idea)
+    """Change the workflow mode in BOTH records that claim to hold it.
+
+    ISS-13: this used to write only WORKFLOW_STATE.json. `sessions.mode` was
+    write-once at open time, and open_session on resume answers
+    `mode_ignored_on_resume: true` with the hint "call set_workflow_mode" -- a
+    hint this tool could not honour. The T1/T2 gate reads the SESSION row, so a
+    caller that followed the hint saw ok:true and stayed on the old mode
+    forever, with the JSON file and the session row disagreeing permanently.
+    The response now reports the session-row outcome explicitly, including the
+    case where there is no active session to re-mode.
+    """
+    raw = await update_workflow_state(project_path, mode=mode, idea=idea)
+    try:
+        result = json.loads(raw)
+    except Exception:
+        return raw
+    if not isinstance(result, dict) or not result.get("ok"):
+        return raw
+
+    canon = _canon_mode(mode)
+    try:
+        root = str(Path(project_path).resolve())
+        session_id = _get_active_session_id(_session_project_key(root))
+        if not session_id:
+            result["session_mode"] = {
+                "applied": False,
+                "reason": "no_active_session",
+                "hint": ("WORKFLOW_STATE.json now says "
+                         f"{canon}, but no active session carries a mode. The next "
+                         "open_session will persist this mode on creation."),
+            }
+        else:
+            applied = _run_session_write(
+                "set session workflow mode",
+                lambda write_conn: _session_store_module._set_session_mode(
+                    write_conn, session_id, canon),
+            )
+            if applied is None:
+                result["session_mode"] = {
+                    "applied": False, "session_id": session_id,
+                    "reason": "session_not_active",
+                    "hint": "The session closed between lookup and write; call open_session.",
+                }
+            else:
+                result["session_mode"] = {"applied": True, "session_id": session_id, **applied}
+    except Exception as exc:
+        # The JSON file is already updated; report the split instead of
+        # pretending the whole change landed.
+        result["session_mode"] = {"applied": False,
+                                  "reason": f"session_write_failed: {type(exc).__name__}",
+                                  "error": str(exc)[:300]}
+    result["mode"] = canon
+    return json.dumps(result, ensure_ascii=False)
 
 
 async def workflow_status_registry(project_path: str) -> str:
@@ -5027,6 +5118,80 @@ async def run_project_command(
             "root_causes": root_causes,
         }
 
+    def _spawn_liveness_evidence(proc) -> dict:
+        """ISS-14: prove the spawned process is still there, or say we cannot.
+
+        The keep_alive branch used to skip verification ENTIRELY whenever no
+        readiness target was given: it answered ok:true with launch_verified:null
+        and a spawned_pid the OS may already have reclaimed, and it did not even
+        honour verify_after_launch_ms. That is how start_app reported success for
+        an app that died milliseconds after spawn -- the caller then aimed
+        stop_app at a PID that no longer existed and never learned the launch had
+        failed at all.
+
+        A dead wrapper is NOT automatically a dead app on Windows: a .bat that
+        detaches its own server exits 0 while the server lives. So only a
+        NON-ZERO exit is reported as a failure. Exit 0 with no readiness target
+        stays ok:true but says readiness_established:false and names the fields
+        that would make it provable, instead of implying a verified launch.
+        """
+        import time as _time
+        settle_ms = max(int(verify_after_launch_ms or 0), 0)
+        if settle_ms <= 0:
+            # A launch that fails on a bad path / missing interpreter dies
+            # immediately; 300ms is far below process spawn cost and turns the
+            # single most common failure from a false ok:true into evidence.
+            settle_ms = 300
+        settle_ms = min(settle_ms, 10000)
+        _time.sleep(settle_ms / 1000.0)
+        exit_code = proc.poll()
+        evidence = {
+            "spawned_pid": proc.pid,
+            "launch_verified": None,
+            "expected_port": None,
+            "expected_process_name": "",
+            "readiness_protocol": "process",
+            "port_probe": None,
+            "process_probe": None,
+            "health_probe": None,
+            "root_causes": [],
+            "spawn_settle_ms": settle_ms,
+            "pid_alive": exit_code is None,
+            "wrapper_exit_code": exit_code,
+            "readiness_established": False,
+        }
+        if exit_code is None:
+            try:
+                import psutil
+                evidence["child_count"] = len(
+                    psutil.Process(proc.pid).children(recursive=True))
+            except Exception:
+                pass
+            evidence["readiness_hint"] = (
+                "PID is alive but nothing proves the app is SERVING. Pass health_url "
+                "(+expect_status), expected_port or expected_process_name for a real "
+                "readiness verdict; stop_app needs include_children for this PID.")
+            return evidence
+        if exit_code != 0:
+            evidence.update({
+                "launch_verified": False,
+                "root_causes": ["PROCESS_EXITED_AFTER_SPAWN"],
+                "error_name": "PROCESS_EXITED_AFTER_SPAWN",
+                "error": (f"The launched process exited with code {exit_code} within "
+                          f"{settle_ms}ms of spawn; nothing is running."),
+                "ca_next_action": "rerun_with_keep_alive_false_to_capture_stderr",
+                "hint": ("stdout/stderr are discarded for keep_alive launches, so the "
+                         "reason is not in this response. Rerun the same command with "
+                         "keep_alive=false to capture it."),
+            })
+            return evidence
+        evidence["readiness_hint"] = (
+            f"The launcher wrapper exited 0 within {settle_ms}ms. That is normal for a "
+            ".bat/script that detaches its own server, but it is NOT evidence the app is "
+            "up, and this PID is gone so stop_app cannot reach the app through it. Pass "
+            "health_url, expected_port or expected_process_name for a verified launch.")
+        return evidence
+
     def _path_quoting_error_payload(stderr: str, stdout: str, returncode: int) -> dict | None:
         combined = f"{stderr or ''}\n{stdout or ''}".lower()
         if returncode == 0 or "is not recognized" not in combined:
@@ -5177,17 +5342,18 @@ async def run_project_command(
                 _register_background_process(proc)
                 stdout, stderr = "", ""
                 timed_out = False
-                launch_evidence = _verify_launch(proc.pid) if (protocol or expected_port or expected_process_name or health_url) else {
-                    "spawned_pid": proc.pid,
-                    "launch_verified": None,
-                    "expected_port": None,
-                    "expected_process_name": "",
-                    "port_probe": None,
-                    "process_probe": None,
-                    "root_causes": [],
-                }
+                # ISS-14: with no readiness target this used to return a static
+                # stub -- no wait, no liveness check, ok:true. See
+                # _spawn_liveness_evidence for why that made a dead app
+                # indistinguishable from a running one.
+                launch_evidence = (_verify_launch(proc.pid)
+                                   if (protocol or expected_port or expected_process_name
+                                       or health_url)
+                                   else _spawn_liveness_evidence(proc))
                 ok = True
                 if (expected_port or expected_process_name or health_url) and not launch_evidence["launch_verified"]:
+                    ok = False
+                elif launch_evidence.get("error_name") == "PROCESS_EXITED_AFTER_SPAWN":
                     ok = False
                 payload = {
                     "ok": ok,
@@ -6097,8 +6263,11 @@ async def query_index(project_path: str, query: str = "", group: str = None, min
 
     P2-SRCH-01: the whole readiness+query pipeline runs under a strict deadline
     (ORCHESTRATOR_QUERY_INDEX_DEADLINE_SEC, default 12s < the ~15s client HTTP
-    timeout). A timeout/unhealthy index returns a structured degraded response
-    (error_name INDEX_QUERY_TIMEOUT), never a misleading matched:0.
+    timeout). A timeout/unhealthy index returns a structured degraded response,
+    never a misleading matched:0. ISS-06: which response depends on what expired
+    — INDEX_QUERY_TIMEOUT for a contended snapshot lease (retry clears it) or an
+    over-broad query (narrow it), INDEX_REFRESH_REQUIRED for anything that needs
+    an O(repo) rebuild the caller must launch and poll itself.
 
     P2-IDX-02: ``query`` matches three independent scopes - file path/name,
     INDEX symbol maps (functions/classes), and bounded file content read from
@@ -6138,13 +6307,44 @@ async def query_index(project_path: str, query: str = "", group: str = None, min
         # P2-SRCH-01: surface a structured degraded state; never let the caller
         # observe a bare client timeout or mistake a not-ready index for a
         # legitimate matched:0.
+        #
+        # ISS-06: the error_name is classified by WHAT ran out of time, because a
+        # caller retries on each one differently. Lease/pin contention clears by
+        # itself, so INDEX_QUERY_TIMEOUT ("retry shortly") is honest there. An
+        # O(repo) drift check does NOT clear by itself -- the only way forward is
+        # an explicit long refresh, and telling that caller "retry shortly" sent
+        # it into a retry loop against a snapshot that stayed stale. A query-side
+        # scan budget is neither: the index is pinned and authoritative, so
+        # category index_not_ready was simply false there.
+        if operation in {"post_refresh_drift_check", "drift_check"}:
+            return error_response(
+                f"query_index could not complete {operation} within the interactive "
+                f"budget ({_query_index_deadline_seconds():.1f}s); no refresh was started",
+                "INDEX_REFRESH_REQUIRED",
+                "stale_index",
+                snapshot_id,
+                hint=("Run generate_project_map/refresh_project_map explicitly, poll "
+                      "write_status progress until committed, then retry query_index."),
+            )
+        if operation in {"pin_current_snapshot", "repin_after_refresh"}:
+            return error_response(
+                f"query_index deadline exceeded during {operation} "
+                f"(budget {_query_index_deadline_seconds():.1f}s)",
+                "INDEX_QUERY_TIMEOUT",
+                "index_not_ready",
+                snapshot_id,
+                hint=("Snapshot lease is contended or a refresh holds it. Retry shortly; "
+                      "if it persists, run generate_project_map explicitly."),
+            )
         return error_response(
             f"query_index deadline exceeded during {operation} "
             f"(budget {_query_index_deadline_seconds():.1f}s)",
             "INDEX_QUERY_TIMEOUT",
-            "index_not_ready",
+            "query_budget_exceeded",
             snapshot_id,
-            hint="Index is cold or a refresh is in progress. Retry shortly, or run generate_project_map first.",
+            hint=("The index is pinned and authoritative — this query was too broad for "
+                  "the interactive budget. Narrow it with file_pattern/group, or raise "
+                  "ORCHESTRATOR_QUERY_INDEX_DEADLINE_SEC."),
         )
 
     def seconds_left() -> float:
@@ -6250,7 +6450,14 @@ async def query_index(project_path: str, query: str = "", group: str = None, min
                 timeout=max(0.001, seconds_left()),
             ))
         except asyncio.TimeoutError:
-            return deadline_error("drift_check", pin.snapshot_id)
+            return error_response(
+                "snapshot drift check exceeded the interactive response budget; no refresh was started",
+                "INDEX_REFRESH_REQUIRED",
+                "stale_index",
+                pin.snapshot_id,
+                hint=("Run refresh_project_map explicitly, poll write_status progress until "
+                      "committed, then retry query_index."),
+            )
         except Exception as exc:
             return error_response(
                 f"snapshot drift check failed: {exc}",
@@ -13400,10 +13607,18 @@ async def open_session(session_title: str = "", project_path: str = ".", mode: s
                     "transport_policy": _transport_policy_payload(),
                     "cslt_policy": __import__("orchestrator.core.ca_policy_matrix", fromlist=["open_session_policy_payload"]).open_session_policy_payload(agent_id=agent_id, project_path=project_path),
                     }
-            resp.update(_open_session_mode_fields(requested_mode, canon_mode, session_row, created=False))
+            resp.update(_open_session_mode_fields(
+                requested_mode, canon_mode, session_row, created=False,
+                project_path=project_path, agent_id=agent_id or ""))
             if apply_requested_title:
                 resp.update({key: session_row[key] for key in ("old_title", "new_title", "renamed")})
             if requested_session_title and requested_session_title != existing[1]:
+                # ISS-08: a mode conflict may already own ca_next_action. Blindly
+                # overwriting it hid one of the two divergences whenever both the
+                # title AND the mode were rejected on the same resume, so the
+                # caller fixed the title and never learned the mode had not
+                # applied. Keep both, and say there are two.
+                _prior_action = resp.get("ca_next_action")
                 resp.update({
                     "requested_session_title": requested_session_title,
                     "effective_session_title": existing[1],
@@ -13415,6 +13630,10 @@ async def open_session(session_title: str = "", project_path: str = ".", mode: s
                         "agent_id": agent_id,
                     },
                 })
+                if _prior_action:
+                    resp["ca_next_actions"] = [
+                        "rename_session_if_requested_title_is_intended", _prior_action]
+                    resp["resume_rejected"] = ["session_title", "mode"]
             # V15 F4 (D4) - severity-aware drift verbosity (shared decision fn)
             _eff_verbosity = _open_session_drift_decision(resp, _mx, verbosity)
             try:
@@ -16276,12 +16495,18 @@ try:
         tool_phases=TOOL_PHASES,
         phase_labels=PHASE_LABELS,
         schema={
-            "description": "T2 derived-index write: index project scope into graph.db. Source files remain read-only.",
+            "description": ("T2 derived-index write: index project scope into graph.db. Source files remain read-only. "
+                            "Explicit indexing has NO wall-clock deadline: it is governed by the progress watchdog and "
+                            "cooperative cancel, so a repo-scale run may exceed the client HTTP timeout. That is not a "
+                            "failure — poll write_status with the returned operation_id (or project_path) until "
+                            "commit_state is terminal, and use /api/cancel to stop it; never resend while in_flight."),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "project_path": {"type": "string", "description": "Absolute project root to index."},
-                    "scope": {"type": "string", "description": "core (orchestrator package, <45s) or full (all .py, <150s). Default: core."},
+                    "scope": {"type": "string", "description": ("core (orchestrator package only) or full (all eligible source). "
+                                                                "Default: core. Duration scales with repo size and is watchdog-governed, "
+                                                                "not capped — the old '<45s / <150s' ceilings no longer truncate a run.")},
                 },
                 "required": ["project_path"],
             },

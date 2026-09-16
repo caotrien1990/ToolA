@@ -18,6 +18,11 @@ DEFAULT_DEADLINE_SECONDS = 8.0
 MIN_DEADLINE_SECONDS = 0.05
 MAX_DEADLINE_SECONDS = 15.0
 _REAP_GRACE_SECONDS = 0.25
+# ISS-12: how often the child flushes what it has found so far. Frequent enough
+# that a killed scan leaves usable evidence, rare enough that the flush (one
+# pickle of the results accumulated so far, between files only) stays off the
+# hot path. D: is an HDD, so this is deliberately not per-match.
+_CHECKPOINT_INTERVAL_SECONDS = 0.35
 
 
 class RegexSearchError(RuntimeError):
@@ -30,6 +35,18 @@ class RegexSearchInvalid(RegexSearchError):
 
 class RegexSearchTimeout(RegexSearchError):
     error_name = "REGEX_SEARCH_TIMEOUT"
+
+    def __init__(self, *args: Any) -> None:
+        super().__init__(*args)
+        # ISS-12: a deadline used to destroy every match the child had already
+        # found -- the results list lived in the killed subprocess and was
+        # pickled only after the WHOLE scan finished. _run_isolated now fills
+        # these from the child's last checkpoint AFTER reaping it, so a search
+        # that ran out of budget on a large repo still reports what it saw.
+        self.partial_results: list[dict] = []
+        self.records_scanned: int = 0
+        self.records_total: int = 0
+        self.partial_checkpoint_age_ms: int | None = None
 
 
 class RegexSearchBudgetExceeded(RegexSearchError):
@@ -126,6 +143,33 @@ def _materialize_records(
     return materialized
 
 
+def _dump_atomic(path: str | None, payload: tuple) -> None:
+    """ISS-12: write a pickle a concurrent reader can never see half-written.
+
+    The parent reads this file after killing the child on deadline, which can
+    land in the middle of a flush. os.replace is atomic on Windows and POSIX,
+    so the reader always gets a whole pickle -- the previous checkpoint or the
+    new one. Without it a truncated file would raise "output corrupt" and lose
+    the earlier checkpoint too. Failures are swallowed on purpose: a missing
+    checkpoint degrades to the old empty-handed timeout, it must never become a
+    second error on top of the real one.
+    """
+    if not path:
+        return
+    # Deterministic sibling name: exactly one process ever writes a given
+    # output_path, so there is no collision, and the parent can unlink this
+    # leftover if the child is killed mid-flush.
+    tmp_path = f"{path}.part"
+    try:
+        with open(tmp_path, "wb") as fh:
+            pickle.dump(payload, fh)
+            fh.flush()
+        os.replace(tmp_path, path)
+    except Exception:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_path)
+
+
 def _bootstrap(input_path: str, output_path: str) -> None:
     global _WORKER_INPUT_PATH, _WORKER_OUTPUT_PATH
     _WORKER_INPUT_PATH = input_path
@@ -146,6 +190,10 @@ def _worker() -> None:
                 payload_out = ("ok", True)
             elif operation == "search":
                 results: list[dict] = []
+                total_records = len(records)
+                scanned = 0
+                flushed_count = 0
+                last_flush = time.monotonic()
                 for _relative_path, label, payload in records:
                     lines = payload.decode("utf-8", errors="ignore").splitlines()
                     for index, line in enumerate(lines, 1):
@@ -170,18 +218,35 @@ def _worker() -> None:
                             })
                             if len(results) >= max_results:
                                 break
+                    scanned += 1
                     if len(results) >= max_results:
                         break
+                    # ISS-12: checkpoint BETWEEN files only, so a salvaged
+                    # partial set is always a whole-file prefix -- never half a
+                    # file, which would make the counts lie about coverage.
+                    now = time.monotonic()
+                    # The FIRST match is flushed immediately, not on the
+                    # interval: catastrophic backtracking happens inside a
+                    # single compiled.search() call, which no Python-level hook
+                    # can interrupt, so one pathological file can consume the
+                    # whole remaining budget. Without the first-match flush the
+                    # matches found before it would still be lost -- the exact
+                    # failure this fix exists to remove.
+                    due = flushed_count == 0 or now - last_flush >= _CHECKPOINT_INTERVAL_SECONDS
+                    if results and due and flushed_count != len(results):
+                        last_flush = now
+                        flushed_count = len(results)
+                        _dump_atomic(
+                            _WORKER_OUTPUT_PATH,
+                            ("partial", results, scanned, total_records, time.time()),
+                        )
                 payload_out = ("ok", results)
             else:
                 payload_out = ("error", f"unsupported regex worker operation: {operation}")
     except BaseException as exc:
         payload_out = ("error", f"{type(exc).__name__}: {exc}")
-    try:
-        with open(_WORKER_OUTPUT_PATH, "wb") as fh:
-            pickle.dump(payload_out, fh)
-    except Exception:
-        pass
+    # ISS-12: atomic, because the parent may be reading a checkpoint right now.
+    _dump_atomic(_WORKER_OUTPUT_PATH, payload_out)
 
 
 def _stop_and_reap(process: multiprocessing.Process) -> None:
@@ -200,6 +265,42 @@ def _stop_and_reap(process: multiprocessing.Process) -> None:
         process.close()
     except (ValueError, OSError):
         pass
+
+
+def _attach_partial(error: RegexSearchTimeout, output_path: str) -> None:
+    """ISS-12: salvage the child's last checkpoint into the timeout error.
+
+    MUST be called only after _stop_and_reap: while the child lives the file
+    can still change, and a half-read checkpoint is worse than none. A file
+    holding a FINAL ("ok", results) tuple is also accepted -- that is a child
+    which finished in the same instant we declared the deadline, and throwing
+    its complete result set away would be the exact bug this fixes.
+    """
+    if not output_path:
+        return
+    try:
+        with open(output_path, "rb") as fh:
+            record = pickle.load(fh)
+    except Exception:
+        return
+    if not isinstance(record, tuple) or not record:
+        return
+    if record[0] == "ok" and len(record) == 2 and isinstance(record[1], list):
+        error.partial_results = record[1]
+        error.partial_checkpoint_age_ms = 0
+        return
+    if record[0] != "partial" or len(record) != 5 or not isinstance(record[1], list):
+        return
+    results, scanned, total, stamped_at = record[1], record[2], record[3], record[4]
+    error.partial_results = results
+    with contextlib.suppress(TypeError, ValueError):
+        error.records_scanned = int(scanned or 0)
+    with contextlib.suppress(TypeError, ValueError):
+        error.records_total = int(total or 0)
+    with contextlib.suppress(TypeError, ValueError):
+        error.partial_checkpoint_age_ms = max(
+            0, int((time.time() - float(stamped_at)) * 1000),
+        )
 
 
 def _decode_worker_result(status: str, payload: Any) -> Any:
@@ -272,6 +373,11 @@ def _run_isolated(payload: tuple, timeout_seconds: float) -> Any:
                     if primary_error is None:
                         raise
                     primary_error.add_note(f"regex helper cleanup also failed: {reap_error}")
+                # ISS-12: the child is dead now, so its last checkpoint can no
+                # longer change -- salvage it BEFORE the outer finally unlinks
+                # output_path, otherwise the deadline destroys the evidence.
+                if isinstance(primary_error, RegexSearchTimeout):
+                    _attach_partial(primary_error, output_path)
     finally:
         for fd in (input_fd, output_fd):
             if fd >= 0:
@@ -281,6 +387,10 @@ def _run_isolated(payload: tuple, timeout_seconds: float) -> Any:
             if path:
                 with contextlib.suppress(OSError):
                     os.unlink(path)
+        # ISS-12: a child killed mid-checkpoint leaves this sibling behind.
+        if output_path:
+            with contextlib.suppress(OSError):
+                os.unlink(f"{output_path}.part")
 
 
 def preflight_pattern(

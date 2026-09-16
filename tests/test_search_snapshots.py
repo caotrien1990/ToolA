@@ -341,9 +341,14 @@ class TestSearchSnapshotStore(unittest.TestCase):
         original_read = snapshots._read_file_bytes
         mutation_count = 0
 
-        def changing_read(path: Path) -> bytes:
+        # The watchdog parameter is not decoration: `_read_file_bytes` grew it
+        # when long captures became progress-governed, and both call sites pass
+        # it positionally. A stub that accepts only `path` raises TypeError
+        # before the capture-changed path is ever exercised, so this test would
+        # report a mock-signature mismatch instead of the invariant it owns.
+        def changing_read(path: Path, watchdog=None) -> bytes:
             nonlocal mutation_count
-            payload = original_read(path)
+            payload = original_read(path, watchdog)
             if Path(path) == target:
                 mutation_count += 1
                 target.write_bytes(payload + (b"x" * mutation_count))

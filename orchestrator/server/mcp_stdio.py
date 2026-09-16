@@ -15,6 +15,8 @@ import asyncio
 import json
 import os
 import secrets
+import sys
+import time
 import uuid as _uuid
 import urllib.error
 import urllib.request
@@ -340,6 +342,10 @@ def _mcp_generation_gate(current_generation: str | None) -> dict | None:
         # Self-heal: adopt the live generation so subsequent calls pass cleanly.
         _MCP_SERVER_GENERATION_SEEN = current_generation
         try:
+            # ISS-07: `sys` was never imported in this module, so this branch
+            # raised NameError into the bare `except Exception: pass` below and
+            # the ONE line documenting a daemon restart was never written. The
+            # self-heal worked; its only evidence did not.
             sys.stderr.write(
                 f"[mcp_stdio] daemon generation changed {previous} -> "
                 f"{current_generation}; re-baselined (self-heal, calls proxy to live daemon)\n",
@@ -348,6 +354,44 @@ def _mcp_generation_gate(current_generation: str | None) -> dict | None:
             pass
         return None
     return None
+
+
+_MCP_GEN_DIVERGED_SINCE: dict = {}
+
+
+def _mcp_generation_disclosure(payload: dict, daemon_gen, local_gen) -> None:
+    """State the daemon-vs-MCP-host relationship instead of leaving it inferable.
+
+    ISS-07: after every daemon restart the two stamps diverge permanently for the
+    lifetime of the MCP client process -- `generation` moves to the new daemon,
+    `mcp_generation` stays whatever this host process minted at import. That is
+    by design (tool calls proxy over HTTP, so they always reach the live daemon),
+    but the payload never SAID so: a reader comparing the two fields saw a silent
+    mismatch and could not tell "correct by design" from "the MCP bridge is
+    running dead code". Both readings were available and only one was true.
+
+    So name it. `mcp_generation_matches_daemon` answers the comparison directly,
+    and on a mismatch the note says what still holds (results come from the live
+    daemon) and what does not (this host's own bridge code is whatever it
+    imported), plus how long the divergence has been observed.
+    """
+    if not daemon_gen or not local_gen:
+        payload.setdefault("mcp_generation_matches_daemon", None)
+        return
+    matches = str(daemon_gen) == str(local_gen)
+    payload.setdefault("mcp_generation_matches_daemon", matches)
+    if matches:
+        _MCP_GEN_DIVERGED_SINCE.pop("since", None)
+        return
+    since = _MCP_GEN_DIVERGED_SINCE.setdefault("since", time.time())
+    payload.setdefault("mcp_generation_diverged_s", round(time.time() - since, 1))
+    payload.setdefault("mcp_generation_note", (
+        f"daemon is at generation {daemon_gen}; this MCP host process minted "
+        f"{local_gen} at its own import and cannot re-mint without a client "
+        "reconnect. Tool results are NOT stale: every call proxies to the live "
+        "daemon over HTTP. Reconnect the MCP client only when the bridge code "
+        "itself (orchestrator/server/mcp_stdio.py or the tool registry it loads) "
+        "changed — a plain daemon restart does not require it."))
 
 
 def _mcp_add_generation(text: str, generation) -> str:
@@ -394,6 +438,7 @@ def _mcp_add_generation(text: str, generation) -> str:
             # Always disclose which code actually executed the call, so a reader
             # can tell "daemon is at gen X" apart from "MCP host is running Y".
             payload.setdefault("mcp_generation", local_gen)
+            _mcp_generation_disclosure(payload, daemon_gen, local_gen)
             return json.dumps(payload, ensure_ascii=False)
         payload.setdefault("generation", generation.get("generation"))
         payload.setdefault("generation_source", generation.get("source"))
