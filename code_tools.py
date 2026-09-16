@@ -12502,6 +12502,20 @@ def _strip_ansi(text) -> str:
     return _ANSI_CSI_RE.sub("", str(text or ""))
 
 
+# ONE list, two uses (campaign-1608 A29-P4): the codes validate_file LINTS for
+# and the codes it advertises as ruff-fixable must be the same set. They were two
+# literals ~150 lines apart, and the day they drift `ruff_preview` starts
+# answering "violations_not_auto_fixable" with rules:[] for a rule we selected on
+# purpose -- a state that is otherwise unreachable precisely because the sets are
+# identical. orchestrator/graph/tools.py's _RUFF_FIX_SELECT is the third copy
+# (the one ruff_fix hands to --fix); the guard test asserts all three still agree
+# rather than importing across that boundary at runtime, which would add a
+# module-level dependency the daemon does not need at boot.
+_RUFF_SAFE_FIX_RULES = ("F401", "F841", "E711", "E712", "E731", "E401", "E402",
+                        "F541", "RUF100")
+_RUFF_LINT_SELECT = ",".join((*_RUFF_SAFE_FIX_RULES, "I"))
+
+
 def _py_error_ruff_hint(error_msg: str) -> tuple[bool, list[str], str]:
     """Map Ruff diagnostics to safe-fix preview guidance without applying fixes."""
     # campaign-1608 (A51): strip ANSI SGR escapes before matching (layer 2 /
@@ -12511,7 +12525,7 @@ def _py_error_ruff_hint(error_msg: str) -> tuple[bool, list[str], str]:
     # and the I\d{3} isort branch. Layer 1 passes "--color never" so the ruff we
     # spawn never colours; this guards any future/foreign call site that forgets.
     text = _strip_ansi(error_msg)
-    supported_rules = ("F401", "F841", "E711", "E712", "E731", "E401", "E402", "F541", "RUF100")
+    supported_rules = _RUFF_SAFE_FIX_RULES
     matched = [rule for rule in supported_rules if re.search(rf"(?<![A-Z0-9]){rule}(?![A-Z0-9])", text, re.IGNORECASE)]
     if re.search(r"(?<![A-Z0-9])I\d{3}(?![A-Z0-9])", text, re.IGNORECASE):
         matched.append("I")
@@ -12659,7 +12673,7 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                 # _RUFF_FIX_OVERRIDES), so the flag -- not an env scrub -- is the
                 # authoritative fix and matches the house idiom. Parser also strips
                 # ANSI now (layer 2) in case a future call site forgets this flag.
-                r = subprocess.run([_console_python(), "-m", "ruff", "check", str(fp), "--select", "F401,F841,E711,E712,E731,E401,E402,F541,RUF100,I", "--output-format", "concise", "--color", "never"], capture_output=True, text=True, timeout=10)
+                r = subprocess.run([_console_python(), "-m", "ruff", "check", str(fp), "--select", _RUFF_LINT_SELECT, "--output-format", "concise", "--color", "never"], capture_output=True, text=True, timeout=10)
                 if r.returncode == 1:
                     err = (r.stdout or "").strip() or (r.stderr or "").strip()
                     if not err:

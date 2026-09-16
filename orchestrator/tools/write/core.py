@@ -1781,20 +1781,23 @@ skip_symbol_check :bool =False )->str :
             "project_root khong tim thay - conflict detection bi bo qua cho lan write nay."
             )
 
-        # Task 3 auto-chain rule 1: ruff_fix preview for .py files after successful write
+        # Task 3 auto-chain rule 1: post-write ruff check for .py files. The
+        # preview is ALWAYS attached (see _ruff_preview_from_validation), so an
+        # absent key can only mean "not a successful .py write" -- never a
+        # check that quietly died and read as a clean file.
         if result.get("ok") and fp.suffix.lower() == ".py":
             try:
                 import code_tools as _ct
                 ruff_raw = await _ct.validate_file(str(fp))
                 ruff_val = _ct.json.loads(ruff_raw) if isinstance(ruff_raw, str) else ruff_raw
-                if isinstance(ruff_val, dict) and ruff_val.get("ruff_fix_applicable"):
-                    result["ruff_preview"] = {
-                        "rules": ruff_val.get("ruff_rules_matched", []),
-                        "hint": ruff_val.get("ruff_fix_hint", "ruff_fix available"),
-                        "ca_next_action": "ruff_fix",
-                    }
-            except Exception:
-                pass  # non-fatal, don't block write result
+                result["ruff_preview"] = _ruff_preview_from_validation(ruff_val, str(fp))
+            except Exception as _ruff_exc:
+                # Was a bare `pass`: still non-fatal, but a dead check now says
+                # so instead of being indistinguishable from a clean file.
+                result["ruff_preview"] = {
+                    "state": "unknown", "applicable": False, "checked": False,
+                    "reason": f"{type(_ruff_exc).__name__}: {_ruff_exc}"[:300],
+                }
         # Task 4 auto-chain: hint git_stage after successful write
         if result.get("ok"):
             result["ca_hint_commit"] = "git_stage available to stage changes for commit"
@@ -1802,6 +1805,50 @@ skip_symbol_check :bool =False )->str :
     return ct.json .dumps (result )
 
 
+def _ruff_preview_from_validation(val, target_path: str) -> dict:
+    """Auto-chain rule 1: always say what the post-write ruff check FOUND.
+
+    The old shape attached ``ruff_preview`` only when ``ruff_fix_applicable``
+    was true and swallowed every failure, so an ABSENT key meant three
+    different things -- the file is clean, ruff had findings it could not
+    report (``lint_skipped_reason``, code_tools.py:12669), or the check itself
+    raised. A caller cannot act on that ambiguity, which is exactly why the
+    feature read as dead weight. The key is now always present for a .py write
+    and names its own state, and the fixable case carries a ready-to-send
+    payload instead of a tool name the caller has to reassemble.
+    """
+    if not isinstance(val, dict):
+        return {"state": "unknown", "applicable": False, "checked": False,
+                "reason": "validate_file returned a non-dict payload"}
+    skipped = val.get("lint_skipped_reason")
+    if skipped:
+        # NOT clean: ruff had findings it could not report. Answering with a
+        # bare applicable=False here would launder "unknown" into "clean".
+        return {"state": "unknown", "applicable": False, "checked": False,
+                "reason": str(skipped)[:300]}
+    if not val.get("ruff_fix_applicable"):
+        warning = str(val.get("lint_warning") or "")
+        if warning.strip():
+            # Violations exist, none of them auto-fixable. Calling this "clean"
+            # would hide real lint from the caller.
+            return {"state": "violations_not_auto_fixable", "applicable": False,
+                    "checked": True, "rules": [], "lint_warning": warning[:400]}
+        return {"state": "clean", "applicable": False, "checked": True,
+                "rules": []}
+    return {
+        "state": "fixable",
+        "applicable": True,
+        "checked": True,
+        "rules": val.get("ruff_rules_matched") or [],
+        "hint": val.get("ruff_fix_hint") or "ruff_fix available",
+        "ca_next_action": "ruff_fix",
+        "apply_payload": {
+            "tool": "ruff_fix", "path": target_path, "apply": True,
+            "note": ("apply=true backs the file up first, validates every file "
+                     "it changed, and reverts with "
+                     "RUFF_VALIDATION_FAILED_AUTO_REVERT if validation fails."),
+        },
+    }
 
     # ─── Tool 7: write_new_file ───────────────────────────────────────────────────
 

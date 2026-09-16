@@ -4400,13 +4400,96 @@ def _r101_parse_fields(value) -> set:
     return {str(i).strip() for i in items if str(i).strip()}
 
 
+def _r101_split_specs(fields):
+    """Split a fields= selector into plain keys and dotted sub-selectors.
+
+    `result.impacted` reads as "keep result, but only its impacted key".
+    Returns (plain_keys, {head: {remainder, ...}}).
+    """
+    plain = set()
+    nested = {}
+    for raw in fields:
+        spec = str(raw).strip()
+        if not spec:
+            continue
+        head, dot, rest = spec.partition(".")
+        head = head.strip()
+        rest = rest.strip()
+        if dot and head and rest:
+            nested.setdefault(head, set()).add(rest)
+        else:
+            plain.add(spec)
+    return plain, nested
+
+
+def _r101_project_nested(value, specs):
+    """Project one nested dict. Returns (out, dropped, rescued, unknown).
+
+    Safety keys are rescued at EVERY level, not just the envelope: for an
+    _ok()-wrapped tool the hash-domain markers live inside `result`, so a
+    nested projection that dropped them would re-open the exact hole ISS-14
+    closed at the top level.
+    """
+    plain, nested = _r101_split_specs(specs)
+    keep = plain | set(nested) | _R101_ALWAYS_KEEP | _R101_SAFETY_KEEP
+    out = {k: v for k, v in value.items() if k in keep}
+    dropped = len(value) - len(out)
+    rescued = sorted((set(value) & _R101_SAFETY_KEEP) - plain - set(nested))
+    unknown = sorted(plain - set(value) - _R101_ALWAYS_KEEP)
+    for head, subs in nested.items():
+        if head in plain:
+            continue
+        inner = out.get(head)
+        if not isinstance(inner, dict):
+            # Absent, or present but not a dict: either way the sub-selector
+            # could not be honoured, and saying so beats a silent bare branch.
+            unknown.extend(f"{head}.{s}" for s in sorted(subs))
+            continue
+        sub_out, sub_dropped, sub_rescued, sub_unknown = _r101_project_nested(
+            inner, subs)
+        out[head] = sub_out
+        dropped += sub_dropped
+        rescued.extend(f"{head}.{name}" for name in sub_rescued)
+        unknown.extend(f"{head}.{name}" for name in sub_unknown)
+    return out, dropped, sorted(set(rescued)), sorted(set(unknown))
+
+
 def _r101_filter(payload, fields):
     if not fields or not isinstance(payload, dict):
         return payload
-    keep = set(fields) | _R101_ALWAYS_KEEP | _R101_SAFETY_KEEP
+    # A29-P3: honour dotted sub-selectors. Nearly every [A] tool answers
+    # through _ok(), so its whole body sits under one `result` key -- with
+    # top-level-only projection a caller could keep or drop that key and
+    # nothing in between, i.e. no saving at all on exactly the responses that
+    # are too fat to read twice.
+    plain, nested = _r101_split_specs(set(fields))
+    keep = plain | set(nested) | _R101_ALWAYS_KEEP | _R101_SAFETY_KEEP
     out = {k: v for k, v in payload.items() if k in keep}
     dropped = len(payload) - len(out)
-    rescued = sorted((set(payload) & _R101_SAFETY_KEEP) - set(fields))
+    rescued = sorted((set(payload) & _R101_SAFETY_KEEP) - plain - set(nested))
+    # A23-P2: name the keys we could not honour. Without this a typo in
+    # `fields=` is indistinguishable from an empty result -- `fields=result`
+    # instead of `results` returned a bare envelope and read as "the tool
+    # found nothing". Same contract as A17 (dropped body field) and A09
+    # (ignored query param): report the drop, keep serving what was
+    # understood. Exclude _R101_ALWAYS_KEEP: those are force-kept by the
+    # filter, so their absence on a success payload is not a caller mistake.
+    unknown = sorted(plain - set(payload) - _R101_ALWAYS_KEEP)
+    for head, subs in nested.items():
+        if head in plain:
+            continue  # the caller asked for the whole branch too; wider wins
+        inner = out.get(head)
+        if not isinstance(inner, dict):
+            unknown.extend(f"{head}.{s}" for s in sorted(subs))
+            continue
+        sub_out, sub_dropped, sub_rescued, sub_unknown = _r101_project_nested(
+            inner, subs)
+        out[head] = sub_out
+        dropped += sub_dropped
+        rescued.extend(f"{head}.{name}" for name in sub_rescued)
+        unknown.extend(f"{head}.{name}" for name in sub_unknown)
+    rescued = sorted(set(rescued))
+    unknown = sorted(set(unknown))
     if rescued:
         # Not error_name: this is a successful response whose projection was
         # unsafe, and poisoning error_name would make every ok:true call look
@@ -4418,14 +4501,6 @@ def _r101_filter(payload, fields):
             "raw_file_bytes digest is NOT a read_file_range content_hash and "
             "seeds no edit authority, so it must not be passed as "
             "write_fix.expected_hash.")
-    # A23-P2: name the keys we could not honour. Without this a typo in
-    # `fields=` is indistinguishable from an empty result -- `fields=result`
-    # instead of `results` returned a bare envelope and read as "the tool
-    # found nothing". Same contract as A17 (dropped body field) and A09
-    # (ignored query param): report the drop, keep serving what was
-    # understood. Exclude _R101_ALWAYS_KEEP: those are force-kept by the
-    # filter, so their absence on a success payload is not a caller mistake.
-    unknown = sorted(set(fields) - set(payload) - _R101_ALWAYS_KEEP)
     if unknown:
         out["fields_unknown"] = unknown
         out["fields_unknown_hint"] = (
@@ -4443,6 +4518,108 @@ def _r101_filter(payload, fields):
         out["fields_dropped_count"] = dropped
     return out
 
+
+# A29 (campaign-1608): `fields=` cures a fat response, but nothing in a fat
+# response says WHICH keys are worth naming, so a caller cannot project what it
+# has not already paid to read once. These two helpers close that loop, and only
+# where it can still change something: no selector was passed AND the body is
+# genuinely large. A hint on a small or already-projected response is pure noise
+# -- the same reasoning as the A23-P2 negative cases above.
+_R101_SIZE_HINT_BYTES = 24_000
+_R101_SIZE_HINT_TOP = 6
+_R101_CHEAP_FIELD_BYTES = 512
+
+
+def _r101_payload_may_be_fat(payload) -> bool:
+    """Cheap structural gate so a small response never pays for a size probe.
+
+    Measuring means serializing, so the precise pass runs only for a payload
+    that already looks heavy: a sizeable container or a long string at the top
+    level or one nesting level down. A deep-but-narrow payload can slip past --
+    the hint is an optimisation, not a contract, and missing one costs nothing.
+    """
+    def _heavy(value) -> bool:
+        if isinstance(value, (list, tuple, set, dict)):
+            return len(value) >= 20
+        return isinstance(value, str) and len(value) >= 4000
+
+    for value in payload.values():
+        if _heavy(value):
+            return True
+        if isinstance(value, dict) and any(_heavy(v) for v in value.values()):
+            return True
+    return False
+
+
+_R101_HINT_EXPAND_MAX_KEYS = 200
+_R101_HINT_DOMINANT_PCT = 60
+
+
+def _r101_json_width(value) -> int:
+    """Serialized byte cost of one value, never raising on an odd object."""
+    try:
+        return len(json.dumps(value, ensure_ascii=False,
+                              default=str).encode("utf-8"))
+    except Exception:
+        return len(str(value).encode("utf-8", "replace"))
+
+
+def _r101_size_hint(payload, fields):
+    """Name the heaviest keys of a large response that was NOT projected."""
+    if fields or not isinstance(payload, dict) or not payload:
+        return payload
+    if "ca_fields_hint" in payload:
+        return payload
+    if not _r101_payload_may_be_fat(payload):
+        return payload
+    sizes = []
+    total = 0
+    for key, value in payload.items():
+        width = _r101_json_width(value)
+        sizes.append((key, width))
+        total += width + len(key) + 4
+    if total < _R101_SIZE_HINT_BYTES:
+        return payload
+    sizes.sort(key=lambda item: (-item[1], item[0]))
+    # A29-P3: nearly every [A] tool answers through _ok(), so its whole body
+    # sits under one `result` dict. Naming that key is true but useless advice
+    # -- `fields=ok,result` saves nothing at all. When a single dict dominates
+    # the response, descend one level and name dotted selectors instead, which
+    # _r101_filter now honours.
+    top_key, top_width = sizes[0]
+    top_value = payload.get(top_key)
+    detail = []
+    if (isinstance(top_value, dict) and top_value
+            and len(top_value) <= _R101_HINT_EXPAND_MAX_KEYS
+            and top_width * 100 >= total * _R101_HINT_DOMINANT_PCT):
+        detail = [(f"{top_key}.{sub}", _r101_json_width(sub_value))
+                  for sub, sub_value in top_value.items()]
+        detail.sort(key=lambda item: (-item[1], item[0]))
+    ranked = detail or sizes
+    cheap = [k for k, width in ranked
+             if width <= _R101_CHEAP_FIELD_BYTES and k not in _R101_ALWAYS_KEEP]
+    if not cheap:
+        # Every field is expensive. The lightest ones are still the honest
+        # answer: an example that is only "ok" tells the caller nothing.
+        cheap = [k for k, _ in ranked[-2:] if k not in _R101_ALWAYS_KEEP]
+    out = dict(payload)
+    out["response_bytes"] = total
+    out["ca_fields_hint"] = {
+        "heaviest_fields": [{"field": k, "bytes": width}
+                            for k, width in ranked[:_R101_SIZE_HINT_TOP]],
+        "fields_example": ",".join(["ok", *cheap[:_R101_SIZE_HINT_TOP]]),
+        "nested_projection": bool(detail),
+        "note": ("This response was NOT projected. Re-run with fields=<csv> to "
+                 "keep only what you need: a dotted key projects INSIDE a "
+                 "nested dict (fields=ok,result.a,result.b), ok/error/"
+                 "error_name are always kept, and a key this tool does not "
+                 "return comes back as fields_unknown instead of being "
+                 "dropped silently."),
+    }
+    # setdefault, never overwrite: the tool's own next action outranks a
+    # generic token-economy suggestion.
+    out.setdefault("ca_next_action", "repeat_with_fields_filter_when_rereading")
+    return out
 
 def _session_contention_error_payload(tool_name: str, exc: BaseException,
                                       body: dict | None = None):
@@ -14689,6 +14866,10 @@ accepted_fields=sorted(accepted_fields),
         # with ensure_ascii=False so CA sees raw UTF-8 text.
         try:
             _result = _r101_filter(_result, _R101_FIELDS.get())
+            # A29: an unprojected fat response is a silent context tax. Name
+            # its heaviest keys so the NEXT call can pass fields=. Runs after
+            # the filter so a caller who already projected never sees a hint.
+            _result = _r101_size_hint(_result, _R101_FIELDS.get())
             # CSLt 2026-07-16: refresh the task metadata AFTER the tool ran and stamp
             # with setdefault so the tool's own response fields win. The old pre-run
             # `_result.update(_task_meta)` overwrote begin_task's fresh task_epoch with
