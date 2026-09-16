@@ -2464,8 +2464,24 @@ class TestCodeToolsCache(unittest.TestCase):
 
     def test_codoc_a2_validation_rollback_serialized_by_gate(self):
         """Validation + rollback MUST complete before another writer enters.
-        Mock the first validate_file call to fail, triggering rollback;
-        the second concurrent write must succeed and see its own content."""
+
+        The first validate_file call is mocked to fail, so the bad write is
+        rolled back; a second writer dispatched concurrently on the SAME file
+        must still end up with its own content on disk.
+
+        Getting there may take two attempts, and that is the contract rather
+        than a defect. write_fix builds its patch BEFORE it takes the path gate
+        and re-checks base_hash under it (orchestrator/tools/write/core.py). A
+        concurrent build landing inside the [bad content written -> rollback]
+        window captures the transient bad content as its base, and the rollback
+        then moves that base out from under it: WRITE_BASE_CHANGED,
+        write_performed=False, ca_next_action=reread_and_rebuild_patch. The
+        refusal IS the guard working -- it stops a patch built against a base
+        that no longer exists. Measured by delaying the injected validation:
+        0ms -> the good write lands first try; 500ms -> WRITE_BASE_CHANGED 2/2.
+        So this test follows ca_next_action instead of assuming a timing --
+        that assumption is what made it fail only under full-suite load.
+        """
         asyncio.run(code_tools.generate_project_map(str(self.project_path)))
 
         _orig_validate = code_tools.validate_file
@@ -2498,6 +2514,23 @@ class TestCodeToolsCache(unittest.TestCase):
                 return await asyncio.gather(_bad(), _good())
 
             bad, good = asyncio.run(asyncio.wait_for(_run(), timeout=10.0))
+
+            if not good.get('ok'):
+                # The only refusal this race may produce, and it must be a
+                # clean one: nothing written, and the rollback already put
+                # the original base back before the retry reads it.
+                self.assertEqual(good.get('error_name'), 'WRITE_BASE_CHANGED',
+                                 msg=f'Unexpected error on good write: {good}')
+                self.assertFalse(good.get('write_performed'),
+                                 msg=f'Refused write must not touch the file: {good}')
+                self.assertEqual(good.get('ca_next_action'),
+                                 'reread_and_rebuild_patch')
+                self.assertNotIn('# bad write',
+                                 self.sample_file.read_text(encoding='utf-8'))
+                good = json.loads(asyncio.run(asyncio.wait_for(
+                    code_tools.write_fix('sample.py', 1, 1, '# good write\n',
+                                         project_path=str(self.project_path)),
+                    timeout=10.0)))
         finally:
             code_tools.validate_file = _orig_validate
 
