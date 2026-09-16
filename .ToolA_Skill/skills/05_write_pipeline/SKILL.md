@@ -8,7 +8,7 @@ description: |
 trigger:
   - task_pattern: "edit | modify | write | refactor | rename | add function | change config"
   - error_name: "FILE_CHANGED_OUTSIDE_ORCHESTRATOR | BINARY_FILE_UNSUPPORTED | INVALID_BASE64"
-  - tool: "write_fix | write_new_file | write_fix_html | apply_after_dry_run | ruff_fix"
+  - tool: "write_fix | write_new_file | write_fix_html | apply_after_dry_run | ruff_fix | read_file_range"
 preconditions:
   - "EXECUTE mode (trigger 'tiến hành' present) OR post-write validation exception"
   - "open_session done"

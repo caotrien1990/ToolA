@@ -2,14 +2,18 @@
 # Complements tool-matrix-ci.yml: compile every entry module, then run the full
 # pytest contract suite. A red suite blocks merge — "green before extraction"
 # is the R3 invariant that keeps the strangler refactor safe.
+#
+# A31 (2026-09-17): every step runs from the checkout root. Do NOT re-add
+# `cd project-orchestrator` -- that directory IS the repo root, so the cd failed
+# and this gate never executed on any branch.
 
 name: test-suite-ci
 
 on:
   push:
-    branches: [main, master, develop]
+    branches: [main, master, develop, "fix/**", "feat/**"]
   pull_request:
-    branches: [main, master, develop]
+    branches: [main, master, develop, "fix/**", "feat/**"]
   workflow_dispatch:
 
 jobs:
@@ -29,20 +33,17 @@ jobs:
 
       - name: Install runtime dependencies
         run: |
-          cd project-orchestrator
           python -m pip install --upgrade pip
           pip install -r requirements.txt
         shell: pwsh
 
       - name: Compile entry modules
         run: |
-          cd project-orchestrator
           python -m py_compile code_tools.py orchestrator_server.py tools_v15.py surgical_mapper.py restart_orchestrator.py
         shell: pwsh
 
       - name: Run pytest suite
         run: |
-          cd project-orchestrator
           $env:PYTHONPATH = (Get-Location).Path
           python -m pytest tests -q
         shell: pwsh

@@ -15,7 +15,7 @@
     "restart_orchestrator.py",
     "rule_core.py",
     "surgical_mapper.py",
-    "test_all_tools.py",
+    "tool_smoke_runner.py",
     "tools_v15.py",
     "watchdog_a.py"
   ],

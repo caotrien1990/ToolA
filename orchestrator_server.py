@@ -3428,7 +3428,7 @@ _PAYLOAD_EXAMPLES = {
         "cdp_port": 9223,
         "kill_existing": True,
     },
-    # V15 R28 — Weak-schema enrichment (13 tools per audit Round 12)
+    # V15 R28 — Weak-schema enrichment (per audit Round 12)
     # R43.3: renamed key — was duplicate `workflow_status` (MD runner version at L416 won),
     # which silently shadowed this R28 enrichment for the T1 registry inspector.
     # Now matches the post-R43.2 rename (workflow_status_registry).
@@ -11023,19 +11023,84 @@ async def handle_council_room_status(request):
     }, headers=cors)
 from orchestrator import git_tools as _git_tools
 
+# A31-1 (2026-09-17). Bounded so a review can never hold a git call hostage: the MCP
+# proxy dies at ~180-195s and ocr_review's own budget is 120s, so 25s is the ceiling
+# that keeps a stage/commit answering in git time, not review time.
+_OCR_ATTACH_TIMEOUT_S = 25.0
+_OCR_ATTACH_FILE_CAP = 20
+
+
+async def _attach_ocr_review(out, project_path, commit=""):
+    """Run the zero-LLM OCR delegate review and attach it to a git payload.
+
+    `ocr_review`'s own docstring is "delegate preview: which changed files are worth
+    reviewing. Zero LLM." -- so this spends one subprocess, never a model call. It is
+    attached only AFTER the git call already returned, is bounded by `wait_for`, and
+    swallows every exception: a stage or a commit must never fail because a review did.
+    This is the async layer on purpose -- `git_tools.stage/commit` are sync and run on
+    an executor thread, where there is no loop to await into.
+    """
+    if not isinstance(out, dict) or not out.get("ok"):
+        return out
+    if not project_path:
+        out["ocr_review"] = {"state": "skipped", "reason": "project_path_not_given"}
+        return out
+    try:
+        from orchestrator.tools.ocr_review import ocr_review as _ocr_review
+        _kw = {"project_path": project_path}
+        if commit:
+            _kw["commit"] = commit
+        _raw = await asyncio.wait_for(_ocr_review(**_kw), timeout=_OCR_ATTACH_TIMEOUT_S)
+        _data = json.loads(_raw) if isinstance(_raw, str) else _raw
+    except asyncio.TimeoutError:
+        out["ocr_review"] = {"state": "timeout", "timeout_s": _OCR_ATTACH_TIMEOUT_S}
+        return out
+    except Exception as _exc:
+        out["ocr_review"] = {"state": "unavailable", "reason": "%s: %s" % (type(_exc).__name__, _exc)}
+        return out
+    if not isinstance(_data, dict) or not _data.get("ok"):
+        _why = (_data or {}).get("error_name") or (_data or {}).get("error") or "ocr_review_not_ok"
+        out["ocr_review"] = {"state": "unavailable", "reason": str(_why)}
+        return out
+    _block = {"state": "ok"}
+    for _k in ("mode", "total_files", "reviewable_count", "excluded_count", "total_insertions", "total_deletions"):
+        if _k in _data:
+            _block[_k] = _data[_k]
+    _files = _data.get("reviewable_files")
+    if isinstance(_files, list):
+        _block["reviewable_files"] = _files[:_OCR_ATTACH_FILE_CAP]
+        # Same contract as the A30-B scan cap: declare the drop ONLY when there was one,
+        # so the declaration still means something on the run where it matters.
+        if len(_files) > _OCR_ATTACH_FILE_CAP:
+            _block["files_omitted"] = len(_files) - _OCR_ATTACH_FILE_CAP
+            _block["max_files"] = _OCR_ATTACH_FILE_CAP
+    out["ocr_review"] = _block
+    return out
 async def git_status(project_path=None, include_ignored=False, max_records=100, compact_untracked=True): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.status, project_path, include_ignored, max_records, compact_untracked), ensure_ascii=False)
 async def git_stale_check(project_path=None, max_commit_age_hours=168, expected_state_hash=""): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.stale_check, project_path, max_commit_age_hours, expected_state_hash), ensure_ascii=False)
 async def git_diff(project_path=None, scope="worktree", paths=None, context_lines=3, max_chars=50000, check_whitespace=False): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.diff, project_path, scope, paths, context_lines, max_chars, check_whitespace), ensure_ascii=False)
 async def git_log(project_path=None, limit=20, ref="HEAD"): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.log, project_path, limit, ref), ensure_ascii=False)
-async def git_stage(project_path=None, paths=None, paths_file="", allow_all=False, expected_state_hash="", file_path=None):
+async def git_stage(project_path=None, paths=None, paths_file="", allow_all=False, expected_state_hash="", file_path=None, ocr=True):
     # R36 alias: CAs habitually send singular `file_path` instead of `paths`.
     # Map it onto the canonical `paths=[file_path]` so the call actually stages
     # the file instead of answering UNSUPPORTED_FIELD.
     if file_path and not paths:
         paths = [file_path]
-    return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.stage, project_path, paths, paths_file, allow_all, expected_state_hash), ensure_ascii=False)
+    out = await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.stage, project_path, paths, paths_file, allow_all, expected_state_hash)
+    if ocr:
+        # No ref: `ocr_review` answers mode "workspace" and reads the UNCOMMITTED tree,
+        # which is exactly the content that was just staged but not yet committed.
+        out = await _attach_ocr_review(out, project_path)
+    return json.dumps(out, ensure_ascii=False)
 async def git_unstage(project_path=None, paths=None, paths_file="", allow_all=False, expected_staged_hash=""): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.unstage, project_path, paths, paths_file, allow_all, expected_staged_hash), ensure_ascii=False)
-async def git_commit(project_path=None, message=None, expected_staged_hash="", allow_empty=False, no_verify=False): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.commit, project_path, message, expected_staged_hash, allow_empty, no_verify), ensure_ascii=False)
+async def git_commit(project_path=None, message=None, expected_staged_hash="", allow_empty=False, no_verify=False, ocr=True):
+    out = await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.commit, project_path, message, expected_staged_hash, allow_empty, no_verify)
+    if ocr:
+        # The commit already exists by the time we get here, so the review is attached
+        # to a range that really came into being -- and cannot un-commit it.
+        _head = out.get("commit") if isinstance(out, dict) else None
+        out = await _attach_ocr_review(out, project_path, commit=str(_head or ""))
+    return json.dumps(out, ensure_ascii=False)
 
 from orchestrator.core.registry import register_tool as _register_tool
 
@@ -11049,6 +11114,15 @@ _GIT_TOOL_SPECS = [
 ("git_unstage",git_unstage,"T2",True,True,"file_artifact",{"files":"paths"}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"paths":{"type":"array","items":{"type":"string"},"description":"Relative paths to unstage"},"paths_file":{"type":"string","description":"UTF-8 newline-delimited relative paths; alternative to paths"},"allow_all":{"type":"boolean","description":"Explicitly unstage all","default":False},"expected_staged_hash":{"type":"string","description":"Optional prior staged_hash"}},["project_path"]),
 ("git_commit",git_commit,"T2",True,True,"repository_history",{"msg":"message"}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"message":{"type":"string","description":"Commit message"},"expected_staged_hash":{"type":"string","description":"git_status staged_hash, or \"auto\" to accept whatever is staged right now. Enforced by the git layer, not the schema: omitting it answers EXPECTED_STAGED_HASH_REQUIRED and carries current_staged_hash, so the corrected retry needs no second call."},"allow_empty":{"type":"boolean","description":"Allow empty commit","default":False},"no_verify":{"type":"boolean","description":"Bypass hooks only when explicitly authorized","default":False}},["project_path","message"]),
 ]
+# A31-1: `git_stage`/`git_commit` now really RUN the zero-LLM delegate review and
+# attach it as `ocr_review`; the A30-B `ca_hint_review` string stays as the fallback
+# for the paths where a review could not run. The prop is declared once here instead
+# of inline in the two rows above so its text cannot drift between the two tools --
+# and so those two long spec rows stay byte-identical.
+_OCR_ATTACH_PROP = {"type": "boolean", "description": "Run the zero-LLM open-code-review delegate pass and attach it as ocr_review. It can never fail the git operation: on error or timeout the key carries state unavailable/timeout instead. Pass false to skip the subprocess.", "default": True}
+for _gspec in _GIT_TOOL_SPECS:
+    if _gspec[0] in ("git_stage", "git_commit"):
+        _gspec[7]["ocr"] = dict(_OCR_ATTACH_PROP)
 for _n,_h,_p,_tok,_sess,_scope,_aliases,_props,_req in _GIT_TOOL_SPECS:
     _register_tool(name=_n,handler=_h,phase=_p,tool_map=ct.TOOL_MAP,tool_schemas=ct.TOOL_SCHEMAS,tool_phases=ct.TOOL_PHASES,arg_aliases=_ARG_ALIASES,phase_labels=ct.PHASE_LABELS,aliases=_aliases,schema={"description":f"Governed Git operation: {_n} (argv-only, no shell).","parameters":{"type":"object","properties":_props,"required":_req}},requires_token=_tok,requires_session=_sess,mutation_scope=(None if _scope == "none" else _scope),token_required_set=_TOKEN_REQUIRED_TOOLS,mutating_set=_MUTATING_TOOLS,mutation_scope_map=getattr(ct,"_MUTATION_SCOPE_MAP",None))
 import tools_v15 as _v15
@@ -13385,8 +13459,8 @@ _TOOL_NAMES_KNOWN_QUERY_PARAMS = frozenset({
 async def handle_tools_names(request):
     """V15 R16.9 — Ultra-compact /api/tools/names endpoint.
 
-    Returns just {name, tier} pairs (no schema, no description). 116 tools
-    → ~3KB response vs ~250KB for full /api/tools. Use first to discover what
+    Returns just {name, tier} pairs (no schema, no description) -- an order of
+    magnitude smaller than the full /api/tools payload. Use first to discover what
     exists, then call /api/tools?name_contains=<name> for the few you need.
 
     Same filters: ?tier=T4, ?phase=T4, ?name_contains=substr.
@@ -14798,6 +14872,23 @@ accepted_fields=sorted(accepted_fields),
                 if _staged_count and _staged_count > 0:
                     _result["ca_hint"] = f"{_staged_count} staged file(s) ready — git_commit to commit"
                     _result.setdefault("ca_next_action", "git_commit")
+            except Exception:
+                pass
+        # A31 Q5 auto-chain: git_diff -> the next step in the commit chain, DERIVED from the
+        # payload's own `scope` rather than guessed: a worktree diff gets staged, a staged diff
+        # gets committed (and git_commit needs the expected_staged_hash that git_status mints).
+        # Deliberately the same shape, and the same place, as the git_status hint above so the
+        # two cannot drift apart. Reuses the registered `ca_hint` field -- see AUTO_CHAIN_RULES
+        # in code_tools.py; no new vocabulary is introduced here.
+        if tool_name == "git_diff" and _status == "ok" and isinstance(_result, dict):
+            try:
+                if str(_result.get("diff") or "").strip():
+                    if _result.get("scope") == "staged":
+                        _result["ca_hint"] = "staged diff is non-empty - git_status for expected_staged_hash, then git_commit"
+                        _result.setdefault("ca_next_action", "git_status then git_commit")
+                    else:
+                        _result["ca_hint"] = "worktree diff is non-empty - git_stage with explicit paths (never allow_all)"
+                        _result.setdefault("ca_next_action", "git_stage")
             except Exception:
                 pass
         await _write_ledger_finish_async(_op_id, _result, _status)  # BK34: SQLite off-loop

@@ -45,6 +45,9 @@ Routing table. Lookup only; do not read full skill bodies here.
 | Project orchestrator fix-loop (targeted [A] edit + validate + commit cycle) | `project-orchestrator-fix-loop/` | high (R20260911) |
 | Council cron schedule CRUD/trigger/history, pinned worker+model and narrator+model | `council-cron-jobs/` | high |
 | Console/merge/audit/verify text artifacts, base+plug report update, zero-audit document loop (`council_console_loop` alias) | `council-console-loop/` | high |
+| Semantic / security review of a diff or a whole tree, zero-LLM delegate mode | `28_ocr_review/` | high |
+| Rule or skill body changed and must reach every CA, worker/council routing edits | `update-rule-skill-all-ca/` | high |
+| A newly added [A] tool needs its verification pass before anyone trusts it | `verify-new-function/` | high |
 
 > **Numbering gap (R43.3 + D4 2026-08-11)**: slots `23/`, `24/` and `25/` are retired/unpopulated. `24_council_tr/` was removed 2026-06-19 (replaced by `00_skill_router`, `04_tool_tiers`, `07_error_schema_hints`); its residual routes merged into `leader-council-skill/` on 2026-08-11 (D4). `26_workflow_ingestion/` was assigned when R43 introduced MD workflow parsing; renumbering would break inbound references.
 

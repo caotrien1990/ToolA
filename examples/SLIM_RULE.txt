@@ -29,11 +29,12 @@ Use [A] as the PRIMARY project channel instead of raw file ops.
 - Canonical policy lives in CORE_RULE TRANSPORT; this slim file keeps only bootstrap-safe reminders.
 - HTTP `/api/call/<tool>` is default for non-T4 work; council workers use HTTP ONLY.
 - MCP is Clau/ClauC-only for explicit stateful T4 page sessions.
-- Window MCP is a thin dispatcher, not 252 named MCP tools. Live surface = `call_tool` + `tool_names` + `tool_schema` + shortcuts (`get_rule_core_text`, `open_session`, `list_sessions`, `log_native_event`, `council_*`). NEVER invent `mcp__project-orchestrator__<tool>` (e.g. `mcp__project-orchestrator__read_file_range`) — that name does not exist. Correct: `call_tool(name=<tool>, payload={...})`. Prefer HTTP when both work.
+- Window MCP is a thin dispatcher, NOT one named MCP tool per [A] tool -- no count belongs in this sentence, any number written here goes stale. Live surface = `call_tool` + `tool_names` + `tool_schema` + shortcuts (`get_rule_core_text`, `open_session`, `list_sessions`, `log_native_event`, `council_*`). NEVER invent `mcp__project-orchestrator__<tool>` (e.g. `mcp__project-orchestrator__read_file_range`) — that name does not exist. Correct: `call_tool(name=<tool>, payload={...})`. Prefer HTTP when both work.
 
 ## Read Routing (measured 2026-08-19)
 - Native grep/glob/`git status`/`git diff`/plain read = ALLOWED for pure inspection, and is much faster ([A] git_status 1542ms vs 164ms; search_code 1199ms vs rg 229ms; regex_search hard-fails at its 5s deadline). Inspection mutates nothing → NO log_native_event owed.
 - Read-to-EDIT is different: `write_fix` needs the read_token only `read_file_range` seeds. Native read before a write → FILE_CHANGED_OUTSIDE_ORCHESTRATOR; recover with `read_file_range(force_reseed=true)`.
+- Native grep/rg/glob saying *no such file*, or returning 0 results on a path that certainly exists, is a cwd bug, NOT an absence. Do NOT retry with `cd`; call `search_code(project_path=<absolute>)` -- [A] resolves by absolute project_path, never by cwd. Reverse of the same trap: grepping a quoted key (`"ca_hint_review"`) misses source written `out['ca_hint_review']` -- match the bare name.
 - Use [A] `search_code` when you need INDEX semantics (symbols, callable refs, staleness) — rg has none.
 - Nothing is locked. `git_status` stays required: `git_commit` needs its `expected_staged_hash`.
 - Short form: native to LOOK, [A] to TOUCH.
@@ -58,6 +59,6 @@ Use [A] as the PRIMARY project channel instead of raw file ops.
 - Leader dispatch (HARD): load `leader-council-skill`, then `council_worker_model` SET+GET before `council_message`. Never dispatch from remembered slot names or a free-model fallback. Worker writes outside cwd ? bootstrap hint.
 
 ## Tool Surface (minimal)
-- Core 10, do NOT memorize the other ~190: get_rule_core_text, open_session, read_file_range, search_code, write_fix, validate_file, council_message, manage_agent, desktop_screenshot, restart_orchestrator_via_bat.
+- Core 10, do NOT memorize the rest -- and do NOT memorize how many there are; ask the daemon (`GET /api/tools/names`, or `tool_names(name_contains=...)` for a slice): get_rule_core_text, open_session, read_file_range, search_code, write_fix, validate_file, council_message, manage_agent, desktop_screenshot, restart_orchestrator_via_bat.
 - Any other need → `tool_decision_hint(task_description=..., verbosity="terse")` (Vietnamese OK) → ranked candidates + payload example; full schema = GET /api/tools/<tool>/schema. Never guess tool names; trust structured errors to self-correct.
 - Writes auto-verify (py/js/ts/html/css/json — read `validation` in response; session+backup auto-handled). Windows read-only commands (dir/type/findstr/tasklist/git status…) → run_project_command token-free; PowerShell/Vietnamese → run_ps1_script. Never open a terminal.

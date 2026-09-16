@@ -7,6 +7,7 @@ description: |
 trigger:
   - task_pattern: "health | bootstrap | is [A] running | start session | check API"
   - error_name: "ORCHESTRATOR_NOT_RUNNING | BOOTSTRAP_HEALTH_FAIL"
+  - tool: "get_rule_core_text"
 preconditions:
   - "CA has access to Bash/Node runtime"
 related_skills:

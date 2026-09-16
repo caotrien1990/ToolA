@@ -6,7 +6,7 @@ description: |
   visualizations. Saves tokens for CA reading; trades against User device bandwidth.
 trigger:
   - task_pattern: "popup hint | render diagram | image of | screenshot | compress this for token"
-  - tool: "screenshot_page | render_mermaid (planned)"
+  - tool: "screenshot_page | desktop_screenshot | render_mermaid (planned)"
 preconditions:
   - "T4 stack installed (playwright + pillow per V15 R8 B.0)"
 related_skills:

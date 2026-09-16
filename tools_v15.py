@@ -273,7 +273,7 @@ def _apply_verbosity(response: dict, mode: str = "full", kind: str = "payload") 
             for k in ("coverage", "inventory_classification"):
                 response.pop(k, None)
     elif kind == "skill_state":
-        # R22: get_skill_state — strip per-entry path metadata × 23 entries
+        # R22: get_skill_state — strip per-entry path metadata from every entry
         skills = response.get("skills_available") or []
         if mode in ("terse", "ref") and isinstance(skills, list):
             response["skills_available"] = [

@@ -1,6 +1,9 @@
 ---
 name: leader-council-skill
 description: Council leader anti-drift skill. Use when Anh triggers leader mode with exact user input "bat hoi dong tr" or "bat hoi dong tr" with Vietnamese diacritics, or when a leader CA must coordinate multi-worker council work without drifting. Enforces Q-first before old-context clarify/search/scan/fetch/history work, bounded Q memory context, full-path broker dispatches, worker/model routing, and Round 2+ peer scoring. Never use from broker/worker prompts or text containing "[broker response]".
+trigger:
+  - task_pattern: "bat hoi dong tr | council leader | convene council | dispatch worker | brainstorm round"
+  - tool: "council_message | council_worker_model | convene_council"
 ---
 
 # Leader Council Skill

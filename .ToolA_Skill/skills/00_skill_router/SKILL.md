@@ -45,7 +45,7 @@ Sau bootstrap, đọc skill chuyên biệt nếu task vào sâu lĩnh vực cụ
 | Analyze repo / structural search | [T1] [A] | 15_search_code_intel |
 | Old memory/context before search/scan/fetch/history | [Q] `/pre_search` via [Q:A] first, then normal [A]/council route | leader-council-skill |
 | Council dispatch / worker routing / multi-worker brainstorm / implement council plan | Load `leader-council-skill` first, then use the loop/fix skill needed by the task | leader-council-skill + council-brainstorm-loop/project-orchestrator-fix-loop |
-| Auto-chain hint in tool response (`ca_chain_hint`/`ca_chain_next`) | Present as suggestion, do NOT auto-execute chain_next without user go-ahead | 00_skill_router |
+| Auto-chain hint in tool response (`ca_hint`/`ca_next_action`, the scoped `ca_hint_commit`/`ca_hint_rule`/`ca_hint_review`/`ca_hint_scope`, or the rarer `ca_chain_hint`/`ca_chain_next`) | Read whichever key the payload actually carries -- both vocabularies exist in code, so never rename an emitted field to match a doc. Present as suggestion, do NOT auto-execute `ca_next_action`/`ca_chain_next` without user go-ahead | 00_skill_router |
 | Deprecated tool (`regex_search`, `find_callers`, `find_definition_and_usage`, `read_chunks`) | Use `search_code` (mode=regex/smart) or `read_file_range` instead | 00_skill_router |
 | Multi-file write + audit/rollback | [T2] [A] | 05_write_pipeline |
 | Single-file <30 lines low-risk | Native Edit + log_native_event | 12_native_audit |

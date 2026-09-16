@@ -218,7 +218,7 @@ PROTECTED_TOOL_NAMES = {
     "create_pending_audit", "sync_pending_audit",
     "record_error_resolution",
     "clear_closed_sessions",  # PC1-CLEANUP: session-lifecycle cleanup (delete closed rows)
-    # V15 R28 — runtime-mutating tools (UI/DOM/process). 17 entries.
+    # V15 R28 — runtime-mutating tools (UI/DOM/process).
     # These were missing from protected set → metadata mismatch surfaced in audit.
     "fill_folder_dialog", "cancel_native_dialog", "invoke_app_function",
     "click_and_handle_folder_dialog",  # V15 R31: atomic click+dialog macro (mutates UI)
@@ -295,7 +295,7 @@ _MUTATION_SCOPE_MAP = {
     "ensure_single_electron_instance": "process", "cleanup_test_session": "process",
     "run_project_command": "process", "restart_orchestrator_via_task": "process",
     # campaign-1608 (A11-b): restart_orchestrator_via_bat was the ONLY entry in the
-    # gate set (PROTECTED | TOKEN_REQUIRED, 60 tools) with no scope, so /api/tools
+    # gate set (PROTECTED | TOKEN_REQUIRED) with no scope, so /api/tools
     # reported mutation_scope='none' -- "read-only" -- for the tool that kills and
     # relaunches the whole daemon. Its sibling restart_orchestrator_via_task was
     # already 'process'; the two differ only in launcher (bat vs schtasks).
@@ -2687,6 +2687,54 @@ def _matrix_audit_open_session_summary(project_path: str):
     return None
 
 
+# A31 Q4 (2026-09-17): the Core-10 tool surface. SOT is examples/CORE_RULE.txt, section
+# "TOOL SURFACE (minimal)" -- tests/test_a31_skill_surface_gates.py parses that line and
+# asserts it equals this tuple, so the two can never drift apart silently. Deliberately a
+# NAMED LIST and not a count: the same A31 doctrine that says never write a tool total in
+# prose next to the code that computes it.
+CORE_TEN_TOOLS = (
+    "get_rule_core_text",
+    "open_session",
+    "read_file_range",
+    "search_code",
+    "write_fix",
+    "validate_file",
+    "council_message",
+    "manage_agent",
+    "desktop_screenshot",
+    "restart_orchestrator_via_bat",
+)
+
+# A31 Q5 (2026-09-17): the auto-chain surface, as a NAMED LIST of the fields actually
+# emitted -- never as a count. Three campaigns argued "12 vs 13 vs 15 auto-chain rules"
+# with no registry to settle it, which is the same rot as writing a tool total in prose:
+# ask this tuple, and if a row is missing the field is not registered, whatever a doc says.
+# SOT for the prose side is examples/CORE_RULE.txt section "AUTO-CHAIN (pointer)";
+# tests/test_a31_autochain_registry.py binds the three directions -- code emits it, the
+# registry names it, the rule file mentions it -- so none can drift alone.
+# ca_next_action is deliberately NOT a row here: it is free-form advisory prose carried on
+# both ok and error payloads -- hundreds of distinct literals, only a handful of which are
+# tool names -- so it is a message, not a chain field. Do not add it, and do not pin its
+# values in a table: tests/test_a31_autochain_registry.py checks its SHAPE (non-empty,
+# stripped, single line) and re-derives the population with an ast walk on every run, which
+# is the only figure that cannot go stale. Ask the scanner, not a comment.
+AUTO_CHAIN_RULES = (
+    # (field, trigger, module that emits it)
+    ("ruff_preview", "write_fix / write_new_file on a .py file", "orchestrator/tools/write/core.py"),
+    ("ca_hint_commit", "write_fix / write_new_file success", "orchestrator/tools/write/core.py"),
+    ("ca_hint_review", "git_stage / git_commit", "orchestrator/git_tools.py"),
+    ("ca_hint_rule", "ocr_rule", "orchestrator/tools/ocr_review.py"),
+    ("ca_hint_rule_text", "ocr_rule with the rule body omitted", "orchestrator/tools/ocr_review.py"),
+    ("ca_hint_scope", "ocr_scan when a list was really capped", "orchestrator/tools/ocr_review.py"),
+    ("ca_hint", "search_code / validate_file / git_status staged>0 / git_diff non-empty", "orchestrator_server.py"),
+    ("post_ruff_validation", "ruff_fix apply=true", "orchestrator/graph/tools.py"),
+    ("ca_chain_hint", "search_code regex on root, cbm_dead_code", "orchestrator/tools/search.py"),
+    ("ca_chain_next", "search_code regex on root, cbm coverage", "orchestrator/graph/tools.py"),
+)
+
+#: The chain fields only, for callers that just need the vocabulary.
+AUTO_CHAIN_FIELDS = tuple(r[0] for r in AUTO_CHAIN_RULES)
+
 def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dict:
     """V15 R13 — Cross-reference TOOL_MAP / TOOL_SCHEMAS / TOOL_PHASES against
     skill SKILL.md trigger.tool, SKILLS.md router, harness *.md test cases,
@@ -2738,18 +2786,32 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
             schema_names.add(name)
 
     # ---- Skill router (SKILLS.md) ----
+    # A31 Q4 (2026-09-17): SKILLS.md is a markdown table ("| task | `folder/` | conf |").
+    # The previous regex expected "- topic -> NN_skill" rows and matched 0 of the file's
+    # lines, so router_topics was silently always []. Two things changed here: parse the
+    # table, and do NOT require an NN_ prefix -- some skill folders are named rather
+    # than numbered, so a \\d{2}_ pattern could never have reached them even with the
+    # separator fixed. routed_folders is what makes the reachability gates below possible.
     skills_md = skill_root / "SKILLS.md"
     router_topics = []
+    routed_folders = set()
     if skills_md.exists():
+        _row_re = _re.compile(r"^\|(?P<topic>[^|]+)\|\s*`(?P<skill>[A-Za-z0-9_.\-]+)/`\s*\|")
         for line in skills_md.read_text(encoding="utf-8", errors="ignore").splitlines():
-            # Match: "- topic → NN_skill_name" rows
-            m = _re.match(r"^[-|]\s*(.+?)\s*[→\->]+\s*(\d{2}_[a-z_]+)", line)
-            if m:
-                router_topics.append({"topic": m.group(1).strip(), "skill": m.group(2)})
+            # The header row and the |---|---| separator have no backticked cell, so
+            # requiring the backticks is what excludes them -- no line counting.
+            m = _row_re.match(line)
+            if not m:
+                continue
+            folder = m.group("skill").strip()
+            router_topics.append({"topic": m.group("topic").strip(), "skill": folder})
+            routed_folders.add(folder)
 
     # ---- Per-skill SKILL.md trigger.tool / trigger.task_pattern ----
     skill_tools = {}  # tool_name -> [skill_folder]
     skill_folders = []
+    skill_bodies = {}  # folder -> SKILL.md text, reused by the A31 gates below
+    skills_without_frontmatter = []
     skills_dir = skill_root / "skills"
     if skills_dir.exists():
         for skill_dir in sorted(skills_dir.iterdir()):
@@ -2760,11 +2822,21 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
                 continue
             skill_folders.append(skill_dir.name)
             txt = skill_md.read_text(encoding="utf-8", errors="ignore")
+            skill_bodies[skill_dir.name] = txt
+            # A31 Q4: harvest `tool:` ONLY from the YAML frontmatter block. Measured on
+            # 2026-09-17: frontmatter-only and whole-file both yield the same 94 tools
+            # (0 lost), so this is not a coverage change -- it stops body prose from
+            # inventing coverage the router would never actually honour.
+            fm = _re.match(r"^﻿?---\r?\n(.*?)\r?\n---\r?\n", txt, _re.S)
+            if not fm:
+                skills_without_frontmatter.append(skill_dir.name)
+                continue
+            front = fm.group(1)
             # YAML scan: look for `tool: "<list>"` lines inside trigger block.
             # Filter: only treat tokens that look like real tool names (in TOOL_MAP or schema).
             # Avoids false positives from descriptive strings like "any protected T2/T3 tool".
             _known = code_tools_set | schema_names
-            for m in _re.finditer(r"tool:\s*['\"]?([^'\"\n]+)['\"]?", txt):
+            for m in _re.finditer(r"tool:\s*['\"]?([^'\"\n]+)['\"]?", front):
                 tools_str = m.group(1)
                 for tn in _re.split(r"[|,\s]+", tools_str):
                     tn = tn.strip().strip('"').strip("'")
@@ -2825,6 +2897,70 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
                        "via scripts/sync_tool_matrix.py --generate."),
         })
 
+    # ---- A31 Q4 (2026-09-17): skill-surface gates ----
+    # Five checks the audit structurally could not make before, because the SKILLS.md
+    # router half was dead code (its regex expected "- topic -> NN_skill" rows and
+    # matched 0 lines of the markdown table the file actually is). With routed_folders
+    # now populated, a folder nobody routes to, a route to nothing, a SKILL.md with no
+    # frontmatter, a Core-10 tool with no trigger.tool, and a dangling references/ link
+    # all become reportable instead of invisible.
+    for folder in sorted(set(skill_folders) - routed_folders):
+        drift.append({
+            "type": "skill_folder_unreachable",
+            "skill": folder,
+            "severity": "medium",
+            "detail": (f"skills/{folder}/SKILL.md exists but no row of "
+                       ".ToolA_Skill/SKILLS.md routes to it, so the router can never "
+                       "reach it. Add a route row naming the folder in backticks."),
+        })
+    for folder in sorted(routed_folders - set(skill_folders)):
+        drift.append({
+            "type": "route_to_missing_folder",
+            "skill": folder,
+            "severity": "high",
+            "detail": (f".ToolA_Skill/SKILLS.md routes to `{folder}/` but "
+                       f"skills/{folder}/SKILL.md does not exist."),
+        })
+    for folder in sorted(skills_without_frontmatter):
+        drift.append({
+            "type": "skill_missing_frontmatter",
+            "skill": folder,
+            "severity": "medium",
+            "detail": (f"skills/{folder}/SKILL.md has no YAML frontmatter block, so any "
+                       "trigger.tool it declares is invisible to the router."),
+        })
+    for tool in CORE_TEN_TOOLS:
+        if tool not in skill_tools:
+            drift.append({
+                "type": "core10_tool_undocumented",
+                "tool": tool,
+                "severity": "medium",
+                "detail": ("Core-10 tool (examples/CORE_RULE.txt, TOOL SURFACE section) has "
+                           "no trigger.tool route in any SKILL.md frontmatter. Body prose "
+                           "does not count: the router only reads frontmatter."),
+            })
+    _shared_refs = skill_root / "references"
+    _seen_refs = set()
+    for folder in sorted(skill_bodies):
+        for m in _re.finditer(r"references/([A-Za-z0-9_.\-]+\.md)", skill_bodies[folder]):
+            ref = m.group(1)
+            if (folder, ref) in _seen_refs:
+                continue
+            _seen_refs.add((folder, ref))
+            # A link resolves if the file sits beside the skill OR in the shared dir.
+            if (skills_dir / folder / "references" / ref).exists():
+                continue
+            if (_shared_refs / ref).exists():
+                continue
+            drift.append({
+                "type": "skill_reference_missing",
+                "skill": folder,
+                "reference": ref,
+                "severity": "low",
+                "detail": (f"skills/{folder}/SKILL.md links references/{ref} but that file "
+                           "exists neither beside the skill nor in "
+                           ".ToolA_Skill/references/."),
+            })
     # ---- Harness scan for obsolete payloads ----
     harness_dir = skill_root / "harness"
     obsolete_patterns = {

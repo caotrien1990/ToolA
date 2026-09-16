@@ -669,13 +669,17 @@ be hiding it.**
 
 ### Two suite counts are both correct
 
-`pytest tests\` reports **2742**; a bare `pytest` reports **2769**. The 27-test gap
-is three files at the **repo root** (`test_all_tools.py`,
-`test_council_reply_fallback.py`, `test_open_session_drift_note.py`), collected by
-rootdir discovery and outside the README's `tests\` baseline. Neither number is
-wrong, and the collect count moves with which one you ran. Before concluding a
-count drifted, check the **scope** — `--collect-only` plus `git stash` of the new
-file separates "new tests" from "different set".
+`pytest tests\` and a bare `pytest` report different totals, and both are correct.
+The gap is the **two** test files at the **repo root** --
+`test_council_reply_fallback.py` (17 tests) and `test_open_session_drift_note.py`
+(10) -- collected by rootdir discovery and outside the README's `tests\` baseline.
+Do not quote an absolute total from this entry: it moves every campaign. Measure the
+**scope** instead -- `--collect-only` plus `git stash` of the new file separates "new
+tests" from "different set". A31 (2026-09-17): this entry used to name a third root
+file, `test_all_tools.py`. It was a tool-sweep script with 0 `def test_` and 0
+`assert` -- it contributed nothing to the gap, and a `test_`-named file that asserts
+nothing is worse than no file, because it looks like the binding that is missing. It
+is now `tool_smoke_runner.py`.
 
 ---
 

@@ -1,6 +1,6 @@
 # CORE_RULE.txt Section Mapping — R1 Sprint 1.5
 
-Source: `examples/CORE_RULE.txt` v post-1.1 cleanup. Total: 266 lines / 15.5 KB.
+**HISTORICAL — R1 Sprint 1.5 planning snapshot. Do NOT read this page as a description of the current file.** It was written against a version of `examples/CORE_RULE.txt` that no longer exists, so every line number, line count and byte figure below is provenance only, not fact about today's rule file. For the live shape call `read_file_range` on `examples/CORE_RULE.txt` and use its `total_lines`; never quote a size from this page. Kept because the classification reasoning (what belongs in super-core vs skill vs reference) is still the design intent.
 
 Target: super-core ≤ 4 KB (~70 lines). Migrate remainder to skills/references.
 

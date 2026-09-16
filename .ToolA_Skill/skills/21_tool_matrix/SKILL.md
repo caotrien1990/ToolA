@@ -163,7 +163,8 @@ CA / developer MUST run `python scripts/sync_tool_matrix.py --check --output md`
 ### Pre-commit installation
 
 ```cmd
-cd project-orchestrator
+:: run from the checkout root -- `project-orchestrator` IS the repo root, so a
+:: `cd project-orchestrator` here fails and the install silently never happens
 scripts\install_precommit.bat     :: one-time, copies hook into .git/hooks/pre-commit
 ```
 

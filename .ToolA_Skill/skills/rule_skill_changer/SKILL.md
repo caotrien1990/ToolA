@@ -1,6 +1,9 @@
 ---
 name: rule_skill_changer
 description: Trigger: "cập nhật skill rule". Use when changing rules, council routing, worker routing, skill bodies, skill router, or syncing rule/skill to all CA. Forces querying related [A] Python files before deciding whether code changes are needed.
+trigger:
+  - task_pattern: "cap nhat skill rule | update rule skill | sync skill rule | sync rule to all CA"
+  - tool: "manage_agent"
 ---
 
 # Rule Skill Changer

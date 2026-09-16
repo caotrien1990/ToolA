@@ -13,11 +13,12 @@ POST [A:API]/api/call/get_rule_core_text {"agent_id":"<id>"} once per process/se
 
 ## TRANSPORT (HARD)
 HTTP /api/call/<tool> = canonical for all non-T4. Host task metadata (session_id, task_epoch, and prompt_hash) is transport-only and MUST identify the newest real user task; stale epochs fail loud. MCP is Clau/ClauC-only for T4 page-stateful. Worker CLI (C-suffix) = HTTP ONLY. Discovery: GET /api/tools/names | /api/tools/<tool>/schema (schema shows requires_session/requires_token per tool). fields= only when key known. 429→read Retry-After, 413→chunk payload.
-MCP DISPATCHER (HARD): window MCP is a thin wrapper, not 252 named MCP tools. Live MCP surface = call_tool + tool_names + tool_schema + a few shortcuts (get_rule_core_text, open_session, list_sessions, log_native_event, council_*). NEVER invent mcp__project-orchestrator__<tool> (e.g. mcp__project-orchestrator__read_file_range) — that name does not exist and fails No such tool available. Correct MCP call: call_tool(name=<tool>, payload={...}). call_tool itself is NOT an [A] catalog tool (tool_schema(name=call_tool) → UNKNOWN_TOOL is expected). Prefer HTTP /api/call/<tool> when both channels work; MCP call_tool is convenience for Clau/ClauLTN only.
+MCP DISPATCHER (HARD): window MCP is a thin wrapper, NOT one named MCP tool per [A] tool -- do not picture a count here, the number is not the point and any number written down goes stale. Live MCP surface = call_tool + tool_names + tool_schema + a few shortcuts (get_rule_core_text, open_session, list_sessions, log_native_event, council_*). NEVER invent mcp__project-orchestrator__<tool> (e.g. mcp__project-orchestrator__read_file_range) — that name does not exist and fails No such tool available. Correct MCP call: call_tool(name=<tool>, payload={...}). call_tool itself is NOT an [A] catalog tool (tool_schema(name=call_tool) → UNKNOWN_TOOL is expected). Prefer HTTP /api/call/<tool> when both channels work; MCP call_tool is convenience for Clau/ClauLTN only.
 
 ## READ ROUTING (HARD — measured 2026-08-19, do not re-litigate)
 Native is ALLOWED for pure inspection only: grep/glob/`git status`/`git diff`/`git log`/plain file read. Measured on this repo: git_status 1542ms vs native 164ms; search_code 1199ms vs rg 229ms; regex_search HARD-FAILS (REGEX_SEARCH_TIMEOUT, 5s deadline) where rg answers in 229ms; on a 17GB repo rg is 147ms. Inspection mutates nothing, so it owes NO log_native_event — this is a routing choice, not a fallback.
 Read-to-EDIT is NOT inspection. write_fix consumes the stable read_token that ONLY read_file_range seeds; a native read before a write returns FILE_CHANGED_OUTSIDE_ORCHESTRATOR. Recovery = read_file_range(force_reseed=true) then retry.
+A native grep/rg/glob that says *no such file* -- or returns 0 results on a path that certainly exists -- is a cwd bug, NOT an absence. Do NOT retry with cd and do NOT conclude the string is missing: call search_code(project_path=<absolute>), because [A] resolves by absolute project_path and never by cwd. Same trap in reverse, measured on this repo: grepping a quoted key ("ca_hint_review") misses source that writes out['ca_hint_review'] -- match the bare name, not the quoting you assumed.
 Rule of thumb: native to LOOK, [A] to TOUCH. Prefer [A] search_code when you need INDEX semantics (symbol/callable refs, project map, staleness signal) — rg has none of that.
 NOTHING is locked. git_status in particular stays mandatory: git_commit requires expected_staged_hash and its only source is git_status.
 
@@ -72,20 +73,23 @@ End reply with: 🔍 ANALYZE | EXC EXECUTE | ✅ VERIFY | ❓ ASK. Reply languag
 Council routing: no fixed cost chain; select workers by task fit and benchmark evidence. CodoC is a high-end judgement/audit/high-dev worker, not default leader. ClauC is outside normal routing order.
 
 ## TOOL SURFACE (minimal)
-Core 10 (do NOT memorize the rest — live surface is ~252 public tools; never rely on a memorized count): get_rule_core_text, open_session, read_file_range, search_code, write_fix, validate_file, council_message, manage_agent, desktop_screenshot, restart_orchestrator_via_bat. Any other need → tool_decision_hint(task_description=..., verbosity="terse") (Vietnamese OK) → ranked candidates + payload example; full schema = GET /api/tools/<tool>/schema. Never guess tool names; trust structured errors to self-correct.
+Core 10 (do NOT memorize the rest, and do NOT memorize how many there are -- the live surface is whatever the daemon registered at boot, so ask it instead of quoting a number from memory or from this file: GET /api/tools/names, or tool_names(name_contains=...) for a slice): get_rule_core_text, open_session, read_file_range, search_code, write_fix, validate_file, council_message, manage_agent, desktop_screenshot, restart_orchestrator_via_bat. Any other need → tool_decision_hint(task_description=..., verbosity="terse") (Vietnamese OK) → ranked candidates + payload example; full schema = GET /api/tools/<tool>/schema. Never guess tool names; trust structured errors to self-correct.
 
 ## DEPRECATED (pointer)
 regex_search, find_callers, find_definition_and_usage, read_chunks are DEPRECATED. Use: search_code(mode='regex') for regex; search_code(mode='smart') for symbol/callers; read_file_range for chunk reads. Deprecated tools still respond but include deprecated:true + deprecation_hint. Do NOT use deprecated tools in new code.
 
 ## AUTO-CHAIN (pointer)
-[A] auto-chains lightweight hints between tools to reduce round-trips. These are CA-level recommendations, NOT automatic execution. Fields: ca_chain_hint (description) + ca_chain_next (suggested tool). Key chains:
-- cbm_dead_code/test_gap/what_if → auto-index if graph stale (_ensure_graph_fresh)
-- write_fix (.py) → ruff_preview in response (lint preview, not auto-fix)
-- search_code → ca_hint for read_file_range when results have line numbers
-- search_code regex on root → ca_chain_hint to narrow scope
-- git_commit → pre-hook injects staged_hash, post-hook validates committed files
-- ruff_fix apply → post_ruff_validation in response
-- validate_file → ca_hint for ruff_fix when ruff_fix_applicable
-- git_status staged>0 → ca_hint for git_stage
-- write_fix ok → ca_hint_commit for git_stage
-Do NOT auto-execute chain_next without user go-ahead; present as suggestion.
+[A] auto-chains lightweight hints between tools to reduce round-trips. These are CA-level recommendations, NOT automatic execution. TWO field vocabularies exist in the code and this file used to declare only the rarer one: (1) ca_hint plus the scoped variants ca_hint_commit, ca_hint_rule, ca_hint_rule_text, ca_hint_review, ca_hint_scope -- the common form, emitted by most tools; (2) ca_chain_hint / ca_chain_next -- the rarer form, emitted only by the search and graph tools. Do NOT memorize how many chain fields there are or which files emit them: the authoritative list is AUTO_CHAIN_RULES in code_tools.py, which names every field with its trigger and its emitting module, and tests/test_a31_autochain_registry.py fails if the code, that registry, or this file drift apart. ca_next_action is NOT a chain field and NOT an enum: it is free-form advisory prose carried on both ok and error payloads, so read it and act on it, never match it against a fixed table of values. Read whichever key the payload actually carries. If a payload key and this file disagree, the payload wins and this file is the bug: never rename an emitted field to match a doc. Key chains:
+- cbm_dead_code/cbm_test_gap/cbm_what_if -> auto-index if graph stale (_ensure_graph_fresh). The tool names carry the cbm_ prefix; a bare test_gap or what_if is a 404.
+- write_fix (.py) -> ruff_preview in response (lint preview, not auto-fix)
+- search_code -> ca_hint for read_file_range when results have line numbers
+- search_code regex on root -> ca_chain_hint + ca_chain_next to narrow scope (search.py emits it on all three paths: timeout, runtime-guard and normal)
+- cbm_dead_code -> ca_chain_next write_fix; cbm coverage -> ca_chain_next cbm_quality_gate (graph/tools.py)
+- git_commit -> post-hook validates the committed files. There is NO pre-hook injecting staged_hash: you pass expected_staged_hash yourself, read from git_status.
+- ruff_fix apply -> post_ruff_validation in response
+- validate_file -> ca_hint for ruff_fix when ruff_fix_applicable
+- git_status staged>0 -> ca_hint + ca_next_action "git_commit" (NOT git_stage -- those files are already staged)
+- git_diff with a non-empty diff -> ca_hint + ca_next_action DERIVED from the payload's own scope: scope=staged -> "git_status then git_commit" (git_commit needs the expected_staged_hash git_status mints), any other scope -> "git_stage" with explicit paths. An empty diff carries NO hint key at all.
+- write_fix ok -> ca_hint_commit for git_stage
+- git_stage/git_commit -> ca_hint_review for ocr_review (a string only, never spawns a review)
+Do NOT auto-execute ca_next_action / ca_chain_next without user go-ahead; present as suggestion.
