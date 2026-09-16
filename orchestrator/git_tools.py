@@ -256,7 +256,13 @@ def stage(project_path, paths=None, paths_file='', allow_all=False, expected_sta
     # read that status to obtain expected_state_hash. Only the hashes and counts are
     # kept, which is what a caller can actually act on: proof of which state it
     # staged from.
-    return {'ok':True,'paths':specs,'paths_file':str(paths_file or ''),'allow_all':bool(allow_all),'before':{'state_hash':before['state_hash'],'staged_hash':before['staged_hash'],'counts':before['counts']},'after':status(str(root))}
+    out={'ok':True,'paths':specs,'paths_file':str(paths_file or ''),'allow_all':bool(allow_all),'before':{'state_hash':before['state_hash'],'staged_hash':before['staged_hash'],'counts':before['counts']},'after':status(str(root))}
+    # A30-B: hint-only, zero token. Verified BEFORE writing this line -- ocr_review with
+    # no refs returns mode "workspace" and reads the UNCOMMITTED tree (exit 0, 0.19s,
+    # 15 files). So the hint names a call that really works on content that is staged but
+    # not yet committed; a hint pointing at a failing call is worse than no hint at all.
+    out['ca_hint_review']='ocr_review(project_path=...) reviews the uncommitted working tree before you commit; mode "workspace", delegate, 0 token'
+    return out
 
 def unstage(project_path, paths=None, paths_file='', allow_all=False, expected_staged_hash=''):
     root=resolve_root(project_path); before=status(str(root))
@@ -305,6 +311,11 @@ def commit(project_path, message, expected_staged_hash, allow_empty=False, no_ve
     committed_paths=[str(r.get('path')) for r in s.get('records',[]) if str(r.get('xy','.'))[:1] not in ('.',' ','?','!') and r.get('path')]
     res=_run(root,args,timeout=300); head=_run(root,['rev-parse','HEAD'])['stdout'].strip()
     out={'ok':True,'commit':head,'stdout':res['stdout'],'stderr':res['stderr'],'status':status(str(root)),'committed_files':committed_paths}
+    # A30-B: hint-only, zero token. OCR consumes a commit range, which is exactly what
+    # just came into existence -- verified live on c25bb81 (exit 0, 10 reviewable of 13).
+    # This attaches a STRING, never a subprocess: a commit must not pay for a review the
+    # caller did not ask for.
+    out['ca_hint_review']=f'ocr_review(project_path=..., commit="{head}") reviews this commit semantically; delegate mode, 0 token'
     # P7-S3 H3: advisory AFTER successful commit+hash, BEFORE return.
     # Flag-OFF = no hooks/graph/status/parser import. Throw cannot fail the commit.
     if os.environ.get("CBM_ENRICH_COMMIT", "0").strip().lower() in ("1", "true", "yes", "on"):

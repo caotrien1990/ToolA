@@ -524,11 +524,27 @@ async def ocr_scan(project_path: str = "", path="", exclude="",
         if perr:
             return _fail(run, dict(perr, preview_only=bool(preview_only)))
         body = data if isinstance(data, dict) else {"raw": data}
+        # A30-B: cap every list-valued key. Measured defect -- a whole-repo
+        # preview_only=true returned 109_259 bytes and the daemon had to spill it into a
+        # result_ref. A tool built for token discipline must not be the thing that blows
+        # the budget. The cap is DECLARED per key, never silent: a truncation the caller
+        # cannot see reads as "that is all there is", which is the worse failure.
+        cap = 50
+        omitted = {}
         for key, value in body.items():
-            payload[key] = _shrink(value, False)
+            shrunk = _shrink(value, False)
+            if isinstance(shrunk, list) and len(shrunk) > cap:
+                omitted[key] = len(shrunk) - cap
+                shrunk = shrunk[:cap]
+            payload[key] = shrunk
+        if omitted:
+            payload["items_omitted"] = omitted
+            payload["max_items"] = cap
+            payload["ca_hint_scope"] = ("output capped at %d items per list; narrow with "
+                                        "path= or exclude= to see the rest" % cap)
         findings = body.get("findings") or body.get("issues") or body.get("results")
         if isinstance(findings, list):
-            payload["findings_common"] = _ocr_findings_to_common(findings)
+            payload["findings_common"] = _ocr_findings_to_common(findings[:cap])
     else:
         text = run.get("stdout") or ""
         payload["output_head"] = text[:2000]

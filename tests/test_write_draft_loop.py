@@ -68,7 +68,11 @@ class DraftLoopCase(unittest.TestCase):
         self.assertGreaterEqual(res.get("new_lines_count", 0), 5000)
 
     # ── contract 2: failure opens a line-accurate draft, target untouched ───
-    def test_bad_python_opens_draft_with_line(self):
+    # The assertions live in a helper because contract 3 reuses the draft they build.
+    # A test method must NOT return a value -- unittest deprecated that in 3.12 and
+    # says it will become an error, so returning `res` from the test itself would
+    # break this file on a future Python instead of merely warning.
+    def _open_draft_with_bad_python(self):
         fp = self._mkfile("mod.py", "a = 1\nb = 2\nc = 3\n")
         original = fp.read_text(encoding="utf-8")
         bad = "def broken(:\n    pass\n\ngood = 1\n"
@@ -84,9 +88,12 @@ class DraftLoopCase(unittest.TestCase):
         self.assertIn(">>2:", parts[0]["excerpt"])
         return res
 
+    def test_bad_python_opens_draft_with_line(self):
+        self._open_draft_with_bad_python()
+
     # ── contract 3: patch only the failed range; clean -> auto-ship ─────────
     def test_patch_wrong_then_right_then_ship(self):
-        res = self.test_bad_python_opens_draft_with_line()
+        res = self._open_draft_with_bad_python()
         draft_id = res["draft_id"]
         err_line = res["failed_parts"][0]["errors"][0]["line"]
         still = run(write_draft_patch(draft_id, err_line, err_line, "def broken(:\n"))
