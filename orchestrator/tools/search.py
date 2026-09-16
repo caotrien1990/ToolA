@@ -132,8 +132,18 @@ async def _run_search_singleflight(
     owner_transfer=None,
     owner_done=None,
     timeout: float | None = None,
+    extend_deadline=None,
 ) -> dict:
-    """Share one producer future while each caller keeps independent cancellation."""
+    """Share one producer future while each caller keeps independent cancellation.
+
+    ISS-20: `extend_deadline` is an optional zero-arg callback, consulted once
+    and only after `timeout` has already expired. It returns how many extra
+    seconds to keep waiting for the SAME shared future (0.0, or no callback at
+    all, means give up now -- the historical behaviour). It exists because a
+    regex producer's budget is per-phase: the caller can only bound the phase
+    it can observe, and the phase that owns the ISS-12 checkpoint must not be
+    cut off by the phase-1 clock.
+    """
     permit = None
     with _SEARCH_SINGLEFLIGHT_LOCK:
         shared_future = _SEARCH_SINGLEFLIGHT.get(key)
@@ -180,6 +190,28 @@ async def _run_search_singleflight(
             return await asyncio.wait_for(waiter, timeout=max(0.001, timeout))
         return await waiter
     except asyncio.TimeoutError:
+        # ISS-20 / #12(b): `timeout` bounds the producer's FIRST phase only. If
+        # the producer has meanwhile earned a second clock -- it is running the
+        # isolated matcher, which enforces its own deadline and holds the only
+        # copy of the ISS-12 checkpoint -- extend_deadline() says how much
+        # longer to wait for it. Giving up here instead would abandon a live
+        # child and discard the rows it had already found. A producer still in
+        # its first phase, or a caller that passed no callback, gets 0.0 and
+        # the old behaviour, so the wall-clock bound on a wedged snapshot pin
+        # is unchanged.
+        extra = 0.0
+        if extend_deadline is not None:
+            try:
+                extra = float(extend_deadline() or 0.0)
+            except Exception:
+                extra = 0.0
+        if extra > 0.0:
+            try:
+                return await asyncio.wait_for(
+                    asyncio.shield(loop_future), timeout=extra,
+                )
+            except asyncio.TimeoutError:
+                pass
         try:
             await asyncio.wait_for(
                 asyncio.shield(loop_future),
@@ -669,6 +701,53 @@ def _attach_regex_partials(resp: dict, partial_source: object | None) -> dict:
     return resp
 
 
+# ISS-20: slack the asyncio wait gets on top of the producer's two phases
+# (input scan, then matching). That wait must never be the thing that fires
+# first: it abandons the child and throws away the ISS-12 checkpoint, which is
+# the only copy of the matches found so far. It is a wedge backstop, not the
+# budget -- each phase enforces its own.
+_REGEX_MATCH_PHASE_SLACK = 2.0
+
+
+def _attach_regex_input_phase(resp: dict, partial_source: object | None) -> dict:
+    """ISS-20: name the phase that ran out of budget instead of guessing.
+
+    A regex search spends its budget in two phases -- reading the candidate
+    files off disk, then matching them in the isolated child -- and only the
+    second one has ever seen the pattern. The payload said
+    `narrow_or_simplify_regex` either way, so a repo on a slow disk was told to
+    rewrite a regex that had never been compiled against its data, when the
+    real answer was "scan fewer files or raise the deadline". Nothing is
+    attached unless the producer actually tagged the phase, so a match-phase
+    timeout -- and every test that raises the worker exception directly --
+    keeps its exact previous shape.
+
+    `partial_*` keys are deliberately NOT set here; ISS-12 owns those. An
+    input-phase death spawned no child, so there is no scanned prefix of a
+    result set to hand back, and dressing 0 matches up as a partial would be
+    the same confident-empty-answer lie that fix exists to prevent.
+    """
+    if str(getattr(partial_source, "timeout_phase", "") or "") != "input":
+        return resp
+    files_read = int(getattr(partial_source, "input_files_read", 0) or 0)
+    bytes_read = int(getattr(partial_source, "input_bytes_read", 0) or 0)
+    resp["timeout_phase"] = "input"
+    resp["input_files_read"] = files_read
+    resp["input_bytes_read"] = bytes_read
+    resp["error"] = (
+        "regex search ran out of budget while READING input after "
+        f"{files_read} file(s) / {bytes_read} byte(s) -- matching never started"
+    )
+    resp["hint"] = (
+        "The deadline was spent reading candidate files off disk, so the "
+        "pattern was never run against them and rewriting it will not help. "
+        "Narrow the FILE scope (path= or file_pattern=) or raise "
+        "regex_deadline_seconds."
+    )
+    resp["ca_next_action"] = "narrow_file_scope_or_raise_regex_deadline"
+    return resp
+
+
 def _regex_timeout_payload(query: str, effective_regex_deadline: float | None,
                            path: str, project_path: str, file_pattern: str,
                            partial_source: object | None = None) -> dict:
@@ -692,7 +771,7 @@ def _regex_timeout_payload(query: str, effective_regex_deadline: float | None,
         payload_example[loc_key] = loc
     if file_pattern and file_pattern != "*":
         payload_example["file_pattern"] = file_pattern
-    return _attach_regex_partials({
+    resp = _attach_regex_partials({
         "ok": False,
         "error": f"regex search exceeded hard deadline of {deadline_txt}s",
         "error_name": "REGEX_SEARCH_TIMEOUT",
@@ -714,6 +793,7 @@ def _regex_timeout_payload(query: str, effective_regex_deadline: float | None,
                 "a file_pattern to shrink the input.",
         "ca_next_action": "narrow_or_simplify_regex",
     }, partial_source)
+    return _attach_regex_input_phase(resp, partial_source)
 
 
 def _regex_budget_payload(query: str, path: str, project_path: str,
@@ -979,6 +1059,71 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
             "snapshot_root": str(snapshot_root),
         }, ensure_ascii=False)
 
+    # ISS-20: which phase is spending the budget, and how far it got. "input"
+    # = pin + read candidate files off disk + line budget; "match" = the
+    # isolated matcher. Only the second has ever seen the pattern, and the
+    # timeout payload used to report the second no matter which one actually
+    # died. It lives HERE, in the caller's frame, and not in the producer's,
+    # because the AWAITING side has to read the phase too -- that is how it
+    # decides whether the match clock has been earned. A plain dict rather
+    # than nonlocal ints because _regex_remaining is called before the read
+    # counters below exist.
+    _regex_progress: dict = {"phase": "input", "files_read": 0, "bytes_read": 0}
+
+    def _regex_match_extension() -> float:
+        """ISS-20 / #12(b): the match phase's clock, only once it is earned.
+
+        Returns 0.0 while the producer is still pinning or reading input, so
+        the singleflight wait expires at the caller's deadline exactly as it
+        did before: no child has spawned, so abandoning it loses nothing. Once
+        the child IS matching, letting that wait fire first would abandon it
+        and take the ISS-12 checkpoint -- the only copy of the matches found
+        so far -- down with it, which is the precise loss this fix removes.
+        Read at call time, so the R39 retry's doubled deadline applies without
+        re-wiring anything.
+        """
+        if mode != "regex" or _regex_progress.get("phase") != "match":
+            return 0.0
+        return effective_regex_deadline + _REGEX_MATCH_PHASE_SLACK
+
+    def _regex_input_phase_source(exc: object | None = None) -> object | None:
+        """ISS-20: let the AWAITING side disclose an input-phase death too.
+
+        The producer tags the phase onto the RegexSearchTimeout it raises, but at
+        a tight deadline the caller's own wait is what usually fires first: a
+        read already issued to a slow disk is not interruptible, so
+        `_regex_remaining` never reaches its next checkpoint and what the caller
+        is left holding is a synthetic asyncio.TimeoutError with nothing on it.
+        Measured live on this repo at regex_deadline_seconds=0.3: the payload
+        still said `narrow_or_simplify_regex` about a pattern that had never
+        been compiled -- the exact defect ISS-20 exists to remove, surviving in
+        the one path that actually runs. The progress dict is shared with the
+        producer, so the same disclosure is available from here.
+
+        Only claimed when the counters can back it: at least one file really
+        read, and no matches in hand. A producer wedged before its first read,
+        and every test that raises the worker exception directly (no producer
+        runs, so the counters stay 0), keep their exact previous shape rather
+        than being handed a phase nobody observed.
+        """
+        if mode != "regex" or regex_worker is None:
+            return exc
+        if _regex_progress.get("phase") != "input":
+            return exc
+        if not (_regex_progress.get("files_read") or _regex_progress.get("bytes_read")):
+            return exc
+        if getattr(exc, "partial_results", None):
+            return exc
+        src = exc
+        if src is None:
+            src = regex_worker.RegexSearchTimeout(
+                f"regex search exceeded hard deadline of {effective_regex_deadline:.3f}s",
+            )
+        if not getattr(src, "timeout_phase", None):
+            src.timeout_phase = "input"
+            src.input_files_read = int(_regex_progress.get("files_read") or 0)
+            src.input_bytes_read = int(_regex_progress.get("bytes_read") or 0)
+        return src
     def _search_snapshot(
         expected_snapshot_id: str | None,
         producer_deadline_at: float | None,
@@ -986,9 +1131,13 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         def _regex_remaining() -> float:
             remaining = producer_deadline_at - time.monotonic()
             if remaining < regex_worker.MIN_DEADLINE_SECONDS:
-                raise regex_worker.RegexSearchTimeout(
+                exc = regex_worker.RegexSearchTimeout(
                     f"regex search exceeded hard deadline of {effective_regex_deadline:.3f}s",
                 )
+                exc.timeout_phase = _regex_progress["phase"]
+                exc.input_files_read = int(_regex_progress["files_read"])
+                exc.input_bytes_read = int(_regex_progress["bytes_read"])
+                raise exc
             return remaining
 
         if mode == "regex":
@@ -1060,9 +1209,17 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                         regex_total_bytes,
                         len(payload),
                     )
+                    # ISS-20: this is now the ONLY line-budget check in the live
+                    # path (search_records is called with
+                    # records_pre_validated=True), and it still runs before any
+                    # payload can reach a child process.
                     regex_worker.validate_line_budget(payload)
                     regex_record_count += 1
                     regex_total_bytes = next_total
+                    # ISS-20: publish coverage so a death in THIS phase can say
+                    # how far it actually got instead of blaming the pattern.
+                    _regex_progress["files_read"] = regex_record_count
+                    _regex_progress["bytes_read"] = regex_total_bytes
                     _regex_remaining()
                 records.append((relative_path, label, payload))
 
@@ -1139,13 +1296,24 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                         break
 
             if mode == "regex":
+                # ISS-20 / #12(b): the MATCH phase gets its own full deadline.
+                # It used to inherit whatever was left after reading every
+                # candidate file off disk, so on this repo (151 files, HDD) the
+                # remainder fell below MIN_DEADLINE_SECONDS and the child was
+                # never spawned: no checkpoint, no partial rows, and a payload
+                # that blamed a pattern which had never been compiled against
+                # the data. regex_deadline_seconds now bounds each phase -- the
+                # input scan above, the matching here -- so the number a caller
+                # passes is the number the matcher actually gets.
+                _regex_progress["phase"] = "match"
                 results = regex_worker.search_records(
                     pattern,
                     re_flags,
                     records,
                     max_results=effective_max_results,
                     context_lines=effective_context,
-                    deadline_seconds=_regex_remaining(),
+                    deadline_seconds=effective_regex_deadline,
+                    records_pre_validated=True,
                 )
             payload_out = {"results": results, "snapshot_id": pin.snapshot_id}
             if skipped_large:
@@ -1176,12 +1344,28 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
             wait_timeout = None
             producer_deadline_at = None
             if mode == "regex":
-                wait_timeout = regex_deadline_at - time.monotonic()
-                if wait_timeout <= 0:
+                # ISS-20: the producer runs TWO separately-clocked phases --
+                # input (pin + read candidate files + line budget) and matching
+                # (a fresh effective_regex_deadline started inside
+                # search_records). This wait is handed ONLY the input bound: a
+                # producer wedged BEFORE the matcher exists (slow snapshot pin,
+                # held state lock) has no checkpoint to salvage, so it must
+                # still be abandoned at exactly the caller's number --
+                # tests/test_search_regex_budget.py pins that, and it is the
+                # only wall-clock guarantee left while nothing has spawned. The
+                # match phase's own clock is granted on demand instead, through
+                # extend_deadline, so a phase that never reached the matcher
+                # can never spend it.
+                input_wait = regex_deadline_at - time.monotonic()
+                if input_wait <= 0:
                     raise regex_worker.RegexSearchTimeout(
                         f"regex search exceeded hard deadline of {effective_regex_deadline:.3f}s",
                     )
+                wait_timeout = input_wait
                 producer_deadline_at = regex_deadline_at
+                _regex_progress.update(
+                    {"phase": "input", "files_read": 0, "bytes_read": 0},
+                )
             # R39: adaptive retry — if first regex attempt times out, retry
             # with extended deadline (up to MAX_DEADLINE_SECONDS). Prevents
             # one-shot timeout on full-repo scans where subprocess overhead
@@ -1195,6 +1379,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                         owner_transfer=lambda: None,
                         owner_done=lambda: None,
                         timeout=wait_timeout,
+                        extend_deadline=_regex_match_extension,
                     )
                     break  # success — exit retry loop
                 except asyncio.TimeoutError:
@@ -1209,6 +1394,9 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                     regex_deadline_at = search_started_at + effective_regex_deadline
                     wait_timeout = regex_deadline_at - time.monotonic()
                     producer_deadline_at = regex_deadline_at
+                    _regex_progress.update(
+                        {"phase": "input", "files_read": 0, "bytes_read": 0},
+                    )
                     search_key = (
                         snapshot_token,
                         str(base_resolved).casefold(), pattern, re_flags, file_pattern,
@@ -1242,6 +1430,9 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                     regex_deadline_at = search_started_at + effective_regex_deadline
                     wait_timeout = regex_deadline_at - time.monotonic()
                     producer_deadline_at = regex_deadline_at
+                    _regex_progress.update(
+                        {"phase": "input", "files_read": 0, "bytes_read": 0},
+                    )
             else:
                 # inner loop exhausted without break — both attempts timed out.
                 # Re-raise as asyncio.TimeoutError to enter the outer handler.
@@ -1276,7 +1467,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         # ISS-12: _last_regex_timeout, not the asyncio.TimeoutError we are
         # holding -- that one is a synthetic re-raise and carries no matches.
         _timeout_resp = _regex_timeout_payload(query, effective_regex_deadline, path, project_path, file_pattern,
-                                              partial_source=_last_regex_timeout)
+                                              partial_source=_regex_input_phase_source(_last_regex_timeout))
         if _narrow_warn:
             _timeout_resp["ca_chain_hint"] = _narrow_warn
             _timeout_resp["ca_chain_next"] = "search_code with file_pattern or path"
@@ -1301,7 +1492,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         # builder so the caller always gets query + corrected_payload + retry_sequence.
         if regex_worker is not None and isinstance(exc, regex_worker.RegexSearchTimeout):
             _rt_resp = _regex_timeout_payload(query, effective_regex_deadline, path, project_path, file_pattern,
-                                              partial_source=exc)
+                                              partial_source=_regex_input_phase_source(exc))
             if _narrow_warn:
                 _rt_resp["ca_chain_hint"] = _narrow_warn
                 _rt_resp["ca_chain_next"] = "search_code with file_pattern or path"

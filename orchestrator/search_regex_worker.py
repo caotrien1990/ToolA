@@ -119,13 +119,18 @@ def _materialize_records(
     *,
     deadline_at: float,
     deadline_seconds: float,
+    validate_lines: bool = True,
 ) -> list[tuple[str, str, bytes]]:
     """Materialize all records with budget checks.
 
-    R38 OPTIMIZATION: Per-record line validation removed — the worker
-    subprocess already validates lines during regex matching. This
-    eliminates O(total_bytes) splitlines() work that previously consumed
-    most of the deadline before the subprocess even started.
+    ISS-20: the previous docstring claimed "R38 OPTIMIZATION: per-record line
+    validation removed" while the loop below still called validate_line_budget
+    on every payload -- it described a change that was never made, so the
+    O(total_bytes) splitlines() it claims to have removed was still charged to
+    the deadline, a SECOND time, after the parent had already paid for it. The
+    check itself must stay reachable: it is what makes an oversize line fail
+    before a child is ever spawned. `validate_lines=False` is the caller
+    asserting it ran the same check while reading the payloads.
     """
     materialized: list[tuple[str, str, bytes]] = []
     total_bytes = 0
@@ -137,7 +142,8 @@ def _materialize_records(
         total_bytes = validate_next_record_budget(
             len(materialized), total_bytes, len(payload_bytes),
         )
-        validate_line_budget(payload_bytes)
+        if validate_lines:
+            validate_line_budget(payload_bytes)
         materialized.append((relative_path, label, payload_bytes))
     _remaining(deadline_at, deadline_seconds)
     return materialized
@@ -412,7 +418,19 @@ def search_records(
     max_results: int,
     context_lines: int,
     deadline_seconds: float = DEFAULT_DEADLINE_SECONDS,
+    records_pre_validated: bool = False,
 ) -> list[dict]:
+    """Match `pattern` over `records` in an isolated child under a hard deadline.
+
+    ISS-20: `records_pre_validated=True` is the caller's assertion that it
+    already ran `validate_line_budget` on every payload as it read it -- which
+    is exactly what orchestrator/tools/search.py does, per file, before it
+    appends. Re-splitting every payload here is O(total_bytes) of duplicate
+    work charged to this deadline, and on an HDD-backed repo it was a
+    measurable slice of the budget the matcher itself needed. The default
+    stays False: an un-audited caller must still be line-budget checked HERE,
+    before a child is ever spawned.
+    """
     validate_pattern_budget(pattern)
     deadline = normalize_deadline_seconds(deadline_seconds)
     deadline_at = time.monotonic() + deadline
@@ -420,6 +438,7 @@ def search_records(
         records,
         deadline_at=deadline_at,
         deadline_seconds=deadline,
+        validate_lines=not records_pre_validated,
     )
     remaining = _remaining(deadline_at, deadline)
     return _run_isolated(
