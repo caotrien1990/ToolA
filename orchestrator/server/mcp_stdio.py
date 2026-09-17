@@ -548,8 +548,14 @@ def run_mcp_stdio() -> None:
                               duration_ms: int = 0, status: str = "ok",
                               reason: str = "", project_path: str = "") -> str:
             """Log one realtime native event into the session. Call immediately after native fallback for Rule C."""
-            return _mcp_guard_response(lambda: asyncio.run(srv.ct.log_native_event(
-                action_type, tool_name, target, duration_ms, status, reason, project_path)))
+            # A33-C: daemon-only transport. ct.log_native_event takes 16 params; this
+            # wrapper exposes the first 7, so the payload names exactly those 7 and the
+            # daemon keeps its own defaults for the rest.
+            return _mcp_call_text("log_native_event", {
+                "action_type": action_type, "tool_name": tool_name, "target": target,
+                "duration_ms": duration_ms, "status": status, "reason": reason,
+                "project_path": project_path,
+            })
 
 
         @_mcp.tool
@@ -559,9 +565,17 @@ def run_mcp_stdio() -> None:
                          mcp_key: str = "project-orchestrator", dry_run: bool = False,
                          mode: str = "", cleanup: bool = True) -> str:
             """R86: CA lifecycle — register/unregister agents, set_mode A|native (default A = [A]-first), bulk-write global-rule/MCP config. Preserves persona line."""
-            return _mcp_guard_response(lambda: asyncio.run(srv.ct.manage_agent(
-                action, agent_id, target, persona, rule_file, rule_format, rule_template,
-                mcp_file, mcp_format, mcp_key, dry_run, mode=mode, cleanup=cleanup)))
+            # A33-C: daemon-only transport. The old call handed 11 POSITIONAL args to a
+            # ct.manage_agent that takes 16, whose params 12-14 are
+            # skill_name/skill_dir/skill_format -- only the current ordering kept that
+            # correct. Keys, not positions.
+            return _mcp_call_text("manage_agent", {
+                "action": action, "agent_id": agent_id, "target": target,
+                "persona": persona, "rule_file": rule_file, "rule_format": rule_format,
+                "rule_template": rule_template, "mcp_file": mcp_file,
+                "mcp_format": mcp_format, "mcp_key": mcp_key, "dry_run": dry_run,
+                "mode": mode, "cleanup": cleanup,
+            })
 
         @_mcp.tool
         def prepare_ca_session(project_path: str, mode: str = "T1", idea: str = "",
@@ -590,8 +604,20 @@ def run_mcp_stdio() -> None:
         @_mcp.tool
         def get_rule_core_text(agent_id: str = "", force: bool = False) -> str:
             """Return canonical CORE_RULE text and metadata, guarded per agent."""
-            return _mcp_guard_response(lambda: asyncio.run(
-                srv.ct.get_rule_core_text(agent_id=agent_id, force=force)))
+            # A33-C: daemon-only transport, and the agent id is resolved HERE for the
+            # same reason as open_session. Measured: the per-agent fetch guard
+            # (_RULE_CORE_FETCH_CACHE, code_tools.py:2472) is a MODULE GLOBAL keyed by
+            # ORCHESTRATOR_AGENT_ID -- a var nothing in this repo ever sets -- so an
+            # empty agent_id keys "default". Running here gave every host its own
+            # private "default"; running in the daemon makes that bucket shared, and a
+            # second agent would get already_fetched without ever receiving the rule
+            # text. COUNCIL_AGENT_ID (orchestrator_server.py:8329 really does set it per
+            # worker) keeps workers apart instead of collapsing them onto one bucket.
+            return _mcp_call_text("get_rule_core_text", {
+                "agent_id": ((agent_id or "").strip()
+                             or (os.environ.get("COUNCIL_AGENT_ID") or "").strip()),
+                "force": force,
+            })
 
         @_mcp.tool
         def bootstrap_session(project_path: str = "", session_id: str = "",
@@ -610,18 +636,21 @@ def run_mcp_stdio() -> None:
                        delegation_capability: str = "",
                        delegate_agent_id: str = "", owner_claim_id: str = "") -> str:
             """Create the authoritative task epoch for a real user prompt."""
-            return _mcp_guard_response(lambda: asyncio.run(
-                srv.ct.begin_task(
-                    session_id, prompt, agent_id, max_chars,
-                    owner_capability, delegation_capability, delegate_agent_id,
-                    owner_claim_id,
-                )))
+            # A33-C: daemon-only transport. The old call handed 8 POSITIONAL args to
+            # ct.begin_task; a keyword payload cannot shift silently if that signature
+            # ever grows a parameter in the middle.
+            return _mcp_call_text("begin_task", {
+                "session_id": session_id, "prompt": prompt, "agent_id": agent_id,
+                "max_chars": max_chars, "owner_capability": owner_capability,
+                "delegation_capability": delegation_capability,
+                "delegate_agent_id": delegate_agent_id, "owner_claim_id": owner_claim_id,
+            })
 
         @_mcp.tool
         def get_task_checkpoint(session_id: str) -> str:
             """Return the active task checkpoint for compaction/recovery."""
-            return _mcp_guard_response(lambda: asyncio.run(
-                srv.ct.get_task_checkpoint(session_id)))
+            # A33-C: daemon-only transport -- see the long note on prepare_ca_session.
+            return _mcp_call_text("get_task_checkpoint", {"session_id": session_id})
 
         def _mcp_response_text(resp) -> str:
             text = getattr(resp, "text", None)
