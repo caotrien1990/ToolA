@@ -2638,6 +2638,121 @@ def _open_session_drift_decision(resp: dict, mx, verbosity: str) -> str:
         ]
     return verbosity
 
+# A33 (2026-09-17) - provenance gate for the open_session matrix audit.
+#
+# Measured defect: open_session reported code_tools 257 / inventory 258 with a
+# phantom `ocr_map` drift while audit_tool_matrix on the SAME daemon generation
+# reported 258/258/258, drift_count 0. The cache is NOT the cause (in-memory,
+# 30s TTL, same producer). orchestrator/server/mcp_stdio.py:535 runs
+# open_session IN THE MCP HOST PROCESS - asyncio.run(srv.ct.open_session(...))
+# - instead of proxying over HTTP the way call_tool does. A host whose registry
+# was imported before ocr_map existed therefore compares its own 257-tool
+# in-memory registry against the daemon-refreshed 258-entry on-disk inventory,
+# while the envelope still carries the daemon's generation. matrix_log.jsonl
+# proves the skew runs BOTH ways: rows from pid 41876 carry ct=258/inv=257
+# (runtime ahead of disk), rows from pid 57644 carry ct=257/inv=258, and 57644
+# wrote rows on both sides of the 45504 -> 36100 daemon restart so it cannot be
+# the daemon. Only the daemon's own runtime may publish a tool surface as the
+# project's truth. Out of scope because unmeasured: progressive_gap_count from a
+# foreign process is left untouched - no phantom gap has been observed.
+_MATRIX_AUDIT_DAEMON_PID_CACHE: dict = {}
+_MATRIX_AUDIT_DAEMON_PID_TTL_SECONDS = 5.0
+
+
+def _daemon_published_pid():
+    """PID the daemon published in server_generation.json, or None if unknown.
+
+    Same stamp orchestrator_server.py:120-124 writes and
+    orchestrator/server/mcp_stdio.py:262 already reads, so nothing new is
+    invented here. conftest.py:156 redirects ORCHESTRATOR_GENERATION_FILE per
+    test run, which keeps tests off the live daemon's stamp for free.
+    """
+    now = time.monotonic()
+    cached = _MATRIX_AUDIT_DAEMON_PID_CACHE.get("v")
+    if cached and (now - cached[0]) < _MATRIX_AUDIT_DAEMON_PID_TTL_SECONDS:
+        return cached[1]
+    pid = None
+    try:
+        configured = os.environ.get("ORCHESTRATOR_GENERATION_FILE")
+        gen_file = (
+            Path(configured)
+            if configured
+            else path_runtime.ORCHESTRATOR_DIR
+            / ".orchestrator_cache"
+            / "server_generation.json"
+        )
+        published = json.loads(gen_file.read_text(encoding="utf-8"))
+        raw = published.get("pid")
+        pid = int(raw) if raw is not None else None
+    except Exception:
+        pid = None
+    # Deliberately LOCK-FREE: a race costs one extra tiny file read, while a
+    # lock around a callback-reachable path is exactly the A32 deadlock family.
+    _MATRIX_AUDIT_DAEMON_PID_CACHE["v"] = (now, pid)
+    return pid
+
+
+def _matrix_audit_runtime_provenance() -> dict:
+    """Who computed this audit, and is that the daemon."""
+    own = os.getpid()
+    daemon_pid = _daemon_published_pid()
+    return {
+        "audit_pid": own,
+        "daemon_pid": daemon_pid,
+        "audit_is_daemon_runtime": bool(
+            daemon_pid is not None and daemon_pid == own
+        ),
+    }
+
+
+def _matrix_audit_gate_foreign_runtime(payload: dict) -> dict:
+    """Refuse to publish a non-daemon process's tool surface as project drift.
+
+    Daemon runtime: pass through, plus one `audit_scope` key so the caller can
+    see the audit is authoritative. Any other process: keep the numbers but
+    under names that say what they measure (`local_registry_counts`), empty the
+    drift list, and hand CA the one call that reaches the daemon.
+    """
+    if not isinstance(payload, dict):
+        return payload
+    summary = payload.get("summary")
+    if not isinstance(summary, dict):
+        summary = {}
+        payload["summary"] = summary
+    if summary.get("audit_scope"):
+        return payload  # already gated; never re-capture zeroed counts
+    prov = _matrix_audit_runtime_provenance()
+    if prov["audit_is_daemon_runtime"]:
+        summary["audit_scope"] = "daemon_runtime"
+        return payload
+    drift = payload.get("drift") or []
+    local_counts = {
+        k: summary.get(k)
+        for k in ("drift_count", "alias_drift_count", "alias_drift_severity")
+        if k in summary
+    }
+    local_counts["drift_tools"] = [
+        d.get("tool") for d in drift if isinstance(d, dict)
+    ][:5]
+    summary.update(prov)
+    summary["audit_scope"] = "local_process_registry"
+    summary["local_registry_counts"] = local_counts
+    summary["drift_count"] = 0
+    summary["alias_drift_count"] = 0
+    summary["alias_drift_severity"] = None
+    summary["audit_note"] = (
+        "this process is not the daemon runtime; its in-memory tool registry is"
+        " not the project's tool surface, so its drift is reported under"
+        " local_registry_counts instead of as project drift"
+    )
+    summary["ca_next_action"] = (
+        "call audit_tool_matrix over HTTP for the daemon's own tool surface"
+    )
+    # Empty the drift list so matrix_drift_present / matrix_drift_note / the
+    # force-full escalation never fire on a phantom. _open_session_drift_decision
+    # is deliberately left untouched.
+    payload["drift"] = []
+    return payload
 
 def _matrix_audit_open_session_summary(project_path: str):
     """Return the matrix-audit fields open_session needs, with TTL + single-flight.
@@ -2690,6 +2805,9 @@ def _matrix_audit_open_session_summary(project_path: str):
                 "generated_at": full.get("generated_at"),
                 "ok": full.get("ok"),
             }
+            # A33 (2026-09-17): gate BEFORE the cache stores it, so a foreign
+            # process can never publish its own tool surface as project drift.
+            payload = _matrix_audit_gate_foreign_runtime(payload)
             with _MATRIX_AUDIT_OPEN_SESSION_CACHE_LOCK:
                 _MATRIX_AUDIT_OPEN_SESSION_CACHE[key] = {
                     "at": time.monotonic(),

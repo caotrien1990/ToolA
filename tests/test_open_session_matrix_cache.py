@@ -20,6 +20,7 @@ their own project's payload.
 """
 from __future__ import annotations
 
+import os
 import threading
 import time
 import unittest
@@ -152,13 +153,21 @@ class TestMatrixAuditOpenSessionCache(unittest.TestCase):
                 "persisted": True,
             }
 
-        with patch.object(code_tools, "_audit_tool_matrix_sync", fake_audit):
+        # A33 (2026-09-17): this test's premise is a DAEMON-runtime audit - it
+        # pins that the cache hands open_session the audit's own numbers. The
+        # provenance gate zeroes drift for any process that is not the daemon,
+        # and pytest is one of those, so the premise has to be stated now
+        # instead of assumed. The gate itself is driven both ways in
+        # tests/test_a33_matrix_audit_provenance_gate.py.
+        with patch.object(code_tools, "_daemon_published_pid", lambda: os.getpid()), \
+                patch.object(code_tools, "_audit_tool_matrix_sync", fake_audit):
             payload = code_tools._matrix_audit_open_session_summary("D:/x")
 
         # Handler consumed keys must be present with right types.
         self.assertIsInstance(payload.get("summary"), dict)
         self.assertEqual(payload["summary"]["drift_count"], 3)
         self.assertEqual(payload["summary"]["progressive_gap_count"], 1)
+        self.assertEqual(payload["summary"]["audit_scope"], "daemon_runtime")
         self.assertIsInstance(payload.get("drift"), list)
         # Truthy check `bool(_mx.get('drift'))` must still work for drift presence
         self.assertTrue(bool(payload.get("drift")))

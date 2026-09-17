@@ -249,12 +249,19 @@ def _apply_verbosity(response: dict, mode: str = "full", kind: str = "payload") 
         # R22: open_session — compress matrix_audit to counts only; drop path notes
         mx = response.get("matrix_audit") or {}
         if isinstance(mx, dict) and mx:
-            response["matrix_audit"] = {
+            compressed = {
                 "drift_count": mx.get("drift_count", 0),
                 "alias_drift_count": mx.get("alias_drift_count", 0),
                 "progressive_gap_count": mx.get("progressive_gap_count", 0),
                 "alias_drift_severity": mx.get("alias_drift_severity"),
             }
+            # A33 (2026-09-17): provenance must survive terse, otherwise a
+            # foreign process's gated audit reads as a clean daemon audit.
+            # Conditional so a daemon call adds exactly one short key.
+            for _k in ("audit_scope", "local_registry_counts", "audit_note"):
+                if mx.get(_k) is not None:
+                    compressed[_k] = mx[_k]
+            response["matrix_audit"] = compressed
         for k in _VERBOSE_BLOCKS_SESSION_OPEN:
             response.pop(k, None)
     elif kind == "matrix_audit":
