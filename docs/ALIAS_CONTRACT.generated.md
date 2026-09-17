@@ -2,8 +2,8 @@
 
 Generated from runtime `orchestrator_server._ARG_ALIASES`.
 
-- Tools with aliases: 72
-- Total aliases: 221
+- Tools with aliases: 73
+- Total aliases: 224
 - Source of truth: `orchestrator_server.py:_ARG_ALIASES` plus runtime `register_tool(aliases=...)` updates
 
 | Tool | Alias | Canonical |
@@ -120,6 +120,9 @@ Generated from runtime `orchestrator_server._ARG_ALIASES`.
 | `memory_query` | `max_items` | `top_k` |
 | `memory_query` | `max_results` | `top_k` |
 | `memory_query` | `q` | `query` |
+| `ocr_map` | `from` | `from_ref` |
+| `ocr_map` | `repo` | `project_path` |
+| `ocr_map` | `to` | `to_ref` |
 | `ocr_review` | `from` | `from_ref` |
 | `ocr_review` | `repo` | `project_path` |
 | `ocr_review` | `to` | `to_ref` |

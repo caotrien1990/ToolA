@@ -7,16 +7,18 @@ Usage:
   python orchestrator_server.py --mcp    # MCP stdio mode
 """
 import asyncio
-import copy
+import base64
 import concurrent.futures
+import contextvars
+import copy
 import functools
 import hashlib
-import base64
 import hmac
-import contextvars
 import inspect
 import json
 import logging
+import math
+import msvcrt
 import os
 import re
 import shlex
@@ -27,16 +29,14 @@ import sys
 import tempfile
 import threading
 import time
-import math
-import msvcrt
-import uuid
 import urllib.error
 import urllib.request
+import uuid
 import webbrowser
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from collections import deque
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from aiohttp import web
@@ -61,25 +61,34 @@ except Exception as exc:
 import code_tools as ct
 import path_runtime
 from orchestrator.core import errors as _legacy_errors
-from orchestrator.council.identity import canonical_id, assert_unique_canonical_ids
+from orchestrator.council.identity import assert_unique_canonical_ids, canonical_id
+from orchestrator.council.route_metrics import (
+    append_measurement as _route_append_measurement,
+)
+from orchestrator.council.route_metrics import (
+    build_measurement as _route_build_measurement,
+)
+from orchestrator.council.route_metrics import (
+    parse_dispatch_metadata as _route_parse_dispatch_metadata,
+)
 from orchestrator.council.snapshots import (
     VersionedSnapshotCache,
     acquire_file_lock_until,
     read_jsonl_tail,
     read_tail_bytes,
 )
-from orchestrator.council.route_metrics import (
-    append_measurement as _route_append_measurement,
-    build_measurement as _route_build_measurement,
-    parse_dispatch_metadata as _route_parse_dispatch_metadata,
-)
-from orchestrator.storage.jsonl_store import append_jsonl as _jsonl_append_locked
 from orchestrator.fileops.xroot import is_outside_project_root, xroot_check
+from orchestrator.lifecycle.request_orchestrator_restart import controller_health
+from orchestrator.lifecycle.restart_protocol import (
+    DEFAULT_CONTROL_URL,
+    BusySnapshotPublisher,
+    reap_orphan_busy_snapshots,
+)
 from orchestrator.server.accounting import PostCallAccountingQueue
 from orchestrator.server.audit_writer import (
+    SESSION_EVENT_KIND,
     AuditRecord,
     DurableAuditWriter,
-    SESSION_EVENT_KIND,
 )
 from orchestrator.server.executor_lanes import (
     ExecutorLaneError,
@@ -92,10 +101,8 @@ from orchestrator.server.fair_admission import (
     reset_admission_identity,
     set_admission_identity,
 )
-from orchestrator.lifecycle.restart_protocol import (
-    BusySnapshotPublisher, DEFAULT_CONTROL_URL, reap_orphan_busy_snapshots,
-)
-from orchestrator.lifecycle.request_orchestrator_restart import controller_health
+from orchestrator.storage.jsonl_store import append_jsonl as _jsonl_append_locked
+
 # ─── Paths & config ───────────────────────────────────────────────────────────
 
 _HERE = Path(__file__).parent
@@ -356,6 +363,7 @@ _MUTATING_TOOLS = set(ct.PROTECTED_TOOL_NAMES) | _TOKEN_REQUIRED_TOOLS
 # file. Any local process (UI, CLI) reads the file to authenticate; remote
 # attackers without filesystem access cannot.
 import secrets as _secrets
+
 _TOKEN_FILE = _HERE / ".orchestrator_cache" / "mutation_token.txt"
 _TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
 EXPECTED_TOKEN = _secrets.token_urlsafe(32)
@@ -1609,6 +1617,13 @@ _ARG_ALIASES.setdefault('ruff_fix', {}).update({'file_path': 'path', 'file': 'pa
 _ARG_ALIASES.setdefault('ocr_review', {}).update({'from': 'from_ref', 'to': 'to_ref', 'repo': 'project_path'})
 _ARG_ALIASES.setdefault('ocr_rule', {}).update({'from': 'from_ref', 'to': 'to_ref', 'repo': 'project_path', 'path': 'paths', 'file': 'paths', 'file_path': 'paths', 'files': 'paths'})
 _ARG_ALIASES.setdefault('ocr_scan', {}).update({'repo': 'project_path', 'file': 'path', 'file_path': 'path', 'format': 'output_format'})
+# A32-1.3: ocr_map takes the same range args as ocr_review, so it takes the same
+# three habit-remaps -- a CA that learned `repo=` on one and got UNSUPPORTED_FIELD
+# on the other would be a trap [A] built itself. min_changed_lines is deliberately
+# NOT aliased: it is [A]'s own knob, not an OCR flag name, so a wrong guess should
+# come back as UNSUPPORTED_FIELD with accepted_fields rather than be silently
+# accepted under a name the schema never documents.
+_ARG_ALIASES.setdefault('ocr_map', {}).update({'from': 'from_ref', 'to': 'to_ref', 'repo': 'project_path'})
 # CA habit: list_structure uses depth/path. max_depth/file_path were 400 UNSUPPORTED_FIELD.
 _ARG_ALIASES.setdefault('list_structure', {}).update({
     'max_depth': 'depth',
@@ -8216,8 +8231,8 @@ def _council_communicate_idle(proc, input_text, idle_sec=None, hard_cap_sec=None
     Legacy timeout arguments remain accepted for compatibility but are ignored.
     A separate 600-second monitor observes liveness and never kills a live worker.
     """
-    import threading as _th
     import codecs as _codecs
+    import threading as _th
     out_chunks, err_chunks = [], []
     live_fh = None
     live_lock = _th.Lock()
@@ -10757,7 +10772,9 @@ async def _council_dispatch_message(sender, target, text, timeout_sec=6000, queu
             _ctx = _council_find_latest_context(target) or {}
             _proj = str(_ctx.get("project_path") or "").strip()
             if _proj:
-                from orchestrator.graph.enrich_producers import produce_council_pack as _cbm_warm_council
+                from orchestrator.graph.enrich_producers import (
+                    produce_council_pack as _cbm_warm_council,
+                )
                 _pack = await asyncio.to_thread(_cbm_warm_council, _proj, generation=_council_context_generation())
                 if isinstance(_pack, dict) and _pack.get("payload"):
                     _resp["council_pack"] = {"status": "ok", "reason": _pack.get("reason"),
@@ -13592,9 +13609,12 @@ async def handle_graph_context(request):
                "graph_degraded_reason": None, "symbols": [], "edges": [],
                "truncated": False, "elapsed_ms": 0}
     try:
-        from orchestrator.graph.config import (GRAPH_ENABLED, COUNCIL_CONTEXT_MAX_SYMBOLS,
-                                               GRAPH_CONTEXT_TIMEOUT_S)
-        from orchestrator.graph.query import graph_find_symbol, cbm_trace_path
+        from orchestrator.graph.config import (
+            COUNCIL_CONTEXT_MAX_SYMBOLS,
+            GRAPH_CONTEXT_TIMEOUT_S,
+            GRAPH_ENABLED,
+        )
+        from orchestrator.graph.query import cbm_trace_path, graph_find_symbol
         if not GRAPH_ENABLED:
             payload["graph_status"] = "disabled"
             payload["graph_degraded_reason"] = "GRAPH_ENABLED=0"
@@ -15333,7 +15353,9 @@ def _tool_names_payload(tier: str = "", name_contains: str = "", category: str =
         # instead of the first N alphabetical names, so CA discovery sees the
         # intended surface. Pass limit=250 (or any filter) for the full catalog.
         try:
-            from orchestrator.core.registry_data import CURATED_CORE_TOOLS as _curated_sot
+            from orchestrator.core.registry_data import (
+                CURATED_CORE_TOOLS as _curated_sot,
+            )
         except Exception:
             _curated_sot = ()
         _curated_set = set(_curated_sot)
@@ -15619,8 +15641,8 @@ async def dispatch_tool_call(tool_name: str, body: dict | None = None,
             return _payload, 409
 
         try:
-            import urllib.request as _ur
             import urllib.error as _ue
+            import urllib.request as _ur
             _pdata = json.dumps(body if isinstance(body, dict) else {}).encode("utf-8")
             _proxy_headers = {
                 "Content-Type": "application/json",
@@ -15975,8 +15997,9 @@ async def handle_open_core_rule(request):
 # ─── Internal: filtered Magika scan ───────────────────────────────────────────
 
 async def _scan_filtered(project_path: str) -> list[dict]:
-    from magika import Magika
     import os as _os
+
+    from magika import Magika
 
     base = Path(project_path)
     files: list[Path] = []

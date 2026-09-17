@@ -158,7 +158,11 @@ _GRAPH_REFRESH_LOCKS: dict = {}
 #
 # Scope: the safe-fixable rules validate_file already advertises, nothing wider --
 # ruff_fix EDITS code, so a rule that lands here must be one we are willing to
-# apply unattended.
+# apply unattended. A32-1.2: this select is therefore deliberately NARROWER than
+# code_tools.py's _RUFF_LINT_SELECT, which also carries _RUFF_REPORT_ONLY_RULES
+# (B006 = unsafe fix, E722 = no fix at all). Do NOT "resync" the two strings back
+# together: the relationship is superset (lint) vs fixable subset (fix), and
+# tests/test_a29_size_hint_and_ruff_preview_states.py pins exactly that.
 _RUFF_FIX_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541,RUF100,I"
 _RUFF_FIX_OVERRIDES = (
     "--config", 'lint.fixable = ["ALL"]',

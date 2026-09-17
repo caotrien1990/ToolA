@@ -82,7 +82,12 @@ class TestAliasCanonicalFieldsExist(unittest.TestCase):
         # output_format). `from` is why this layer is not optional: it is a Python
         # keyword, so the handler cannot declare it and only the alias registry can
         # accept the spelling the OCR CLI itself uses.
-        self.assertEqual(total, 221, f"Expected 221 aliases, got {total}")
+        # Re-based 2026-09-17 (A32-1.3): +3 for ocr_map -- the same three range remaps
+        # as ocr_review (from -> from_ref, to -> to_ref, repo -> project_path) and
+        # deliberately NOT a fourth for min_changed_lines: that one is [A]'s own knob,
+        # not an OCR flag name, so a wrong guess must come back as UNSUPPORTED_FIELD
+        # with accepted_fields rather than be accepted under an undocumented spelling.
+        self.assertEqual(total, 224, f"Expected 224 aliases, got {total}")
 
     def test_alias_tool_count_is_42(self):
         # Re-based 2026-08-11: R44 result-cap family added 14 new aliased tools.
@@ -93,8 +98,12 @@ class TestAliasCanonicalFieldsExist(unittest.TestCase):
         # ocr_rule, ocr_scan. The method name says 42 and the docstring above says
         # 113; both are historical and were already stale before this re-base. The
         # assert is the contract, the name is not.
-        self.assertEqual(len(srv._ARG_ALIASES), 72,
-                         f"Expected 72 aliased tools, got {len(srv._ARG_ALIASES)}")
+        # Re-based 2026-09-17 (A32-1.3): +1 ocr_map, the navigation-map member of the
+        # same island. It is registered T1 while its three siblings are T2, which the
+        # alias layer does not care about -- the alias registry is keyed by tool name,
+        # not by phase.
+        self.assertEqual(len(srv._ARG_ALIASES), 73,
+                         f"Expected 73 aliased tools, got {len(srv._ARG_ALIASES)}")
 
 
 # ── 2. Harmless-ignore fields are NOT schema properties ──────────────────────

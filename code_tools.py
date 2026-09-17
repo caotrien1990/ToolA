@@ -16,6 +16,7 @@ import os
 import re
 import secrets
 import shutil
+
 # C2-followup (2026-08-10): commit 4e4e8bf's message claims "signal/sys imports
 # added" but its actual diff never landed them. Both _kill_process_tree
 # (signal.SIGKILL) and run_project_command / run_project_test_script
@@ -31,20 +32,21 @@ import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timedelta
-from pathlib import Path
 from html.parser import HTMLParser
+from pathlib import Path
 
 import path_runtime
 import surgical_mapper
 from orchestrator import search_snapshots
+
+# Phase 0 Step 2: graph feature-flag + bounded-context constants (A_Q_devineupgrade_breakdown_plan_2nd)
+from orchestrator.graph import config as graph_config
+from orchestrator.mission import tools as _mission_tools
 from orchestrator.server.executor_lanes import (
     ExecutorLaneError,
     run_in_executor_lane,
 )
 from rule_core import get_rule_core, get_rule_core_metadata, get_rule_core_runtime_paths
-# Phase 0 Step 2: graph feature-flag + bounded-context constants (A_Q_devineupgrade_breakdown_plan_2nd)
-from orchestrator.graph import config as graph_config
-from orchestrator.mission import tools as _mission_tools
 
 # ─── Shared constants ─────────────────────────────────────────────────────────
 
@@ -188,11 +190,6 @@ def _atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> str:
 def _atomic_write_json(path: Path, data, *, indent: int | None = None) -> None:
     _atomic_write_text(Path(path), json.dumps(data, ensure_ascii=False, indent=indent), encoding="utf-8")
 
-from orchestrator.council.route_metrics import (
-    build_scorecard as _route_build_scorecard,
-    load_measurements as _route_load_measurements,
-    write_scorecard_files as _route_write_scorecard_files,
-)
 from orchestrator.core.registry_data import (
     BASE_TOOL_MAP_SPECS,
     T1_TOOLS,
@@ -205,6 +202,16 @@ from orchestrator.core.registry_data import (
     build_tool_phases,
     build_tool_schemas,
 )
+from orchestrator.council.route_metrics import (
+    build_scorecard as _route_build_scorecard,
+)
+from orchestrator.council.route_metrics import (
+    load_measurements as _route_load_measurements,
+)
+from orchestrator.council.route_metrics import (
+    write_scorecard_files as _route_write_scorecard_files,
+)
+
 PROTECTED_TOOL_NAMES = {
     "write_fix", "write_fix_html", "write_new_file", "delete_file", "ruff_fix",
     "replace_between_anchors",  # R43 P1 #3-B anchor-based patch (write op)
@@ -1635,8 +1642,15 @@ async def write_fix_html(file_path: str, start_line: int, end_line: int, new_con
     return json.dumps(result, ensure_ascii=False)
 
 
-from orchestrator.tools.write import write_fix, write_new_file, apply_after_dry_run, delete_file
-from orchestrator.tools.write import write_draft_patch, write_draft_status, write_draft_abort
+from orchestrator.tools.write import (
+    apply_after_dry_run,
+    delete_file,
+    write_draft_abort,
+    write_draft_patch,
+    write_draft_status,
+    write_fix,
+    write_new_file,
+)
 
 # ─── V15 R58: Python executable resolver ──────────────────────────────────────
 # Decouples script Python from orchestrator's own venv. Orchestrator may run on
@@ -2725,6 +2739,7 @@ AUTO_CHAIN_RULES = (
     ("ruff_preview", "write_fix / write_new_file on a .py file", "orchestrator/tools/write/core.py"),
     ("ca_hint_commit", "write_fix / write_new_file success", "orchestrator/tools/write/core.py"),
     ("ca_hint_review", "git_stage / git_commit", "orchestrator/git_tools.py"),
+    ("ca_hint_map", "ocr_map", "orchestrator/tools/ocr_review.py"),
     ("ca_hint_rule", "ocr_rule", "orchestrator/tools/ocr_review.py"),
     ("ca_hint_rule_text", "ocr_rule with the rule body omitted", "orchestrator/tools/ocr_review.py"),
     ("ca_hint_scope", "ocr_scan when a list was really capped", "orchestrator/tools/ocr_review.py"),
@@ -4009,12 +4024,20 @@ async def cache_delta(project_path: str) -> str:
     project_key = str(Path(project_path).resolve())
     with _CACHE_DELTA_FUTURES_LOCK:
         future = _CACHE_DELTA_FUTURES.get(project_key)
-        if future is None:
+        created = future is None
+        if created:
             future = _INDEX_IO_EXECUTOR.submit(_cache_delta_sync, project_key)
             _CACHE_DELTA_FUTURES[project_key] = future
-            future.add_done_callback(
-                lambda done, key=project_key: _forget_cache_delta_future(key, done)
-            )
+    # Recorded 2026-09-17: registering the done-callback while still holding the lock wedges
+    # the calling thread forever. concurrent.futures invokes add_done_callback INLINE when
+    # the future has already finished, and _forget_cache_delta_future acquires this same
+    # non-reentrant Lock -- a full-suite run froze here under load, on the daemon's own
+    # write path via post_write_batch_verify. The dict entry is still published before the
+    # lock is released, so the coalescing invariant is unchanged.
+    if created:
+        future.add_done_callback(
+            lambda done, key=project_key: _forget_cache_delta_future(key, done)
+        )
     return await asyncio.shield(asyncio.wrap_future(future))
 
 
@@ -4028,16 +4051,21 @@ async def _cache_delta_for_snapshot(
     future_key = (project_key, snapshot_id)
     with _CACHE_DELTA_FUTURES_LOCK:
         future = _CACHE_DELTA_FUTURES.get(future_key)
-        if future is None:
+        created = future is None
+        if created:
             future = _INDEX_IO_EXECUTOR.submit(
                 _cache_delta_sync,
                 project_key,
                 index,
             )
             _CACHE_DELTA_FUTURES[future_key] = future
-            future.add_done_callback(
-                lambda done, key=future_key: _forget_cache_delta_future(key, done)
-            )
+    # Same self-deadlock as cache_delta: add_done_callback runs the callback INLINE on the
+    # calling thread when the future is already done, and the callback acquires this very
+    # Lock, which is not reentrant. Register it only after the lock is released.
+    if created:
+        future.add_done_callback(
+            lambda done, key=future_key: _forget_cache_delta_future(key, done)
+        )
     return await asyncio.shield(asyncio.wrap_future(future))
 
 
@@ -4494,7 +4522,8 @@ async def run_project_command(
         if _err is not None:
             return json.dumps(_err, ensure_ascii=False)
         command = _decoded_text or ""
-    import re as _re_rpc_temp, tempfile as _tempfile_rpc
+    import re as _re_rpc_temp
+    import tempfile as _tempfile_rpc
     _temp_root = str(Path(_tempfile_rpc.gettempdir()).resolve())
     _temp_alias = _re_rpc_temp.compile(r"(?i)(%TEMP%|%TMP%|\$env:TEMP|\$\{TEMP\})")
     def _normalize_basetemp_text(text: str) -> str:
@@ -4518,7 +4547,8 @@ async def run_project_command(
             normalized_command.append(text)
             previous_basetemp = text == "--basetemp"
         command = normalized_command
-    import sys as _sys_rpc, shlex as _shlex_rpc
+    import shlex as _shlex_rpc
+    import sys as _sys_rpc
     _is_win = _sys_rpc.platform == "win32"
     if background:
         keep_alive = True
@@ -5962,23 +5992,28 @@ This file is created from user-approved inputs only.
 
 _ORCHESTRATOR_ROOT = Path(__file__).parent.parent  # project root của Orchestrator
 
+import orchestrator.session.logs as _session_logs_module
+import orchestrator.session.store as _session_store_module
 from orchestrator.session.logs import (
     _auto_trim_log,
     _check_incomplete_sessions,
     _log_app_session,
     _log_to_file,
     _log_usage,
+)
+from orchestrator.session.logs import (
     log_native as _session_log_native_impl,
 )
-import orchestrator.session.logs as _session_logs_module
-import orchestrator.session.store as _session_store_module
 from orchestrator.session.store import (
     TOOL_ACTION_MAP,
     _make_natural_log_line,
-    _project_cache_dir as _session_project_cache_dir,
     _session_project_key,
     _session_started_today,
 )
+from orchestrator.session.store import (
+    _project_cache_dir as _session_project_cache_dir,
+)
+
 _SESSIONS_DB = _session_store_module._SESSIONS_DB
 
 
@@ -7303,8 +7338,14 @@ async def folder_diff(path_a: str, path_b: str,
 # -- T4 desktop dialog runtime shims -----------------------------------------
 from orchestrator.runtime import (
     cancel_native_dialog as _runtime_cancel_native_dialog,
+)
+from orchestrator.runtime import (
     click_and_handle_folder_dialog as _runtime_click_and_handle_folder_dialog,
+)
+from orchestrator.runtime import (
     fill_folder_dialog as _runtime_fill_folder_dialog,
+)
+from orchestrator.runtime import (
     folder_dialog_snapshot as _runtime_folder_dialog_snapshot,
 )
 
@@ -8304,9 +8345,13 @@ async def run_project_test_script(
             try:
                 from orchestrator.graph.enrich_producers import (
                     produce_test_advisory as _cbm_warm_test,
+                )
+                from orchestrator.graph.enrich_producers import (
                     run_producer_async as _cbm_run_async,
                 )
-                from orchestrator.graph.hooks import scoped_fingerprint as _cbm_scoped_fp
+                from orchestrator.graph.hooks import (
+                    scoped_fingerprint as _cbm_scoped_fp,
+                )
                 result["enrich_fingerprint"] = _cbm_scoped_fp(str(root), script_hash)
                 _warm = await _cbm_run_async(_cbm_warm_test, str(root), script_hash, _declared)
                 if isinstance(_warm, dict):
@@ -9349,8 +9394,8 @@ async def check_server_path(path: str, mode: str = "auto", timeout_sec: int = 5,
     }
     try:
         if detected in ("http", "https"):
-            import urllib.request as _req
             import ssl as _ssl
+            import urllib.request as _req
             if verify_tls:
                 ctx = _ssl.create_default_context()
             else:
@@ -9378,7 +9423,8 @@ async def check_server_path(path: str, mode: str = "auto", timeout_sec: int = 5,
                 result["error"] = str(exc)
         elif detected == "unc":
             # SMB existence check via Path; can hang if server unreachable — use threaded timeout
-            import threading as _th_csp, queue as _q_csp
+            import queue as _q_csp
+            import threading as _th_csp
             q = _q_csp.Queue()
             def _probe():
                 try:
@@ -9449,9 +9495,9 @@ async def webfetch(url: str, max_chars: int = 200000, format: str = "text",
       - json: parse content as JSON and return under `parsed`
     Truncates content to max_chars (default 200KB) and reports `truncated`.
     """
-    import urllib.request as _ur_wf
-    import urllib.error as _uerr_wf
     import ssl as _ssl_wf
+    import urllib.error as _uerr_wf
+    import urllib.request as _ur_wf
     if not url:
         return _json_error("url required", error_name="MISSING_REQUIRED_FIELD")
     if not (url.startswith("http://") or url.startswith("https://")):
@@ -9900,8 +9946,10 @@ async def sample_unc_paths_with_root_check(paths: list,
     }
     Replaces v3 steps 12-14 (sample UNC + folder_stats per sample + root probe).
     """
+    import queue as _q_su
     import re as _re_su
-    import threading as _th_su, queue as _q_su, time as _t_su
+    import threading as _th_su
+    import time as _t_su
     if not isinstance(paths, list):
         return _json_error("paths must be a list of strings",
                             error_name="WRONG_ARGUMENTS",
@@ -10841,7 +10889,9 @@ async def parse_log_section(page_id: str, section_title: str,
     context_b64 / raw_issue_b64 and parse double-encoded JSON. Returns structured
     entries so CA doesn't manually decode.
     """
-    import base64 as _b64, re as _re_pl
+    import base64 as _b64
+    import re as _re_pl
+
     import tools_v15 as _v15_pl
     try:
         raw = await _v15_pl.extract_log_section(page_id=page_id, section_title=section_title,
@@ -11897,7 +11947,8 @@ async def workflow_draft_create(name: str, body_md: str, ttl_sec: int = 3600) ->
         return _json_error("name and body_md required",
                            error_name="MISSING_REQUIRED_FIELD")
     import secrets as _sec
-    from datetime import datetime as _dt, timedelta as _td
+    from datetime import datetime as _dt
+    from datetime import timedelta as _td
     token = _sec.token_urlsafe(16)
     now = _dt.now()
     ttl = max(60, min(int(ttl_sec or 3600), 86400))  # clamp 60s..24h
@@ -12647,18 +12698,32 @@ def _strip_ansi(text) -> str:
     return _ANSI_CSI_RE.sub("", str(text or ""))
 
 
-# ONE list, two uses (campaign-1608 A29-P4): the codes validate_file LINTS for
-# and the codes it advertises as ruff-fixable must be the same set. They were two
-# literals ~150 lines apart, and the day they drift `ruff_preview` starts
-# answering "violations_not_auto_fixable" with rules:[] for a rule we selected on
-# purpose -- a state that is otherwise unreachable precisely because the sets are
-# identical. orchestrator/graph/tools.py's _RUFF_FIX_SELECT is the third copy
-# (the one ruff_fix hands to --fix); the guard test asserts all three still agree
-# rather than importing across that boundary at runtime, which would add a
-# module-level dependency the daemon does not need at boot.
+# ONE tuple, three uses (campaign-1608 A29-P4; split in A32-1.2): the codes
+# validate_file LINTS for are now a SUPERSET of the codes it advertises as
+# ruff-fixable. They were two literals ~150 lines apart, and the day the fixable
+# half drifts from what ruff can really apply, `_py_error_ruff_hint` starts
+# promising an edit ruff refuses to make -- worse than not reporting the rule at
+# all. orchestrator/graph/tools.py's _RUFF_FIX_SELECT is the third copy (the one
+# ruff_fix hands to --fix) and it tracks the FIXABLE tuple, never the lint
+# select; the guard test asserts that relationship instead of importing across
+# the boundary at runtime, which would add a module-level dependency the daemon
+# does not need at boot.
 _RUFF_SAFE_FIX_RULES = ("F401", "F841", "E711", "E712", "E731", "E401", "E402",
                         "F541", "RUF100")
-_RUFF_LINT_SELECT = ",".join((*_RUFF_SAFE_FIX_RULES, "I"))
+# A32-1.2: lint-only, deliberately NOT in the tuple above. Measured on ruff
+# 0.16.7 (positive control: a probe with `def f(x=[])` + a bare `except:` fired
+# B006 at 1:9 and E722 at 4:5; negative control: `--select ZZ999` is rejected as
+# an unknown selector, so a zero count means clean rather than ignored):
+# B006's fix applicability is `unsafe` and E722 has NO fix, and `--diff` over
+# the whole repo wrote 0 bytes. Advertising them as safe-fixable would make
+# `_py_error_ruff_hint` promise a fix that cannot happen. They are still worth
+# SEEING -- a mutable default argument and a bare except are exactly the two
+# defects in OCR's checklist that a linter can catch mechanically -- so they are
+# selected for the lint pass and reported, and `ruff_preview` answers
+# `violations_not_auto_fixable`, which is why that state is no longer
+# unreachable (see the docstring of RuffRuleSetsMustNotDrift).
+_RUFF_REPORT_ONLY_RULES = ("B006", "E722")
+_RUFF_LINT_SELECT = ",".join((*_RUFF_SAFE_FIX_RULES, *_RUFF_REPORT_ONLY_RULES, "I"))
 
 
 def _py_error_ruff_hint(error_msg: str) -> tuple[bool, list[str], str]:
@@ -14205,6 +14270,8 @@ async def log_native_event(action_type: str = "", tool_name: str = "", target: s
         try:
             from orchestrator.core.ca_policy_matrix import (
                 classify_action as _cslt_classify,
+            )
+            from orchestrator.core.ca_policy_matrix import (
                 encode_classification_reason as _cslt_encode,
             )
             _cls = _cslt_classify(
@@ -15072,11 +15139,13 @@ async def cep_extension_status(project_path: str = "", live_name: str = "") -> s
 
 from orchestrator.tools.write import copy_file
 
+
 async def cep_deploy(project_path: str = "", live_name: str = "", files: list = None,
                      validate_first: bool = True) -> str:
     """R81 (T2) — mirror a CEP extension repo→LIVE (%APPDATA%/Adobe/CEP/extensions/<name>), per-file backup + hash verify + audit. files=[] deploys the curated
     set (manifest + html/js/jsx/css/json/png); pass explicit relative paths to deploy a subset."""
-    import shutil, time as _t
+    import shutil
+    import time as _t
     repo = Path(project_path) if project_path else None
     if repo is None or not repo.exists():
         return _json_error("project_path (extension repo root) required and must exist", error_name="MISSING_REQUIRED_FIELD")
@@ -16638,12 +16707,16 @@ except Exception as _rdc_exc:
 
 # ── CBM graph T1 tools (Phase 1 Step 11): additive registration via register_tool ──
 try:
+    from orchestrator.core.registry import register_tool as _register_cbm
+    from orchestrator.graph.tools import (
+        cbm_graph_status as _cbm_graph_status_handler,
+    )
     from orchestrator.graph.tools import (
         cbm_index as _cbm_index_handler,
-        cbm_graph_status as _cbm_graph_status_handler,
+    )
+    from orchestrator.graph.tools import (
         cbm_trace_path as _cbm_trace_path_handler,
     )
-    from orchestrator.core.registry import register_tool as _register_cbm
 
     _register_cbm(
         name="cbm_index",
@@ -16720,16 +16793,28 @@ except Exception as _cbm_exc:
 
 # ── CBM graph P1 tools (Phase 3 Steps 14-17): additive registration ──
 try:
+    from orchestrator.core.registry import register_tool as _register_cbm_p1
     from orchestrator.graph.tools import (
-        cbm_template_query as _cbm_template_query_handler,
-        cbm_get_architecture as _cbm_get_architecture_handler,
-        cbm_dead_code as _cbm_dead_code_handler,
-        ruff_fix as _ruff_fix_handler,
-        cbm_incremental_index as _cbm_incremental_index_handler,
         cbm_council_context as _cbm_council_context_handler,
+    )
+    from orchestrator.graph.tools import (
         cbm_cycle_point as _cbm_cycle_point_handler,
     )
-    from orchestrator.core.registry import register_tool as _register_cbm_p1
+    from orchestrator.graph.tools import (
+        cbm_dead_code as _cbm_dead_code_handler,
+    )
+    from orchestrator.graph.tools import (
+        cbm_get_architecture as _cbm_get_architecture_handler,
+    )
+    from orchestrator.graph.tools import (
+        cbm_incremental_index as _cbm_incremental_index_handler,
+    )
+    from orchestrator.graph.tools import (
+        cbm_template_query as _cbm_template_query_handler,
+    )
+    from orchestrator.graph.tools import (
+        ruff_fix as _ruff_fix_handler,
+    )
 
     _register_cbm_p1(
         name="cbm_template_query",
@@ -16900,15 +16985,23 @@ except Exception as _cbm_p1_exc:
 # npm install could take every CBM graph tool offline with it.
 # phase="T2" follows the ruff_fix template even though delegate mode mutates
 # nothing (it only reads git diff): ocr_scan with preview_only=false is the one
-# call in this family that reaches an external provider, so the family is gated
-# at the tier of its most expensive member.
+# call in this family that reaches an external provider, so the three tools below
+# are gated at the tier of that most expensive member. ocr_map is deliberately
+# outside that gate and states its reason at its own registration.
 try:
+    from orchestrator.core.registry import register_tool as _register_ocr_p5
+    from orchestrator.tools.ocr_review import (
+        ocr_map as _ocr_map_handler,
+    )
     from orchestrator.tools.ocr_review import (
         ocr_review as _ocr_review_handler,
+    )
+    from orchestrator.tools.ocr_review import (
         ocr_rule as _ocr_rule_handler,
+    )
+    from orchestrator.tools.ocr_review import (
         ocr_scan as _ocr_scan_handler,
     )
-    from orchestrator.core.registry import register_tool as _register_ocr_p5
 
     _register_ocr_p5(
         name="ocr_review",
@@ -16955,6 +17048,7 @@ try:
                     "from_ref": {"type": "string", "default": "", "description": "Git ref to diff from."},
                     "to_ref": {"type": "string", "default": "", "description": "Git ref to diff to."},
                     "include_rule_text": {"type": "boolean", "default": False, "description": "False omits rule bodies over 512 bytes (one .py measured 7886 bytes) and reports rule_bytes instead."},
+                    "compact": {"type": "boolean", "default": False, "description": "True replaces the system Python rule body with the 7-group checklist it condenses to (~100 tokens against ~1900), declaring verbatim_ocr_text=false. Groups that are not the system Python rule keep their byte count. Mutually exclusive with include_rule_text."},
                     "timeout": {"type": "integer", "default": 120, "description": "Subprocess timeout in seconds."},
                 },
                 "required": ["project_path", "paths"],
@@ -16989,17 +17083,56 @@ try:
             },
         },
     )
+
+    # A32-1.3: ocr_map registers T1, NOT T2 like the three siblings above, and the
+    # tier sentence at the head of this island was narrowed to say so. That rule
+    # ("gated at the tier of its most expensive member") exists for a tool that CAN
+    # escalate: ocr_scan takes preview_only, so one argument decides whether a
+    # provider is reached. ocr_map has no such parameter and no branch that can
+    # spawn anything but `delegate preview` -- the same zero-LLM subprocess
+    # ocr_review already runs -- so gating it T2 would charge a session to a tool
+    # that cannot spend one. phase= is per-tool in register_tool, so this is a
+    # declaration rather than a loophole: if ocr_map ever grows an argument that
+    # reaches a provider, it moves to T2 in that same commit.
+    _register_ocr_p5(
+        name="ocr_map",
+        handler=_ocr_map_handler,
+        phase="T1",
+        tool_map=TOOL_MAP,
+        tool_schemas=TOOL_SCHEMAS,
+        tool_phases=TOOL_PHASES,
+        phase_labels=PHASE_LABELS,
+        schema={
+            "description": "Navigation map of a change, cbm_graph-shaped: which files a diff actually lives in, sorted by changed-line count, with every dropped file counted by reason. Same zero-LLM subprocess as ocr_review. Read-only, 0 tokens, no session.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_path": {"type": "string", "description": "Absolute repo root to map."},
+                    "from_ref": {"type": "string", "default": "", "description": "Git ref to diff from. Mutually exclusive with commit."},
+                    "to_ref": {"type": "string", "default": "", "description": "Git ref to diff to. Mutually exclusive with commit."},
+                    "commit": {"type": "string", "default": "", "description": "Single commit to map instead of a from/to range."},
+                    "exclude": {"type": "string", "default": "", "description": "Comma-separated gitignore-style patterns, handed to OCR itself."},
+                    "min_changed_lines": {"type": "integer", "default": 10, "description": "A file with fewer insertions+deletions than this is dropped as below_min_changed_lines and counted in excluded_summary. 0 keeps every file: a 6-line edit can be a real production change, so the threshold is declared and overridable rather than silent."},
+                    "include_excluded": {"type": "boolean", "default": False, "description": "True adds excluded_files[] with a path and reason per drop. False still reports excluded_summary counts, so no drop is invisible."},
+                    "timeout": {"type": "integer", "default": 120, "description": "Subprocess timeout in seconds. Kept under the MCP proxy ceiling."},
+                },
+                "required": ["project_path"],
+            },
+        },
+    )
 except Exception as _ocr_p5_exc:
     import logging as _ocr_p5_log
     _ocr_p5_log.warning(f"OCR P5 tool registration failed: {_ocr_p5_exc}")
 
 # ── CAN-053 P2: raw graph browse tools (codo: no public API to browse nodes) ──
 try:
+    from orchestrator.core.registry import register_tool as _register_cbm_p2
     from orchestrator.graph.tools import (
-        cbm_nodes_query as _cbm_nodes_query_handler,
         cbm_edges_query as _cbm_edges_query_handler,
     )
-    from orchestrator.core.registry import register_tool as _register_cbm_p2
+    from orchestrator.graph.tools import (
+        cbm_nodes_query as _cbm_nodes_query_handler,
+    )
 
     _register_cbm_p2(
         name="cbm_nodes_query",
@@ -17054,14 +17187,22 @@ except Exception as _cbm_p2_exc:
 
 # ── CBM campaign P3–P6 tools: additive fourth block (do not move the three above) ──
 try:
+    from orchestrator.core.registry import register_tool as _register_cbm_p3
     from orchestrator.graph.tools import (
-        cbm_test_gap as _cbm_test_gap_handler,
-        cbm_quality_gate as _cbm_quality_gate_handler,
-        cbm_what_if as _cbm_what_if_handler,
-        cbm_evolution as _cbm_evolution_handler,
         cbm_dsm as _cbm_dsm_handler,
     )
-    from orchestrator.core.registry import register_tool as _register_cbm_p3
+    from orchestrator.graph.tools import (
+        cbm_evolution as _cbm_evolution_handler,
+    )
+    from orchestrator.graph.tools import (
+        cbm_quality_gate as _cbm_quality_gate_handler,
+    )
+    from orchestrator.graph.tools import (
+        cbm_test_gap as _cbm_test_gap_handler,
+    )
+    from orchestrator.graph.tools import (
+        cbm_what_if as _cbm_what_if_handler,
+    )
 
     _register_cbm_p3(
         name="cbm_test_gap",

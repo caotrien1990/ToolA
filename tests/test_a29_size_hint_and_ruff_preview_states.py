@@ -338,43 +338,92 @@ class SizeHintDescendsIntoTheWrapper(unittest.TestCase):
 
 
 class RuffRuleSetsMustNotDrift(unittest.TestCase):
-    """A29-P4: why `violations_not_auto_fixable` cannot be produced live.
+    """A29-P4 / A32-1.2: what validate_file LINTS vs what ruff_fix may repair.
 
     validate_file lints with one --select list and _py_error_ruff_hint decides
-    fixability from another. While the two lists are the SAME set, a non-empty
-    lint_warning always carries a rule the hint recognises, so ruff_preview can
-    only ever answer clean/fixable/unknown -- the not-auto-fixable branch is
-    correct code guarding a state the current configuration cannot reach. That
-    is a property of the two lists, so it is the lists these tests pin.
+    fixability from another. Until A32-1.2 the two were the SAME set, and this
+    docstring claimed `violations_not_auto_fixable` was therefore unreachable --
+    which was never quite true: E999 is reported by lint and matched by no rule
+    in the hint, so test_ruff_preview_states already reaches that branch at :167
+    and :197 already pins it as one of the four live states. A32-1.2 makes it
+    reachable from ORDINARY lint too, deliberately: B006 and E722 are selected so
+    a mutable default argument and a bare except are SEEN, but ruff cannot repair
+    them unattended (B006's fix is `unsafe`, E722 has none), so they must never be
+    advertised as fixable. The invariant these tests pin is therefore no longer
+    equality but containment: _RUFF_LINT_SELECT == fixable + report-only + I,
+    while _RUFF_FIX_SELECT (the third copy, in orchestrator/graph/tools.py -- the
+    one handed to --fix) tracks the FIXABLE half alone.
     """
 
-    HISTORICAL_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541,RUF100,I"
+    FIXABLE_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541,RUF100,I"
+    LINT_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541,RUF100,B006,E722,I"
 
     def test_refactor_did_not_change_what_ruff_is_asked_to_check(self):
         import code_tools
 
-        self.assertEqual(code_tools._RUFF_LINT_SELECT, self.HISTORICAL_SELECT)
+        self.assertEqual(code_tools._RUFF_LINT_SELECT, self.LINT_SELECT)
 
-    def test_ruff_fix_selects_exactly_what_validate_file_lints(self):
+    def test_ruff_fix_selects_only_the_half_it_may_repair(self):
         # The third copy lives in another module. Comparing it here keeps the
         # daemon free of a boot-time import while still failing loudly the day
-        # someone widens one list and not the other.
+        # someone widens one list and not the other. It must equal the FIXABLE
+        # half: widening it to the lint select would hand `ruff --fix` a rule it
+        # can only repair unsafely, which is exactly what A24 refused to allow.
         import code_tools
         from orchestrator.graph import tools as graph_tools
 
-        self.assertEqual(graph_tools._RUFF_FIX_SELECT,
-                         code_tools._RUFF_LINT_SELECT)
+        self.assertEqual(graph_tools._RUFF_FIX_SELECT, self.FIXABLE_SELECT)
+        self.assertNotEqual(graph_tools._RUFF_FIX_SELECT,
+                            code_tools._RUFF_LINT_SELECT)
+
+    def test_the_lint_select_is_the_fixable_set_plus_the_report_only_set(self):
+        import code_tools
+
+        self.assertEqual(
+            code_tools._RUFF_LINT_SELECT,
+            ",".join((*code_tools._RUFF_SAFE_FIX_RULES,
+                      *code_tools._RUFF_REPORT_ONLY_RULES, "I")))
+        for rule in code_tools._RUFF_REPORT_ONLY_RULES:
+            self.assertNotIn(rule, code_tools._RUFF_SAFE_FIX_RULES,
+                             "a report-only rule in the fixable tuple would make "
+                             "_py_error_ruff_hint promise a fix ruff refuses")
 
     def test_every_selected_rule_is_recognised_as_fixable(self):
         import code_tools
 
-        for rule in self.HISTORICAL_SELECT.split(","):
+        for rule in self.FIXABLE_SELECT.split(","):
             code = "I001" if rule == "I" else rule
             line = f"probe.py:1:1: {code} something ruff dislikes"
             applicable, matched, hint = code_tools._py_error_ruff_hint(line)
             self.assertTrue(applicable, f"{code} not recognised as fixable")
             self.assertTrue(matched, f"{code} matched no rule")
             self.assertIn("ruff_fix", hint)
+
+    def test_a_report_only_rule_is_linted_but_never_called_fixable(self):
+        # A32-1.2: the live route into `violations_not_auto_fixable`. Measured on
+        # ruff 0.16.7 with both controls: a probe with `def f(x=[])` + a bare
+        # `except:` fired B006 at 1:9 and E722 at 4:5, and `--select ZZ999` is
+        # rejected as an unknown selector, so these codes are real and enabled.
+        # `--diff` over the whole repo wrote 0 bytes -- there is nothing safe to
+        # apply, so a hint naming ruff_fix would be a promise ToolA cannot keep.
+        import code_tools
+        from orchestrator.tools.write.core import _ruff_preview_from_validation
+
+        for rule, warning in (
+                ("B006", "probe.py:1:9: B006 Do not use mutable data structures"
+                         " for argument defaults"),
+                ("E722", "probe.py:4:5: E722 Do not use bare `except`")):
+            self.assertIn(rule, code_tools._RUFF_LINT_SELECT)
+            applicable, matched, hint = code_tools._py_error_ruff_hint(warning)
+            self.assertFalse(applicable, f"{rule} must not be called fixable")
+            self.assertEqual(matched, [])
+            self.assertEqual(hint, "")
+            preview = _ruff_preview_from_validation(
+                {"ok": True, "lang": "python", "lint_warning": warning,
+                 "ruff_fix_applicable": False, "ruff_rules_matched": []},
+                "probe.py")
+            self.assertEqual(preview["state"], "violations_not_auto_fixable")
+            self.assertIn(rule, preview["lint_warning"])
 
     def test_an_unselected_rule_would_take_the_not_fixable_branch(self):
         # The drift case, proven by construction: F821 is deliberately NOT in

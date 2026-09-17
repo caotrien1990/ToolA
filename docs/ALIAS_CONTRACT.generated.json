@@ -193,6 +193,11 @@
     "max_results": "top_k",
     "q": "query"
   },
+  "ocr_map": {
+    "from": "from_ref",
+    "repo": "project_path",
+    "to": "to_ref"
+  },
   "ocr_review": {
     "from": "from_ref",
     "repo": "project_path",

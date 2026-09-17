@@ -10,13 +10,20 @@ Validates the per-tool JSON-schema ``parameters`` contract:
    collision ``write_new_file.content`` (legacy alias source that is also a
    declared property) is whitelisted — see ALIAS_CONTRACT §5.1.
 5. Ratchet: no NEW properties missing ``description`` / ``type`` beyond the
-   historically-accepted counts (upper-bound ratchet, less brittle than
-   snapshotting the full 278-line list).
+   historically-accepted counts (an upper-bound count ratchet, less brittle than
+   snapshotting the whole gap list).
+6. Positive controls: each lockstep predicate is ALSO driven with deliberately
+   drifted input, because a gate that has only ever been shown a healthy registry
+   has not been shown to be capable of failing -- see ``TestRegistryLockstep``.
 
-``orchestrator_server`` is imported lazily because (a) it owns ``_ARG_ALIASES``
-and (b) its import triggers late ``register_tool()`` calls that lift the
-registry from 187 -> 194 tools. If it cannot be imported, the whole module
-skips via ``skipUnless`` instead of failing collection.
+``orchestrator_server`` is imported lazily because (a) it owns ``_ARG_ALIASES`` and
+(b) its import triggers late ``register_tool()`` calls that add to the registry. How
+many tools that ends up being is deliberately NOT written into this docstring: ask
+``len(code_tools.TOOL_MAP)``. The figure this text used to carry went stale across
+three waves of tool additions while every assertion below stayed green, because the
+assertions read the live registry and only the prose was lying. If
+``orchestrator_server`` cannot be imported, the whole module skips via
+``skipUnless`` instead of failing collection.
 
 Run:  ./venv312/Scripts/python.exe -m pytest tests/test_schema_params_contract.py -v
 """
@@ -26,7 +33,7 @@ import unittest
 import code_tools
 
 try:
-    import orchestrator_server as srv  # triggers late registrations -> 194 tools
+    import orchestrator_server as srv  # import triggers the late register_tool() calls
     _SRV_AVAILABLE = True
     _SRV_REASON = ""
 except Exception as _exc:  # pragma: no cover - env-dependent
@@ -36,8 +43,9 @@ except Exception as _exc:  # pragma: no cover - env-dependent
 
 from orchestrator.core.registry import validate_registry
 
-# Whole-module skip guard: every assertion below depends on the full 194-tool
-# registry that only exists after ``orchestrator_server`` late registration.
+# Whole-module skip guard: every assertion below depends on the registry as it exists
+# only AFTER ``orchestrator_server`` late registration. How many tools that is stays
+# unwritten here on purpose -- ask ``len(code_tools.TOOL_MAP)``.
 _SKIP_IF_NO_SRV = unittest.skipUnless(_SRV_AVAILABLE, _SRV_REASON or "orchestrator_server unavailable")
 
 
@@ -88,6 +96,67 @@ class TestRegistryLockstep(unittest.TestCase):
         names = [fn["name"] for fn in _SCHEMAS]
         dupes = sorted({n for n in names if names.count(n) > 1})
         self.assertEqual(dupes, [], f"Duplicate schema names: {dupes}")
+
+    # -- positive controls ------------------------------------------- A32 / A31-Q1 B1
+    # Every assertion above describes a HEALTHY registry, so all three have only ever
+    # been seen green. Driven with real drift on 2026-09-17, two of them turned out not
+    # to be able to fail in the direction that matters most.
+
+    def test_validate_registry_cannot_see_a_name_missing_from_tool_map(self):
+        """Pins a MEASURED one-way gap so nobody reads this validator as lockstep.
+
+        ``validate_registry`` iterates ``for n in tool_map``: a name present in
+        TOOL_SCHEMAS or TOOL_PHASES but ABSENT from TOOL_MAP is unreachable by
+        construction. Both drifts below were driven for real and both returned ``[]``.
+
+        That is the expensive direction. ``TOOL_MAP`` is built by
+        ``build_tool_map(BASE_TOOL_MAP_SPECS, globals())``, which resolves handlers by
+        STRING through ``globals()`` -- so a typo'd or renamed handler silently drops
+        the TOOL_MAP entry while the schema and the phase stay behind, which is exactly
+        the shape this validator is blind to. The gate that actually covers it is
+        ``test_name_sets_equal`` below, NOT this function.
+
+        This test is deliberately an assertion of the CURRENT behaviour, not of the
+        desired behaviour: it exists so a future reader cannot mistake
+        ``validate_registry() == []`` for a lockstep proof, and so that widening the
+        validator arrives with a failing test attached instead of as a silent change.
+        """
+        short_map = dict(code_tools.TOOL_MAP)
+        short_map.pop(sorted(short_map)[0])
+        self.assertEqual(
+            validate_registry(short_map, code_tools.TOOL_SCHEMAS, code_tools.TOOL_PHASES),
+            [],
+            "validate_registry now reports a TOOL_MAP-side deletion -- that is an "
+            "IMPROVEMENT, not a regression: delete this test and say so in the commit")
+
+        ghost_phases = dict(code_tools.TOOL_PHASES)
+        ghost_phases["zz_ghost_tool_not_in_tool_map"] = "T1"
+        self.assertEqual(
+            validate_registry(code_tools.TOOL_MAP, code_tools.TOOL_SCHEMAS, ghost_phases),
+            [],
+            "same one-way gap, entered from the TOOL_PHASES side")
+
+    def test_validate_registry_does_report_the_drift_it_can_see(self):
+        # The other half of the control: the predicate is not simply inert.
+        duped = list(code_tools.TOOL_SCHEMAS) + [code_tools.TOOL_SCHEMAS[0]]
+        issues = validate_registry(
+            code_tools.TOOL_MAP, duped, code_tools.TOOL_PHASES)
+        self.assertTrue(any("duplicate schema" in i for i in issues),
+                        f"duplicate schema name went unreported: {issues}")
+
+    def test_name_sets_equal_is_what_catches_a_dropped_tool_map_entry(self):
+        # Control for test_name_sets_equal: drive it with the two drifts
+        # validate_registry cannot see, and show set equality does see both.
+        schema_names = {fn["name"] for fn in _SCHEMAS}
+        short_map = dict(code_tools.TOOL_MAP)
+        short_map.pop(sorted(short_map)[0])
+        self.assertNotEqual(set(short_map), schema_names,
+                            "a dropped TOOL_MAP entry must break set equality")
+
+        ghost_phases = dict(code_tools.TOOL_PHASES)
+        ghost_phases["zz_ghost_tool_not_in_tool_map"] = "T1"
+        self.assertNotEqual(set(code_tools.TOOL_MAP), set(ghost_phases),
+                            "a ghost TOOL_PHASES entry must break set equality")
 
 
 # ── 2. parameters.type == "object" ───────────────────────────────────────────
@@ -176,17 +245,23 @@ class TestAliasCanonicalAndLegacyCollision(unittest.TestCase):
 
 # ── 5. Ratchet: no NEW properties missing description / type ─────────────────
 
-# Upper-bound ratchet constants (fresh discovery, 2026-07-08, OpeC5). These are
-# the historically-accepted counts of schema properties that lack a
-# "description" / "type" field, measured across all 194 registered tools. The
-# assertion is `actual <= constant`: existing gaps are tolerated, but any NEW
-# gap (a freshly added property without description/type) flips the test red and
-# forces the author to either add the field or, if intentional, bump the
-# constant with a reason. A count ratchet is deliberately used instead of
-# snapshotting the full 278-line list — it stays robust when properties are
-# renamed/reordered/removed, and only alerts on net-new gaps.
-MISSING_DESCRIPTION_UPPER_BOUND = 282  # S4-bump 2026-08-08: +4 new from S4 tools sample_data_file(mode,project_path) + read_chunks(by,project_path)
-MISSING_TYPE_UPPER_BOUND = 1
+# Upper-bound ratchet constants (first measured 2026-07-08, OpeC5). These are the
+# accepted counts of schema properties that lack a "description" / "type" field,
+# measured across every registered tool -- ask the registry how many that is rather
+# than writing the number into this comment, where it rots. The assertion is
+# `actual <= constant`: existing gaps are tolerated, but any NEW gap (a freshly added
+# property without description/type) flips the test red and forces the author to
+# either add the field or, if intentional, bump the constant with a reason. A count
+# ratchet is deliberately used instead of snapshotting the gap list itself -- it stays
+# robust when properties are renamed/reordered/removed, and only alerts on net-new gaps.
+#
+# A32 2026-09-17: tightened 282 -> 278, which is the measured actual. WHY those 4 units
+# of slack existed is NOT measured, and is deliberately not guessed at here; what is
+# measured is that they were slack, and slack is the one thing a ratchet cannot carry --
+# four new properties with no description could have landed without ever turning this
+# red. Bump it again only with a named reason, and re-tighten once that reason is spent.
+MISSING_DESCRIPTION_UPPER_BOUND = 278
+MISSING_TYPE_UPPER_BOUND = 1  # actual is also 1: already tight, no slack to give back
 
 
 @_SKIP_IF_NO_SRV

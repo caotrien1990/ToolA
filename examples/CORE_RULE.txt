@@ -92,4 +92,5 @@ regex_search, find_callers, find_definition_and_usage, read_chunks are DEPRECATE
 - git_diff with a non-empty diff -> ca_hint + ca_next_action DERIVED from the payload's own scope: scope=staged -> "git_status then git_commit" (git_commit needs the expected_staged_hash git_status mints), any other scope -> "git_stage" with explicit paths. An empty diff carries NO hint key at all.
 - write_fix ok -> ca_hint_commit for git_stage
 - git_stage/git_commit -> ca_hint_review for ocr_review (a string only, never spawns a review)
+- ocr_map -> ca_hint_map: files[] is ordered by changed-line count and excluded_summary names every drop reason (a string only, zero LLM, zero token)
 Do NOT auto-execute ca_next_action / ca_chain_next without user go-ahead; present as suggestion.

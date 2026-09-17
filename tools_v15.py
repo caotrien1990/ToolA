@@ -45,19 +45,19 @@ Ktr enforces this rule via `acceptance_dashboard.import_topology_clean` (R43.3).
 """
 
 from __future__ import annotations
+
+import ast
+import asyncio
+import hashlib
 import json
+import logging
 import os
 import re
-import ast
-import logging
-import time
 import socket
-import hashlib
-import asyncio
 import subprocess
-from pathlib import Path
+import time
 from datetime import datetime
-
+from pathlib import Path
 
 # V15 R18: schema version stamped on every response so CA can detect drift
 # and invalidate cached schema assumptions across [A] updates.
@@ -691,8 +691,10 @@ async def _r43_replace_between_anchors(
     end_anchor_inclusive: when True, replace through end_anchor line; when False,
     end_anchor line is preserved (replace up to line before it).
     """
-    from code_tools import write_fix as _wf_anchor, _resolve_project_file as _resolve_anchor
     import re as _re_anchor
+
+    from code_tools import _resolve_project_file as _resolve_anchor
+    from code_tools import write_fix as _wf_anchor
     try:
         fp = _resolve_anchor(project_path, file_path)
     except Exception as exc:
@@ -801,7 +803,12 @@ async def write_transaction(operations: list, project_path: str = "",
     Steps: dry_run all → structural check → if any fail → abort. backup_project →
     apply all → validate batch → if any validate fail → revert all .bak.
     """
-    from code_tools import write_fix, write_new_file, post_write_batch_verify, backup_project
+    from code_tools import (
+        backup_project,
+        post_write_batch_verify,
+        write_fix,
+        write_new_file,
+    )
     if not isinstance(operations, list) or not operations:
         return _err("operations must be non-empty list", error_name="MISSING_REQUIRED_FIELD")
 
@@ -1087,6 +1094,7 @@ async def audit_reconciliation_report(project_path: str = "", target_session_id:
     import json as j
     import re
     import sqlite3
+
     import code_tools as ct
     ct._sync_session_db_alias()
     wanted = str(target_session_id or session_id or "").strip()
@@ -1158,6 +1166,7 @@ async def session_audit_summary(project_path: str = "", session_id: str = "",
     if target_session_id:
         session_id = target_session_id
     import sqlite3
+
     from code_tools import _SESSIONS_DB, _session_project_key
 
     if not session_id and not project_path:
@@ -2998,10 +3007,11 @@ async def launch_electron_with_cdp(launcher_path: str = "", project_path: str = 
 
     Token required (mutating).
     """
-    from code_tools import run_project_command
+    import json as _json
     import re as _re
     import urllib.request as _ur
-    import json as _json
+
+    from code_tools import run_project_command
     chosen = launcher_path
     # 1. resolve launcher
     if not chosen:
@@ -3996,7 +4006,9 @@ async def cleanup_test_session(project_path: str = "",
     # R43 P0 #6A: idle guard — refuse cleanup if target still busy
     if idle_guard_signals and not idle_guard_force:
         try:
-            from code_tools import assert_target_idle as _ati_fn  # R43 fix: not in tools_v15 scope
+            from code_tools import (
+                assert_target_idle as _ati_fn,  # R43 fix: not in tools_v15 scope
+            )
             _sigs = list(idle_guard_signals)
             if idle_guard_stable_seconds and isinstance(idle_guard_stable_seconds, int):
                 for _s in _sigs:
@@ -4063,8 +4075,9 @@ async def cleanup_test_session(project_path: str = "",
     # 3. close session
     if close_session_after and project_path:
         try:
-            from code_tools import close_session as _close
             import json as _json
+
+            from code_tools import close_session as _close
             raw = await _close(project_path=project_path)
             try:
                 cs = _json.loads(raw)
@@ -4355,8 +4368,8 @@ async def ensure_single_electron_instance(project_path: str = "",
     Pair with launch_electron_with_cdp:
       ensure_single_electron_instance(project_path=...) → launch_electron_with_cdp(...)
     """
-    import subprocess as _sp
     import socket as _socket
+    import subprocess as _sp
     result: dict = {
         "ok": True,
         "existing_pids": [],
@@ -4934,7 +4947,7 @@ async def declare_mission(mission: str = "",
     sid = ""
     if project_path:
         try:
-            from code_tools import _session_project_key, _get_active_session_id
+            from code_tools import _get_active_session_id, _session_project_key
             norm = _session_project_key(project_path)
             # Anh 2026-08-11 (Phase A on-loop audit): _get_active_session_id is a
             # SQLite read; run it OFF the loop.
@@ -5099,7 +5112,8 @@ async def alias_contract_test(tool_filter: str = "",
         base_url = os.environ.get("ORCHESTRATOR_BASE_URL", "http://localhost:8083")
 
         def _http_probe(tname, payload):
-            import urllib.request as _ur, urllib.error as _ue
+            import urllib.error as _ue
+            import urllib.request as _ur
             try:
                 req = _ur.Request(
                     f"{base_url}/api/call/{tname}",
@@ -6038,8 +6052,8 @@ async def cdp_attach_target(target_id: str = "", cdp_port: int = 9223,
     ws_url = websocket_url or ""
     target_meta = {}
     if not ws_url:
-        import urllib.request as _ur
         import json as _json
+        import urllib.request as _ur
         try:
             with _ur.urlopen(f"http://localhost:{cdp_port}/json/list", timeout=3) as resp:
                 targets = _json.loads(resp.read().decode("utf-8"))
@@ -6071,8 +6085,8 @@ async def cdp_attach_target(target_id: str = "", cdp_port: int = 9223,
     # V15 R16 fix: Electron renderer rejects Target.createBrowserContext when
     # attaching via page-level WS. Auto-fallback to browser-level WS from
     # /json/version when we detect this specific failure.
-    import urllib.request as _ur2
     import json as _json2
+    import urllib.request as _ur2
     pw = await async_playwright().start()
     attach_via = "page_level_ws"
     attempted_urls = [ws_url]
@@ -6797,7 +6811,9 @@ async def desktop_window_list(title_filter: str = "",
     """
     if not _pywin32_available():
         return _missing_dep("pywin32", "pip install pywin32")
-    import win32gui, win32con, win32process
+    import win32con
+    import win32gui
+    import win32process
 
     def _get_proc_name(pid: int) -> str:
         try:
@@ -6918,8 +6934,11 @@ async def check_window_visibility(hwnd: int = 0, title_pattern: str = "",
     Either `hwnd` or `title_pattern` must be provided. If title_pattern, the
     first visible window matching wins.
     """
-    import win32gui, win32con, win32process
     import re as _re
+
+    import win32con
+    import win32gui
+    import win32process
 
     def _resolve_hwnd() -> tuple[int, str]:
         if hwnd and win32gui.IsWindow(hwnd):
@@ -7048,8 +7067,8 @@ async def _cdp_pick_target(port: int, prefer_title_substr: str = "",
                            wait_for_navigation: bool = False,
                            wait_timeout_ms: int = 5000):
     """Returns (target_dict or None, error_str or None)."""
-    import urllib.request as _ur
     import time as _time
+    import urllib.request as _ur
 
     first_candidate = None
     last_error = ""
@@ -7123,8 +7142,13 @@ async def _cdp_dispatch(port: int, target_id: str, method: str, params: dict):
     """Open a single-call CDP session, send one method, close. Returns (response, error)."""
     # Use websockets via stdlib? Python stdlib has no WS client; need raw socket impl
     # or external lib. Easiest: use a tiny WS handshake + frame writer/reader.
-    import socket, base64 as _b64, hashlib as _hl, os as _os, struct as _st
+    import base64 as _b64
+    import hashlib as _hl
+    import os as _os
+    import socket
+    import struct as _st
     import urllib.parse as _up
+
     # find ws URL for target
     import urllib.request as _ur
     try:
@@ -7216,9 +7240,9 @@ async def restart_orchestrator_via_task(delay_seconds: int = 2) -> str:
          expected_health_url: "...", helper_path: "..."} on success.
         Or {ok:false, error_name:"INSTALL_TASK_REQUIRED"|...} on setup error.
     """
-    import subprocess as _sp
     import json as _json
     import os as _os
+    import subprocess as _sp
     from pathlib import Path as _Path
     task_name = "ToolA_Orchestrator"
     delay = max(1, min(int(delay_seconds), 10))
@@ -7569,13 +7593,16 @@ async def restart_orchestrator_via_bat(
             Clamped to [1, 10].
         controller_url: unused compatibility argument; bat Path A talks to :8085.
     """
-    import subprocess as _sp
     import json as _json
+    import subprocess as _sp
     from pathlib import Path as _Path
 
     delay = max(1, min(int(delay_seconds), 10))
     root = _Path(__file__).parent
-    from orchestrator.lifecycle.restart_protocol import canonical_secret_path, migrate_legacy_secret
+    from orchestrator.lifecycle.restart_protocol import (
+        canonical_secret_path,
+        migrate_legacy_secret,
+    )
     secret_path = canonical_secret_path(root)
     _migrated = await asyncio.to_thread(migrate_legacy_secret, root)
     if _migrated is not None:
@@ -7833,7 +7860,10 @@ async def desktop_app_focus(hwnd: int = 0, title_pattern: str = "",
                     cdp_attempted=cdp_attempted,
                     cdp_error=err,
                     remediation="pip install pywin32")
-    import win32gui, win32process, win32con, win32api
+    import win32api
+    import win32con
+    import win32gui
+    import win32process
     target_hwnd = hwnd
     resolved_from = "hwnd" if hwnd else ""
     window_match_count = 0
@@ -8004,7 +8034,13 @@ async def desktop_send_text(text: str,
     if not _pywin32_available():
         return _err("desktop_send_text needs pywin32",
                     error_name="DESKTOP_INTERACTION_FAILED", remediation="pip install pywin32")
-    import win32gui, win32process, win32con, win32api, win32clipboard, time as _time
+    import time as _time
+
+    import win32api
+    import win32clipboard
+    import win32con
+    import win32gui
+    import win32process
 
     target_hwnd = hwnd
     resolved_from = "hwnd" if hwnd else ""
@@ -8385,7 +8421,10 @@ async def desktop_click(hwnd: int = 0, x: int = 0, y: int = 0,
                     cdp_attempted=cdp_attempted,
                     cdp_note=err,
                     remediation="pip install pywin32")
-    import win32gui, win32api, win32con, win32process
+    import win32api
+    import win32con
+    import win32gui
+    import win32process
     target_hwnd = hwnd
     resolved_from = "hwnd" if hwnd else ""
     window_match_count = 0
@@ -8450,6 +8489,7 @@ async def desktop_click(hwnd: int = 0, x: int = 0, y: int = 0,
                 }
                 try:
                     import os as _os
+
                     import win32security
                     process_query = getattr(win32con, "PROCESS_QUERY_LIMITED_INFORMATION", 0x1000)
                     token_query = getattr(win32security, "TOKEN_QUERY", 0x0008)
@@ -8678,7 +8718,14 @@ async def desktop_window_state(state: str,
       show     → SW_SHOW     (5)
     """
     try:
-        import win32gui, win32con, win32process, win32api
+        # The two suppressed imports below are never called in this function: they exist so
+        # that an incomplete pywin32 install raises ImportError at this gate instead of
+        # failing deeper in. ruff declines to fix an unused import inside an availability
+        # probe, so the intent is declared inline rather than left as a standing finding.
+        import win32api  # noqa: F401
+        import win32con
+        import win32gui
+        import win32process  # noqa: F401
     except ImportError:
         return _missing_dep("pywin32", "pip install pywin32")
 
@@ -9133,7 +9180,8 @@ async def get_token_meter(session_id: str = "", project_path: str = "") -> str:
     Returns approximate cumulative bytes_in / bytes_out / call count.
     """
     import sqlite3
-    from code_tools import _SESSIONS_DB, _session_project_key, _get_active_session_id
+
+    from code_tools import _SESSIONS_DB, _get_active_session_id, _session_project_key
 
     sid = session_id
     if not sid and project_path:
@@ -9251,6 +9299,7 @@ async def get_skill_state(session_id: str = "", project_path: str = "",
 async def list_projects(limit: int = 26) -> str:
     """V15 R8 B.7: list distinct project_paths from sessions DB; map to [Ab]..[Az]."""
     import sqlite3
+
     from code_tools import _SESSIONS_DB
     def _q() -> list:
         conn = sqlite3.connect(str(_SESSIONS_DB))
@@ -9335,8 +9384,8 @@ async def ca_policy_metrics(
 ) -> str:
     """T3: aggregate Matrix bypass counters from sessions.db events (CSLt metrics)."""
     try:
-        from orchestrator.core.ca_policy_matrix import query_session_metrics
         from code_tools import _SESSIONS_DB
+        from orchestrator.core.ca_policy_matrix import query_session_metrics
         result = query_session_metrics(
             _SESSIONS_DB,
             session_id=session_id or "",
@@ -9420,11 +9469,12 @@ async def normalize_ca_registration(dry_run: bool = True) -> str:
     """T3: set mode=A + transport_policy machine-checkable on all agents_registry.json rows."""
     try:
         from pathlib import Path
-        from orchestrator.core.ca_policy_matrix import (
-            normalize_registry,
-            load_agents_registry_file,
-        )
+
         from code_tools import _AGENTS_REGISTRY_PATH, _atomic_write_json
+        from orchestrator.core.ca_policy_matrix import (
+            load_agents_registry_file,
+            normalize_registry,
+        )
         path = Path(_AGENTS_REGISTRY_PATH)
         if not path.exists():
             return _err(f"registry not found: {path}", error_name="FILE_NOT_FOUND")

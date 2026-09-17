@@ -368,9 +368,202 @@ async def ocr_review(project_path: str = "", from_ref: str = "", to_ref: str = "
     return _json.dumps(payload, ensure_ascii=False)
 
 
+# A32-1.3: the MAP, not the review. `delegate preview` is the right subprocess to
+# navigate by -- it already knows which changed files a reviewer would open -- but
+# its raw answer is per-file rows and most of them are not landmarks. Measured on
+# this worktree: 19 previewed files, 11 of which OCR itself refuses as
+# `unsupported_ext`, and two of the eight it DOES offer are .council/ runtime json
+# the daemon rewrites every 45s (2 and 4 changed lines). ocr_map renders that same
+# call as a navigation surface, cbm_graph-shaped: keep the files a change actually
+# lives in, and say OUT LOUD what was dropped and why. An exclusion that does not
+# name itself reads as "nothing there" -- the same laundering this module already
+# refuses for an empty capture and for a rule it did not author.
+_OCR_MAP_MIN_CHANGED_LINES = 10
+_OCR_MAP_STATE_DIRS = (".council/", ".orchestrator_cache/")
+# A .json survives only when its NAME says it configures something. That is what
+# separates package.json / a schema file from runtime_state.json and
+# worker_models.json, and it is a name test on purpose: reading the file to decide
+# would make a read-only map tool open every changed json in the diff.
+_OCR_MAP_CONFIG_JSON_HINTS = ("schema", "config", "package", "tsconfig",
+                              "requirements", "manifest", "lock")
+
+
+def _ocr_map_drop_reason(path: str, changed: int, min_changed: int):
+    """Why a previewed file is not a navigation landmark. None = keep it.
+
+    Order matters: a .council/*.json must report the DIRECTORY reason, not the
+    json one, so the count in excluded_summary names the cause a CA can act on.
+    Note the leading-"./" strip is a slice, NOT lstrip("./") -- lstrip takes a
+    CHARACTER SET, so it would eat the dot of ".council/" and silently defeat the
+    very first rule below.
+    """
+    posix = str(path or "").replace("\\", "/")
+    if posix.startswith("./"):
+        posix = posix[2:]
+    low = posix.lower()
+    for state_dir in _OCR_MAP_STATE_DIRS:
+        if low.startswith(state_dir) or ("/" + state_dir) in low:
+            return "runtime_state_dir"
+    base = low.rsplit("/", 1)[-1]
+    if base.endswith("_state.json"):
+        return "state_snapshot"
+    if low.endswith(".json") and not any(h in base for h in _OCR_MAP_CONFIG_JSON_HINTS):
+        return "data_json"
+    if changed < min_changed:
+        return "below_min_changed_lines"
+    return None
+
+
+async def ocr_map(project_path: str = "", from_ref: str = "", to_ref: str = "",
+                  commit: str = "", exclude="",
+                  min_changed_lines: int = _OCR_MAP_MIN_CHANGED_LINES,
+                  include_excluded: bool = False,
+                  timeout: int = _OCR_TIMEOUT_DELEGATE,
+                  **aliases) -> str:  # noqa: ARG001
+    """delegate preview as a navigation map: where a change lives. Zero LLM.
+
+    Same subprocess as ocr_review, a different question. ocr_review answers "what
+    would a reviewer open"; ocr_map answers "which files is this change actually
+    in", sorted by weight, with every dropped file accounted for by reason. It
+    reads no LLM config and can reach no provider -- like cbm_graph, it is a map.
+    """
+    root, err = _clean_root(project_path)
+    if err:
+        return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION", "error": err},
+                           ensure_ascii=False)
+    commit_s = str(commit or "").strip()
+    from_s = str(from_ref or "").strip()
+    to_s = str(to_ref or "").strip()
+    range_flags, err = _range_flags(commit_s, from_s, to_s)
+    if err:
+        return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION", "error": err},
+                           ensure_ascii=False)
+    try:
+        min_changed = int(min_changed_lines)
+    except (TypeError, ValueError):
+        return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
+                            "error": "min_changed_lines must be an integer"},
+                           ensure_ascii=False)
+    if min_changed < 0:
+        return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
+                            "error": "min_changed_lines must be >= 0 (0 keeps every file)"},
+                           ensure_ascii=False)
+    args = ["delegate", "preview", "--repo", root, "--format", "json", *range_flags]
+    excl = _as_csv(exclude)
+    if excl:
+        args += ["--exclude", excl]
+    run = await _ocr_run(args, root, int(timeout or _OCR_TIMEOUT_DELEGATE))
+    if not run.get("ok"):
+        return _fail(run)
+    data, perr = _parse_json(run)
+    if perr:
+        return _fail(run, perr)
+    if not isinstance(data, dict):
+        return _fail(run, {"error_name": "OCR_OUTPUT_NOT_JSON",
+                           "error": "delegate preview did not return a JSON object"})
+
+    kept, dropped_by_a = [], []
+    for row in data.get("reviewable_files") or []:
+        if not isinstance(row, dict):
+            continue
+        changed = int(row.get("insertions") or 0) + int(row.get("deletions") or 0)
+        entry = {"path": row.get("path") or "", "status": row.get("status"),
+                 "changed": changed}
+        reason = _ocr_map_drop_reason(entry["path"], changed, min_changed)
+        if reason:
+            entry["exclude_reason"] = reason
+            dropped_by_a.append(entry)
+        else:
+            kept.append(entry)
+    dropped_by_ocr = []
+    for row in data.get("excluded_files") or []:
+        if not isinstance(row, dict):
+            continue
+        dropped_by_ocr.append({
+            "path": row.get("path") or "", "status": row.get("status"),
+            "changed": int(row.get("insertions") or 0) + int(row.get("deletions") or 0),
+            "exclude_reason": row.get("exclude_reason") or "excluded_by_ocr",
+        })
+    kept.sort(key=lambda item: (-item["changed"], item["path"]))
+    summary = {}
+    for entry in (*dropped_by_a, *dropped_by_ocr):
+        reason = entry["exclude_reason"]
+        summary[reason] = summary.get(reason, 0) + 1
+
+    payload = {
+        "ok": True, "mode": "delegate_map", "repository": root,
+        "ref_metadata": {
+            "ocr_mode": data.get("mode"),
+            "schema_version": data.get("schema_version"),
+            "commit": data.get("commit") or commit_s or None,
+            "from_ref": from_s or None,
+            "to_ref": to_s or None,
+            # Named, and answered honestly: measured on BOTH mode=workspace and
+            # mode=commit, delegate preview emits no merge base at all. Computing
+            # one here and shipping it inside ref_metadata would be [A] inventing
+            # a number and attributing it to OCR -- same refusal as pinned_version
+            # being None for a binary [A] did not install.
+            "merge_base": None,
+            "merge_base_source": "not_emitted_by_ocr_preview",
+        },
+        "files": kept,
+        "counts": {"previewed": int(data.get("total_files") or 0),
+                   "mapped": len(kept), "dropped_by_ocr": len(dropped_by_ocr),
+                   "dropped_by_a": len(dropped_by_a)},
+        "totals": {"insertions": int(data.get("total_insertions") or 0),
+                   "deletions": int(data.get("total_deletions") or 0)},
+        "min_changed_lines": min_changed,
+        "excluded_summary": summary,
+    }
+    if include_excluded:
+        payload["excluded_files"] = [*dropped_by_a, *dropped_by_ocr]
+    payload.update(_base_meta(run))
+    payload["ca_next_action"] = "ocr_rule" if kept else "none"
+    payload["ca_hint_map"] = (
+        "files[] is sorted by changed-line count, so the first entry is where the "
+        "change lives. excluded_summary counts every dropped file by reason; lower "
+        "min_changed_lines or pass include_excluded=true to see them.")
+    return _json.dumps(payload, ensure_ascii=False)
+
+
+# A32-1.1: the compact answer to "what should I look for in these files". `delegate
+# rule` returns a 7598-byte body for one .py; a CA that only needs the checklist pays
+# ~1900 tokens for prose it already knows. These 7 lines are that body's own structure,
+# condensed -- and they are NOT OCR's wording, so substituting them for a rule OCR did
+# not author would be fabrication. _ocr_checklist_applies() is the gate that refuses to.
+_OCR_PY_CHECKLIST = (
+    "Khi review Python, kiểm tra 7 nhóm:",
+    "1. Boundary: input rỗng, off-by-one, None propagation, float ==",
+    "2. Mutable: def f(x=[]), class-level shared state, closure loop var",
+    "3. Errors: bare except, silent pass, traceback loss, broad try",
+    "4. Resources: file/socket/lock không dùng with, try-finally thiếu",
+    "5. Performance: += trong loop, list vs set lookup, f-string trong logging",
+    "6. Concurrency: sync I/O trong async, task không await, shared state",
+    "7. Security: eval/exec, shell=True, pickle, yaml.load, SQL concat, weak crypto",
+)
+
+
+def _ocr_checklist_applies(group) -> bool:
+    """True only when _OCR_PY_CHECKLIST really is a condensation of THIS group.
+
+    Both conditions are read off the live payload: source "system" (the rule OCR
+    ships, which the checklist was written from) and a pattern that covers Python.
+    A repo-authored rule, or a system rule for another language, keeps its byte
+    count -- a condensation of someone else's text is not a summary, it is a guess.
+    """
+    if not isinstance(group, dict):
+        return False
+    if str(group.get("source") or "").strip().lower() != "system":
+        return False
+    pattern = str(group.get("pattern") or "").lower()
+    for ch in "{},*/.":
+        pattern = pattern.replace(ch, " ")
+    return "py" in pattern.split()
+
+
 async def ocr_rule(project_path: str = "", paths=None, commit: str = "",
                    from_ref: str = "", to_ref: str = "",
-                   include_rule_text: bool = False,
+                   include_rule_text: bool = False, compact: bool = False,
                    timeout: int = _OCR_TIMEOUT_DELEGATE,
                    **aliases) -> str:  # noqa: ARG001
     """delegate rule: the rule text that applies to given files. Zero LLM.
@@ -378,10 +571,23 @@ async def ocr_rule(project_path: str = "", paths=None, commit: str = "",
     include_rule_text defaults to False because one .py file measured 7886 bytes
     of rule body. That is a token-discipline default, not a missing feature:
     ask for it when the group is actually being reviewed.
+
+    compact=True answers with the condensed 7-group checklist in place of that
+    body (~100 tokens against ~1900). It is a substitution, not a truncation, so
+    it applies only where the substitution is honest (_ocr_checklist_applies) and
+    it always declares verbatim_ocr_text=False. compact and include_rule_text
+    contradict each other -- asking for the full text and for a condensation of it
+    in one call is refused rather than silently ranked.
     """
     root, err = _clean_root(project_path)
     if err:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION", "error": err},
+                           ensure_ascii=False)
+    if compact and include_rule_text:
+        return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
+                            "error": ("compact and include_rule_text are mutually "
+                                      "exclusive: one replaces the rule body with a "
+                                      "checklist, the other returns it in full")},
                            ensure_ascii=False)
     if isinstance(paths, str):
         paths = [p for p in paths.split(",") if p.strip()]
@@ -415,7 +621,36 @@ async def ocr_rule(project_path: str = "", paths=None, commit: str = "",
     for key, value in body.items():
         payload[key] = _shrink(value, include_rule_text)
     payload.update(_base_meta(run))
-    if not include_rule_text:
+    if compact:
+        payload["compact"] = True
+        groups = payload.get("groups")
+        if not isinstance(groups, list):
+            groups = []
+        condensed = 0
+        untouched = []
+        for group in groups:
+            if not isinstance(group, dict):
+                continue
+            if not _ocr_checklist_applies(group):
+                untouched.append(group.get("group_id"))
+                continue
+            prior = group.get("rule")
+            group["rule"] = {
+                "condensed": True,
+                "verbatim_ocr_text": False,
+                "checklist": list(_OCR_PY_CHECKLIST),
+                "body_bytes": prior.get("bytes") if isinstance(prior, dict) else None,
+            }
+            condensed += 1
+        payload["groups_condensed"] = condensed
+        payload["groups_not_condensed"] = untouched
+        payload["ca_hint_rule_text"] = (
+            "checklist is ToolA's condensation of the system Python rule, not OCR's own "
+            "wording; include_rule_text=true (without compact) returns that text"
+            if condensed else
+            "no group here is the system Python rule, so nothing was condensed; "
+            "include_rule_text=true (without compact) returns the bodies")
+    elif not include_rule_text:
         payload["ca_hint_rule_text"] = ("large strings are reported as byte counts; "
                                         "include_rule_text=true returns them in full")
     return _json.dumps(payload, ensure_ascii=False)

@@ -398,18 +398,206 @@ def test_ocr_registration_is_its_own_island_after_the_cbm_block():
         "npm install would take every CBM graph tool offline with it"
     )
     assert "except Exception as _ocr_p5_exc" in source
-    for name in ("ocr_review", "ocr_rule", "ocr_scan"):
+    for name in ("ocr_map", "ocr_review", "ocr_rule", "ocr_scan"):
         assert 'name="%s", handler=' % name in compact, name
-    assert compact.count('_register_ocr_p5( name=') == 3
+    # Re-based 2026-09-17 (A32-1.3): 3 -> 4 for ocr_map. The COUNT is the assert, not
+    # decoration: a fourth tool registered in some other island, or registered twice,
+    # would pass every other check in this file.
+    assert compact.count('_register_ocr_p5( name=') == 4
+    assert 'name="ocr_map", handler=_ocr_map_handler, phase="T1"' in compact, (
+        "ocr_map is the one member of this island outside the T2 gate, because it has "
+        "no argument that can reach a provider. If it ever grows one, this is the "
+        "line that must change in the same commit as that argument"
+    )
 
 
 def test_ocr_arg_aliases_remap_the_cli_flag_names():
     source = (REPO_ROOT / "orchestrator_server.py").read_text(encoding="utf-8", errors="replace")
 
-    for tool in ("ocr_review", "ocr_rule", "ocr_scan"):
+    for tool in ("ocr_map", "ocr_review", "ocr_rule", "ocr_scan"):
         assert "_ARG_ALIASES.setdefault('%s', {})" % tool in source, tool
-    line = next(ln for ln in source.splitlines()
-                if "_ARG_ALIASES.setdefault('ocr_review'" in ln)
-    assert "'from': 'from_ref'" in line, "`from` is a Python keyword; the handler cannot take it"
-    assert "'to': 'to_ref'" in line
-    assert "'repo': 'project_path'" in line
+    # ocr_map takes the same range args as ocr_review, so it must accept the same
+    # spellings. A CA that learned `repo=` on one tool and got UNSUPPORTED_FIELD on
+    # its sibling would be a trap [A] built for itself.
+    for tool in ("ocr_review", "ocr_map"):
+        line = next(ln for ln in source.splitlines()
+                    if "_ARG_ALIASES.setdefault('%s'" % tool in ln)
+        assert "'from': 'from_ref'" in line, (
+            "`from` is a Python keyword; the handler cannot take it (%s)" % tool)
+        assert "'to': 'to_ref'" in line, tool
+        assert "'repo': 'project_path'" in line, tool
+
+
+# --------------------------------------------------------------- A32-1.3 ocr_map
+
+def _map_body(**over) -> str:
+    """A preview payload shaped like the measured one, with every drop class in it."""
+    body = {
+        "mode": "workspace", "schema_version": "1", "repository": "R",
+        "total_files": 6, "reviewable_count": 4, "excluded_count": 2,
+        "total_insertions": 900, "total_deletions": 100,
+        "reviewable_files": [
+            {"path": "orchestrator/tools/ocr_review.py", "status": "modified",
+             "insertions": 160, "deletions": 2},
+            {"path": "code_tools.py", "status": "modified",
+             "insertions": 50, "deletions": 1},
+            # OCR itself calls this one REVIEWABLE -- it is why the filter exists.
+            {"path": ".council/runtime_state.json", "status": "modified",
+             "insertions": 2, "deletions": 2},
+            # 6 changed lines, and a real production edit (A32-1.2 touched exactly
+            # this file with exactly this size).
+            {"path": "orchestrator/graph/tools.py", "status": "modified",
+             "insertions": 5, "deletions": 1},
+        ],
+        "excluded_files": [
+            {"path": "notes.md", "status": "modified", "insertions": 9,
+             "deletions": 0, "exclude_reason": "unsupported_ext"},
+            {"path": "run.jsonl", "status": "modified", "insertions": 3,
+             "deletions": 0, "exclude_reason": "unsupported_ext"},
+        ],
+    }
+    body.update(over)
+    return json.dumps(body)
+
+
+def test_map_keeps_the_files_a_change_lives_in_sorted_by_weight(monkeypatch, tmp_path):
+    repo, _fake, _exe = _wire(monkeypatch, tmp_path, stdout=_map_body())
+
+    payload = _call(mod.ocr_map, project_path=str(repo))
+
+    assert payload["ok"] is True, payload
+    assert [f["path"] for f in payload["files"]] == [
+        "orchestrator/tools/ocr_review.py", "code_tools.py"], (
+        "files[] must be sorted by changed-line count so the first entry is where "
+        "the change lives")
+    assert payload["files"][0]["changed"] == 162
+    assert payload["counts"] == {"previewed": 6, "mapped": 2,
+                                 "dropped_by_ocr": 2, "dropped_by_a": 2}
+    assert payload["totals"] == {"insertions": 900, "deletions": 100}
+
+
+def test_every_dropped_file_is_counted_by_reason_even_without_include_excluded(
+        monkeypatch, tmp_path):
+    repo, _fake, _exe = _wire(monkeypatch, tmp_path, stdout=_map_body())
+
+    payload = _call(mod.ocr_map, project_path=str(repo))
+
+    assert payload["excluded_summary"] == {
+        "runtime_state_dir": 1, "below_min_changed_lines": 1, "unsupported_ext": 2}
+    assert "excluded_files" not in payload, "detail is opt-in; the COUNTS are not"
+    assert sum(payload["excluded_summary"].values()) == (
+        payload["counts"]["dropped_by_a"] + payload["counts"]["dropped_by_ocr"]), (
+        "a map that drops a file without counting it reads as 'nothing there' -- the "
+        "same laundering this module refuses for an empty capture")
+
+
+def test_include_excluded_adds_detail_and_leaves_the_summary_alone(monkeypatch, tmp_path):
+    repo, _fake, _exe = _wire(monkeypatch, tmp_path, stdout=_map_body())
+
+    default = _call(mod.ocr_map, project_path=str(repo))
+    asked = _call(mod.ocr_map, project_path=str(repo), include_excluded=True)
+
+    assert asked["excluded_summary"] == default["excluded_summary"]
+    assert len(asked["excluded_files"]) == 4
+    for entry in asked["excluded_files"]:
+        assert entry["exclude_reason"], entry
+
+
+def test_the_dot_of_dot_council_survives_because_the_strip_is_a_slice():
+    # The trap this predicate was written against: str.lstrip("./") takes a CHARACTER
+    # SET, so lstrip would eat the dot of ".council/" and silently defeat the very
+    # first rule. Both spellings must land on the same reason.
+    for spelling in (".council/runtime_state.json", "./.council/runtime_state.json"):
+        assert mod._ocr_map_drop_reason(spelling, 4, 10) == "runtime_state_dir", spelling
+    assert mod._ocr_map_drop_reason(r".council\worker_models.json", 40, 10) == (
+        "runtime_state_dir"), "a Windows separator is the same path"
+
+
+def test_a_state_dir_file_reports_the_directory_reason_not_the_size_one():
+    # Order matters: this file is BOTH inside .council/ and under the line floor.
+    # The count must name the cause a CA can act on.
+    assert mod._ocr_map_drop_reason(".council/runtime_state.json", 2, 10) == "runtime_state_dir"
+    assert mod._ocr_map_drop_reason("orchestrator/x_state.json", 900, 10) == "state_snapshot"
+    assert mod._ocr_map_drop_reason("data/rows.json", 900, 10) == "data_json"
+    assert mod._ocr_map_drop_reason("package.json", 900, 10) is None, (
+        "a .json whose NAME says it configures something is a landmark")
+    assert mod._ocr_map_drop_reason("schemas/tool.schema.json", 900, 10) is None
+    assert mod._ocr_map_drop_reason("a.py", 9, 10) == "below_min_changed_lines"
+    assert mod._ocr_map_drop_reason("a.py", 10, 10) is None, "the floor is inclusive"
+
+
+def test_min_changed_lines_zero_keeps_a_six_line_production_edit(monkeypatch, tmp_path):
+    repo, _fake, _exe = _wire(monkeypatch, tmp_path, stdout=_map_body())
+
+    payload = _call(mod.ocr_map, project_path=str(repo), min_changed_lines=0)
+
+    assert "orchestrator/graph/tools.py" in [f["path"] for f in payload["files"]], (
+        "a 6-line edit can be a real production change; the floor is declared and "
+        "overridable rather than silent")
+    assert payload["min_changed_lines"] == 0
+    assert "below_min_changed_lines" not in payload["excluded_summary"]
+    assert payload["excluded_summary"]["runtime_state_dir"] == 1, (
+        "0 lowers the SIZE floor; it must not switch off the state-dir rule")
+
+
+def test_min_changed_lines_must_be_a_non_negative_integer(monkeypatch, tmp_path):
+    repo, fake, _exe = _wire(monkeypatch, tmp_path, stdout=_map_body())
+
+    for bad in ("ten", -1):
+        payload = _call(mod.ocr_map, project_path=str(repo), min_changed_lines=bad)
+        assert payload["ok"] is False, bad
+        assert payload["error_name"] == "SCHEMA_VIOLATION", bad
+    assert fake.calls == [], "a bad threshold must be refused before spawning"
+
+
+def test_map_declares_the_merge_base_it_cannot_compute(monkeypatch, tmp_path):
+    body = _map_body(mode="commit", commit="7871d56")
+    repo, _fake, _exe = _wire(monkeypatch, tmp_path, stdout=body)
+
+    payload = _call(mod.ocr_map, project_path=str(repo), commit="7871d56")
+
+    meta = payload["ref_metadata"]
+    assert meta["ocr_mode"] == "commit"
+    assert meta["commit"] == "7871d56"
+    assert meta["merge_base"] is None
+    assert meta["merge_base_source"] == "not_emitted_by_ocr_preview", (
+        "measured on both workspace and commit mode, delegate preview emits no merge "
+        "base; computing one here and filing it under ref_metadata would be [A] "
+        "inventing a number and attributing it to OCR")
+
+
+def test_map_is_zero_llm_and_zero_token(monkeypatch, tmp_path):
+    repo, fake, _exe = _wire(monkeypatch, tmp_path, stdout=_map_body())
+
+    payload = _call(mod.ocr_map, project_path=str(repo))
+
+    assert payload["llm_used"] is False
+    assert payload["token_cost"] == 0
+    command = fake.last_command
+    assert command[1:3] == ["delegate", "preview"], (
+        "the map may only ever run the same zero-LLM subprocess ocr_review runs")
+    assert "--color" in command and command[command.index("--color") + 1] == "never"
+
+
+def test_map_refuses_commit_with_a_ref_range_before_spawning(monkeypatch, tmp_path):
+    repo, fake, _exe = _wire(monkeypatch, tmp_path, stdout=_map_body())
+
+    payload = _call(mod.ocr_map, project_path=str(repo), commit="abc123", to_ref="HEAD")
+
+    assert payload["ok"] is False
+    assert payload["error_name"] == "SCHEMA_VIOLATION"
+    assert fake.calls == []
+
+
+def test_map_with_nothing_left_says_so_instead_of_pointing_at_a_rule(monkeypatch, tmp_path):
+    body = _map_body(reviewable_files=[
+        {"path": ".council/runtime_state.json", "status": "modified",
+         "insertions": 2, "deletions": 2}])
+    repo, _fake, _exe = _wire(monkeypatch, tmp_path, stdout=body)
+
+    payload = _call(mod.ocr_map, project_path=str(repo))
+
+    assert payload["files"] == []
+    assert payload["ca_next_action"] == "none", (
+        "with no landmark left there is nothing to fetch a rule for")
+    assert payload["excluded_summary"]["runtime_state_dir"] == 1
