@@ -91,8 +91,8 @@ task arrives →
   bootstrap [A] once (health OK; stop on connection-refused)
   is_project_work?
     yes → [A]-first: classify task_class via CA_TOOL_POLICY_MATRIX
-          (SOT: .council/CA_TOOL_POLICY_MATRIX.json; skill 21_tool_matrix
-           references/ca-tool-policy-matrix.md)
+          (SOT: .council/CA_TOOL_POLICY_MATRIX.json, echoed live by
+           open_session.cslt_policy; skill 21_tool_matrix explains the axes)
           native only if row.native_policy permits + audit
     no → outside project: allow_readonly native / env probe only
   is_read_only?

@@ -117,16 +117,25 @@ def test_router_actually_parses_the_real_skills_md(real_audit):
     "route_to_missing_folder",
     "skill_missing_frontmatter",
     "core10_tool_undocumented",
+    "skill_reference_missing",
 ])
 def test_real_skill_tree_satisfies_the_fixable_gates(real_audit, gate):
-    """These four gates must stay empty on the shipped tree.
+    """These five gates must stay empty on the shipped tree.
 
     This is the one place a real-tree assertion is right: adding a skill folder with
     no SKILLS.md row, routing at a folder that does not exist, shipping a SKILL.md
-    with no frontmatter, or dropping a Core-10 tool's trigger.tool are all mistakes,
-    not drift to be tolerated. skill_reference_missing is deliberately NOT asserted
-    here: four referenced documents genuinely do not exist yet and are recorded as
-    backlog, so pinning it to 0 would either be a lie or force four invented files.
+    with no frontmatter, dropping a Core-10 tool's trigger.tool, or linking at a
+    reference document that is not there are all mistakes, not drift to tolerate.
+
+    skill_reference_missing joined the list on 2026-09-17. Until then it was held out
+    with the note that four referenced documents genuinely did not exist yet and were
+    recorded as backlog -- true when it was written, false now. Two of the four were
+    written (`references/high_il_restart_pitfalls.md` and
+    `references/cross-protocol-tool-replay.md`); the four links naming the two that
+    must NOT exist were repointed at the single source of truth a policy matrix is
+    allowed to have, `.council/CA_TOOL_POLICY_MATRIX.json`. With the backlog closed
+    there is no honest reason left to exempt this gate, and the companion assertion in
+    tests/test_a31_soft_data_binding.py now demands `drift == []` outright.
     """
     offenders = _offenders(real_audit.get("drift") or [], gate)
     assert offenders == set(), "%s: %s" % (gate, sorted(offenders))
@@ -251,3 +260,181 @@ def test_the_same_dangling_reference_is_reported_once_per_skill(tmp_path, monkey
     )
     missing = [d for d in res["drift"] if d.get("type") == "skill_reference_missing"]
     assert len(missing) == 1
+
+
+# --- Gates added 2026-09-17: the two hand-curated surfaces nothing else could check ---
+
+
+def _hot_skill_prefixes():
+    """Read `_HOT_SKILL_PREFIXES` out of the audit's own source.
+
+    The tuple is function-local inside `ct._audit_tool_matrix_sync`, so it cannot be
+    imported. `inspect.getsource` on a nested function returns a body indented 8
+    spaces, which `ast.parse` refuses -- hence the `textwrap.dedent`.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(ct._audit_tool_matrix_sync)))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id == "_HOT_SKILL_PREFIXES":
+                return tuple(ast.literal_eval(node.value))
+    raise AssertionError(
+        "_HOT_SKILL_PREFIXES is no longer assigned inside _audit_tool_matrix_sync")
+
+
+def _skills_dir():
+    return Path(ct.path_runtime.ORCHESTRATOR_DIR) / ".ToolA_Skill" / "skills"
+
+
+def _dead_prefixes(prefixes, folder_names):
+    """Prefixes matching no folder -- the whole predicate, in one callable place.
+
+    Split out from the gate so the positive control below can drive it with a folder
+    list of its own: a gate that has only ever seen a passing tree is not a proven
+    gate, it is an assertion nobody has ever watched fail.
+    """
+    return [p for p in prefixes if not any(name.startswith(p) for name in folder_names)]
+
+
+def test_every_hot_skill_prefix_resolves_to_a_real_folder():
+    """A prefix matching no folder escalates nothing, and says nothing about it.
+
+    `_HOT_SKILL_PREFIXES` decides which skill folders the audit treats as hot. A
+    prefix with no folder behind it is silent dead weight -- "20_" sat in the tuple
+    doing precisely that until 2026-09-17. The audit reports the drift it finds;
+    nothing else can tell "no offenders" apart from "no coverage", so this gate does.
+    """
+    prefixes = _hot_skill_prefixes()
+    assert prefixes, "the tuple parsed empty -- the extraction broke, not the data"
+    live = [p.name for p in _skills_dir().iterdir() if p.is_dir()]
+    dead = _dead_prefixes(prefixes, live)
+    assert dead == [], "prefix matches no folder under %s: %s" % (_skills_dir(), dead)
+
+
+def test_a_prefix_with_no_folder_behind_it_is_reported():
+    """Positive control, in the exact shape the bug really had in the tree.
+
+    "20_" against a folder list containing no 20_* folder. If this ever comes back
+    empty, the gate above is decorative and the next dead prefix rides in silently.
+    """
+    live = ["00_skill_router", "22_council_ops", "28_ocr_review"]
+    assert _dead_prefixes(("00_", "22_"), live) == []
+    assert _dead_prefixes(("00_", "20_"), live) == ["20_"]
+    assert _dead_prefixes((), live) == []
+
+
+_TRIGGER_PROSE_ALLOWANCE = {
+    ("06_token_auth", "any TOKEN_REQUIRED destructive tool first call this session"),
+}
+
+_TRIGGER_TOKEN_SHAPE = re.compile(r"^([a-z][a-z0-9_]*)(?:\s*\(.*\)|\s+with\s+.+)?$")
+
+
+def _live_tool_names():
+    """The set `/api/tools/names` publishes, which IS the live tool surface.
+
+    `limit` must be passed explicitly: unfiltered, the endpoint may answer with the
+    curated core only, and a gate keyed on a curated slice would condemn live tools.
+
+    Do NOT key this on `ct.TOOL_MAP`. Measured 2026-09-17: TOOL_MAP holds 234 names
+    and omits every `git_*`, every `council_*` and `restart_orchestrator_via_bat` --
+    12 false positives on the shipped tree.
+    """
+    import orchestrator_server as osrv
+
+    return {t["name"] for t in osrv._tool_names_payload(limit=5000)["tools"]}
+
+
+def _trigger_tool_tokens():
+    """Every (folder, token) pair declared by a `trigger: - tool:` frontmatter row."""
+    pairs = []
+    for folder in sorted(p for p in _skills_dir().iterdir() if p.is_dir()):
+        skill = folder / "SKILL.md"
+        if not skill.is_file():
+            continue
+        text = skill.read_text(encoding="utf-8", errors="ignore")
+        head = text.split("\n---", 1)[0] if text.startswith("---") else text[:2000]
+        for match in re.finditer(r"^\s*-\s*tool:\s*[\"']?(.+?)[\"']?\s*$", head, re.M):
+            for token in match.group(1).split("|"):
+                token = token.strip()
+                if token:
+                    pairs.append((folder.name, token))
+    return pairs
+
+
+def _unresolved_trigger_tokens(pairs, live, allowance=None):
+    """(folder, token) pairs whose token names no live tool.
+
+    Every normalisation lives here, so the positive control exercises the same code
+    the real tree does. Three shapes are legitimate and resolve: a bare tool name, a
+    tool plus a parenthesised qualifier (`run_test_profile (post-call)`), and a tool
+    plus `with <args>` (`write_fix with dry_run=true`). An `/api/...` endpoint is not
+    a tool call and is skipped. Prose is excused only by name, through `allowance`.
+
+    Note what the qualifier branch deliberately does NOT excuse: `render_mermaid
+    (planned)` parses to `render_mermaid`, which is not live, so it is condemned.
+    There is no `(planned)` escape hatch, and adding one would re-open the defect
+    the 2026-09-17 pass closed in `19_image_mode`.
+    """
+    allowed = _TRIGGER_PROSE_ALLOWANCE if allowance is None else allowance
+    out = []
+    for folder, token in pairs:
+        if token.startswith("/") or (folder, token) in allowed:
+            continue
+        named = _TRIGGER_TOKEN_SHAPE.match(token)
+        if named is None or named.group(1) not in live:
+            out.append("%s: %r" % (folder, token))
+    return out
+
+
+def test_every_trigger_tool_token_names_a_live_tool():
+    """A skill's `trigger.tool` must be callable, not aspirational.
+
+    The frontmatter row is what routes CA to a skill; a token naming a tool that
+    does not exist sends CA to call nothing. Measured 2026-09-17: 110 tokens, 5 of
+    them unresolved -- 1 prose, 2 `/api/...` endpoints, 2 qualifiers, and the
+    phantom `render_mermaid (planned)`, which this gate is what keeps out.
+    """
+    live = _live_tool_names()
+    assert {"git_status", "write_fix"} <= live, "the live surface came back wrong"
+    unresolved = _unresolved_trigger_tokens(_trigger_tool_tokens(), live)
+    assert unresolved == [], "trigger.tool names no live tool: %s" % unresolved
+
+
+def test_the_trigger_token_shapes_are_each_really_handled():
+    """Positive control: one row of every shape, against a live set of three names.
+
+    The phantom comes first, spelled exactly as it stood in `19_image_mode` before
+    2026-09-17. The prose row is then run with `allowance=set()` to prove that the
+    allowance is what excuses it -- not its shape, which would excuse any sentence.
+    """
+    live = {"write_fix", "run_test_profile", "screenshot_page"}
+    rows = [
+        ("19_image_mode", "render_mermaid (planned)"),
+        ("19_image_mode", "screenshot_page"),
+        ("10_coverage_report", "run_test_profile (post-call)"),
+        ("13_apply_after_dry_run", "write_fix with dry_run=true"),
+        ("07_error_schema_hints", "/api/tools/names"),
+    ]
+    assert _unresolved_trigger_tokens(rows, live, allowance=set()) == [
+        "19_image_mode: 'render_mermaid (planned)'"]
+    prose = [
+        ("06_token_auth", "any TOKEN_REQUIRED destructive tool first call this session"),
+    ]
+    assert _unresolved_trigger_tokens(prose, live, allowance=set()) != []
+    assert _unresolved_trigger_tokens(prose, live) == []
+
+
+def test_the_trigger_prose_allowance_is_not_stale():
+    """Each pinned prose token must still be present in the tree.
+
+    An allowance outliving the row it excuses is how a gate quietly stops gating.
+    """
+    present = set(_trigger_tool_tokens())
+    stale = sorted(_TRIGGER_PROSE_ALLOWANCE - present)
+    assert stale == [], "allowance no longer matches any frontmatter row: %s" % stale

@@ -16,8 +16,11 @@ Two allowances, both mechanisms rather than line-number whitelists:
     matching the convention the tree already uses;
   * a cap/default is a contract the code enforces ("rolling 50 entries",
     "128 rules cap").
-And one grammar exclusion: "R18 tools", "Core-10 tool", "v3 step 12 rule" are
-names and references, not counts.
+And two grammar exclusions: "R18 tools", "Core-10 tool", "v3 step 12 rule",
+"Task 3 auto-chain rule 6" are names and references, not counts; and "saves 1
+tool call" is a per-call rate, which has no population to drift away from.
+The count itself may be a single digit and may carry one modifier word
+("7 async functions") - both of those hid a rotten count from this gate once.
 
 tokenize (not a line regex) does the reading, because implicit string
 concatenation across source lines makes any per-line regex on a literal wrong.
@@ -34,8 +37,12 @@ SCANNED_FILES = ("code_tools.py", "orchestrator_server.py", "tools_v15.py")
 
 # A count of a live population: "257 tools", "35 skill folders", "221 aliases".
 # The lookbehind rejects R19/Core-10/13462. - i.e. a digit that is part of a name.
+# One optional modifier word is allowed between the digit and the noun, because
+# "7 async functions" rots exactly the way "7 functions" does; and the count may be
+# a single digit - "5 function patterns" was a real population that had gone stale.
 COUNT_RE = re.compile(
-    r"(?<![\w.-])(\d{2,})\s+(tools?|entries|entry|skill folders?|aliases|alias|rules?)\b",
+    r"(?<![\w.-])(\d+)\s+(?:[a-z][a-z-]{2,11}\s+)?"
+    r"(tools?|entries|entry|skill folders?|aliases|alias|rules?|functions?)\b",
     re.I,
 )
 DATED_RE = re.compile(r"\b(?:19|20)\d{2}\b")
@@ -43,8 +50,11 @@ CAP_RE = re.compile(
     r"\b(cap|capped|caps|max|maximum|limit|limited|default|rolling|up to|at most|first)\b",
     re.I,
 )
-# "v3 step 12 rule" / "audit Round 12" - an ordinal, not a size.
-REF_RE = re.compile(r"\b(step|round|phase|item|section|line|chapter|v\d+)\s*$", re.I)
+# "v3 step 12 rule" / "audit Round 12" / "Task 3 auto-chain rule 6" - an ordinal or
+# a name, not a size.
+REF_RE = re.compile(r"\b(step|round|phase|item|section|line|chapter|task|v\d+)\s*$", re.I)
+# "saves 1 tool call", "10 separate tool calls" - a per-call rate, not a population.
+CALL_RE = re.compile(r"\s*calls?\b", re.I)
 
 
 def _sweep(text_lines, tokens):
@@ -55,6 +65,8 @@ def _sweep(text_lines, tokens):
             continue
         for m in COUNT_RE.finditer(tok_text):
             if REF_RE.search(tok_text[max(0, m.start() - 14):m.start()]):
+                continue
+            if CALL_RE.match(tok_text[m.end():m.end() + 12]):
                 continue
             lineno = start[0]
             # Context = the whole token (a docstring may date itself on any of
@@ -135,6 +147,38 @@ def test_detector_ignores_r_numbers_and_named_groups():
     assert _sweep_source(src) == []
 
 
+def test_detector_flags_a_count_with_a_modifier_word():
+    """The false negative this gate shipped with: an adjective in between.
+
+    code_tools.py:3 read "7 async functions" for a module that now defines far
+    more than seven. The old pattern required the noun to touch the digit, so a
+    single modifier word was enough to hide a rotten count from its own gate.
+    """
+    src = '"""Code Intelligence Tools - 7 async functions shared by HTTP API."""\n'
+    assert [h[1] for h in _sweep_source(src)] == ["7 async functions"]
+
+
+def test_detector_flags_a_single_digit_count():
+    """The same miss, second cause: a one-digit population is still a count."""
+    src = "# the router parses JS with 5 function patterns + source evidence\nx = 1\n"
+    assert [h[1] for h in _sweep_source(src)] == ["5 function"]
+
+
+def test_detector_ignores_a_per_call_rate():
+    """"1 tool call" is a rate, not a population - nothing there can rot."""
+    src = (
+        '"""R38: expose the body so CA saves 1 tool call per status query."""\n'
+        "# aggregates metrics so audits do not need 10 separate tool calls\n"
+        "x = 1\n"
+    )
+    assert _sweep_source(src) == []
+
+
+def test_detector_ignores_a_task_number_before_a_rule_name():
+    src = "# Task 3 auto-chain rule 6: git_commit post-hook\nx = 1\n"
+    assert _sweep_source(src) == []
+
+
 # ------------------------------------------------- the six Q6 fixes, by phrase
 # Pinned as phrases, not line numbers: the line will move, the claim will not
 # come back by accident.
@@ -144,11 +188,13 @@ def test_the_q6_rot_phrases_are_gone():
     os_src = (REPO / "orchestrator_server.py").read_text(encoding="utf-8")
     v15_src = (REPO / "tools_v15.py").read_text(encoding="utf-8")
 
-    for needle in ("34 skill folders", "TOKEN_REQUIRED, 60 tools", "process). 17 entries"):
+    for needle in ("34 skill folders", "TOKEN_REQUIRED, 60 tools",
+                   "process). 17 entries", "7 async functions"):
         assert needle not in ct_src, needle
     for needle in ("116 tools", "13 tools per audit Round 12"):
         assert needle not in os_src, needle
-    assert "× 23 entries" not in v15_src
+    for needle in ("× 23 entries", "5 function patterns"):
+        assert needle not in v15_src, needle
 
 
 def test_the_mechanism_sentences_that_replaced_them_are_present():
@@ -157,8 +203,10 @@ def test_the_mechanism_sentences_that_replaced_them_are_present():
     v15_src = (REPO / "tools_v15.py").read_text(encoding="utf-8")
 
     assert "some skill folders are named rather" in ct_src
+    assert "ask the daemon (GET /api/tools/names), never this docstring" in ct_src
     assert "magnitude smaller than the full /api/tools payload" in os_src
     assert "strip per-entry path metadata from every entry" in v15_src
+    assert "the pattern count is the length of that list" in v15_src
 
 
 def test_the_dated_records_were_not_swept_away_with_them():

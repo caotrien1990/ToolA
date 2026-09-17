@@ -1,6 +1,8 @@
 # pyright: reportArgumentType=false, reportPossiblyUnboundVariable=false, reportAssignmentType=false, reportIndexIssue=false, reportOptionalMemberAccess=false, reportCallIssue=false, reportUnboundVariable=false
 """
-Code Intelligence Tools — 7 async functions shared by HTTP API and MCP mode.
+Code Intelligence Tools - the async tool functions shared by the HTTP API and
+MCP stdio mode. How many there are is whatever build_tool_map() registered at
+import time; ask the daemon (GET /api/tools/names), never this docstring.
 All functions return JSON strings for easy transport over HTTP or MCP stdio.
 """
 import asyncio
@@ -3005,8 +3007,15 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
                 scan_roots.append(bootstrap)
         except Exception:
             pass
-        # R20: skills CA reads most often → escalate severity if mentions found here
-        _HOT_SKILL_PREFIXES = ("00_", "07_", "17_", "18_", "20_", "22_")
+        # R20: skills whose vocabulary must not rot -> escalate severity if a retired
+        # term is mentioned there. Hand-curated, not derivable: the first group is by CA
+        # read frequency, the trailing group is the newest skill surfaces, where a retired
+        # term would be a fresh mistake rather than inherited debt. Every prefix must
+        # resolve to a real folder under `.ToolA_Skill/skills` or the entry can never
+        # match and silently escalates nothing -- pinned by
+        # tests/test_a31_skill_surface_gates.py. That gate is why "20_" is not here:
+        # measured 2026-09-17, no folder with that prefix exists.
+        _HOT_SKILL_PREFIXES = ("00_", "07_", "17_", "18_", "22_", "26_", "27_", "28_")
         retired_terms = {"tool_inspector", "tool_inventory", "dom_screenshot_summary"}
         def _severity_for(file_path: str) -> str:
             fn = str(file_path).replace("\\", "/")

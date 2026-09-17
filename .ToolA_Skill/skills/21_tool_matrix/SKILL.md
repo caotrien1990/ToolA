@@ -136,9 +136,9 @@ The matrix/4Ktr audit also covers these auxiliary and lifecycle tools:
 
 ## Related references / scripts
 
-- `references/ca-tool-policy-matrix.md` — CA execution-policy matrix vs tool-surface audit; **CSLt** north star (C→S→L→t, never CLSt/CSLT); residual-scan checklist + **data-identity** residual (`why_cslt`, registry `governance.acronym`, plan `write_range`); source-vs-runtime verify gate; hybrid A+native; axes order Matrix→Registration→Metrics→Ledger→Host gate; sticky `http_only` desktop pitfall; progress-report contract after “tiến hành”.
+- **CA execution-policy matrix** — SOT `.council/CA_TOOL_POLICY_MATRIX.json`, echoed live by `open_session.cslt_policy`. There is deliberately no markdown copy: a second copy of a policy is a second policy. What it governs, vs the tool-surface audit: **CSLt** north star (C→S→L→t, never CLSt/CSLT); residual-scan checklist + **data-identity** residual (`why_cslt`, registry `governance.acronym`, plan `write_range`); source-vs-runtime verify gate; hybrid A+native; axes order Matrix→Registration→Metrics→Ledger→Host gate; sticky `http_only` desktop pitfall; progress-report contract after “tiến hành”.
 - `scripts/cslt_governance_smoke.py` — post-restart CSLt governance smoke (health, gov tools, classify, host gate, ledger forbid, metrics, backup_status, registry).
-- Cross-ref: `council-agent-operation` → `references/cslt-governance-acceptance.md` (hard vs soft residual data scan + registry identity contract).
+- Cross-ref: hard vs soft residual data scan + registry identity contract — no document holds these. The binding that enforces them is `tests/test_a31_soft_data_binding.py` (committed file vs runtime) plus the drift types `_audit_tool_matrix_sync` emits. The skill `council-agent-operation` this line used to point at does not exist under `.ToolA_Skill/skills/`.
 
 ## Operations matrix (V15 R15)
 

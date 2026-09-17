@@ -91,36 +91,23 @@ class InventoryMatchesTheRuntimeTest(unittest.TestCase):
         self.assertEqual(s["inventory_retired_count"], 0)
 
     def test_no_drift_of_any_type_is_tolerated(self):
-        """high/medium must be empty; [low] is pinned to a named backlog.
+        """No drift of any severity is tolerated -- the backlog is closed.
 
-        The seven low rows are dangling `references/*.md` links that pre-exist
-        this campaign (`git show HEAD:<skill>/SKILL.md` carries every one of
-        them), and they only became reportable once the SKILLS.md router
-        started populating routed_folders -- exactly what the audit promises it
-        would surface. They name four documents that somebody wanted written,
-        so deleting the links would erase the only record of that. The
-        allowance is therefore by identity, not by severity: a NEW dangling
-        link fails on an unknown row, and writing one of the four missing docs
-        fails on a stale allowance, which forces this list to shrink.
+        Until 2026-09-17 this test pinned seven `skill_reference_missing` rows
+        by identity, because they named four documents somebody wanted written
+        and deleting the links would have erased the only record of that. All
+        four are now resolved, so the allowance is gone and `low` must be as
+        empty as `high` and `medium`: two documents were written
+        (`.ToolA_Skill/references/high_il_restart_pitfalls.md` and
+        `cross-protocol-tool-replay.md`), and the four lines pointing at the
+        two documents that must NOT exist -- a policy matrix has exactly one
+        source of truth, `.council/CA_TOOL_POLICY_MATRIX.json`, echoed live by
+        `open_session.cslt_policy` -- were repointed at that SOT instead.
+        A new dangling `references/*.md` link therefore fails here outright,
+        with no named-backlog escape hatch left to add a row to.
         """
         drift = self.audit["drift"]
-        loud = [row for row in drift if row.get("severity") in ("high", "medium")]
-        self.assertEqual(len(loud), 0, "matrix drift:" + _drift_report(loud))
-        open_backlog = {
-            ("skill_reference_missing", "00_skill_router", "ca-tool-policy-matrix.md"),
-            ("skill_reference_missing", "01_bootstrap_health", "high_il_restart_pitfalls.md"),
-            ("skill_reference_missing", "11_repo_vs_runtime", "cross-protocol-tool-replay.md"),
-            ("skill_reference_missing", "16_server_lifecycle", "high_il_restart_pitfalls.md"),
-            ("skill_reference_missing", "17_session_audit", "ca-tool-policy-matrix.md"),
-            ("skill_reference_missing", "21_tool_matrix", "ca-tool-policy-matrix.md"),
-            ("skill_reference_missing", "21_tool_matrix", "cslt-governance-acceptance.md"),
-        }
-        quiet = {
-            (row.get("type"), row.get("skill"), row.get("reference"))
-            for row in drift
-            if row.get("severity") == "low"
-        }
-        self.assertEqual(quiet, open_backlog, "matrix drift:" + _drift_report(drift))
+        self.assertEqual(drift, [], "matrix drift:" + _drift_report(drift))
 
     def test_the_audit_still_declares_its_blind_spot(self):
         # drift_count == 0 says the RUNTIME is self-consistent, not that the .py on

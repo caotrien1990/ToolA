@@ -2710,7 +2710,8 @@ async def inspect_project_usage(project_path: str) -> str:
                                             "reason": "Name matches dangerous pattern"})
             if len(primary_buttons) >= 30:
                 break
-    # V15 R28: parse JS with 5 function patterns + source evidence (file+line+kind)
+    # V15 R28: parse JS with the _FUNC_PATTERNS list below + source evidence
+    # (file+line+kind); the pattern count is the length of that list, not a comment.
     # R28 fix: allow indented declarations (drop strict ^ anchor) via \b boundary
     _FUNC_PATTERNS = [
         (r'(?:^|\s)(?:async\s+)?function\s+(\w{3,60})\s*\(', "function_decl"),

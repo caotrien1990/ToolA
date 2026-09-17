@@ -226,7 +226,7 @@ When scoring whether a CA used `[A]` correctly (see `.council/CA_A_USAGE_ACCEPTA
 4. Negative control: intentional forbidden native must show up in audit; if not, harness fails.
 5. Transcript claims without HTTP/session/ledger evidence → not PASS.
 
-Related: skill `21_tool_matrix` → `references/ca-tool-policy-matrix.md`.
+Related: skill `21_tool_matrix`. The policy matrix itself is `.council/CA_TOOL_POLICY_MATRIX.json` (echoed live by `open_session.cslt_policy`), not a markdown file.
 
 ## Harness verification
 
