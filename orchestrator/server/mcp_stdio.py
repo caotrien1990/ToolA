@@ -532,10 +532,16 @@ def run_mcp_stdio() -> None:
             """Open or resume an agent-scoped project session."""
             resolved_agent_id = ((agent_id or "").strip()
                                  or (os.environ.get("COUNCIL_AGENT_ID") or "").strip())
-            return _mcp_guard_response(lambda: asyncio.run(srv.ct.open_session(
-                session_title=session_title, project_path=project_path, mode=mode,
-                agent_id=resolved_agent_id, force_new_session=force_new_session,
-                apply_requested_title=apply_requested_title)))
+            # A33-B: daemon-only transport -- see the long note on prepare_ca_session
+            # below for why srv.ct here was the A33 root cause. The agent id is resolved
+            # HERE on purpose: COUNCIL_AGENT_ID lives in THIS host's env, not the
+            # daemon's, so it has to ride the payload.
+            return _mcp_call_text("open_session", {
+                "session_title": session_title, "project_path": project_path,
+                "mode": mode, "agent_id": resolved_agent_id,
+                "force_new_session": force_new_session,
+                "apply_requested_title": apply_requested_title,
+            })
 
         @_mcp.tool
         def log_native_event(action_type: str, tool_name: str, target: str,
@@ -563,10 +569,23 @@ def run_mcp_stdio() -> None:
                                owner_claim_id: str = "") -> str:
             """Prepare, open/resume, and bootstrap an agent-scoped CA session."""
             canonical_agent_id = agent_id or os.environ.get("COUNCIL_AGENT_ID", "")
-            return _mcp_guard_response(lambda: asyncio.run(srv.ct.prepare_ca_session(
-                project_path=project_path, mode=mode, idea=idea,
-                agent_id=canonical_agent_id, host_session_id=host_session_id,
-                owner_claim_id=owner_claim_id)))
+            # A33-B: reach the DAEMON, never srv.ct here. asyncio.run(srv.ct.<fn>()) ran
+            # the tool inside this long-lived MCP host process, so a host that imported
+            # its registry before a tool existed compared its own in-RAM registry with
+            # the daemon's on-disk inventory while the envelope still carried the
+            # daemon's generation -- that is how generation stopped proving runtime
+            # (A33 root cause, closed at the producer by the provenance gate).
+            # _mcp_call_text goes through srv.dispatch_tool_call(transport="mcp"), whose
+            # non-T4 branch (orchestrator_server.py:15595) POSTs /api/call/<tool> to the
+            # live daemon. Measured: prepare_ca_session is T3, open_session T1 -- neither
+            # is T4, so both really leave this process. Do NOT "simplify" either one back
+            # to srv.ct: that reintroduces a second registry answering as if it were the
+            # daemon.
+            return _mcp_call_text("prepare_ca_session", {
+                "project_path": project_path, "mode": mode, "idea": idea,
+                "agent_id": canonical_agent_id, "host_session_id": host_session_id,
+                "owner_claim_id": owner_claim_id,
+            })
 
         @_mcp.tool
         def get_rule_core_text(agent_id: str = "", force: bool = False) -> str:

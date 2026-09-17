@@ -2643,18 +2643,25 @@ def _open_session_drift_decision(resp: dict, mx, verbosity: str) -> str:
 # Measured defect: open_session reported code_tools 257 / inventory 258 with a
 # phantom `ocr_map` drift while audit_tool_matrix on the SAME daemon generation
 # reported 258/258/258, drift_count 0. The cache is NOT the cause (in-memory,
-# 30s TTL, same producer). orchestrator/server/mcp_stdio.py:535 runs
-# open_session IN THE MCP HOST PROCESS - asyncio.run(srv.ct.open_session(...))
-# - instead of proxying over HTTP the way call_tool does. A host whose registry
-# was imported before ocr_map existed therefore compares its own 257-tool
+# 30s TTL, same producer). orchestrator/server/mcp_stdio.py RAN the open_session
+# shortcut IN THE MCP HOST PROCESS - asyncio.run(srv.ct.open_session(...)) -
+# instead of proxying over HTTP the way call_tool does. A host whose registry
+# was imported before ocr_map existed therefore compared its own 257-tool
 # in-memory registry against the daemon-refreshed 258-entry on-disk inventory,
-# while the envelope still carries the daemon's generation. matrix_log.jsonl
-# proves the skew runs BOTH ways: rows from pid 41876 carry ct=258/inv=257
+# while the envelope still carried the daemon's generation. matrix_log.jsonl
+# proves the skew ran BOTH ways: rows from pid 41876 carry ct=258/inv=257
 # (runtime ahead of disk), rows from pid 57644 carry ct=257/inv=258, and 57644
 # wrote rows on both sides of the 45504 -> 36100 daemon restart so it cannot be
 # the daemon. Only the daemon's own runtime may publish a tool surface as the
 # project's truth. Out of scope because unmeasured: progressive_gap_count from a
 # foreign process is left untouched - no phantom gap has been observed.
+#
+# A33-B (2026-09-17) closed that CAUSE: both MCP session shortcuts now proxy to
+# the daemon, pinned by tests/test_a33b_mcp_session_shortcut_transport.py. This
+# gate still earns its place and must NOT be deleted because the bridge was
+# fixed: it guards the PRODUCER, which any non-daemon caller still reaches
+# directly (pytest does exactly that), so correctness here never depended on one
+# transport staying correct.
 _MATRIX_AUDIT_DAEMON_PID_CACHE: dict = {}
 _MATRIX_AUDIT_DAEMON_PID_TTL_SECONDS = 5.0
 

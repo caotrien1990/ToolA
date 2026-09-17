@@ -1,10 +1,15 @@
 """A33 - open_session must not publish a foreign process's tool surface as drift.
 
-Measured cause pinned here: orchestrator/server/mcp_stdio.py runs open_session
+Measured cause pinned here: orchestrator/server/mcp_stdio.py RAN open_session
 inside the MCP host process (asyncio.run(srv.ct.open_session(...))) instead of
 proxying over HTTP, so a host whose registry was imported before a new tool
-existed compares its own in-memory registry against the daemon-refreshed
-on-disk inventory and reports a phantom drift under the daemon's generation.
+existed compared its own in-memory registry against the daemon-refreshed
+on-disk inventory and reported a phantom drift under the daemon's generation.
+
+A33-B (2026-09-17) removed that transport, so the cause itself is gone. This gate
+STAYS anyway: it sits at the producer, which any non-daemon caller can still
+reach -- pytest does exactly that, which is how every test below drives it. The
+transport is pinned separately by tests/test_a33b_mcp_session_shortcut_transport.py.
 
 Every test drives the gate with SYNTHETIC provenance, both directions: a gate
 that has only ever seen a green tree is not yet a gate.

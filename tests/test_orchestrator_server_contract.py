@@ -65,7 +65,36 @@ def _issued_checkpoint(session_key: str, checkpoint: dict):
     shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-async def _capture_mcp_open_session_call(agent_id: str, env_agent=None):
+def _run_mcp_coro_inline(coro):
+    """Stand-in for orchestrator_server._run_mcp_coro inside a unit test.
+
+    The real one hands the coroutine to the process-global MCP loop
+    (_ensure_mcp_loop), which would leave a background thread alive for the rest
+    of the suite. Every caller here already runs on an asyncio.to_thread worker
+    with no loop of its own, so asyncio.run is both sufficient and cheaper.
+    """
+    return asyncio.run(coro)
+
+
+async def _capture_mcp_session_dispatch(tool: str, args: tuple, env_agent=None):
+    """Drive one MCP session shortcut and return what it handed the dispatcher.
+
+    A33-B (2026-09-17): these shortcuts used to run asyncio.run(srv.ct.<fn>(...)),
+    i.e. inside the MCP host process -- the A33 root cause, because a second
+    registry then answered while the envelope still carried the daemon's
+    generation. They now go through _mcp_call_text ->
+    srv.dispatch_tool_call(..., transport="mcp"), whose non-T4 branch POSTs
+    /api/call/<tool> to the live daemon. dispatch_tool_call is therefore patched
+    here for two reasons: it is the new observation point for the payload, and
+    leaving it unpatched would make this unit test open real sessions on the
+    running :8083 daemon (B010 -- a bridge test must never touch live state).
+    _mcp_call_text itself is a closure inside run_mcp_stdio and cannot be
+    patched from outside; dispatch_tool_call is the only external seam.
+
+    Replaces _capture_mcp_open_session_call, which patched
+    code_tools.open_session -- an observation point the shortcut no longer
+    reaches.
+    """
     from orchestrator.server import mcp_stdio
 
     class FakeMcpServer:
@@ -83,19 +112,21 @@ async def _capture_mcp_open_session_call(agent_id: str, env_agent=None):
         def stdio(self):
             return None
 
-    opened = mock.AsyncMock(return_value=json.dumps({'ok': True}))
+    dispatched = mock.AsyncMock(
+        return_value=types.SimpleNamespace(text=json.dumps({'ok': True})))
     fake_module = types.SimpleNamespace(McpServer=FakeMcpServer)
     environment = {'ORCHESTRATOR_MCP_FULL_SURFACE': '1'}
     if env_agent is not None:
         environment['COUNCIL_AGENT_ID'] = env_agent
     with mock.patch.dict(sys.modules, {'zeromcp': fake_module}), \
          mock.patch.dict(os.environ, environment, clear=True), \
-         mock.patch.object(code_tools, 'open_session', opened), \
+         mock.patch.object(orchestrator_server, 'dispatch_tool_call', dispatched), \
+         mock.patch.object(orchestrator_server, '_run_mcp_coro', _run_mcp_coro_inline), \
          mock.patch.object(mcp_stdio, '_mcp_current_server_generation', return_value=None):
         await asyncio.to_thread(mcp_stdio.run_mcp_stdio)
-        wrapper = FakeMcpServer.instance.tools.methods['open_session']
-        await asyncio.to_thread(wrapper, 'Session A', 'C:/repo', 'T2', agent_id)
-    return opened.await_args
+        wrapper = FakeMcpServer.instance.tools.methods[tool]
+        await asyncio.to_thread(wrapper, *args)
+    return dispatched.call_args
 
 
 @contextlib.contextmanager
@@ -2262,31 +2293,36 @@ process.stdout.write(JSON.stringify(snapshots));
                 code_tools._sync_session_db_alias()
 
     async def test_mcp_open_session_explicit_agent_overrides_environment(self):
-        call = await _capture_mcp_open_session_call(' agent-explicit ', ' agent-env ')
+        call = await _capture_mcp_session_dispatch(
+            'open_session', ('Session A', 'C:/repo', 'T2', ' agent-explicit '),
+            env_agent=' agent-env ')
 
-        self.assertEqual(call, mock.call(
-            session_title='Session A', project_path='C:/repo', mode='T2',
-            agent_id='agent-explicit', force_new_session=False,
-            apply_requested_title=False,
-        ))
+        self.assertEqual(call, mock.call('open_session', {
+            'session_title': 'Session A', 'project_path': 'C:/repo', 'mode': 'T2',
+            'agent_id': 'agent-explicit', 'force_new_session': False,
+            'apply_requested_title': False,
+        }, transport='mcp'))
 
     async def test_mcp_open_session_uses_environment_agent_fallback(self):
-        call = await _capture_mcp_open_session_call('   ', ' agent-env ')
+        call = await _capture_mcp_session_dispatch(
+            'open_session', ('Session A', 'C:/repo', 'T2', '   '),
+            env_agent=' agent-env ')
 
-        self.assertEqual(call, mock.call(
-            session_title='Session A', project_path='C:/repo', mode='T2',
-            agent_id='agent-env', force_new_session=False,
-            apply_requested_title=False,
-        ))
+        self.assertEqual(call, mock.call('open_session', {
+            'session_title': 'Session A', 'project_path': 'C:/repo', 'mode': 'T2',
+            'agent_id': 'agent-env', 'force_new_session': False,
+            'apply_requested_title': False,
+        }, transport='mcp'))
 
     async def test_mcp_open_session_without_environment_forwards_blank_legacy_agent(self):
-        call = await _capture_mcp_open_session_call('   ')
+        call = await _capture_mcp_session_dispatch(
+            'open_session', ('Session A', 'C:/repo', 'T2', '   '))
 
-        self.assertEqual(call, mock.call(
-            session_title='Session A', project_path='C:/repo', mode='T2',
-            agent_id='', force_new_session=False,
-            apply_requested_title=False,
-        ))
+        self.assertEqual(call, mock.call('open_session', {
+            'session_title': 'Session A', 'project_path': 'C:/repo', 'mode': 'T2',
+            'agent_id': '', 'force_new_session': False,
+            'apply_requested_title': False,
+        }, transport='mcp'))
 
     async def test_mcp_prepare_ca_session_forwards_scope_keywords_and_env_agent_fallback(self):
         from orchestrator.server import mcp_stdio
@@ -2306,25 +2342,37 @@ process.stdout.write(JSON.stringify(snapshots));
             def stdio(self):
                 return None
 
-        prepare = mock.AsyncMock(return_value=json.dumps({'ok': True}))
+        # A33-B (2026-09-17): the shortcut no longer runs prepare_ca_session inside this
+        # process, so the observation point moved from code_tools.prepare_ca_session to
+        # dispatch_tool_call. Patching it is also what keeps this unit test from POSTing
+        # into the live :8083 daemon -- see _capture_mcp_session_dispatch.
+        dispatched = mock.AsyncMock(
+            return_value=types.SimpleNamespace(text=json.dumps({'ok': True})))
         fake_module = types.SimpleNamespace(McpServer=FakeMcpServer)
         with mock.patch.dict(sys.modules, {'zeromcp': fake_module}), \
              mock.patch.dict(os.environ, {
                  'ORCHESTRATOR_MCP_FULL_SURFACE': '1',
                  'COUNCIL_AGENT_ID': 'agent-env',
              }), \
-             mock.patch.object(code_tools, 'prepare_ca_session', prepare), \
+             mock.patch.object(orchestrator_server, 'dispatch_tool_call', dispatched), \
+             mock.patch.object(orchestrator_server, '_run_mcp_coro', _run_mcp_coro_inline), \
              mock.patch.object(mcp_stdio, '_mcp_current_server_generation', return_value=None):
             await asyncio.to_thread(mcp_stdio.run_mcp_stdio)
             wrapper = FakeMcpServer.instance.tools.methods['prepare_ca_session']
             await asyncio.to_thread(wrapper, 'C:/repo', 'T2', 'Build CRM', 'agent-explicit', 'host-a')
             await asyncio.to_thread(wrapper, 'D:/repo', 'T1', '', '', 'host-b')
 
-        self.assertEqual(prepare.await_args_list, [
-            mock.call(project_path='C:/repo', mode='T2', idea='Build CRM',
-                      agent_id='agent-explicit', host_session_id='host-a', owner_claim_id=''),
-            mock.call(project_path='D:/repo', mode='T1', idea='',
-                      agent_id='agent-env', host_session_id='host-b', owner_claim_id=''),
+        self.assertEqual(dispatched.call_args_list, [
+            mock.call('prepare_ca_session', {
+                'project_path': 'C:/repo', 'mode': 'T2', 'idea': 'Build CRM',
+                'agent_id': 'agent-explicit', 'host_session_id': 'host-a',
+                'owner_claim_id': '',
+            }, transport='mcp'),
+            mock.call('prepare_ca_session', {
+                'project_path': 'D:/repo', 'mode': 'T1', 'idea': '',
+                'agent_id': 'agent-env', 'host_session_id': 'host-b',
+                'owner_claim_id': '',
+            }, transport='mcp'),
         ])
 
     async def test_open_session_environment_agent_fallback_for_response_store_and_event(self):

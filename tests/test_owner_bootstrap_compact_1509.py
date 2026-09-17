@@ -106,7 +106,20 @@ def test_mcp_prepare_forwards_claim_and_bootstrap_uses_durable_helper():
     tree = ast.parse(source.read_text(encoding="utf-8"))
     prepare = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "prepare_ca_session")
     assert "owner_claim_id" in {a.arg for a in prepare.args.args}
-    assert any(isinstance(n, ast.keyword) and n.arg == "owner_claim_id" for n in ast.walk(prepare))
+    # A33-B (2026-09-17): the shortcut now PROXIES to the daemon, so the claim rides
+    # in the _mcp_call_text payload dict instead of a call keyword. Assert the
+    # FORWARDING, not the transport -- dropping the field still fails here, and a
+    # stub literal does not pass because the value must be the parameter itself.
+    forwarded_as_keyword = any(
+        isinstance(n, ast.keyword) and n.arg == "owner_claim_id" for n in ast.walk(prepare)
+    )
+    forwarded_in_payload = any(
+        isinstance(k, ast.Constant) and k.value == "owner_claim_id"
+        and isinstance(v, ast.Name) and v.id == "owner_claim_id"
+        for n in ast.walk(prepare) if isinstance(n, ast.Dict)
+        for k, v in zip(n.keys, n.values)
+    )
+    assert forwarded_as_keyword or forwarded_in_payload
     boot = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "bootstrap_session")
     assert any(isinstance(n, ast.Attribute) and n.attr == "_bootstrap_with_cached_owner_claim" for n in ast.walk(boot))
     assert not any(isinstance(n, ast.Attribute) and n.attr == "token_urlsafe" for n in ast.walk(boot))
