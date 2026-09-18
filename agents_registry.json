@@ -43,7 +43,7 @@
       "rule_file": "C:/Users/ADMIN/.codex/AGENTS.md",
       "rule_format": "markdown",
       "rule_template": "slim",
-      "mcp_file": "",
+      "mcp_file": "C:/Users/ADMIN/.codex/config.toml",
       "mcp_format": "toml",
       "mcp_key": "project-orchestrator",
       "skill_dir": "C:/Users/ADMIN/.agents/skills",
