@@ -97,7 +97,17 @@ def test_full_catalog_hint_tracks_live_count():
     assert full["bounded"] is False
 
 
-def test_progress_index_tools_have_no_proxy_wall_clock(monkeypatch):
+def test_progress_index_tools_are_not_bounded_by_the_default_floor(monkeypatch):
+    """A long index must not die on the 180s floor -- but it must still be BOUNDED.
+
+    The earlier form of this test pinned ``timeout is None``, i.e. an unbounded
+    urllib wait. That protects the real invariant (a multi-minute index is not
+    killed by a fixed proxy wall clock) at the cost of a worse failure: if the
+    daemon hangs, the proxy hangs with it forever and no caller can tell a slow
+    index from a dead one. A34 replaced it with a large explicit ceiling, which
+    keeps the invariant and drops the hang. Asserting the ceiling instead of
+    ``None`` is strictly stronger, so this is a tightened pin, not a loosened one.
+    """
     seen = {}
 
     def urlopen(request, timeout=None):
@@ -107,4 +117,8 @@ def test_progress_index_tools_have_no_proxy_wall_clock(monkeypatch):
     monkeypatch.setattr(ms.urllib.request, "urlopen", urlopen)
     assert json.loads(ms._mcp_proxy_call(
         "cbm_incremental_index", {"project_path": "D:/repo"}))["ok"]
-    assert seen["timeout"] is None
+    # Positive control: the ceiling only means something if it really exceeds the
+    # floor, otherwise this test would pass on a regression back to 180s.
+    assert ms._MCP_PROXY_LONG_TIMEOUT > ms._MCP_PROXY_DEFAULT_TIMEOUT
+    assert seen["timeout"] == ms._MCP_PROXY_LONG_TIMEOUT
+    assert seen["timeout"] is not None

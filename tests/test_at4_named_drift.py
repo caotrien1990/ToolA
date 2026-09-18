@@ -24,6 +24,14 @@ locked by a named test:
 These tests are additive.  They must PASS now and FAIL on any future
 regression of those two specific instances.
 
+CASE-1809-E qualifies the subset rule in (2), and only there: a parameter the
+DISPATCHER pops out of the request body before dispatch is accepted by the
+transport, so it can never appear in a handler signature.  R101 ``fields=`` is
+the first such parameter to be published in the schema, so the subset check
+subtracts exactly the properties carrying the R101 marker -- by marker, not by
+name -- and a positive-control test keeps that subtraction from growing into a
+blanket pass.
+
 Run:
   ./venv312/Scripts/python.exe -m pytest tests/test_at4_named_drift.py -q
 """
@@ -33,6 +41,7 @@ import inspect
 import code_tools
 import orchestrator_server as srv  # noqa: F401 — triggers late registrations
 import tools_v15
+from orchestrator.core.fields_param import R101_MARKER
 
 # Module-level reference so inspect.signature does not see a bound
 # method (which happens when the attribute lives on a class).
@@ -50,6 +59,25 @@ def _schema_function(name: str) -> dict | None:
         if fn.get("name") == name:
             return fn
     return None
+
+
+def _dispatcher_popped_props(fn: dict | None) -> set[str]:
+    """Schema properties the DISPATCHER consumes, so no handler can declare them.
+
+    Measured 2026-09-18: orchestrator_server pops ``fields`` out of the request
+    body before the UNSUPPORTED_FIELD check, which is exactly why the R101
+    projection is accepted on every tool while appearing in no tool's
+    signature.  Membership is decided by the marker the stamper writes
+    (orchestrator.core.fields_param), NOT by the name -- two DOM-state tools,
+    checkpoint_loop_dom_state and click_and_checkpoint_loop, declare an
+    unmarked ``fields`` that means a property list and IS a real parameter.
+    """
+    props = ((fn or {}).get("parameters") or {}).get("properties") or {}
+    return {
+        prop_name
+        for prop_name, spec in props.items()
+        if isinstance(spec, dict) and spec.get(R101_MARKER) is True
+    }
 
 
 # ── 1) git_stage token gate agreement ───────────────────────────────────────
@@ -160,12 +188,53 @@ class TestQueryDomCandidatesSchemaImplFieldAgreement:
     def test_schema_props_are_subset_of_signature(self):
         schema_props = self._schema_props()
         sig_params = self._sig_params()
-        extra_in_schema = schema_props - sig_params
+        # CASE-1809-E: subtract the parameters the DISPATCHER consumes.  R101
+        # ``fields=`` is popped out of the request body in orchestrator_server
+        # BEFORE the UNSUPPORTED_FIELD check, so every tool accepts it and NO
+        # handler signature can ever contain it.  Publishing it is therefore
+        # not drift -- withholding it was the bug (CA could not discover the
+        # projection from the schema).  The exemption is earned by the stamped
+        # marker, never by the name: two DOM-state tools own an UNMARKED
+        # ``fields`` property that still has to match their signature.
+        fn = _schema_function(self.SCHEMA_TOOL)
+        dispatcher_popped = _dispatcher_popped_props(fn)
+        extra_in_schema = schema_props - sig_params - dispatcher_popped
         assert not extra_in_schema, (
             f"schema<->impl drift: {self.SCHEMA_TOOL!r} schema publishes "
             f"fields the implementation cannot accept: "
             f"{sorted(extra_in_schema)}; signature params = "
-            f"{sorted(sig_params)}"
+            f"{sorted(sig_params)}; dispatcher-popped = "
+            f"{sorted(dispatcher_popped)}"
+        )
+
+    def test_the_exemption_is_earned_by_the_marker_not_by_a_name(self):
+        """Positive control for the subtraction in the test above.
+
+        That subtraction can rot in two directions: it can stop matching
+        anything (the R101 declaration would then fail the gate again), or it
+        can grow until it swallows a genuinely undeclared property.  Both are
+        checked here -- on the live schema, plus one fabricated stray.
+        """
+        fn = _schema_function(self.SCHEMA_TOOL)
+        popped = _dispatcher_popped_props(fn)
+        assert popped, (
+            f"no dispatcher-popped property on {self.SCHEMA_TOOL!r}: either "
+            f"the R101 ``fields`` declaration is gone or its marker was "
+            f"renamed -- the subtraction above is now vacuous"
+        )
+        assert popped <= {"fields"}, (
+            f"unexpected dispatcher-popped properties {sorted(popped)}: only "
+            f"R101 ``fields`` is popped before dispatch, so anything else "
+            f"listed here would be a real parameter hidden from this gate"
+        )
+        # A stray property carries no marker, so the gate still catches it.
+        props = dict((fn.get("parameters") or {}).get("properties") or {})
+        props["not_a_real_parameter"] = {"type": "string"}
+        stray = {"parameters": {"properties": props}}
+        assert _dispatcher_popped_props(stray) == popped
+        leftover = set(props) - self._sig_params() - _dispatcher_popped_props(stray)
+        assert leftover == {"not_a_real_parameter"}, (
+            f"the exemption swallowed a stray property: leftover={sorted(leftover)}"
         )
 
     def test_required_fields_are_subset_of_signature(self):

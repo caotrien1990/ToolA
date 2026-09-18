@@ -16,6 +16,12 @@ from copy import deepcopy
 
 from typing import Any
 
+# A34 P2c: the enum and the bound for the `pipeline` parameter are DERIVED from the
+# active-chain leaf, never retyped here. active_chain imports only os/time/typing and
+# orchestrator/core/__init__.py is empty, so this stays inside the "independent from
+# code_tools" promise in the module docstring -- no cycle is introduced.
+from orchestrator.core.active_chain import ACTIVE_CHAIN_STEPS, MAX_STEPS_PER_CALL
+
 
 
 T1_TOOLS = [
@@ -207,6 +213,9 @@ BASE_TOOL_SCHEMAS = [
 					"include_next_ranges": {"type": "boolean", "default": True, "description": "Include ranked bounded follow-up ranges."},
 					"content_hash": {"type": "string", "default": "", "description": "Hash returned by a prior read for cache reuse/staleness signaling."},
 					"force_refresh": {"type": "boolean", "default": False, "description": "Bypass the in-memory content cache."},
+					# A34 P2c (2026-09-18): see the twin block in the search_code schema below
+					# for why a dispatcher-popped field still has to be declared here.
+					"pipeline": {"type": "array", "default": [], "items": {"type": "string", "enum": sorted(ACTIVE_CHAIN_STEPS.get("read_file_range", ()))}, "description": "OPT-IN follow-up READS to run inside this same call, at most %d; each answer lands under the response key `pipeline`. Every step is built from THIS call's own result -- the neighbour range it already computed, the symbol map of the file it just read -- so nothing runs unless you name it here and an unset pipeline costs nothing. An unknown name is echoed under pipeline.rejected next to the steps that did run, never raised." % MAX_STEPS_PER_CALL},
 				},
 				"required": ["file_path"],
 			},
@@ -315,6 +324,14 @@ BASE_TOOL_SCHEMAS = [
 					# understands is still UNSUPPORTED_FIELD until the registry lists it, and an
 					# escape hatch nobody can reach is not an escape hatch. 0 = scan everything.
 					"max_file_bytes": {"type": "integer", "default": 2000000, "description": "mode='text' skips records larger than this (bytes). 0 = no cap, scan every record. Skipped files are reported in skipped_large_files."},
+					# A34 P2c (2026-09-18): the ACTIVE half of the auto-chain, opt-in per call.
+					# The dispatcher POPS this field before the handler ever sees it, so the
+					# tool signature does not need it -- but B-01 and B026 directly above are
+					# the same lesson twice: a field missing from THIS schema is a field no CA
+					# can discover, and the dispatcher's own allowed_params comes from here.
+					# enum and the bound are derived from the leaf's table, never retyped, so
+					# this line cannot drift from what resolve_active_pipeline really accepts.
+					"pipeline": {"type": "array", "default": [], "items": {"type": "string", "enum": sorted(ACTIVE_CHAIN_STEPS.get("search_code", ()))}, "description": "OPT-IN follow-up READS to run inside this same call, at most %d; each answer lands under the response key `pipeline`. Every step is built from THIS call's own result, so nothing runs unless you name it here and an unset pipeline costs nothing. An unknown name is echoed under pipeline.rejected next to the steps that did run, never raised." % MAX_STEPS_PER_CALL},
 
 				},
 

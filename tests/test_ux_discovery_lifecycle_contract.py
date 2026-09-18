@@ -136,3 +136,38 @@ def test_public_schema_describes_real_contracts():
     assert "estimates" in lifecycle["description"]
     start = srv._tool_schema_payload("start_app")[0]["tool"]["function"]
     assert "command_source" in start["description"] and "app_ignored" in start["description"]
+
+
+@pytest.mark.parametrize("field", sorted(set(ct.AUTO_CHAIN_FIELDS) | {"ca_next_action"}))
+def test_advisory_field_called_as_a_tool_is_told_it_is_a_field(field):
+    """A34 W2 P2d: `ca_next_tool` carries a live tool NAME as its VALUE, so the FIELD name
+    reads like a tool -- and the sibling `ca_*` names in TOOL_MAP really are tools, so the
+    prefix carries no signal. Measured 2026-09-18: calling the field name returned a bare
+    UNKNOWN_TOOL whose similarity ranking produced an EMPTY suggestions list, i.e. the CA was
+    told what it is not and nothing about what it is. Same shape as the `call_tool` branch."""
+    assert field not in ct.TOOL_MAP, "a field name that became a tool invalidates this branch"
+    result = srv._unknown_tool_payload(field)
+    assert result["error_name"] == "UNKNOWN_TOOL" and result["ok"] is False
+    assert result["surface"] == "response_field"
+    assert "RESPONSE FIELD" in result["error"]
+    assert result["suggestions"] == []
+    assert field in result["advisory_fields"]
+    assert "call THAT" in result["field_semantics"]
+
+
+def test_the_advisory_branch_is_derived_not_a_hand_table(monkeypatch):
+    """Positive control for the derivation. A31 forbids a hand-written mirror of a registry:
+    a field registered in AUTO_CHAIN_RULES must be answered with no edit in the server."""
+    monkeypatch.setattr(ct, "AUTO_CHAIN_FIELDS", ("ca_hint_freshly_registered",))
+    assert srv._unknown_tool_payload("ca_hint_freshly_registered")["surface"] == "response_field"
+
+
+def test_the_advisory_branch_is_not_a_blanket_ca_prefix_pass():
+    """Restraint control: real `ca_*` TOOLS must keep resolving, and an unknown name that is
+    not a registered field must keep the ranked-suggestions answer with its discovery_url."""
+    real = [t for t in ct.TOOL_MAP if t.startswith("ca_")]
+    assert real, "no ca_* tool left to prove the prefix is not the signal"
+    for tool in real:
+        assert srv._tool_schema_payload(tool)[1] == 200
+    other = srv._unknown_tool_payload("ca_totally_made_up_name")
+    assert other.get("surface") != "response_field" and "discovery_url" in other

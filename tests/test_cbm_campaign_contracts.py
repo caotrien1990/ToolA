@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import code_tools
+from orchestrator.core.fields_param import R101_MARKER
 from orchestrator.graph.attack import compute_entry_reach
 from orchestrator.graph.cycle_point import compute_cycle_point
 from orchestrator.graph.testgap import compute_test_gap
@@ -15,11 +16,24 @@ from orchestrator.graph import tools as gtools
 
 
 def _schema_props(name: str) -> set[str]:
+    """Schema properties a HANDLER must declare.
+
+    CASE-1809-E: the dispatcher pops R101 ``fields=`` out of the request body
+    before dispatch, so a property carrying the R101 marker is accepted by the
+    transport yet can never appear in a handler signature.  Subtract it by
+    MARKER, not by name -- checkpoint_loop_dom_state and click_and_checkpoint_loop
+    own an unmarked ``fields`` that IS a real parameter (B027).
+    """
     for row in code_tools.TOOL_SCHEMAS:
         fn = row.get("function") or {}
         if fn.get("name") == name:
             params = fn.get("parameters") or {}
-            return set((params.get("properties") or {}))
+            props = params.get("properties") or {}
+            return {
+                prop
+                for prop, spec in props.items()
+                if not (isinstance(spec, dict) and spec.get(R101_MARKER) is True)
+            }
     return set()
 
 

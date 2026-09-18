@@ -97,8 +97,22 @@ def test_valid_mcp_payload_uses_proxy_happy_path(monkeypatch):
     proxy_calls = []
 
     class Response:
+        """Stands in for http.client.HTTPResponse, context manager included.
+
+        The proxy opens the POST as ``with urlopen(...) as resp:`` so the socket
+        is closed on every path. A fake with only ``read()`` makes the proxy
+        raise TypeError and answer 502 -- which looks exactly like a routing
+        regression and is only mock infidelity.
+        """
+
         def read(self):
             return b'{"ok": true, "source": "live-http"}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
 
     def fake_urlopen(request, timeout):
         proxy_calls.append((request.full_url, timeout))

@@ -68,11 +68,25 @@ def _stale_schema_dropping(tool_name, drop_field):
 
 
 class _FakeResponse:
+    """Stand-in for urlopen's return -- which IS a context manager.
+
+    http.client.HTTPResponse supports ``with``, and the proxy now uses it so the
+    socket is closed on every path. A fake without __enter__/__exit__ made three
+    tests fail on the mock's own infidelity, reported as a proxy failure; the
+    assertions they pin were never the thing that broke.
+    """
+
     def __init__(self, payload):
         self._payload = json.dumps(payload).encode("utf-8")
 
     def read(self):
         return self._payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
 
 
 def _isolate(monkeypatch):
@@ -180,6 +194,22 @@ def test_tool_missing_from_the_local_registry_still_reaches_the_daemon(
 
 
 def test_progress_index_proxy_has_no_fixed_wall_clock(monkeypatch, tmp_path):
+    """Not capped at the flat default -- but no longer unbounded either.
+
+    PREMISE CHANGE, stated rather than quietly dropped: this test used to assert
+    ``timeout is None``, i.e. an unbounded urlopen for the progress/index class.
+    A34 removed that on purpose. `None` answered "don't cap a 40-minute index" by
+    making a WEDGED daemon hang the calling CA forever with no way out but killing
+    the client -- the opposite defect from a 180s cap, and the one with no error
+    message. See the _MCP_PROXY_LONG_TIMEOUT comment in mcp_stdio.
+
+    What the name still means, and what is pinned here: this class must not be
+    measured against the flat wall every other tool gets. It gets the long ceiling,
+    and what actually ends a healthy-but-slow scan early is the idle watchdog
+    (progress in the daemon's own ledger), not the clock.
+    """
+    from orchestrator.server import mcp_stdio as mcpw
+
     _isolate(monkeypatch)
     seen = {}
 
@@ -192,7 +222,11 @@ def test_progress_index_proxy_has_no_fixed_wall_clock(monkeypatch, tmp_path):
     response = asyncio.run(srv.dispatch_tool_call(
         "cbm_incremental_index", {"project_path": str(tmp_path)}, transport="mcp"))
     assert json.loads(response.body)["ok"]
-    assert seen["timeout"] is None
+    assert seen["timeout"] is not None, \
+        "an unbounded wait is the footgun A34 removed, not the contract"
+    assert seen["timeout"] == mcpw._MCP_PROXY_LONG_TIMEOUT
+    assert seen["timeout"] > mcpw._MCP_PROXY_DEFAULT_TIMEOUT, \
+        "the progress class must not be measured against the flat wall clock"
 
 
 def test_a_field_no_layer_knows_still_fails_loud(monkeypatch, tmp_path):

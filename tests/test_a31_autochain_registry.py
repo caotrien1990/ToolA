@@ -93,7 +93,13 @@ def emitted():
             rel = str(path.relative_to(REPO))
             tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
             for key, val in _payload_keys(tree):
-                if _HINTISH.match(key) or key in ("ruff_preview", "post_ruff_validation"):
+                # A34 W2: registry-driven, not a hand list. The two non-ca_hint*/ca_chain*
+                # rows used to be spelled out here, so the third one (ca_next_tool) would
+                # have been registered and named in the rule file yet never scanned -- the
+                # row would pass vacuously. Asking AUTO_CHAIN_FIELDS keeps this scan honest
+                # for every future row. The reverse direction is still independent: the
+                # _HINTISH branch below catches a ca_hint*/ca_chain* key with NO row.
+                if _HINTISH.match(key) or key in ct.AUTO_CHAIN_FIELDS:
                     fields.setdefault(key, set()).add(rel)
                 if key == "ca_next_action" and isinstance(val, ast.Constant) \
                         and isinstance(val.value, str):

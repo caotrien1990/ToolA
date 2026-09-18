@@ -362,6 +362,100 @@ class TestOrchestratorServerContract(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(data['mcp']['project-orchestrator']['type'], 'local')
             self.assertEqual(data['mcp']['project-orchestrator']['command'], ['python', 'orchestrator_server.py', '--mcp'])
 
+    def test_mcp_env_absent_emits_nothing_at_all(self):
+        """A34 W2 item 4, restraint control. `mcp_env` is opt-in: with the key absent from both the
+        registry and the agent, the written entry must be byte-identical to the old two-key shape.
+        A config that never asks for an env block must not grow one."""
+        with tempfile.TemporaryDirectory() as tmp:
+            mcp_file = Path(tmp) / '.claude.json'
+            mcp_file.write_text(json.dumps({'mcpServers': {}}), encoding='utf-8')
+
+            result = code_tools._ma_write_mcp(
+                {'id': 'clau', 'mcp_file': str(mcp_file), 'mcp_format': 'json'},
+                {'mcp_command': 'python', 'mcp_args_server': 'orchestrator_server.py'},
+                dry_run=False,
+            )
+
+            entry = json.loads(mcp_file.read_text(encoding='utf-8'))['mcpServers']['project-orchestrator']
+            self.assertTrue(result['ok'])
+            self.assertEqual(sorted(entry), ['args', 'command'])
+
+    def test_mcp_env_carries_the_proxy_timeout_knob_into_the_json_shape(self):
+        """The knob this exists for: mcp_stdio reads MCP_PROXY_HTTP_TIMEOUT from the ENVIRONMENT at
+        import, so raising the 180s default means putting it in the CA's own MCP config. Values are
+        stringified because a JSON number would be an invalid env value to the client."""
+        with tempfile.TemporaryDirectory() as tmp:
+            mcp_file = Path(tmp) / '.claude.json'
+            mcp_file.write_text(json.dumps({'mcpServers': {}}), encoding='utf-8')
+
+            result = code_tools._ma_write_mcp(
+                {'id': 'clau', 'mcp_file': str(mcp_file), 'mcp_format': 'json'},
+                {'mcp_command': 'python', 'mcp_args_server': 'orchestrator_server.py',
+                 'mcp_env': {'MCP_PROXY_HTTP_TIMEOUT': 420}},
+                dry_run=False,
+            )
+
+            entry = json.loads(mcp_file.read_text(encoding='utf-8'))['mcpServers']['project-orchestrator']
+            self.assertTrue(result['ok'])
+            self.assertEqual(entry['env'], {'MCP_PROXY_HTTP_TIMEOUT': '420'})
+
+    def test_mcp_env_agent_overrides_registry_key_by_key(self):
+        """Registry-level mcp_env is the fleet default; a per-agent mcp_env must override only the
+        keys it names, not replace the whole block -- otherwise one CA needing a longer timeout
+        would silently drop every other shared variable."""
+        with tempfile.TemporaryDirectory() as tmp:
+            mcp_file = Path(tmp) / 'mcp.json'
+            mcp_file.write_text(json.dumps({'servers': {}}), encoding='utf-8')
+
+            code_tools._ma_write_mcp(
+                {'id': 'copi', 'mcp_file': str(mcp_file), 'mcp_format': 'vscode',
+                 'mcp_env': {'MCP_PROXY_HTTP_TIMEOUT': '600'}},
+                {'mcp_command': 'python', 'mcp_args_server': 'orchestrator_server.py',
+                 'mcp_env': {'MCP_PROXY_HTTP_TIMEOUT': '180', 'PYTHONUTF8': '1'}},
+                dry_run=False,
+            )
+
+            entry = json.loads(mcp_file.read_text(encoding='utf-8'))['servers']['project-orchestrator']
+            self.assertEqual(entry['env'], {'MCP_PROXY_HTTP_TIMEOUT': '600', 'PYTHONUTF8': '1'})
+
+    def test_mcp_env_opencode_shape_spells_it_environment(self):
+        """Measured 2026-09-18 in the live C:/Users/ADMIN/.config/opencode/opencode.json: opencode
+        local servers carry `environment`, never `env`. Emitting `env` there would be accepted by
+        the file and ignored by the client -- a knob that looks set and does nothing."""
+        with tempfile.TemporaryDirectory() as tmp:
+            mcp_file = Path(tmp) / 'opencode.json'
+            mcp_file.write_text(json.dumps({'mcp': {}}), encoding='utf-8')
+
+            code_tools._ma_write_mcp(
+                {'id': 'opencode', 'mcp_file': str(mcp_file), 'mcp_format': 'json'},
+                {'mcp_command': 'python', 'mcp_args_server': 'orchestrator_server.py',
+                 'mcp_env': {'MCP_PROXY_HTTP_TIMEOUT': '420'}},
+                dry_run=False,
+            )
+
+            entry = json.loads(mcp_file.read_text(encoding='utf-8'))['mcp']['project-orchestrator']
+            self.assertEqual(entry['environment'], {'MCP_PROXY_HTTP_TIMEOUT': '420'})
+            self.assertNotIn('env', entry)
+
+    def test_mcp_env_toml_uses_an_inline_table_so_a_resync_leaves_one_block(self):
+        """The TOML branch rewrites its block with a regex that ends at the next `^[`. An
+        `[mcp_servers.KEY.env]` SUB-TABLE would end that match early and the next sync would append
+        a second block instead of replacing the first. An inline table keeps it to one line."""
+        with tempfile.TemporaryDirectory() as tmp:
+            mcp_file = Path(tmp) / 'config.toml'
+            mcp_file.write_text('model = "gpt"\n', encoding='utf-8')
+            agent = {'id': 'codo', 'mcp_file': str(mcp_file), 'mcp_format': 'toml'}
+            reg = {'mcp_command': 'python', 'mcp_args_server': 'orchestrator_server.py',
+                   'mcp_env': {'MCP_PROXY_HTTP_TIMEOUT': '420'}}
+
+            first = code_tools._ma_write_mcp(agent, reg, dry_run=False)
+            second = code_tools._ma_write_mcp(agent, reg, dry_run=False)
+
+            text = mcp_file.read_text(encoding='utf-8')
+            self.assertTrue(first['ok'] and second['ok'], (first, second))
+            self.assertEqual(text.count('[mcp_servers.project-orchestrator]'), 1)
+            self.assertIn('env = { MCP_PROXY_HTTP_TIMEOUT = "420" }', text)
+            self.assertIn('model = "gpt"', text)
     def test_manage_agent_backup_archives_bak_ma_outside_live_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
             live = Path(tmp) / 'AGENTS.md'

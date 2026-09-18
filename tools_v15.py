@@ -59,6 +59,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+# A34: stdlib-only leaf under orchestrator.core -- safe at module level here
+# because orchestrator/__init__.py and orchestrator/core/__init__.py are inert,
+# so this does NOT re-create the ct->tv->os import cycle the docstring forbids.
+from orchestrator.core.params import csv_param
+
 # V15 R18: schema version stamped on every response so CA can detect drift
 # and invalidate cached schema assumptions across [A] updates.
 _SCHEMA_VERSION = "v15.r18"
@@ -445,7 +450,7 @@ async def import_graph(project_path: str, file_pattern: str = "*.py,*.js,*.ts",
     if not base.exists():
         return _err(f"Path not found: {project_path}", error_name="PATH_NOT_FOUND")
 
-    patterns = [pat.strip() for pat in file_pattern.split(",")]
+    patterns = csv_param(file_pattern)
 
     PY_FROM = re.compile(r"^\s*from\s+([\w\.]+)\s+import\s")
     PY_IMPORT = re.compile(r"^\s*import\s+([\w\.]+)")
@@ -544,7 +549,10 @@ async def ast_query(pattern: str, project_path: str,
             error_name="UNSUPPORTED_FIELD",
             accepted_fields=sorted(SUPPORTED),
         )
-
+    # A34: coerce once, outside the walk -- `file_pattern` may arrive as a
+    # csv string, a JSON array, or a real list; all three must select the same
+    # files (before A34 a list crashed on .split).
+    _pats = csv_param(file_pattern)
     def _scan() -> list:
         hits = []
         for root, dirs, files in os.walk(base, onerror=lambda e: None):
@@ -554,7 +562,7 @@ async def ast_query(pattern: str, project_path: str,
                 if len(hits) >= max_results:
                     return hits
                 fp = Path(root) / fn
-                if not any(fp.match(p) for p in [s.strip() for s in file_pattern.split(",")]):
+                if not any(fp.match(p) for p in _pats):
                     continue
                 try:
                     src = fp.read_text(encoding="utf-8-sig", errors="ignore")

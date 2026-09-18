@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Callable
 
+from orchestrator.core.fields_param import stamp_fields_parameter
+
 
 class RegistryDriftError(RuntimeError):
     """A tool's map/schema/phase/alias entries are inconsistent."""
@@ -66,6 +68,13 @@ def register_tool(
     fn["x_phase"] = phase
     if phase_labels:
         fn.setdefault("x_phase_label", phase_labels.get(phase, ""))
+    # CASE-1809-E: declare the R101 ``fields=`` projection. The dispatcher accepts it on every
+    # tool (it is popped out of the body before the UNSUPPORTED_FIELD check), yet it was declared
+    # by only 2 schemas -- and both of those mean a DOM-state list, not a projection. Stamped
+    # HERE as well as in the code_tools bulk loop for the same reason x_phase is stamped twice:
+    # a late registration never passes through that loop. Never overwrites a tool's own
+    # ``fields`` property.
+    stamp_fields_parameter(fn)
     # CAN-015: stamp enforcement metadata into the schema (surfaces in /api/tools).
     if requires_token:
         fn["requires_token"] = True

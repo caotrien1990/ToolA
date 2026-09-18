@@ -16,6 +16,7 @@ import json
 import os
 import secrets
 import sys
+import threading
 import time
 import uuid as _uuid
 import urllib.error
@@ -44,17 +45,434 @@ _MCP_PROXY_TOKEN_ERRORS = (
 )
 # urlopen(timeout=) is SECONDS, not ms. The old proxy branch in
 # orchestrator_server.py used ``timeout=6100`` (~1.7 HOURS) -- almost certainly a
-# ms/seconds unit bug. 180s is a sane default; per-call overrides ride on top for
-# the genuinely long tools (backup_project, run_project_command, reindex).
+# ms/seconds unit bug. 180s is the FLOOR, not the answer: the per-call budget in
+# _mcp_timeout_budget rides on top of it.
 _MCP_PROXY_DEFAULT_TIMEOUT = float(os.environ.get("MCP_PROXY_HTTP_TIMEOUT", "180"))
 # Margin added to a tool's own ``timeout`` arg so the HTTP wait always outlives the
 # work the daemon is doing (otherwise the proxy times out on a call that is still
 # legitimately running).
 _MCP_PROXY_TIMEOUT_MARGIN = 30.0
+# Ceiling for the long class. It replaces an earlier ``http_timeout = None``: an
+# unbounded urlopen wait meant a WEDGED daemon hung the calling CA forever with no
+# way out but killing the client -- the opposite defect from a 180s cap, and the
+# worse one, because a cap at least fails loud (7-RULE #7).
+_MCP_PROXY_LONG_TIMEOUT = float(os.environ.get("MCP_PROXY_HTTP_LONG_TIMEOUT", "3600"))
+# Tools whose progress is governed server-side rather than by one request/response
+# round trip. They get the long ceiling instead of the floor. Do NOT hand-add a tool
+# here just because it is slow: declare a ``timeout`` in its schema and
+# _mcp_schema_timeout picks it up. A hand mirror of the registry is the drift class
+# A31 spent a campaign deleting, and every name below is pinned to a live tool by
+# tests/test_a34_mcp_proxy_budget.py so a renamed tool fails loud instead of
+# silently dropping back to the floor.
 _MCP_PROGRESS_TOOLS = {
     "cbm_index", "cbm_incremental_index",
     "generate_project_map", "refresh_project_map",
 }
+# The schema fields a tool uses to declare how long its own work may take. Ordered:
+# the first one the tool declares wins.
+_MCP_TIMEOUT_DECL_FIELDS = ("timeout", "timeout_sec", "timeout_ms")
+
+# --- idle watchdog -----------------------------------------------------------
+# The budget above is a CEILING, not a deadline. Raising a number is the wrong
+# answer to "this repo is bigger": the question that actually matters is whether
+# the daemon is still making progress, and the daemon already answers it --
+# /api/write_status returns operation_state in {running, stalled} plus
+# seconds_since_progress for every member of _MUTATING_TOOLS (not writes only),
+# with its own stall window from ORCHESTRATOR_OPERATION_STALL_SECONDS. So this
+# side needs no new endpoint: it waits in slices and asks.
+#
+# How long each slice of the wait is before we ask the daemon how it is doing.
+_MCP_PROXY_POLL_SLICE = float(os.environ.get("MCP_PROXY_POLL_SLICE_SECONDS", "20") or 20)
+# A floor, so a misconfigured slice cannot turn the wait into a poll storm against
+# the daemon. Named rather than inlined because it is also the knob a test has to
+# lower: with a 1s floor a sub-second fake response finishes inside the first join
+# and no probe ever runs, which makes a watchdog test pass while measuring nothing.
+_MCP_PROXY_POLL_SLICE_FLOOR = 1.0
+# The IDLE deadline: how long the daemon may publish NO progress before we stop
+# waiting. Deliberately larger than the server's own default stall window (120s)
+# so "stalled" has to hold across two independent observers before it decides
+# anything -- the label alone is not enough, the number has to agree.
+_MCP_PROXY_IDLE_ABANDON = float(
+    os.environ.get("MCP_PROXY_IDLE_ABANDON_SECONDS", "180") or 180)
+# A status probe is a cheap read; it must never become the thing that hangs.
+_MCP_PROXY_STATUS_TIMEOUT = float(
+    os.environ.get("MCP_PROXY_STATUS_TIMEOUT_SECONDS", "10") or 10)
+# --- liveness watchdog, for the tools the ledger cannot see ------------------
+# write_status answers only for _MUTATING_TOOLS, so the idle watchdog above covers
+# writes and leaves every SCAN tool -- read_*, cbm_*, ocr_*, settings -- with
+# nothing but the wall ceiling. The daemon does publish one fact about itself that
+# holds for every tool: GET /health carries its `pid`. So for a read the question
+# is not "how long has this taken" (unanswerable -- a big repo is legitimately
+# slow) but "is the daemon I POSTed to still serving this call".
+#
+# Only POSITIVE evidence may end a wait, and there are exactly two kinds:
+#   * a DIFFERENT pid -- it restarted, and this request died with the old process;
+#   * connection REFUSED -- nothing is listening, so no response can ever arrive.
+# A probe that merely times out is NOT evidence: a daemon busy enough to miss
+# /health is the normal state of a large scan, and abandoning a live scan is the
+# worse of the two defects. Those waits are ended by the finite budget instead,
+# which is why the budget must never be None (see _mcp_timeout_budget).
+_MCP_PROXY_HEALTH_STRIKES = max(1, int(
+    os.environ.get("MCP_PROXY_HEALTH_STRIKES", "2") or 2))
+
+
+class _MCPProxyAbandoned(Exception):
+    """A wait cut short on evidence the daemon published, never on elapsed time.
+
+    Subclasses build their own envelope so BOTH proxy paths -- _mcp_proxy_call here
+    and the dispatcher branch in orchestrator_server.py -- answer one contract from
+    one source. Two hand-kept copies of an error shape is precisely how those two
+    paths drifted apart in the first place: one grew this watchdog while the other
+    kept an unbounded urlopen.
+    """
+
+    def mcp_proxy_envelope(self, name: str, http_budget: float) -> dict:
+        raise NotImplementedError
+
+
+class _MCPOperationStalled(_MCPProxyAbandoned):
+    """The daemon's own ledger reported no progress for longer than the idle budget.
+
+    Carries the evidence, because the caller must report the MEASUREMENT rather
+    than a wall clock: a stall is only ever asserted on something the daemon said.
+    """
+
+    def __init__(self, status: dict, waited: float, idle_seconds: float,
+                 payload: dict | None = None):
+        super().__init__(f"no progress for {idle_seconds}s")
+        self.status = dict(status or {})
+        self.waited = float(waited)
+        self.idle_seconds = float(idle_seconds)
+        self.payload = dict(payload or {})
+
+    def mcp_proxy_envelope(self, name: str, http_budget: float) -> dict:
+        return {
+            "ok": False,
+            "error_name": "MCP_PROXY_OPERATION_STALLED",
+            "tool": name,
+            "error": (f"{name} is registered in_flight but published no progress for "
+                      f"{self.idle_seconds}s; abandoned the wait after "
+                      f"{round(self.waited, 1)}s of a {round(http_budget, 1)}s budget"),
+            "commit_state": self.status.get("commit_state") or "unknown",
+            "operation_state": "stalled",
+            "operation_id": self.status.get("operation_id"),
+            "seconds_since_progress": self.idle_seconds,
+            "idle_budget_s": _MCP_PROXY_IDLE_ABANDON,
+            "waited_s": round(self.waited, 1),
+            "http_budget_s": http_budget,
+            "progress": self.status.get("progress"),
+            "safe_to_retry": False,
+            "retryable": False,
+            "ca_next_action": "inspect_write_status_before_retry",
+            "write_status_url": "/api/write_status?" + urllib.parse.urlencode(
+                _mcp_write_status_query(name, self.payload)),
+            "hint": ("The wait was cut short by the IDLE deadline, not by elapsed "
+                     "time: a long-but-progressing operation is never abandoned, so "
+                     "no timeout number needs raising for a large repo. Poll "
+                     "write_status for this target until commit_state is terminal; "
+                     "do NOT resend this call."),
+        }
+
+
+class _MCPDaemonGone(_MCPProxyAbandoned):
+    """The daemon holding this in-flight call is provably not serving it any more.
+
+    The watchdog for every tool that records NO ledger entry -- the scan class. It
+    reports which of the two positive verdicts fired, never a wall clock.
+    """
+
+    def __init__(self, reason: str, waited: float, strikes: int = 0,
+                 pid_first=None, pid_now=None, payload: dict | None = None):
+        super().__init__(f"daemon {reason}")
+        self.reason = str(reason)
+        self.waited = float(waited)
+        self.strikes = int(strikes)
+        self.pid_first = pid_first
+        self.pid_now = pid_now
+        self.payload = dict(payload or {})
+
+    def mcp_proxy_envelope(self, name: str, http_budget: float) -> dict:
+        if self.reason == "restarted":
+            error_name = "MCP_PROXY_DAEMON_RESTARTED"
+            detail = (f"the daemon restarted mid-call (pid {self.pid_first} -> "
+                      f"{self.pid_now}), so this request died with the old process")
+        else:
+            error_name = "MCP_PROXY_DAEMON_UNREACHABLE"
+            detail = (f"/health refused the connection {self.strikes} times running; "
+                      f"nothing is listening, so no response can arrive")
+        return {
+            "ok": False,
+            "error_name": error_name,
+            "tool": name,
+            "error": (f"abandoned {name} after {round(self.waited, 1)}s of a "
+                      f"{round(http_budget, 1)}s budget: {detail}"),
+            "commit_state": "unknown",
+            "operation_state": self.reason,
+            "daemon_pid_first_seen": self.pid_first,
+            "daemon_pid_now": self.pid_now,
+            "health_refusals": self.strikes,
+            "health_refusal_budget": _MCP_PROXY_HEALTH_STRIKES,
+            "waited_s": round(self.waited, 1),
+            "http_budget_s": http_budget,
+            "safe_to_retry": False,
+            "retryable": False,
+            "ca_next_action": "inspect_write_status_before_retry",
+            "write_status_url": "/api/write_status?" + urllib.parse.urlencode(
+                _mcp_write_status_query(name, self.payload)),
+            "hint": ("This is a LIVENESS verdict, not a timeout: the wait stopped "
+                     "because the daemon provably stopped serving this call, so no "
+                     "number needs raising. A read/scan tool is safe to call again "
+                     "once [A] answers; for a write, poll write_status for this "
+                     "target FIRST -- a lost response never proves the write did "
+                     "not land."),
+        }
+
+
+def _mcp_write_status_query(name: str, payload: dict) -> list:
+    """The (project_path, file_path, tool) target key for a write_status lookup.
+
+    The operation_id is deliberately NOT recomputed here. orchestrator_server's
+    _mcp_proxy_failure_payload documents why: the id is sha256 over the body the
+    DISPATCHER sees, after it rewrites task_epoch / prompt_hash / fields /
+    project_path / agent_id, so an id minted on this side of the wire would be a
+    plausible-looking key for an entry that does not exist -- and a 404 for it
+    would read as "no write happened". The target lookup is the supported route,
+    narrowed by &tool= because index and script tools all record file_path="", so
+    one project root can hold several unrelated operations at once.
+    """
+    body = payload or {}
+    pp = str(body.get("project_path") or "")
+    fp = str(body.get("file_path") or body.get("path") or body.get("dst") or "")
+    return [(k, v) for k, v in (("project_path", pp), ("file_path", fp),
+                                ("tool", str(name or ""))) if v]
+
+
+def _mcp_operation_probe(base: str, name: str, payload: dict) -> dict:
+    """Ask the daemon whether this operation is still moving. {} means "no evidence".
+
+    Every failure mode collapses to {}: a 404 (no ledger entry, i.e. a read-only
+    tool), a 409 (ambiguous target), malformed JSON, an unreachable daemon. A probe
+    is an observability aid and must never be the thing that decides the fate of a
+    call that may still be running -- no evidence means keep waiting, not give up.
+    """
+    query = _mcp_write_status_query(name, payload)
+    if not any(k == "project_path" for k, _ in query):
+        return {}
+    url = f"{base}/api/write_status?" + urllib.parse.urlencode(query)
+    try:
+        with urllib.request.urlopen(url, timeout=_MCP_PROXY_STATUS_TIMEOUT) as resp:
+            parsed = json.loads(resp.read().decode("utf-8", "replace"))
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def _mcp_health_probe(base: str) -> tuple:
+    """Is the daemon still there? Returns (payload, verdict).
+
+    verdict is one of:
+      "alive"    -- it answered. Even a 4xx/5xx counts: a process that returns a
+                    status is a process that is running, and liveness (not
+                    correctness) is the only question being asked here.
+      "refused"  -- nothing is listening on the port. The one unambiguous "gone".
+      "unclear"  -- a timeout, a DNS error, garbage JSON. Decides NOTHING, because
+                    a daemon too busy to answer /health is the normal state of a
+                    large scan and killing that scan is the worse defect.
+
+    The projection keeps this the cheapest call the daemon serves: it runs once per
+    wait slice on every long call, and all it needs back is the pid.
+    """
+    url = f"{base}/health?fields=ok,pid,generation,executor_active_total"
+    try:
+        with urllib.request.urlopen(url, timeout=_MCP_PROXY_STATUS_TIMEOUT) as resp:
+            parsed = json.loads(resp.read().decode("utf-8", "replace"))
+        return (parsed if isinstance(parsed, dict) else {}), "alive"
+    except urllib.error.HTTPError:
+        return {}, "alive"
+    except urllib.error.URLError as exc:
+        reason = getattr(exc, "reason", None)
+        return {}, ("refused" if isinstance(reason, ConnectionRefusedError)
+                    else "unclear")
+    except ConnectionRefusedError:
+        return {}, "refused"
+    except Exception:
+        return {}, "unclear"
+
+
+def _mcp_proxy_wait(req, http_timeout: float, name: str, payload: dict, base: str) -> str:
+    """Wait for one proxied response on an IDLE deadline instead of a wall clock.
+
+    The POST runs on a daemon thread and is NEVER re-issued: a urllib socket
+    timeout abandons its response irrecoverably, so "short timeout + retry" would
+    replay a mutation. The thread keeps the full ceiling as its socket timeout, so
+    nothing regresses; this loop only makes it possible to stop waiting EARLY, and
+    only on evidence the daemon itself published.
+
+    Raises _MCPOperationStalled when the daemon's ledger reports a stall, and
+    _MCPDaemonGone when the daemon it was POSTed to is provably no longer serving
+    this call; otherwise raises whatever urlopen raised, so the existing failure
+    branches keep owning it. Both carry their own envelope so either proxy path
+    reports the same contract.
+    """
+    slice_s = max(_MCP_PROXY_POLL_SLICE_FLOOR, _MCP_PROXY_POLL_SLICE)
+    if _MCP_PROXY_IDLE_ABANDON <= 0 or slice_s >= http_timeout:
+        # Nothing a probe could change: one plain bounded wait.
+        with urllib.request.urlopen(req, timeout=http_timeout) as resp:
+            return resp.read().decode("utf-8", "replace")
+
+    box: dict = {}
+
+    def _run() -> None:
+        try:
+            with urllib.request.urlopen(req, timeout=http_timeout) as resp:
+                box["body"] = resp.read().decode("utf-8", "replace")
+        except BaseException as exc:  # re-raised on the caller's thread, never swallowed
+            box["exc"] = exc
+
+    worker = threading.Thread(target=_run, name=f"mcp-proxy-{name}", daemon=True)
+    worker.start()
+    started = time.monotonic()
+    pid_seen: dict = {}
+    refusals = 0
+    while True:
+        worker.join(slice_s)
+        if not worker.is_alive():
+            break
+        waited = time.monotonic() - started
+        if waited >= http_timeout:
+            # Let the socket timeout own this failure; give it a moment to surface.
+            worker.join(5.0)
+            break
+        status = _mcp_operation_probe(base, name, payload)
+        if (status.get("ok")
+                and str(status.get("commit_state") or "") == "in_flight"):
+            idle = status.get("progress")
+            idle_s = idle.get("seconds_since_progress") if isinstance(idle, dict) else None
+            if (str(status.get("operation_state") or "") == "stalled"
+                    and isinstance(idle_s, (int, float)) and not isinstance(idle_s, bool)
+                    and float(idle_s) >= _MCP_PROXY_IDLE_ABANDON):
+                raise _MCPOperationStalled(status, waited, float(idle_s),
+                                           payload=payload)
+            # Still running: a long-but-progressing operation is never abandoned, and
+            # it costs no health probe either -- the ledger already answered.
+            continue
+        # Everything else lands here: a TERMINAL ledger entry (committed /
+        # not_committed -- the body is on its way back, and work the ledger says
+        # finished must never be turned into a failure) and, far more often, NO entry
+        # at all, because write_status only tracks _MUTATING_TOOLS. That second case
+        # is every scan tool -- read_*, cbm_*, ocr_*, settings -- which until now had
+        # no watchdog whatsoever on this side: absence of evidence waited out the
+        # entire ceiling. So ask the one question that IS answerable for a read, and
+        # answer it only on positive evidence (see _mcp_health_probe): a probe that
+        # merely times out proves nothing, so it decides nothing and the finite
+        # budget stays the backstop for it.
+        health, verdict = _mcp_health_probe(base)
+        if verdict == "refused":
+            refusals += 1
+            if refusals >= _MCP_PROXY_HEALTH_STRIKES:
+                raise _MCPDaemonGone("unreachable", waited, strikes=refusals,
+                                     pid_first=pid_seen.get("v"), payload=payload)
+            continue
+        refusals = 0
+        if verdict != "alive":
+            continue
+        pid_now = health.get("pid")
+        if not isinstance(pid_now, int) or isinstance(pid_now, bool):
+            continue
+        if "v" not in pid_seen:
+            # Baselined at the FIRST probe, not at the POST: a restart inside the
+            # opening slice is not detected. That is one slice of blindness bought
+            # for zero probes on the short calls that are the vast majority.
+            pid_seen["v"] = pid_now
+        elif pid_now != pid_seen["v"]:
+            raise _MCPDaemonGone("restarted", waited, pid_first=pid_seen["v"],
+                                 pid_now=pid_now, payload=payload)
+
+    if "body" in box:
+        return box["body"]
+    exc = box.get("exc")
+    if exc is not None:
+        raise exc
+    raise TimeoutError(
+        f"{name} produced neither a response nor an error within {http_timeout}s")
+
+
+def _mcp_schema_timeout(name: str, srv=None) -> float:
+    """The budget a tool DECLARES for itself, in seconds; 0.0 when it declares none.
+
+    Read from the live registry, never from a table in this module: whatever
+    ``registry_data`` says a tool's ``timeout`` default is becomes the proxy's HTTP
+    budget for it. That is the whole point -- ``backup_project`` (600) and
+    ``run_test_profile`` (120) need no entry anywhere here, and a tool added
+    tomorrow with ``timeout: 900`` is wired the moment it is registered.
+
+    ``TOOL_SCHEMAS`` is a LIST of OpenAI-style envelopes
+    (``{"type": "function", "function": {"name", "parameters"}}``), NOT a dict keyed
+    by name, and it is REBOUND as later schema batches are appended -- so it is read
+    through the module attribute on every call and never captured at import time.
+    """
+    try:
+        ct = getattr(srv, "ct", None)
+        for envelope in (getattr(ct, "TOOL_SCHEMAS", None) or []):
+            fn = (envelope or {}).get("function") or {}
+            if fn.get("name") != name:
+                continue
+            props = ((fn.get("parameters") or {}).get("properties") or {})
+            for field in _MCP_TIMEOUT_DECL_FIELDS:
+                spec = props.get(field)
+                if not isinstance(spec, dict):
+                    continue
+                default = spec.get("default")
+                if not isinstance(default, (int, float)) or isinstance(default, bool):
+                    continue
+                if default <= 0:
+                    continue
+                return float(default) / 1000.0 if field.endswith("_ms") else float(default)
+            return 0.0
+    except Exception:
+        # A half-loaded or malformed registry must not break the transport; the
+        # caller falls back to the floor.
+        return 0.0
+    return 0.0
+
+
+def _mcp_timeout_budget(name: str, timeout_override: float | None = None,
+                        srv=None) -> float:
+    """Resolve ONE per-call HTTP budget in seconds. The single place this is decided.
+
+    Precedence, most specific first:
+      1. ``MCP_PROXY_TIMEOUT__<TOOL>`` -- the per-tool escape hatch for a repo that
+         turns out slower than any default, with no code change at all.
+      2. the caller's own ``timeout`` argument, + margin.
+      3. the timeout the tool DECLARES in its schema, + margin.
+      4. the long ceiling, for the server-side-progress class.
+      5. the default floor.
+
+    Never returns None. An unbounded wait is not a budget: it converts a wedged
+    daemon into a wedged CA.
+    """
+    raw = os.environ.get("MCP_PROXY_TIMEOUT__" + name.upper())
+    if raw:
+        try:
+            explicit = float(raw)
+        except (TypeError, ValueError):
+            explicit = 0.0
+        if explicit > 0:
+            return explicit
+    budget = _MCP_PROXY_DEFAULT_TIMEOUT
+    if name in _MCP_PROGRESS_TOOLS:
+        budget = max(budget, _MCP_PROXY_LONG_TIMEOUT)
+    declared = 0.0
+    if timeout_override is not None:
+        try:
+            declared = float(timeout_override)
+        except (TypeError, ValueError):
+            declared = 0.0
+    if declared <= 0:
+        declared = _mcp_schema_timeout(name, srv)
+    if declared > 0:
+        budget = max(budget, declared + _MCP_PROXY_TIMEOUT_MARGIN)
+    return budget
 
 
 def _mcp_proxy_base_url(srv) -> str:
@@ -108,16 +526,7 @@ def _mcp_proxy_call(name: str, payload: dict | None = None,
     payload = payload or {}
     base = _mcp_proxy_base_url(srv)
     url = f"{base}/api/call/{name}"
-    if timeout_override is not None:
-        http_timeout = max(_MCP_PROXY_DEFAULT_TIMEOUT,
-                           float(timeout_override) + _MCP_PROXY_TIMEOUT_MARGIN)
-    else:
-        http_timeout = _MCP_PROXY_DEFAULT_TIMEOUT
-    # Long explicit indexing is governed by server-side progress/cancellation,
-    # not a fixed proxy wall clock. Passing None lets urllib wait for the terminal
-    # response; callers can use operation status/cancel from another connection.
-    if name in _MCP_PROGRESS_TOOLS:
-        http_timeout = None
+    http_timeout = _mcp_timeout_budget(name, timeout_override, srv)
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     headers = {
         "Content-Type": "application/json",
@@ -133,8 +542,16 @@ def _mcp_proxy_call(name: str, payload: dict | None = None,
         headers["X-Project-Path"] = str(payload["project_path"])
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=http_timeout) as resp:
-            body = resp.read().decode("utf-8", "replace")
+        body = _mcp_proxy_wait(req, http_timeout, name, payload, base)
+    except _MCPProxyAbandoned as abandoned:
+        # Fail loud with the MEASUREMENT rather than a wall clock. The envelope is
+        # built BY THE EXCEPTION so the dispatcher's proxy branch in
+        # orchestrator_server.py answers the same shape from the same source: two
+        # hand-kept copies of one error contract is exactly how these two proxy
+        # paths drifted apart, one growing a watchdog while the other kept an
+        # unbounded urlopen.
+        return json.dumps(abandoned.mcp_proxy_envelope(name, http_timeout),
+                          ensure_ascii=False)
     except urllib.error.HTTPError as exc:
         raw = exc.read().decode("utf-8", "replace") if exc.fp else ""
         try:
@@ -170,8 +587,32 @@ def _mcp_proxy_call(name: str, payload: dict | None = None,
             failure["tool"] = name
             failure["base_url"] = base
             reason = getattr(exc, "reason", None)
-            if isinstance(exc, ConnectionRefusedError) or isinstance(reason, ConnectionRefusedError):
+            unreachable = (isinstance(exc, ConnectionRefusedError)
+                           or isinstance(reason, ConnectionRefusedError))
+            if unreachable:
                 failure["error_name"] = "MCP_PROXY_UNREACHABLE"
+            elif str(failure.get("commit_state") or "") == "unknown":
+                # The ceiling was reached, so the RESPONSE is lost -- but a lost
+                # response is not an unknown outcome. Ask the daemon's own ledger
+                # once and answer with what it measured, so a CA is not left
+                # guessing whether the mutation landed. Only "unknown" is filled in:
+                # a confident transport verdict is never second-guessed, and a probe
+                # that finds no entry leaves the honest "unknown" standing rather
+                # than inventing a verdict.
+                probe = _mcp_operation_probe(base, name, payload)
+                measured = str(probe.get("commit_state") or "") if probe.get("ok") else ""
+                if measured:
+                    failure["commit_state"] = measured
+                    failure["commit_state_source"] = "write_status_ledger"
+                    failure["operation_state"] = probe.get("operation_state")
+                    failure["operation_id"] = probe.get("operation_id")
+                    failure["progress"] = probe.get("progress")
+                    failure["safe_to_retry"] = measured == "not_committed"
+                    failure["ca_next_action"] = {
+                        "committed": "do_not_retry_write_already_committed",
+                        "not_committed": "retry_write",
+                        "in_flight": "wait_and_poll_write_status_do_not_retry",
+                    }.get(measured, "inspect_write_status_before_retry")
             return json.dumps(failure, ensure_ascii=False)
         return json.dumps({
             "ok": False,
@@ -900,18 +1341,28 @@ def run_mcp_stdio() -> None:
         @_mcp.tool
         def run_test_profile(project_path: str, profile: str = "unittest", timeout: int = 120) -> str:
             """Run a predefined test profile (unittest/pytest). Automatically detects the tests directory."""
-            return _mcp_call_text("run_test_profile", {
+            # Proxied + forwarded. The wrapper already declared a ``timeout`` and then
+            # threw it away, so a profile run the caller sized at 600s was still cut
+            # off at the 180s floor -- and it ran in the MCP host process instead of
+            # the daemon that owns the test runtime.
+            return _mcp_proxy_call("run_test_profile", {
                 "project_path": project_path, "profile": profile, "timeout": timeout,
-            })
+            }, timeout_override=timeout)
 
         # ── T2: Safety ──────────────────────────────────────────────
         @_mcp.tool
-        def backup_project(project_path: str, backup_dir: str = None, force: bool = False, keep_last_n: int = 2) -> str:
+        def backup_project(project_path: str, backup_dir: str = None, force: bool = False,
+                           keep_last_n: int = 2, timeout: int = 600) -> str:
             """Create a zip backup of the project."""
-            return _mcp_call_text("backup_project", {
+            # Proxied, not dispatched in-process: a backup WRITES a zip and the daemon
+            # is the single writer. ``timeout`` is the same 600 the schema declares
+            # (registry_data backup_project) -- the old wrapper accepted no timeout at
+            # all, so a big-repo backup died at the 180s floor while its own schema
+            # said it may take 600. Declaring it and forwarding it is the wiring.
+            return _mcp_proxy_call("backup_project", {
                 "project_path": project_path, "backup_dir": backup_dir,
-                "force": force, "keep_last_n": keep_last_n,
-            })
+                "force": force, "keep_last_n": keep_last_n, "timeout": timeout,
+            }, timeout_override=timeout)
 
         # ── T3: Session management ──────────────────────────────────
         @_mcp.tool
@@ -1166,16 +1617,12 @@ def run_mcp_stdio() -> None:
                             project_path: str = "", top_skills: int = 5,
                             top_tools: int = 20, verbosity: str = "full") -> str:
             """Curate skill+tool subset for active session (T1). hints=csv or JSON list."""
-            hints = []
-            if context_hints:
-                try:
-                    parsed = json.loads(context_hints)
-                    if isinstance(parsed, list):
-                        hints = [str(x) for x in parsed]
-                    elif parsed:
-                        hints = [str(parsed)]
-                except Exception:
-                    hints = [h.strip() for h in context_hints.split(",") if h.strip()]
+            # A34: csv / JSON-list / real-list coercion now lives in ONE place.
+            # Imported lazily because this module deliberately keeps no top-level
+            # `orchestrator.*` import (see the late-binding note in the docstring).
+            from orchestrator.core.params import csv_param
+
+            hints = csv_param(context_hints)
             return _mcp_call_text("declare_mission", {
                 "mission": mission, "context_hints": hints,
                 "project_path": project_path, "top_skills": top_skills,

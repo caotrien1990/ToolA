@@ -2859,6 +2859,15 @@ CORE_TEN_TOOLS = (
 # values in a table: tests/test_a31_autochain_registry.py checks its SHAPE (non-empty,
 # stripped, single line) and re-derives the population with an ast walk on every run, which
 # is the only figure that cannot go stale. Ask the scanner, not a comment.
+# A34 W2 (2026-09-18): the CALLABLE half of that prose IS a row -- `ca_next_tool`. Measured
+# over the same population: 25 literals name a real tool inside the advice
+# ("use_write_fix_or_choose_new_path") and 26 more are the identical snake_case shape while
+# naming no tool at all ("use_partial_then_narrow_regex_scope"), so a CA reading
+# ca_next_action alone cannot tell "call this" from "read this" and pays a round trip
+# against a tool that does not exist. ca_next_tool is emitted ONLY when the literal resolves
+# against the LIVE TOOL_MAP: its presence means callable, its absence means advice. It is
+# derived per response by orchestrator.core.next_tool.resolve_next_tool -- never a
+# hand-written mapping table, so a tool added or removed changes the answer with no edit.
 AUTO_CHAIN_RULES = (
     # (field, trigger, module that emits it)
     ("ruff_preview", "write_fix / write_new_file on a .py file", "orchestrator/tools/write/core.py"),
@@ -2868,10 +2877,11 @@ AUTO_CHAIN_RULES = (
     ("ca_hint_rule", "ocr_rule", "orchestrator/tools/ocr_review.py"),
     ("ca_hint_rule_text", "ocr_rule with the rule body omitted", "orchestrator/tools/ocr_review.py"),
     ("ca_hint_scope", "ocr_scan when a list was really capped", "orchestrator/tools/ocr_review.py"),
-    ("ca_hint", "search_code / validate_file / git_status staged>0 / git_diff non-empty", "orchestrator_server.py"),
+    ("ca_hint", "search_code / validate_file / git_status staged>0 / git_diff non-empty / any matching PASSIVE_CHAINS row applied at the dispatch funnel", "orchestrator_server.py"),
     ("post_ruff_validation", "ruff_fix apply=true", "orchestrator/graph/tools.py"),
     ("ca_chain_hint", "search_code regex on root, cbm_dead_code", "orchestrator/tools/search.py"),
     ("ca_chain_next", "search_code regex on root, cbm coverage", "orchestrator/graph/tools.py"),
+    ("ca_next_tool", "any tool whose ca_next_action resolves to a live TOOL_MAP name; injected once by the orchestrator_server dispatch funnel", "orchestrator/core/next_tool.py"),
 )
 
 #: The chain fields only, for callers that just need the vocabulary.
@@ -4279,8 +4289,13 @@ async def rule_drift_check(project_path: str = "", checks: str = "") -> str:
     rule_loc?,code_value?}]}. tool_names = best-effort (backtick tokens); behavior_sets
     = deterministic; agent_list = council_config vs rule."""
     import re as _re
+
+    from orchestrator.core.params import csv_param
     here = Path(__file__).resolve().parent
-    sel = {c.strip() for c in (checks or "").split(",") if c.strip()} or {
+    # A34: `checks` arrives as a csv STRING from the schema, but a CA that sends a
+    # JSON list (or the in-process caller that passes a real list) used to crash on
+    # `.split(",")`. csv_param normalises str / json-string / list / tuple / set.
+    sel = set(csv_param(checks, lower=True)) or {
         "tool_names", "agent_list", "behavior_sets", "constants"}
     drifts: list[dict] = []
 
@@ -15686,6 +15701,15 @@ def _ma_write_mcp(ag: dict, reg: dict, dry_run: bool) -> dict:
     fmt = ag.get("mcp_format", "json")
     key = ag.get("mcp_key", "project-orchestrator")
     cmd, args = _ma_mcp_block(reg)
+    # A34 W2 item 4: the MCP bridge reads its HTTP wait from the ENVIRONMENT at import time --
+    # mcp_stdio._MCP_PROXY_DEFAULT_TIMEOUT <- MCP_PROXY_HTTP_TIMEOUT (default 180s), then
+    # max(that, tool_declared_timeout + 30s). Only wrappers that DECLARE a `timeout` param can
+    # push past 180s, so a future 3-5 minute tool without one was capped with no knob anywhere:
+    # the env var existed but nothing wired it into the CA configs this function writes.
+    # Registry-level `mcp_env` applies to every agent, per-agent `mcp_env` overrides key by key.
+    # Absent on both = nothing emitted, so a config that never opts in stays byte-identical.
+    env = {str(k): str(v) for k, v in
+           {**(reg.get("mcp_env") or {}), **(ag.get("mcp_env") or {})}.items()}
     existing = p.read_text(encoding="utf-8") if p.exists() else ""
     if dry_run:
         return {"ok": True, "agent": ag.get("id"), "mcp_file": str(p), "mcp_format": fmt, "dry_run": True}
@@ -15695,14 +15719,25 @@ def _ma_write_mcp(ag: dict, reg: dict, dry_run: bool) -> dict:
         except Exception as e:
             return {"ok": False, "agent": ag.get("id"), "error": f"{p.name} parse failed: {e}"}
         entry = {"type": "stdio", "command": cmd, "args": args}
+        if env:
+            entry["env"] = dict(env)
         if fmt == "json" and (ag.get("id") == "opencode" or p.name.lower() == "opencode.json"):
-            data.setdefault("mcp", {})[key] = {"type": "local", "command": [cmd, *args], "enabled": True}
+            local = {"type": "local", "command": [cmd, *args], "enabled": True}
+            if env:
+                # opencode spells this key `environment`, NOT `env` -- measured 2026-09-18 in the
+                # live C:/Users/ADMIN/.config/opencode/opencode.json, where every other local
+                # server carries `environment`. Emitting `env` here would be silently ignored.
+                local["environment"] = dict(env)
+            data.setdefault("mcp", {})[key] = local
             if isinstance(data.get("mcpServers"), dict):
                 data["mcpServers"].pop(key, None)
                 if not data["mcpServers"]:
                     data.pop("mcpServers", None)
         elif fmt == "json":
-            data.setdefault("mcpServers", {})[key] = {"command": cmd, "args": args}
+            plain = {"command": cmd, "args": args}
+            if env:
+                plain["env"] = dict(env)
+            data.setdefault("mcpServers", {})[key] = plain
         else:
             data.setdefault("servers", {})[key] = entry
         bak = _ma_backup(p)
@@ -15714,6 +15749,15 @@ def _ma_write_mcp(ag: dict, reg: dict, dry_run: bool) -> dict:
         return {"ok": True, "agent": ag.get("id"), "mcp_file": str(p), "backup": bak, "mcp_format": fmt}
     if fmt == "toml":
         block = f"[mcp_servers.{key}]\ncommand = '{cmd}'\nargs = ['{args[0]}', '--mcp']\n"
+        if env:
+            # An INLINE table stays on ONE line, so the region regex below (which ends at the
+            # next `^[`) still sees exactly one block. An `[mcp_servers.KEY.env]` sub-table would
+            # terminate that match early and leave a stale duplicate behind on the next sync.
+            parts = []
+            for ek in sorted(env):
+                bare = ek if re.match(r"^[A-Za-z0-9_-]+$", ek) else json.dumps(ek)
+                parts.append(bare + " = " + json.dumps(env[ek]))
+            block += "env = { " + ", ".join(parts) + " }\n"
         pat = re.compile(r"(?ms)^\[mcp_servers\." + re.escape(key) + r"\].*?(?=^\[|\Z)")
         if pat.search(existing):
             newtext = pat.sub(block, existing)
@@ -16732,6 +16776,24 @@ for _schema in TOOL_SCHEMAS:
     _phase = tool_phase(_name)
     _fn["x_phase"] = _phase
     _fn["x_phase_label"] = PHASE_LABELS.get(_phase, PHASE_LABELS["T3"])
+
+# CASE-1809-E: declare the R101 ``fields=`` projection on every literal schema above, which
+# includes the four ``TOOL_SCHEMAS = TOOL_SCHEMAS + [...]`` concatenations (V15/R8, P4, P5,
+# soft_data_reconcile) that an injection inside build_tool_schemas() would silently miss.
+# This loop is NOT sufficient on its own: orchestrator_server and code_tools itself keep
+# calling register_tool BELOW this point, so orchestrator.core.registry stamps there too --
+# exactly how x_phase already has to be stamped in both places. The count is kept so a guard
+# can prove this hook ran instead of inferring it.
+# Nested import, like the soft_data_reconcile block above: a bare mid-file import would add a new
+# E402 here, and ruff_fix on code_tools.py would rewrite 30 unrelated pre-existing rows. Keep the
+# import line under 88 chars too, or isort answers with I001 and wants it wrapped.
+try:
+    from orchestrator.core.fields_param import stamp_all_fields_parameters
+    _R101_FIELDS_STAMPED = stamp_all_fields_parameters(TOOL_SCHEMAS)
+except Exception as _r101_exc:  # fail-open: boot must survive one malformed schema row
+    import logging as _logging_r101
+    _logging_r101.warning(f"R101 fields= declaration not stamped: {_r101_exc}")
+    _R101_FIELDS_STAMPED = 0
 
 
 # ── Tools manifest → [Q] Z2 (2026-07-12, CSLt tool-surface minimization) ──

@@ -4477,6 +4477,99 @@ def _r101_project_nested(value, specs):
     return out, dropped, sorted(set(rescued)), sorted(set(unknown))
 
 
+_R101_AVAILABLE_CAP = 24
+
+
+def _r101_available_names(payload, unknown):
+    """CASE-1809-E: name the keys that DO exist, per namespace, for every miss.
+
+    A23-P2 already reports WHICH fields= keys were not honoured, which is what
+    keeps a projection from reading as an empty result.  It does not say what
+    to type instead, so the only way forward was to repeat the SAME call with
+    fields= omitted -- the full payload the projection existed to avoid.
+    Measured 2026-09-18 on read_file_range: `content` instead of `result`, and
+    `total_lines.deeper` aimed at an int, were both answered with nothing but
+    "check spelling".
+
+    Bounded on purpose: at most _R101_AVAILABLE_CAP names per namespace, since
+    an unbounded key dump is the very cost fields= buys off.  Namespace "" is
+    the top level.  A dotted head that exists but is not a dict reports its
+    type instead of a list -- no sub-selector can descend into a scalar, and
+    that is a different mistake from a misspelled key.
+    """
+    if not isinstance(payload, dict):
+        return {}
+
+    def _bounded(names) -> list:
+        names = sorted(str(n) for n in names)
+        if len(names) <= _R101_AVAILABLE_CAP:
+            return names
+        hidden = len(names) - _R101_AVAILABLE_CAP
+        return names[:_R101_AVAILABLE_CAP] + ["...+%d more" % hidden]
+
+    spaces = {}
+    for key in unknown:
+        head, dot, _leaf = str(key).partition(".")
+        if not dot or head not in payload:
+            # A plain key, or a dotted key whose HEAD is the typo: either way
+            # the choice to be made is at the top level.
+            spaces.setdefault("", _bounded(payload))
+            continue
+        inner = payload.get(head)
+        if isinstance(inner, dict):
+            spaces.setdefault(head, _bounded(inner))
+        else:
+            spaces.setdefault(head, [
+                "<not an object: %s> -- a dotted key cannot descend into it"
+                % type(inner).__name__])
+    return spaces
+
+
+_R101_POP_EXEMPT_CACHE = None
+
+
+def _r101_pop_exempt_tools() -> frozenset:
+    """Tools whose `fields` is their OWN parameter, so the dispatcher must not pop it.
+
+    B027, decided 2026-09-18.  The dispatcher pops `fields` out of the request body
+    before the UNSUPPORTED_FIELD check, which is what makes the R101 projection
+    available on every tool without a single handler declaring it.  Two DOM-state
+    tools paid for that: their `fields` is a genuine handler parameter (the DOM-state
+    names to capture), so the pop meant the caller's own value never arrived.
+
+    Membership is DERIVED from the schema, never from a name list: the R101 stamper
+    marks the property it adds, so an UNMARKED `fields` property is a real parameter.
+    Rename or add such a tool and this still answers correctly with no edit here.  A
+    tool with no `fields` property at all is NOT exempt -- the selector has to keep
+    working there, which is the whole point of the unconditional pop.
+
+    Cached: it is consulted on every dispatch and ct.TOOL_SCHEMAS is a list.  The
+    cache fills on first use, by which time import-time stamping has run.
+    """
+    global _R101_POP_EXEMPT_CACHE
+    if _R101_POP_EXEMPT_CACHE is not None:
+        return _R101_POP_EXEMPT_CACHE
+    try:
+        from orchestrator.core.fields_param import FIELDS_PARAM_NAME, R101_MARKER
+    except Exception:
+        # The marker is the only honest membership test.  Without it, fall back to
+        # the old unconditional pop rather than guess at a name.
+        _R101_POP_EXEMPT_CACHE = frozenset()
+        return _R101_POP_EXEMPT_CACHE
+    names = set()
+    for schema in getattr(ct, "TOOL_SCHEMAS", None) or ():
+        if not isinstance(schema, dict):
+            continue
+        fn = schema.get("function") or {}
+        props = (fn.get("parameters") or {}).get("properties") or {}
+        spec = props.get(FIELDS_PARAM_NAME) if isinstance(props, dict) else None
+        if isinstance(spec, dict) and spec.get(R101_MARKER) is not True:
+            name = fn.get("name")
+            if name:
+                names.add(name)
+    _R101_POP_EXEMPT_CACHE = frozenset(names)
+    return _R101_POP_EXEMPT_CACHE
+
 def _r101_filter(payload, fields):
     if not fields or not isinstance(payload, dict):
         return payload
@@ -4529,7 +4622,16 @@ def _r101_filter(payload, fields):
         out["fields_unknown_hint"] = (
             "These fields= keys are not in this tool's response and were "
             "ignored; the result is NOT empty because of them. Check spelling "
-            "(e.g. 'results' not 'result') or omit fields= to see every key.")
+            "(e.g. 'results' not 'result') or omit fields= to see every key. "
+            "fields_available names the keys that DO exist per namespace "
+            "('' = top level), so the retry needs no second full call; a "
+            "dotted key keeps one nested branch, e.g. fields=result.files.")
+        # CASE-1809-E: naming the miss is not enough to prevent a retry loop.
+        # Measured: `content` instead of `result` on read_file_range, and
+        # `total_lines.deeper` aimed at an int, both left the caller with no
+        # way forward except repeating the SAME call without fields= -- the
+        # full payload the projection existed to avoid.
+        out["fields_available"] = _r101_available_names(payload, unknown)
     # ISS-14: say that this response IS a projection -- but only when the
     # projection was already problematic. A23-P2 pinned the negative case
     # (`CorrectFilterStaysClean`): a marker present on every filtered response
@@ -14198,11 +14300,31 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
     _compat_meta = body.pop("_compat_meta", None)
     # R101: strip `fields` from body BEFORE allowed_params/unsupported so it never trips
     # UNSUPPORTED_FIELD; union with any HTTP ?fields= selector.
-    _r101_bf = _r101_parse_fields(body.pop("fields", None))
+    # B027, decided 2026-09-18: that unconditional pop is what makes the projection
+    # available on EVERY tool -- and it silently ate the argument of the two DOM-state
+    # tools whose `fields` is a real handler parameter (a list of DOM-state names to
+    # capture).  They are exempt from the pop, so their own value reaches the handler.
+    # The URL selector `?fields=` still projects their response: that one is
+    # unambiguous, it was the BODY key that collided.  The exemption is earned by the
+    # R101 schema marker, never by a name -- see _r101_pop_exempt_tools.
+    if tool_name in _r101_pop_exempt_tools():
+        _r101_bf = None
+    else:
+        _r101_bf = _r101_parse_fields(body.pop("fields", None))
     if _r101_bf:
         _r101_fields = (_r101_fields or set()) | _r101_bf
         _R101_FIELDS.set(_r101_fields or None)
-
+    # A34 W2 P2c: strip `pipeline` BEFORE allowed_params/unsupported, for exactly the reason
+    # `fields` is stripped directly above and `page_id` above that -- it is a DISPATCHER-
+    # consumed field, never a handler kwarg, so leaving it in body would make the source tool
+    # fail on an unexpected keyword argument. It is popped for EVERY tool, not only the two
+    # that offer steps: a tool that offers none then answers a report naming what it does
+    # offer (an empty list), which tells the caller more than UNSUPPORTED_FIELD would -- the
+    # same self-describing choice `fields` makes with fields_unknown. Declared in the
+    # read_file_range / search_code registry schemas all the same, because B-01 and B019 are
+    # the same lesson twice: a field absent from the registry is a field no CA can discover.
+    # Consumed at the response funnel below, where the requested steps actually run.
+    _active_pipeline = body.pop("pipeline", None)
     # S4: registry properties are the public contract; signatures are internal.
     _registry_params = _schema_for_tool(tool_name).get("parameters") or {}
     _registry_props = _registry_params.get("properties") or {}
@@ -14911,6 +15033,81 @@ accepted_fields=sorted(accepted_fields),
                         _result.setdefault("ca_next_action", "git_stage")
             except Exception:
                 pass
+        # A34 W2 P2c: the PASSIVE auto-chain. Measured 2026-09-18: of 258 registered tools,
+        # 117 emit a hint from their own handler source and 141 emit none -- and by real
+        # ledger traffic the biggest of those gaps is read_file_range, 3478 of 13406 calls.
+        # 141 hand-written hints is the rot A31 forbids, so the rows live in ONE table
+        # (orchestrator/core/passive_chain.py) applied here, once, for every tool. It reuses
+        # the already-registered `ca_hint` plus the free-form `ca_next_action`, so the
+        # `ca_next_tool` resolver below derives from whatever the table set and there is no
+        # second mechanism to keep in step. It runs BEFORE that resolver for exactly that
+        # reason, fires only on an ok payload, and never overwrites a hint a tool wrote itself.
+        try:
+            from orchestrator.core.passive_chain import apply_passive_chain
+            apply_passive_chain(tool_name, _result, _R101_FIELDS.get())
+        except Exception:
+            pass  # advisory only -- the passive table must never fail a tool that worked
+        # A34 W2 P2b: derive `ca_next_tool` -- the CALLABLE half of `ca_next_action`.
+        # ca_next_action keeps its documented contract (free-form advisory prose; see the
+        # comment above AUTO_CHAIN_RULES in code_tools.py). Measured 2026-09-18 over the
+        # production tree: of its 259 distinct literals, 25 name a real tool inside advice
+        # ("use_write_fix_or_choose_new_path") and 28 more are the SAME imperative shape
+        # while naming no tool at all ("use_partial_then_narrow_regex_scope"), so ONE field
+        # cannot tell a CA what is callable. Two can: ca_next_tool present => that tool
+        # exists in the live registry, call it; absent => ca_next_action is advice to read.
+        # One insertion here covers every tool, ok or error, because `_result` is the parsed
+        # payload for all of them, and the resolver re-derives against TOOL_MAP so a tool
+        # added or removed never needs an edit here. The decision (including the R101
+        # projection rule) lives in the leaf so it is testable without an HTTP request.
+        try:
+            from orchestrator.core.next_tool import annotate_next_tool
+            annotate_next_tool(_result, getattr(ct, "TOOL_MAP", None),
+                               tool_name, _R101_FIELDS.get())
+        except Exception:
+            pass  # advisory only -- a hint that will not resolve must never fail a tool
+        # A34 W2 P2c: the ACTIVE auto-chain -- the only half that RUNS anything, and it runs
+        # ONLY what this call explicitly asked for via pipeline=[...]. That is what keeps it
+        # inside the rule that an auto-chain is "a CA-level recommendation, NOT automatic
+        # execution" (examples/CORE_RULE.txt): every step is a pure read whose payload is
+        # built from THIS call's own answer, and a read the caller requested is not automatic.
+        # Placed AFTER the passive table and the ca_next_tool resolver so the source payload
+        # is complete before any step reads it, and BEFORE the ledger for the same reason
+        # ca_next_tool is -- the ledger must record what the CA was actually told. The tool
+        # semaphore was released in the finally around the await above, so invoking targets
+        # here cannot self-deadlock, and the leaf's own cap bounds the fan-out.
+        if _active_pipeline and isinstance(_result, dict):
+            try:
+                from orchestrator.core.active_chain import (
+                    PIPELINE_RESPONSE_KEY,
+                    execute_active_pipeline,
+                    pipeline_key_requested,
+                )
+
+                # R101: the payload reaching this funnel is already projected, so a key added
+                # now would bypass the caller's token budget. Asked BEFORE anything runs
+                # rather than after -- a report the caller projected away must cost zero
+                # reads. The rule lives in the leaf so it is testable without an HTTP request.
+                if pipeline_key_requested(_R101_FIELDS.get()):
+
+                    async def _invoke_pipeline_step(_target, _payload):
+                        """The resolver the leaf is given, so the leaf imports no server module.
+
+                        Same idiom the dispatcher uses on the source tool itself: resolve the
+                        name in the live TOOL_MAP, await it, parse the JSON string it returns.
+                        A name that is not registered raises, and the leaf records that as
+                        this step's own failure instead of losing the steps that did work.
+                        """
+                        _step_fn = getattr(ct, "TOOL_MAP", {}).get(_target)
+                        if _step_fn is None:
+                            raise KeyError(_target)
+                        return json.loads(await _step_fn(**_payload))
+
+                    _pipeline_report = await execute_active_pipeline(
+                        tool_name, _active_pipeline, _result, body, _invoke_pipeline_step)
+                    if _pipeline_report is not None:
+                        _result[PIPELINE_RESPONSE_KEY] = _pipeline_report
+            except Exception:
+                pass  # opt-in extra reads must never fail the call that already worked
         await _write_ledger_finish_async(_op_id, _result, _status)  # BK34: SQLite off-loop
         if _status == "error":
             err_text = str(_result.get("error") or _result.get("reason")
@@ -15420,6 +15617,30 @@ def _unknown_tool_payload(name: str) -> dict:
                 "payload_example": {"name": "read_file_range", "payload": {"file_path": "D:/path/file"}},
                 "http_equivalent": "POST /api/call/read_file_range",
                 "hint": "Discover names with tool_names and schemas with tool_schema(name=<catalog tool>). Do not invent named MCP tools."}
+    # Same class of confusion as `call_tool` above, one layer in: a CA reads an advisory
+    # RESPONSE FIELD name out of a payload and calls it. `ca_next_tool` is the measured case
+    # (2026-09-18, by a CA on this very campaign) -- its VALUE is a live tool name, so the
+    # field name reads exactly like one, and the sibling `ca_policy_metrics` IS a real tool,
+    # so the `ca_` prefix carries no signal either way. Similarity ranking answers it with an
+    # EMPTY suggestions list, the least useful answer possible. Derived from
+    # ct.AUTO_CHAIN_FIELDS so a newly registered chain field is covered with no edit here;
+    # ca_next_action is added by hand because the registry deliberately excludes it (free-form
+    # prose, not a chain field) while being the field a CA reads FIRST on an error, hence the
+    # likeliest of all to be mis-called.
+    advisory_fields = set(ct.AUTO_CHAIN_FIELDS) | {"ca_next_action"}
+    if low in advisory_fields and low not in ct.TOOL_MAP:
+        return {"ok": False, "error_name": "UNKNOWN_TOOL",
+                "error": f"{low} is a RESPONSE FIELD on [A] payloads, not a tool",
+                "surface": "response_field", "suggestions": [],
+                "field_semantics": ("ca_next_tool carries a live tool NAME as its value: call THAT "
+                                    "value, never the field name. Every other advisory field "
+                                    "carries prose to READ, not a name to call."),
+                "ca_next_action": "read_the_field_value_then_call_the_tool_it_names",
+                "payload_example": {"name": "<the value of ca_next_tool>",
+                                    "payload": {"project_path": "D:/path/to/project"}},
+                "advisory_fields": sorted(advisory_fields),
+                "hint": ("Advisory fields are EMITTED BY tools, never called. "
+                         "Discover real names with tool_names; suggestions are not aliases.")}
     words = set(re.findall(r"[a-z0-9]+", low))
     ranked = []
     for candidate in ct.TOOL_MAP:
@@ -15557,14 +15778,90 @@ def _mcp_proxy_failure_payload(tool_name: str, body: dict, exc: BaseException) -
     return payload
 
 
-def _mcp_is_stateful_t4_tool(tool_name: str) -> bool:
-    """Keep stateful T4/browser tools in MCP; route every other tool via HTTP."""
+_MCP_T4_TIER_TTL = float(os.environ.get("MCP_T4_TIER_TTL_SECONDS", "300") or 300)
+_MCP_T4_TIER_TIMEOUT = float(
+    os.environ.get("MCP_T4_TIER_TIMEOUT_SECONDS", "5") or 5)
+_MCP_T4_TIER_CACHE: dict = {}
+_MCP_T4_TIER_DISAGREED: set = set()
+
+
+def _mcp_local_t4_phase(tool_name: str) -> bool:
+    """T4 according to the registry THIS process imported at its own launch."""
     phases = getattr(ct, "TOOL_PHASES", {}) or {}
     phase = phases.get(str(tool_name)) if isinstance(phases, dict) else None
     if isinstance(phase, (list, tuple, set, frozenset)):
         return any(str(item).strip().upper() == "T4" for item in phase)
     return any(token.strip().upper() == "T4" for token in
                str(phase or "").replace(",", "|").replace("/", "|").split("|"))
+
+
+def _mcp_daemon_t4_names():
+    """The T4 set as the DAEMON sees it, or None when it must not be asked.
+
+    B010 (see the comment inside dispatch_tool_call) settled that only the daemon's
+    registry decides what exists -- yet the gate deciding whether to ASK the daemon
+    was itself answering from this process's imported map, the very map B010
+    documents as possibly older than the daemon's. Measured: a bridge process up
+    for 90 minutes reports mcp_generation_matches_daemon=false, so its TOOL_PHASES
+    is whatever was on disk at ITS launch. A T4 tool added or retired since then is
+    then routed by a stale answer, silently, in both directions: a stateful browser
+    tool gets proxied (its page session ends up in the wrong process), or a retired
+    one keeps running in-process, outside the daemon's lanes and accounting.
+
+    Cost is one GET per TTL per process. ?tier=T4 reuses a filter /api/tools/names
+    already had, so the daemon answers from its registry without scanning anything,
+    and none of it ever reaches a CA's context.
+    """
+    if "--mcp" not in sys.argv:
+        # Inside the daemon this would be a blocking call into our own event loop:
+        # a self-deadlock, not a measurement. And it would answer nothing new --
+        # here the local registry IS the daemon's registry, so returning None is
+        # the right answer rather than a fallback.
+        return None
+    now = time.monotonic()
+    cached = _MCP_T4_TIER_CACHE.get("names")
+    if cached and (now - float(_MCP_T4_TIER_CACHE.get("at") or 0.0)) < _MCP_T4_TIER_TTL:
+        return cached
+    base = os.environ.get(
+        "ORCHESTRATOR_BASE_URL", f"http://127.0.0.1:{PORT}").rstrip("/")
+    try:
+        import urllib.request as _tur
+        with _tur.urlopen(f"{base}/api/tools/names?tier=T4&fields=ok,tools,count",
+                          timeout=_MCP_T4_TIER_TIMEOUT) as _tresp:
+            _tparsed = json.loads(_tresp.read().decode("utf-8", "replace"))
+        fetched = {str(entry.get("name"))
+                   for entry in (_tparsed.get("tools") or [])
+                   if isinstance(entry, dict) and entry.get("name")}
+    except Exception:
+        fetched = set()
+    if not fetched:
+        # An empty answer is NOT an answer. Caching it would reclassify EVERY
+        # stateful T4 tool as proxy-able and move live browser sessions into
+        # another process; "unreachable" and "zero results" are the same trap.
+        return None
+    _MCP_T4_TIER_CACHE["names"] = fetched
+    _MCP_T4_TIER_CACHE["at"] = now
+    return fetched
+
+
+def _mcp_is_stateful_t4_tool(tool_name: str) -> bool:
+    """Keep stateful T4/browser tools in MCP; route every other tool via HTTP."""
+    name = str(tool_name)
+    local = _mcp_local_t4_phase(name)
+    daemon = _mcp_daemon_t4_names()
+    if daemon is None:
+        return local
+    verdict = name in daemon
+    if verdict != local and name not in _MCP_T4_TIER_DISAGREED:
+        # Fail loud, once per tool: a routing decision that silently disagrees
+        # with the daemon is how a page session goes missing with no error.
+        _MCP_T4_TIER_DISAGREED.add(name)
+        logger.warning(
+            "MCP T4 routing: the daemon says %s for %s, this bridge's imported "
+            "registry says %s; following the daemon (B010). Reconnect the MCP "
+            "client to resync this bridge.",
+            "T4" if verdict else "not T4", name, "T4" if local else "not T4")
+    return verdict
 
 
 async def dispatch_tool_call(tool_name: str, body: dict | None = None,
@@ -15653,14 +15950,32 @@ async def dispatch_tool_call(tool_name: str, body: dict | None = None,
             _preq = _ur.Request(
                 f"{_proxy_base}/api/call/{tool_name}", data=_pdata,
                 headers=_proxy_headers)
-            _timeout = (None if tool_name in {
-                "cbm_index", "cbm_incremental_index",
-                "generate_project_map", "refresh_project_map",
-            } else float(os.environ.get("MCP_PROXY_HTTP_TIMEOUT", "180")))
-            _pres = await asyncio.to_thread(
-                lambda: _ur.urlopen(_preq, timeout=_timeout).read()
-            )
-            _proxy_payload = json.loads(_pres.decode("utf-8", "replace"))
+            # This is the proxy path EVERY call_tool takes, and until now it was the
+            # one with no watchdog: a flat 180s wall for most tools and -- worse --
+            # timeout=None for four index tools, which converts a wedged daemon into a
+            # wedged CA forever. mcp_stdio deleted that same footgun on its own side;
+            # the 4-name set here was a hand-mirror of _MCP_PROGRESS_TOOLS, i.e. the
+            # drift class itself. So borrow both halves from the one module that owns
+            # them instead of re-deriving either: the budget (never None, suy from the
+            # tool's own schema) and the wait (idle watchdog for writes, /health pid
+            # liveness for the scan tools the write ledger cannot see).
+            try:
+                from orchestrator.server import mcp_stdio as _mcpw
+            except Exception:
+                _mcpw = None
+            if _mcpw is None:
+                # Bridge module unavailable: still bounded, never None.
+                _timeout = float(os.environ.get("MCP_PROXY_HTTP_LONG_TIMEOUT", "3600"))
+                _ptext = await asyncio.to_thread(
+                    lambda: _ur.urlopen(_preq, timeout=_timeout).read().decode(
+                        "utf-8", "replace"))
+            else:
+                _timeout = _mcpw._mcp_timeout_budget(
+                    tool_name, (body or {}).get("timeout"), sys.modules[__name__])
+                _ptext = await asyncio.to_thread(
+                    _mcpw._mcp_proxy_wait, _preq, _timeout, tool_name,
+                    (body or {}), _proxy_base)
+            _proxy_payload = json.loads(_ptext)
             if not isinstance(_proxy_payload, dict):
                 _proxy_payload = {
                     "ok": False,
@@ -15688,6 +16003,26 @@ async def dispatch_tool_call(tool_name: str, body: dict | None = None,
             _error_payload, _proxy_status = _bridge_dedup(_error_payload, exc.code)
             return web.json_response(_error_payload, status=_proxy_status)
         except Exception as exc:
+            # A watchdog verdict from _mcp_proxy_wait carries its OWN envelope, so the
+            # two proxy paths cannot drift into two error contracts for one
+            # measurement -- which is exactly how this branch ended up with an
+            # unbounded urlopen while the other path grew an idle watchdog. Duck-typed
+            # on purpose: no class import, so the check cannot NameError when the lazy
+            # import above failed and the fallback socket timeout raised instead.
+            _abandon = getattr(exc, "mcp_proxy_envelope", None)
+            if callable(_abandon):
+                try:
+                    _abandon_payload = _abandon(tool_name, _timeout)
+                except Exception:
+                    _abandon_payload = None
+                if isinstance(_abandon_payload, dict):
+                    logger.error(
+                        "MCP HTTP proxy abandoned tool %s via %s: %s",
+                        tool_name, _proxy_base, _abandon_payload.get("error_name"),
+                    )
+                    _abandon_payload, _abandon_status = _bridge_dedup(
+                        _abandon_payload, 200)
+                    return web.json_response(_abandon_payload, status=_abandon_status)
             logger.error(
                 "MCP HTTP proxy failed for tool %s via %s: %s",
                 tool_name, _proxy_base, exc,
