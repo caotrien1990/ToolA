@@ -384,6 +384,12 @@ def template_query(project_path: str, template: str, *, name: str = "",
 
     Returns {enabled, template, results, count, total_count, truncated, error, elapsed_ms}.
 
+    A35 (b): callers/callees/orphan_symbols/impact_scope also carry
+    `resolution_limits`, and `ca_next_action` when such a template answers
+    count=0. The indexer does not resolve instance-receiver calls, so an empty
+    result is NOT proof the symbol is unused -- see the block above the
+    elapsed_ms tail.
+
     total_count is the TRUE PRE-CAP population for every template, and truncated
     is derived from it: truncated iff offset+count < total_count. B021: these two
     used to be set independently, and module_deps answered count=12 truncated=True
@@ -581,6 +587,30 @@ def template_query(project_path: str, template: str, *, name: str = "",
             conn.close()
     except Exception as e:
         payload["error"] = f"{type(e).__name__}: {e}"
+    # A35 (b) -- disclose the resolver's blind spot instead of letting an empty
+    # `results` read as "this symbol is unused". graph/indexer.py only resolves a
+    # call edge when the receiver is an imported module/alias (_resolve_in_module,
+    # receiver hop ~L811): a call through an INSTANCE, local variable or attribute
+    # (self.foo(), obj.foo(), cfg.helper()) keeps the edge as ext:<name>, so the
+    # definition ends with zero inbound 'calls' edges. That narrowness is
+    # deliberate (indexer L714-719: "a wrong call edge is worse than a missing
+    # one"), which makes it OUR job to say so -- a CA cannot tell count=0 apart
+    # from dead code and must not have to guess.
+    if payload["error"] is None and template in (
+            "callers", "callees", "orphan_symbols", "impact_scope"):
+        payload["resolution_limits"] = {
+            "resolved": "calls through an imported module or alias: mod.fn(), or from x import fn -> fn()",
+            "not_resolved": ("calls through an instance / local / attribute receiver -- self.fn(), "
+                             "obj.fn(), cfg.helper() -- stay ext:<name> and create NO inbound calls edge"),
+            "means": ("count=0 means NO RESOLVED CALLER, never 'unused'. A method reached only via "
+                      "self./instance receivers is invisible to this template by design."),
+            "cross_check": ("search_code(query='<name>', project_path='<abs>', mode='callers') is a "
+                            "regex text scan and DOES see self.fn( / obj.fn("),
+            "applies_to_template": template,
+        }
+        if payload["count"] == 0:
+            payload["ca_next_action"] = (
+                "cross_check_with_search_code_mode_callers_before_calling_it_unused")
     payload["elapsed_ms"] = round((time.monotonic() - t0) * 1000, 1)
     return payload
 

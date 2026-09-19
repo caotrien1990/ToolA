@@ -413,9 +413,29 @@ async def cbm_dead_code(project_path: str = "", limit: int = 50,
         result["auto_index_result"] = _auto_idx
         # Task 4 auto-chain: hint write_fix when dead code found
         _dead = result.get("dead") or result.get("dead_code") or []
+        # A35 (b) -- the graph resolves a call edge only when the receiver is an
+        # imported module or alias (graph/indexer.py _resolve_in_module, receiver
+        # hop ~L811). A call through an instance / local / attribute receiver --
+        # self.fn(), obj.fn(), cfg.helper() -- stays ext:<name> and leaves the
+        # definition with ZERO inbound 'calls' edges. So "dead" here means "no
+        # RESOLVED reference", and the old bare hint ("write_fix available to
+        # remove dead code entries") pointed a CA straight at deleting live code.
+        # ca_chain_next stays 'write_fix' -- CORE_RULE documents that chain -- but
+        # the precondition is now stated instead of left for the CA to guess.
+        result["resolution_limits"] = {
+            "not_resolved": ("calls through an instance / local / attribute receiver -- self.fn(), "
+                             "obj.fn(), cfg.helper() -- stay ext:<name> and create NO inbound calls edge"),
+            "means": "advisory only: 'dead' = no RESOLVED reference in the graph, NOT proof of unused",
+            "cross_check": ("search_code(query='<name>', project_path='<abs>', mode='callers') is a "
+                            "regex text scan and DOES see self.fn( / obj.fn("),
+        }
         if _dead:
-            result["ca_chain_hint"] = "write_fix available to remove dead code entries"
+            result["ca_chain_hint"] = (
+                "write_fix available to remove dead code entries -- ADVISORY: cross-check each "
+                "entry with search_code(mode='callers') first; an instance-receiver call resolves "
+                "to no graph edge, so a live method can appear in this list")
             result["ca_chain_next"] = "write_fix"
+            result["ca_chain_precondition"] = "search_code(mode='callers') per entry returns no hit"
         return _ok(result)
     except Exception as e:
         return _err("cbm_dead_code", e)

@@ -2881,6 +2881,12 @@ AUTO_CHAIN_RULES = (
     ("post_ruff_validation", "ruff_fix apply=true", "orchestrator/graph/tools.py"),
     ("ca_chain_hint", "search_code regex on root, cbm_dead_code", "orchestrator/tools/search.py"),
     ("ca_chain_next", "search_code regex on root, cbm coverage", "orchestrator/graph/tools.py"),
+    # A35 (b): cbm_dead_code keeps ca_chain_next=write_fix (CORE_RULE documents that
+    # chain) but the chain is only safe once the entry is cross-checked, because the
+    # graph resolves no call edge through an instance receiver. The precondition is a
+    # chain field of its own so it is registered, doc-bound and ast-verified like the
+    # rest -- a bare softened sentence inside ca_chain_hint would bind to nothing.
+    ("ca_chain_precondition", "cbm_dead_code with findings -- the cross-check owed before the ca_chain_next write_fix", "orchestrator/graph/tools.py"),
     ("ca_next_tool", "any tool whose ca_next_action resolves to a live TOOL_MAP name; injected once by the orchestrator_server dispatch funnel", "orchestrator/core/next_tool.py"),
 )
 
@@ -8233,6 +8239,14 @@ async def run_project_test_script(
         is genuinely disposable (e.g. inside .orchestrator_cache).
 
     Returns: {ok, exit_code, stdout, stderr, duration_seconds, script_path, script_hash, runtime_used, timed_out}
+      A35: runtime="python" also returns `child_encoding`. The child's stdout/stderr
+        are forced to UTF-8 (PYTHONIOENCODING/PYTHONUTF8 via setdefault), closing the
+        asymmetry with the powershell branch's UTF-8 BOM + chcp 65001 prelude. Without
+        it a non-cp1252 character raised UnicodeEncodeError INSIDE the script and
+        killed it -- it was never merely mojibake.
+      A35: timeout>170 also returns `transport_ceiling_note`. The ~180-195s MCP stdio
+        proxy ceiling is a TRANSPORT limit, not a tool limit: call this over HTTP
+        (POST /api/call/run_project_test_script) for anything longer.
       On a destructive body without acknowledgement: DESTRUCTIVE_SCRIPT_CONFIRMATION_REQUIRED.
       On a PowerShell -Include/-LiteralPath footgun: DESTRUCTIVE_SCRIPT_FOOTGUN (refused outright).
     """
@@ -8378,9 +8392,31 @@ async def run_project_test_script(
     else:  # sh
         cmd = ["sh", str(script_path)]
     child_env = os.environ.copy()
+    child_encoding_note: dict = {}
     if runtime_clean == "python":
         inherited_pythonpath = child_env.get("PYTHONPATH", "")
         child_env["PYTHONPATH"] = str(root) + (os.pathsep + inherited_pythonpath if inherited_pythonpath else "")
+        # A35 -- close the encoding asymmetry with the powershell branch above.
+        # The parent decodes this child as UTF-8 (Popen encoding="utf-8" below),
+        # but a python child on Windows defaults stdout to the ANSI code page.
+        # Measured live on generation d2190b5ed454: PYTHONIOENCODING unset,
+        # PYTHONUTF8 unset, sys.stdout.encoding='cp1252', sys.flags.utf8_mode=0
+        # -- start_orchestrator.bat sets neither, so the child inherited nothing.
+        # A Vietnamese literal therefore did not merely arrive as mojibake: it
+        # raised UnicodeEncodeError INSIDE the script and killed it, while .ps1
+        # got a BOM plus a chcp 65001 prelude and the council dispatcher already
+        # sets both vars for its own children (_council_run_agent). setdefault,
+        # not assignment, so a caller who wants another codec still wins.
+        child_env.setdefault("PYTHONIOENCODING", "utf-8")
+        child_env.setdefault("PYTHONUTF8", "1")
+        child_encoding_note = {
+            "PYTHONIOENCODING": child_env["PYTHONIOENCODING"],
+            "PYTHONUTF8": child_env["PYTHONUTF8"],
+            "why": ("python child stdout/stderr forced to UTF-8 to match this side's "
+                    "utf-8 decode; without it a non-cp1252 character raises "
+                    "UnicodeEncodeError in the script itself, not just mojibake"),
+            "override": "set PYTHONIOENCODING in the [A] process env to beat this default",
+        }
 
     start_t = time.time()
     timed_out = False
@@ -8449,6 +8485,20 @@ async def run_project_test_script(
         "script_label": script_label,
         "runtime_used": runtime_clean,
         "timed_out": timed_out,
+        # A35: say so when [A] forced the child's stdout codec, so a CA never has
+        # to guess whether a clean non-ASCII line was luck or policy.
+        **({"child_encoding": child_encoding_note} if child_encoding_note else {}),
+        # A35 gap#3 -- the ~180-195s MCP stdio ceiling is a TRANSPORT limit, not a
+        # tool limit, and nothing in the surface said so: a CA that asked for a 600s
+        # run lost the whole answer with no way to know why. Emitted only when the
+        # requested timeout is near that wall, so an ordinary call pays nothing.
+        **({"transport_ceiling_note": (
+            "timeout=%ds exceeds the ~180-195s MCP stdio proxy ceiling. Over MCP the proxy "
+            "dies first and this result is lost even though the child keeps running. Call "
+            "POST http://localhost:8083/api/call/run_project_test_script over HTTP instead, "
+            "or use the detached-supervisor pattern (a 0.1s launcher that Popens the real "
+            "work and writes a timestamped status file to poll)."
+            % int(timeout or 0))} if int(timeout or 0) > 170 else {}),
         "ca_next_action": (
             "inspect_stderr_if_failed" if rc != 0 or timed_out else "evaluate_stdout_assertions"
         ),

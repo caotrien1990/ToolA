@@ -84,7 +84,7 @@ regex_search, find_callers, find_definition_and_usage, read_chunks are DEPRECATE
 - write_fix (.py) -> ruff_preview in response (lint preview, not auto-fix)
 - search_code -> ca_hint for read_file_range when results have line numbers
 - search_code regex on root -> ca_chain_hint + ca_chain_next to narrow scope (search.py emits it on all three paths: timeout, runtime-guard and normal)
-- cbm_dead_code -> ca_chain_next write_fix; cbm coverage -> ca_chain_next cbm_quality_gate (graph/tools.py)
+- cbm_dead_code -> ca_chain_next write_fix, AND ca_chain_precondition + resolution_limits (A35): "dead" means NO RESOLVED reference, never "unused" -- the graph resolves a call edge only through an imported module/alias, so self.fn() / obj.fn() / cfg.helper() leave the definition with zero inbound calls edges. Cross-check every entry with search_code(query='<name>', project_path='<abs>', mode='callers') -- a regex scan that DOES see instance receivers -- BEFORE deleting anything; cbm coverage -> ca_chain_next cbm_quality_gate (graph/tools.py)
 - git_commit -> post-hook validates the committed files. There is NO pre-hook injecting staged_hash: you pass expected_staged_hash yourself, read from git_status.
 - ruff_fix apply -> post_ruff_validation in response
 - validate_file -> ca_hint for ruff_fix when ruff_fix_applicable

@@ -203,7 +203,15 @@ def status(project_path, include_ignored=False, max_records=0, compact_untracked
                 display_records.append(record)
     cap=max(0,int(max_records or 0))
     shown=display_records if not cap else display_records[:cap]
-    return {'ok':True,'git_root':str(root),'branch':branch,'detached':not bool(branch),'head':head['stdout'].strip(),'ahead':ahead,'behind':behind,'state_hash':state_hash,'staged_hash':_staged_hash(root),'counts':counts,'clean':not records,'records_total':total,'records_truncated':bool(cap and len(display_records)>cap),'records_grouped':bool(compact_untracked),'display_records_total':len(display_records),'records':shown}
+    return {'ok':True,'git_root':str(root),'branch':branch,'detached':not bool(branch),'head':head['stdout'].strip(),'ahead':ahead,'behind':behind,'state_hash':state_hash,'staged_hash':_staged_hash(root),
+            # A35 (c) -- disclose the hash DOMAIN next to the hash. Measured live:
+            # staged=3 and staged=0 answered the SAME staged_hash, which reads as a
+            # bug and is not one. Projectable away with fields= when not needed.
+            'staged_hash_semantics':('digest of the WHOLE index (git ls-files --stage), NOT the diff vs '
+                                     'HEAD: a commit leaves the index byte-identical, so an unchanged '
+                                     'staged_hash does NOT prove a commit is still pending. Use head + '
+                                     'counts.staged to tell pending from already-committed.'),
+            'counts':counts,'clean':not records,'records_total':total,'records_truncated':bool(cap and len(display_records)>cap),'records_grouped':bool(compact_untracked),'display_records_total':len(display_records),'records':shown}
 
 def stale_check(project_path, max_commit_age_hours=168, expected_state_hash=''):
     root=resolve_root(project_path); s=status(str(root)); git=root/'.git'; states=[n for n in ['MERGE_HEAD','CHERRY_PICK_HEAD','REVERT_HEAD','BISECT_LOG','rebase-merge','rebase-apply'] if (git/n).exists()]
@@ -302,7 +310,30 @@ def commit(project_path, message, expected_staged_hash, allow_empty=False, no_ve
                            current_staged_hash=s['staged_hash'],expected_staged_hash=checked,
                            ca_next_action='re-read git_status and resend, or pass "auto" to accept the current index',
                            retryable=True)
-    if s['counts']['staged']==0 and not allow_empty: raise GitToolError('NOTHING_STAGED','nothing staged to commit')
+    if s['counts']['staged']==0 and not allow_empty:
+        # A35 (c) -- staged_hash digests the WHOLE index (`git ls-files --stage -z`),
+        # not the staged diff vs HEAD. A commit does not change index CONTENT (same
+        # blobs, same modes) -- it only moves HEAD -- so the digest is byte-identical
+        # before and after, and the optimistic lock above PASSES on a retry that has
+        # nothing left to commit. Measured live: staged=3 and staged=0 answered the
+        # same staged_hash. That is correct by design (changing the recipe would make
+        # every held lock read as a concurrent modification, and would break the
+        # KIND_COMMIT advisory cache key below), so the fix is DISCLOSURE: name HEAD
+        # and the two fields that DO discriminate, instead of letting a client-timeout
+        # retry read as state confusion.
+        _head=_run(root,['rev-parse','HEAD'],check=False)['stdout'].strip()
+        _subject=_run(root,['log','-1','--pretty=%s'],check=False)['stdout'].strip()
+        raise GitToolError('NOTHING_STAGED','nothing staged to commit',
+                           head=_head or 'unknown', head_subject=_subject,
+                           staged_hash=s['staged_hash'], state_hash=s['state_hash'],
+                           staged_count=0,
+                           why=('expected_staged_hash matching does NOT mean a commit is still '
+                                'pending: staged_hash digests the whole index, which a commit '
+                                'leaves byte-identical. If an earlier commit call client-timed-out, '
+                                'THIS error is the expected answer to the retry -- it already landed.'),
+                           ca_next_action=('compare head_subject with the message you sent: same subject '
+                                           '= already committed, stop retrying. Otherwise stage with '
+                                           'git_add, or pass allow_empty=True for an empty commit.'))
     for key in ('user.name','user.email'):
         if not _run(root,['config','--get',key],check=False)['stdout'].strip(): raise GitToolError('GIT_IDENTITY_MISSING',f'{key} is not configured')
     args=['commit','-m',msg]

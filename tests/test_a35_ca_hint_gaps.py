@@ -1,0 +1,293 @@
+"""A35: three CA-facing gaps from the 2026-09-19 order, one group of tests each.
+
+(a) run_project_test_script(runtime="python") set only PYTHONPATH on the child,
+    while the powershell branch got a UTF-8 BOM plus a chcp 65001 prelude. Measured
+    live on generation d2190b5ed454: the child ran with sys.stdout.encoding='cp1252'
+    and utf8_mode=0, so a Vietnamese literal did not arrive as mojibake -- it raised
+    UnicodeEncodeError INSIDE the script and killed it. The same function's sibling
+    in orchestrator_server._council_run_agent had set both vars all along.
+    Gap #3 (the ~180-195s MCP stdio ceiling) is a TRANSPORT limit and stays by
+    design; what was missing was any disclosure of it, so a 600s request now says so.
+    Gap #2 (destructive refuse) needed nothing: the refusal already names the exact
+    confirm_destructive value, and the footgun branch already says it cannot be
+    confirmed at all -- measured in _destructive_script_refusal, not assumed.
+
+(b) The graph resolves a call edge only when the receiver is an imported module or
+    alias. self.fn() / obj.fn() / cfg.helper() stay ext:<name> and create NO inbound
+    'calls' edge, so `callers` answering count=0 -- and cbm_dead_code listing a
+    symbol -- proves "no RESOLVED reference", never "unused". The resolver is
+    deliberately narrow and is NOT changed here; only the disclosure is added.
+
+(c) git_status.staged_hash digests the WHOLE index (git ls-files --stage), not the
+    staged diff vs HEAD. A commit leaves index CONTENT byte-identical and only moves
+    HEAD, so the hash is the same before and after -- which is why a commit retry
+    after a client timeout passes the optimistic lock and then dies at NOTHING_STAGED
+    looking like state confusion. test_a35_staged_hash_is_identical_across_a_commit
+    measures that equality rather than trusting the new prose.
+
+Run:  ./venv312/Scripts/python.exe -m pytest tests/test_a35_ca_hint_gaps.py -v
+"""
+import asyncio
+import json
+import os
+import subprocess
+
+import pytest
+
+import code_tools
+from orchestrator import git_tools
+from orchestrator.graph import query as gquery
+from orchestrator.graph import tools as gtools
+
+_ROOT = os.path.dirname(os.path.abspath(code_tools.__file__))
+
+# U+1EBF, the exact character that raised UnicodeEncodeError under cp1252.
+_VI = "ế"
+_PROBE = (
+    "import sys\n"
+    "sys.stdout.write('ENC=%s UTF8MODE=%s CHAR=\\u1ebf\\n'"
+    " % (sys.stdout.encoding, sys.flags.utf8_mode))\n"
+)
+
+
+def _run_probe(**kw):
+    return json.loads(asyncio.run(code_tools.run_project_test_script(
+        _ROOT, _PROBE, runtime="python", script_label="a35_probe", **kw)))
+
+
+# ── (a) the python child's stdout codec ──────────────────────────────────────
+
+def test_a35_python_child_encodes_vietnamese_instead_of_dying():
+    """The measurement that proved the gap, now the regression test.
+
+    Asserting on stdout content, not on the env dict: the old failure mode was a
+    non-zero exit with UnicodeEncodeError in stderr, which an env-only assertion
+    would have happily passed.
+    """
+    out = _run_probe(timeout=60)
+    assert out["ok"] is True, out
+    assert out["exit_code"] == 0, out.get("stderr")
+    assert "UnicodeEncodeError" not in (out.get("stderr") or "")
+    assert _VI in out["stdout"], out["stdout"]
+    assert "enc=utf-8" in out["stdout"].lower(), out["stdout"]
+    assert "utf8mode=1" in out["stdout"].lower(), out["stdout"]
+
+
+def test_a35_child_encoding_is_disclosed_not_silent():
+    """A CA must be able to tell a forced codec from a lucky one."""
+    out = _run_probe(timeout=60)
+    note = out.get("child_encoding")
+    assert isinstance(note, dict), out.keys()
+    assert note["PYTHONIOENCODING"].lower() == "utf-8"
+    assert note["PYTHONUTF8"] == "1"
+    assert "UnicodeEncodeError" in note["why"]
+    assert "PYTHONIOENCODING" in note["override"]
+
+
+def test_a35_forced_codec_uses_setdefault_so_a_caller_can_still_win():
+    """setdefault, not assignment: an [A]-level env var must keep priority."""
+    os.environ["PYTHONIOENCODING"] = "latin-1"
+    try:
+        out = _run_probe(timeout=60)
+        assert out["child_encoding"]["PYTHONIOENCODING"] == "latin-1", out["child_encoding"]
+    finally:
+        os.environ.pop("PYTHONIOENCODING", None)
+
+
+# ── (a) gap #3: the transport ceiling is disclosed, not enforced ─────────────
+
+def test_a35_transport_ceiling_note_fires_only_above_the_wall():
+    """A pair, so the test cannot pass by emitting the note unconditionally."""
+    quiet = _run_probe(timeout=120)
+    assert "transport_ceiling_note" not in quiet, quiet.get("transport_ceiling_note")
+
+    loud = _run_probe(timeout=600)
+    note = loud.get("transport_ceiling_note") or ""
+    assert "180-195s" in note, note
+    assert "/api/call/run_project_test_script" in note, note
+    # The child still ran: the ceiling is disclosed, never enforced by refusing.
+    assert loud["exit_code"] == 0, loud.get("stderr")
+
+
+def test_a35_destructive_refusal_already_named_its_own_workaround():
+    """Gap #2 needed no change -- pinned so a later 'improvement' cannot claim it did.
+
+    A footgun is NOT confirmable (there is no count worth acknowledging), while a
+    plain destructive body is, and says with which exact value.
+    """
+    scan = {"destructive": True, "count": 2, "findings": ["rm -rf a", "del b"],
+            "footguns": [], "warnings": [], "prose_matches": []}
+    ref = code_tools._destructive_refusal(
+        scan, dry_run=False, confirm_destructive=-1, surface="script")
+    assert ref["error_name"] == "DESTRUCTIVE_SCRIPT_CONFIRMATION_REQUIRED"
+    assert ref["confirm_destructive_required"] == 2
+    assert "confirm_destructive=2" in ref["confirm_hint"]
+
+    scan_fg = dict(scan, footguns=["Remove-Item -Include"])
+    ref_fg = code_tools._destructive_refusal(
+        scan_fg, dry_run=False, confirm_destructive=1, surface="script")
+    assert ref_fg["error_name"] == "DESTRUCTIVE_SCRIPT_FOOTGUN"
+    assert ref_fg["retryable"] is False
+    assert "cannot be confirmed" in ref_fg["error"]
+
+
+# ── (b) the graph's unresolved-receiver blind spot ───────────────────────────
+
+class _FakeCur:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def fetchall(self):
+        return self._rows
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else (0,)
+
+
+class _FakeConn:
+    """Answers every SELECT with nothing and every COUNT(*) with 0.
+
+    That is the exact shape of the bug being disclosed: a method called only via
+    self./instance receivers has no inbound 'calls' edge, so the real database
+    answers zero rows too.
+    """
+
+    def execute(self, sql, params=()):
+        return _FakeCur([(0,)] if "COUNT(*)" in sql else [])
+
+    def close(self):
+        pass
+
+
+def _patch_empty_graph(monkeypatch):
+    monkeypatch.setattr(gquery, "graph_enabled", lambda *a, **k: True)
+    monkeypatch.setattr(gquery._store, "get_db", lambda *a, **k: _FakeConn())
+    monkeypatch.setattr(gquery, "_resolve_node",
+                        lambda *a, **k: {"id": "n1", "name": "fn"})
+
+
+@pytest.mark.parametrize("template", ["callers", "callees"])
+def test_a35_empty_result_states_it_is_not_proof_of_unused(monkeypatch, template):
+    _patch_empty_graph(monkeypatch)
+    p = gquery.template_query(_ROOT, template, name="fn")
+    assert p["error"] is None, p["error"]
+    assert p["count"] == 0
+    lim = p["resolution_limits"]
+    assert "self.fn()" in lim["not_resolved"]
+    assert "never 'unused'" in lim["means"]
+    # The cross-check must name a tool AND its real parameters: search_code takes
+    # query=, not symbol=, and a hint that guesses is the trap being closed.
+    assert "search_code(query=" in lim["cross_check"]
+    assert "mode='callers'" in lim["cross_check"]
+    assert lim["applies_to_template"] == template
+    assert p["ca_next_action"] == (
+        "cross_check_with_search_code_mode_callers_before_calling_it_unused")
+
+
+def test_a35_no_disclosure_is_invented_when_the_query_failed(monkeypatch):
+    """An error payload must not carry a limits note about results it never read."""
+    monkeypatch.setattr(gquery, "graph_enabled", lambda *a, **k: True)
+
+    def _boom(*a, **k):
+        raise RuntimeError("db gone")
+
+    monkeypatch.setattr(gquery._store, "get_db", _boom)
+    p = gquery.template_query(_ROOT, "callers", name="fn")
+    assert p["error"] and "db gone" in p["error"]
+    assert "resolution_limits" not in p
+    assert "ca_next_action" not in p
+
+
+def _call_dead_code(monkeypatch, dead):
+    monkeypatch.setattr(gtools, "_ensure_graph_fresh",
+                        lambda *a, **k: asyncio.sleep(0, result={"reason": "fresh"}))
+    monkeypatch.setattr(gtools, "_freshness_refusal", lambda *a, **k: None)
+    monkeypatch.setattr(gtools, "_cbm_dead_code_dispatch",
+                        lambda *a, **k: {"ok": True, "dead": list(dead)})
+    return json.loads(asyncio.run(gtools.cbm_dead_code(project_path=_ROOT)))
+
+
+def test_a35_dead_code_no_longer_points_straight_at_write_fix(monkeypatch):
+    """The old hint was a bare 'write_fix available to remove dead code entries'."""
+    out = _call_dead_code(monkeypatch, [{"name": "fn", "file_path": "a.py"}])
+    res = out.get("result", out)
+    assert "advisory" in res["ca_chain_hint"].lower()
+    assert "search_code(mode='callers')" in res["ca_chain_hint"]
+    # CORE_RULE documents cbm_dead_code -> ca_chain_next write_fix; the chain is
+    # kept and the PRECONDITION is what gets stated.
+    assert res["ca_chain_next"] == "write_fix"
+    assert "search_code(mode='callers')" in res["ca_chain_precondition"]
+    assert "NOT proof of unused" in res["resolution_limits"]["means"]
+
+
+def test_a35_dead_code_discloses_limits_even_with_nothing_to_delete(monkeypatch):
+    out = _call_dead_code(monkeypatch, [])
+    res = out.get("result", out)
+    assert "resolution_limits" in res
+    assert "ca_chain_precondition" not in res
+    assert "ca_chain_next" not in res
+
+
+# ── (c) the staged_hash domain ───────────────────────────────────────────────
+
+def test_a35_git_status_names_the_hash_domain():
+    s = git_tools.status(_ROOT)
+    sem = s["staged_hash_semantics"]
+    assert "WHOLE index" in sem
+    assert "does NOT prove" in sem
+    assert "counts.staged" in sem
+
+
+def _tmp_repo(tmp_path):
+    r = tmp_path / "repo"
+    r.mkdir()
+    for args in (['init', '-q'], ['config', 'user.name', 'a35'],
+                 ['config', 'user.email', 'a35@local'],
+                 ['config', 'commit.gpgsign', 'false']):
+        subprocess.run(['git', '-C', str(r), *args], check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (r / "seed.txt").write_text("seed\n", encoding="utf-8")
+    subprocess.run(['git', '-C', str(r), 'add', 'seed.txt'], check=True,
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    subprocess.run(['git', '-C', str(r), 'commit', '-q', '-m', 'seed'], check=True,
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return r
+
+
+def test_a35_staged_hash_is_identical_across_a_commit(tmp_path):
+    """The anomaly, measured: same staged_hash at staged=1 and staged=0.
+
+    This is the fact the new prose claims, so it is asserted rather than trusted.
+    A commit rewrites no index entry -- same blobs, same modes -- it only moves
+    HEAD, so the digest of `git ls-files --stage` cannot change.
+    """
+    r = _tmp_repo(tmp_path)
+    (r / "seed.txt").write_text("seed\nmore\n", encoding="utf-8")
+    subprocess.run(['git', '-C', str(r), 'add', 'seed.txt'], check=True,
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    before = git_tools.status(str(r))
+    assert before["counts"]["staged"] == 1
+    subprocess.run(['git', '-C', str(r), 'commit', '-q', '-m', 'second'], check=True,
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    after = git_tools.status(str(r))
+
+    assert after["counts"]["staged"] == 0
+    assert after["staged_hash"] == before["staged_hash"]   # the anomaly, by design
+    assert after["head"] != before["head"]                 # what actually moved
+
+
+def test_a35_nothing_staged_explains_the_already_committed_case(tmp_path):
+    r = _tmp_repo(tmp_path)
+    with pytest.raises(git_tools.GitToolError) as ei:
+        git_tools.commit(str(r), "seed", "auto")
+    err = ei.value
+    assert err.error_name == "NOTHING_STAGED"
+    x = err.extra
+    assert x["staged_count"] == 0
+    assert len(x["head"]) == 40, x["head"]
+    assert x["head_subject"] == "seed"
+    assert "already landed" in x["why"]
+    assert "head_subject" in x["ca_next_action"]
+    # state_hash is offered because it is the field that DOES discriminate.
+    assert x["state_hash"]
