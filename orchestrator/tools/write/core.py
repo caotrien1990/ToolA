@@ -653,7 +653,30 @@ def _write_fix_guard_result(fp: Path, project_path: str, _file_path: str, expect
         # the read_token check, which may mask the mismatch after a
         # same-file hash-chain write in write_transaction.
         if expected_hash and _current_hash and _current_hash != expected_hash:
-            return True, _expected_hash_error(ct, fp), True
+            # CASE-1919 item 2: measure the OTHER hash domain before answering.
+            # read_file_range.content_hash is sha256 of the normalized text (BOM
+            # stripped, decoded with errors="replace") while expected_hash is the raw
+            # bytes; both are 64 hex characters, so without this probe [A] could only
+            # warn that the caller might have confused them. Same recipe as the
+            # read-token comparison below, deliberately duplicated rather than
+            # hoisted: this branch returns before that code can run.
+            _probe_text_hash = ""
+            try:
+                _probe_text = fp.read_text(encoding="utf-8", errors="replace")
+                if _probe_text.startswith("﻿"):
+                    _probe_text = _probe_text[1:]
+                _probe_text_hash = ct.hashlib.sha256(
+                    _probe_text.encode("utf-8", errors="replace"),
+                ).hexdigest()
+            except Exception:
+                _probe_text_hash = ""
+            return True, _expected_hash_error(
+                ct, fp,
+                raw_hash=_current_hash,
+                text_hash=_probe_text_hash,
+                received_is_text_hash=bool(
+                    _probe_text_hash and _probe_text_hash == expected_hash),
+            ), True
 
         _read_hash = _tok.get("read_hash") or _entry.get("read_hash")
         _read_mtime = float(_tok.get("read_mtime") or _entry.get("read_mtime") or 0)
@@ -708,8 +731,29 @@ def _write_fix_guard_result(fp: Path, project_path: str, _file_path: str, expect
     return True, {}, False
 
 
-def _expected_hash_error(ct, fp: Path) -> dict:
-    """Explicit byte-hash conflicts require a corrected payload, not blind reseeding."""
+def _expected_hash_error(ct, fp: Path, raw_hash: str = "", text_hash: str = "",
+                         received_is_text_hash: bool = False) -> dict:
+    """Explicit byte-hash conflicts require a corrected payload, not blind reseeding.
+
+    CASE-1919 item 2: the raw-byte digest and read_file_range.content_hash are both
+    64 hex characters, so this error could only ever WARN that the caller MIGHT have
+    pasted the wrong one -- prose the CA then had to test by trial. The caller now
+    measures both domains on the current file and passes them in, so the answer
+    states which digest the value actually was and reports the value that would have
+    worked. Defaults keep the old prose for any call site that measures nothing.
+    """
+    verdict = (
+        "MEASURED: the expected_hash you passed IS this file's "
+        "read_file_range.content_hash (sha256 of the normalized text), not its "
+        "raw-byte digest. So the file's text is identical to what you read and "
+        "nothing was edited outside [A]: resend the SAME write_fix with the "
+        "expected_hash key removed -- the read token already authorises it -- or "
+        "pass file_raw_bytes_sha256 below to keep an explicit hash."
+        if received_is_text_hash else
+        "MEASURED: the expected_hash you passed matches neither this file's raw-byte "
+        "digest nor its normalized-text digest, so it is stale or belongs to another "
+        "file or revision. Both current digests are reported below."
+    )
     return ct.json.loads(ct._json_error(
         "expected_hash does not match the file's raw-byte SHA256. "
         "This does not by itself prove an external edit.",
@@ -718,6 +762,18 @@ def _expected_hash_error(ct, fp: Path) -> dict:
         expected_hash_kind="raw_bytes_sha256",
         expected_hash_source="write_fix.new_hash",
         incompatible_hash_source="read_file_range.content_hash",
+        expected_hash_domain_measured=True,
+        expected_hash_is_read_file_range_content_hash=received_is_text_hash,
+        file_raw_bytes_sha256=raw_hash,
+        file_normalized_text_sha256=text_hash,
+        file_text_unchanged_since_read=received_is_text_hash,
+        expected_hash_verdict=verdict,
+        corrected_payload_hint=(
+            "Resend the identical write_fix payload with the expected_hash key "
+            "removed; no re-read is required."
+            if received_is_text_hash else
+            "Re-read the file, rebuild the patch against that content, then omit "
+            "expected_hash or use the previous successful write_fix.new_hash."),
         file_path=str(fp),
         action_required="reread_and_review_patch",
         ca_next_action="reread_and_review_patch",
@@ -727,10 +783,10 @@ def _expected_hash_error(ct, fp: Path) -> dict:
             "with read_file_range(force_reseed=true), review/rebuild the patch against "
             "that content, then omit expected_hash for a normal read-token write. "
             "For a sequential write chain, use the prior successful write_fix.new_hash. "
-            "Do not blindly drop a stale hash and replay an old patch."
+            "Do not blindly drop a stale hash and replay an old patch. " + verdict
         ),
         reseed_overrides_expected_hash=False,
-        retryable=False,
+        retryable=received_is_text_hash,
     ))
 
 

@@ -3099,6 +3099,31 @@ def _normalize_body(tool_name: str, body: dict) -> tuple[dict, list]:
             )
             applied.append(f"{k}: edge control chars stripped")
         path_runtime.reject_c0_control_characters(v, field=k)
+        # CASE-1919 item 3: a RELATIVE project_path has no base except the DAEMON's
+        # own working directory, which is not the caller's -- [A] resolves by
+        # absolute project_path, never by the CA's cwd. Measured 2026-09-19:
+        # project_path="." returned ok:true / count:1 and said nothing, so the CA
+        # could not tell the answer came from another project. Disclose it; do NOT
+        # rewrite the value, because the existing multi-base resolver (the one that
+        # reports tried_paths) must keep its fallbacks. project_path ONLY: every
+        # other path key is resolved against project_path by the handlers, so
+        # re-basing them here would break the documented relative-file_path form.
+        if k == "project_path" and v and not _looks_like_windows_path(v):
+            try:
+                _resolved_pp = str(Path(v).resolve())
+            except Exception:
+                _resolved_pp = ""
+            body["_relative_project_path"] = {
+                "project_path_was_relative": True,
+                "sent": v,
+                "resolved_against": os.getcwd(),
+                "resolved_candidate": _resolved_pp,
+                "ca_next_action": "resend_with_absolute_project_path",
+                "why": ("A relative project_path is resolved against the [A] daemon's "
+                        "working directory, not yours. This answer may describe a "
+                        "different project than the one you meant; pass the absolute "
+                        "project root to make it deterministic."),
+            }
         if "/" not in v:
             continue
         if not _looks_like_windows_path(v):
@@ -3701,8 +3726,22 @@ def _retry_sequence(tool_name: str, error_name: str, body: dict | None) -> list[
             {"tool": tool_name, "payload": body, "headers": {"X-Orchestrator-Token": "token from GET /api/token"}},
         ]
     if error_name == "MISSING_REQUIRED_FIELD":
+        # CASE-1919 item 1: "<required_field>": "<value>" is a placeholder, and a CA
+        # that has not been taught this tool cannot expand it. Name the fields from
+        # the registry and hand back a payload that already carries them.
+        try:
+            _mrf_detail = _missing_required_detail(tool_name, "", body)
+        except Exception:
+            _mrf_detail = {}
+        _mrf_payload = dict(_mrf_detail.get("payload_example") or body)
+        _mrf_missing = _mrf_detail.get("missing_fields") or []
+        for _mrf_name in _mrf_missing:
+            _mrf_payload.setdefault(_mrf_name, "<value>")
         return [
-            {"tool": tool_name, "payload": {**body, "<required_field>": "<value>"}},
+            {"action": "add_missing_required_fields", "tool": tool_name,
+             "missing_fields": _mrf_missing, "payload": _mrf_payload,
+             "note": ("Every name in this payload comes from the tool's registry "
+                      "schema; replace the example values with real ones.")},
         ]
     if error_name == "STALE_INDEX":
         file_path = body.get("file_path") or body.get("path") or "relative/file.py"
@@ -3842,6 +3881,52 @@ def _missing_required_error(tool_name: str, body: dict, required_fields: list[st
         "applied": False,
     }
 
+
+def _missing_required_detail(tool_name: str, err_text: str, body: dict | None) -> dict:
+    """CASE-1919 item 1: name the field(s) a MISSING_REQUIRED_FIELD is about.
+
+    The registry gate (_missing_required_error) already answers with missing_fields
+    and a real example, but a tool body that raises MISSING_REQUIRED_FIELD itself
+    never reaches that gate: it arrived with a generic message plus the legacy
+    _PAYLOAD_EXAMPLES fallback, which for search_code is {"project_path": ...} --
+    an example that omits the very field that was missing. A CA that was not taught
+    the tool beforehand then has to GUESS the name. Derive the names from the live
+    registry schema, keep whatever the caller already sent, and hand back an example
+    that contains the missing names.
+    """
+    body = dict(body or {})
+    required = _required_field_names(tool_name)
+    props = list(((_schema_for_tool(tool_name).get("parameters") or {}).get("properties") or {}))
+    accepted = sorted(props) if props else sorted(dict.fromkeys(required))
+    missing = [f for f in required if body.get(f) in (None, "") and f not in body]
+    if not missing:
+        missing = [f for f in required if body.get(f) in (None, "")]
+    if not missing:
+        # The tool raised on a field the registry does not mark required (typically
+        # one half of an either/or pair). Fall back to the names the message itself
+        # states, intersected with the schema's own property names so free-form
+        # prose can never invent a field that does not exist.
+        tokens = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", err_text or ""))
+        missing = [p for p in props if p in tokens and p not in body]
+    try:
+        example = dict(_payload_example_for_tool(tool_name, _schema_for_tool(tool_name)) or {})
+    except Exception:
+        example = {}
+    example.update({k: v for k, v in body.items() if not str(k).startswith("_")})
+    out = {
+        "missing_fields": missing,
+        "required_fields": required,
+        "accepted_fields": accepted,
+        "payload_example": example,
+        "ca_next_action": "rebuild_payload_using_required_and_accepted_fields",
+    }
+    if missing:
+        out["error_detail"] = (
+            f"{tool_name} needs " + ", ".join(f"'{f}'" for f in missing)
+            + " -- payload_example already contains "
+            + ("it" if len(missing) == 1 else "them")
+            + "; required_fields/accepted_fields list every name this tool takes")
+    return out
 
 def _is_mutating_tool(tool_name: str) -> bool:
     return tool_name in _MUTATING_TOOLS
@@ -4411,8 +4496,11 @@ _R101_ALWAYS_KEEP = {"ok", "error", "error_name"}
 # write_fix.expected_hash -- the two hash domains are indistinguishable by shape,
 # so `fields=ok,sha256` used to hand back a bare 64-hex string with no domain and
 # no "this seeds no edit authority" marker. Force-kept, and the rescue is
-# announced, so a caller cannot silently receive the ambiguous half.
-_R101_SAFETY_KEEP = {"hash_domain", "read_token_seeded"}
+# disclosed via fields_force_kept so a caller sees why the key survived.
+# CASE-1919 item 3 adds project_path_resolution to the same class: it is the only
+# signal that a relative project_path was resolved against the DAEMON's cwd rather
+# than the caller's, so hiding it turns "wrong project" into "looks correct".
+_R101_SAFETY_KEEP = {"hash_domain", "read_token_seeded", "project_path_resolution"}
 
 
 def _r101_parse_fields(value) -> set:
@@ -4616,7 +4704,11 @@ def _r101_filter(payload, fields):
             "fields= would have hidden these hash-domain markers. Read them: a "
             "raw_file_bytes digest is NOT a read_file_range content_hash and "
             "seeds no edit authority, so it must not be passed as "
-            "write_fix.expected_hash.")
+            "write_fix.expected_hash. project_path_resolution is force-kept for "
+            "the same reason in the path domain: it says the project_path you "
+            "sent was relative and names the directory it actually resolved "
+            "against, so a projection cannot hide that the answer may come from "
+            "a different project.")
     if unknown:
         out["fields_unknown"] = unknown
         out["fields_unknown_hint"] = (
@@ -4829,15 +4921,31 @@ def _error_response(tool_name: str, error: str, status: int, headers: dict,
         discovery = _unknown_tool_payload(tool_name)
         payload.update(discovery)
         payload.pop("available", None)
-        payload["payload_example"] = {"discovery_url": discovery["discovery_url"]}
+        # CASE-1919 item 4: two of the three _unknown_tool_payload branches name a
+        # SURFACE instead of ranking candidates (`call_tool` -> mcp_dispatcher,
+        # `ca_next_tool` -> response_field), so they carry no discovery_url and an
+        # empty suggestions list by design. Subscripting them raised KeyError INSIDE
+        # the error handler, and aiohttp turned the richest answer [A] has into a
+        # bare HTTP 500 with no JSON and no error_name -- measured on
+        # POST /api/call/ca_next_tool and /api/call/ca_hint_review. The in-process
+        # tests never saw it because they call _unknown_tool_payload directly.
+        # Those branches also bring their own payload_example / ca_next_action,
+        # which are more specific than the generic discovery ones, so they win.
+        _discovery_url = discovery.get("discovery_url") or "/api/tools/names"
+        _suggestions = discovery.get("suggestions") or []
+        payload["payload_example"] = (discovery.get("payload_example")
+                                      or {"discovery_url": _discovery_url})
         payload["ca_guidance"] = {
-            "error_name": error_name, "ca_next_action": "filter_tool_names",
-            "call_pattern": "GET " + discovery["discovery_url"],
+            "error_name": error_name,
+            "ca_next_action": discovery.get("ca_next_action") or "filter_tool_names",
+            "call_pattern": discovery.get("http_equivalent") or ("GET " + _discovery_url),
             "payload_example": payload["payload_example"],
             "suggested_alternative_tool": {},
             "see_also": {name: "/api/tools/" + name + "/schema"
-                         for name in discovery["suggestions"]},
+                         for name in _suggestions},
         }
+        if discovery.get("surface"):
+            payload["ca_guidance"]["surface"] = discovery["surface"]
     payload = _r101_filter(payload, _R101_FIELDS.get())
     logger.warning(json.dumps({
         "event": "tool_error",
@@ -14296,6 +14404,10 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
     # V15 R34: stash _normalized_paths for response surface, remove from body
     # (it is an audit field, not a tool param; would trigger UNSUPPORTED_FIELD otherwise)
     _r34_normalized_paths = body.pop("_normalized_paths", None)
+    # CASE-1919 item 3: same contract for the relative-project_path audit entry --
+    # an audit field, never a tool param, so it must leave the body here or it
+    # would come back as UNSUPPORTED_FIELD on every tool.
+    _rel_project_path = body.pop("_relative_project_path", None)
     # CAP R3: stash compat metadata for response surface, remove from body
     _compat_meta = body.pop("_compat_meta", None)
     # R101: strip `fields` from body BEFORE allowed_params/unsupported so it never trips
@@ -15127,7 +15239,44 @@ accepted_fields=sorted(accepted_fields),
             _result.setdefault("reason", err_text)
             _result.setdefault("hint", _default_hint(tool_name, err_name))
             _result.setdefault("ca_next_action", _ca_next_action(err_name, tool_name))
-            _result.setdefault("payload_example", _PAYLOAD_EXAMPLES.get(tool_name, {"project_path": "D:/path/to/project"}))
+            # CASE-1919 item 1: the REGISTRY-driven example, not the legacy
+            # _PAYLOAD_EXAMPLES table -- that dict has no search_code entry, so its
+            # {"project_path": ...} fallback answered a missing `query` with an
+            # example that omits `query`, i.e. it taught a CA nothing it did not
+            # already have. _payload_example_for_tool honours the curated overrides
+            # first and derives everything else from the live schema.
+            try:
+                _tb_example = _payload_example_for_tool(tool_name, _schema_for_tool(tool_name))
+            except Exception:
+                _tb_example = {}
+            _result.setdefault("payload_example", _tb_example or _PAYLOAD_EXAMPLES.get(
+                tool_name, {"project_path": "D:/path/to/project"}))
+            if err_name == "MISSING_REQUIRED_FIELD":
+                # A handler-raised MISSING_REQUIRED_FIELD bypasses the registry gate
+                # (_missing_required_error), so it carried no missing_fields at all.
+                # Name the field(s) in the message itself -- prose a CA has never been
+                # taught is indistinguishable from prose about some other field.
+                try:
+                    _mrf = _missing_required_detail(tool_name, err_text, body)
+                except Exception:
+                    _mrf = {}
+                _mrf_detail = _mrf.pop("error_detail", "")
+                _mrf_example = _mrf.pop("payload_example", None) or {}
+                for _mrf_key, _mrf_val in _mrf.items():
+                    _result.setdefault(_mrf_key, _mrf_val)
+                if _mrf_example:
+                    # Union, example-wins-per-key: the tool's own example keeps every
+                    # value it chose and gains the names it left out.
+                    _mrf_prev = _result.get("payload_example")
+                    _result["payload_example"] = (
+                        {**_mrf_example, **_mrf_prev} if isinstance(_mrf_prev, dict) and _mrf_prev
+                        else _mrf_example)
+                if _mrf_detail:
+                    for _msg_key in ("error", "reason"):
+                        _msg_old = str(_result.get(_msg_key) or "")
+                        if _mrf_detail not in _msg_old:
+                            _result[_msg_key] = (
+                                f"{_msg_old} | {_mrf_detail}" if _msg_old else _mrf_detail)
             _result.setdefault("retry_sequence", _retry_sequence(tool_name, err_name, body))
             _result.setdefault("ca_guidance", _ca_guidance(tool_name, err_text, body, err_name))
             if tool_name == "read_file_range" and err_name == "INVALID_RANGE":
@@ -15151,6 +15300,15 @@ accepted_fields=sorted(accepted_fields),
         # V15 R34: surface boundary-level path normalization audit
         if _r34_normalized_paths and isinstance(_result, dict):
             _result["path_normalized"] = _r34_normalized_paths
+        # CASE-1919 item 3 -- a RELATIVE project_path resolves against the DAEMON's
+        # own working directory, never the caller's. Measured 2026-09-19:
+        # project_path="." answered ok:true with count:1 and disclosed nothing, so a
+        # cwd-confused CA reads a successful-looking answer that came from a
+        # different project. Behaviour is deliberately unchanged -- the multi-base
+        # resolver and its tried_paths stay in charge -- the SILENCE is the defect.
+        # Force-kept via _R101_SAFETY_KEEP so a fields= projection cannot hide it.
+        if _rel_project_path and isinstance(_result, dict):
+            _result["project_path_resolution"] = _rel_project_path
         # CAP R3: surface deprecated-field compatibility metadata on success
         if _compat_meta and isinstance(_result, dict):
             _result["deprecated_fields"] = _compat_meta.get("deprecated_fields", [])
