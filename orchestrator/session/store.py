@@ -1585,6 +1585,22 @@ def _session_started_today(started_at: str) -> bool:
         return True
 
 
+def _session_active_today(conn, session_id: str) -> bool:
+    """CASE-1909-H2: a session USED today is never stale, whatever calendar day it
+    was opened on. The calendar-only test closed live sessions across midnight --
+    measured: two other agents' active sessions swept by a third agent's open, all
+    three carrying an identical ended_at. Activity decides, not the date."""
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM events WHERE session_id=? AND created_at>=? LIMIT 1",
+            (session_id, datetime.now().date().isoformat()),
+        ).fetchone()
+        return row is not None
+    except Exception:
+        # Fail-safe: a session we cannot measure is never closed.
+        return True
+
+
 def _close_stale_active_sessions(project_path: str) -> int:
     try:
         norm = _session_project_key(project_path)
@@ -1604,8 +1620,13 @@ def _close_stale_active_sessions(project_path: str) -> int:
                 "WHERE project_path=? AND status='active'",
                 (norm,),
             ).fetchall()
+            # CASE-1909-H2: same guard as _open -- this sweep is not scoped to one
+            # agent, and a session with activity today is alive whatever calendar
+            # day it was opened on.
             current_stale = [
-                sid for sid, started_at in current if not _session_started_today(started_at)
+                sid for sid, started_at in current
+                if not _session_started_today(started_at)
+                and not _session_active_today(conn, sid)
             ]
             if current_stale:
                 conn.executemany(
@@ -1762,7 +1783,14 @@ def _open_or_resume_session(project_path: str, session_title: str, mode: str,
             "SELECT session_id, started_at FROM sessions "
             "WHERE project_path=? AND status='active'", (norm,),
         ).fetchall()
-        stale_ids = [sid for sid, started_at in rows if not _session_started_today(started_at)]
+        # CASE-1909-H2: this sweep is project-wide, so it closes OTHER agents'
+        # sessions as well -- it must therefore never fire on a session that is
+        # still in use. A date-only test closed two different agents' live sessions
+        # when a third agent opened one just after midnight; measured as an
+        # identical ended_at on all of them. Activity decides, not the calendar.
+        stale_ids = [sid for sid, started_at in rows
+                     if not _session_started_today(started_at)
+                     and not _session_active_today(conn, sid)]
         if stale_ids:
             conn.executemany(
                 "UPDATE sessions SET status='closed', ended_at=? WHERE session_id=?",
@@ -1774,6 +1802,11 @@ def _open_or_resume_session(project_path: str, session_title: str, mode: str,
         if agent_id:
             sql += " AND agent_id=?"
             params += (agent_id,)
+        else:
+            # CASE-1909-H2: an unscoped lookup ADOPTS whichever agent's session
+            # sorts first and then writes this caller's events into it. An
+            # anonymous open may only ever resume an anonymous session.
+            sql += " AND agent_id IS NULL"
         sql += " ORDER BY started_at DESC, session_id DESC LIMIT 1"
         existing = conn.execute(sql, params).fetchone()
         closed_session_id = None

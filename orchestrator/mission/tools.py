@@ -155,12 +155,22 @@ def _update_mission_state(db_path: Path, mission_id: int, state: str) -> None:
         conn.commit()
 
 
-def _force_task_state(db_path: Path, task_id: int, state: str, **fields: Any) -> bool:
+# CASE-1909-B6: the task states that actually carry a lease, mirroring the
+# reaper's own scan (it selects dispatching/started/verifying). A heartbeat is
+# meaningful only for a task in one of these -- anywhere else there is no lease
+# to refresh, so accepting one fabricates a field nothing reads.
+_LEASE_BEARING_STATES = frozenset({"dispatching", "started", "verifying"})
+
+
+def _force_task_state(db_path: Path, task_id: int, state: str, *,
+                      bump_version: bool = True, **fields: Any) -> bool:
     allowed = {
         "attempt", "res_summary", "lease_expires_at", "child_pid",
         "started_at", "finished_at",
     }
-    sets = ["state = ?", "version = version + 1"]
+    # bump_version=False is for a no-op refresh (heartbeat): bumping the optimistic
+    # lock on every keep-alive conflicts with an in-flight cas_transition.
+    sets = ["state = ?"] + (["version = version + 1"] if bump_version else [])
     vals: list[Any] = [state]
     for key, value in fields.items():
         if key not in allowed:
@@ -410,8 +420,24 @@ async def mission_report(task_id=None, attempt_token=None, res_path=None, summar
             return _err("TASK_NOT_FOUND", f"task {task_id} not found")
         report_kind = str(kind or "final").strip().lower()
         if report_kind == "heartbeat":
+            # CASE-1909-B6: a heartbeat only EXTENDS a lease -- it never advances
+            # state, because it re-writes str(task["state"]) unchanged. Accepting one
+            # for a task nobody dispatched wrote a lease onto a row the reaper never
+            # scans (it selects dispatching/started/verifying only), so a run of
+            # heartbeats left the task pending and read exactly like a stuck state
+            # machine. Refuse instead, and name the call that DOES advance it.
+            if str(task["state"]) not in _LEASE_BEARING_STATES:
+                return _err("HEARTBEAT_NOT_LEASED",
+                            f"task {task['id']} is in state {task['state']!r}; a heartbeat "
+                            "refreshes an existing lease and cannot create one",
+                            task_id=int(task["id"]), state=str(task["state"]),
+                            lease_bearing_states=sorted(_LEASE_BEARING_STATES),
+                            ca_next_action="call_mission_dispatch_first")
             lease = time.time() + float(task.get("hard_cap_s") or task.get("timeout_sec") or DEFAULT_TIMEOUT_SEC)
-            _force_task_state(db_path, int(task["id"]), str(task["state"]), lease_expires_at=lease)
+            # bump_version=False: refreshing a lease must not invalidate the CAS
+            # version an in-flight mission_dispatch is already holding.
+            _force_task_state(db_path, int(task["id"]), str(task["state"]),
+                              bump_version=False, lease_expires_at=lease)
             store.append_ledger(db_path, int(task["mission_id"]), int(task["id"]), "heartbeat", _dump_json({"summary": summary or ""}))
             return _json({"ok": True, "task_id": int(task["id"]), "kind": "heartbeat", "lease_expires_at": lease})
         parsed = engine.parse_attempt_token(str(attempt_token or ""))

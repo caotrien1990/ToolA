@@ -198,20 +198,32 @@ def _missing_file_response(_fp: Path, file_path: str, project_path: str | None) 
         _NEG_PATH_CACHE[(root_key, rel_key)] = ent
     streak = [t for t in _MISS_STREAK.get(root_key, []) if now - t < 30.0] + [now]
     _MISS_STREAK[root_key] = streak[-10:]
+    import os as _os
+    # CASE-1909-B5: a markdown-escaped path (`a\_b.md`, pasted out of rendered
+    # prose) survives the replace() above as SEPARATORS, so basename() degenerates
+    # to the last escaped fragment and the fuzzy match then runs on rubbish.
+    # Measured: `project\_tq\_fix1009\_room.md` -> basename `_room.md`. Match on
+    # BOTH the raw basename and the de-escaped whole path.
+    md_escaped = "\\_" in str(file_path)
+    unescaped = str(file_path).replace("\\_", "_") if md_escaped else ""
+    bases = [_os.path.basename(rel_key)]
+    if unescaped:
+        bases.append(_os.path.basename(unescaped.replace("\\", "/").lower()))
     suggestions = []
     try:
         if project_path:
             import difflib
-            import os as _os
+
             import code_tools as ct
             idx = ct._load_index(str(Path(project_path).resolve()))
             if idx:
                 names = {}
                 for k in (idx.get("files") or {}):
                     names.setdefault(_os.path.basename(str(k)).lower(), str(k))
-                base = _os.path.basename(rel_key)
-                for m in difflib.get_close_matches(base, list(names), n=5, cutoff=0.6):
-                    suggestions.append(names[m])
+                for base in bases:
+                    for m in difflib.get_close_matches(base, list(names), n=5, cutoff=0.6):
+                        if names[m] not in suggestions:
+                            suggestions.append(names[m])
     except Exception:
         pass
     payload = {
@@ -222,9 +234,24 @@ def _missing_file_response(_fp: Path, file_path: str, project_path: str | None) 
         "repeat_probe": repeat,
         "probe_count": ent["hits"],
         "fuzzy_suggestions": suggestions,
+        "fuzzy_suggestions_source": "code_index",
+        "fuzzy_suggestions_limitation": (
+            "The code index carries CODE files only. A .md / .txt / .log target can "
+            "never appear in fuzzy_suggestions even when it does exist on disk -- an "
+            "empty list is NOT evidence the file is absent. Use "
+            "list_structure(compact=true) or query_index(file_pattern=...) for "
+            "non-code paths."),
         "ca_next_action": ("stop_probing_run_inventory_first" if len(streak) >= 3
                            else "check_fuzzy_suggestions_or_list_structure"),
     }
+    if md_escaped:
+        # CASE-1909-B5: the path arrived markdown-escaped (`a\_b.md`, pasted out of
+        # rendered prose). Name it, so an empty fuzzy_suggestions is never read as
+        # "the file does not exist".
+        payload["markdown_escape_detected"] = True
+        payload["unescaped_path_candidate"] = unescaped
+        if len(streak) < 3:
+            payload["ca_next_action"] = "retry_with_unescaped_path"
     if len(streak) >= 3:
         payload["circuit_breaker"] = {
             "miss_streak_30s": len(streak),
