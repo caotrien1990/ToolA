@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 import code_tools as ct
+from orchestrator.core import registry_data
 
 
 def _offenders(drift, gate):
@@ -74,22 +75,82 @@ def real_audit():
     return ct._audit_tool_matrix_sync(persist=False)
 
 
-# ---------------------------------------------------------------- the Core-10 binding
+# --------------------------------------------- the curated-core binding (A37 re-sourced)
 
-def test_core_ten_tools_is_bound_to_core_rule_txt():
-    """CORE_TEN_TOOLS must equal the list CORE_RULE.txt publishes, name for name.
+def _slim_curated_line():
+    """The one SLIM_RULE.txt line that still NAMES the curated core tool surface."""
+    slim = Path(ct.path_runtime.ORCHESTRATOR_DIR) / "examples" / "SLIM_RULE.txt"
+    hits = [ln for ln in slim.read_text(encoding="utf-8", errors="ignore").splitlines()
+            if "Curated core surface" in ln]
+    assert len(hits) == 1, (
+        "examples/SLIM_RULE.txt must carry exactly ONE 'Curated core surface' line; found "
+        "%d - a SOT nothing can find, and two of them, are both not-a-SOT" % len(hits))
+    return hits[0]
 
-    Deliberately a NAMED LIST on both sides and no count anywhere: the same A31
-    doctrine that says never write a tool total in prose beside the code that
-    computes it. If the rule file is reworded so this line stops parsing, that is a
-    failure too - a SOT nothing can read is not a SOT.
+
+def _live_tool_names():
+    """Every name the daemon can route, unioned across the registries that hold them.
+
+    Measured 2026-09-19: council_message and restart_orchestrator_via_bat are curated
+    core but are in NEITHER code_tools.TOOL_MAP nor TOOL_SCHEMAS - they register at the
+    server layer - so a liveness check against one registry reports two false ghosts.
+    """
+    names = {(entry.get("function") or {}).get("name") for entry in ct.TOOL_SCHEMAS}
+    names |= set(ct.TOOL_MAP)
+    names |= set(registry_data.CURATED_CORE_TOOLS)
+    names.discard(None)
+    return names
+
+
+def test_core_ten_tools_is_bound_to_slim_rule_txt():
+    """CORE_TEN_TOOLS must equal the list SLIM_RULE.txt publishes, name for name.
+
+    A37 (2026-09-19) MOVED this SOT rather than dropping it. CORE_RULE.txt used to carry
+    a 'Core 10 (...): a, b.' line; it now deliberately refuses to name any fixed set and
+    points at the bootstrap tool_purposes map, which is built from the live registry at
+    answer time. The binding followed the named list to SLIM_RULE.txt. Still a NAMED LIST
+    on both sides and still no count anywhere: the same A31 doctrine that says never write
+    a tool total in prose beside the code that computes it. If the rule file is reworded
+    so this line stops parsing, that is a failure too - a SOT nothing can read is not a
+    SOT.
+    """
+    tail = _slim_curated_line().rsplit("):", 1)[-1]
+    match = re.search(r"([a-z][a-z0-9_]+(?:,\s*[a-z][a-z0-9_]+)+)\.", tail)
+    assert match, (
+        "the 'Curated core surface' line no longer ends in a parseable comma-separated "
+        "tool list")
+    named = tuple(tool.strip() for tool in match.group(1).split(","))
+    assert named == ct.CORE_TEN_TOOLS
+
+
+def test_every_curated_core_name_is_a_live_tool():
+    """The named list may not advertise a tool no registry can route.
+
+    Two identical WRONG lists satisfy the pairing test above; this is what makes that
+    binding mean something.
+    """
+    missing = [tool for tool in ct.CORE_TEN_TOOLS if tool not in _live_tool_names()]
+    assert missing == [], (
+        "curated core names no registry can route: %s" % missing)
+
+
+def test_core_rule_txt_does_not_re_grow_a_named_core_list():
+    """CORE_RULE.txt must stay a POINTER and never grow the list back.
+
+    A37 replaced the named ten with a pointer at the bootstrap tool_purposes map. An
+    editor 'helpfully' pasting the list back would recreate exactly the rot A31 closed:
+    two copies of one surface, one of them stale, with no gate between them.
     """
     rule = Path(ct.path_runtime.ORCHESTRATOR_DIR) / "examples" / "CORE_RULE.txt"
     text = rule.read_text(encoding="utf-8", errors="ignore")
-    match = re.search(r"^Core 10 \(.*?\):\s*([a-z0-9_ ,]+)\.", text, re.M)
-    assert match, "CORE_RULE.txt no longer carries a parseable 'Core 10 (...): a, b.' line"
-    named = tuple(tool.strip() for tool in match.group(1).split(","))
-    assert named == ct.CORE_TEN_TOOLS
+    assert "tool_purposes" in text, (
+        "CORE_RULE.txt no longer points at the bootstrap tool_purposes map, so nothing "
+        "tells a CA where the live read-tool surface comes from")
+    counted = re.search(r"\bCore[ -]\d+\b", text)
+    assert not counted, (
+        "CORE_RULE.txt re-introduced a COUNTED core tool surface (%r); the named list "
+        "belongs in examples/SLIM_RULE.txt and the count belongs nowhere"
+        % (counted.group(0) if counted else ""))
 
 
 # ------------------------------------------------------- the dead-regex regression

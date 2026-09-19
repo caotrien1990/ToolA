@@ -94,9 +94,17 @@ def blackhole_port():
 
 
 def _proxy_failure(monkeypatch, port, tool, body, timeout="180") -> dict:
-    """Run one tool through the MCP proxy branch pointed at a broken endpoint."""
+    """Run one tool through the MCP proxy branch pointed at a broken endpoint.
+
+    A37: the budget is pinned with the PER-TOOL knob, not ``MCP_PROXY_HTTP_TIMEOUT``.
+    That one is a FLOOR -- ``_mcp_timeout_budget`` only ever raises with it (schema
+    declaration + margin, long-class ceiling), so asking for 0.35 there bought the full
+    180s ceiling and every black-hole test below really waited it out. The per-tool knob
+    returns, so it is the only one that can LOWER a budget.
+    """
     monkeypatch.setenv("ORCHESTRATOR_BASE_URL", "http://127.0.0.1:%d" % port)
     monkeypatch.setenv("MCP_PROXY_HTTP_TIMEOUT", timeout)
+    monkeypatch.setenv("MCP_PROXY_TIMEOUT__" + tool.upper(), timeout)
 
     async def run():
         response = await srv.dispatch_tool_call(tool, dict(body), transport="mcp")

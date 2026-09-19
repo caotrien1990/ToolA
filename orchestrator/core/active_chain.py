@@ -161,16 +161,23 @@ def _b_next_range(result: dict, args: dict):
 
 
 def _b_callers(result: dict, args: dict):
-    """read_file_range -> find_callers for the symbol just read.
+    """read_file_range -> search_code(mode='callers') for the symbol just read.
 
     Only a symbol-scoped read carries selection.name; a line range answers None.
+
+    A37 audit-2: this step used to target find_callers, which [A]'s own HARD rule
+    lists as a DEPRECATED alias -- so pipeline=["callers"] routed a CA straight into
+    the one tool the rule forbids, from inside [A] itself. search_code(mode='callers')
+    is the live surface and the stronger answer too: it sees instance receivers
+    (self.fn() / obj.fn()) that the cbm call graph resolves only through an imported
+    module/alias.
     """
     selection = result.get("selection")
     name = _text(selection.get("name")) if isinstance(selection, dict) else ""
     project = _project(result, args)
     if not (name and project):
         return None
-    return {"project_path": project, "symbol": name}
+    return {"project_path": project, "query": name, "mode": "callers"}
 
 
 def _b_file_symbols(result: dict, args: dict):
@@ -220,7 +227,7 @@ def _b_hit_symbols(result: dict, args: dict):
 ACTIVE_CHAINS: tuple[ActiveStep, ...] = (
     ActiveStep("read_file_range", "next_range", "read_file_range", _b_next_range,
                "read the top structural neighbour this call already computed"),
-    ActiveStep("read_file_range", "callers", "find_callers", _b_callers,
+    ActiveStep("read_file_range", "callers", "search_code", _b_callers,
                "who calls the symbol just read (symbol-scoped reads only)"),
     ActiveStep("read_file_range", "file_symbols", "get_file_symbols", _b_file_symbols,
                "the symbol map of the file just read"),

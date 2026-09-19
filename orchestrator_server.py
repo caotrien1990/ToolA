@@ -4488,6 +4488,12 @@ def _r40_suggest_alternative(tool_name: str, error_name: str) -> dict:
 # returns the FULL envelope (backward compatible). Set per-dispatch via ContextVar so both the
 # success path and every _error_response return can filter without rewriting call sites.
 _R101_FIELDS = contextvars.ContextVar("_r101_fields", default=None)
+# A37 #0b: the agent id of the dispatch in flight, set once in
+# _dispatch_tool_call_request and read by _error_response, which is called from dozens of
+# sites that never carry identity. Same reason as _R101_FIELDS above: per-dispatch state
+# without rewriting every call site. Default "" resolves to bootstrap ctx "default", so a
+# route outside the dispatcher re-arms nothing instead of re-arming the wrong CA.
+_A37_AGENT_CTX = contextvars.ContextVar("_a37_agent_id", default="")
 _R101_ALWAYS_KEEP = {"ok", "error", "error_name"}
 # ISS-14: keys a projection must never be able to hide, because dropping them
 # turns a correct answer into a dangerous one. `hash_domain` and
@@ -4947,6 +4953,19 @@ def _error_response(tool_name: str, error: str, status: int, headers: dict,
         if discovery.get("surface"):
             payload["ca_guidance"]["surface"] = discovery["surface"]
     payload = _r101_filter(payload, _R101_FIELDS.get())
+    # A37 #0b: an error means the CA has NOT yet had a working call of this tool, so re-arm
+    # its once-per-bootstrap schema push HERE, at the single producer of every
+    # dispatcher-level error payload -- not at each gate, which is how the promise rotted in
+    # the first place. Stamped AFTER _r101_filter on purpose: a key added before it is pruned
+    # for every caller passing fields=, i.e. exactly the disclosure pushed_schema_note
+    # promises would vanish for the callers who read most carefully. A disclosure must never
+    # break the answer, hence the bare except.
+    try:
+        if tool_name and ct.bootstrap_forget(
+                ct.bootstrap_ctx_id(_A37_AGENT_CTX.get() or ""), tool_name):
+            payload["schema_rearmed"] = True
+    except Exception:
+        pass
     logger.warning(json.dumps({
         "event": "tool_error",
         "tool": tool_name,
@@ -13917,22 +13936,17 @@ async def handle_tools(request):
     )
 
 
-async def handle_tool_describe(request):
-    """R81 — GET /api/tools/{tool_name}/schema : full schema for ONE tool by exact name.
+def _enriched_tool_schema(name: str):
+    """The ONE definition of "the schema a CA gets" for a single tool; None if unknown.
 
-    Convenience over `GET /api/tools?name_contains=` (which substring-matches and may
-    return several). Returns the single tool's enriched schema (payload_example,
-    protected/mutating/requires_token/requires_session/mutation_scope), or 404 with the
-    closest-name suggestions so CA can fix a typo without dumping the full tool catalog
-    (see /api/tools/names?limit=250 for the live count — D5 2026-08-11: the doc used to
-    hard-code "all 174 tools", which drifted as tools were added/removed).
+    A37: this body used to live inline inside handle_tool_describe, so the #0 first-use
+    schema push had nothing to call -- and hand-rolling a second enrichment next to the
+    dispatcher is exactly the drift shape this campaign is closing (same fact, two
+    places, one of them going stale). Extracted, not duplicated: the HTTP route and the
+    push now return the byte-identical object.
     """
-    name = (request.match_info.get('tool_name') or '').strip()
     if name not in ct.TOOL_MAP:
-        return web.json_response(
-            _unknown_tool_payload(name), status=404,
-            headers=_cors(request.headers.get("Origin")),
-        )
+        return None
     for schema in ct.TOOL_SCHEMAS:
         fn = schema.get("function", {})
         if fn.get("name") != name:
@@ -13948,6 +13962,31 @@ async def handle_tool_describe(request):
         except Exception:
             out_fn["mutation_scope"] = "none"
         out_fn["requires_session"] = _requires_session(name)
+        return out_schema
+    return None
+
+
+async def handle_tool_describe(request):
+    """R81 — GET /api/tools/{tool_name}/schema : full schema for ONE tool by exact name.
+
+    Convenience over `GET /api/tools?name_contains=` (which substring-matches and may
+    return several). Returns the single tool's enriched schema (payload_example,
+    protected/mutating/requires_token/requires_session/mutation_scope), or 404 with the
+    closest-name suggestions so CA can fix a typo without dumping the full tool catalog
+    (see /api/tools/names?limit=250 for the live count — D5 2026-08-11: the doc used to
+    hard-code "all 174 tools", which drifted as tools were added/removed).
+
+    The schema itself is built by _enriched_tool_schema, shared with the A37 #0 first-use
+    push, so a CA that was handed a schema and a CA that asked for one get the same text.
+    """
+    name = (request.match_info.get('tool_name') or '').strip()
+    if name not in ct.TOOL_MAP:
+        return web.json_response(
+            _unknown_tool_payload(name), status=404,
+            headers=_cors(request.headers.get("Origin")),
+        )
+    out_schema = _enriched_tool_schema(name)
+    if out_schema:
         return web.json_response(
             {"ok": True, "tool": out_schema},
             headers=_cors(request.headers.get('Origin'), extra={"Cache-Control": "no-store, max-age=0"}),
@@ -14072,6 +14111,14 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
         or (body.get("agent_id", "") if isinstance(body, dict) else "")
         or os.environ.get("COUNCIL_AGENT_ID", "")
     )
+    # A37 #0b: publish the resolved identity for the WHOLE dispatch so _error_response --
+    # which never receives an agent id -- can re-arm the bootstrap schema push. The gates
+    # that reject on schema (UNSUPPORTED_FIELD, MISSING_REQUIRED_FIELD) return ~1300 lines
+    # ABOVE the success-path push block, so without this the "an error re-arms the push"
+    # promise in pushed_schema_note was FALSE for the most common CA error class. Measured
+    # before the fix: after a bogus_param error the next good call still carried no
+    # pushed_schema.
+    _A37_AGENT_CTX.set(_task_agent_id)
     if isinstance(body, dict):
         try:
             _agent_fn = ct.TOOL_MAP.get(tool_name)
@@ -15344,6 +15391,45 @@ accepted_fields=sorted(accepted_fields),
             # its heaviest keys so the NEXT call can pass fields=. Runs after
             # the filter so a caller who already projected never sees a hint.
             _result = _r101_size_hint(_result, _R101_FIELDS.get())
+            # A37 #0 "Lan 1": the FIRST call of a read tool since this CA's bootstrap gets
+            # that tool's schema WITH the result; later calls get nothing; an ERROR re-arms
+            # it, because an error is the evidence the CA does not really hold the schema.
+            #
+            # Measured problem: one session fetched ~18 schemas, read_file_range alone 6
+            # times. The schema was always available and always had to be asked for -- pure
+            # S and t with no C gained. Bootstrap opens the epoch
+            # (code_tools.open_bootstrap_epoch); this is where that epoch is spent.
+            #
+            # WHY here, after _r101_filter and not next to the _DEPRECATED_TOOLS block:
+            # the filter would have pruned pushed_schema for any caller who passed fields=,
+            # so the epoch would be SPENT on a call that never delivered the schema. A CA
+            # cannot project for a key it does not yet know exists, which is the same reason
+            # _R101_SAFETY_KEEP exists.
+            #
+            # Write tools never appear here: they are excluded from the purpose map on
+            # purpose and keep fetching their schema every call, because a wrong write costs
+            # Correctness, which outranks S and t.
+            if isinstance(_result, dict) and tool_name:
+                try:
+                    _bctx = ct.bootstrap_ctx_id(_task_agent_id or "")
+                    if _status == "error":
+                        # Re-arm only -- do NOT push into an error payload. The CA is already
+                        # being handed retry_sequence + payload_example + corrected_payload;
+                        # the schema lands on the corrected retry, where it is actionable.
+                        if ct.bootstrap_forget(_bctx, tool_name):
+                            _result["schema_rearmed"] = True
+                    elif tool_name in ct.bootstrap_push_tools() and ct.bootstrap_first_use(_bctx, tool_name):
+                        _pushed_schema = _enriched_tool_schema(tool_name)
+                        if _pushed_schema:
+                            _result["pushed_schema"] = _pushed_schema
+                            _result["pushed_schema_note"] = (
+                                "First call of this tool since your bootstrap, so its schema "
+                                "arrives WITH the result -- do not spend a call fetching it. "
+                                "A later call of the same tool does not repeat this push; an "
+                                "error on it re-arms the push (schema_rearmed)."
+                            )
+                except Exception:
+                    pass  # a disclosure must never fail the call that already worked
             # CSLt 2026-07-16: refresh the task metadata AFTER the tool ran and stamp
             # with setdefault so the tool's own response fields win. The old pre-run
             # `_result.update(_task_meta)` overwrote begin_task's fresh task_epoch with
@@ -15403,6 +15489,16 @@ accepted_fields=sorted(accepted_fields),
                                 "read_file_range before retrying — do NOT blindly "
                                 "re-patch, that risks a double-write.")
                             _result.setdefault("ca_next_action", "read_file_range")
+            # A37 #4: the R101 projection above ran BEFORE this block stamped
+            # generation / operation_id / write_status_url / operation_* and the
+            # refreshed task metadata, so fields_unknown could name a key that IS
+            # in the very response being returned. Prune by asking the payload,
+            # never a hand-maintained list of envelope keys.
+            try:
+                from orchestrator.core.fields_param import prune_unknown_fields
+                prune_unknown_fields(_result)
+            except Exception:
+                pass  # advisory disclosure only: never fail a good response over it
             _json_body = json.dumps(_result, ensure_ascii=False)
             _json_body = _shape_tool_response_text(tool_name, _json_body)
             return web.Response(text=_json_body, content_type="application/json",
@@ -15593,9 +15689,20 @@ class _InProcessToolRequest:
         return self._raw_body
 
 
+# CAN-051 scopes: the writers that "stay non-source-mutating and token-free" -- they
+# touch [A]'s own index / cache / log, never the caller's files. A37: this set used to be
+# spelled out here as a second copy of the vocabulary that code_tools._MUTATION_SCOPE_MAP
+# defines, which is the drift shape this campaign is closing -- so it now POINTS at the
+# one SOT (code_tools.NON_SOURCE_MUTATION_SCOPES) instead of restating it.
+_R102_NON_SOURCE_SCOPES = ct.NON_SOURCE_MUTATION_SCOPES
+
 _R102_CATEGORY_HINT = (
-    "Optional category filter: _list, read, write, search, desktop, workflow, "
-    "assert, runtime, session, audit, mcp, t1, t2, t3, t4."
+    "Optional category filter: _list, read, write, derived, search, cbm, ocr, git, "
+    "desktop, workflow, assert, runtime, session, audit, mcp, t1, t2, t3, t4. "
+    "read/write come from the registry mutation_scope, never from the tool name: read "
+    "means it cannot change YOUR files, and derived marks the subset that still writes "
+    "[A]'s own index or log (cbm_*, query_index, list_structure). categories_available "
+    "in the response is the authoritative live list."
 )
 
 
@@ -15626,6 +15733,34 @@ def _r102_tool_categories(name: str, tier: str = "") -> set[str]:
         cats.add("audit")
     if low.startswith(("mcp_", "tool_")) or low in {"call_tool", "get_rule_core_text"}:
         cats.add("mcp")
+    # A37 #7 ROOT FIX: this classifier was prefix-only, so the cbm_ and ocr_ families
+    # answered no functional category at all and tool_names(category="read") hid every
+    # one of them -- measured as the reason a CA never discovers the graph/OCR surface
+    # it is told to prefer. read-vs-write is not a naming convention: the registry
+    # already knows each tool's mutation_scope, so ask it instead of guessing.
+    if low.startswith("cbm_"):
+        cats.add("cbm")
+    if low.startswith("ocr_"):
+        cats.add("ocr")
+    try:
+        _scope = ct.tool_mutation_scope(name)
+    except Exception:
+        _scope = ""
+    # MEASURED 2026-09-19 on the live daemon, and the reason this is not `== "none"`:
+    # cbm_get_architecture answers mutation_scope="derived_index", so a none-only test
+    # filed the whole cbm family as write and category="read" STILL hid it -- reopening
+    # the very bug five lines above. CAN-051 (code_tools._MUTATION_SCOPE_MAP) declares
+    # cache / audit_log / derived_index for writers that "stay non-source-mutating and
+    # token-free": they touch [A]'s own index or log, never the caller's source, which
+    # is why list_structure (cache) and query_index (derived_index) both sit under
+    # "Core read" in CURATED_CORE_TOOLS. So read = "cannot change your files", the
+    # question a CA is actually asking -- and the derived write is still disclosed.
+    if _scope in _R102_NON_SOURCE_SCOPES:
+        cats.add("read")
+        if _scope != "none":
+            cats.add("derived")
+    elif _scope:
+        cats.add("write")
     return cats
 
 
@@ -15753,11 +15888,22 @@ def _tool_names_payload(tier: str = "", name_contains: str = "", category: str =
             "GET /health default compact; ?fields= subset, ?verbose=1 full lanes",
         ],
         "hint": _R102_CATEGORY_HINT,
+        "categories_available": _r102_category_names(),
     }
     if suppress_hints:
-        payload["ca_hint"] = ""
+        # A37 #7: the flag used to clear only ca_hint + must_know_hints and left
+        # next_query_hint / ca_next_action / hint populated, so a caller that asked
+        # for silence still paid for three advisory strings -- the name promised the
+        # whole advisory class, so it now clears the whole advisory class and says
+        # which keys it emptied (silence must still be auditable).
+        for _hint_key in ("ca_hint", "next_query_hint", "ca_next_action", "hint"):
+            payload[_hint_key] = ""
         payload["must_know_hints"] = []
         payload["hints_suppressed"] = True
+        payload["hints_suppressed_keys"] = [
+            "ca_hint", "next_query_hint", "ca_next_action", "hint",
+            "must_know_hints",
+        ]
     return payload
 
 

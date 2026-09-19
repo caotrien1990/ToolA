@@ -12,6 +12,8 @@ on the ``orchestrator_server`` module keeps working.
 """
 
 import asyncio
+import functools as _functools
+import inspect as _inspect
 import json
 import os
 import secrets
@@ -40,6 +42,11 @@ _MCP_OWNER_CLAIMS: dict[tuple[str, str], str] = {}
 # ``_BROWSER_PAGES`` and its event loop alive across calls; proxying it would drop
 # that state on the floor.
 _MCP_PROXY_TOKEN: dict[str, str] = {"v": ""}
+# A37 #0b: the agent id this host process is serving, learned from whichever call
+# first carries one (normally the get_rule_core_text shortcut at bootstrap) and then
+# attached as X-Agent-Id to EVERY proxied call. Without it the daemon sees ctx
+# "default" for reads whose bootstrap epoch was opened under the real id.
+_MCP_AGENT_ID: dict[str, str] = {"v": ""}
 _MCP_PROXY_TOKEN_ERRORS = (
     "MUTATION_TOKEN_REQUIRED", "MUTATION_TOKEN_EXPIRED", "TOKEN_REQUIRED",
 )
@@ -442,14 +449,24 @@ def _mcp_timeout_budget(name: str, timeout_override: float | None = None,
 
     Precedence, most specific first:
       1. ``MCP_PROXY_TIMEOUT__<TOOL>`` -- the per-tool escape hatch for a repo that
-         turns out slower than any default, with no code change at all.
+         turns out slower than any default, with no code change at all. It is the only
+         ABSOLUTE knob: it returns, so it can also LOWER a budget.
       2. the caller's own ``timeout`` argument, + margin.
       3. the timeout the tool DECLARES in its schema, + margin.
       4. the long ceiling, for the server-side-progress class.
-      5. the default floor.
+      5. ``MCP_PROXY_HTTP_TIMEOUT`` -- the floor, re-read HERE on every call.
 
     Never returns None. An unbounded wait is not a budget: it converts a wedged
     daemon into a wedged CA.
+
+    A37: the floor is re-read from the environment on EVERY call because
+    ``_MCP_PROXY_DEFAULT_TIMEOUT`` freezes at IMPORT, and this module is imported long
+    before any caller can set the knob -- so a documented environment variable was
+    silently inert for every process that set it after startup, which is all of them.
+    Measured: ``tests/test_mcp_proxy_failure_identity`` sets it to 0.35 and then waited
+    the whole frozen 180s ceiling against a black-hole socket, three times over. The
+    floor keeps its MAX semantics (it never lowers the long class); a test or operator
+    that needs an absolute cap uses knob 1.
     """
     raw = os.environ.get("MCP_PROXY_TIMEOUT__" + name.upper())
     if raw:
@@ -460,6 +477,14 @@ def _mcp_timeout_budget(name: str, timeout_override: float | None = None,
         if explicit > 0:
             return explicit
     budget = _MCP_PROXY_DEFAULT_TIMEOUT
+    env_floor = os.environ.get("MCP_PROXY_HTTP_TIMEOUT")
+    if env_floor:
+        try:
+            parsed_floor = float(env_floor)
+        except (TypeError, ValueError):
+            parsed_floor = 0.0
+        if parsed_floor > 0:
+            budget = parsed_floor
     if name in _MCP_PROGRESS_TOOLS:
         budget = max(budget, _MCP_PROXY_LONG_TIMEOUT)
     declared = 0.0
@@ -540,6 +565,22 @@ def _mcp_proxy_call(name: str, payload: dict | None = None,
     # could 403. Forward it whenever the payload names a project.
     if isinstance(payload, dict) and payload.get("project_path"):
         headers["X-Project-Path"] = str(payload["project_path"])
+    # A37 #0b: carry identity on EVERY proxied call, not only the ones whose schema
+    # happens to declare agent_id. The daemon keys the bootstrap epoch (and the
+    # rule-core fetch-once guard) by agent id, so a host that sent it ONLY on
+    # get_rule_core_text opened the epoch as "claultnai" and then read every file as
+    # "default": the Lan-1 schema push stayed armed for an identity that never called
+    # again -- inert for exactly the desktop CA it was built for. One host process
+    # serves one CA, so remembering the last id seen is the correct scope.
+    _agent_id = ""
+    if isinstance(payload, dict):
+        _agent_id = str(payload.get("agent_id") or "").strip()
+    if _agent_id:
+        _MCP_AGENT_ID["v"] = _agent_id
+    _agent_id = _agent_id or _MCP_AGENT_ID["v"] or str(
+        os.environ.get("COUNCIL_AGENT_ID") or "").strip()
+    if _agent_id:
+        headers["X-Agent-Id"] = _agent_id
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
     try:
         body = _mcp_proxy_wait(req, http_timeout, name, payload, base)
@@ -637,6 +678,72 @@ def _mcp_proxy_call(name: str, payload: dict | None = None,
     return body
 
 
+# A37 #1b: the one place a named MCP tool's `fields=` value lives between the wrapper
+# that accepted it and the call that has to send it. A thread-local (not a global) because
+# zeromcp may serve concurrent calls, and each must send its OWN projection or a caller
+# could silently receive another caller's fields= -- a correctness bug, not a token bug.
+_MCP_FIELDS_LOCAL = threading.local()
+
+
+def _mcp_fields_current() -> str:
+    """The `fields=` value the MCP tool call on this thread arrived with, else "".
+
+    Empty string means "the caller did not project", which must behave exactly like the
+    pre-A37 bridge: send no `fields` at all and let the daemon answer full-fat.
+    """
+    try:
+        return str(getattr(_MCP_FIELDS_LOCAL, "value", "") or "")
+    except Exception:
+        return ""
+
+
+def _mcp_tool_fields_decorator(raw_tool):
+    """Wrap zeromcp's ``@_mcp.tool`` so EVERY registered tool accepts ``fields=``.
+
+    `fields=` is accepted on every [A] tool over HTTP, but none of the 62 named MCP
+    wrappers ever declared it -- so on this surface the daemon's own "pass fields= next
+    time" size hint was advice a caller physically could not take, and every answer came
+    back full-fat. Anh's requirement for A37 was that HTTP and MCP be usable EQUALLY.
+
+    Done here, once, rather than in 62 hand-edited signatures: duplicating one fact across
+    62 places is exactly how this bridge drifted from the daemon before, and a wrapper
+    added tomorrow inherits `fields=` with nobody remembering to add it.
+
+    FAIL-SAFE by construction: if zeromcp builds its JSON schema from something other than
+    ``__signature__``, the parameter is simply not advertised and every existing call still
+    works unchanged (``fields`` defaults to ""). The failure mode is "the feature is not
+    exposed", never "a call breaks" -- which also means only a live MCP client, after a
+    reconnect, can confirm the exposure.
+    """
+    def _tool(fn):
+        wrapped_sig = _inspect.signature(fn)
+        if "fields" in wrapped_sig.parameters:
+            return raw_tool(fn)
+
+        @_functools.wraps(fn)
+        def _fields_aware(*args, fields: str = "", **kwargs):
+            previous = getattr(_MCP_FIELDS_LOCAL, "value", "")
+            _MCP_FIELDS_LOCAL.value = str(fields or "")
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                _MCP_FIELDS_LOCAL.value = previous
+
+        params = [p for p in wrapped_sig.parameters.values()
+                  if p.kind is not _inspect.Parameter.VAR_KEYWORD]
+        params.append(_inspect.Parameter(
+            "fields", _inspect.Parameter.KEYWORD_ONLY, default="", annotation=str))
+        # __signature__ is assigned AFTER functools.wraps on purpose: wraps copies
+        # __wrapped__, and inspect.signature follows that back to fn -- which would hide
+        # the parameter just added. An explicit __signature__ outranks __wrapped__.
+        _fields_aware.__signature__ = wrapped_sig.replace(parameters=params)
+        _fields_aware.__annotations__ = {
+            **dict(getattr(fn, "__annotations__", {}) or {}), "fields": str}
+        return raw_tool(_fields_aware)
+
+    return _tool
+
+
 def _mcp_live_discovery(endpoint: str, query: dict | None = None) -> str:
     """Discovery must share the daemon registry used by proxied calls."""
     import sys
@@ -644,6 +751,14 @@ def _mcp_live_discovery(endpoint: str, query: dict | None = None) -> str:
     if srv is None or not hasattr(srv, "PORT"):
         import orchestrator_server as srv
     url = _mcp_proxy_base_url(srv) + endpoint
+    query = dict(query or {})
+    # The discovery routes are HTTP GETs, so a projection rides the QUERY STRING here,
+    # not a JSON body -- and the discovery payloads (`/api/tools/names`, a full schema)
+    # are among the largest [A] returns, which is exactly where `fields=` pays. Same
+    # precedence as _mcp_call_text: an explicit value already in the query WINS.
+    _fields_now = _mcp_fields_current()
+    if _fields_now and not query.get("fields"):
+        query["fields"] = _fields_now
     if query:
         encoded = {}
         for k, v in query.items():
@@ -835,6 +950,24 @@ def _mcp_generation_disclosure(payload: dict, daemon_gen, local_gen) -> None:
         "changed — a plain daemon restart does not require it."))
 
 
+def _mcp_dump(payload: dict) -> str:
+    """Serialise an MCP response after pruning fields_unknown of late-stamped keys.
+
+    A37 #4, MCP half. The daemon's R101 projection ran before ANY of the envelope
+    stamps existed, and this host adds four more of its own (generation_source,
+    mcp_generation, mcp_generation_matches_daemon/diverged_s/note) after the fact,
+    so `fields=ok,mcp_generation` used to come back naming mcp_generation as a key
+    the response does not have -- while carrying it. Every exit of
+    _mcp_add_generation goes through here so a new stamp cannot reopen the hole.
+    """
+    try:
+        from orchestrator.core.fields_param import prune_unknown_fields
+        prune_unknown_fields(payload)
+    except Exception:
+        pass  # advisory disclosure only: never fail a good response over it
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def _mcp_add_generation(text: str, generation) -> str:
     """Add generation to JSON-object MCP responses without changing other fields.
 
@@ -880,16 +1013,16 @@ def _mcp_add_generation(text: str, generation) -> str:
             # can tell "daemon is at gen X" apart from "MCP host is running Y".
             payload.setdefault("mcp_generation", local_gen)
             _mcp_generation_disclosure(payload, daemon_gen, local_gen)
-            return json.dumps(payload, ensure_ascii=False)
+            return _mcp_dump(payload)
         payload.setdefault("generation", generation.get("generation"))
         payload.setdefault("generation_source", generation.get("source"))
         if generation.get("probe_error"):
             payload.setdefault("generation_probe_error", generation["probe_error"])
         if generation.get("source") != "daemon":
             payload.setdefault("mcp_generation", generation.get("local_generation"))
-        return json.dumps(payload, ensure_ascii=False)
+        return _mcp_dump(payload)
     payload.setdefault("generation", generation)
-    return json.dumps(payload, ensure_ascii=False)
+    return _mcp_dump(payload)
 
 def _load_lessons(srv) -> list:
     """Load LESSONS_LOG.md rows (cached by mtime). Returns list of (keyword, fix)."""
@@ -965,6 +1098,20 @@ def run_mcp_stdio() -> None:
 
         _mcp = McpServer("project-orchestrator")
 
+        # A37 #1b ROOT FIX -- every named MCP tool gains `fields=` from ONE place.
+        # The surgery itself lives MODULE-LEVEL in _mcp_tool_fields_decorator so it can be
+        # tested without starting the stdio loop (a decorator defined in here would only be
+        # reachable by running the server). Rebinding _mcp.tool means a wrapper added
+        # tomorrow gets `fields=` for free and nobody can forget it -- the alternative was
+        # hand-editing 62 @_mcp.tool signatures, which is precisely the duplication that let
+        # this bridge drift from the daemon before (A33: the bridge's own registry answering
+        # as if it were the daemon's).
+        try:
+            _mcp.tool = _mcp_tool_fields_decorator(_mcp.tool)
+        except Exception:
+            # A bridge object that refuses the rebinding keeps its original decorator.
+            # Degrading to "no fields on named tools" is the status quo, not a regression.
+            pass
         # ── T3: Session ────────────────────────────────────────────
         @_mcp.tool
         def open_session(session_title: str = "", project_path: str = ".", mode: str = "T1",
@@ -1113,8 +1260,22 @@ def run_mcp_stdio() -> None:
             return _mcp_add_generation(producer(), probe)
 
         def _mcp_call_text(name: str, payload: dict | None = None) -> str:
+            # A37 #1b: HTTP and MCP have to be usable EQUALLY. `fields=` is accepted on
+            # EVERY [A] tool over HTTP, but none of the named MCP wrappers below ever
+            # declared it -- so on this surface the daemon's own "pass fields= next time"
+            # size hint was advice a caller physically could not take, and every answer came
+            # back full-fat. The value rides a thread-local that the _mcp.tool decorator
+            # sets (ONE place -- see _mcp_tool_with_fields) instead of 62 hand-edited
+            # signatures: hand-duplicating one fact across 62 wrappers is exactly how this
+            # bridge drifted from the daemon before.
+            # An explicit payload["fields"] WINS -- call_tool(payload={...,"fields":...})
+            # is the caller being specific, and must not be overridden by the wrapper arg.
+            payload = dict(payload or {})
+            _fields_now = _mcp_fields_current()
+            if _fields_now and not payload.get("fields"):
+                payload["fields"] = _fields_now
             return _mcp_guard_response(lambda: _mcp_response_text(
-                srv._run_mcp_coro(srv.dispatch_tool_call(name, payload or {}, transport="mcp"))))
+                srv._run_mcp_coro(srv.dispatch_tool_call(name, payload, transport="mcp"))))
 
         @_mcp.tool
         def tool_names(tier: str = "", name_contains: str = "", category: str = "",

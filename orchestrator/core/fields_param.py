@@ -59,6 +59,10 @@ __all__ = [
     "stamp_fields_parameter",
     "stamp_all_fields_parameters",
     "fields_declarations",
+    "UNKNOWN_KEY",
+    "UNKNOWN_HINT_KEY",
+    "LATE_STAMPED_KEY",
+    "prune_unknown_fields",
 ]
 
 FIELDS_PARAM_NAME = "fields"
@@ -153,3 +157,51 @@ def fields_declarations(tool_schemas) -> dict:
         else:
             out[name] = "foreign"
     return out
+
+
+UNKNOWN_KEY = "fields_unknown"
+UNKNOWN_HINT_KEY = "fields_unknown_hint"
+LATE_STAMPED_KEY = "fields_late_stamped"
+
+
+def prune_unknown_fields(payload) -> list:
+    """Drop from ``fields_unknown`` every key the caller DOES receive; return those names.
+
+    WHY (A37 #4, measured 2026-09-19 on the live daemon): the R101 projection runs
+    inside ``dispatch_tool_call`` BEFORE the envelope is stamped. ``generation``,
+    ``operation_id``, ``write_status_url``, ``operation_attempts``,
+    ``operation_replayed``, the refreshed task-metadata keys, and on the MCP side
+    ``generation_source`` / ``mcp_generation*`` are all ``setdefault``-ed AFTER the
+    filter has already decided what the caller asked for that does not exist. So
+    ``fields=ok,generation`` came back carrying ``fields_unknown:["generation"]``
+    right next to the very key it said was not in the response -- a false "you
+    typoed it" on a correct request, the same class of harm as a silent drop.
+
+    DERIVED, NEVER HAND-TABLED: a frozenset of injected key names would rot the next
+    time the envelope grows a field, and the question the caller actually asks is
+    "is this key in the response I am holding" -- so ask the response, not a table.
+
+    Dotted specs are left alone: ``a.b`` names a key inside a nested dict, and the
+    late stamp only ever lands at the top level.
+
+    The prune is DISCLOSED as ``fields_late_stamped`` rather than done silently: a
+    caller who really did mistype is still told, and one who did not learns that the
+    key arrives after the projection. Idempotent, and a no-op on any other shape.
+    """
+    if not isinstance(payload, dict):
+        return []
+    names = payload.get(UNKNOWN_KEY)
+    if not isinstance(names, list) or not names:
+        return []
+    late = sorted({n for n in names
+                   if isinstance(n, str) and "." not in n and n in payload})
+    if not late:
+        return []
+    remaining = [n for n in names if n not in late]
+    if remaining:
+        payload[UNKNOWN_KEY] = remaining
+    else:
+        payload.pop(UNKNOWN_KEY, None)
+        payload.pop(UNKNOWN_HINT_KEY, None)
+    payload[LATE_STAMPED_KEY] = late
+    return late

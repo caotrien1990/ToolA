@@ -385,6 +385,15 @@ _MUTATION_SCOPE_MAP = {
     # mission_next, mission_status) — metadata honesty cuts BOTH ways.
 }
 
+# A37: the CAN-051 group, named ONCE. Every scope in here is a writer that the map
+# above calls non-source-mutating and token-free: it touches [A]'s own index, cache or
+# audit log, never the caller's files. That distinction is the only thing a CA is
+# really asking about ("can this change MY source?"), and it was previously re-derived
+# by hand in orchestrator_server._r102_tool_categories -- where guessing it from the
+# tool-name prefix had already filed the entire cbm family as write and hidden it from
+# category="read". One SOT, so a new scope cannot be added here and silently rot there.
+NON_SOURCE_MUTATION_SCOPES = frozenset({"none", "cache", "audit_log", "derived_index"})
+
 
 def tool_mutation_scope(tool_name: str) -> str:
     """V15 R28 — return mutation_scope for a tool. Default 'none' = read-only."""
@@ -1553,11 +1562,22 @@ for schema in TOOL_SCHEMAS:
         fn["description"] = _ENGLISH_TOOL_DESCRIPTIONS[name]
     props = fn.get("parameters", {}).get("properties", {})
     for prop_name, prop_schema in props.items():
-        # Preserve the read tool's range-validation contract from registry_data;
-        # generic English labels otherwise erase its actionable INVALID_RANGE guidance.
-        if name == "read_file_range" and prop_name in {"start_line", "end_line"}:
+        # A37 root fix: FILL-ONLY, never overwrite. This map holds generic English LABELS
+        # keyed by BARE PARAM NAME -- and a bare name cannot describe a param whose meaning
+        # is per-tool: `mode` is T1/T2 for open_session but text/regex/symbol/callers for
+        # search_code, and ONE label was being published for both. Measured before this fix:
+        # the overwrite erased real per-tool text on 85 properties, including write_fix's
+        # 309-char content_encoding='base64' guidance (down to 19), which is exactly why a CA
+        # kept hitting SYNTAX_ERROR_PRE_WRITE on new_content containing quotes. registry_data
+        # is the SOT for what a param MEANS; this map only fills a param that carries no
+        # description at all. That also retires the read_file_range start_line/end_line
+        # special case: under fill-only every tool's own contract survives, so no tool needs
+        # an exception. Guard kept: nothing here may introduce non-English copy, and the 85
+        # recovered descriptions were measured diacritic-free.
+        if not isinstance(prop_schema, dict):
             continue
-        if isinstance(prop_schema, dict) and prop_name in _ENGLISH_PROPERTY_DESCRIPTIONS:
+        if prop_name in _ENGLISH_PROPERTY_DESCRIPTIONS and not str(
+                prop_schema.get("description") or "").strip():
             prop_schema["description"] = _ENGLISH_PROPERTY_DESCRIPTIONS[prop_name]
 
 # Strip orphan schemas declared for internal helpers but not exposed in TOOL_MAP.
@@ -2496,6 +2516,198 @@ def _rule_core_agent_key(agent_id: str = "") -> str:
     return (agent_id or os.environ.get("ORCHESTRATOR_AGENT_ID") or "default").strip() or "default"
 
 
+# ---------------------------------------------------------------------------
+# A37 #0 Tang 0 -- the bootstrap epoch + the read-tool purpose map.
+#
+# WHY here and nowhere else: get_rule_core_text is the one fixed point in a CA's
+# life. It runs exactly once before any project work, so it is the only place where
+# "first use since bootstrap" can be a MEASURED fact instead of a guess. Everything
+# below is derived from the LIVE registry -- no tool name, no count and no purpose
+# sentence is copied into CORE_RULE, because soft data pasted into a rule file is
+# exactly the rot this campaign exists to stop.
+#
+# Measured problem this closes: a CA fetched ~18 schemas in one session, read_file_range
+# alone 6 times, because nothing ever told it which read tools exist or what they are
+# FOR -- so the cbm graph and the OCR family went undiscovered while the curated read
+# tools were re-learned over and over.
+# ---------------------------------------------------------------------------
+
+_BOOTSTRAP_EPOCHS: dict = {}
+_BOOTSTRAP_EPOCH_LOCK = threading.Lock()
+# Bounded so a long-lived daemon serving many agent_ids cannot grow this forever.
+# Eviction drops the oldest ctx, which at worst costs that CA one extra schema push --
+# the failure mode is a few wasted tokens, never a wrong answer.
+_BOOTSTRAP_EPOCH_MAX = 64
+# A purpose is ONE sentence, capped. The cap is what keeps Tang 0 a net saving:
+# ~40 read tools x ~120 chars lands once, against 1-3KB per schema x ~18 avoided.
+_BOOTSTRAP_PURPOSE_MAX_CHARS = 140
+
+
+def bootstrap_ctx_id(agent_id: str = "") -> str:
+    """Context identity for the epoch -- deliberately the SAME key as the rule-core
+    cache.
+
+    A33-C measured that the fetch-once guard is per-process BY DESIGN, so agent_id
+    already separates two CAs. Adding a session_id parameter would have to be declared
+    in the registry schema or the dispatcher refuses it as UNSUPPORTED_FIELD, so the
+    epoch reuses the key that already exists rather than inventing a second identity.
+    """
+    return _rule_core_agent_key(agent_id)
+
+
+def open_bootstrap_epoch(ctx_id: str) -> int:
+    """Start a new epoch for ctx_id and forget every first-use mark from the old one.
+
+    Called ONLY from the full branch of get_rule_core_text. An already_fetched stub
+    must never re-arm the pushes: if it did, "first read since bootstrap" would mean
+    "first read since the last time I asked", which is not a bootstrap at all.
+    """
+    with _BOOTSTRAP_EPOCH_LOCK:
+        row = _BOOTSTRAP_EPOCHS.get(ctx_id)
+        epoch = (int(row["epoch"]) + 1) if row else 1
+        _BOOTSTRAP_EPOCHS.pop(ctx_id, None)
+        _BOOTSTRAP_EPOCHS[ctx_id] = {"epoch": epoch, "used": set()}
+        while len(_BOOTSTRAP_EPOCHS) > _BOOTSTRAP_EPOCH_MAX:
+            _BOOTSTRAP_EPOCHS.pop(next(iter(_BOOTSTRAP_EPOCHS)), None)
+        return epoch
+
+
+def bootstrap_epoch_of(ctx_id: str) -> int:
+    """Live epoch for ctx_id, 0 when none is open. Read-only on purpose: the stub
+    branch discloses the epoch without arming anything."""
+    with _BOOTSTRAP_EPOCH_LOCK:
+        row = _BOOTSTRAP_EPOCHS.get(ctx_id)
+        return int(row["epoch"]) if row else 0
+
+
+def bootstrap_first_use(ctx_id: str, tool_name: str) -> bool:
+    """True exactly ONCE per (ctx_id, epoch, tool_name); False after that.
+
+    False is also the answer when no epoch is open, and that is the safe default: no
+    epoch means this caller never bootstrapped through [A], so pushing a schema it
+    never asked for would be pure noise.
+    """
+    if not tool_name:
+        return False
+    with _BOOTSTRAP_EPOCH_LOCK:
+        row = _BOOTSTRAP_EPOCHS.get(ctx_id)
+        if not row:
+            return False
+        used = row["used"]
+        if tool_name in used:
+            return False
+        used.add(tool_name)
+        return True
+
+
+def bootstrap_forget(ctx_id: str, tool_name: str) -> bool:
+    """Re-arm one tool's push. Called when that tool ERRORS.
+
+    An error IS the evidence that the CA does not actually hold the schema -- a wrong
+    param name or a missing field is what forgetting looks like from outside -- so the
+    next call pushes it again instead of letting the CA guess twice.
+    """
+    if not tool_name:
+        return False
+    with _BOOTSTRAP_EPOCH_LOCK:
+        row = _BOOTSTRAP_EPOCHS.get(ctx_id)
+        if not row or tool_name not in row["used"]:
+            return False
+        row["used"].discard(tool_name)
+        return True
+
+
+def _purpose_sentence(text: str) -> str:
+    """First sentence of a tool description, capped.
+
+    Anh's constraint, verbatim: "Hint phai la cong dung, khong phai huong dan su dung,
+    schema moi lo huong dan". So this keeps only the opening claim -- what the tool is
+    FOR -- and drops the payload talk that follows it in most descriptions. The schema
+    owns the how; duplicating it here would pay for the same bytes twice.
+    """
+    raw = " ".join(str(text or "").split())
+    if not raw:
+        return ""
+    cut = len(raw)
+    for marker in (". ", "! ", "? "):
+        idx = raw.find(marker)
+        if idx != -1:
+            cut = min(cut, idx + 1)
+    out = raw[:cut].rstrip()
+    if len(out) > _BOOTSTRAP_PURPOSE_MAX_CHARS:
+        out = out[:_BOOTSTRAP_PURPOSE_MAX_CHARS - 1].rstrip() + "…"
+    return out
+
+
+def bootstrap_tool_purposes() -> dict:
+    """Purpose map for the READ surface, derived from the live registry.
+
+    Membership = (cbm_* | ocr_* | CURATED_CORE_TOOLS) & the non-source mutation scopes.
+    The cbm and ocr families are named explicitly because they are exactly the two
+    surfaces measured never to be discovered. The scope intersection is what keeps a
+    write tool out, and it answers the question a CA is actually asking -- "can this
+    change MY files?" -- instead of trusting a name prefix: cbm_get_architecture
+    answers mutation_scope="derived_index", not "none", so a none-only filter would
+    have dropped the whole cbm family right back out of view.
+
+    Write tools are excluded BY DESIGN. They keep fetching their schema on every call;
+    that costs S and t and we accept it, because a wrong write costs Correctness, which
+    outranks both.
+    """
+    try:
+        # Lazy: one name, imported at call time, rather than renumbering ~2300 lines
+        # of this module to extend the top-level registry_data import block.
+        from orchestrator.core.registry_data import CURATED_CORE_TOOLS as _curated
+    except Exception:
+        _curated = ()
+    # globals() and not a direct reference: TOOL_SCHEMAS is rebound as later batches
+    # append to it, and this must read whatever the module holds when the CA calls.
+    schemas = globals().get("TOOL_SCHEMAS") or []
+    out: dict = {}
+    for entry in schemas:
+        fn = entry.get("function") if isinstance(entry, dict) else None
+        if not isinstance(fn, dict):
+            continue
+        name = str(fn.get("name") or "")
+        if not name:
+            continue
+        if not (name.startswith("cbm_") or name.startswith("ocr_") or name in _curated):
+            continue
+        try:
+            if tool_mutation_scope(name) not in NON_SOURCE_MUTATION_SCOPES:
+                continue
+        except Exception:
+            continue
+        purpose = _purpose_sentence(fn.get("description"))
+        if purpose:
+            out[name] = purpose
+    return out
+
+
+_BOOTSTRAP_PUSH_TOOLS_CACHE: dict = {}
+
+
+def bootstrap_push_tools() -> frozenset:
+    """The tools eligible for the #0 first-use schema push = exactly the keys of the
+    purpose map, cached.
+
+    ONE membership answer, derived from ONE place: if a tool is worth a purpose sentence
+    at bootstrap it is worth its schema on first use, and a second hand-maintained list
+    in the dispatcher would be free to drift away from this one. Cached because the
+    dispatcher asks on every single tool call; keyed on the live schema count so the set
+    rebuilds by itself when a later batch appends to TOOL_SCHEMAS.
+    """
+    try:
+        stamp = len(globals().get("TOOL_SCHEMAS") or ())
+    except Exception:
+        stamp = -1
+    cached = _BOOTSTRAP_PUSH_TOOLS_CACHE.get(stamp)
+    if cached is None:
+        cached = frozenset(bootstrap_tool_purposes())
+        _BOOTSTRAP_PUSH_TOOLS_CACHE.clear()
+        _BOOTSTRAP_PUSH_TOOLS_CACHE[stamp] = cached
+    return cached
+
 async def get_rule_core_text(agent_id: str = "", force: bool = False) -> str:
     """R102-B once-guard: full CORE_RULE on first fetch per agent/TTL; repeated calls return a
     tiny already_fetched stub (saves ~9KB/repeat). force=true or a distinct agent_id re-fetches.
@@ -2512,16 +2724,59 @@ async def get_rule_core_text(agent_id: str = "", force: bool = False) -> str:
                 "already_fetched": True,
                 "sha256": sha,
                 "agent_id": key,
+                # A37 #1a: `text` is absent here BY DESIGN, and saying so out loud ends a
+                # contradiction a CA hit twice this campaign. The rule says the first fetch
+                # must include `text`; this answer has none; so a CA reasonably read the
+                # missing key as staleness and re-fetched with force=true, paying ~9KB to be
+                # told the same thing. Name the omission AND name the only conditions that
+                # justify force, so the two readings can no longer both look correct.
+                "text_omitted": True,
+                "text_omitted_reason": (
+                    "already_fetched: an earlier call in this process returned the full "
+                    "CORE_RULE at this exact sha256. A missing `text` is the expected stub "
+                    "shape, NOT evidence of staleness."
+                ),
+                "ca_next_action": (
+                    "Reuse the CORE_RULE text already in your context; do not re-fetch. "
+                    "force=true is correct ONLY if you genuinely do not hold it: you were "
+                    "asked to verify, this sha256 disagrees with the copy you hold, or [A] "
+                    "restarted at a new generation and you never held the text. A context "
+                    "compaction is not a new session and does not by itself justify force."
+                ),
+                "bootstrap_epoch": bootstrap_epoch_of(key),
                 "hint": "CORE_RULE already returned for this agent within TTL; reuse the cached rule text in context. Pass force=true (or a distinct agent_id) to re-fetch.",
             }, ensure_ascii=False)
         metadata = get_rule_core_metadata()
         _RULE_CORE_FETCH_CACHE[key] = (now, sha)
-        return json.dumps({
+        # A37 #0 Tang 0: THIS is the bootstrap moment -- the one call every CA makes
+        # before any project work, so it is the only place a purpose map can arrive ONCE
+        # instead of being re-derived per tool call. The epoch is opened here and NOT in
+        # the already_fetched branch above: that is what makes "first read since
+        # bootstrap" a measurable fact instead of a guess.
+        payload = {
             "ok": True,
             "already_fetched": False,
             "text": rendered,
             **metadata,
-        }, ensure_ascii=False)
+        }
+        try:
+            ctx = bootstrap_ctx_id(agent_id)
+            payload["ctx_id"] = ctx
+            payload["bootstrap_epoch"] = open_bootstrap_epoch(ctx)
+            purposes = bootstrap_tool_purposes()
+            if purposes:
+                payload["tool_purposes"] = purposes
+                payload["tool_purposes_note"] = (
+                    "What each read tool is FOR, not how to call it -- the schema owns the "
+                    "how. The FIRST call of one of these after this bootstrap returns its "
+                    "schema next to the result (response key pushed_schema), so do not fetch "
+                    "it: call the tool. A later call does not repeat the push, and an ERROR "
+                    "re-pushes it. Write tools are excluded on purpose -- keep fetching their "
+                    "schema every call, because a wrong write costs Correctness."
+                )
+        except Exception as exc:
+            payload["tool_purposes_error"] = str(exc)
+        return json.dumps(payload, ensure_ascii=False)
     except Exception as exc:
         return _json_error(str(exc))
 
@@ -2848,11 +3103,18 @@ def _matrix_audit_open_session_summary(project_path: str):
     return None
 
 
-# A31 Q4 (2026-09-17): the Core-10 tool surface. SOT is examples/CORE_RULE.txt, section
-# "TOOL SURFACE (minimal)" -- tests/test_a31_skill_surface_gates.py parses that line and
-# asserts it equals this tuple, so the two can never drift apart silently. Deliberately a
-# NAMED LIST and not a count: the same A31 doctrine that says never write a tool total in
-# prose next to the code that computes it.
+# A31 Q4 (2026-09-17, re-sourced A37 2026-09-19): the curated core tool surface.
+# SOT MOVED: it was examples/CORE_RULE.txt "TOOL SURFACE (minimal)", but A37 deleted that
+# named list ON PURPOSE -- CORE_RULE now points at the bootstrap tool_purposes map, built
+# from the live registry at answer time, because a list inside a rule file is exactly the
+# soft data CBM-FIRST forbids. The named list survives in examples/SLIM_RULE.txt on the
+# "Curated core surface" line, and tests/test_a31_skill_surface_gates.py parses THAT line
+# and asserts it equals this tuple, so the two still cannot drift apart silently.
+# Deliberately a NAMED LIST and not a count: the same A31 doctrine that says never write a
+# tool total in prose next to the code that computes it. Measured trap for whoever edits
+# this next: council_message and restart_orchestrator_via_bat are NOT in TOOL_MAP or
+# TOOL_SCHEMAS (they register at the server layer), so a liveness check on this tuple must
+# union the schema names with registry_data.CURATED_CORE_TOOLS or it reports false ghosts.
 CORE_TEN_TOOLS = (
     "get_rule_core_text",
     "open_session",
@@ -3113,9 +3375,10 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
                 "type": "core10_tool_undocumented",
                 "tool": tool,
                 "severity": "medium",
-                "detail": ("Core-10 tool (examples/CORE_RULE.txt, TOOL SURFACE section) has "
-                           "no trigger.tool route in any SKILL.md frontmatter. Body prose "
-                           "does not count: the router only reads frontmatter."),
+                "detail": ("Curated-core tool (examples/SLIM_RULE.txt, the 'Curated core "
+                           "surface' line) has no trigger.tool route in any SKILL.md "
+                           "frontmatter. Body prose does not count: the router only reads "
+                           "frontmatter."),
             })
     _shared_refs = skill_root / "references"
     _seen_refs = set()

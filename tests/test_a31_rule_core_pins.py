@@ -24,11 +24,14 @@ SOT_FILES = ("CORE_RULE.txt", "SLIM_RULE.txt", "SLIM_RULE_INLINE.txt")
 # path that certainly exists is a cwd bug, not an absence.
 CWD_RULE = "is a cwd bug, NOT an absence"
 
-# The MCP-dispatcher sentence must name the mechanism and carry no tool count.
-# CORE_RULE/SLIM_RULE write "NOT one named ...", SLIM_RULE_INLINE writes
-# "not one named ...", so pin only the fragment that is byte-identical in all
-# three files.
-MCP_MECHANISM = "one named MCP tool per [A] tool"
+# The MCP-dispatcher sentence must name the MECHANISM and carry no tool count.
+# A37 measured that [A] exposes TWO MCP surfaces with DIFFERENT shapes: the
+# window/desktop host is a thin dispatcher, while orchestrator/server/mcp_stdio.py
+# DOES register named per-tool wrappers. The single old fragment ("one named MCP
+# tool per [A] tool") is therefore no longer true of both surfaces, and CORE_RULE
+# stopped carrying it on purpose. Pin instead the two mechanism literals that ARE
+# byte-identical in all three files -- a stricter gate, not a looser one.
+MCP_MECHANISM = ("thin dispatcher", "call_tool(name=")
 
 # The count that used to sit in that sentence. It rotted three campaigns in a
 # row; the fix was to delete the digit, so its return is a regression.
@@ -54,8 +57,10 @@ class RuleCoreSotFilesCarryTheCwdRule(unittest.TestCase):
 
     def test_mcp_dispatcher_sentence_names_the_mechanism(self):
         for name in SOT_FILES:
-            with self.subTest(name):
-                self.assertIn(MCP_MECHANISM, _read(name))
+            text = _read(name)
+            for fragment in MCP_MECHANISM:
+                with self.subTest(f"{name}:{fragment}"):
+                    self.assertIn(fragment, text)
 
     def test_no_stale_tool_count_in_any_sot_file(self):
         for name in SOT_FILES:
@@ -84,7 +89,8 @@ class RuleCoreRuntimeReadsTheCommittedFile(unittest.TestCase):
     def test_full_inline_is_the_core_rule_whitespace_collapsed(self):
         inline_full = code_tools._ma_rule_inline("full")
         self.assertIn(CWD_RULE, inline_full)
-        self.assertIn(MCP_MECHANISM, inline_full)
+        for fragment in MCP_MECHANISM:
+            self.assertIn(fragment, inline_full)
         self.assertNotIn("\n", inline_full)
 
     def test_every_propagated_template_carries_the_cwd_rule(self):

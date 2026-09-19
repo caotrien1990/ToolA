@@ -226,6 +226,29 @@ def test_an_unparseable_env_override_is_ignored_not_fatal(monkeypatch):
         _MCP_PROXY_DEFAULT_TIMEOUT)
 
 
+def test_the_floor_knob_is_read_at_call_time_not_at_import(monkeypatch):
+    """A37 defect: ``_MCP_PROXY_DEFAULT_TIMEOUT`` freezes at IMPORT, and this module is
+    imported by the server itself long before anything can set the knob -- so
+    ``MCP_PROXY_HTTP_TIMEOUT`` was inert for every process that set it afterwards, i.e.
+    all of them. Measured cost of the frozen read: the black-hole cases in
+    tests/test_mcp_proxy_failure_identity asked for 0.35s and waited out the full 180s
+    ceiling three times, ~9 minutes for one file."""
+    raised = _MCP_PROXY_DEFAULT_TIMEOUT + 111.0
+    monkeypatch.setenv("MCP_PROXY_HTTP_TIMEOUT", str(raised))
+    assert _mcp_timeout_budget("read_file_range", None, srv) == pytest.approx(raised)
+
+
+def test_the_floor_knob_is_a_floor_and_only_the_per_tool_knob_is_absolute(monkeypatch):
+    """The other half of the same contract, so the fix above cannot be read as license to
+    shrink a long-class budget: the floor keeps MAX semantics (a progress tool still gets
+    its ceiling), and knob 1 is the only one that returns, hence the only one that can
+    LOWER a budget. A test wanting a fast failure must use knob 1."""
+    long_tool = sorted(_MCP_PROGRESS_TOOLS)[0]
+    monkeypatch.setenv("MCP_PROXY_HTTP_TIMEOUT", "0.35")
+    assert _mcp_timeout_budget(long_tool, None, srv) >= _MCP_PROXY_LONG_TIMEOUT
+    monkeypatch.setenv("MCP_PROXY_TIMEOUT__" + long_tool.upper(), "0.35")
+    assert _mcp_timeout_budget(long_tool, None, srv) == pytest.approx(0.35)
+
 # ── 5. the wiring itself ─────────────────────────────────────────────────────
 
 def test_every_proxied_wrapper_that_declares_a_timeout_forwards_it():
