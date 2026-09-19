@@ -699,7 +699,7 @@ tools.
 
 | What I called | Correct | What [A] actually answered |
 |---|---|---|
-| `write_fix` as find-and-replace | `start_line` / `end_line` / `new_content` | Nothing to answer — the schema already reads *"Replace a line range in one file, create a .bak backup, and sync the cache after writing"*, `start_line`: *"1-based start line."*, `end_line`: *"Inclusive end line."* |
+| `write_fix` as find-and-replace | `start_line` / `end_line` / `new_content` | Nothing to answer — the schema already says it in full. Since A36 the `write_fix` description is owned by `orchestrator/core/registry_data.py` (`EXTRA_TOOL_SCHEMAS`, ~L384) and states the FLAT contract: one region per call, no `edits` array, multi-region bottom-up, `expected_hash` = a previous `write_fix.new_hash`. Params: `start_line`: *"1-based start line."*, `end_line`: *"Inclusive end line."* Do not quote a fixed sentence here — `GET /api/tools/write_fix/schema` is the live text. |
 | `copy_file` with `source`/`dest` | `src` / `dst` | HTTP **400**, `UNSUPPORTED_FIELD`, `unsupported_fields: ["dest","source"]`, `accepted_fields: ["backup_existing","dst","overwrite","project_path","src"]`, `ca_next_action: remove_unsupported_field` |
 | `read_context_batch` with `reads` | `requests` | HTTP **400**, `UNSUPPORTED_FIELD`, `accepted_fields` naming `requests` |
 | `write_new_file` with `path` instead of `file_path` | **either works** | `ok:true` both ways under `dry_run` — measured. There was never a trap here |

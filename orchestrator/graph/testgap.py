@@ -32,6 +32,20 @@ from .schema import SCHEMA_VERSION
 
 ALGORITHM_NAME = "test-gap-v1"
 
+# CA-facing disclosure. This tool NEVER emits a verdict: `pass` is hardcoded False and
+# `score` None on EVERY path (success, vacuous, unavailable). A CA reading
+# `pass:false` + `score:null` + an empty `reasons[]` as "coverage gate FAILED" is the
+# exact misread this constant exists to prevent, so the key ships on all three shapes -
+# a field that appears only sometimes is itself a trap.
+PASS_SEMANTICS = (
+    "pass is ALWAYS False and score ALWAYS None on every path of cbm_test_gap: it is a "
+    "static import-reach ADVISORY, not an executed-coverage gate, so it emits no verdict. "
+    "pass:false + score:null + empty reasons[] means NO VERDICT WAS COMPUTED, never "
+    "'coverage failed'. Rank the real signal instead: coverage_ratio, counts, "
+    "uncovered_files, isolated_uncovered, gaps. For a true pass/fail, run the suite with "
+    "run_project_test_script."
+)
+
 
 def _unavailable(reason: str, *, root: str = "", extra: dict[str, Any] | None = None) -> dict[str, Any]:
     payload = {
@@ -53,6 +67,7 @@ def _unavailable(reason: str, *, root: str = "", extra: dict[str, Any] | None = 
         "metric_notes": [reason],
         "truncated": False,
         "reasons": [reason],
+        "pass_semantics": PASS_SEMANTICS,
         "provenance": {
             "root": root,
             "extractor_version": EXTRACTOR_VERSION,
@@ -256,6 +271,7 @@ def compute_test_gap(
             "metric_notes": notes + ["vacuous_no_source"],
             "truncated": False,
             "reasons": [],
+            "pass_semantics": PASS_SEMANTICS,
             "provenance": {
                 "root": root,
                 "extractor_version": EXTRACTOR_VERSION,
@@ -333,6 +349,7 @@ def compute_test_gap(
         "metric_notes": notes,
         "truncated": truncated,
         "reasons": [],
+        "pass_semantics": PASS_SEMANTICS,
         "provenance": {
             "root": root,
             "extractor_version": EXTRACTOR_VERSION,

@@ -1746,6 +1746,60 @@ def _campaign_routing_prepass(folded_raw: str, live_tools: set) -> list:
         if not _source_lookup:
             _add("desktop_screenshot", "T4", "18_runtime_dom_T4",
                  "R2 C8: chup man hinh / screenshot, not a source snapshot.")
+    # A36 (2026-09-19): three LOWEST-priority rows, appended after every existing
+    # rule so they can never shadow a campaign primary - they only catch the
+    # phrasings that used to fall through to a bulk read. The gap they close:
+    # a CA facing a LARGE repo (ToolA itself is one) says "I need to understand
+    # this repo" and nothing routed it to the graph, so it read source by the
+    # thousand lines. CSLt order = structure from the index first, then the
+    # smallest read that answers the question.
+    if (
+        re.search(
+            r"\b(hieu|nam|onboard|lam[ _-]?quen|tim[ _-]?hieu|overview|"
+            r"understand|understanding|familiar|familiarise|familiarize|grasp|"
+            r"orient|tong[ _-]?quan|walk[ _-]?through|where[ _-]?to[ _-]?start)\b",
+            folded_raw,
+        )
+        and re.search(
+            r"\b(repo|repository|codebase|code[ _-]?base|project|du[ _-]?an|"
+            r"source|he[ _-]?thong)\b",
+            folded_raw,
+        )
+        and "cbm_get_architecture" in live
+    ):
+        _add("cbm_get_architecture", "T2", "15_search_code_intel",
+             "R2 C9: understand/onboard a repo - module graph + entrypoints from "
+             "the index, before any bulk read (CSLt: less context).")
+    if (
+        re.search(
+            r"\b(doc[ _-]?het|doc[ _-]?toan[ _-]?bo|"
+            r"read[ _-]?(the[ _-]?)?(all|every|whole|entire)|"
+            r"quet[ _-]?toan[ _-]?bo|scan[ _-]?(the[ _-]?)?(all|whole|entire)|"
+            r"liet[ _-]?ke[ _-]?het|dump)\b",
+            folded_raw,
+        )
+        and re.search(
+            r"\b(file|files|code|repo|codebase|module|source|thu[ _-]?muc|"
+            r"folder|directory)\b",
+            folded_raw,
+        )
+        and "cbm_graph_status" in live
+    ):
+        _add("cbm_graph_status", "T1", "15_search_code_intel",
+             "R2 C10: whole-repo read/scan request - check index freshness, then "
+             "cbm_get_architecture / cbm_dsm answer structure WITHOUT reading "
+             "source; bounded read_file_range only on what they name.")
+    if re.search(
+        r"\b(ai[ _-]?goi|who[ _-]?calls?|callers?|noi[ _-]?goi|call[ _-]?sites?|"
+        r"duoc[ _-]?goi[ _-]?o[ _-]?dau)\b",
+        folded_raw,
+    ):
+        _add("search_code", "T1", "15_search_code_intel",
+             "R2 C11: who-calls / ai goi -> search_code(mode='callers'), NOT the "
+             "deprecated find_callers. It sees instance receivers (self.fn() / "
+             "obj.fn()), so it is the cross-check before trusting a cbm_dead_code "
+             "'no callers' verdict - the cbm graph resolves only imported-alias "
+             "edges, and an empty cbm list means unresolved, never unused.")
     return out
 
 

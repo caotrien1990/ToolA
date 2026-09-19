@@ -193,7 +193,7 @@ BASE_TOOL_SCHEMAS = [
 		"type": "function",
 		"function": {
 			"name": "read_file_range",
-			"description": "Adaptive pure read: range, function, class, section, or file summary. Small files auto-expand; large files remain bounded and return AST-aware next_ranges.",
+			"description": "Adaptive pure read: range, function, class, section, or file summary. Small files auto-expand; large files remain bounded and return AST-aware next_ranges. On a LARGE or unfamiliar repo do NOT bulk-read to understand it - ask the index first (cbm_graph_status for freshness, cbm_get_architecture for the module graph + entrypoints, cbm_dsm for coupling, cbm_trace_path between two files, find_symbol or search_code mode=symbol for the exact line), then read ONE bounded range. That is the CSLt order: structure from the graph, then the smallest read that answers the question. This is also the ONLY call that seeds the write_fix read_token, so read the exact region before editing it and use force_reseed=true after FILE_CHANGED_OUTSIDE_ORCHESTRATOR; its content_hash is a raw-bytes digest and must NEVER be passed as write_fix.expected_hash.",
 			"parameters": {
 				"type": "object",
 				"properties": {
@@ -225,7 +225,7 @@ BASE_TOOL_SCHEMAS = [
 		"type": "function",
 		"function": {
 			"name": "read_context_batch",
-			"description": "Read multiple files or structural scopes in one pure T1 call under one total token budget.",
+			"description": "Read multiple files or structural scopes in one pure T1 call under one total token budget. Use it once cbm has already said WHICH files matter (cbm_get_architecture, cbm_dsm, cbm_trace_path, ocr_map, find_symbol): N targeted scopes in one budgeted call costs far less context than N separate read_file_range calls. It is a PURE read and does NOT seed the write_fix read_token - seed that with read_file_range on the exact region you are about to edit.",
 			"parameters": {
 				"type": "object",
 				"properties": {
@@ -291,7 +291,7 @@ BASE_TOOL_SCHEMAS = [
 
 			"name": "search_code",
 
-			"description": "Unified code/search entrypoint. mode defaults to text; supported modes: text|regex|symbol|callers|definition_usage|index|dom_candidates. Legacy tool names route here as HTTP aliases. query_encoding = plain|base64.",
+			"description": "Unified code/search entrypoint. mode defaults to text; supported modes: text|regex|symbol|callers|definition_usage|index|dom_candidates|smart. Legacy tool names route here as HTTP aliases (find_callers / find_definition_and_usage / regex_search / read_chunks are DEPRECATED - come here instead). query_encoding = plain|base64. Pick by SEMANTICS, not habit: search_code answers WHERE a string or symbol sits, while the cbm_* family answers HOW the repo is shaped - cbm_get_architecture for the module graph and entrypoints, cbm_dsm for coupling, cbm_evolution for churn, cbm_trace_path between two files, cbm_dead_code for unreachable callables. It indexes CODE only, so file_pattern=\"*.txt\"/\"*.md\"/\"*.log\" answering 0 hits is a measurement trap, not proof the text is absent - drop the pattern or read the file. It resolves by absolute project_path and never by cwd, so use it whenever a native grep says 'no such file' on a path that certainly exists. mode=callers DOES see instance receivers (self.fn() / obj.fn()), which is exactly why it is the cross-check to run before believing a cbm_dead_code 'no callers' verdict: the cbm graph resolves a call edge only through an imported module/alias, so an empty cbm callers list means 'no RESOLVED reference', never 'unused'.",
 
 			"parameters": {
 
@@ -381,7 +381,7 @@ BASE_TOOL_SCHEMAS = [
 
 			"name": "write_fix",
 
-            "description": "Edit a code range in a file by replacing it by line numbers. NO size limit on new_content — send the whole block in one call (base64 for multiline). The file's existing line ending (CRLF vs LF) is auto-preserved, so editing a .bat/.ps1 keeps CRLF — no manual newline handling needed. On validation failure the backend opens a draft: response carries draft_id + failed_parts (line-accurate, with excerpts); fix ONLY the failed range via write_draft_patch until clean — the backend then ships automatically. Automatically creates a .bak backup and syncs the cache after the write. Requires INDEX.json to exist first (run generate_project_map). If the file changed outside Orchestrator, returns a conflict. When Python validation fails with a Ruff safe-fixable diagnostic, the response includes ruff_fix_applicable and ruff_fix_hint suggesting ruff_fix(path=<file>, apply=false) for CA-controlled preview; it never auto-fixes.",
+            "description": "Edit a code range in a file by replacing it by line numbers. NO size limit on new_content — send the whole block in one call (base64 for multiline). The file's existing line ending (CRLF vs LF) is auto-preserved, so editing a .bat/.ps1 keeps CRLF — no manual newline handling needed. On validation failure the backend opens a draft: response carries draft_id + failed_parts (line-accurate, with excerpts); fix ONLY the failed range via write_draft_patch until clean — the backend then ships automatically. Automatically creates a .bak backup and syncs the cache after the write. Requires INDEX.json to exist first (run generate_project_map). If the file changed outside Orchestrator, returns a conflict. When Python validation fails with a Ruff safe-fixable diagnostic, the response includes ruff_fix_applicable and ruff_fix_hint suggesting ruff_fix(path=<file>, apply=false) for CA-controlled preview; it never auto-fixes. ONE region per call and the shape is FLAT (file_path,start_line,end_line,new_content) — there is no edits[] array, so several regions in the SAME file need several calls and they MUST go BOTTOM-UP: an earlier top region renumbers every line beneath it. expected_hash is a PREVIOUS write_fix.new_hash, never a read_file_range.content_hash (that one is a raw-bytes digest and seeds no edit authority). On a large repo, run cbm_what_if / cbm_dsm on the target first so the edit set is chosen from the call graph instead of guessed, and a client timeout is NOT a failed write — poll /api/write_status?operation_id=... until commit_state is terminal instead of resending.",
 
 			"parameters": {
 

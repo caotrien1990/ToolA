@@ -1345,10 +1345,11 @@ for schema in TOOL_SCHEMAS:
             "default": False,
             "description": "Force read-token reseed even when the file changes during read; audited.",
         }
-        fn["description"] = (
-            "Adaptive pure read for a line range, function, class, section, or file "
-            "summary. Small files auto-expand; large files remain bounded."
-        )
+        # A36: registry_data.BASE_TOOL_SCHEMAS owns the read_file_range description.
+        # It is the FIRST tool a CA reaches for on an unfamiliar repo, so its text has to
+        # carry the CSLt order (ask the cbm INDEX before a bulk read) and the read_token /
+        # content_hash caveat BEFORE the first call. The one-line label that used to be
+        # assigned here erased all of it. See _REGISTRY_DESCRIPTION_WINS below.
     if name == "search_code":
         from orchestrator import search_regex_worker as _search_regex_worker
 
@@ -1369,7 +1370,11 @@ for schema in TOOL_SCHEMAS:
             "default": MAX_SEARCH_RESULTS,
             "description": "Maximum matches to return, capped by the backend.",
         }
-        fn["description"] = "Search the codebase with bounded max_results and max_context_lines. Prefer project_path; path remains a legacy alias."
+        # A36: description deliberately NOT set here. registry_data owns the search_code
+        # text because it carries the mode enum, the cbm routing map and the measured
+        # traps (*.txt/*.md = 0 hits is a measurement trap; mode=callers DOES see
+        # instance receivers). The old one-liner said only "bounded max_results", which a
+        # CA can already read off these very properties.
     if name == "write_fix_html":
         fn["description"] = "Edit a range inside an .html file with base64, encoding_check, and diff_preview; performs delimiter safety checks before writing."
     if name == "write_new_file":
@@ -1526,10 +1531,25 @@ _ENGLISH_PROPERTY_DESCRIPTIONS = {
     # both params are tombstoned and no longer advertised in the schema.
 }
 
+# A36: the four tools a CA reaches for FIRST on an unfamiliar repo keep their
+# registry_data description. Measured 2026-09-19: the daemon served a 94-char
+# read_file_range description while registry_data already held the long one, so every
+# word of CA-facing routing guidance written there was unreachable text. The generic
+# one-line English label erases exactly the part that has to arrive BEFORE the first
+# call - ask the cbm INDEX before a bulk read, write_fix is FLAT and BOTTOM-UP,
+# mode=callers DOES see instance receivers - while adding nothing a CA cannot already
+# read off the parameters. Same reasoning as the read-range property carve-out below.
+_REGISTRY_DESCRIPTION_WINS = frozenset({
+    "read_file_range",
+    "read_context_batch",
+    "search_code",
+    "write_fix",
+})
+
 for schema in TOOL_SCHEMAS:
     fn = schema.get("function", {})
     name = fn.get("name", "")
-    if name in _ENGLISH_TOOL_DESCRIPTIONS:
+    if name in _ENGLISH_TOOL_DESCRIPTIONS and name not in _REGISTRY_DESCRIPTION_WINS:
         fn["description"] = _ENGLISH_TOOL_DESCRIPTIONS[name]
     props = fn.get("parameters", {}).get("properties", {})
     for prop_name, prop_schema in props.items():
@@ -17249,7 +17269,7 @@ try:
         tool_phases=TOOL_PHASES,
         phase_labels=PHASE_LABELS,
         schema={
-            "description": "Semantic review layer beside ruff: open-code-review delegate preview lists which changed files are worth reviewing. Needs no LLM, costs 0 tokens, mutates nothing.",
+            "description": "Semantic review layer beside ruff: open-code-review delegate preview lists which changed files are worth reviewing. Needs no LLM, costs 0 tokens, mutates nothing. git_stage and git_commit ALREADY run it by default (ocr:true) at two different scopes - git_stage returns mode=workspace (the WHOLE worktree, so unstaged churn and scratch files appear in reviewable_files even though they are not staged) while git_commit returns mode=commit (only the committed set) - so reading the stage-time list as 'what I am about to commit' is a misread. Call this tool directly only for an explicit from_ref/to_ref or commit range.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -17302,7 +17322,7 @@ try:
         tool_phases=TOOL_PHASES,
         phase_labels=PHASE_LABELS,
         schema={
-            "description": "open-code-review scan. preview_only=true (default) plans the review with no LLM and no token cost. preview_only=false needs a configured provider and refuses with OCR_LLM_NOT_CONFIGURED when none is set, instead of spending a call to find out.",
+            "description": "open-code-review scan. preview_only=true (default) plans the review with no LLM and no token cost. preview_only=false needs a configured provider and refuses with OCR_LLM_NOT_CONFIGURED when none is set, instead of spending a call to find out. Scope is the WHOLE repo unless you pass path=, so on a large repo narrow it FIRST - ocr_map for a diff, cbm_dsm / cbm_get_architecture to pick the module worth reviewing - and read ca_hint_scope, which fires only when the returned list really was capped.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -17340,7 +17360,7 @@ try:
         tool_phases=TOOL_PHASES,
         phase_labels=PHASE_LABELS,
         schema={
-            "description": "Navigation map of a change, cbm_graph-shaped: which files a diff actually lives in, sorted by changed-line count, with every dropped file counted by reason. Same zero-LLM subprocess as ocr_review. Read-only, 0 tokens, no session.",
+            "description": "Navigation map of a change, cbm_graph-shaped: which files a diff actually lives in, sorted by changed-line count, with every dropped file counted by reason. Same zero-LLM subprocess as ocr_review. Read-only, 0 tokens, no session. Call it BEFORE reading a diff: it names the few files that carry the change, so the follow-up read is one bounded range instead of a git_diff dump - then cbm_what_if / cbm_dsm on those same files gives blast radius before any edit. git_stage and git_commit already attach ocr_review by default, so this is pre-commit navigation, not a duplicate review.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -17450,7 +17470,7 @@ try:
         tool_phases=TOOL_PHASES,
         phase_labels=PHASE_LABELS,
         schema={
-            "description": "T2 derived-index-aware static import-reach test-gap advisory. May update graph.db; never edits source. Not executed coverage.",
+            "description": "T2 derived-index-aware static import-reach test-gap advisory. May update graph.db; never edits source. Not executed coverage. VERDICT-FREE BY CONTRACT: pass is ALWAYS false and score ALWAYS null on every path - that means 'no verdict computed', NEVER 'coverage failed'; rank coverage_ratio + counts + uncovered_files + isolated_uncovered + gaps instead, and read the response key pass_semantics. Cheapest way to see which production files no test even imports, without reading or running anything.",
             "parameters": {
                 "type": "object",
                 "properties": {
