@@ -40,7 +40,10 @@ tools_v15.py MUST NEVER import `orchestrator_server` or `code_tools` at top leve
 INSIDE function bodies (lazy import). Use `sys.modules.get('orchestrator_server')`
 for soft lookups that work even before the module finishes loading.
 
-Ktr enforces this rule via `acceptance_dashboard.import_topology_clean` (R43.3).
+Enforced at runtime INSIDE `acceptance_dashboard` (this file), which AST-scans its own
+top-level imports and reports `import_topology_violations` + `import_topology_scan_ok`
+(R43.3 H11). There is no `import_topology_clean` field: read those two live keys, and
+treat scan_ok=false as "the check never ran", never as "the check passed".
 ═══════════════════════════════════════════════════════════════════════════════
 """
 

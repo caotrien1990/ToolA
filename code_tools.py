@@ -16981,11 +16981,27 @@ try:
         _fn = _schema.get("function", {})
         _params = (_fn.get("parameters") or {}).get("properties") or {}
         if _fn.get("name") == "write_transaction":
-            _params.setdefault("skip_verify", {"type": "boolean", "default": False})
+            _params.setdefault("skip_verify", {"type": "boolean", "default": False,
+                "description": "Skip the post-write verify-or-REVERT pass. Default false: "
+                "every write is re-validated and, when validation fails, the batch is rolled "
+                "back from its backup and the outcome comes back in `batch_verify`. True "
+                "instead stamps `batch_verify_skipped` and LEAVES a broken write in place, so "
+                "set it only for a deliberately mid-refactor write whose transient syntax "
+                "error is expected -- then run validate_file yourself."})
         elif _fn.get("name") == "write_fix":
-            _params.setdefault("skip_symbol_check", {"type": "boolean", "default": False})
+            _params.setdefault("skip_symbol_check", {"type": "boolean", "default": False,
+                "description": "Pass true ONLY for an INTENDED rename or removal of a top-level "
+                "symbol. By default write_fix re-parses the file after writing and, when a "
+                "top-level def/class has disappeared, answers SYMBOL_DRIFT_AUTO_REVERT and "
+                "REVERTS the write -- that is a guard, not a bug, so a deliberate rename must "
+                "carry this flag in the SAME call. It also owns most of the wall clock on a huge "
+                "file (measured 27.5s of a 70.6s write on 9.9MB), the other legitimate reason "
+                "to set it."})
         elif _fn.get("name") == "apply_after_dry_run":
-            _params.setdefault("skip_verify", {"type": "boolean", "default": False})
+            _params.setdefault("skip_verify", {"type": "boolean", "default": False,
+                "description": "Skip the post-write verify-or-REVERT pass on the write this "
+                "applies. Same contract as write_transaction.skip_verify: default false "
+                "re-validates and can roll back, true stamps `batch_verify_skipped`."})
 
 except Exception as _v15_exc:
     import logging

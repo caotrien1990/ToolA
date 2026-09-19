@@ -16,14 +16,13 @@ import functools as _functools
 import inspect as _inspect
 import json
 import os
-import secrets
 import sys
 import threading
 import time
-import uuid as _uuid
 import urllib.error
-import urllib.request
 import urllib.parse
+import urllib.request
+import uuid as _uuid
 from pathlib import Path
 
 _LESSONS_CACHE: list = []

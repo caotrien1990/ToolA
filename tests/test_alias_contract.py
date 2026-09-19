@@ -54,8 +54,12 @@ class TestAliasCanonicalFieldsExist(unittest.TestCase):
                     missing.append(f"{tool}: {legacy}->{canonical}: canonical NOT in properties")
         self.assertEqual(missing, [], f"Canonical fields missing from schema: {missing}")
 
-    def test_alias_count_is_113(self):
-        """Contract snapshot: exactly 113 aliases across 42 tools.
+    def test_alias_count_matches_pinned_total(self):
+        """Contract snapshot: the alias total pinned in the assert below IS the contract.
+
+        A37: the counts left both the method name and this summary line -- they read "113
+        aliases across 42 tools" while the asserts pin 224 and 73. A number written twice
+        rots in whichever copy nobody runs, so it is now written once, in the assert.
 
         History: 102/39 until 2026-07-08; +2 aliases (delay, delay_sec ->
         delay_seconds) khi Anh yeu cau tool restart_orchestrator_via_bat
@@ -89,7 +93,9 @@ class TestAliasCanonicalFieldsExist(unittest.TestCase):
         # with accepted_fields rather than be accepted under an undocumented spelling.
         self.assertEqual(total, 224, f"Expected 224 aliases, got {total}")
 
-    def test_alias_tool_count_is_42(self):
+    def test_alias_tool_count_matches_pinned_total(self):
+        # A37: digits removed from the NAME (it said 42 while asserting 73). The comment
+        # block below is the reason this convention exists at all.
         # Re-based 2026-08-11: R44 result-cap family added 14 new aliased tools.
         # Re-based 2026-08-12: R46 write-content family (+3 tools).
         # Re-based 2026-08-14: +1 ruff_fix (file_path/file -> path).
@@ -126,7 +132,11 @@ class TestHarmlessIgnoreNotInSchema(unittest.TestCase):
         self.assertEqual(collisions, [],
                          f"Ignore fields that are also schema properties: {collisions}")
 
-    def test_harmless_ignore_count_is_46(self):
+    def test_harmless_ignore_count_matches_pinned_total(self):
+        # A37: the digits left the NAME on purpose. This file already documents the
+        # convention below test_alias_tool_count -- "the assert is the contract, the name
+        # is not" -- and a count embedded in a method name re-rots at every re-base: this
+        # one read 46 while asserting 45. The pinned number now lives in exactly one place.
         total = sum(len(v) for v in srv._HARMLESS_IGNORE_FIELDS.values())
         self.assertEqual(total, 45, f"Expected 45 harmless-ignore fields, got {total}")
 
