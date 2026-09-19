@@ -64,12 +64,47 @@ _PROBE_SHAPES = {
         "query_scope", "content_files_scanned",
     },
     "cbm_graph_status": {"ok", "result"},
+    # A38, probed live on 2026-09-19 over HTTP /api/call/<tool>. `generation` and the operation_*
+    # keys are the HTTP envelope, recorded as measured; the tool's own answer is `result`, which
+    # is why all four triggers below live in _PROBE_NESTED.
+    "cbm_quality_gate": {"ok", "result", "generation"},
+    "cbm_dsm": {"ok", "result", "generation"},
+    "cbm_evolution": {"ok", "result", "generation"},
+    "cbm_what_if": {
+        "ok", "result", "generation", "operation_id", "write_status_url", "operation_attempts",
+        "operation_replayed",
+    },
 }
 
 # The one nested level the probe expanded. cbm_graph_status carries its whole answer under
 # `result`, so its trigger is legitimately not a top-level key.
 _PROBE_NESTED = {
     "cbm_graph_status": {"enabled", "db_present", "integrity", "nodes", "edges", "files"},
+    # A38: the whole cbm family answers under `result`, so these four are nested for the same
+    # reason. Probed live on 2026-09-19 (script label a38_probe_cbm..8) against this repo.
+    "cbm_quality_gate": {
+        "version", "status", "reason", "pass", "aggregate", "checks", "counts", "cycles",
+        "max_depth", "metric_notes", "truncated", "reasons", "provenance", "config", "mode",
+        "wrote", "cache_hit", "elapsed_ms",
+    },
+    "cbm_dsm": {
+        "version", "status", "reason", "pass", "files", "size", "total_files", "edge_count",
+        "density", "propagation_cost", "propagation_mode", "above_diagonal", "below_diagonal",
+        "same_level", "clusters", "page", "levels", "truncated", "sampled", "metric_notes",
+        "provenance", "cache_hit", "elapsed_ms", "wrote",
+    },
+    "cbm_evolution": {
+        "version", "status", "reason", "pass", "lookback_days", "commits_analyzed",
+        "commits_dropped_merges", "files_dropped_pair_cap", "pairs_considered",
+        "rename_history_partial", "history_truncated", "shallow", "churn", "coupling",
+        "authors", "hotspots", "bus_factor_score", "single_author_ratio", "churn_score",
+        "evolution_score", "metric_notes", "truncated", "provenance", "wrote",
+    },
+    "cbm_what_if": {
+        "version", "status", "reason", "pass", "applied", "ops_applied", "steps", "before",
+        "after", "diff", "clone", "metric_notes", "truncated", "elapsed_ms", "provenance",
+        "original_unchanged", "caps", "cache_hit", "wrote", "auto_index_result",
+    },
 }
 
 # A minimal payload per (tool, trigger) that SHOULD fire, and one that should not. Written
@@ -80,6 +115,27 @@ _FIRES = {
     ("cache_delta", "total_changed"): {"ok": True, "total_changed": 3},
     ("query_index", "files"): {"ok": True, "files": [{"path": "a.py"}]},
     ("cbm_graph_status", "db_present"): {"ok": True, "result": {"db_present": False}},
+    # A38, probed live: a gate run that counted cycles, a DSM with one A<->B component, a DSM
+    # page that stops short of `size` on both axes, one co-change pair, and the measured
+    # ok:true / applied:false shape (an op named an id the graph view does not contain).
+    ("cbm_quality_gate", "cycles"): {"ok": True, "result": {"cycles": 1}},
+    ("cbm_dsm", "clusters"): {
+        "ok": True,
+        "result": {"clusters": [{"files": ["a.py", "b.py"], "internal_edges": 2, "level": 0}]},
+    },
+    ("cbm_dsm", "page"): {
+        "ok": True,
+        "result": {"size": 130,
+                   "page": {"row_start": 0, "col_start": 0, "rows": 100, "cols": 100}},
+    },
+    ("cbm_evolution", "coupling"): {
+        "ok": True,
+        "result": {"coupling": [{"file_a": "a.py", "file_b": "b.py", "jaccard": 0.7}]},
+    },
+    ("cbm_what_if", "applied"): {
+        "ok": True,
+        "result": {"applied": False, "status": "unavailable", "reason": "invalid_id"},
+    },
 }
 _STAYS_SILENT = {
     ("read_file_range", "truncated"): {"ok": True, "truncated": False},
@@ -87,6 +143,18 @@ _STAYS_SILENT = {
     ("cache_delta", "total_changed"): {"ok": True, "total_changed": 0},
     ("query_index", "files"): {"ok": True, "files": []},
     ("cbm_graph_status", "db_present"): {"ok": True, "result": {"db_present": True}},
+    # A38. The gate with zero cycles, a DSM whose page covers the whole matrix (size == rows ==
+    # cols is exactly dsm.py's "complete axis"), no co-change pair, and a what_if that really
+    # applied its ops.
+    ("cbm_quality_gate", "cycles"): {"ok": True, "result": {"cycles": 0}},
+    ("cbm_dsm", "clusters"): {"ok": True, "result": {"clusters": []}},
+    ("cbm_dsm", "page"): {
+        "ok": True,
+        "result": {"size": 100,
+                   "page": {"row_start": 0, "col_start": 0, "rows": 100, "cols": 100}},
+    },
+    ("cbm_evolution", "coupling"): {"ok": True, "result": {"coupling": []}},
+    ("cbm_what_if", "applied"): {"ok": True, "result": {"applied": True, "ops_applied": 1}},
 }
 
 _ROWS = list(PASSIVE_CHAINS)
@@ -161,6 +229,20 @@ def test_git_log_is_an_honest_gap_not_an_oversight():
     assert "git_log" not in PASSIVE_CHAIN_TOOLS
     readers = [t for t in ("git_show", "git_cat_file", "git_read_commit") if t in ct.TOOL_MAP]
     assert not readers, "%r exists now -- git_log can be given a row" % readers
+
+
+def test_the_gate_unavailable_count_is_an_honest_gap():
+    """cbm_quality_gate answers `counts.unavailable`, and A38 deliberately gave it NO row.
+
+    Measured causes are three, each fixed somewhere else: missing_layers (the caller's
+    rules_toml), missing_file_line_counts (the caller's metrics dict), missing_quality_factors
+    (another tool's output). No single next_action is true for all three, so a row here would be
+    a guess a CA pays a round trip for. If the reasons ever collapse to one, this fails and the
+    gap must be re-decided rather than silently filled.
+    """
+    gate_rows = [r for r in _ROWS if r.tool == "cbm_quality_gate"]
+    assert gate_rows, "cbm_quality_gate lost its row; this gap note now guards nothing"
+    assert not [r for r in gate_rows if "unavailable" in r.trigger]
 
 
 # ---------------------------------------------------------------------- 2. predicates

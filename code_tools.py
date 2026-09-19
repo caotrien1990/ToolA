@@ -41,12 +41,14 @@ from orchestrator import search_snapshots
 
 # Phase 0 Step 2: graph feature-flag + bounded-context constants (A_Q_devineupgrade_breakdown_plan_2nd)
 from orchestrator.graph import config as graph_config
-from orchestrator.mission import tools as _mission_tools
+from orchestrator.mission import (
+    tools as _mission_tools,  # noqa: F401 - eval'd by BASE_TOOL_MAP_SPECS as '_mission_tools.mission_*'
+)
 from orchestrator.server.executor_lanes import (
     ExecutorLaneError,
     run_in_executor_lane,
 )
-from rule_core import get_rule_core, get_rule_core_metadata, get_rule_core_runtime_paths
+from rule_core import get_rule_core, get_rule_core_metadata
 
 # ─── Shared constants ─────────────────────────────────────────────────────────
 
@@ -192,9 +194,9 @@ def _atomic_write_json(path: Path, data, *, indent: int | None = None) -> None:
 
 from orchestrator.core.registry_data import (
     BASE_TOOL_MAP_SPECS,
-    T1_TOOLS,
-    T2_TOOLS,
-    T3_TOOLS,
+    T1_TOOLS,  # noqa: F401 - re-exported: tool_smoke_runner.py reads ct.T1_TOOLS
+    T2_TOOLS,  # noqa: F401 - re-exported: tool_smoke_runner.py reads ct.T2_TOOLS
+    T3_TOOLS,  # noqa: F401 - re-exported: tool_smoke_runner.py reads ct.T3_TOOLS
     V15_NEW_TOOL_SPECS,
     V15_R8_NEW_SCHEMA_SPECS,
     V15_TIERS,
@@ -1595,14 +1597,18 @@ for schema in TOOL_SCHEMAS:
 TOOL_MAP: dict = {}  # filled after function definitions
 
 # ─── Tool 1-5 shims ───────────────────────────────────────────────────────────
+# F401 FALSE POSITIVE on this whole block: registry_data.BASE_TOOL_MAP_SPECS names these
+# handlers as STRING exprs that build_tool_map() eval()s against code_tools globals() at
+# the bottom of this file, so ruff sees no reference. `ruff --fix` deleting them makes the
+# daemon die at import with NameError -- that is why every line carries a noqa.
 from orchestrator.tools.read import (
-    architecture_context_pack,
-    get_file_symbols,
-    list_structure,
-    read_context_batch,
-    read_file_range,
+    architecture_context_pack,  # noqa: F401
+    get_file_symbols,  # noqa: F401
+    list_structure,  # noqa: F401
+    read_context_batch,  # noqa: F401
+    read_file_range,  # noqa: F401
 )
-from orchestrator.tools.search import find_symbol, search_code
+from orchestrator.tools.search import find_symbol, search_code  # noqa: F401
 
 # ─── Tool write_fix_html ──────────────────────────────────────────────────────
 
@@ -1682,14 +1688,16 @@ async def write_fix_html(file_path: str, start_line: int, end_line: int, new_con
     return json.dumps(result, ensure_ascii=False)
 
 
+# F401 FALSE POSITIVE on every name here except write_fix: BASE_TOOL_MAP_SPECS names
+# them as string exprs that build_tool_map() eval()s against code_tools globals().
 from orchestrator.tools.write import (
-    apply_after_dry_run,
-    delete_file,
-    write_draft_abort,
-    write_draft_patch,
-    write_draft_status,
+    apply_after_dry_run,  # noqa: F401
+    delete_file,  # noqa: F401
+    write_draft_abort,  # noqa: F401
+    write_draft_patch,  # noqa: F401
+    write_draft_status,  # noqa: F401
     write_fix,
-    write_new_file,
+    write_new_file,  # noqa: F401
 )
 
 # ─── V15 R58: Python executable resolver ──────────────────────────────────────
@@ -4087,7 +4095,7 @@ async def backup_project(
             candidate = raw_candidate.resolve()
             try:
                 relative = candidate.relative_to(root)
-            except ValueError as exc:
+            except ValueError:
                 return _json_error(f"Backup target is outside project root: {value}")
             normalized_targets.append(candidate)
             normalized_target_labels.append(str(relative).replace("\\", "/"))
@@ -6097,7 +6105,10 @@ async def run_project_command(
     return json.dumps(result, ensure_ascii=False)
 
 
-from orchestrator.session.process import kill_process
+# F401 FALSE POSITIVE: 'kill_process' is a TOOL handler that BASE_TOOL_MAP_SPECS
+# resolves as a string expr eval'd against these globals -- deleting it kills the
+# import of this module, not just the tool.
+from orchestrator.session.process import kill_process  # noqa: F401
 
 
 def _fresh_basetemp() -> str:
@@ -6430,17 +6441,9 @@ from orchestrator.session.logs import (
     _log_to_file,
     _log_usage,
 )
-from orchestrator.session.logs import (
-    log_native as _session_log_native_impl,
-)
 from orchestrator.session.store import (
     TOOL_ACTION_MAP,
-    _make_natural_log_line,
     _session_project_key,
-    _session_started_today,
-)
-from orchestrator.session.store import (
-    _project_cache_dir as _session_project_cache_dir,
 )
 
 _SESSIONS_DB = _session_store_module._SESSIONS_DB
@@ -10728,7 +10731,6 @@ async def verify_get_footage_copy_completion(
       ca_next_action
     }
     """
-    import os as _os_v
     from datetime import datetime as _dt_v
     if not target_folder:
         return _json_error("target_folder required",
@@ -10847,7 +10849,6 @@ async def verify_get_footage_copy_completion(
     mismatch_drilldown: dict | None = None
     if not cross_check["matched"] and log_summary["log_exists"]:
         try:
-            import os as _os_md
             # Folder side: enumerate filenames (recursive when scan was recursive)
             folder_files = set()
             try:
@@ -11363,7 +11364,6 @@ async def parse_log_section(page_id: str, section_title: str,
     entries so CA doesn't manually decode.
     """
     import base64 as _b64
-    import re as _re_pl
 
     import tools_v15 as _v15_pl
     try:
@@ -15610,7 +15610,11 @@ async def cep_extension_status(project_path: str = "", live_name: str = "") -> s
     }, ensure_ascii=False)
 
 
-from orchestrator.tools.write import copy_file
+# F401 FALSE POSITIVE: registry_data.BASE_TOOL_MAP_SPECS names 'copy_file' as a STRING
+# expr that build_tool_map() eval()s against code_tools globals(), so ruff sees no
+# reference -- `ruff --fix` would delete it and the daemon would then die at import
+# with NameError. Keep the noqa.
+from orchestrator.tools.write import copy_file  # noqa: F401
 
 
 async def cep_deploy(project_path: str = "", live_name: str = "", files: list = None,

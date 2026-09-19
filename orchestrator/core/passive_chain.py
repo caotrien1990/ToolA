@@ -40,6 +40,20 @@ Three traps this file is written around:
   3. A predicate reads a value the probe never showed at a value level (only the key names
      one dict deep). Every predicate here is written so that an unexpected shape makes it
      stay SILENT: the failure mode is a missing hint, never a wrong one.
+
+A38 added the cbm read success paths, and measuring them moved three facts into this file:
+
+  * The whole cbm family answers under `result`, so every cbm trigger is a NESTED key and the
+    guard test records it in _PROBE_NESTED. A top-level trigger there would never fire.
+  * An oversize payload already carries its own `ca_next_action` (the R101 size wrapper stamps
+    truncated/result_ref/read_hint plus advice). The truthiness guard below therefore stands the
+    passive row down on exactly those payloads, by design -- the rows fire on the small success
+    payloads that had no advice at all, which is where the traffic ranking said the CAs were.
+  * MEASURED NON-COVERAGE, recorded so nobody adds the row later and calls it an oversight:
+    `cbm_quality_gate` -> `counts.unavailable > 0` has THREE different causes (missing_layers =
+    the caller's rules_toml, missing_file_line_counts = the caller's metrics dict,
+    missing_quality_factors = another tool's output). No single next_action is true for all
+    three, so there is no row -- same standing as the git_log gap.
 """
 
 from __future__ import annotations
@@ -93,6 +107,72 @@ def _positive_count(value) -> bool:
         return False
 
 
+def _inner(payload) -> dict:
+    """The cbm family answers under `result`; a non-dict there yields no keys, never a raise.
+
+    Every cbm trigger below is therefore a NESTED key, recorded in the guard test's
+    _PROBE_NESTED rather than _PROBE_SHAPES -- the same shape cbm_graph_status already had.
+    """
+    inner = payload.get("result")
+    return inner if isinstance(inner, dict) else {}
+
+
+def _gate_has_cycles(payload) -> bool:
+    """True when cbm_quality_gate measured cycles in the module graph.
+
+    Measured: a valid rules_toml returns `cycles` and `max_depth` beside the checks, while an
+    invalid_config payload (rules.py _cfg_error) has NEITHER -- so an absent key is a config
+    error, not zero cycles, and _positive_count keeps both of those silent.
+    """
+    return _positive_count(_inner(payload).get("cycles"))
+
+
+def _dsm_has_mutual_clusters(payload) -> bool:
+    """True when cbm_dsm found an A<->B component: [{files, internal_edges, level}, ...]."""
+    clusters = _inner(payload).get("clusters")
+    return isinstance(clusters, list) and bool(clusters)
+
+
+def _dsm_page_is_a_window(payload) -> bool:
+    """True when the page stops short of the matrix end on either axis.
+
+    dsm.py builds `page.rows = min(page_rows, size - row_start)`, so `start + span == size` is
+    exactly \"this axis is complete\" and needs no threshold guess. A non-int on either side is
+    a shape the probe never showed, so that axis is skipped rather than assumed.
+    """
+    inner = _inner(payload)
+    size = inner.get("size")
+    page = inner.get("page")
+    if isinstance(size, bool) or not isinstance(size, int) or size <= 0:
+        return False
+    if not isinstance(page, dict):
+        return False
+    for start_key, span_key in (("row_start", "rows"), ("col_start", "cols")):
+        start = page.get(start_key)
+        span = page.get(span_key)
+        if isinstance(start, bool) or isinstance(span, bool):
+            continue
+        if not isinstance(start, int) or not isinstance(span, int):
+            continue
+        if start + span < size:
+            return True
+    return False
+
+
+def _evolution_has_coupling(payload) -> bool:
+    """True when cbm_evolution returned co-change pairs: [{file_a, file_b, jaccard, ...}, ...]."""
+    coupling = _inner(payload).get("coupling")
+    return isinstance(coupling, list) and bool(coupling)
+
+
+def _what_if_applied_nothing(payload) -> bool:
+    """True only on the measured ok:true / applied:false shape (status unavailable, invalid_id).
+
+    Strict `is False` on purpose: an EMPTY ops list answers applied:true, and a missing key is
+    an unmeasured shape -- neither may fire.
+    """
+    return _inner(payload).get("applied") is False
+
 #: The passive chain table. First matching row wins, so order inside a tool is precedence.
 PASSIVE_CHAINS = (
     # read_file_range is 3478 of the 13406 measured calls -- by far the biggest gap. Two rows,
@@ -132,6 +212,46 @@ PASSIVE_CHAINS = (
         _graph_db_missing,
         "no CBM graph database: graph and coverage tools will answer on nothing",
         "cbm_incremental_index",
+    ),
+    # A38, probed live 2026-09-19 (script label a38_probe_cbm): the next four rows of the
+    # traffic ranking above -- 267 / 263 / 216 / 200 calls -- and every one answered hintless.
+    # Each trigger is a key a real call returned, and all of them sit under `result`, because
+    # that is where the whole cbm family answers.
+    PassiveChain(
+        "cbm_quality_gate", "cycles",
+        _gate_has_cycles,
+        "the gate COUNTED cycles without naming them: max_cycles says how many, not which",
+        "cbm_cycle_point",
+    ),
+    # clusters before page on purpose: _clusters() in orchestrator/graph/dsm.py runs over the
+    # whole ordered set, so a mutual-dependency finding is already complete when the page is a
+    # window. The read_file_range precedent (completeness first) does NOT transfer here --
+    # there truncation hid the very thing the CA read; here only `cells` is paged.
+    PassiveChain(
+        "cbm_dsm", "clusters",
+        _dsm_has_mutual_clusters,
+        "mutual-dependency clusters (A<->B): each is a cycle no level ordering can break",
+        "cbm_what_if",
+    ),
+    PassiveChain(
+        "cbm_dsm", "page",
+        _dsm_page_is_a_window,
+        "cells are one <=100x100 window of a larger matrix, not the whole DSM",
+        # Imperative, like the read_file_range row: without call/use/run the resolver drops a
+        # self-referential answer and the CA gets no ca_next_tool at all.
+        "call_cbm_dsm_on_the_next_page",
+    ),
+    PassiveChain(
+        "cbm_evolution", "coupling",
+        _evolution_has_coupling,
+        "co-change pairs by jaccard: a pair with no static edge is coupling the graph cannot see",
+        "cbm_edges_query",
+    ),
+    PassiveChain(
+        "cbm_what_if", "applied",
+        _what_if_applied_nothing,
+        "ok but nothing was simulated: an op named an id the graph view does not contain",
+        "cbm_nodes_query",
     ),
 )
 
