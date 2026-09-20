@@ -2150,7 +2150,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "skill_dir": {"type": "string", "default": "", "description": "target skills root for register"},
 
-            "skill_format": {"type": "string", "enum": ["folder", "agents_md_ref", "rule_file_append"], "default": "folder", "description": "folder=native SKILL.md copy to skill_dir (clau/codo/comc/hermes verified); agents_md_ref/rule_file_append=adapter that writes a managed skill reference into rule_file for AGENTS.md/rule-file agents (opencode/kilo); native load NOT assumed for adapters"},
+            "skill_format": {"type": "string", "enum": ["folder", "agents_md_ref", "rule_file_append"], "default": "folder", "description": "folder=native SKILL.md copy to skill_dir (clau/codo/hermes verified); agents_md_ref/rule_file_append=adapter that writes a managed skill reference into rule_file for AGENTS.md/rule-file agents (opencode/kilo); native load NOT assumed for adapters"},
 
             "mode": {"type": "string", "enum": ["A", "native"], "default": "", "description": "set_mode/register: A = [A]-first (DEFAULT for every CA), native = Anh-approved temporary opt-out; set_mode regenerates the agent's rule file immediately"},
 

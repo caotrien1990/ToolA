@@ -3709,7 +3709,8 @@ def _error_contract_meta(error_name: str, status: int) -> dict:
     }
 
 
-def _retry_sequence(tool_name: str, error_name: str, body: dict | None) -> list[dict]:
+def _retry_sequence(tool_name: str, error_name: str, body: dict | None,
+                    *, corrected_payload: dict | None = None) -> list[dict]:
     body = dict(body or {})
     project_path = body.get("project_path") or "D:/path/to/project"
     if tool_name == "read_file_range" and error_name == "INVALID_RANGE":
@@ -3768,9 +3769,22 @@ def _retry_sequence(tool_name: str, error_name: str, body: dict | None) -> list[
             {"tool": tool_name, "payload": body},
         ]
     if error_name == "UNSUPPORTED_FIELD":
+        # The body the caller sent is NOT a corrected payload. Replaying it verbatim
+        # re-sends the rejected field, and the duplicate-failure guard then answers
+        # DUPLICATE_RETRY_BLOCKED (measured on manage_agent + project_path), so the
+        # "retry once with corrected payload" step could never succeed -- it named a
+        # correction while carrying the uncorrected request. The schema gate already
+        # builds the one true retry body (alias mapping, then strip) and publishes it
+        # as corrected_payload; forward THAT rather than keep a second copy that has
+        # to be re-derived here and is wrong whenever it drifts. Fallback to body only
+        # for call sites that have no corrected_payload to hand (behaviour unchanged
+        # there).
         return [
             {"action": "remove unsupported field(s) per accepted_fields/accepted_aliases"},
-            {"tool": tool_name, "payload": body, "note": "retry once with corrected payload"},
+            {"tool": tool_name, "payload": dict(corrected_payload or body),
+             "note": ("retry once with THIS payload -- it is this response's "
+                      "corrected_payload; resending your original body earns "
+                      "DUPLICATE_RETRY_BLOCKED")},
         ]
     if error_name == "WRONG_ARGUMENTS":
         return [
@@ -4919,7 +4933,9 @@ def _error_response(tool_name: str, error: str, status: int, headers: dict,
         "hint": hint,
         "ca_next_action": ca_next_action,
         "payload_example": guidance.get("payload_example", {}),
-        "retry_sequence": extra.pop("retry_sequence", _retry_sequence(tool_name, error_name, body)),
+        "retry_sequence": extra.pop("retry_sequence", _retry_sequence(
+            tool_name, error_name, body,
+            corrected_payload=extra.get("corrected_payload"))),
         "ca_guidance": guidance,
         **extra,
     }
@@ -15324,7 +15340,9 @@ accepted_fields=sorted(accepted_fields),
                         if _mrf_detail not in _msg_old:
                             _result[_msg_key] = (
                                 f"{_msg_old} | {_mrf_detail}" if _msg_old else _mrf_detail)
-            _result.setdefault("retry_sequence", _retry_sequence(tool_name, err_name, body))
+            _result.setdefault("retry_sequence", _retry_sequence(
+                tool_name, err_name, body,
+                corrected_payload=_result.get("corrected_payload")))
             _result.setdefault("ca_guidance", _ca_guidance(tool_name, err_text, body, err_name))
             if tool_name == "read_file_range" and err_name == "INVALID_RANGE":
                 # Error-specific range example wins over the generic function example.

@@ -106,11 +106,7 @@ Do not put Python compile/restart after apply sync. Python compile/restart/live-
 Verify with bounded search in:
 
 - canonical files under `[A:P]`.
-- `C:\Users\ADMIN\.codex`
-- `C:\Users\ADMIN\.claude`
-- `C:\Users\ADMIN\.commandcode`
-- `C:\Users\ADMIN\.config\opencode`
-- `C:\Users\ADMIN\AppData\Local\hermes`
+- every `rule_file` path reported by the live `manage_agent(action='sync_rule', target='all', dry_run=true)` -- that dry-run IS the list and `agents_registry.json` is its SOT. Never verify against a path set written down here: it drifts both ways at once. Measured 2026-09-20: the live target set is 10 files, while the hardcoded list this line replaced named `C:\Users\ADMIN\.commandcode` (retired id `comc`, absent from the registry, `AGENTS.md` last written 2026-07-15, receives no sync) and omitted 6 registered targets -- so following it checked 4 live paths out of 10 plus one dead one and then reported "propagation verified".
 
 Required report:
 
