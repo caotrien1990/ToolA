@@ -48,6 +48,9 @@ Before editing, query/read these sources with bounded search:
 - `agents_registry.json`
 - `code_tools.py`
 - `orchestrator_server.py`
+- `orchestrator/core/registry_data.py` -- tool and field `description` text; a description may name specific agents or counts.
+- `orchestrator/core/ca_policy_matrix.py` -- worker-id / desktop-id tuples and per-agent gates.
+- `examples/SLIM_RULE.txt` -- the PRODUCER `sync_rule` renders every CA rule file from; one stale sentence here becomes one stale rule file per registered agent.
 
 For `code_tools.py`, check these areas when relevant:
 
@@ -70,7 +73,7 @@ If no Python change is needed, explicitly record: `Python checked; no backend/sc
 
 Before any sync, run a bounded diff/stale-reference pass against canonical files:
 
-- Check `git diff -- .council .ToolA_Skill code_tools.py orchestrator_server.py agents_registry.json` or an equivalent bounded diff if git scope is unavailable.
+- Check `git diff -- .council .ToolA_Skill agents_registry.json code_tools.py orchestrator_server.py orchestrator/core examples` or an equivalent bounded diff if git scope is unavailable. `orchestrator/core/` and `examples/` are the two paths easiest to omit and both hold PRODUCERS (see Drift Location Map), so a diff that skips them reports a clean tree while a rule enum or a tool description is stale.
 - Search for stale route/model/worker names introduced or removed by the change, for example old provider ids, removed worker slots, old trigger wording, and obsolete fallback text.
 - If stale references remain in `code_tools.py` or `orchestrator_server.py`, fix them before sync. Do not assume `council_config_diff` is enough; it only checks generated council docs, not Python fallback constants.
 - If `council_config_diff` is available, run it after canonical config/doc edits and record the result.
@@ -130,3 +133,61 @@ Required report:
 - `sync_rule` can overwrite adapter skill references, so adapter sync must run after rule sync.
 - `council_worker_model` accepts only `action`, `agent`, optional `provider`, and `model`; never use `slot`. Normal routing sets only `agent` + `model` because backend keeps/derives provider from config.
 - Updating guidance without checking `code_tools.py` / `orchestrator_server.py` can leave live API behavior inconsistent with rules.
+
+## Drift Location Map (complete)
+
+A clean drift sweep is not a clean surface. Measured 2026-09-20: `audit_tool_matrix` answered
+`drift 0 / alias_drift 0 / progressive_gaps 0` with `258 = 258 = 258` tools, `rule_drift_check`
+answered `20 rows, 100% info` (its baseline), and `manage_agent(sync_mcp, dry_run)` answered
+`10/10 ok` -- while **4 real drifts were open at that moment**. All three compare
+**code <-> schema <-> registry**; not one of them opens a doc, a skill body, or a rule file and
+reads its prose. The three tools clear class A only. They are the start of the sweep, never the end.
+
+Sweep all three classes, in this order. For each the rule is the same: ask the call that PRODUCES
+the set, never a path/id list copied into a doc -- a copy drifts in BOTH directions at once and
+that is exactly why it reads as correct (see Verification above).
+
+**Class A -- machine-checkable.** `audit_tool_matrix` is `scope: runtime_only` and says so in its
+own `scope_note`: it does not parse `.py` on disk, so `drift_count=0` means the RUNNING process is
+self-consistent, not that disk matches it. Run it AFTER the restart or it grades the old process.
+- `audit_tool_matrix` -- code_tools vs schema vs inventory, alias drift, progressive gaps.
+- `rule_drift_check` -- `checks_run` = agent_list, behavior_sets, constants, tool_names. Row list
+  is `drifts` (plural), not `drift`.
+- `manage_agent(action='sync_mcp', target='all', dry_run=true)` -- the [A] MCP block per agent.
+
+**Class B -- live code that hardcodes an id, a name or a count. No check reads these; grep them.**
+- `orchestrator/core/registry_data.py` -- tool and field `description` text, which may name
+  specific agents; measured, one named a retired id for months. After editing, confirm the daemon
+  SERVES your bytes (`GET /api/tools/<tool>/schema`): a later layer in `code_tools.py` can override
+  this file, so a correct edit here is not automatically the served text.
+- `orchestrator/core/ca_policy_matrix.py` -- worker-id and desktop-id tuples, per-agent host gates.
+- `orchestrator_server.py` -- council roster / label / default-provider-model tables, per-agent CLI
+  branches and output parsers, and the dashboard order tuple guarded by a set-equality assert that
+  fails loudly on drift.
+- `code_tools.py` -- agent names embedded in `reason`/`note` strings returned to a CA.
+- `examples/SLIM_RULE.txt` -- also a PRODUCER: `sync_rule` renders every CA rule file from it, so
+  one stale sentence here becomes 10 stale rule files at the next sync.
+
+**Class C -- prose. No check, and not all of it is drift.**
+- `.ToolA_Skill/skills/**/SKILL.md` and `.ToolA_Skill/SKILLS.md` -- routing lists, verification
+  lists, restart instructions, id enums.
+- `.council/council_config.json` (`agents` / `roster_order` / `messaging_to_enum`) and
+  `.council/council_rule_leader.md` -- presence here means a worker is treated as LIVE.
+- Historical council artifacts (`.council/BENCHMARK_*`, round reports, transcripts, `outputs/`) are
+  EVIDENCE, not drift. Do not "clean" them: deleting a pointer deletes the measurement that
+  justified a decision.
+
+**Propagation is part of the sweep, not a follow-up.** A canonical edit under
+`.ToolA_Skill/skills/` is live for nobody until `sync_skill` runs. Measured on two skill files: of
+10 targets, 9 had no copy at all and the single target that did have one held the STALE (buggy)
+copy. Two traps in that measurement: the dry-run `reason` says `would copy (native folder)` for
+every target whether or not anything differs, so it is NOT evidence that propagation is owed --
+hash-compare the destination instead; and a `sync_skill` row names its destination `target`
+(already the full skill-folder path), not `skill_dir`, so guessing that key prints nothing for all
+10 rows and invites the exact opposite conclusion.
+
+**Close-out gate.** Before reporting a clean sweep, report per class: A = the three tool answers
+plus the `generation` they came from; B = which files were grepped and for which id/name/count;
+C = which prose files were read, and which mentions were deliberately KEPT as evidence. A sweep
+that reports only class A is reporting 1 of 3, which is how "drift 0" and "4 drifts still open"
+were both true on the same day.

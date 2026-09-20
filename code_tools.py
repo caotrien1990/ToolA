@@ -16439,11 +16439,33 @@ async def manage_agent(action: str, agent_id: str = "", target: str = "all",
         reg = _load_agents_registry()
         agents = reg.setdefault("agents", {})
         act = (action or "").strip().lower()
+
+        def _ma_require_agent_id(_act: str, _aid: str, _target: str, _agents: dict):
+            """A40 — get/set_mode/unregister read ``agent_id``; only sync_* read
+            ``target``. An empty agent_id is a MISSING field, not an unsupported
+            one: naming it UNSUPPORTED_FIELD handed the CA a corrected_payload
+            that still carried ``agent_id=""``, so the prescribed retry could only
+            fail identically and the attempt after it earned
+            DUPLICATE_RETRY_BLOCKED. Returns an error string, or None to proceed."""
+            if not _aid:
+                _moved = _target if _target and _target != "all" and _target in _agents else ""
+                _msg = f"agent_id required for {_act}"
+                if _moved:
+                    _msg += (f"; you passed target='{_moved}' -- {_act} ignores target, "
+                             f"resend with agent_id='{_moved}'")
+                return _json_error(_msg, error_name="MISSING_REQUIRED_FIELD",
+                                   accepted_fields=["agent_id"])
+            if _aid not in _agents:
+                return _json_error(f"agent not registered: {_aid}",
+                                   error_name="UNSUPPORTED_FIELD",
+                                   accepted_fields=sorted(_agents.keys()))
+            return None
         if act == "list":
             return json.dumps({"ok": True, "agents": list(agents.keys()), "registry_path": str(_AGENTS_REGISTRY_PATH)}, ensure_ascii=False)
         if act == "get":
-            if agent_id not in agents:
-                return _json_error(f"agent not registered: {agent_id}", error_name="UNSUPPORTED_FIELD")
+            _bad = _ma_require_agent_id(act, agent_id, target, agents)
+            if _bad:
+                return _bad
             return json.dumps({"ok": True, "agent": {"id": agent_id, **agents[agent_id]}}, ensure_ascii=False)
         if act == "register":
             if not agent_id:
@@ -16466,8 +16488,9 @@ async def manage_agent(action: str, agent_id: str = "", target: str = "all",
             _save_agents_registry(reg)
             return json.dumps({"ok": True, "registered": agent_id, "agent": rec}, ensure_ascii=False)
         if act == "set_mode":
-            if not agent_id or agent_id not in agents:
-                return _json_error(f"agent not registered: {agent_id}", error_name="UNSUPPORTED_FIELD")
+            _bad = _ma_require_agent_id(act, agent_id, target, agents)
+            if _bad:
+                return _bad
             m = (mode or "").strip().lower()
             if m not in ("a", "native"):
                 return _json_error("mode must be 'A' or 'native'", error_name="UNSUPPORTED_FIELD",
@@ -16484,8 +16507,9 @@ async def manage_agent(action: str, agent_id: str = "", target: str = "all",
                                         if new_mode == "native" else "[A]-first restored")},
                               ensure_ascii=False)
         if act == "unregister":
-            if not agent_id or agent_id not in agents:
-                return _json_error(f"agent not registered: {agent_id}", error_name="UNSUPPORTED_FIELD")
+            _bad = _ma_require_agent_id(act, agent_id, target, agents)
+            if _bad:
+                return _bad
             rec = dict(agents[agent_id])
             cleaned: dict = {}
             if dry_run:

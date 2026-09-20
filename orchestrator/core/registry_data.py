@@ -2122,13 +2122,13 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["page_id"]),
 
-    ('manage_agent', "R86 T3: central multi-agent config manager. actions: register (upsert agent into agents_registry.json), list, get, sync_rule (rewrite global-rule body for target id or 'all', persona line preserved), sync_mcp (rewrite project-orchestrator MCP block; formats json/vscode/toml), sync_skill (native: copy canonical .ToolA_Skill/skills/<skill_name> folder to each target agent skill_dir when skill_format=folder, verified for clau/codo/comc/hermes; adapter: skill_format=agents_md_ref/rule_file_append writes a managed skill reference into rule_file for AGENTS.md/rule-file agents like opencode/kilo — adapter writes only when target is an explicit id + dry_run=false, else reports adapter_needed; agents with neither verified skill_dir nor rule_file report not_verified — never not_supported). backup .bak_ma; validates SKILL.md + canonical source. Auto-backup + validate + rollback on failure. dry_run=true previews.", {
+    ('manage_agent', "R86 T3: central multi-agent config manager. actions: register (upsert agent into agents_registry.json), unregister, list, get, set_mode, sync_rule (rewrite global-rule body for target id or 'all', persona line preserved), sync_mcp (rewrite project-orchestrator MCP block; formats json/vscode/toml), sync_skill (native: copy canonical .ToolA_Skill/skills/<skill_name> folder to each target agent skill_dir when skill_format=folder -- native copy is verified for any agent whose registry row has a real skill_dir, so read agents_registry.json rather than an id list; adapter: skill_format=agents_md_ref/rule_file_append writes a managed skill reference into rule_file for agents that have a rule_file but no skill_dir -- adapter writes only when target is an explicit id + dry_run=false, else reports adapter_needed; agents with neither report not_verified -- never not_supported). backup .bak_ma; validates SKILL.md + canonical source. Auto-backup + validate + rollback on failure. dry_run=true previews.", {
 
             "action": {"type": "string", "enum": ["register", "unregister", "list", "get", "set_mode", "sync_rule", "sync_mcp", "sync_skill"]},
 
-            "agent_id": {"type": "string", "default": ""},
+            "agent_id": {"type": "string", "default": "", "description": "the agent for register/unregister/get/set_mode; those four ignore target. agents_registry.json is SOT for valid ids."},
 
-            "target": {"type": "string", "default": "all", "description": "agent id or 'all' for sync_*"},
+            "target": {"type": "string", "default": "all", "description": "sync_rule/sync_mcp/sync_skill ONLY: one agent id or 'all'. register/unregister/get/set_mode ignore target and read agent_id."},
 
             "persona": {"type": "string", "default": ""},
 
@@ -2150,7 +2150,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "skill_dir": {"type": "string", "default": "", "description": "target skills root for register"},
 
-            "skill_format": {"type": "string", "enum": ["folder", "agents_md_ref", "rule_file_append"], "default": "folder", "description": "folder=native SKILL.md copy to skill_dir (clau/codo/hermes verified); agents_md_ref/rule_file_append=adapter that writes a managed skill reference into rule_file for AGENTS.md/rule-file agents (opencode/kilo); native load NOT assumed for adapters"},
+            "skill_format": {"type": "string", "enum": ["folder", "agents_md_ref", "rule_file_append"], "default": "folder", "description": "folder=native SKILL.md copy into the agent's registry skill_dir; agents_md_ref/rule_file_append=adapter that writes a managed skill reference into rule_file, for agents that have a rule_file but no skill_dir. Which agent is which comes from agents_registry.json, never from an id list in this text. Native load is NOT assumed for adapters."},
 
             "mode": {"type": "string", "enum": ["A", "native"], "default": "", "description": "set_mode/register: A = [A]-first (DEFAULT for every CA), native = Anh-approved temporary opt-out; set_mode regenerates the agent's rule file immediately"},
 
