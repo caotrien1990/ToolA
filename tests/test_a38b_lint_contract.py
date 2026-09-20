@@ -108,12 +108,41 @@ def test_the_ruff_toml_baseline_block_still_matches_the_live_counts():
     add a module-level import and E402 moves, this fails, and the note gets the real number --
     which is the opposite of a digit sitting in a comment with no test behind it."""
     baseline = _note_baseline()
-    assert len(baseline) == 5, (
-        "expected 5 rule lines in the ruff.toml baseline block, parsed %r -- the block was edited "
-        "into a shape this test can no longer read" % baseline)
+    assert len(baseline) == 8, (
+        "expected 8 rule lines in the ruff.toml baseline block (5 from A38-B round 1 plus the E7 "
+        "one-liner family E701/E702/E741 from round 2), parsed %r -- the block was edited into a "
+        "shape this test can no longer read" % baseline)
     live = {rule: _count(rule) for rule in baseline}
     assert live == baseline, "ruff.toml baseline is stale: live=%r note=%r" % (live, baseline)
 
 
 def test_the_note_says_out_loud_that_a_wider_run_is_not_the_gate():
     assert "OUT OF GATE BY DESIGN" in RUFF_TOML.read_text(encoding="utf-8")
+
+
+def test_the_e7_one_liner_family_is_silenced_by_scope_not_by_line_noise():
+    """A38-B round 2. Of 61 E701/E702 sites across code_tools.py and tools_v15.py, 59 were READ and
+    kept as deliberate compact style (try/except one-liners in the T4 shims, aligned assignment
+    tables, aligned dispatch returns) and 2 were real defects that got fixed. The root fix for the
+    59 is the `[lint.per-file-ignores]` table in ruff.toml, NOT 59 per-line suppressions: a comment
+    cannot stop the next CA from running a wider --select, but ruff answering zero can.
+
+    Note the missing `--isolated` here -- that is the whole point. This run reads ruff.toml, so it
+    measures the table. The baseline test above keeps its `--isolated`, so the raw counts stay
+    visible and honest instead of being laundered away by the same table.
+    """
+    proc = _ruff(TARGET, "tools_v15.py", "--select", "E701,E702,E741")
+    assert proc.returncode == 0, (
+        "ruff still reports the E7 family on the two ignored files -- the per-file-ignores table in "
+        "ruff.toml was removed, renamed or narrowed:\n%s" % proc.stdout)
+
+
+def test_that_e7_ignore_is_scoped_and_hides_nothing_else():
+    """Positive control for the test above. Widen the table to the whole repo and the E7 family
+    disappears everywhere while that test still passes -- a suppression quietly hiding findings
+    nobody measured. Measured 2026-09-20: 441 sites live outside the two named files.
+    """
+    proc = _ruff(".", "--select", "E701,E702,E741", "--statistics")
+    assert proc.returncode != 0, (
+        "the whole repo now reports zero E701/E702/E741 -- the per-file-ignores entry was widened "
+        "past code_tools.py and tools_v15.py, which turns a scoped note into a blanket suppression")

@@ -3785,7 +3785,7 @@ async def read_all_logs(page_id: str, panels: list | None = None,
         if entry.get("found_title") and not entry.get("area_found"):
             hint = f"Title '{title}' found but no '.{area_class}' ancestor — section uses different layout"
         elif entry.get("area_found") and not entry.get("body_found"):
-            hint = f"Section exists but contains no textarea/pre/.log-body — likely uses div+textContent. Try evaluate_js inspection or describe_page tool."
+            hint = "Section exists but contains no textarea/pre/.log-body — likely uses div+textContent. Try evaluate_js inspection or describe_page tool."
         out[title] = {
             "found_title": entry.get("found_title", False),
             "area_found": entry.get("area_found", False),

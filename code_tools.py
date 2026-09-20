@@ -7367,7 +7367,7 @@ async def get_usage_stats(project_path: str = "", last_n: int = 200,
     if log_path.exists():
         try:
             raw_lines = log_path.read_text(encoding="utf-8").splitlines()
-            entries = [json.loads(l) for l in raw_lines[-last_n:] if l.strip()]
+            entries = [json.loads(line) for line in raw_lines[-last_n:] if line.strip()]
             source = "APP_SESSION_LOG.jsonl"
         except Exception as e:
             return _json_error(f"Failed to read session log: {e}")
@@ -8986,7 +8986,12 @@ async def begin_task(session_id: str, prompt: str, agent_id: str = "", max_chars
             return reject("valid root owner capability is required", "TASK_OWNER_MISMATCH", owner_agent_id=root,
                           ca_next_action="use_server_issued_owner_capability")
         replacement = dict(previous)
-        if status == "pending": replacement["owner_claim_status"] = "committed"; replacement.pop("owner_claim_expires_at", None)
+        if status == "pending":
+            # Both statements are inside this if. They used to share one line via `;`, where
+            # the pop() reads as unconditional -- splitting only the first one off would have
+            # silently changed behaviour. Keep them as an indented block.
+            replacement["owner_claim_status"] = "committed"
+            replacement.pop("owner_claim_expires_at", None)
         delegate = str(delegate_agent_id or "").strip()
         if delegate:
             if delegate == incoming: return reject("delegate_agent_id must differ from root owner", "INVALID_DELEGATION")

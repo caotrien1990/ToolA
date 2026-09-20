@@ -35,3 +35,39 @@ select = ['E9', 'F63', 'F7']
 # E501 (~1423) and BLE001 (~282) are the two loud style families. They are
 # legacy debt, deliberately unselected, and re-measuring them proves nothing.
 # ---------------------------------------------------------------------------
+#
+# A38-B round 2, measured 2026-09-20. The E7 one-liner family, and why the fix
+# is a scoped ignore instead of 59 edits:
+#
+#   E701  17  code_tools.py -- multiple statements on one line (colon)
+#   E702   6  code_tools.py -- multiple statements on one line (semicolon)
+#   E741   0  code_tools.py (was 1: the app-session-log reader bound the loop
+#             variable to a single lowercase L, which reads as 1 or I; renamed.
+#             That one WAS a real defect, and it is fixed, not ignored)
+#
+# tools_v15.py carries 31 more E701 and 4 more E702 of the same shape. Every one
+# of the 59 survivors was READ before being kept: try/except one-liners in the
+# T4 desktop shims, aligned assignment tables, and aligned dispatch returns
+# where the column alignment IS the documentation. Splitting them changes no
+# behaviour, doubles the line count, and destroys that alignment.
+#
+# Exactly two of the 61 sites were real defects and both are fixed: the rename
+# above, and the single line that carried BOTH rules at once --
+# `if status == "pending": a = ...; b.pop(...)` -- where the semicolon made the
+# pop() read as unconditional. That one is now a properly indented block.
+#
+# THE ROOT FIX IS THE TABLE BELOW, not a per-line suppression. A comment cannot
+# stop the next CA from running a wider --select and re-opening a measurement
+# that is already closed; a per-file-ignores entry makes ruff itself answer
+# zero. MEASURED 2026-09-20: per-file-ignores wins over a CLI --select (two
+# byte-identical probe files, one listed in the table and one not -- the listed
+# one reported 0, the other reported 3). The entry is scoped to these two files
+# and to these two rules, so it cannot hide anything anywhere else, and the
+# enforced gate above (E9/F63/F7) is untouched by it.
+# The counts above stay honest because tests/test_a38b_lint_contract.py
+# re-measures them with --isolated, which deliberately bypasses this table.
+# ---------------------------------------------------------------------------
+
+[lint.per-file-ignores]
+'code_tools.py' = ['E701', 'E702']
+'tools_v15.py' = ['E701', 'E702']
