@@ -55,6 +55,15 @@ def _run_probe(**kw):
         _ROOT, _PROBE, runtime="python", script_label="a35_probe", **kw)))
 
 
+def _restore_env(name, prior):
+    """Restore an env var, never pop it: popping an INHERITED value silently
+    changes what every later test in this process sees, which is how an env
+    assertion turns order-dependent. Measured 2026-09-20."""
+    if prior is None:
+        os.environ.pop(name, None)
+    else:
+        os.environ[name] = prior
+
 # ── (a) the python child's stdout codec ──────────────────────────────────────
 
 def test_a35_python_child_encodes_vietnamese_instead_of_dying():
@@ -74,24 +83,53 @@ def test_a35_python_child_encodes_vietnamese_instead_of_dying():
 
 
 def test_a35_child_encoding_is_disclosed_not_silent():
-    """A CA must be able to tell a forced codec from a lucky one."""
+    """A CA must be able to tell a forced codec from a lucky one.
+
+    BOTH vars are set with setdefault (code_tools.py:8720-8721), so the PARENT
+    wins whenever it already exports one -- that is the documented contract,
+    and the two tests below pin both of its halves. This test therefore reads
+    the parent env instead of hardcoding "utf-8": measured 2026-09-20, a shell
+    exporting PYTHONIOENCODING=utf-8:surrogateescape made the hardcoded form
+    fail while the child was obeying the contract exactly -- a false defect
+    report costing a full suite round to disprove.
+    """
     out = _run_probe(timeout=60)
     note = out.get("child_encoding")
     assert isinstance(note, dict), out.keys()
-    assert note["PYTHONIOENCODING"].lower() == "utf-8"
-    assert note["PYTHONUTF8"] == "1"
+    want_ioenc = os.environ.get("PYTHONIOENCODING") or "utf-8"
+    want_utf8 = os.environ.get("PYTHONUTF8") or "1"
+    assert note["PYTHONIOENCODING"].lower() == want_ioenc.lower(), (want_ioenc, note)
+    assert note["PYTHONUTF8"] == want_utf8, (want_utf8, note)
     assert "UnicodeEncodeError" in note["why"]
     assert "PYTHONIOENCODING" in note["override"]
 
 
 def test_a35_forced_codec_uses_setdefault_so_a_caller_can_still_win():
     """setdefault, not assignment: an [A]-level env var must keep priority."""
+    prior = os.environ.get("PYTHONIOENCODING")
     os.environ["PYTHONIOENCODING"] = "latin-1"
     try:
         out = _run_probe(timeout=60)
         assert out["child_encoding"]["PYTHONIOENCODING"] == "latin-1", out["child_encoding"]
     finally:
-        os.environ.pop("PYTHONIOENCODING", None)
+        _restore_env("PYTHONIOENCODING", prior)
+
+
+def test_a35_forced_codec_defaults_to_utf8_when_the_parent_exports_nothing():
+    """The other half of the same contract, pinned independently of the shell.
+
+    The test above pins "an exported codec wins"; this one pins "parent silent
+    -> utf-8" by clearing the var first. With only one of the two, a run whose
+    shell happened to export a codec could not tell a working default from a
+    missing one.
+    """
+    prior = os.environ.get("PYTHONIOENCODING")
+    os.environ.pop("PYTHONIOENCODING", None)
+    try:
+        out = _run_probe(timeout=60)
+        assert out["child_encoding"]["PYTHONIOENCODING"].lower() == "utf-8", out["child_encoding"]
+    finally:
+        _restore_env("PYTHONIOENCODING", prior)
 
 
 # ── (a) gap #3: the transport ceiling is disclosed, not enforced ─────────────
