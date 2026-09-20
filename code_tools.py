@@ -8066,13 +8066,26 @@ _DESTRUCTIVE_EMBEDDED_SHELL = [
 # PowerShell aliases matter as much as the cmdlet names: rm / del / ri / rd /
 # rmdir / erase are all Remove-Item, and a guard that only knew "Remove-Item"
 # would wave through ``rm -Recurse -Force $dir``.
+#
+# CASE-2008 follow-up, measured 2026-09-20 (Anh/ClauLTN): the statement-start
+# anchor must allow LEADING WHITESPACE. The scan below is per-LINE
+# (``re.search(pattern, line)``), so a bare ``^`` demanded column 0 -- and every
+# real script indents its statements inside ``if`` / ``foreach`` / ``try``. An
+# indented ``Move-Item`` or ``clc`` therefore scored destructive_count=0, ran
+# with ``confirm_destructive`` unspent and took no pre-run backup: CASE-2008
+# again, one indent level deeper. ``Remove-Item`` and ``Clear-Content`` were
+# rescued by their bare-word companions below; ``clc``, ``Move-Item``/``mi``/
+# ``move``/``mv`` and the whole ``sh`` list had none, so ``Move-Item`` gets one
+# too. ``^\s*`` is strictly widening: a leading ``#`` still fails to match, so
+# a commented-out line stays uncounted.
 _DESTRUCTIVE_PATTERNS = {
     "powershell": [
-        (r"(?i)(?:^|[;|&{(]\s*)(?:Remove-Item|ri|rm|rmdir|rd|del|erase)\b", "remove_item"),
+        (r"(?i)(?:^\s*|[;|&{(]\s*)(?:Remove-Item|ri|rm|rmdir|rd|del|erase)\b", "remove_item"),
         (r"(?i)\bRemove-Item(?:Property)?\b", "remove_item"),
         (r"(?i)\bClear-Content\b", "clear_content"),
-        (r"(?i)(?:^|[;|&{(]\s*)clc\b", "clear_content"),
-        (r"(?i)(?:^|[;|&{(]\s*)(?:Move-Item|mi|move|mv)\b", "move_item"),
+        (r"(?i)(?:^\s*|[;|&{(]\s*)clc\b", "clear_content"),
+        (r"(?i)(?:^\s*|[;|&{(]\s*)(?:Move-Item|mi|move|mv)\b", "move_item"),
+        (r"(?i)\bMove-Item\b", "move_item"),
         (r"(?i)\[(?:System\.)?IO\.(?:File|Directory)\]::Delete", "dotnet_delete"),
         (r"(?i)\.Delete\s*\(", "dotnet_instance_delete"),
         (r"(?i)\b(?:Format-Volume|Clear-Disk|Remove-Partition|Initialize-Disk)\b", "disk_destructive"),
@@ -8097,9 +8110,9 @@ _DESTRUCTIVE_PATTERNS = {
         (r"\b(?:remove|unlink|rmdir|removedirs|truncate)\s*\(", "os_remove"),
     ],
     "sh": [
-        (r"(?:^|[;|&(]\s*)rm\b", "rm"),
-        (r"(?:^|[;|&(]\s*)rmdir\b", "rmdir"),
-        (r"(?:^|[;|&(]\s*)(?:mv|dd|shred|mkfs\S*)\b", "sh_destructive"),
+        (r"(?:^\s*|[;|&(]\s*)rm\b", "rm"),
+        (r"(?:^\s*|[;|&(]\s*)rmdir\b", "rmdir"),
+        (r"(?:^\s*|[;|&(]\s*)(?:mv|dd|shred|mkfs\S*)\b", "sh_destructive"),
         (r"-delete\b", "find_delete"),
     ],
 }
@@ -8365,7 +8378,7 @@ def _scan_destructive_script(script_content: str, runtime: str) -> dict:
             if line_no in folded_prose:
                 continue
             is_remove = re.search(
-                r"(?i)(?:^|[;|&{(]\s*)(?:Remove-Item|ri|rm|rmdir|rd|del|erase)\b", line
+                r"(?i)(?:^\s*|[;|&{(]\s*)(?:Remove-Item|ri|rm|rmdir|rd|del|erase)\b", line
             ) or re.search(r"(?i)\bRemove-Item\b", line)
             if not is_remove:
                 continue
