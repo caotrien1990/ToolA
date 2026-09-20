@@ -202,10 +202,21 @@ self-consistent, not that disk matches it. Run it AFTER the restart or it grades
   and the transport line naming which workers are HTTP-only. The greeting lists drift the OTHER way
   too -- the leader list had never included the live GroC. Rewriting a line also clears the
   double-encoded `ChA o` mojibake sitting in both files.
-- Three literal markers are REQUIRED in each of those two docs (`code_tools.py:16849-16853`): a
-  no-cost-chain phrase, `not the default leader`, and `ClauC is outside the normal routing order`.
-  An edit that drops one flips the doc to `drift` for a reason that has nothing to do with the
-  roster, so re-grep the three after any rewrite.
+- Three literal markers are REQUIRED in each of those two docs. The live checks sit at
+  `code_tools.py:16871-16875`, with the retired-label word-boundary scan just above at 16869-16870
+  and the roster/retired reads at 16851-16853. An earlier version of THIS skill anchored them at
+  `16849-16853` and was wrong -- a `file:line` anchor is exactly what the `constants` blind spot
+  below cannot check, so the skill drifted against the code it documents.
+- Each marker accepts SEVERAL literal variants, all matched lowercased, so grep for ANY variant and
+  never for the single phrase: no-cost-chain accepts `no fixed chain`, `no cost chain`,
+  `no fixed cost chain` or `do not use a cost chain`; the CodoC marker accepts `not default leader`
+  or `not the default leader`; the ClauC marker accepts `clauc is excluded from normal routing
+  order`, `clauc is outside the normal routing order` or `clauc is outside normal routing order`.
+  Probing for one hand-picked phrase produces a FALSE marker gap: measured 2026-09-20, a probe
+  reported 2 markers missing from both docs while `council_config_diff` correctly answered
+  `in_sync` with 0 drift. The tool is authoritative; a hand probe that disagrees is the suspect.
+  An edit that drops every variant of one marker flips the doc to `drift` for a reason that has
+  nothing to do with the roster, so re-grep all three after any rewrite.
 - Historical council artifacts (`.council/BENCHMARK_*`, round reports, transcripts, `outputs/`) are
   EVIDENCE, not drift. Do not "clean" them: deleting a pointer deletes the measurement that
   justified a decision.
@@ -219,8 +230,100 @@ hash-compare the destination instead; and a `sync_skill` row names its destinati
 (already the full skill-folder path), not `skill_dir`, so guessing that key prints nothing for all
 10 rows and invites the exact opposite conclusion.
 
+**Tool Coverage Map -- what each drift tool READS, and what it therefore cannot see.** Measured
+2026-09-20 from the source plus a live call on daemon generation `068475af0aaf`. A tool whose NAME
+contains `drift`/`audit`/`check` is no evidence it checks drift: the 26 tools matching those
+fragments include a git-worktree probe and an HTML version scraper. Pick by what the tool OPENS,
+and for every blind spot below the manual step is the only coverage that exists.
+
+- `rule_drift_check` opens exactly THREE files -- `RULE_DRIFT_SOURCES` at
+  `code_tools.py:3235-3239` = `examples/CORE_RULE.txt`, `examples/SLIM_RULE.txt`,
+  `examples/SLIM_RULE_INLINE.txt`. Every rule text OUTSIDE `examples/` (the 10 rendered CA rule
+  files, `.council/*.md`, every `SKILL.md`) is invisible to all four of its checks. Manual: grep
+  those paths yourself, per classes B and C above.
+  - `tool_names` (`:4737`) matches by POSITION only: `` `tool(`` and `/api/call/<tool>`. A stale
+    tool named in prose as bare `` `tool` `` is deliberately NOT flagged -- that change removed 16
+    false positives out of 16. The one exception is a name in `_DEPRECATED_TOOLS`, which is a
+    ONE-member set (`electron_devtools_log`, `:17198`), so a freshly deprecated alias stays
+    unchecked until it is added there. Manual: after renaming or retiring a tool, grep the rule
+    files for the BARE name and add the old name to `_DEPRECATED_TOOLS`.
+  - `agent_list` (`:4787`) is blind in BOTH directions. The id list is HARDCODED at `:4796` --
+    `\b(clau|codo|gro|pic|ope|hermes|kilo|cozo)\b` -- so `fbuf`, `claultnai` and `zcode` are live
+    registry ids this regex can never match: a stale mention of them cannot be reported at all.
+    And the config side reads `cfg["agents"].keys()` WITHOUT the `enabled` filter, so a row retired
+    the approved way (`enabled: false`) still counts as present and a rule file may keep routing to
+    it at severity zero. Those two facts together are the other half of "drift bao 0 nhung kiem tra
+    lai con drift". Manual: take the id set from `manage_agent(action='list')` +
+    `agents_registry.json`, intersect it with the `enabled: true` rows of `council_config.json`, and
+    grep every retired id yourself with a word boundary.
+  - `behavior_sets` (`:4805`) opens NO file -- it is code vs code (`_MUTATION_SCOPE_MAP`,
+    `TOKEN_REQUIRED_TOOLS`, `PROTECTED_TOOL_NAMES` vs `TOOL_MAP`, `tool_mutation_scope`,
+    `tool_phase`). It is also where 100% of the live rows come from: 20 rows, all `info`, all the
+    CAN-012 decoupled-by-design baseline. So `drift_count: 20` is the FLOOR of a healthy surface and
+    no doc drift can ever raise it. Compare the row count PER CHECK, never the total.
+  - `constants` (`:4827`) checks exactly four values: `MAX_READ_LINES`, `MAX_READ_LINES_HARD_CAP`,
+    `MAX_SEARCH_RESULTS`, and `PORT` scraped out of `orchestrator_server.py` (8082 whitelisted as
+    the compat port). Every other number a rule states -- tool counts, agent counts, `file:line`
+    anchors, sha prefixes, day counts -- is unchecked. Manual: re-measure each digit you write, or
+    state the UNIT and the producing call instead of the digit.
+- `audit_tool_matrix` is `scope: runtime_only` by its own `scope_note`: it compares the in-memory
+  `TOOL_MAP`/`TOOL_SCHEMAS` against `.md` docs and NEVER parses `.py` on disk. `drift_count=0`
+  proves the RUNNING process is self-consistent, not that your edit is in it. Manual: restart [A],
+  re-run it, and quote the `generation` the answer came from.
+- `architecture_audit_compact` is a ~30-line DIGEST of that same matrix audit (plus alias drift,
+  progressive gaps, inventory classification). It inherits the runtime_only blind spot exactly and
+  opens no additional file: using it INSTEAD of the matrix saves ~4500 tokens and widens nothing.
+- `progressive_matrix_check` is a STATIC harness over 4 checks (`public_tool_count`,
+  `workflow_docs`, `schema`, `ui`) and 5 matrix rows, and says so itself in `runtime_test_note`:
+  static matrix checks cannot prove browser/server behavior. Blind to every T4 runtime behavior.
+  Manual: run the T4 harness for the surface you touched.
+- `council_config_diff` reads the SOT config against `CORE_RULE.txt` + `.council/*.md` and asserts
+  three things only: enabled labels PRESENT, retired labels ABSENT, the 3 literal markers present.
+  Everything else in those docs -- route-table cells, greeting text, transport lines, mojibake --
+  is outside it. Manual: the Class C enumeration above.
+- `council_config_sync` (T2 WRITE) rewrites ONLY the cost-order chain and the roster list and backs
+  up `<file>.bak_ccsync`. It does not regenerate the two hand-maintained council docs, so it is not
+  a way to propagate a retirement into them.
+- Four tools match the `check`/`audit`/`verify` fragments and are NOT drift tools. Do not count
+  them in a sweep: `git_stale_check` answers git worktree/commit staleness (`reasons:
+  ['dirty_worktree']`, and `no fetch performed`, so remote divergence is invisible);
+  `bundle_version_check` scrapes a version marker out of HTML with a regex;
+  `audit_reconciliation_report` reconciles unresolved session ERRORS and answers
+  `SESSION_SCOPE_AMBIGUOUS` until `target_session_id` is passed whenever more than one session is
+  open; `validate_file` proves SYNTAX only (`py_compile` / `node --check`).
+- A sweep PATTERN is itself a blind spot. `\b(kilo)\b` CANNOT match `KiloC` -- `C` is a word
+  character, so there is no boundary after `kilo` -- while `\b(pic)\b` DOES match `PiC`. Measured
+  2026-09-20: a whole sweep pass reported clean on `KiloC` and `CozoC` for exactly this reason, and
+  the miss was invisible because the same pattern DID find plenty of `pic` hits. Sweep council ids
+  with `\b(kilo|pic|cozo)c?5?\b`, which covers the bare id, the `C`-suffixed worker label and the
+  `C5`-style model slot in one pattern, and positive-control it against a line you KNOW is stale.
+- `audit_tool_matrix` has NO `drift_count` key. Measured top level: `drift` (a list), `alias_drift`,
+  `progressive_gaps`, `summary`, `inventory_classification`, `scope`, `scope_note`,
+  `router_topics_count`, `matrix_log_path`, `ca_next_action`. Its own `scope_note` prose says
+  "drift_count=0 means runtime is internally consistent" -- naming a key the payload does not carry
+  -- so a CA that trusts the note and projects `fields=drift_count` reads `None` and mistakes it for
+  zero. Read `len(drift)`, never `drift_count`.
+- For the three rule files the FILE beats the in-code constant. `_ma_rule_file_text`
+  (`code_tools.py:15925-15933`) returns the `examples/` file whenever it is non-empty and falls back
+  to the constant only when it is missing, and its docstring says so. So a constant that was already
+  corrected proves NOTHING about what ships. Measured 2026-09-20: `_SLIM_RULE_INLINE`
+  (`code_tools.py:15912`) already read "agents_registry.json is SOT -- never copy an id list into a
+  rule", while `examples/SLIM_RULE_INLINE.txt` still shipped the literal
+  `{"agent_id":"<clau|codo|gro|hermes|kilo|ope|pic>"}` to every CA at bootstrap -- naming 2 retired
+  ids and omitting 3 live ones, drifting both ways at once. Fix the FILE first; fix the constant too,
+  only so the fallback cannot regress.
+- That same file is the end-to-end PROOF of the `agent_list` hole. `rule_drift_check` DOES open
+  `examples/SLIM_RULE_INLINE.txt`, its regex DOES match the `kilo` and `pic` inside that literal, and
+  `checks=agent_list` still answered `drift_count: 0` -- because the config side reads
+  `cfg["agents"].keys()` unfiltered and a retired row is kept at `enabled:false`, so the id is still
+  a key. A rule file can therefore ship a stale roster while every machine check reports clean.
+- NO tool in the surface reads prose in a `.md`/`.txt`, a hardcoded id/path list in live code, or a
+  `description` string in `registry_data.py`. That is not a gap to file -- it is WHY classes B and C
+  exist, and why the close-out gate below refuses a class-A-only report.
+
 **Close-out gate.** Before reporting a clean sweep, report per class: A = the three tool answers
 plus the `generation` they came from; B = which files were grepped and for which id/name/count;
-C = which prose files were read, and which mentions were deliberately KEPT as evidence. A sweep
-that reports only class A is reporting 1 of 3, which is how "drift 0" and "4 drifts still open"
-were both true on the same day.
+C = which prose files were read, and which mentions were deliberately KEPT as evidence. Name, for
+each class, WHICH tool covered it and which blind spot from the Tool Coverage Map you closed by
+hand. A sweep that reports only class A is reporting 1 of 3, which is how "drift 0" and "4 drifts
+still open" were both true on the same day.
