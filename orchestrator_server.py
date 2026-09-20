@@ -17797,6 +17797,151 @@ async def _run_session_retention_prune() -> dict:
         return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:240]}"}
 
 
+# ---------------------------------------------------------------------------
+# .bak archive retention (A38-D, 2026-09-20)
+#
+# WHY this exists: every write_fix drops a sibling <file>.bak and nothing ever
+# collected them -- 88 files / 4.35 MB had piled up across the worktree, one of
+# them a 924 KB code_tools.py.bak. The .bak IS the auto-revert source, so a write
+# cannot simply delete its own backup; the pile has to be aged out instead.
+#
+# TWO stages, deliberately separated so no single sweep both CHOOSES and
+# DESTROYS (CASE-2008):
+#   1. PROMOTE -- a .bak older than the write-ledger TTL is MOVED into
+#      _recycle_bin/bak_archive/<relative path>. The threshold is DERIVED from
+#      _WRITE_LEDGER_TTL_DAYS rather than invented: once the ledger row is gone,
+#      no write_status or auto-revert path can still reach that backup, so it has
+#      no rollback authority left to protect. A move loses nothing.
+#   2. EXPIRE -- inside _recycle_bin ONLY, an entry older than
+#      _BAK_ARCHIVE_TTL_DAYS is deleted, counted from ARCHIVAL (stage 1 stamps
+#      the destination) so the two stages can never collapse into one pass.
+#      Whitelisted twice: by ROOT (the resolved path must sit under the bin) and
+#      by SUFFIX. A symlink/junction is skipped rather than followed, so the
+#      sweep cannot be steered out of the bin.
+# ---------------------------------------------------------------------------
+_BAK_ARCHIVE_DIR = "_recycle_bin"
+_BAK_ARCHIVE_SUBDIR = "bak_archive"
+_BAK_ARCHIVE_TTL_DAYS = max(
+    1, min(365, int(os.environ.get("ORCHESTRATOR_BAK_ARCHIVE_TTL_DAYS", "14")))
+)
+_BAK_ARCHIVE_SKIP_DIRS = (".git", ".orchestrator_cache", "BACKUP", _BAK_ARCHIVE_DIR)
+_BAK_ARCHIVE_EXPIRE_SUFFIXES = (".bak", ".zip", ".tsv")
+
+
+def _bak_archive_sweep(
+    project_root: str, dry_run: bool = True, now: float | None = None
+) -> dict:
+    """Promote stale .bak files into _recycle_bin, then expire the bin past TTL.
+
+    dry_run defaults to TRUE: a caller that forgets the flag gets a preview, not a
+    deletion. The returned lists carry the exact chosen paths, so the preview IS
+    the approval list instead of a count the caller has to take on trust.
+
+    ``now`` is injectable so a test can age a file without sleeping 14 days.
+    """
+    now = time.time() if now is None else float(now)
+    root = Path(project_root).resolve()
+    bin_root = (root / _BAK_ARCHIVE_DIR).resolve()
+    archive_root = bin_root / _BAK_ARCHIVE_SUBDIR
+    out: dict = {
+        "ok": True,
+        "dry_run": bool(dry_run),
+        "root": str(root),
+        "archive_root": str(archive_root),
+        "promote_after_days": _WRITE_LEDGER_TTL_DAYS,
+        "expire_after_days": _BAK_ARCHIVE_TTL_DAYS,
+        "promoted": [],
+        "expired": [],
+        "errors": [],
+    }
+    promote_cutoff = now - (_WRITE_LEDGER_TTL_DAYS * 86400)
+    expire_cutoff = now - (_BAK_ARCHIVE_TTL_DAYS * 86400)
+    try:
+        for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+            dirnames[:] = [
+                d for d in dirnames
+                if d not in _BAK_ARCHIVE_SKIP_DIRS and not d.startswith("venv")
+            ]
+            for fn in filenames:
+                if not fn.endswith(".bak"):
+                    continue
+                src = Path(dirpath) / fn
+                try:
+                    if src.is_symlink() or src.stat().st_mtime > promote_cutoff:
+                        continue
+                    rel = src.relative_to(root)
+                    out["promoted"].append(str(rel))
+                    if dry_run:
+                        continue
+                    dst = archive_root / rel
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    if dst.exists():
+                        # Keep the .bak suffix on a collision rename, or stage 2
+                        # would never recognise the file as expirable again.
+                        dst = dst.with_name(f"{dst.stem}.{int(now)}{dst.suffix}")
+                    shutil.move(str(src), str(dst))
+                    # The 14-day clock starts at ARCHIVAL, not at the original
+                    # write: shutil.move preserves mtime, so without this stamp a
+                    # .bak already older than the expire TTL would be promoted and
+                    # deleted inside the SAME sweep -- one pass both choosing and
+                    # destroying, which is exactly what stage separation forbids.
+                    os.utime(dst, (now, now))
+                except Exception as exc:
+                    out["errors"].append(f"promote {fn}: {type(exc).__name__}: {exc}")
+        if bin_root.is_dir():
+            for dirpath, _dirnames, filenames in os.walk(bin_root, followlinks=False):
+                for fn in filenames:
+                    victim = Path(dirpath) / fn
+                    try:
+                        if victim.is_symlink():
+                            continue
+                        if not fn.endswith(_BAK_ARCHIVE_EXPIRE_SUFFIXES):
+                            continue
+                        real = victim.resolve()
+                        if bin_root not in real.parents:
+                            out["errors"].append(f"skip out-of-bin path: {real}")
+                            continue
+                        if real.stat().st_mtime > expire_cutoff:
+                            continue
+                        out["expired"].append(str(real))
+                        if not dry_run:
+                            real.unlink()
+                    except Exception as exc:
+                        out["errors"].append(f"expire {fn}: {type(exc).__name__}: {exc}")
+    except Exception as exc:
+        out["ok"] = False
+        out["errors"].append(f"{type(exc).__name__}: {str(exc)[:240]}")
+    out["promoted_count"] = len(out["promoted"])
+    out["expired_count"] = len(out["expired"])
+    return out
+
+
+async def _run_bak_archive_retention() -> dict:
+    """Run the .bak sweep off the startup path, fail-soft, opt-out by env.
+
+    Mirrors _run_session_retention_prune: scheduled AFTER SERVER_READY, executed
+    on a worker thread so a slow disk cannot block the loop, and every error is
+    logged instead of raised. Set ORCHESTRATOR_BAK_RETENTION_ON_BOOT=0 to skip.
+    """
+    if os.environ.get("ORCHESTRATOR_BAK_RETENTION_ON_BOOT", "1").strip().lower() in (
+        "0", "false", "no", "off"
+    ):
+        return {"skipped": "disabled"}
+    try:
+        stats = await asyncio.to_thread(
+            _bak_archive_sweep, str(ct.path_runtime.ORCHESTRATOR_DIR), False
+        )
+        logger.info(
+            "bak archive retention: promoted=%s expired=%s errors=%s",
+            stats.get("promoted_count"),
+            stats.get("expired_count"),
+            len(stats.get("errors") or []),
+        )
+        return stats
+    except Exception as exc:  # fail-soft: retention must never crash the server
+        logger.exception("bak archive retention failed: %s", exc)
+        return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:240]}"}
+
 COUNCIL_TAB_ENV = "ORCHESTRATOR_OPEN_COUNCIL_TAB"
 
 
@@ -17886,6 +18031,9 @@ async def _run_server():
     # A22: sessions.db retention runs AFTER boot recovery so it never counts toward
     # the startup deadline; the task drives DELETEs on the writer thread off-loop.
     _session_retention_task = asyncio.create_task(_run_session_retention_prune())
+    # A38-D: same shape for the .bak pile -- promote stale backups into
+    # _recycle_bin, expire the bin past its TTL, both off the startup path.
+    _bak_retention_task = asyncio.create_task(_run_bak_archive_retention())
     logger.info(f"Orchestrator server: http://localhost:{PORT}")
     logger.info(
         "Runtime paths | app_root=%s | orchestrator_dir=%s | core_rule_path=%s | start_script=%s",

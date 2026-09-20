@@ -4627,26 +4627,54 @@ async def rule_drift_check(project_path: str = "", checks: str = "") -> str:
     mutating = set(PROTECTED_TOOL_NAMES) | set(TOKEN_REQUIRED_TOOLS)
 
     if "tool_names" in sel:
-        _NON_TOOL = {
-            "project_path", "file_path", "new_content", "content", "content_encoding",
-            "agent_id", "page_id", "session_id", "start_line", "end_line", "mode", "text",
-            "sha256", "force", "provider", "model", "action", "sender", "timeout_sec",
-            "already_fetched", "mutation_scope", "requires_token", "requires_session",
-            "error_name", "ca_next_action", "project_root", "expected_hash",
-            # MCP-wrapper / bootstrap tools — real but live in the orchestrator MCP
-            # surface, NOT code_tools.TOOL_MAP, so do not flag them as missing.
-            "tool_names", "tool_schema", "call_tool", "open_session",
-        }
+        # A tool reference is recognised by POSITION, never by exclusion. The old
+        # contract flagged every backticked snake_case token and subtracted a
+        # hand-written _NON_TOOL list, so every response field (`fields_unknown`),
+        # param (`script_content`) and error name (`write_existing_file`) the rule
+        # documents read as "missing tool": measured 2026-09-20 against
+        # SLIM_RULE.txt -- 16 findings, 16 of them false, 0 true. That list could
+        # only ever be grown by hand AFTER each false report. A rule file writes a
+        # TOOL as a call `tool(...)` or as an /api/call/<tool> path and never
+        # writes a response field that way, so position alone separates the two
+        # classes with no name list left to go stale.
+        registered = set(tool_keys)
+        for _s in TOOL_SCHEMAS:
+            _n = ((_s.get("function") or {}) if isinstance(_s, dict) else {}).get("name")
+            if _n:
+                registered.add(_n)
+        # TOOL_MAP is NOT the whole surface: git_status, council_message and
+        # restart_orchestrator_via_bat are live and in none of it, so comparing
+        # against one registry reported REAL tools as missing. Union every live
+        # registry instead of naming their members here.
+        registered |= set(_MUTATION_SCOPE_MAP) | set(PROTECTED_TOOL_NAMES)
+        try:
+            from orchestrator.core.ca_policy_matrix import _TOOL_TO_CLASS as _T2C
+            registered |= set(_T2C)
+        except Exception:
+            pass
+        # The MCP host's own dispatcher/discovery tools have no daemon registry
+        # row by construction -- they run in the bridge, not in the daemon.
+        registered |= {"call_tool", "tool_names", "tool_schema"}
         for rf, txt in rule_text.items():
             seen = set()
-            for m in _re.finditer(r"`([a-z][a-z0-9_]{3,})`", txt):
-                tok = m.group(1)
-                if tok in seen or tok in _NON_TOOL or tok in tool_keys or "_" not in tok:
+            cands = [m.group(1) for m in _re.finditer(r"`([a-z][a-z0-9_]{3,})\(", txt)]
+            cands += [m.group(1) for m in _re.finditer(r"/api/call/([a-z][a-z0-9_]{3,})", txt)]
+            for tok in cands:
+                if tok in seen or tok in registered or "_" not in tok:
                     continue
                 seen.add(tok)
                 _add("tool_names", "review",
-                     f"rule {rf} references `{tok}` which is NOT a registered tool — possible stale/renamed tool ref (or a non-tool identifier)",
+                     f"rule {rf} calls `{tok}(...)` but no live registry knows that tool -- stale/renamed tool ref",
                      rule_loc=rf, code_value="absent")
+            # A BARE mention is prose, with one exception: a name the registry
+            # itself marks deprecated is a real stale ref the rule keeps teaching.
+            for tok in sorted(_DEPRECATED_TOOLS):
+                if tok in seen or not _re.search(r"`" + _re.escape(tok) + r"`", txt):
+                    continue
+                seen.add(tok)
+                _add("tool_names", "review",
+                     f"rule {rf} still teaches `{tok}`, which the registry marks DEPRECATED",
+                     rule_loc=rf, code_value="deprecated")
 
     if "agent_list" in sel:
         cfg_agents = set()

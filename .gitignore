@@ -54,6 +54,10 @@ type/
 *.bak_*
 *.bak-*
 .wip_backup_*/
+# A38-D: where stale .bak are promoted before the 14-day expiry deletes them.
+# The contents already match *.bak / *.zip; the FOLDER name did not, so an
+# untracked-dir report kept showing up on every git_status after a sweep.
+_recycle_bin/
 CHURN*
 implementation_report_CHURN*
 wt_missing*.txt
