@@ -1874,6 +1874,20 @@ skip_symbol_check :bool =False )->str :
         # Task 4 auto-chain: hint git_stage after successful write
         if result.get("ok"):
             result["ca_hint_commit"] = "git_stage available to stage changes for commit"
+            # A39: `write_fix -> rule_drift_check` was DESIGNED, approved, and never built:
+            # measured 2026-09-20, rule_drift_check appeared in ZERO chain/hint contexts
+            # anywhere in the production tree. So a CA could rewrite examples/CORE_RULE.txt
+            # or the tool registry and nothing ever said the doc and the code may now
+            # disagree -- the drift surfaced a campaign later instead of on the next call.
+            # The predicate and its file/symbol lists live in code_tools next to
+            # rule_drift_check's own reader (RULE_DRIFT_SOURCES), so the two cannot drift
+            # apart. ca_next_action is a setdefault, never an assignment: the cache_delta
+            # hint above outranks it -- a desynced cache breaks the NEXT read.
+            _drift = ct.rule_drift_trigger_reason(str(fp), new_content)
+            if _drift:
+                result["ca_hint"] = ("rule_drift_check(project_path=...) compares the rule "
+                                     "files against the live registry: %s" % _drift)
+                result.setdefault("ca_next_action", "rule_drift_check")
 
     return ct.json .dumps (result )
 
@@ -2218,6 +2232,18 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
                 }
         # A30-P1 auto-chain rule 4: the same git_stage hint write_fix emits.
         result ["ca_hint_commit"]="git_stage available to stage changes for commit"
+        # A39: and the same rule-drift trigger write_fix emits -- a NEW rule or registry
+        # file desyncs the doc exactly like an edit to an existing one. Both halves of the
+        # body are scanned because write_new_file accepts the text as `content` OR as the
+        # `new_content` alias, and which one survives normalisation is not this site's
+        # business. ca_next_action is a setdefault, never an assignment: the cache_delta
+        # hint above outranks it (a desynced cache breaks the NEXT read, drift only the
+        # next campaign) and two authors writing one key produce advice neither meant.
+        _drift =ct.rule_drift_trigger_reason (str (fp ),str (content or "")+str (new_content or ""))
+        if _drift :
+            result ["ca_hint"]=("rule_drift_check(project_path=...) compares the rule files "
+            "against the live registry: %s"%_drift )
+            result .setdefault ("ca_next_action","rule_drift_check")
     return ct.json .dumps (result )
 
     # ─── Tool: apply_after_dry_run ────────────────────────────────────────────────

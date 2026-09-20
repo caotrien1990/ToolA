@@ -3181,7 +3181,7 @@ AUTO_CHAIN_RULES = (
     ("ca_hint_rule", "ocr_rule", "orchestrator/tools/ocr_review.py"),
     ("ca_hint_rule_text", "ocr_rule with the rule body omitted", "orchestrator/tools/ocr_review.py"),
     ("ca_hint_scope", "ocr_scan when a list was really capped", "orchestrator/tools/ocr_review.py"),
-    ("ca_hint", "search_code / validate_file / git_status staged>0 / git_diff non-empty / any matching PASSIVE_CHAINS row applied at the dispatch funnel", "orchestrator_server.py"),
+    ("ca_hint", "search_code / validate_file / git_status staged>0 / git_diff non-empty / write_fix or write_new_file on a rule or registry file / any matching PASSIVE_CHAINS row applied at the dispatch funnel", "orchestrator_server.py"),
     ("post_ruff_validation", "ruff_fix apply=true", "orchestrator/graph/tools.py"),
     ("ca_chain_hint", "search_code regex on root, cbm_dead_code", "orchestrator/tools/search.py"),
     ("ca_chain_next", "search_code regex on root, cbm coverage", "orchestrator/graph/tools.py"),
@@ -3192,10 +3192,97 @@ AUTO_CHAIN_RULES = (
     # rest -- a bare softened sentence inside ca_chain_hint would bind to nothing.
     ("ca_chain_precondition", "cbm_dead_code with findings -- the cross-check owed before the ca_chain_next write_fix", "orchestrator/graph/tools.py"),
     ("ca_next_tool", "any tool whose ca_next_action resolves to a live TOOL_MAP name; injected once by the orchestrator_server dispatch funnel", "orchestrator/core/next_tool.py"),
+    # A39: post_commit_validation was BUILT and returned -- the git_commit post-hook in
+    # orchestrator_server.py has computed it since Task 3 -- but it was declared NOWHERE,
+    # so `advisory_fields` (derived from AUTO_CHAIN_FIELDS) did not cover it and a CA that
+    # called the field name as a tool got an empty suggestions list instead of the
+    # surface=response_field answer every other chain field gives. Nothing caught it for
+    # the same reason: the only registration gate in the A31 suite matches ca_hint*/
+    # ca_chain* by shape, and this name is neither, so a non-hint-shaped chain field could
+    # ship invisible. Registering it is the whole fix -- the guard extends itself from the
+    # registry -- and tests/test_a39_chain_registration_gate.py now closes the class by
+    # scanning EVERY declared-chain-field emitter instead of one shape.
+    ("post_commit_validation", "git_commit success with committed_files", "orchestrator_server.py"),
+    # A39 (same sweep): `ca_next_actions` -- PLURAL -- is the OTHER field that was built and
+    # returned while declared nowhere, and it is NOT a stray duplicate of the deliberately
+    # unregistered singular above. ISS-08 created it on purpose: a resume can reject the
+    # requested title AND the mode, `ca_next_action` holds one string, so overwriting it hid
+    # one of the two divergences and the caller fixed the title never learning the mode had
+    # not applied. A LIST, emitted at exactly one site under one condition, is a chain field
+    # by this registry's own test -- structured, not prose -- so the fix is to register it,
+    # never to delete it: deleting it reopens ISS-08. Measured 2026-09-20: one site, the
+    # write itself, and ZERO consumers across .py/.js/.html/.md/.txt/.json -- which is
+    # precisely how an undeclared field stays invisible long enough to be mistaken for rot.
+    ("ca_next_actions", "open_session resume that rejects BOTH the requested title and the mode", "code_tools.py"),
 )
 
 #: The chain fields only, for callers that just need the vocabulary.
 AUTO_CHAIN_FIELDS = tuple(r[0] for r in AUTO_CHAIN_RULES)
+
+# --- rule-drift trigger (A39) ---------------------------------------------------------
+# `write_fix -> rule_drift_check` was a designed chain that was never built: measured
+# 2026-09-20, `rule_drift_check` appeared in ZERO chain/hint contexts anywhere in the
+# production tree. The consequence is silent and expensive: a CA edits examples/CORE_RULE.txt
+# or the tool registry, nothing tells it the doc and the code may now disagree, and the
+# drift is found by the next campaign instead of the next call.
+#
+# The trigger data lives HERE rather than inside rule_drift_check because there are two
+# readers -- the check itself and the write path -- and two literals would drift apart the
+# day a fourth rule file appears, leaving the trigger silent on exactly the edit it exists
+# to catch. One tuple, two readers.
+
+#: The DOC side: the rule files rule_drift_check reads. Also rule_drift_check's own list.
+RULE_DRIFT_SOURCES = (
+    "examples/CORE_RULE.txt",
+    "examples/SLIM_RULE.txt",
+    "examples/SLIM_RULE_INLINE.txt",
+)
+
+#: The CODE side of the same comparison. Drift has TWO producers and the trigger needs
+#: both: editing a rule file can make the doc disagree with the registry, and editing the
+#: registry can make the registry disagree with the doc.
+RULE_DRIFT_SYMBOLS = (
+    "TOOL_MAP",
+    "PROTECTED_TOOL_NAMES",
+    "TOKEN_REQUIRED_TOOLS",
+    "register_tool",
+)
+
+#: The files that hold that registry.
+RULE_DRIFT_REGISTRY_FILES = (
+    "code_tools.py",
+    "orchestrator/core/registry_data.py",
+)
+
+
+def rule_drift_trigger_reason(file_path: str, written_text: str = "") -> str:
+    """Why THIS write could have drifted the rule files -- or "" when it could not.
+
+    Deliberately NOT "any write". A hint costs tokens on every response that carries it,
+    forever, multiplied by every call: a path-only test would fire on every code_tools.py
+    edit, and a content-only test would fire on every file that merely mentions TOOL_MAP.
+    So the two are combined -- a rule file by PATH alone, a registry file by path AND
+    symbol -- and the result is silent on writes that cannot desync examples/*RULE*.txt
+    from the live registry.
+
+    Returns the REASON, not a bool, so the caller can say which side moved instead of
+    emitting one generic sentence. An encoded body (content_encoding=base64) reaches the
+    caller as ciphertext, so a registry edit shipped that way is a MISSED hint, never a
+    wrong one -- the path branch above still covers the rule files themselves.
+    """
+    norm = str(file_path or "").replace("\\", "/").lower()
+    for src in RULE_DRIFT_SOURCES:
+        if norm.endswith(src.lower()):
+            return "you edited %s, one of the rule files rule_drift_check reads" % src
+    text = str(written_text or "")
+    for reg in RULE_DRIFT_REGISTRY_FILES:
+        if norm.endswith(reg.lower()):
+            hit = [sym for sym in RULE_DRIFT_SYMBOLS if sym in text]
+            if hit:
+                return "this %s edit touches %s, which the rule files describe" % (
+                    reg.rsplit("/", 1)[-1], ", ".join(hit))
+            break
+    return ""
 
 def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dict:
     """V15 R13 — Cross-reference TOOL_MAP / TOOL_SCHEMAS / TOOL_PHASES against
@@ -3803,6 +3890,24 @@ async def audit_tool_matrix(project_path: str = "", include_coverage: bool = Fal
         result = _v15._apply_verbosity(result, _eff_verbosity, "matrix_audit")
     except Exception:
         pass
+    # A39: stamped AFTER _apply_verbosity on purpose. A key written before a verbosity /
+    # R101 filter is a key that filter can prune out of the very response it was written
+    # for (measured in A37), and an advisory that survives only at verbosity="full" is
+    # worse than none: its absence would read as "no drift".
+    #
+    # The condition is the SAME one _drift_override already computed above, so the trigger
+    # costs no extra work and is silent on a clean matrix. It names rule_drift_check, not
+    # write_fix: matrix drift is a doc-vs-registry disagreement and WHICH SIDE MOVED is
+    # precisely what rule_drift_check answers -- pointing straight at a write would invite
+    # editing the doc to match a registry that is itself the bug.
+    _drift_n = int(_summary.get("drift_count", 0) or 0)
+    _gap_n = int(_summary.get("progressive_gap_count", 0) or 0)
+    if _drift_n or _gap_n:
+        result["ca_hint"] = (
+            "rule_drift_check(project_path=...) says which side moved for drift_count=%d / "
+            "progressive_gap_count=%d -- read that before editing either side"
+            % (_drift_n, _gap_n))
+        result.setdefault("ca_next_action", "rule_drift_check")
     return json.dumps(result, ensure_ascii=False)
 
 
@@ -4615,7 +4720,10 @@ async def rule_drift_check(project_path: str = "", checks: str = "") -> str:
         d.update(kw)
         drifts.append(d)
 
-    rule_files = ["examples/CORE_RULE.txt", "examples/SLIM_RULE.txt", "examples/SLIM_RULE_INLINE.txt"]
+    # A39: this list used to be a literal HERE, which meant the write-side drift trigger
+    # would have needed a second copy -- and a second copy goes stale the day a fourth
+    # rule file appears, leaving the trigger silent on the very edit it exists to catch.
+    rule_files = list(RULE_DRIFT_SOURCES)
     rule_text = {}
     for rf in rule_files:
         p = here / rf
@@ -4750,14 +4858,29 @@ async def rule_drift_check(project_path: str = "", checks: str = "") -> str:
     by_sev: dict = {}
     for d in drifts:
         by_sev[d["severity"]] = by_sev.get(d["severity"], 0) + 1
-    return json.dumps({
+    _drift_payload = {
         "ok": True,
         "checks_run": sorted(sel),
         "drift_count": len(drifts),
         "by_severity": by_sev,
         "drifts": drifts,
         "note": "T1 read-only. behavior_sets=deterministic; agent_list=config-vs-rule; tool_names(review)=best-effort backtick heuristic (verify each).",
-    }, ensure_ascii=False)
+    }
+    # A39: the tool that FINDS the drift owes the fix. write_fix now sends a CA here
+    # (rule_drift_trigger_reason), so the loop has to close on this side too -- otherwise
+    # the CA arrives, reads drift_count=3, and is on its own again, which is the same
+    # dead end the write-side trigger was built to remove.
+    #
+    # Gated on drift_count>0 by design: a clean rule set carries no hint key at all, so
+    # the common path pays nothing. And the hint says RECONCILE, never "edit the doc":
+    # each row already carries code_value, because the code is sometimes the side that
+    # is wrong and a hint that always blames the doc would launder a real code bug.
+    if drifts:
+        _drift_payload["ca_hint"] = (
+            "write_fix reconciles the %d drift row(s): each row carries code_value, so read "
+            "it first -- the doc is not automatically the wrong side" % len(drifts))
+        _drift_payload["ca_next_action"] = "write_fix"
+    return json.dumps(_drift_payload, ensure_ascii=False)
 
 
 async def path_quote_helper(project_path: str = "", subfolder: str = "", command: str = "", shell: str = "powershell") -> str:

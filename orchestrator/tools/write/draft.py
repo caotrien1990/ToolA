@@ -411,6 +411,18 @@ async def write_draft_patch(draft_id: str, start_line: int, end_line: int,
                "patched_range": f"{start}-{end}",
                "encoding_check": encoding_check}
         out.update(_view(rec))
+        # A39: the highest-value site in the draft family, and it had no advice at all. A CA
+        # lands here mid-loop -- it just patched, the draft STILL fails, and a draft is a held
+        # write that ships nothing when the TTL expires. CORE_RULE documents ca_next_action as
+        # valid on error payloads exactly for this shape, so the loop out is named here
+        # instead of being rediscovered each time.
+        #
+        # Deliberately ungated: this branch IS the failure state, so there is no common path
+        # to keep quiet. Written after _view() so the projection cannot clobber it.
+        out["ca_hint"] = ("still failing after patch #%d: last_errors names the lines, "
+                          "write_draft_patch re-audits and auto-ships when clean, "
+                          "write_draft_abort drops the draft" % int(rec.get("patch_count", 0) or 0))
+        out.setdefault("ca_next_action", "write_draft_patch")
         return ct.json.dumps(out, ensure_ascii=False)
 
     result = await _ship(rec)
@@ -432,14 +444,34 @@ async def write_draft_status(draft_id: str = "") -> str:
                 "patch_count": r["patch_count"],
                 "expires_in_sec": max(0, int(r["expires_at_epoch"] - _now())),
             } for r in _DRAFTS.values()]
-        return ct.json.dumps({"ok": True, "drafts": items, "count": len(items)},
-                             ensure_ascii=False)
+        _list_out = {"ok": True, "drafts": items, "count": len(items)}
+        # A39: a draft is a HELD write -- it expires and ships NOTHING. The state a CA has to
+        # act on is "still failing", and the listing reported it without saying what to do.
+        # Gated on that flag, so an empty store and a clean draft both carry no hint key.
+        # Only `failing` is used: an expiry-countdown branch would need a new warn-threshold
+        # constant, and a magic number invented to justify a hint is a contract nobody asked
+        # for. expires_in_sec is already in every row for a CA that wants to judge urgency.
+        _bad = [d for d in items if d["failing"]]
+        if _bad:
+            _list_out["ca_hint"] = (
+                "%d pending draft(s) still fail validation and ship nothing on expiry: "
+                "write_draft_patch re-audits and auto-ships when clean, write_draft_abort "
+                "drops one deliberately" % len(_bad))
+            _list_out["ca_next_action"] = "write_draft_patch"
+        return ct.json.dumps(_list_out, ensure_ascii=False)
     rec = _get(draft_id)
     if rec is None:
         return ct._json_error(f"draft_id not found or expired: {draft_id}",
                               error_name="DRAFT_NOT_FOUND", retryable=False)
     out = {"ok": True}
     out.update(_view(rec))
+    # A39: the same gate for the single-draft view. Read last_errors from rec, NOT from the
+    # keys _view() happens to project: a trigger that depends on a projection goes silent
+    # the day that projection drops a field, and a silent trigger reads as "draft is fine".
+    if rec.get("last_errors"):
+        out["ca_hint"] = ("this draft still fails validation and ships nothing on expiry: "
+                          "write_draft_patch re-audits the range and auto-ships when clean")
+        out.setdefault("ca_next_action", "write_draft_patch")
     return ct.json.dumps(out, ensure_ascii=False)
 
 

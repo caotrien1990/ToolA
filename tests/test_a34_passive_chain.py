@@ -88,7 +88,20 @@ _PROBE_SHAPES = {
 # The one nested level the probe expanded. cbm_graph_status carries its whole answer under
 # `result`, so its trigger is legitimately not a top-level key.
 _PROBE_NESTED = {
-    "cbm_graph_status": {"enabled", "db_present", "integrity", "nodes", "edges", "files"},
+    # A39: re-probed live 2026-09-20 (/api/call/cbm_graph_status, this repo). The six keys the
+    # A34 probe recorded are all still present; the thirteen added here were in the same
+    # answer. `stale_files` is listed because the M-2 row keys on it, and the ORDER matters --
+    # measure first, then add the row, never the reverse: this guard exists because a row
+    # keyed on a field nobody measured never fires, and that silence is indistinguishable from
+    # a false condition. Values at that call: db_present=true, stale_files=9, freshness=
+    # "stale", stale_scan.complete=true -- the exact state M-2 exists to catch (graph PRESENT
+    # but behind) and precisely the state the db_present row above cannot see.
+    "cbm_graph_status": {
+        "enabled", "db_present", "integrity", "nodes", "edges", "files", "last_run",
+        "stale_files", "extractor_version", "tree_sitter_enabled", "wal", "freshness",
+        "elapsed_ms", "error", "integrity_probe", "integrity_ms", "stale_scan", "scan_ms",
+        "extract_js_enabled",
+    },
     # A38: the whole cbm family answers under `result`, so these four are nested for the same
     # reason. Probed live on 2026-09-19 (script label a38_probe_cbm..8) against this repo.
     "cbm_quality_gate": {
@@ -173,6 +186,15 @@ _FIRES = {
         "ok": True,
         "result": {"status": "unavailable", "gaps": [], "pass": False, "score": None},
     },
+    # A39 (M-2), probed live 2026-09-20 on this repo: db_present true, stale_files 9, freshness
+    # "stale", stale_scan.complete true. The graph EXISTS and every answer computed from it is
+    # behind the working tree -- exactly the state the db_present row cannot see, which is why
+    # M-2 is a SECOND row and not a widened predicate on the first.
+    ("cbm_graph_status", "stale_files"): {
+        "ok": True,
+        "result": {"db_present": True, "stale_files": 9, "freshness": "stale",
+                   "stale_scan": {"stale_files": 9, "files_checked": 469, "complete": True}},
+    },
 }
 _STAYS_SILENT = {
     ("read_file_range", "truncated"): {"ok": True, "truncated": False},
@@ -201,6 +223,17 @@ _STAYS_SILENT = {
         "ok": True,
         "result": {"status": "ok", "gaps": [], "coverage_ratio": 1.0,
                    "counts": {"source_files": 1, "test_files": 1, "covered_files": 1}},
+    },
+    # A39 (M-2), from the SAME live probe: a graph that is present AND current. stale_files=0 is
+    # the only silent state this row can have, and it is measured rather than assumed because the
+    # db_present row above wins first whenever the graph is missing -- so this row only ever
+    # speaks about a graph that exists. freshness "current" is carried for the same reason the
+    # positive carries "stale": it is what the daemon really answered, so the two states stay
+    # tellable apart without re-probing.
+    ("cbm_graph_status", "stale_files"): {
+        "ok": True,
+        "result": {"db_present": True, "stale_files": 0, "freshness": "current",
+                   "stale_scan": {"stale_files": 0, "files_checked": 469, "complete": True}},
     },
 }
 

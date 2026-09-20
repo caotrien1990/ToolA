@@ -2311,7 +2311,7 @@ async def progressive_matrix_check(project_path: str = "",
             {"area": "ui", "owner": str(ui_file), "guardrail": "special actions must map to a normal tool owner"},
         ]
 
-        return _ok({
+        _matrix_out = {
             "ok_to_ship_static_matrix": not gaps,
             "mode": mode,
             "step_id": step_id,
@@ -2329,7 +2329,28 @@ async def progressive_matrix_check(project_path: str = "",
             "gaps": gaps,
             "matrix_rows": matrix_rows,
             "runtime_test_note": "Static matrix checks cannot prove browser/server behavior; run T4 runtime harnesses for touched surfaces.",
-        })
+        }
+        # A39: ok_to_ship_static_matrix=False already said "do not ship" and then said
+        # nothing about what to do, so the gap list was a dead end. Gated on gaps, so the
+        # ship-ready path -- the one a CA hits most -- carries no hint key at all.
+        #
+        # The next tool is DERIVED from the gap's own area instead of being fixed, because
+        # the two kinds of gap want different tools: a schema gap is a registry-vs-backend
+        # disagreement (audit_tool_matrix is the tool that pairs them), while a
+        # workflow_docs or ui gap is a missing or too-short FILE, where reading the target
+        # is the honest first step. One generic "go fix it" would be advice neither case
+        # asked for. Stamped before _ok() deliberately: _ok only stamps ok/schema_version
+        # and prunes nothing, so there is no pre-filter key loss here (unlike the
+        # verbosity-filtered matrix_audit path in code_tools).
+        if gaps:
+            _areas = sorted({str(g.get("area") or "?") for g in gaps})
+            _nxt = "audit_tool_matrix" if "schema" in _areas else "read_file_range"
+            _matrix_out["ca_hint"] = (
+                "%d gap(s) block shipping (area: %s); %s is the next step -- gaps[].tools or "
+                "gaps[].detail names the exact target"
+                % (len(gaps), ", ".join(_areas), _nxt))
+            _matrix_out.setdefault("ca_next_action", _nxt)
+        return _ok(_matrix_out)
     except Exception as exc:
         return _err(f"progressive_matrix_check failed: {exc}", error_name="MATRIX_CHECK_FAILED")
 

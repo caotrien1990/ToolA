@@ -270,6 +270,15 @@ def stage(project_path, paths=None, paths_file='', allow_all=False, expected_sta
     # 15 files). So the hint names a call that really works on content that is staged but
     # not yet committed; a hint pointing at a failing call is worse than no hint at all.
     out['ca_hint_review']='ocr_review(project_path=...) reviews the uncommitted working tree before you commit; mode "workspace", delegate, 0 token'
+    # A39: M-8 was designed as `git_stage -> git_status`, and the DESIGN was wrong. 'after'
+    # is a full status(), so after.staged_hash IS the hash git_commit wants: a chain to
+    # git_status would have shipped a round-trip [A] never needed. Measured 2026-09-20 -- a
+    # CA probed fields=staged_hash on git_stage, got fields_unknown, concluded "git_stage
+    # does not return it" and paid for a git_status. The value was one level down the whole
+    # time. So the fix is a HINT that names the field, not a chain to a second tool.
+    out['ca_hint']=('expected_staged_hash for git_commit is already in this response at '
+                    'after.staged_hash -- do NOT call git_status to fetch it')
+    out.setdefault('ca_next_action','git_commit')
     return out
 
 def unstage(project_path, paths=None, paths_file='', allow_all=False, expected_staged_hash=''):
@@ -302,7 +311,8 @@ def commit(project_path, message, expected_staged_hash, allow_empty=False, no_ve
     checked=str(expected_staged_hash or '').strip()
     if not checked:
         raise GitToolError('EXPECTED_STAGED_HASH_REQUIRED',
-                           'expected_staged_hash is required: pass git_status.staged_hash, '
+                           'expected_staged_hash is required: pass git_stage.after.staged_hash '
+                           '(git_stage ALREADY returns it -- no second call) or git_status.staged_hash, '
                            'or "auto" to commit whatever is staged right now',
                            current_staged_hash=s['staged_hash'])
     if checked.lower()!='auto' and checked!=s['staged_hash']:

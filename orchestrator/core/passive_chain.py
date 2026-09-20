@@ -233,6 +233,31 @@ PASSIVE_CHAINS = (
         "no CBM graph database: graph and coverage tools will answer on nothing",
         "cbm_incremental_index",
     ),
+    # A39, M-2: `cbm_graph_status -> cbm_incremental_index when stale` was a DESIGNED chain
+    # that never shipped. Probed live 2026-09-20 on [A] itself: db_present=true,
+    # stale_files=7, freshness="stale" -- and the response carried no ca_hint and no
+    # ca_next_action at all, because the row above fires only when the DB is MISSING. So the
+    # single most common failure of the graph family (present but behind) was the one state
+    # with no advice.
+    #
+    # Second in precedence, not first: a missing DB is the harder stop, and first match wins.
+    #
+    # The designed form was "healthy -> cbm_test_gap", and that is REJECTED with reason, not
+    # merely unbuilt: (a) a healthy graph is the COMMON path, so it would add a hint to
+    # nearly every call forever -- the exact cost the root-cause rule warns about -- and
+    # (b) cbm_test_gap is verdict-free (A38: pass is ALWAYS false, score ALWAYS null), so the
+    # chain would have pointed at a tool that cannot answer the question the hint implies.
+    #
+    # `stale_scan.complete` is deliberately NOT part of the predicate. The known trap runs
+    # the other way: an incomplete scan can report stale_files=0, which is "unknown", not
+    # "clean". Firing only on > 0 means an incomplete scan that already found stale files is
+    # still a true positive, and the 0 case stays silent either way.
+    PassiveChain(
+        "cbm_graph_status", "stale_files",
+        lambda p: _positive_count(_inner(p).get("stale_files")),
+        "files changed since the last index: every graph and coverage answer is computed on the old snapshot",
+        "cbm_incremental_index",
+    ),
     # A38, probed live 2026-09-19 (script label a38_probe_cbm): the next four rows of the traffic
     # ranking above, every one of them answering hintless. Reproduce the ranking rather than trust
     # a figure in a comment -- .orchestrator_cache/sessions.db, "SELECT tool_name, COUNT(*) FROM
