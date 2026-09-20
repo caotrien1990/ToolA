@@ -173,6 +173,26 @@ def _what_if_applied_nothing(payload) -> bool:
     """
     return _inner(payload).get("applied") is False
 
+
+def _query_matched(payload) -> bool:
+    """True when cbm_nodes_query / cbm_edges_query returned at least one row.
+
+    Keyed on `count`, not on the `nodes`/`edges` list: both tools answer `count` on every success
+    path, and a zero-match query is a dead end -- chaining it would hand the CA a next step for a
+    question that found nothing.
+    """
+    return _positive_count(_inner(payload).get("count"))
+
+
+def _test_gap_unavailable(payload) -> bool:
+    """True only on the measured cbm_test_gap `status == \"unavailable\"` state.
+
+    `gaps` is deliberately NOT the trigger: probed 2026-09-20 it came back [] in every state
+    reachable without inventing a payload (bare, included_files only, and both of those with a
+    tested and with an untested file), so `gaps > 0` would be trap 3 -- a predicate on a shape no
+    probe ever showed. The status string IS measured.
+    """
+    return _inner(payload).get("status") == "unavailable"
 #: The passive chain table. First matching row wins, so order inside a tool is precedence.
 PASSIVE_CHAINS = (
     # read_file_range is 3478 of the 13406 measured calls -- by far the biggest gap. Two rows,
@@ -213,8 +233,13 @@ PASSIVE_CHAINS = (
         "no CBM graph database: graph and coverage tools will answer on nothing",
         "cbm_incremental_index",
     ),
-    # A38, probed live 2026-09-19 (script label a38_probe_cbm): the next four rows of the
-    # traffic ranking above -- 267 / 263 / 216 / 200 calls -- and every one answered hintless.
+    # A38, probed live 2026-09-19 (script label a38_probe_cbm): the next four rows of the traffic
+    # ranking above, every one of them answering hintless. Reproduce the ranking rather than trust
+    # a figure in a comment -- .orchestrator_cache/sessions.db, "SELECT tool_name, COUNT(*) FROM
+    # events GROUP BY 1 ORDER BY 2 DESC" (10231 rows on 2026-09-20: cbm_what_if 30, cbm_dsm 25,
+    # cbm_evolution 17, cbm_quality_gate 16). An earlier draft of this comment quoted
+    # 267/263/216/200; nothing reproduces those, so they are retracted here instead of left to be
+    # re-measured by the next CA. The RANKING is what the rows rest on, not the absolute counts.
     # Each trigger is a key a real call returned, and all of them sit under `result`, because
     # that is where the whole cbm family answers.
     PassiveChain(
@@ -252,6 +277,31 @@ PASSIVE_CHAINS = (
         _what_if_applied_nothing,
         "ok but nothing was simulated: an op named an id the graph view does not contain",
         "cbm_nodes_query",
+    ),
+    # A38-B, probed live 2026-09-20: the two index QUERY tools. A CA that got matches has no way
+    # to know what the next question is -- the payload names neither an edge nor a path -- and
+    # these are the entry point of every cbm read, so the hint is worth more here than deeper in.
+    PassiveChain(
+        "cbm_nodes_query", "count",
+        _query_matched,
+        "symbols matched: cbm_edges_query names what reaches one, cbm_trace_path how two connect",
+        "cbm_edges_query",
+    ),
+    PassiveChain(
+        "cbm_edges_query", "count",
+        _query_matched,
+        "edges matched: each names a source and a target, so reachability is one trace away",
+        "cbm_trace_path",
+    ),
+    # Keyed on `status`, NOT on `gaps` -- see _test_gap_unavailable. This is the one cbm state
+    # where the rest of the payload actively misleads: `pass` is always False and `score` always
+    # None on EVERY path (the tool's own pass_semantics says so), so a CA that reads them as a
+    # verdict needs the real runner, not another index read.
+    PassiveChain(
+        "cbm_test_gap", "status",
+        _test_gap_unavailable,
+        "no test files were compared: uncovered_files is not evidence of untested code",
+        "run_project_test_script",
     ),
 )
 

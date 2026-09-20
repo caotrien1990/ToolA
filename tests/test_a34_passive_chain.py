@@ -74,6 +74,15 @@ _PROBE_SHAPES = {
         "ok", "result", "generation", "operation_id", "write_status_url", "operation_attempts",
         "operation_replayed",
     },
+    # A38-B, probed live 2026-09-20 over HTTP /api/call/<tool>. Same envelope story as A38:
+    # `generation` and the operation_* keys are the transport, the tool's own answer is `result`,
+    # so all three triggers below live in _PROBE_NESTED.
+    "cbm_nodes_query": {"ok", "result", "generation"},
+    "cbm_edges_query": {"ok", "result", "generation"},
+    "cbm_test_gap": {
+        "ok", "result", "generation", "operation_id", "write_status_url", "operation_attempts",
+        "operation_replayed",
+    },
 }
 
 # The one nested level the probe expanded. cbm_graph_status carries its whole answer under
@@ -104,6 +113,19 @@ _PROBE_NESTED = {
         "version", "status", "reason", "pass", "applied", "ops_applied", "steps", "before",
         "after", "diff", "clone", "metric_notes", "truncated", "elapsed_ms", "provenance",
         "original_unchanged", "caps", "cache_hit", "wrote", "auto_index_result",
+    },
+    # A38-B, probed live 2026-09-20: limit=3 on the two index queries, a bare call on test_gap.
+    "cbm_nodes_query": {
+        "count", "enabled", "error", "limit", "next_offset", "offset", "results", "total",
+    },
+    "cbm_edges_query": {
+        "count", "enabled", "error", "limit", "next_offset", "offset", "results", "total",
+    },
+    "cbm_test_gap": {
+        "auto_index_result", "cache_hit", "counts", "coverage_ratio", "covered_files",
+        "elapsed_ms", "gaps", "isolated_uncovered", "metric_notes", "pass", "pass_semantics",
+        "per_test", "provenance", "reason", "reasons", "score", "source_files", "status",
+        "test_files", "truncated", "uncovered_files", "vacuous", "version",
     },
 }
 
@@ -136,6 +158,21 @@ _FIRES = {
         "ok": True,
         "result": {"applied": False, "status": "unavailable", "reason": "invalid_id"},
     },
+    # A38-B, probed live 2026-09-20: a nodes/edges query with limit=3 that matched, and the BARE
+    # cbm_test_gap call -- which answers status "unavailable" precisely because no test file was
+    # ever compared, while `pass`/`score` still look like a verdict.
+    ("cbm_nodes_query", "count"): {
+        "ok": True,
+        "result": {"count": 3, "total": 3, "results": [{"id": "a.py"}]},
+    },
+    ("cbm_edges_query", "count"): {
+        "ok": True,
+        "result": {"count": 3, "total": 3, "results": [{"src": "a.py", "dst": "b.py"}]},
+    },
+    ("cbm_test_gap", "status"): {
+        "ok": True,
+        "result": {"status": "unavailable", "gaps": [], "pass": False, "score": None},
+    },
 }
 _STAYS_SILENT = {
     ("read_file_range", "truncated"): {"ok": True, "truncated": False},
@@ -155,6 +192,16 @@ _STAYS_SILENT = {
     },
     ("cbm_evolution", "coupling"): {"ok": True, "result": {"coupling": []}},
     ("cbm_what_if", "applied"): {"ok": True, "result": {"applied": True, "ops_applied": 1}},
+    # A38-B. A query that matched nothing is a dead end, not a chain. And a test_gap run that
+    # really compared test files (status "ok", measured with included_files + test_files) has a
+    # coverage answer of its own, so it needs no runner hint.
+    ("cbm_nodes_query", "count"): {"ok": True, "result": {"count": 0, "results": []}},
+    ("cbm_edges_query", "count"): {"ok": True, "result": {"count": 0, "results": []}},
+    ("cbm_test_gap", "status"): {
+        "ok": True,
+        "result": {"status": "ok", "gaps": [], "coverage_ratio": 1.0,
+                   "counts": {"source_files": 1, "test_files": 1, "covered_files": 1}},
+    },
 }
 
 _ROWS = list(PASSIVE_CHAINS)
@@ -243,6 +290,21 @@ def test_the_gate_unavailable_count_is_an_honest_gap():
     gate_rows = [r for r in _ROWS if r.tool == "cbm_quality_gate"]
     assert gate_rows, "cbm_quality_gate lost its row; this gap note now guards nothing"
     assert not [r for r in gate_rows if "unavailable" in r.trigger]
+
+
+def test_the_test_gap_row_is_keyed_on_status_and_not_on_gaps():
+    """A38-B gave cbm_test_gap a row, but keyed on `status` -- never on `gaps`.
+
+    Measured 2026-09-20: `gaps` came back [] in every state reachable without inventing a payload
+    (bare, included_files only, and both of those with a tested and with an untested file). A
+    `gaps > 0` predicate would therefore be trap 3 -- a row written against a shape no probe ever
+    showed. If a live call is ever seen returning a non-empty `gaps`, this is where the decision
+    gets re-made instead of being quietly widened.
+    """
+    rows = [r for r in _ROWS if r.tool == "cbm_test_gap"]
+    assert rows, "cbm_test_gap lost its row; this decision note now guards nothing"
+    assert not [r for r in rows if "gaps" in r.trigger]
+    assert [r for r in rows if r.trigger == "status"]
 
 
 # ---------------------------------------------------------------------- 2. predicates

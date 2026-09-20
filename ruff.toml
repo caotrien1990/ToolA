@@ -4,3 +4,34 @@ target-version = 'py312'
 # Start with fatal parser/runtime-binding checks across all tracked Python,
 # including .council. Broader style and modernization rules are legacy debt.
 select = ['E9', 'F63', 'F7']
+
+# ---------------------------------------------------------------------------
+# A38-B, measured 2026-09-20. READ THIS BEFORE "fixing ruff findings" again.
+#
+# `ruff check <file>` from the repo root uses the select above and answers
+# "All checks passed!" for code_tools.py. Anything a wider run reports is
+# OUT OF GATE BY DESIGN -- not debt somebody forgot. Two gates exist and they
+# disagree on purpose: [A]'s own write-time validator runs a wider set and
+# reports its findings in write_fix.validation.lint_warning, which is advice,
+# not a failing check.
+#
+# Baseline for code_tools.py after A38-B, per rule, `ruff check --isolated
+# --select <rule> --statistics`:
+#
+#   E402  17  module-level import not at top of file -- STRUCTURAL, not a
+#             defect: this module registers tools in stages and imports the
+#             later stages where they are used. Moving them to the top is a
+#             refactor of the registration order, never a lint fix.
+#   F401   0  (was 1; A38-B deleted the dead orchestrator.graph.config import)
+#   F811   0  (was 5; all five were the session-log wrappers redefining names
+#             the deleted import had bound -- one deletion closed both rules)
+#   F841   0  (was 1; the unused see_also_macros dict, deleted as a contract
+#             defect: bootstrap_session promised it and never returned it)
+#   I001   0  keep it there. A comment placed INSIDE an import block makes
+#             isort report the block un-sorted -- measured on this very file.
+#   F821, F822, E711, E712, E722, F632: 0. These are the error-class rules a
+#             wider select would add, and there is nothing hiding behind them.
+#
+# E501 (~1423) and BLE001 (~282) are the two loud style families. They are
+# legacy debt, deliberately unselected, and re-measuring them proves nothing.
+# ---------------------------------------------------------------------------

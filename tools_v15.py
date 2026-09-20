@@ -56,7 +56,6 @@ import json
 import logging
 import os
 import re
-import socket
 import subprocess
 import time
 from datetime import datetime
@@ -613,7 +612,6 @@ async def git_blame_symbol(symbol: str, project_path: str,
     first = fs["results"][0]
     file_rel = first["file"]
     line = first["line"]
-    abs_path = str(Path(project_path) / file_rel)
 
     def _git_log() -> dict:
         try:
@@ -2227,7 +2225,6 @@ async def progressive_matrix_check(project_path: str = "",
     This is intentionally a small harness, not a replacement for runtime tests.
     It catches static drift early and points CA to the next focused runtime proof.
     """
-    import json
     from pathlib import Path
 
     try:
@@ -3806,7 +3803,6 @@ async def read_all_logs(page_id: str, panels: list | None = None,
     # V15 R16.6 — view-* panel enumeration
     view_panels: dict = {}
     if include_view_panels:
-        import re as _re
         pat_js = json.dumps(view_id_pattern)
         view_expr = (
             "((pat) => {"
@@ -5276,7 +5272,6 @@ async def architecture_audit_compact(project_path: str = "") -> str:
     s = raw.get("summary", {}) or {}
     alias_drift = raw.get("alias_drift", []) or []
     prog = raw.get("progressive_gaps", []) or []
-    inv = raw.get("inventory_classification", {}) or {}
     # KtrB: backend code/tool count + drift presence
     KtrB = {
         "status": "ok" if s.get("drift_count", 0) == 0 else "drift_present",
@@ -5487,14 +5482,13 @@ async def acceptance_dashboard(project_path: str = "",
         alias_contract_intact = bool(ac_summary.get("alias_contract_intact"))
         alias_pass = int(ac_summary.get("total_passed", 0) or 0)
         alias_fail = int(ac_summary.get("total_failed", 0) or 0)
-    except Exception as exc:
+    except Exception:
         alias_contract_intact = None
         alias_pass = alias_fail = -1
 
     # Schema scan: weak-hint count + mutation_scope consistency + protected mismatch
     weak_schema_count = 0
     weak_schema_examples: list = []
-    protected_mismatch_count = 0
     mutation_scope_mismatch = []
     try:
         import code_tools as _ct
@@ -5514,7 +5508,6 @@ async def acceptance_dashboard(project_path: str = "",
             if not name:
                 continue
             desc = fn.get("description", "") or ""
-            params = (fn.get("parameters", {}) or {}).get("properties", {}) or {}
             # V15 R29: Weak = short desc AND no enrichment (payload_example absent).
             # Skip protected tools (they have token/contract gate as guidance).
             has_example = name in payload_examples
@@ -5525,8 +5518,15 @@ async def acceptance_dashboard(project_path: str = "",
                 if len(weak_schema_examples) < 5:
                     weak_schema_examples.append({"tool": name, "desc_len": len(desc),
                                                   "has_payload_example": has_example})
-            # Protected metadata mismatch: tool in PROTECTED but description says non-mutating
-            # Skip — handled via /api/tools metadata response (not schema)
+            # Protected metadata mismatch: tool in PROTECTED but description says non-mutating.
+            # DELIBERATELY NOT CHECKED HERE -- it is handled via the /api/tools metadata response,
+            # not the schema. A38-B RETIRED the counter this block used to feed: the report was
+            # publishing `protected_mismatch_count` from len(mutation_scope_mismatch), a DIFFERENT
+            # measurement, so `protected_mismatch_ok` and `mutation_scope_ok` were one boolean
+            # wearing two names, and `protected_mismatch_count_max` was a target for a quantity
+            # nothing ever measured. The local, the target, the actual and the delta are all gone.
+            # Do not re-add a counter here to "restore a missing metric": either implement the real
+            # check, or leave the honest gap. Never wire it to the mutation_scope list again.
         # mutation_scope consistency: every PROTECTED tool should have a scope entry
         for pn in protected_set:
             if pn in _ct.TOOL_MAP and pn not in scope_map:
@@ -5711,7 +5711,6 @@ async def acceptance_dashboard(project_path: str = "",
         "drift_count": 0,
         "alias_drift_count_max": 5,
         "weak_schema_count_max": 3,
-        "protected_mismatch_count_max": 0,
         "mutation_scope_consistent": True,
         "alias_contract_intact": True,
         "duplicate_key_count_max": 0,  # R43.2
@@ -5720,7 +5719,6 @@ async def acceptance_dashboard(project_path: str = "",
         "drift_count": s.get("drift_count", 0),
         "alias_drift_count": s.get("alias_drift_count", 0),
         "weak_schema_count": weak_schema_count,
-        "protected_mismatch_count": len(mutation_scope_mismatch),
         "mutation_scope_consistent": (len(mutation_scope_mismatch) == 0),
         "alias_contract_intact": alias_contract_intact,
         "duplicate_key_count": len(duplicate_key_findings),  # R43.2
@@ -5730,7 +5728,6 @@ async def acceptance_dashboard(project_path: str = "",
         "drift_ok": actuals["drift_count"] == 0,
         "alias_drift_ok": actuals["alias_drift_count"] <= targets["alias_drift_count_max"],
         "weak_schema_ok": actuals["weak_schema_count"] <= targets["weak_schema_count_max"],
-        "protected_mismatch_ok": actuals["protected_mismatch_count"] == 0,
         "mutation_scope_ok": actuals["mutation_scope_consistent"],
         "alias_contract_ok": actuals["alias_contract_intact"] is True,
         "duplicate_key_ok": actuals["duplicate_key_count"] == 0,  # R43.2
@@ -7008,7 +7005,6 @@ async def check_window_visibility(hwnd: int = 0, title_pattern: str = "",
     """
     import re as _re
 
-    import win32con
     import win32gui
     import win32process
 
@@ -7215,7 +7211,6 @@ async def _cdp_dispatch(port: int, target_id: str, method: str, params: dict):
     # Use websockets via stdlib? Python stdlib has no WS client; need raw socket impl
     # or external lib. Easiest: use a tiny WS handshake + frame writer/reader.
     import base64 as _b64
-    import hashlib as _hl
     import os as _os
     import socket
     import struct as _st
@@ -7313,7 +7308,6 @@ async def restart_orchestrator_via_task(delay_seconds: int = 2) -> str:
         Or {ok:false, error_name:"INSTALL_TASK_REQUIRED"|...} on setup error.
     """
     import json as _json
-    import os as _os
     import subprocess as _sp
     from pathlib import Path as _Path
     task_name = "ToolA_Orchestrator"

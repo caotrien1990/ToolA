@@ -38,9 +38,6 @@ from pathlib import Path
 import path_runtime
 import surgical_mapper
 from orchestrator import search_snapshots
-
-# Phase 0 Step 2: graph feature-flag + bounded-context constants (A_Q_devineupgrade_breakdown_plan_2nd)
-from orchestrator.graph import config as graph_config
 from orchestrator.mission import (
     tools as _mission_tools,  # noqa: F401 - eval'd by BASE_TOOL_MAP_SPECS as '_mission_tools.mission_*'
 )
@@ -192,6 +189,23 @@ def _atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> str:
 def _atomic_write_json(path: Path, data, *, indent: int | None = None) -> None:
     _atomic_write_text(Path(path), json.dumps(data, ensure_ascii=False, indent=indent), encoding="utf-8")
 
+# === E402 ANCHOR NOTE -- READ THIS BEFORE ANY LINT SWEEP ON code_tools.py ===================
+# E402 CLUSTER: this line plus the three `from orchestrator.council.route_metrics import (...)`
+# blocks below (4 sites). All 17 E402 in this file are OUT OF GATE BY DESIGN -- ruff.toml selects
+# only E9/F63/F7 and its baseline block records the count, which tests/test_a38b_lint_contract.py
+# parses, so the number is anchored by a test. This module is a 15.6k-line aggregator: every
+# section keeps its imports under its own banner, hence module-level imports after the helpers.
+# MEASURED 2026-09-20: orchestrator/core/registry_data.py and orchestrator/council/route_metrics.py
+# do NOT import code_tools back. This is NOT a circular-import guard -- do not document it as one,
+# and do not hoist these imports to the top: churn with no behaviour change.
+# THE REAL HAZARD HERE IS F401, NOT E402: registry_data.BASE_TOOL_MAP_SPECS names its handlers as
+# STRING expressions that build_tool_map() eval()s against code_tools globals() at the bottom of
+# this file, so ruff sees no reference to them. `ruff --fix` deleting such an import makes the
+# daemon die at import with NameError -- that is why those lines carry a noqa F401 suppression
+# (spelled without the hash here on purpose: ruff parses a literal noqa token inside a comment and
+# would warn about an invalid directive). Never run a
+# blanket `ruff --fix` or auto-organise-imports on this file. The other three E402 clusters
+# (~L6432 logging helpers, ~L7765 T4 runtime shims, ~L11503 workflow dispenser) point back here.
 from orchestrator.core.registry_data import (
     BASE_TOOL_MAP_SPECS,
     T1_TOOLS,  # noqa: F401 - re-exported: tool_smoke_runner.py reads ct.T1_TOOLS
@@ -6432,15 +6446,15 @@ This file is created from user-approved inputs only.
 
 _ORCHESTRATOR_ROOT = Path(__file__).parent.parent  # project root của Orchestrator
 
+# E402 CLUSTER -- this line plus the 2 imports below (3 sites). OUT OF GATE BY DESIGN: ruff.toml
+# selects only E9/F63/F7 and its baseline block records all 17 E402 in this file. They sit under
+# the "Logging helpers" banner beside the wrapper defs that consume them, per this file's section
+# layout. MEASURED 2026-09-20: orchestrator/session/logs.py and orchestrator/session/store.py do
+# NOT import code_tools, so this is NOT a circular-import guard -- hoisting is churn with no
+# behaviour change. The wrappers below dereference these module aliases at call time; see the
+# note above _log_to_file, and the F401/eval() hazard note near L192 before any `ruff --fix`.
 import orchestrator.session.logs as _session_logs_module
 import orchestrator.session.store as _session_store_module
-from orchestrator.session.logs import (
-    _auto_trim_log,
-    _check_incomplete_sessions,
-    _log_app_session,
-    _log_to_file,
-    _log_usage,
-)
 from orchestrator.session.store import (
     TOOL_ACTION_MAP,
     _session_project_key,
@@ -6641,6 +6655,10 @@ def _task_checkpoint_update(session_key: str, update_fn, busy_timeout_ms: int = 
 TaskCheckpointStorageError = _session_store_module.TaskCheckpointStorageError
 
 
+# These five wrappers ARE the live definitions of the session-log helpers -- they delegate to
+# _session_logs_module. Importing the same five names at the top of this file is therefore dead by
+# construction: these defs shadow them as soon as the module finishes loading. A38-B removed that
+# import (F401); do not re-add it to "restore a missing name".
 def _log_to_file(log_path: Path, entry: dict, max_entries: int = 500):
     return _session_logs_module._log_to_file(log_path, entry, max_entries=max_entries)
 
@@ -7768,6 +7786,12 @@ async def folder_diff(path_a: str, path_b: str,
 
 
 # -- T4 desktop dialog runtime shims -----------------------------------------
+# E402 CLUSTER -- 4 sites: this line plus the three `from orchestrator.runtime import (...)` blocks
+# below. OUT OF GATE BY DESIGN: ruff.toml selects only E9/F63/F7 and its baseline block records all
+# 17 E402 in this file. They live beside the T4 shims that consume them because this module is a
+# 15.6k-line aggregator sectioned by banner. MEASURED 2026-09-20: orchestrator/runtime/__init__.py
+# does NOT import code_tools, so this is NOT a circular-import guard -- hoisting is pure churn.
+# Every alias below is used by the T4 wrapper defs that follow; do not delete an "unused" import.
 from orchestrator.runtime import (
     cancel_native_dialog as _runtime_cancel_native_dialog,
 )
@@ -9425,7 +9449,6 @@ async def bootstrap_session(project_path: str = "", session_id: str = "",
       - key_tools_compact (~30 frequently-used tools with required + alias hints)
       - common_pitfalls (R41 lessons distilled)
       - active_skills_index (skill names)
-      - see_also_macros (other 1-shot discovery endpoints)
     """
     import json as _json_bs
     if verbosity not in {"terse", "compact", "full", "ref"}:
@@ -9625,15 +9648,6 @@ async def bootstrap_session(project_path: str = "", session_id: str = "",
         "Use bounded, filtered discovery.",
         "Use script-file transport on Windows for multiline, regex, JSON, Unicode, or heavy quoting.",
     ]
-
-
-    see_also_macros = {
-        "audit_tool_matrix": "GET /api/call/audit_tool_matrix — full schema + drift audit",
-        "acceptance_dashboard": "GET /api/call/acceptance_dashboard — R29 compact dashboard (drift/alias/weak/mutation)",
-        "tool_inspector": "GET /api/tool_inspector/<tool_name> — per-tool deep schema",
-        "tools_compact": "GET /api/tools/names?tier=T4 — name+tier only (~3KB)",
-        "workflow_list": "POST /api/call/workflow_list — list workflow MDs",
-    }
 
     # Active skills via skill_router file scan (cheap)
     active_skills_index = []
@@ -11516,6 +11530,11 @@ async def workflow_goto_step(name: str, target_step: int, reason: str = "",
 
 # ─── V15 R35: MD workflow stateful dispenser + universal completion-signal gate ─────
 
+# E402 (module-level import not at top of file) -- OUT OF GATE BY DESIGN: ruff.toml selects only
+# E9/F63/F7, and its baseline block records the 17 E402 sites in this file. This is a 15.6k-line
+# aggregator where each section carries its own imports under its own banner. MEASURED 2026-09-20:
+# this is NOT a circular-import guard. Do not hoist it to the top and do not run `ruff --fix` on
+# this file -- see the F401/eval() hazard in the tool-map import note near L192.
 import re as _re_wf
 
 _WORKFLOW_VALID_STATUS = {"active", "done", "fail", "skipped", "pending"}

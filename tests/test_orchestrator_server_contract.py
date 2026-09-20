@@ -15,17 +15,17 @@ import types
 import unittest
 import unittest.mock
 import urllib.error
-from unittest import mock
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest import mock
 
 from aiohttp import StreamReader
-from orchestrator.server.audit_writer import DurableAuditWriter
 from aiohttp.test_utils import make_mocked_request
 
-import orchestrator_server
 import code_tools
+import orchestrator_server
 import tools_v15
+from orchestrator.server.audit_writer import DurableAuditWriter
 
 
 @contextlib.contextmanager
@@ -1345,7 +1345,8 @@ process.stdout.write(JSON.stringify(snapshots));
         # on-disk .council/runtime_state.json (cross-process visibility), so
         # without this patch the test read whatever a live [A] had written for
         # 'ope' and flaked. Point it at a temp file for the duration.
-        import tempfile as _tf, os as _os
+        import os as _os
+        import tempfile as _tf
         _tmp = _tf.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
         _tmp.write('{}')
         _tmp.close()
