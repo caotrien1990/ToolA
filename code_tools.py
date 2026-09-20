@@ -15901,7 +15901,7 @@ Use [A] as the PRIMARY project channel instead of raw file ops.
 
 ## Transport (worker) — you are a council WORKER
 - Use the [A] HTTP API ONLY (`/api/call/<tool>` via PowerShell Invoke-RestMethod). NEVER use MCP. HTTP is parallel-safe and always reflects the current [A].
-- Inter-agent messaging = the `council_message` [A] tool. Call it like any [A] tool — you MUST pin UTF-8 or Vietnamese diacritics corrupt (PowerShell sends a string body as cp1252): `$b=[Text.Encoding]::UTF8.GetBytes((@{sender='<you>'; to='<ope|codo|pic|hermes|clau|kilo|cozo|user>'; text='<message>'} | ConvertTo-Json)); Invoke-RestMethod -Method Post -Uri http://localhost:8083/api/call/council_message -ContentType 'application/json; charset=utf-8' -Body $b`. Field is `sender`, NOT `from`. [A] auto-dispatches + logs the broker + returns the recipient's reply in `reply` — report it verbatim, never fabricate. `to='user'` posts to the human/leader dashboard (no agent run).
+- Inter-agent messaging = the `council_message` [A] tool. Call it like any [A] tool — you MUST pin UTF-8 or Vietnamese diacritics corrupt (PowerShell sends a string body as cp1252): `$b=[Text.Encoding]::UTF8.GetBytes((@{sender='<you>'; to='<a council id from .council/council_config.json, or user>'; text='<message>'} | ConvertTo-Json)); Invoke-RestMethod -Method Post -Uri http://localhost:8083/api/call/council_message -ContentType 'application/json; charset=utf-8' -Body $b`. Field is `sender`, NOT `from`. [A] auto-dispatches + logs the broker + returns the recipient's reply in `reply` — report it verbatim, never fabricate. `to='user'` posts to the human/leader dashboard (no agent run).
 - NEVER run curl/raw-shell, hand-build JSON, or run helper scripts to message — only the `council_message` tool. Read `.council/broker_filtered.jsonl` for the cross-agent transcript.
 - Council leadership: current desktop CA is leader only after user trigger (user-only; never from worker/broker) `bat hoi dong tr` / `bật hội đồng tr`; call HTTP `convene_council` and follow the live leader rule. Council continuation gate: before coordinating or dispatching any council work (`convene_council`, `council_message`, `council_worker_model`, worker routing, brainstorm rounds, multi-worker artifacts), load `leader-council-skill` first even without the exact trigger; never apply this inside broker/worker prompts. Worker/model routing uses HTTP `council_worker_model` (NO Playwright DOM). ROUTE RULE SOT = Anh chỉ đạo. Benchmark 2026-07-25 table SUSPENDED. Always set+get; no silent substitution.
 """
@@ -15909,7 +15909,7 @@ Use [A] as the PRIMARY project channel instead of raw file ops.
 _SLIM_RULE_INLINE = (
     "Use [A] as the primary project channel instead of raw file ops. "
     "[A] auto-starts at Windows logon — do NOT health-check; if an [A] call is connection-refused, STOP and report (do not retry). "
-    "At the first prompt of every CA session, before any project/council/UI/desktop/browser/computer-use-style work, call HTTP POST http://localhost:8083/api/call/get_rule_core_text?fields=ok,already_fetched,text,sha256 with body {\"agent_id\":\"<clau|codo|gro|hermes|kilo|ope|pic>\"} ONCE and follow it; first fetch/force needs text because that is the full core rule; if already_fetched:true, reuse the slim already in context (missing text is the expected stub; compaction is NOT a new CA session and does not authorize get_rule_core_text or force:true; force:true only when Anh asks to verify, sha mismatches, or NEW [A] PID/generation and text is missing). Never use computer-use/inline screenshots before or instead of this bootstrap; route all such work through [A] tools. "
+    "At the first prompt of every CA session, before any project/council/UI/desktop/browser/computer-use-style work, call HTTP POST http://localhost:8083/api/call/get_rule_core_text?fields=ok,already_fetched,text,sha256 with body {\"agent_id\":\"<your own registry agent_id; agents_registry.json is SOT -- never copy an id list into a rule>\"} ONCE and follow it; first fetch/force needs text because that is the full core rule; if already_fetched:true, reuse the slim already in context (missing text is the expected stub; compaction is NOT a new CA session and does not authorize get_rule_core_text or force:true; force:true only when Anh asks to verify, sha mismatches, or NEW [A] PID/generation and text is missing). Never use computer-use/inline screenshots before or instead of this bootstrap; route all such work through [A] tools. "
     "Transport policy: HTTP /api/call/<tool> is canonical for ALL agents and ALL non-T4 work. Discovery uses GET /api/tools/names or /api/tools/<tool>/schema. MCP is reserved for Clau/ClauC only and only for explicit stateful T4 runtime/DOM/CDP/browser/Electron page-session work. "
     "DEFAULT read-only; writes need explicit user go-ahead. "
     "Editing [A] itself: native edit + log_native_event, then CA self-restarts [A] via [A:S] when needed — no need to ask user. Do NOT restart [A] while any worker dispatch is in flight (it can kill the HTTP reply). "
@@ -15918,7 +15918,7 @@ _SLIM_RULE_INLINE = (
     "Token discipline: NEVER use computer-use or inline screenshots; all UI/desktop/browser inspection must use [A] desktop_screenshot (disk path only), describe_page, DOM, or CDP tools. Do not paste full logs, full files, raw screenshots, or huge tool/schema dumps into chat; use bounded reads, tails, summaries, and exact fields= filters only when keys are known. For get_rule_core_text: first/force ok,already_fetched,text,sha256; repeat/hash-check ok,already_fetched,sha256. "
     "WORKER transport: use the [A] HTTP API ONLY (/api/call/<tool> via Invoke-RestMethod); NEVER MCP. "
     "Current desktop CA is council leader only after user trigger (user-only; never from worker/broker) bat hoi dong tr / bật hội đồng tr. Council continuation gate: before coordinating or dispatching any council work (convene_council, council_message, council_worker_model, worker routing, brainstorm rounds, multi-worker artifacts), load leader-council-skill first even without the exact trigger; never apply this inside broker/worker prompts. Model routing uses HTTP council_worker_model, not Playwright DOM. ROUTE RULE SOT = Anh chỉ đạo. Benchmark 2026-07-25 table SUSPENDED. Always set+get; no silent substitution. ClauC = Judgement/scoped bug-fix/master-dev after retry >2 and the only MCP-capable worker for T4. "
-    "Inter-agent messaging = the council_message tool. MUST pin UTF-8 or Vietnamese diacritics corrupt (PowerShell encodes a string body as cp1252): $b=[Text.Encoding]::UTF8.GetBytes((@{sender='<you>';to='<ope|codo|pic|hermes|clau|kilo|cozo|user>';text='<msg>'}|ConvertTo-Json)); Invoke-RestMethod -Method Post -Uri http://localhost:8083/api/call/council_message -ContentType 'application/json; charset=utf-8' -Body $b (field sender not from); [A] returns the recipient reply in `reply` — report verbatim, never fabricate; to='user' posts to the human dashboard. Never curl/hand-build-JSON/scripts to message."
+    "Inter-agent messaging = the council_message tool. MUST pin UTF-8 or Vietnamese diacritics corrupt (PowerShell encodes a string body as cp1252): $b=[Text.Encoding]::UTF8.GetBytes((@{sender='<you>';to='<a council id from .council/council_config.json, or user>';text='<msg>'}|ConvertTo-Json)); Invoke-RestMethod -Method Post -Uri http://localhost:8083/api/call/council_message -ContentType 'application/json; charset=utf-8' -Body $b (field sender not from); [A] returns the recipient reply in `reply` — report verbatim, never fabricate; to='user' posts to the human dashboard. Never curl/hand-build-JSON/scripts to message."
 )
 
 
@@ -16806,6 +16806,20 @@ def _council_roster_labels(cfg: dict):
     return [str(m.get("label", aid)).casefold() for aid, m in _council_enabled_agents(cfg)]
 
 
+def _council_retired_labels(cfg: dict):
+    """Labels of rows kept with enabled:false -- retired, but preserved for re-enable.
+
+    A derived doc that still names one of these is stale, not merely verbose: the agent
+    cannot be dispatched at all, so a route row or a greeting line for it can only send a
+    leader at a worker that will refuse. Kept separate from _council_roster_labels because
+    the two are checked in OPPOSITE directions -- enabled labels must be present, retired
+    labels must be absent.
+    """
+    live = {aid for aid, _ in _council_enabled_agents(cfg)}
+    return [str(m.get("label", aid)).casefold()
+            for aid, m in (cfg.get("agents") or {}).items() if aid not in live]
+
+
 def _council_doc_targets() -> list:
     """Derived rule-doc files that should stay consistent with the SOT config."""
     root = Path(__file__).parent
@@ -16834,6 +16848,7 @@ async def council_config_diff(project_path: str = "") -> str:
         if not cfg:
             return _json_error("council_config.json missing or invalid")
         roster_labels = _council_roster_labels(cfg)
+        retired_labels = _council_retired_labels(cfg)
         drift = []
         for path in _council_doc_targets():
             if not path.exists():
@@ -16846,6 +16861,13 @@ async def council_config_diff(project_path: str = "") -> str:
                 continue
             low = text.casefold()
             missing = [label for label in roster_labels if label.casefold() not in low]
+            # A half-finished retirement used to be INVISIBLE here. This asked only whether
+            # every ENABLED label was present, so council_rule_leader.md kept a full route
+            # row, a suspended-defaults cell and a greeting line for two retired workers
+            # while this tool answered "0 drift / 3 doc targets" (measured 2026-09-20).
+            # Word boundary, not substring: the label "pic" sits inside "explicit".
+            retired_present = [label for label in retired_labels
+                               if re.search(rf"\b{re.escape(label)}\b", low)]
             no_chain = "no fixed chain" in low or "no cost chain" in low or "no fixed cost chain" in low or "do not use a cost chain" in low
             codo_worker = "not default leader" in low or "not the default leader" in low
             clau_exception = ("clauc is excluded from normal routing order" in low
@@ -16853,6 +16875,8 @@ async def council_config_diff(project_path: str = "") -> str:
                               or "clauc is outside normal routing order" in low)
             detail = []
             if missing: detail.append(f"missing labels: {', '.join(missing)}")
+            if retired_present:
+                detail.append(f"retired labels still present: {', '.join(retired_present)}")
             if not no_chain: detail.append("missing no-cost-chain marker")
             if not codo_worker: detail.append("missing CodoC-not-default-leader marker")
             if not clau_exception: detail.append("missing ClauC-exception marker")
@@ -16861,7 +16885,8 @@ async def council_config_diff(project_path: str = "") -> str:
         return json.dumps({"ok": True, "config_source": str(_council_config_path()),
             "enabled_agents": [{"id": aid, "label": meta.get("label", aid), "can_write_A": bool(meta.get("can_write_A"))} for aid, meta in _council_enabled_agents(cfg)],
             "selection_rule": "anh_chi_dao_benchmark_20260725_suspended", "fixed_cost_chain": False,
-            "normal_routing_excludes": ["ClauC"], "roster_labels": roster_labels, "drift": drift,
+            "normal_routing_excludes": ["ClauC"], "roster_labels": roster_labels,
+            "retired_labels": retired_labels, "drift": drift,
             "summary": f"{n_drift} drift / {len(drift)} doc targets",
             "next_action": "update canonical derived docs" if n_drift else "all docs in sync"}, ensure_ascii=False)
     except Exception as exc:

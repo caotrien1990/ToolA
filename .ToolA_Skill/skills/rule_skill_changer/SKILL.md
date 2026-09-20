@@ -154,16 +154,25 @@ self-consistent, not that disk matches it. Run it AFTER the restart or it grades
 - `rule_drift_check` -- `checks_run` = agent_list, behavior_sets, constants, tool_names. Row list
   is `drifts` (plural), not `drift`.
 - `manage_agent(action='sync_mcp', target='all', dry_run=true)` -- the [A] MCP block per agent.
-
+- `council_config_diff` -- the derived-doc check, TWO-WAY since 2026-09-20: enabled labels must be
+  PRESENT and retired labels (the rows kept `enabled: false`) must be ABSENT, reported as
+  `retired labels still present: ...` with the retired set echoed in `retired_labels`. It used to ask
+  only the first question, which is why it answered `0 drift / 3 doc targets` while
+  `council_rule_leader.md` still routed to two retired workers -- that one-way check WAS the root
+  cause of "drift bao 0 nhung kiem tra lai con drift". Even two-way it is not a full doc check: it
+  reads the roster labels and 4 literal markers, nothing else. The retired match is word-boundary,
+  because the label `pic` sits inside `explicit`.
 **Class B -- live code that hardcodes an id, a name or a count. No check reads these; grep them.**
 - `orchestrator/core/registry_data.py` -- tool and field `description` text, which may name
   specific agents; measured, one named a retired id for months. After editing, confirm the daemon
   SERVES your bytes (`GET /api/tools/<tool>/schema`): a later layer in `code_tools.py` can override
   this file, so a correct edit here is not automatically the served text.
 - `orchestrator/core/ca_policy_matrix.py` -- worker-id and desktop-id tuples, per-agent host gates.
-- `orchestrator_server.py` -- council roster / label / default-provider-model tables, per-agent CLI
-  branches and output parsers, and the dashboard order tuple guarded by a set-equality assert that
-  fails loudly on drift.
+- `orchestrator_server.py` -- council roster / label / default-provider-model tables, plus
+  per-agent CLI branches and output parsers. The dashboard order tuple was the B3 hardcode here and
+  is now DERIVED from `_COUNCIL_AGENTS` (2026-09-20), so that one can no longer drift; the LABEL
+  table still can, because `canonical_labels` is applied via `labels.update(...)` AFTER the config
+  labels and therefore OVERRIDES the SOT.
 - `code_tools.py` -- agent names embedded in `reason`/`note` strings returned to a CA.
 - `examples/SLIM_RULE.txt` -- also a PRODUCER: `sync_rule` renders every CA rule file from it, so
   one stale sentence here becomes 10 stale rule files at the next sync.
@@ -171,8 +180,32 @@ self-consistent, not that disk matches it. Run it AFTER the restart or it grades
 **Class C -- prose. No check, and not all of it is drift.**
 - `.ToolA_Skill/skills/**/SKILL.md` and `.ToolA_Skill/SKILLS.md` -- routing lists, verification
   lists, restart instructions, id enums.
-- `.council/council_config.json` (`agents` / `roster_order` / `messaging_to_enum`) and
-  `.council/council_rule_leader.md` -- presence here means a worker is treated as LIVE.
+- `.council/council_config.json` (`agents` / `roster_order` / `messaging_to_enum`) -- presence here
+  means a worker is treated as LIVE. Retiring one is `enabled: false`, NOT a row delete:
+  `_council_active_from_config` in `orchestrator_server.py` and `_council_enabled_agents` in
+  `code_tools.py` both filter on `enabled`, so a disabled row vanishes from the roster, the labels,
+  `route_capabilities` and the 5 council tool schema descriptions while the row itself survives for a
+  later re-enable -- and every test that uses that id as a live example keeps passing. ONE field
+  escapes the filter: `_council_build_from_config` returns `messaging_to_enum` RAW, so a retired id
+  stays in the rule's `to` enum until dropped by hand. This file is also XROOT-GATED -- `write_fix`
+  answers `XROOT_DENIED`. It is the hand-edited SOT: edit it natively (it is inside [A]'s own tree,
+  so `log_native_event` is the authorized path).
+- `.council/council_rule_leader.md` and `.council/global_rule_worker.md` -- **hand-maintained SOT,
+  NOT generated.** `code_tools.py:16621` names the leader doc the leader-rule source of truth, and
+  `council_config_sync` only marker-DIFFS these two -- it never regenerates them from the config, so
+  a retirement in `council_config.json` reaches them only when a CA edits them by hand. They are not
+  XROOT-gated, so `write_fix` works (bottom-up, one region per call). Every place a retired id hides,
+  measured 2026-09-20 -- in `council_rule_leader.md`: the per-agent route TABLE row, the
+  `Suspended routing defaults` line, the `Chao <Agent>,` greeting list, and the old preferred-chain
+  line. In `global_rule_worker.md`: the per-agent quick-reference bullet, the greeting list, the
+  greeting line near the end, the `to='<...>'` enum inside the `council_message` PowerShell example,
+  and the transport line naming which workers are HTTP-only. The greeting lists drift the OTHER way
+  too -- the leader list had never included the live GroC. Rewriting a line also clears the
+  double-encoded `ChA o` mojibake sitting in both files.
+- Three literal markers are REQUIRED in each of those two docs (`code_tools.py:16849-16853`): a
+  no-cost-chain phrase, `not the default leader`, and `ClauC is outside the normal routing order`.
+  An edit that drops one flips the doc to `drift` for a reason that has nothing to do with the
+  roster, so re-grep the three after any rewrite.
 - Historical council artifacts (`.council/BENCHMARK_*`, round reports, transcripts, `outputs/`) are
   EVIDENCE, not drift. Do not "clean" them: deleting a pointer deletes the measurement that
   justified a decision.

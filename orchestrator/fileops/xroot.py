@@ -104,7 +104,7 @@ def _live_file_match(path: Path) -> tuple[str, str] | None:
     parts = [part.lower() for part in resolved.parts]
     joined = "/".join(parts)
     if joined.endswith("/.council/council_config.json"):
-        return "live_files", ".council/council_config.json must be modified through council_config_sync"
+        return "live_files", (".council/council_config.json is the hand-edited SOT: edit it in place, then run council_config_sync to propagate it to the derived rule docs. council_config_sync reads this file and writes those docs; it cannot edit this file, so it is not a way to make the change you just attempted.")
     if ".council" in parts and (name.startswith("inbox_") or name.startswith("outbox_")) and name.endswith(".md"):
         return "live_files", ".council/inbox_*.md and outbox_*.md must be modified through council_message"
     return None

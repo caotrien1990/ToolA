@@ -5055,11 +5055,14 @@ def _council_active_from_config():
 
 
 _COUNCIL_AGENTS, _COUNCIL_AGENT_LABELS = _council_active_from_config()
-# Dashboard render order. Must cover exactly set(_COUNCIL_AGENTS); aligned to
-# .council/council_config.json roster_order (the SOT) so adding an agent there
-# is the only edit needed. test_dashboard_order_and_payload_example_b3_b6.py
-# asserts the set equality and fails loudly if this drifts (B3: pic was missing).
-_COUNCIL_DASHBOARD_AGENT_ORDER = ("clau", "ope", "codo", "kilo", "pic", "hermes", "gro")
+# Dashboard render order. DERIVED from _COUNCIL_AGENTS, which reads roster_order in
+# .council/council_config.json (the SOT) and drops any agent with enabled:false.
+# B3 was a HAND-COPIED tuple here that omitted "pic", so that agent silently got no
+# dashboard card; test_dashboard_order_and_payload_example_b3_b6.py called this
+# constant "a hand-maintained duplicate of the active roster". Deriving it makes that
+# class of drift impossible: adding, removing or disabling an agent in the config is
+# the only edit needed, and retiring one (kilo/pic, 2026-09-20) needs no code change.
+_COUNCIL_DASHBOARD_AGENT_ORDER = _COUNCIL_AGENTS
 
 
 def _council_dashboard_agents() -> tuple[str, ...]:
@@ -11693,8 +11696,8 @@ _register_tool(
         "parameters": {
             "type": "object",
             "properties": {
-                "sender": {"type": "string", "description": "Your agent id: ope|codo|pic|hermes|kilo (alias: from)"},
-                "to": {"type": "string", "description": "Recipient: ope|codo|pic|hermes|clau|kilo|user"},
+                "sender": {"type": "string", "description": f"Your agent id, council namespace: {'|'.join(_COUNCIL_AGENTS)} (alias: from). Rendered from the live .council/council_config.json roster."},
+                "to": {"type": "string", "description": f"Recipient: {'|'.join(_COUNCIL_AGENTS)}|user -- rendered from the live .council/council_config.json roster. A council id is NOT an agents_registry.json id: registry 'opencode' routes as 'ope' (its route_id)."},
                 "text": {"type": "string", "description": "Inline message; exactly one of text or body_file"},
                 "body_file": {"type": "string", "description": "Allowlisted UTF-8 .council/briefs/*.md or *.txt; exactly one of text or body_file"},
                 "timeout_sec": {"type": "integer", "default": 6000, "description": "Max wait for the reply"},
@@ -11799,7 +11802,7 @@ _register_tool(
             "type": "object",
             "properties": {
                 "sender": {"type": "string", "description": "Caller id (resolved server-side; alias: from)"},
-                "to": {"type": "string", "description": "Recipient worker: ope|codo|pic|hermes|clau|kilo"},
+                "to": {"type": "string", "description": f"Recipient worker, council namespace: {'|'.join(_COUNCIL_AGENTS)} -- rendered from the live .council/council_config.json roster, never a hand-copied list"},
                 "text": {"type": "string", "description": "Inline task/message; exactly one of text or body_file"},
                 "body_file": {"type": "string", "description": "Allowlisted UTF-8 .council/briefs/*.md or *.txt; exactly one of text or body_file"},
                 "timeout_sec": {"type": "integer", "default": 3600, "description": "Worker run timeout"},
@@ -12424,7 +12427,7 @@ _register_tool(
     phase_labels=ct.PHASE_LABELS,
     aliases={"worker": "agent", "id": "model", "model_id": "model"},
     schema={
-        "description": "Get/set/list a council worker's model (clau|codo|pic|ope|hermes|kilo) WITHOUT "
+        "description": f"Get/set/list a council worker's model ({'|'.join(_COUNCIL_AGENTS)}) WITHOUT "
                        "the dashboard UI / Playwright DOM. Validates against curated "
                        ".council/ID_MODELS/<PROVIDER>.txt; applies at the next dispatch. "
                        "ROUTE RULE SOT = the user's live directive (Anh). Benchmark 2026-07-25 table SUSPENDED. "
@@ -12434,7 +12437,7 @@ _register_tool(
         "parameters": {
             "type": "object",
             "properties": {
-                "agent": {"type": "string", "description": "Worker id: clau|codo|pic|ope|hermes|kilo (alias: worker)"},
+                "agent": {"type": "string", "description": f"Worker id, council namespace: {'|'.join(_COUNCIL_AGENTS)} (alias: worker). Rendered from the live roster (.council/council_config.json) at import, so it cannot drift; action='list' prints it. A council id is NOT an agents_registry.json id: registry 'opencode' routes as 'ope' (its route_id)."},
                 "model": {"type": "string", "description": "Model id to set (alias: id). Must be in curated ID_MODELS. SET only the model Anh named or keep the live pin. Benchmark 2026-07-25 preferred cells are SUSPENDED. Always verify with action=get."},
                 "provider": {"type": "string", "description": "Optional override. Normal routing omits provider only when action=get verifies backend/provider mapping; set explicitly for mismatch/debug."},
                 "action": {"type": "string", "description": "get (default) | set | list. Recommended: set, then get to verify before dispatch."},

@@ -159,68 +159,6 @@
         "http_only": true
       }
     },
-    "kilo": {
-      "id": "kilo",
-      "route_id": "kilo",
-      "provider": "kilo",
-      "display_name": "Kilo",
-      "legacy_worker_name": "KiloC",
-      "persona": "Always refer to yourself as \"Kilo\" and address the user as \"Anh\". Use [A] tools and other tools via HTTP API; do not use MCP.",
-      "rule_file": "C:/Users/ADMIN/.config/kilo/AGENTS.md",
-      "rule_format": "markdown",
-      "rule_template": "slim",
-      "mcp_file": "",
-      "mcp_format": "json",
-      "mcp_key": "project-orchestrator",
-      "skill_dir": "C:/Users/ADMIN/.kilo/skills",
-      "skill_format": "folder",
-      "mode": "A",
-      "transport_policy": "a_first_mcp_t4_ok",
-      "governance": {
-        "north_star": "CSLt",
-        "acronym": "CSLt",
-        "order": [
-          "Correctness",
-          "Save token",
-          "Less context",
-          "Time fee"
-        ],
-        "a_first": true,
-        "http_only": false
-      },
-      "agent_transport_policy": "a_first_mcp_t4_ok"
-    },
-    "pic": {
-      "id": "pic",
-      "route_id": "pic",
-      "provider": "pi",
-      "display_name": "Pi",
-      "legacy_worker_name": "PiC",
-      "persona": "Always refer to yourself as \"Pi\" and address the user as \"Anh\".",
-      "rule_file": "C:/Users/ADMIN/.pi/agent/AGENTS.md",
-      "rule_format": "markdown",
-      "rule_template": "slim",
-      "mcp_file": "",
-      "mcp_format": "json",
-      "mcp_key": "project-orchestrator",
-      "skill_dir": "C:/Users/ADMIN/.agents/skills",
-      "skill_format": "folder",
-      "mode": "A",
-      "transport_policy": "http_only",
-      "governance": {
-        "north_star": "CSLt",
-        "acronym": "CSLt",
-        "order": [
-          "Correctness",
-          "Save token",
-          "Less context",
-          "Time fee"
-        ],
-        "a_first": true,
-        "http_only": true
-      },
-      "agent_transport_policy": "http_only"
-    },
     "fbuf": {
       "id": "fbuf",
       "route_id": "fbuf",

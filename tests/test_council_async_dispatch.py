@@ -22,13 +22,33 @@ from tempfile import TemporaryDirectory
 import orchestrator_server
 
 
+def _live_targets(count: int) -> tuple:
+    """`count` DISTINCT live council ids, DERIVED from the roster.
+
+    Hardcoded ids rot: the literal ("ope", "codo", "kilo") here broke the day kilo was
+    retired (enabled:false, 2026-09-20), because _council_dispatch_message validates the
+    target against _COUNCIL_AGENTS and not against worker_models.json. clau is skipped:
+    it is excluded from normal routing order.
+    """
+    agents = [a for a in orchestrator_server._COUNCIL_AGENTS if a != "clau"]
+    assert len(agents) >= count, f"live roster too small for {count} targets: {agents}"
+    return tuple(agents[:count])
+
+
 def _write_worker_models(root: Path) -> None:
+    # One row per LIVE roster id, so a roster change cannot leave a dispatched target
+    # without a model. The two named providers are kept because other assertions in this
+    # file read them back; every other agent gets a generic stub.
+    named = {
+        "ope": {"provider": "opencode-zen", "model": "opencode/test-model"},
+        "codo": {"provider": "codex", "model": "gpt-test-model"},
+    }
+    models = {
+        agent: named.get(agent, {"provider": "ltnai", "model": "ltnai/test-model"})
+        for agent in orchestrator_server._COUNCIL_AGENTS
+    }
     (root / ".council" / "worker_models.json").write_text(
-        json.dumps({
-            "ope": {"provider": "opencode-zen", "model": "opencode/test-model"},
-            "codo": {"provider": "codex", "model": "gpt-test-model"},
-            "kilo": {"provider": "ltnai", "model": "ltnai/test-model"},
-        }),
+        json.dumps(models),
         encoding="utf-8",
     )
 
@@ -110,7 +130,9 @@ class TestAsyncDispatchGate(_CouncilTmpBase):
             return io.BytesIO(b'{"ok": true}')
 
         urllib.request.urlopen = _slow_urlopen
-        targets = ("ope", "codo", "kilo", "ope", "codo")
+        # 5 dispatches over 3 DISTINCT live ids, derived from the roster.
+        trio = _live_targets(3)
+        targets = trio + trio[:2]
         t0 = time.monotonic()
         results = await asyncio.gather(*(
             orchestrator_server._council_dispatch_message(
@@ -156,7 +178,7 @@ class TestCouncilMessageAsyncRoundTrip(_CouncilTmpBase):
         return events
 
     async def test_async_ack_id_maps_to_broker_reply(self):
-        targets = ("ope", "codo", "kilo")
+        targets = _live_targets(3)
         t0 = time.monotonic()
         acks = await asyncio.gather(*(
             orchestrator_server.council_message_async(sender="clau", to=t, text=f"task {t}")

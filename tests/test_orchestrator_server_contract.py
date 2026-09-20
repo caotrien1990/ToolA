@@ -1412,10 +1412,17 @@ process.stdout.write(JSON.stringify(snapshots));
                 for agent in orchestrator_server._COUNCIL_AGENTS:
                     self.assertTrue(orchestrator_server._council_supports_mode(agent, 'broker'), agent)
                     self.assertFalse(orchestrator_server._council_supports_mode(agent, 'context'), agent)
+                # Any LIVE roster agent proves the mode gate -- the loop above just
+                # established that none of them supports 'context'. Derived, not
+                # hardcoded: the literal 'pic' here returned INVALID_AGENT instead of
+                # MODE_NOT_SUPPORTED the day that agent was retired (2026-09-20).
+                roster_agent = next(
+                    a for a in orchestrator_server._COUNCIL_AGENTS if a != 'clau'
+                )
                 req2 = make_mocked_request(
                     'POST', '/api/council/message',
                     headers={'Content-Type': 'application/json', 'Origin': f'http://localhost:{orchestrator_server.PORT}'},
-                    payload=_make_body_reader({'from': 'Anh', 'to': 'pic', 'text': 'x', 'mode': 'context'}),
+                    payload=_make_body_reader({'from': 'Anh', 'to': roster_agent, 'text': 'x', 'mode': 'context'}),
                 )
                 resp2 = await orchestrator_server.handle_council_message(req2)
                 self.assertEqual(resp2.status, 400)

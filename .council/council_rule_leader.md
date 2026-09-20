@@ -3,7 +3,7 @@
 ## ROUTE MEASUREMENT (HARD)
 
 Before dispatch, prompts MUST include TASK_ID, OBJECTIVE_CLASS, RISK_LEVEL, DEV_LEVEL, LOAD_BUDGET_SOURCE, INDEPENDENT_QUESTIONS, FILES_SUBSYSTEMS, EXPECTED_TOOL_CALLS, EXPECTED_WRITES, DEPENDENCY_DEPTH, and EXPECTED_END_MARKER. After reply/timeout, verify artifact exists/non-zero/end-marker and call/read council_route_scorecard. Separate transport_ok, artifact_valid, tests_reported, quality_verified, duration/tokens/cost utility. Fewer than the homogeneous sample threshold means insufficient_evidence and numeric capacity unknown/not verified. No route promotion/demotion from a single heterogeneous case.
-COUNCIL RULE â€” LEADER AGENTS
+COUNCIL RULE — LEADER AGENTS
 # v1.0 | 2026-06-05 | clauC
 
 ## Transport
@@ -45,8 +45,6 @@ ROUTE RULE SOT = Anh chỉ đạo. Do not use a cost chain. The 2026-07-25 bench
 | Agent | Live pin until Anh changes it | Use | Avoid |
 |---|---|---|---|
 | **CodoC** | `grok-4.6-build` via CodexLTNAI | High-end worker when Anh names CodoC: judgement, independent audit, high-difficulty development | Broad evidence scan; default coordination; not the default leader |
-| **PiC** | no Anh-directed default cell | Only when Anh names PiC or a live pin already exists | Suspended defaults `qwen3.7-max` / DeepSeek-as-default-scan |
-| **KiloC** | no Anh-directed default cell | Only when Anh names KiloC or a live pin already exists | Suspended default `ltnai/minimax-m3` |
 | **OpeC** | `openai-compatible/grok-4.6-build` | When Anh names OpeC or this live pin is used after SET+GET | Suspended default `qwen3.7-max` |
 | **HermC** | no Anh-directed default cell | Only when Anh names HermC or a live pin already exists | Suspended MiniMax/Qwen/DeepSeek default cells |
 | **GroC** | `grok-4.6-build` (LTNAI) | Grok CLI worker; design/bugs-scan/code skills | Do not treat as default leader or T4/MCP route |
@@ -54,7 +52,7 @@ ROUTE RULE SOT = Anh chỉ đạo. Do not use a cost chain. The 2026-07-25 bench
 
 ClauC is outside the normal routing order and remains an explicit exceptional T4/scoped route.
 
-Suspended routing defaults (do not apply): PiC+DeepSeek, PiC+Qwen, KiloC+MiniMax, OpeC+Qwen, CodoC+ox-alpha, CodoC+GPT-5.6 Sol, Kimi `DEFAULT_OFF` as a routing cell.
+Suspended routing defaults (do not apply): OpeC+Qwen, CodoC+ox-alpha, CodoC+GPT-5.6 Sol, Kimi `DEFAULT_OFF` as a routing cell. Two more cells left this list with their agents at the 2026-09-20 retirement; the live roster is the `enabled` rows in `.council/council_config.json`, never this table.
 
 ### ClauC Scarcity Gate
 
@@ -66,8 +64,8 @@ Suspended routing defaults (do not apply): PiC+DeepSeek, PiC+Qwen, KiloC+MiniMax
 
 ## Prompt Addressing + RES Append
 
-- When assigning a task to a worker, greet that worker by identity if useful: `ChÃ o ClauC,`, `ChÃ o OpeC,`, `ChÃ o CodoC,`, `ChÃ o PiC,`, `ChÃ o HermC,`, `ChÃ o KiloC,`.
-- Use `ChÃ o Anh,` only when replying directly to the human user.
+- When assigning a task to a worker, greet that worker by identity if useful: `Chào ClauC,`, `Chào OpeC,`, `Chào CodoC,`, `Chào HermC,`, `Chào GroC,`.
+- Use `Chào Anh,` only when replying directly to the human user.
 - In verification prompts, write: `VERIFY ONLY: no source/runtime edits; appending the required RES block to your own outbox is mandatory and allowed.`
 - Require short Vietnamese output with correct diacritics unless the task explicitly asks for English.
 
@@ -105,9 +103,9 @@ Classify `RISK_LEVEL` and `DEV_LEVEL` (`low | mid | high`) as measurement metada
 
 - Classify focused, sequential, parallel, or cross-verify.
 - Create shard contracts with dependencies, full paths, exclusive artifacts, acceptance criteria and stop conditions.
-- Do not route by the suspended benchmark table or the old preferred chain PiC+Qwen -> KiloC+MiniMax -> CodoC.
+- Do not route by the suspended benchmark table, and not by any remembered preferred chain -- the first two cells of the old chain were retired with their agents on 2026-09-20.
 - Never silently substitute a model.
-## Council Coordination (v1.1 â€” BROKER-ONLY)
+## Council Coordination (v1.1 — BROKER-ONLY)
 
 Before worker/model selection, classify the task as focused dispatch, sequential pipeline, parallel fan-out, or cross-verify. Do direct leader/[A] work for trivial bounded reads/checks; delegate when work spans concerns, needs specialist evidence, has independent parallel shards, or would overload one worker.
 
@@ -136,6 +134,6 @@ Use git_status/git_stale_check/git_diff/git_log for local evidence. git_stage/gi
 - **Confidence labels**: numeric confidence maps to display labels EXACT=1.0, UNIQUE=0.9, SAME_MODULE=0.7, SUFFIX=0.3-0.7. Inferred/dynamic edges are advisory - never destructive-edit evidence.
 - **Worker reporting contract (anti-drift)**: when a worker prompt contains a `GRAPH_CONTEXT:` block, the worker report MUST include a `GRAPH_EVIDENCE:` section that either (a) cites each graph-derived claim as `qualified_name file:line (confidence label)` taken from the block, or (b) states `GRAPH_EVIDENCE: none (<reason>)` when the block was degraded/unused. Any graph claim without a matching citation = drift; the leader rejects the report and re-dispatches.
 - **Leader checks on receipt**: reject reports that cite symbols/files not present in the embedded block (fabrication) or that treat confidence <1.0 edges as certainty.
-- **Leader enforcement mechanism (STT-24)**: (1) keyword scan â€” verify the report contains a `GRAPH_EVIDENCE:` section header; (2) spot-check â€” pick 3 random citations and confirm each `qualified_name file:line` exists in the embedded `GRAPH_CONTEXT:` block; (3) reject criteria â€” missing GRAPH_EVIDENCE header, citation references a symbol not in the block, or confidence <1.0 edge treated as certainty. Re-dispatch with a note on the specific violation.
+- **Leader enforcement mechanism (STT-24)**: (1) keyword scan — verify the report contains a `GRAPH_EVIDENCE:` section header; (2) spot-check — pick 3 random citations and confirm each `qualified_name file:line` exists in the embedded `GRAPH_CONTEXT:` block; (3) reject criteria — missing GRAPH_EVIDENCE header, citation references a symbol not in the block, or confidence <1.0 edge treated as certainty. Re-dispatch with a note on the specific violation.
 
 Council routing order: no fixed chain; ROUTE RULE SOT = Anh chỉ đạo. ClauC is excluded from normal routing order.

@@ -35,7 +35,7 @@
     "kilo": {
       "label": "KiloC",
       "bridge": "kilo",
-      "enabled": true,
+      "enabled": false,
       "can_write_A": false,
       "role": "Kilo harness. No Anh-directed default route cell. Do not apply the suspended 2026-07-25 MiniMax/Qwen/DeepSeek defaults. Use only when Anh names KiloC or a live pin already exists after SET+GET.",
       "provider": "ltnai",
@@ -50,7 +50,7 @@
     "pic": {
       "label": "PiC",
       "bridge": "pic",
-      "enabled": true,
+      "enabled": false,
       "can_write_A": false,
       "role": "Pi harness. No Anh-directed default route cell. Do not apply the suspended 2026-07-25 Qwen/DeepSeek/MiniMax/Sol defaults. Use only when Anh names PiC or a live pin already exists after SET+GET.",
       "provider": "ltnai",
@@ -141,10 +141,8 @@
   "messaging_to_enum": [
     "ope",
     "codo",
-    "pic",
     "hermes",
     "clau",
-    "kilo",
     "gro",
     "user"
   ],
@@ -163,7 +161,8 @@
     "CodoC live pin is grok-4.6-build on CodexLTNAI. ox-alpha deferred. GPT Sol/Terra/Luna discontinued.",
     "ClauC live pin is claude-opus-5 via claudeltnai. Catalog also claude-opus-4-8 and claude-sonnet-5.",
     "OpeC and GroC live pin is grok-4.6-build until Anh changes it.",
-    "KiloC / PiC / HermC have no Anh-directed default cell.",
+    "HermC has no Anh-directed default cell.",
+    "KiloC and PiC are RETIRED: Anh 2026-09-20 \"chot bo kiloc, pic\". Their agents rows are kept with enabled:false so they can be switched back on, and they were unregistered from agents_registry.json. Do not route to them; re-enable here first if Anh reopens them.",
     "Same-model workers are not interchangeable.",
     "Cost-chain routing is obsolete.",
     "CodoC is a high-end worker; it is not the default leader.",
