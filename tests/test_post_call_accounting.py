@@ -136,6 +136,132 @@ class TestPostCallAccountingIsolation(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(response.status == 200 for response in responses))
         self.assertEqual(len(persisted), 50)
 
+
+class TestSessionLogWrapperForwarding(unittest.TestCase):
+    """code_tools re-defines the five session-log helpers as wrappers that shadow
+    orchestrator.session.logs -- so code_tools._log_usage, not the producer, is what the
+    dispatcher actually calls.
+
+    MEASURED 2026-09-21: A41 widened the producer with delivered/client_gone/error_name/
+    agent_id, the wrapper still restated the pre-A41 signature, and every accounting row
+    died with `TypeError: _log_usage() got an unexpected keyword argument 'delivered'` --
+    /health went accounting_ok=False degraded=True and USAGE_LOG.jsonl stopped growing.
+    The suite stayed green because TestPostCallAccountingIsolation monkeypatches
+    code_tools._log_usage ITSELF, so the wrapper under test was never executed. These tests
+    patch the PRODUCER instead, which keeps the live wrapper in the call path.
+    """
+
+    def test_log_usage_wrapper_forwards_every_producer_kwarg(self):
+        logs = code_tools._session_logs_module
+        seen = {}
+
+        def recorder(*args, **kwargs):
+            seen["args"] = args
+            seen["kwargs"] = kwargs
+            return True
+
+        old_producer = logs._log_usage
+        logs._log_usage = recorder
+        try:
+            result = code_tools._log_usage(
+                "probe_tool", {"project_path": "p"}, True, 12, "boom",
+                delivered=False, client_gone=True,
+                error_name="CALLER_TIMEOUT_TOO_LOW", agent_id="claultnai",
+            )
+        finally:
+            logs._log_usage = old_producer
+
+        self.assertTrue(result)
+        self.assertEqual(
+            seen["args"], ("probe_tool", {"project_path": "p"}, True, 12, "boom"))
+        self.assertEqual(seen["kwargs"], {
+            "delivered": False,
+            "client_gone": True,
+            "error_name": "CALLER_TIMEOUT_TOO_LOW",
+            "agent_id": "claultnai",
+        })
+
+    def test_row_written_through_the_wrapper_carries_the_a41_fields(self):
+        logs = code_tools._session_logs_module
+        with tempfile.TemporaryDirectory() as tmp:
+            old_cache_dir = logs._project_cache_dir
+            logs._project_cache_dir = lambda _root: Path(tmp)
+            try:
+                written = code_tools._log_usage(
+                    "probe_tool", {"project_path": "p"}, True, 34, "",
+                    delivered=False, client_gone=True,
+                    error_name="SERVER_BUDGET_EXCEEDED", agent_id="claultnai",
+                )
+            finally:
+                logs._project_cache_dir = old_cache_dir
+            self.assertTrue(written)
+            raw = (Path(tmp) / "USAGE_LOG.jsonl").read_text(encoding="utf-8")
+        rows = [json.loads(line) for line in raw.splitlines() if line.strip()]
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertIs(row["delivered"], False)
+        self.assertIs(row["client_gone"], True)
+        self.assertEqual(row["undelivered_reason"], "client_transport_gone")
+        self.assertEqual(row["error_name"], "SERVER_BUDGET_EXCEEDED")
+        self.assertEqual(row["agent_id"], "claultnai")
+
+    def test_all_five_wrappers_stay_signature_transparent(self):
+        import inspect
+
+        for name in ("_log_to_file", "_log_usage", "_log_app_session",
+                     "_auto_trim_log", "_check_incomplete_sessions"):
+            with self.subTest(wrapper=name):
+                params = inspect.signature(getattr(code_tools, name)).parameters.values()
+                self.assertTrue(
+                    any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params),
+                    f"code_tools.{name} must forward **kwargs to "
+                    f"orchestrator.session.logs.{name}: a wrapper that restates the "
+                    f"signature is a second contract nothing keeps in lockstep, and that "
+                    f"is exactly how A41's delivered/client_gone/error_name/agent_id "
+                    f"kwargs were dropped on 100% of accounting writes.",
+                )
+
+    def test_persist_post_call_accounting_reads_agent_id_off_the_record(self):
+        """agent_id must come from the RECORD, like the other three A41 fields.
+
+        MEASURED 2026-09-21: `_task_agent_id` is stamped by _compact_accounting_result,
+        never by _compact_accounting_body, so the old `body["_task_agent_id"]` lookup
+        could only ever yield "" -- 0 of 1000 rows carried an agent_id. The second record
+        below is the negative control: agent_id present ONLY in the nested result compact
+        must NOT reach the row, or the container mismatch is back.
+        """
+        logs = code_tools._session_logs_module
+        base = {
+            "tool_name": "probe_tool",
+            "body": {"project_path": "p"},
+            "result": {"_task_agent_id": "nested-only"},
+            "duration_ms": 7,
+            "status": "ok",
+            "error_msg": "",
+            "delivered": True,
+            "client_gone": False,
+            "error_name": "",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            old_cache_dir = logs._project_cache_dir
+            logs._project_cache_dir = lambda _root: Path(tmp)
+            try:
+                orchestrator_server._persist_post_call_accounting(
+                    dict(base, accounting_id="rec-top-level", agent_id="claultnai"))
+                orchestrator_server._persist_post_call_accounting(
+                    dict(base, accounting_id="rec-nested-only"))
+                raw = (Path(tmp) / "USAGE_LOG.jsonl").read_text(encoding="utf-8")
+            finally:
+                logs._project_cache_dir = old_cache_dir
+        rows = [json.loads(line) for line in raw.splitlines() if line.strip()]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["agent_id"], "claultnai")
+        self.assertNotIn(
+            "agent_id", rows[1],
+            "agent_id must be read off the record, not out of result['_task_agent_id']: "
+            "the nested compact exists for durable-audit meta, and reading it there is "
+            "what left 1000 USAGE_LOG rows with no agent_id at all",
+        )
 class TestPostCallAccountingQueue(unittest.TestCase):
     def test_sink_failure_isolated_and_fifo_continues(self):
         seen = []

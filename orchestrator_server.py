@@ -776,13 +776,16 @@ def _compact_accounting_result(result, task_meta: dict) -> dict:
 def _persist_post_call_accounting(record: dict) -> None:
     """Persist non-durable usage telemetry on the dedicated FIFO worker.
 
-    A41 tier 3a/3b: `delivered`, `client_gone` and `error_name` are read off the
-    RECORD, not out of `body` -- the dispatcher measured them in its own `finally`
-    (the only frame where the socket state is still knowable) and put them there.
-    `agent_id` comes from `body["_task_agent_id"]`, which `_compact_accounting_body`
-    has always stamped: the measured 0-of-1000 rows carrying an agent_id was a KEY
-    NAME mismatch (`_task_agent_id` written, `agent_id` looked up), not a value that
-    was never resolved.
+    A41 tier 3a/3b: all four telemetry fields -- `delivered`, `client_gone`,
+    `error_name` and `agent_id` -- are read off the RECORD, never out of `body`.
+    The dispatcher measured them in its own `finally` (the only frame where the
+    socket state is still knowable) and puts them there together.
+
+    MEASURED 2026-09-21, corrected: the 0-of-1000 rows carrying an agent_id was NOT a
+    key-name mismatch. `_task_agent_id` is stamped by `_compact_accounting_result`
+    (for the durable-audit meta), NOT by `_compact_accounting_body`, so reading it off
+    `body` could only ever yield "". One container for all four fields is the fix; do
+    not reintroduce a second lookup path into a nested compact.
     """
     tool_name = str(record.get("tool_name") or "")
     body = dict(record.get("body") or {})
@@ -795,7 +798,7 @@ def _persist_post_call_accounting(record: dict) -> None:
             delivered=bool(record.get("delivered", True)),
             client_gone=bool(record.get("client_gone", False)),
             error_name=str(record.get("error_name") or ""),
-            agent_id=str(body.get("_task_agent_id") or ""),
+            agent_id=str(record.get("agent_id") or ""),
         )
         if usage_ok is False:
             raise RuntimeError("usage_jsonl_write_failed")
@@ -15885,6 +15888,14 @@ accepted_fields=sorted(accepted_fields),
                 "client_gone": _client_gone,
                 "error_name": (_result.get("error_name", "")
                                if isinstance(_result, dict) else ""),
+                # MEASURED 2026-09-21 on a live row: agent_id landed on 0 of 1000 USAGE_LOG
+                # rows. It was stamped ONLY as `_task_agent_id` inside the RESULT compact --
+                # which exists to carry durable-audit meta -- while the usage sink read it
+                # off `body`. A CONTAINER mismatch, not the key-name typo an earlier pass
+                # recorded. All four A41 telemetry fields now travel top-level on the
+                # record, which is the single container `_persist_post_call_accounting`
+                # reads; do not re-derive agent_id from a nested compact again.
+                "agent_id": _task_agent_id or "",
             })
             if not _accounting_accepted:
                 logger.critical(

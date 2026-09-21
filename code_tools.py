@@ -6818,24 +6818,36 @@ TaskCheckpointStorageError = _session_store_module.TaskCheckpointStorageError
 # _session_logs_module. Importing the same five names at the top of this file is therefore dead by
 # construction: these defs shadow them as soon as the module finishes loading. A38-B removed that
 # import (F401); do not re-add it to "restore a missing name".
-def _log_to_file(log_path: Path, entry: dict, max_entries: int = 500):
-    return _session_logs_module._log_to_file(log_path, entry, max_entries=max_entries)
+#
+# They forward (*args, **kwargs) BLIND, on purpose. MEASURED 2026-09-21: A41 widened
+# _session_logs_module._log_usage with delivered/client_gone/error_name/agent_id and the dispatcher
+# started passing them, but this wrapper still restated the OLD signature -- so EVERY accounting row
+# died with `TypeError: _log_usage() got an unexpected keyword argument 'delivered'` (9 of 9 calls
+# failed, /health went accounting_ok=False degraded=True, USAGE_LOG.jsonl stopped growing entirely).
+# A shadowing wrapper that restates a signature is a SECOND contract nothing keeps in lockstep, and
+# tests/test_post_call_accounting.py monkeypatches this very name, so the suite cannot see the drift.
+# Forwarding blind deletes the second contract instead of documenting it: the real signatures, their
+# defaults and their docstrings live in orchestrator/session/logs.py and are the only copy. Do NOT
+# re-add parameter names or defaults here -- every default below was verified identical to the
+# producer's before this change, so there is nothing for a signature here to preserve.
+def _log_to_file(*args, **kwargs):
+    return _session_logs_module._log_to_file(*args, **kwargs)
 
 
-def _log_usage(tool: str, params: dict, ok: bool, ms: int, error: str = ""):
-    return _session_logs_module._log_usage(tool, params, ok, ms, error)
+def _log_usage(*args, **kwargs):
+    return _session_logs_module._log_usage(*args, **kwargs)
 
 
-def _log_app_session(project_path: str, tool: str, extra: dict, ok: bool, ms: int = 0, error: str = ""):
-    return _session_logs_module._log_app_session(project_path, tool, extra, ok, ms, error)
+def _log_app_session(*args, **kwargs):
+    return _session_logs_module._log_app_session(*args, **kwargs)
 
 
-def _auto_trim_log(log_path: Path, keep_sessions: int = 2):
-    return _session_logs_module._auto_trim_log(log_path, keep_sessions=keep_sessions)
+def _auto_trim_log(*args, **kwargs):
+    return _session_logs_module._auto_trim_log(*args, **kwargs)
 
 
-def _check_incomplete_sessions() -> list[dict]:
-    return _session_logs_module._check_incomplete_sessions()
+def _check_incomplete_sessions(*args, **kwargs):
+    return _session_logs_module._check_incomplete_sessions(*args, **kwargs)
 
 
 async def log_native(native: list = None) -> str:
