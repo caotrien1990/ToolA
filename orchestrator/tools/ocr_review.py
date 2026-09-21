@@ -154,6 +154,27 @@ def _as_csv(value) -> str:
     return str(value).strip()
 
 
+def _ocr_cost_key(args) -> str:
+    """Cost bucket for one OCR spawn: keyed by SUBCOMMAND, not by tool name.
+
+    `map`, `scan` and `review` differ by more than an order of magnitude, so one
+    bucket per module would floor the cheap subcommand with the expensive one's
+    number. Keying on `args[0]` also means the floor is measured at the SAME place
+    it is enforced -- the dispatcher's per-tool timings include [A]'s own overhead,
+    while `timeout` bounds this subprocess and nothing else.
+    """
+    head = ""
+    try:
+        for a in args:
+            text = str(a)
+            if text and not text.startswith("-"):
+                head = text
+                break
+    except Exception:
+        head = ""
+    return "ocr_spawn:%s" % (head or "?")
+
+
 async def _ocr_run(args, root: str, timeout: int) -> dict:
     """The ONLY place this module spawns OCR. One spawn site, one flag policy."""
     resolved = _ocr_binary()
@@ -161,6 +182,46 @@ async def _ocr_run(args, root: str, timeout: int) -> dict:
         return resolved
     command = [resolved["path"], *[str(a) for a in args], "--color", "never"]
     child_env = _ocr_child_env()
+
+    # A41 tier 2a: refuse a timeout this repo has already been MEASURED to outrun.
+    #
+    # Measured 2026-09-21: `ocr_map timeout=45` failed while the real cost of the
+    # same work was 23-42s -- the caller picked a number blind, and the only thing
+    # [A] could say afterwards was "it timed out". D7's lesson applies here without
+    # change: do not add a field explaining the mistake after it happens, narrow the
+    # contract so the wrong call cannot be made. The floor is never hardcoded; it
+    # comes from >=3 real samples of THIS subcommand on THIS repo, so it is silent
+    # until [A] has actually measured something, and it moves when the repo does.
+    cost_key = _ocr_cost_key(args)
+    cost = None
+    try:
+        from orchestrator.core import call_cache as _cc
+        cost = _cc.measured_cost(cost_key, root)
+    except Exception:
+        cost = None
+    if cost and float(timeout) < float(cost["p95_s"]):
+        floor = float(cost["p95_s"])
+        need = int(floor) + (1 if floor > int(floor) else 0)
+        return {
+            "ok": False,
+            "error_name": "TIMEOUT_BELOW_MEASURED_FLOOR",
+            "error": ("timeout=%ss is below the measured p95 of %.1fs for this "
+                      "subcommand on this repo (%d samples: min %.1fs, median %.1fs, "
+                      "max %.1fs)" % (timeout, floor, cost["samples"], cost["min_s"],
+                                      cost["median_s"], cost["max_s"])),
+            "measured_cost": cost,
+            "min_timeout_s": need,
+            "stopped_by": "caller_parameter_gate",
+            "spawned": False,
+            "ca_next_action": "resend_with_timeout_at_or_above_min_timeout_s",
+            "retry_sequence": [{"timeout": need,
+                                "note": "the measured p95 rounded up; not a blind increase"}],
+            "hint": ("Nothing was spawned, so no work was wasted. This is not a blind "
+                     "widening: min_timeout_s is this repo's own measured p95. If that "
+                     "number is larger than the budget you have, narrow the scope "
+                     "instead -- a smaller file set is the only other direction."),
+        }
+
     started = time.time()
     try:
         completed = await asyncio.to_thread(
@@ -173,17 +234,35 @@ async def _ocr_run(args, root: str, timeout: int) -> dict:
         # this repo), not a broken binary. Folding it into OCR_EXEC_FAILED handed
         # the CA the generic "retry the same payload" advice, which times out
         # again; the distinct name is what lets _ca_next_action say raise-timeout.
-        return {
+        #
+        # A41 tier 2b: split the two causes the single name used to merge. A timeout
+        # that cleared the p95 gate but lost to a run this repo has ALREADY produced
+        # is a caller number that is too low (the work is fine); with no measurement
+        # at all, the honest name stays the neutral OCR_TIMEOUT.
+        #
+        # DORMANT UNTIL ~12 SAMPLES, and that is arithmetic, not a bug: `measured_cost`
+        # takes p95 as `samples[round(0.95*(n-1))]`, which equals `max_s` for every
+        # n <= 11. While the two coincide the pre-flight gate above has already
+        # refused anything below max, so this branch cannot be reached -- a CA reading
+        # it as dead code would be measuring the sample count, not the code path.
+        _too_low = bool(cost and float(timeout) < float(cost["max_s"]))
+        out = {
             "ok": False,
-            "error_name": "OCR_TIMEOUT",
+            "error_name": "CALLER_TIMEOUT_TOO_LOW" if _too_low else "OCR_TIMEOUT",
             "error": "ocr did not finish within timeout=%ss" % timeout,
             "binary": resolved["path"],
             "binary_source": resolved["source"],
             "command": command,
             "timeout": timeout,
             "timeout_exceeded": True,
+            "stopped_by": "caller_timeout",
             "duration_s": round(time.time() - started, 3),
         }
+        if cost:
+            out["measured_cost"] = cost
+            _need = float(cost["max_s"])
+            out["min_timeout_s"] = int(_need) + (1 if _need > int(_need) else 0)
+        return out
     except Exception as exc:
         return {
             "ok": False,
@@ -195,6 +274,12 @@ async def _ocr_run(args, root: str, timeout: int) -> dict:
             "timeout": timeout,
             "duration_s": round(time.time() - started, 3),
         }
+    if completed.returncode == 0:
+        try:
+            from orchestrator.core import call_cache as _cc_obs
+            _cc_obs.observe(cost_key, root, time.time() - started)
+        except Exception:
+            pass  # the floor is an optimisation; never fail a good OCR run over it
     stdout = completed.stdout or ""
     stderr = completed.stderr or ""
     out = {

@@ -627,8 +627,7 @@ async def _http_defense_middleware(request, handler):
             # reconcile them. Checking the transport here is the earliest point
             # that knows the socket is already gone.
             try:
-                _tr = getattr(request, "transport", None)
-                if _tr is None or _tr.is_closing():
+                if _client_transport_gone(request):
                     _response.headers["X-Orchestrator-Undelivered"] = "1"
                     logger.warning(
                         "RESPONSE_UNDELIVERED tool=%s elapsed_ms=%d bytes=%s: the tool "
@@ -646,6 +645,35 @@ async def _http_defense_middleware(request, handler):
             _record_api_call_latency((time.time() - started) * 1000.0)
         _requests_in_flight = max(0, _requests_in_flight - 1)
 
+
+_TRANSPORT_ABSENT = object()
+
+
+def _client_transport_gone(request) -> bool:
+    """Is the client socket for this request already gone? (A41, one shared answer.)
+
+    TWO sites need this truth and they must not drift: the middleware above, which
+    can stamp a header but runs AFTER the dispatcher has written its accounting row,
+    and the dispatcher's own `finally`, which is the only place that can record
+    `delivered=false` in USAGE_LOG. D4 shipped the first one alone, which is why the
+    log could still say ok=true for a call that delivered 0 bytes.
+
+    The absent-attribute case is NOT "gone". `_InProcessToolRequest` (the MCP
+    in-process shim) has no transport at all because it has no socket to lose;
+    reading a missing attribute as a closed connection would mark every single MCP
+    call an orphan. Only a transport that EXISTS and is None-or-closing is a client
+    that left -- for a real aiohttp request the attribute is always present, so this
+    preserves the D4 behaviour exactly where D4 applied.
+    """
+    transport = getattr(request, "transport", _TRANSPORT_ABSENT)
+    if transport is _TRANSPORT_ABSENT:
+        return False
+    if transport is None:
+        return True
+    try:
+        return bool(transport.is_closing())
+    except Exception:
+        return False
 
 # Tools allowed without an active session (bootstrap + read-only utility)
 _NO_SESSION_REQUIRED = {
@@ -746,14 +774,29 @@ def _compact_accounting_result(result, task_meta: dict) -> dict:
 
 
 def _persist_post_call_accounting(record: dict) -> None:
-    """Persist non-durable usage telemetry on the dedicated FIFO worker."""
+    """Persist non-durable usage telemetry on the dedicated FIFO worker.
+
+    A41 tier 3a/3b: `delivered`, `client_gone` and `error_name` are read off the
+    RECORD, not out of `body` -- the dispatcher measured them in its own `finally`
+    (the only frame where the socket state is still knowable) and put them there.
+    `agent_id` comes from `body["_task_agent_id"]`, which `_compact_accounting_body`
+    has always stamped: the measured 0-of-1000 rows carrying an agent_id was a KEY
+    NAME mismatch (`_task_agent_id` written, `agent_id` looked up), not a value that
+    was never resolved.
+    """
     tool_name = str(record.get("tool_name") or "")
     body = dict(record.get("body") or {})
     status = str(record.get("status") or "error")
     duration_ms = int(record.get("duration_ms") or 0)
     error_msg = str(record.get("error_msg") or "")[:300]
     try:
-        usage_ok = ct._log_usage(tool_name, body, status == "ok", duration_ms, error_msg)
+        usage_ok = ct._log_usage(
+            tool_name, body, status == "ok", duration_ms, error_msg,
+            delivered=bool(record.get("delivered", True)),
+            client_gone=bool(record.get("client_gone", False)),
+            error_name=str(record.get("error_name") or ""),
+            agent_id=str(body.get("_task_agent_id") or ""),
+        )
         if usage_ok is False:
             raise RuntimeError("usage_jsonl_write_failed")
     except Exception as exc:
@@ -15169,8 +15212,58 @@ accepted_fields=sorted(accepted_fields),
                 heartbeat=lambda p: _write_ledger_heartbeat(_op_id, p),
                 cancel_event=_cancel_event,
             ))
+        # A41 tier 1b: the same read-only question, already answered, costs nothing to
+        # answer again -- and that is exactly the retry a CA makes after its own
+        # timeout, the case that used to recompute 25-133s of work already paid for.
+        # Placed HERE rather than as an early return so admission, the write ledger and
+        # post-call accounting all still run: a cache hit is a normal call that was
+        # cheap, not a call that did not happen.
+        _cache_hit = None
         try:
-            raw = await fn(**body)
+            from orchestrator.core import call_cache as _cc_in
+            _cache_hit = _cc_in.lookup(tool_name, body)
+        except Exception:
+            _cache_hit = None
+        try:
+            if _cache_hit is not None:
+                _cached = dict(_cache_hit["result"])
+                _cached["cache_hit"] = True
+                _cached["cache_age_s"] = _cache_hit["age_s"]
+                _cached["cache_note"] = (
+                    "Served from the result cache: the identical payload was computed "
+                    "%.0fs ago in %dms. Read it as an answer of that age, not as a "
+                    "fresh measurement."
+                    % (_cache_hit["age_s"], _cache_hit["duration_ms"]))
+                raw = json.dumps(_cached, ensure_ascii=False)
+            else:
+                # A41 tier 1a: pin the inequality `server budget < client timeout` that
+                # produced the orphan. asyncio.wait_for cancels the coroutine, so work
+                # already handed to a worker thread may still finish in the background --
+                # what this guarantees is that a RESPONSE leaves before the client goes,
+                # which is the half that was missing.
+                _budget_s = None
+                try:
+                    from orchestrator.core import call_cache as _cc_b
+                    _budget_s = _cc_b.budget_for(tool_name)
+                except Exception:
+                    _budget_s = None
+                if _budget_s:
+                    _b0 = time.time()
+                    try:
+                        raw = await asyncio.wait_for(fn(**body), timeout=_budget_s)
+                    except asyncio.TimeoutError:
+                        raw = json.dumps(
+                            _cc_b.budget_exceeded_payload(
+                                tool_name, _budget_s, time.time() - _b0,
+                                str(body.get("project_path", "") or "")
+                                if isinstance(body, dict) else ""),
+                            ensure_ascii=False)
+                        logger.warning(
+                            "SERVER_BUDGET_EXCEEDED tool=%s budget_s=%.1f: answered with "
+                            "an honest partial instead of racing the client timeout",
+                            tool_name, _budget_s)
+                else:
+                    raw = await fn(**body)
         finally:
             _release_tool_semaphore(_sem, _sem_category, _request_op_id)
         try:
@@ -15570,6 +15663,22 @@ accepted_fields=sorted(accepted_fields),
             # refreshed task metadata, so fields_unknown could name a key that IS
             # in the very response being returned. Prune by asking the payload,
             # never a hand-maintained list of envelope keys.
+            # A41 (Anh's idea): a CA that abandoned a call on its own timeout never
+            # learns the answer arrived. Tell it on its NEXT call -- here, the single
+            # success exit every tool passes through. Stamped AFTER _r101_filter for
+            # the same reason as schema_rearmed: a key added before it is pruned for
+            # exactly the callers who pass fields=. It is CONDITIONAL, not a field on
+            # every call forever -- pending_advisory() only answers after a real
+            # orphan and consumes itself, so the cost is one note per orphan.
+            try:
+                from orchestrator.core import call_cache as _cc_adv
+                _advisory = _cc_adv.pending_advisory(
+                    _task_agent_id or "",
+                    str(body.get("project_path", "") or "") if isinstance(body, dict) else "")
+                if _advisory and isinstance(_result, dict):
+                    _result["cached_result_available"] = _advisory
+            except Exception:
+                pass  # advisory only: never fail a good response over it
             try:
                 from orchestrator.core.fields_param import prune_unknown_fields
                 prune_unknown_fields(_result)
@@ -15693,6 +15802,41 @@ accepted_fields=sorted(accepted_fields),
                     _result.get("warning") or
                     _result.get("returncode") or "")
             )[:300]
+        # A41 tier 1b/3a: the socket is already closed by the time this `finally`
+        # runs, so THIS is the only place that can tell a delivered answer from an
+        # orphan BEFORE the accounting row is written. The middleware check at the
+        # top of this file sees the same truth but runs after the enqueue below, so
+        # USAGE_LOG could never know. Both read one helper, `_client_transport_gone`,
+        # so the two sites cannot drift apart.
+        _client_gone = _client_transport_gone(request)
+        _delivered = not _client_gone
+        _cache_key = ""
+        try:
+            from orchestrator.core import call_cache as _cc
+            _cache_key = _cc.store(
+                tool_name, body, _result if isinstance(_result, dict) else None,
+                _ms, str(body.get("project_path", "") or "") if isinstance(body, dict) else "",
+                _task_agent_id or "")
+            if _status == "ok" and _cc.budget_for(tool_name) is not None:
+                # ONLY tools [A] actually floors are measured here. A bucket no gate
+                # ever reads is pure write amplification: `ocr_*` keeps its own keys
+                # (per SUBCOMMAND, observed from inside ocr_review) and every other
+                # tool has no consumer at all. Measured: observing every tool cost 50
+                # dispatches ~2.3s instead of ~47ms before the save was debounced.
+                _cc.observe(tool_name,
+                            str(body.get("project_path", "") or "") if isinstance(body, dict) else "",
+                            _ms / 1000.0)
+            if _client_gone and _cache_key:
+                # The answer exists and nobody received it. Arm ONE advisory for the
+                # next call instead of letting the work rot until TTL.
+                _cc.mark_undelivered(_cache_key)
+        except Exception:
+            pass  # a cache is an optimisation; it must never fail a real answer
+        if _client_gone:
+            logger.warning(
+                "CALL_ORPHANED tool=%s ms=%d status=%s cached=%s: client socket was "
+                "already closed when the answer was ready",
+                tool_name, _ms, _status, bool(_cache_key))
         _accounting_task_meta = {
             "host_session_id": _task_session_id or None,
             "task_epoch": (
@@ -15734,6 +15878,13 @@ accepted_fields=sorted(accepted_fields),
                 "duration_ms": _ms,
                 "status": _status,
                 "error_msg": _error_msg,
+                # A41 tier 3a/3b: `ok=true` alone made USAGE_LOG say a call
+                # succeeded when it delivered 0 bytes, and the truncated `error`
+                # string forced a CA to read source to classify a failure.
+                "delivered": _delivered,
+                "client_gone": _client_gone,
+                "error_name": (_result.get("error_name", "")
+                               if isinstance(_result, dict) else ""),
             })
             if not _accounting_accepted:
                 logger.critical(

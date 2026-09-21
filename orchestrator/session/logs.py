@@ -98,7 +98,9 @@ def _log_to_file(log_path: Path, entry: dict, max_entries: int = 500) -> bool:
         return False
 
 
-def _log_usage(tool: str, params: dict, ok: bool, ms: int, error: str = "") -> bool:
+def _log_usage(tool: str, params: dict, ok: bool, ms: int, error: str = "", *,
+               delivered: bool = True, client_gone: bool = False,
+               error_name: str = "", agent_id: str = "") -> bool:
     """Ghi vao USAGE_LOG cua Orchestrator (meta-log ve chinh Orchestrator).
 
     D6: the row used to be {ts, tool, ok, ms, project} where `project` was only a
@@ -108,6 +110,28 @@ def _log_usage(tool: str, params: dict, ok: bool, ms: int, error: str = "") -> b
     recorded as ok=True. Param KEY NAMES only, never values: attribution without
     copying payloads (or secrets) into a log. This is a log-only change, so it
     costs nothing per call in the response.
+
+    A41 tier 3a/3b -- the row used to be unintentionally DISHONEST in two ways:
+
+    * `ok=true` was written for calls that delivered ZERO bytes. Measured
+      2026-09-21: five calls of 22-133s answered `"POST /api/call/..." 200 0` in
+      one window, every one of them logged ok=true, and no ERROR or WARNING line
+      existed anywhere. `ok` answers "did the tool succeed", which was true; what
+      no field answered was "did the caller ever receive it". Hence `delivered`,
+      written on EVERY row rather than only on the bad ones: a flag that appears
+      only when something went wrong is indistinguishable from an older row that
+      predates the flag, and absence-means-true is the exact trap that made a
+      wrong key read as an empty result earlier in this campaign.
+    * only a truncated `error` STRING was kept, never `error_name`, so classifying
+      a failure meant reading source to guess which branch produced the prose.
+
+    `agent_id` is now an explicit argument instead of a lookup in `params`.
+    Measured: 1000 USAGE_LOG rows, `with_agent_id=0` -- and the cause was a KEY
+    NAME mismatch, not a missing value. `_compact_accounting_body` stamps
+    `_task_agent_id` into the body it hands down, while the loop below has always
+    looked for a bare `agent_id`, so a resolved identity sat one key away from the
+    row it belonged to. The params loop is kept for the `session_id` case and for
+    any caller that does carry a plain `agent_id`; the explicit argument wins.
     """
     cache_dir = _project_cache_dir(str(_ORCHESTRATOR_ROOT))
     project_hint = params.get("project_path", params.get("file_path", ""))
@@ -115,6 +139,7 @@ def _log_usage(tool: str, params: dict, ok: bool, ms: int, error: str = "") -> b
         "ts": datetime.now().isoformat(timespec="seconds"),
         "tool": tool, "ok": ok, "ms": ms,
         "project": Path(project_hint).name if project_hint else "",
+        "delivered": bool(delivered),
     }
     if project_hint:
         entry["project_path"] = str(project_hint)[:260]
@@ -122,10 +147,19 @@ def _log_usage(tool: str, params: dict, ok: bool, ms: int, error: str = "") -> b
         entry["params"] = sorted(str(k) for k in params)[:40]
     except Exception:
         pass
+    if agent_id:
+        entry["agent_id"] = str(agent_id)[:80]
     for _attr in ("agent_id", "session_id"):
+        if entry.get(_attr):
+            continue
         _val = params.get(_attr)
         if _val:
             entry[_attr] = str(_val)[:80]
+    if client_gone:
+        entry["client_gone"] = True
+        entry["undelivered_reason"] = "client_transport_gone"
+    if error_name:
+        entry["error_name"] = str(error_name)[:80]
     if error:
         entry["error"] = error[:120]
     return _log_to_file(cache_dir / "USAGE_LOG.jsonl", entry, max_entries=1000)
