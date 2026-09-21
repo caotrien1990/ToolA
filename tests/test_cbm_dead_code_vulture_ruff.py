@@ -1,5 +1,6 @@
 import asyncio
 import json
+from fnmatch import fnmatch
 
 from orchestrator.graph.extractors.vulture_ruff import (
     _merge_dedup,
@@ -9,6 +10,7 @@ from orchestrator.graph.extractors.vulture_ruff import (
     scan_vulture,
 )
 from orchestrator.graph.tools import cbm_dead_code, ruff_fix
+from orchestrator.skip_rules import SKIP_DIRS
 
 
 class _Completed:
@@ -190,3 +192,91 @@ def test_ruff_fix_validation_failure_reverts(monkeypatch, tmp_path):
     assert payload["error_name"] == "RUFF_VALIDATION_FAILED_AUTO_REVERT"
     assert payload["rollback_verified"] is True
     assert source.read_text(encoding="utf-8") == original
+
+
+def _captured_vulture_argv(monkeypatch, target, **kwargs) -> list:
+    """Run scan_vulture against a fake subprocess and hand back the argv it built."""
+    seen: list = []
+
+    def fake_run(cmd, *args, **kw):
+        seen.append(list(cmd))
+        return _Completed("", returncode=0)
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    scan_vulture(str(target), **kwargs)
+    return seen[0]
+
+
+def _excluded(path: str, patterns: list) -> bool:
+    """Decide a path the way vulture itself does.
+
+    vulture's exclude test is `any(fnmatch(name, pattern))` (core.py:276, case=False),
+    so fnmatch IS the contract -- including its Windows normcase of "/" to "\\".
+    Reimplemented here instead of imported: production drives vulture as a
+    subprocess and never imports it, so `import vulture` in this file would turn a
+    missing scanner into collection errors for every other test in it.
+    """
+    return any(fnmatch(path, pattern) for pattern in patterns)
+
+
+def test_vulture_excludes_the_projects_own_skip_dirs(monkeypatch, tmp_path):
+    """A tree scan must not lint the virtualenv.
+
+    Measured 2026-09-22 on ToolA: vulture has no built-in exclude, so aiming it at
+    the repo root took 66.1s and returned 1001 of 2004 findings from inside
+    venv312/, against 727ms for orchestrator/ alone. cbm_dead_code(scope="full")
+    therefore could not finish inside its own 25s server budget -- the default
+    contract guaranteed its own failure. Ruff never needed this because its own
+    default exclude already drops site-packages.
+    """
+    argv = _captured_vulture_argv(monkeypatch, tmp_path)
+    assert "--exclude" in argv, "a tree scan without --exclude walks the venv"
+    patterns = argv[argv.index("--exclude") + 1].split(",")
+
+    # Derived from SKIP_DIRS, not from a list copied into this test: when the SOT
+    # grows, the scanner follows it and this assertion keeps holding by itself.
+    for name in SKIP_DIRS:
+        assert f"*/{name}/*" in patterns
+        assert f"*\\{name}\\*" in patterns
+
+
+def test_vulture_exclude_patterns_are_directory_anchored(monkeypatch, tmp_path):
+    """The patterns must match a DIRECTORY component, never a filename substring.
+
+    vulture wraps a bare pattern into *pattern* (core.py:268-271), so passing the
+    bare SKIP_DIRS entries would exclude `orchestrator/distill_points.py` (via
+    "dist") and `build_graph.py` (via "build") -- measured, and silent: real source
+    would simply stop being scanned with nothing in the payload to say so. Both
+    separators are required because fnmatch normcases "/" to "\\" on Windows and
+    leaves it untouched on POSIX, so neither shape alone covers both platforms.
+    """
+    argv = _captured_vulture_argv(monkeypatch, tmp_path)
+    patterns = argv[argv.index("--exclude") + 1].split(",")
+
+    for name in SKIP_DIRS:
+        assert name not in patterns, f"bare {name!r} would match any path containing it"
+
+    for path in (r"D:\repo\orchestrator\distill_points.py",
+                 r"D:\repo\orchestrator\build_graph.py",
+                 "/repo/orchestrator/distill_points.py"):
+        assert not _excluded(path, patterns), f"{path} is source and must be scanned"
+
+    for path in (r"D:\repo\venv312\Lib\site-packages\x.py",
+                 "/repo/venv312/lib/x.py"):
+        assert _excluded(path, patterns), f"{path} is not this project's source"
+
+
+def test_an_explicit_file_list_is_never_filtered(monkeypatch, tmp_path):
+    """`files` is the caller's own choice of targets, so no --exclude is added.
+
+    Filtering it here would drop files that were asked for BY NAME and report
+    nothing about the omission; the exclude exists only to stop a tree walk from
+    wandering out of the project's source.
+    """
+    target = tmp_path / "venv312" / "mod.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("x = 1\n", encoding="utf-8")
+
+    argv = _captured_vulture_argv(monkeypatch, tmp_path, files=[str(target)])
+    assert "--exclude" not in argv
+    assert str(target) in argv

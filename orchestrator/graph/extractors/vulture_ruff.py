@@ -12,12 +12,40 @@ import sys
 import warnings
 from pathlib import Path
 
+from orchestrator.skip_rules import SKIP_DIRS
+
 # B029c 2026-08-22. Was 30s, against a measured 56s for vulture on ToolA full
 # scope -- so every full run timed out, and (before B029b) said nothing. The
 # budget is generous rather than tight because the failure mode of "too short" is
 # a silent empty result, while "too long" only costs latency on an already-slow
 # advisory tool. Overridable so a caller on a huge tree is not stuck with ours.
+#
+# 2026-09-22: that 56s was the SYMPTOM of the defect below, and raising the
+# ceiling only hid it -- until the 25s server budget (CALL_BUDGET_S) made 180s
+# unreachable and cbm_dead_code(scope="full") began failing outright.
 _SCAN_TIMEOUT_S = float(os.environ.get("CBM_SCAN_TIMEOUT_S", "180"))
+
+# Vulture has NO built-in exclude, so pointing it at a project root walks the
+# virtualenv as if it were source: measured 2026-09-22 on ToolA, 66.1s and 1001
+# of 2004 findings inside venv312/, against 727ms for orchestrator/ alone. Ruff
+# needs no such list -- its own default exclude already drops site-packages,
+# which is why only this scanner blew the budget. SKIP_DIRS is the project-wide
+# SOT (orchestrator/skip_rules.py) the graph walk already honours, so the
+# dead-code advisory now agrees with the INDEX instead of contradicting it.
+#
+# DIRECTORY-ANCHORED on purpose, and both separators are listed:
+#   * vulture wraps a bare pattern into *pattern* (core.py:268-271), so the bare
+#     SKIP_DIRS entry "dist" also matches orchestrator/distill_points.py and
+#     "build" matches build_graph.py -- measured, both silently hidden.
+#   * the match is fnmatch, which normcases "/" to "\\" on Windows and leaves it
+#     alone on POSIX, so neither separator alone covers both platforms.
+# Residual cost is vulture's own unpruned os.walk (it enumerates, then filters):
+# full scope lands near 6s, not at the 727ms of a tree with no venv in it.
+_VULTURE_EXCLUDE = ",".join(
+    pattern
+    for name in sorted(SKIP_DIRS)
+    for pattern in (f"*/{name}/*", f"*\\{name}\\*")
+)
 
 # B029a 2026-08-22. The daemon inherits FORCE_COLOR from whatever launched it
 # (measured =3), so ruff painted ANSI even into a pipe and `_RUFF_RE` matched
@@ -297,6 +325,10 @@ def scan_vulture(project_path: str, min_conf: int = 60,
                  status: "dict | None" = None) -> list[dict]:
     """Vulture dead-code scan. Fail-open: returns [] and reports via `status`."""
     targets = [str(Path(p)) for p in files] if files else [str(Path(project_path))]
+    # `--exclude` only when vulture is handed a TREE to walk. An explicit `files`
+    # list is the caller's own choice of targets, so filtering it here would drop
+    # files that were asked for by name and report nothing about the omission.
+    exclude = [] if files else ["--exclude", _VULTURE_EXCLUDE]
     try:
         completed = subprocess.run(
             [
@@ -306,6 +338,7 @@ def scan_vulture(project_path: str, min_conf: int = 60,
                 *targets,
                 "--min-confidence",
                 str(int(min_conf)),
+                *exclude,
             ],
             capture_output=True,
             text=True,
