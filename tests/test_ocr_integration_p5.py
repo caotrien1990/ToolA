@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -32,7 +33,25 @@ class _FakeCompleted:
 
 
 class _FakeSubprocess:
-    """Stands in for the subprocess module inside ocr_review's globals."""
+    """Stands in for the subprocess module inside ocr_review's globals.
+
+    The real module's EXCEPTION classes are re-exported verbatim. `run` is the only
+    behaviour a test overrides, but production code also names those exceptions in its
+    `except` clauses, and Python resolves an except expression at RAISE time -- so a
+    double that omits them turns every unrelated error into AttributeError instead of
+    reaching the handler under test.
+
+    Measured 2026-09-21: `except subprocess.TimeoutExpired` was added above the OSError
+    handler in `ocr_review._ocr_run`, and `test_exec_exception_becomes_ocr_exec_failed`
+    then failed with "'_FakeSubprocess' object has no attribute 'TimeoutExpired'" in a
+    4436-test run. The production code was correct; the double was lying about the
+    module's surface. Re-exporting the classes fixes the whole family at once rather
+    than the one attribute today's traceback happened to name.
+    """
+
+    TimeoutExpired = subprocess.TimeoutExpired
+    CalledProcessError = subprocess.CalledProcessError
+    SubprocessError = subprocess.SubprocessError
 
     def __init__(self, stdout="", returncode=0, stderr="", raises=None):
         self.stdout = stdout

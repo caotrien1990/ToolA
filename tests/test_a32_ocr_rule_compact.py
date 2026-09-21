@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -41,7 +42,20 @@ class _FakeCompleted:
 
 
 class _FakeSubprocess:
-    """Stands in for the subprocess module inside ocr_review's globals."""
+    """Stands in for the subprocess module inside ocr_review's globals.
+
+    Second copy of the double defined in test_ocr_integration_p5.py (test_a30b imports
+    that one instead). The exception re-exports below are here for the same reason they
+    are there: production code names `subprocess.TimeoutExpired` in an `except` clause,
+    Python resolves that expression at RAISE time, and a double without the attribute
+    converts any error inside the try block into AttributeError. No test here passes
+    `raises`, so this copy has not fired yet -- which is precisely why it would rot
+    silently.
+    """
+
+    TimeoutExpired = subprocess.TimeoutExpired
+    CalledProcessError = subprocess.CalledProcessError
+    SubprocessError = subprocess.SubprocessError
 
     def __init__(self, stdout="", returncode=0, stderr=""):
         self.stdout = stdout
