@@ -305,7 +305,7 @@ BASE_TOOL_SCHEMAS = [
 
 					"project_path": {"type": "string", "default": "", "description": "Project root to search"},
 
-					"file_pattern": {"type": "string", "description": "File glob filter (e.g. *.py, *.js). Default: * = every indexed file. D2: WIDENING THIS IS THE EXPENSIVE DIRECTION and the contract used to hide it -- the wall clock tracks the bytes the glob admits, so on an 838-file repo (same query, mode='text', warm) one exact filename answered in 0.36s and '*.py' in 25.33s, ~70x. Pass the narrowest pattern that can still answer the question, and never widen it on a retry 'to be safe'. The non-regex modes are bounded at SEARCH_TEXT_DEADLINE_SECONDS (60.0s) and answer error_name=SEARCH_TIMEOUT past it; there is no deadline parameter on those lanes, because a bigger budget buys a bigger bill rather than an answer.", "default": "*"},
+					"file_pattern": {"type": "string", "description": "File glob filter. The RIGHT shape is the narrowest thing that still answers the question: one filename (kick_qsleep.py) or a subdirectory glob (orchestrator/tools/*). Default: * = every indexed file. D2: WIDENING THIS IS THE EXPENSIVE DIRECTION and the contract used to hide it -- the wall clock tracks the bytes the glob admits, so on an 838-file repo (same query, mode='text', warm) one exact filename answered in 0.36s while a language-wide *.py glob took 25.33s, ~70x. On a same-language repo a language-wide glob is not a narrowing at all, so it is never the fix for a SEARCH_TOO_BROAD or SEARCH_TIMEOUT answer. Pass the narrowest pattern that can still answer the question, and never widen it on a retry 'to be safe'. The non-regex modes are bounded at SEARCH_TEXT_DEADLINE_SECONDS (60.0s) and answer error_name=SEARCH_TIMEOUT past it; there is no deadline parameter on those lanes, because a bigger budget buys a bigger bill rather than an answer.", "default": "*"},
 
 					"mode": {"type": "string", "enum": ["text", "regex", "symbol", "callers", "definition_usage", "index", "dom_candidates", "smart"], "default": "text", "description": "Search mode or legacy-tool preset."},
 
@@ -313,7 +313,7 @@ BASE_TOOL_SCHEMAS = [
 
 					"flags": {"type": "string", "default": "i", "description": "Regex flags: i|m|s"},
 
-                "force": {"type": "boolean", "default": False, "description": "CAN-053: override SEARCH_TOO_BROAD guard for catch-all queries (know the cost: full-tree scan)"},
+                "force": {"type": "boolean", "default": False, "description": "CAN-053 escape hatch, and explicitly NOT the remedy for SEARCH_TOO_BROAD: it only switches the guard off and pays the full-tree scan, so it answers slower, never better. The remedy is a narrower query or file_pattern. Set this only when a catch-all scan is genuinely the thing you want."},
 
 					"max_context_lines": {"type": "integer", "default": 0, "description": "Context lines before and after each text/regex hit."},
 

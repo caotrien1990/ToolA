@@ -246,10 +246,11 @@ async def _run_search_singleflight(
         raise
 
 
-async def find_symbol(name: str = "", path: str = "", project_path: str = "",
-                      context_lines: int = 0, include: str = "def",
-                      name_encoding: str = "plain", include_impact: bool = False,
-                      **aliases) -> str:
+async def _find_symbol_unbounded(name: str = "", path: str = "", project_path: str = "",
+                                 context_lines: int = 0, include: str = "def",
+                                 name_encoding: str = "plain",
+                                 include_impact: bool = False,
+                                 **aliases) -> str:
     """Find a symbol's DEFINITION in Python/JS-style source files.
 
     TT-A-01 scope contract (2026-08-10): the live-filesystem fallback only
@@ -272,9 +273,17 @@ async def find_symbol(name: str = "", path: str = "", project_path: str = "",
     if include_impact and name:
         # CAN-053 P2 opt-in: run the base lookup, then attach bounded graph
         # impact_scope for the symbol (fail-open, graph-disabled tolerated).
-        base_raw = await find_symbol(name=name, path=path, project_path=project_path,
-                                     context_lines=context_lines, include=include,
-                                     name_encoding="plain")
+        # D2 completion: this self-call targets the IMPL, not the bounded public
+        # find_symbol wrapper. Two reasons, both about not inventing a new failure
+        # mode: (1) the outer wrapper already caps total wall clock, so a second
+        # nested wait_for buys nothing; (2) if the inner call timed out it would
+        # return a SEARCH_TIMEOUT dict into base_raw, and the code below reads
+        # base['results'] -- it would silently degrade to "symbol not found"
+        # instead of reporting the timeout. One bound at the boundary.
+        base_raw = await _find_symbol_unbounded(
+            name=name, path=path, project_path=project_path,
+            context_lines=context_lines, include=include,
+            name_encoding="plain")
         try:
             base = json.loads(base_raw)
             if base.get("results"):
@@ -676,6 +685,56 @@ async def find_symbol(name: str = "", path: str = "", project_path: str = "",
     return json.dumps(response, ensure_ascii=False)
 
 
+# D2 completion, 2026-09-21: find_symbol was the LAST unbounded search lane.
+#
+# The first D2 pass bounded only mode='text'|'smart', because it put the budget in
+# _run_search_singleflight -- and mode='symbol'|'callers'|'definition_usage' never
+# reach it: search_code returns early with `return await find_symbol(...)`. Three
+# modes therefore kept the exact defect D2 was opened for (a scope-driven walk with
+# no wall clock), which is why "only the approved point" is the wrong unit of scope:
+# the DEFECT is "a search lane with no bound", and it had four instances.
+#
+# Root, not symptom: the bound goes AROUND the producer, not at the search_code
+# call site. Patching :1086 would have left the DIRECT find_symbol tool and its
+# find_callers / find_definition_and_usage aliases unbounded -- three more doors
+# into the same walk, and the next reader would have had to rediscover that. Here
+# every caller, whichever door it came through, shares ONE wall clock and ONE
+# constant (SEARCH_TEXT_DEADLINE_SECONDS, the same one the text lane uses).
+#
+# The remedy this lane reports is `path`, never file_pattern: find_symbol has no
+# file_pattern parameter, so _text_timeout_payload is called with
+# scope_field='path' and cannot advertise a field the tool would reject.
+async def find_symbol(name: str = "", path: str = "", project_path: str = "",
+                      context_lines: int = 0, include: str = "def",
+                      name_encoding: str = "plain", include_impact: bool = False,
+                      **aliases) -> str:
+    call = _find_symbol_unbounded(
+        name=name, path=path, project_path=project_path,
+        context_lines=context_lines, include=include,
+        name_encoding=name_encoding, include_impact=include_impact, **aliases)
+    if SEARCH_TEXT_DEADLINE_SECONDS <= 0:
+        # Env-disabled budget (0 / negative). Kept as an explicit escape hatch so an
+        # operator can measure the unbounded cost on purpose; it is NOT the default.
+        return await call
+    try:
+        return await asyncio.wait_for(call, timeout=SEARCH_TEXT_DEADLINE_SECONDS)
+    except asyncio.TimeoutError:
+        # Report the mode the CALLER asked for, derived from include, so the payload
+        # names the mode that appears in its own retry payload rather than "symbol"
+        # for all three.
+        mode = {"def": "symbol", "callers": "callers",
+                "all": "definition_usage"}.get((include or "def").strip().lower(),
+                                               "symbol")
+        return json.dumps(
+            _text_timeout_payload(name, mode, SEARCH_TEXT_DEADLINE_SECONDS,
+                                  path, project_path, "", scope_field="path"),
+            ensure_ascii=False)
+
+
+# One docstring, one source: the wrapper must not grow a second description that
+# can drift from the implementation's.
+find_symbol.__doc__ = _find_symbol_unbounded.__doc__
+
 # A04: the REGEX_SEARCH_TIMEOUT payload used to carry ONLY {error, error_name,
 # retryable, bounded, ca_next_action} -- it told the caller "retryable: true,
 # narrow_or_simplify_regex" but handed back NOTHING to retry with: the original
@@ -816,15 +875,25 @@ def _attach_regex_input_phase(resp: dict, partial_source: object | None) -> dict
 
 
 def _text_timeout_payload(query: str, mode: str, budget_seconds: float,
-                          path: str, project_path: str, file_pattern: str) -> dict:
-    """Build the SEARCH_TIMEOUT payload for the non-regex lanes (D2).
+                          path: str, project_path: str, file_pattern: str,
+                          scope_field: str = "file_pattern") -> dict:
+    """Build the SEARCH_TIMEOUT payload for every non-regex lane (D2).
 
     Kept separate from ``_regex_timeout_payload`` on purpose: that one talks
     about backtracking, per-phase clocks and ``regex_deadline_seconds``, none of
-    which exist on this lane. A text/smart search that runs long is a SCOPE
-    problem -- the cost is bytes scanned -- so the only remedy offered here is a
-    narrower ``file_pattern``/``path``. No deadline knob is advertised, because
-    raising one would buy a bigger bill rather than an answer.
+    which exist on these lanes. A text/smart/symbol search that runs long is a
+    SCOPE problem -- the cost is bytes walked -- so the only remedy offered here
+    is a narrower scope. No deadline knob is advertised, because raising one buys
+    a bigger bill rather than an answer.
+
+    ``scope_field`` is why this is ONE builder and not two. The text/smart lane
+    narrows with ``file_pattern``; the symbol/callers/definition_usage lane runs
+    through ``find_symbol``, which has NO ``file_pattern`` parameter at all and
+    narrows with ``path``. Naming a field the tool would reject is the same
+    dishonesty as inventing a value, and a second near-duplicate builder is how
+    two payloads drift apart (the A40 lesson: one producer, or they diverge). So
+    the caller declares which field it actually accepts, and the payload never
+    advertises the other one.
 
     There is deliberately NO ``corrected_payload``: the narrowing is a decision
     only the caller can make (which file did it actually mean?), and inventing
@@ -834,36 +903,58 @@ def _text_timeout_payload(query: str, mode: str, budget_seconds: float,
     loc = project_path or path
     loc_key = "project_path" if project_path else "path"
     scope_txt = file_pattern if (file_pattern and file_pattern != "*") else "*"
+    by_pattern = scope_field == "file_pattern"
     example: dict = {"query": q_echo, "mode": mode}
     if loc:
         example[loc_key] = loc
-    example["file_pattern"] = "REPLACE_WITH_ONE_FILENAME_OR_NARROWER_GLOB"
-    return {
+    if by_pattern:
+        example["file_pattern"] = "REPLACE_WITH_ONE_FILENAME_OR_NARROWER_GLOB"
+        scope_echo = "file_pattern='%s'" % scope_txt
+        remedy = ("Narrow the scope: name the exact file in file_pattern, or pass "
+                  "path=<subdir>. No timeout parameter helps here -- the wall clock "
+                  "tracks the bytes the glob admits, so only a smaller glob is "
+                  "cheaper, and a language-wide glob like '*.py' is not a narrowing.")
+        note = ("substitute the real filename or subdirectory for the placeholder -- "
+                "there is no deadline knob on this lane and widening the glob is the "
+                "expensive direction")
+    else:
+        example["path"] = "REPLACE_WITH_THE_SUBDIR_THAT_HOLDS_THE_SYMBOL"
+        scope_echo = "path='%s'" % (path or project_path or "<repo root>")
+        remedy = ("Narrow the scope: pass path=<subdir> so the symbol walk starts "
+                  "below the repo root. This lane has NO file_pattern parameter and "
+                  "no timeout parameter -- path is the only narrowing it accepts.")
+        note = ("substitute the subdirectory that actually holds the symbol -- this "
+                "lane accepts path, NOT file_pattern, and there is no deadline knob "
+                "on it")
+    out = {
         "ok": False,
-        "error": ("mode='%s' search exceeded its %.1fs wall-clock budget at "
-                  "file_pattern='%s'. This is a SCOPE cost, not a hung tool: the "
-                  "same query measured 0.36s against one exact filename and "
-                  "25.33s against '*.py' on an 838-file repo (~70x, warm)."
-                  % (mode, float(budget_seconds), scope_txt)),
+        "error": ("mode='%s' search exceeded its %.1fs wall-clock budget at %s. "
+                  "This is a SCOPE cost, not a hung tool: the same query measured "
+                  "0.36s against one exact filename and 25.33s against '*.py' on an "
+                  "838-file repo (~70x, warm)."
+                  % (mode, float(budget_seconds), scope_echo)),
         "error_name": "SEARCH_TIMEOUT",
         "wall_clock_budget_seconds": round(float(budget_seconds), 3),
         "retryable": True,
         "bounded": True,
         "mode": mode,
         "query": q_echo,
-        "file_pattern": scope_txt,
-        "ca_next_action": "narrow_file_pattern_or_path_then_retry",
+        "accepted_narrowing_fields": (["file_pattern", "path"] if by_pattern
+                                      else ["path"]),
+        "ca_next_action": ("narrow_file_pattern_or_path_then_retry" if by_pattern
+                           else "narrow_path_then_retry"),
         "payload_example": example,
         "retry_sequence": [
-            {"tool": "search_code", "payload": example,
-             "note": "substitute the real filename or subdirectory for the "
-                     "placeholder -- there is no deadline knob on this lane and "
-                     "widening the glob is the expensive direction"},
+            {"tool": "search_code", "payload": example, "note": note},
         ],
-        "hint": ("Narrow the scope: name the exact file, or pass path=<subdir>. "
-                 "No timeout parameter helps here -- the wall clock tracks the "
-                 "bytes the glob admits, so only a smaller glob is cheaper."),
+        "hint": remedy,
     }
+    if by_pattern:
+        # Only echoed on the lane that HAS the field. On the symbol lane a
+        # file_pattern key would read as "this is what you passed / what you may
+        # pass", and both are false there.
+        out["file_pattern"] = scope_txt
+    return out
 
 
 def _regex_timeout_payload(query: str, effective_regex_deadline: float | None,
@@ -984,12 +1075,24 @@ def _regex_budget_payload(query: str, path: str, project_path: str,
     by_path["path"] = (path or "<a subdirectory of the repo, not its root>")
 
     # Narrow by glob: works even when the whole tree is genuinely in scope.
+    # D7 2026-09-21: the fallback here used to be "*.py", so a caller that had
+    # passed no file_pattern got {"file_pattern": "*.py"} back as corrected_payload
+    # -- i.e. "resend this as-is". On a same-language repo that glob is very nearly
+    # "*" (measured 25.33s vs 0.36s for the exact filename, ~70x), so the remedy
+    # cost about as much as the refusal it was answering. This is the 4th instance
+    # of ONE producer bug, alongside the SEARCH_TOO_BROAD payload and both
+    # _narrow_warn strings: [A] naming a language-wide glob as the narrowing. The
+    # bug is the class, not any single dict -- a grep for one guard's error_name
+    # found two of the four.
     by_glob: dict = {"query": q_echo, "mode": "regex"}
     if loc:
         by_glob[loc_key] = loc
-    by_glob["file_pattern"] = file_pattern if file_pattern and file_pattern != "*" else "*.py"
+    _had_glob = bool(file_pattern) and file_pattern != "*"
+    by_glob["file_pattern"] = (
+        file_pattern if _had_glob
+        else "<one filename, or a glob narrower than a whole language>")
 
-    return {
+    out = {
         "ok": False,
         # The worker raises this same error_name for two different ceilings
         # (MAX_RECORDS and MAX_INPUT_BYTES), so carry ITS message rather than
@@ -1002,12 +1105,14 @@ def _regex_budget_payload(query: str, path: str, project_path: str,
         "query": q_echo,
         "input_budget_bytes": _rw.MAX_INPUT_BYTES,
         "input_budget_records": _rw.MAX_RECORDS,
-        "corrected_payload": by_glob,
         "payload_example": by_path,
         "accepted_narrowing_fields": ["path", "file_pattern"],
         "retry_sequence": [
             {"tool": "search_code", "payload": by_glob,
-             "note": "narrow the input by glob -- fewer files read, same tree in scope"},
+             "note": ("narrow the input by glob -- fewer files read, same tree in scope"
+                      if _had_glob else
+                      "narrow the input by glob -- replace the placeholder with the "
+                      "file you actually mean; a whole-language glob is not a narrowing")},
             {"tool": "search_code", "payload": by_path,
              "note": "or scope to a subdirectory; `path` and `file_pattern` compose"},
         ],
@@ -1017,6 +1122,15 @@ def _regex_budget_payload(query: str, path: str, project_path: str,
                 "regex_search. Raising the ceiling is not a caller-side option.",
         "ca_next_action": "narrow_path_or_reduce_regex_input",
     }
+    # corrected_payload means "sendable as-is". That is honest only when the caller
+    # already had a real glob worth keeping; with a placeholder inside it would be
+    # the same fabricated authority D7 removed elsewhere. retry_sequence[0] carries
+    # the shape either way, and when both are present they stay the identical dict
+    # -- the DUPLICATE_RETRY_BLOCKED invariant (corrected_payload must equal the
+    # first retry step, never disagree with it).
+    if _had_glob:
+        out["corrected_payload"] = by_glob
+    return out
 
 
 async def search_code(query: str = "", path: str = "", project_path: str = "",
@@ -1131,11 +1245,19 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         )
         _regex_initial_deadline = effective_regex_deadline
         regex_deadline_at = search_started_at + effective_regex_deadline
-        # Task 3 auto-chain fix: proactive narrow hint for regex on root
+        # Task 3 auto-chain fix: proactive narrow hint for regex on root.
+        # D7 2026-09-21: this used to say "Add file_pattern='*.py'". On a repo that is
+        # mostly one language that glob is very nearly '*' -- measured 25.33s vs 0.36s
+        # for the exact filename on 838 files (~70x) -- so the hint pointed AT the
+        # expensive scope while claiming to narrow. Same producer bug as the
+        # SEARCH_TOO_BROAD payload below: never name a language-wide glob as the
+        # remedy. The two narrowings that actually cut bytes are ONE filename or a
+        # subdirectory, so those are what the text asks for now.
         if (not file_pattern or file_pattern == "*") and not path:
             _narrow_warn = (
-                "Regex on full repo may timeout. "
-                "Add file_pattern='*.py' or path='orchestrator/' to narrow."
+                "Regex on the full repo may time out. Narrow it with "
+                "file_pattern='<the one filename you mean>' or path='<subdir>/'. "
+                "A language-wide glob such as '*.py' is NOT a narrowing here."
             )
         else:
             _narrow_warn = ""
@@ -1159,14 +1281,57 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         or (mode in {"text", "smart"} and len(_q_sel) < 3 and (file_pattern or "*") == "*")
     )
     if _broad and not force:
+        # D7 2026-09-21: this payload USED to answer
+        #   corrected_payload={"query": _q_sel, "file_pattern": "*.py", "force": True}
+        # with a hint whose last sentence was "Pass force=true to run anyway."
+        # Both halves were defects, and together they made the guard self-defeating:
+        #   1. On a same-language repo "*.py" is not a narrowing -- it is very nearly
+        #      "*". Measured on ToolQ (838 files, one query, mode='text', warm): the
+        #      exact filename answered in 0.36s, "*.py" in 25.33s, ~70x. So [A] handed
+        #      back a scope as expensive as the one it had just refused.
+        #   2. force=True DISABLES this very guard. The standing CA contract is "use
+        #      corrected_payload and retry once", so a COMPLIANT CA retried with
+        #      force=True and the refusal protected nothing.
+        # This is the producer of the sleep.py case: the CA did not invent
+        # file_pattern="*.py", it copied what this dict told it to send. Per truy gốc,
+        # không vá ngọn the fix is to stop teaching the wrong payload -- not to add a
+        # field that explains afterwards why the retry was slow.
+        #
+        # There is deliberately NO corrected_payload now: the remedy is a more
+        # selective QUERY or a scope only the caller knows, so a ready-to-send dict
+        # would be fabricated authority. payload_example carries placeholders that
+        # CANNOT be resent verbatim, which is the honest shape here -- same reasoning
+        # as _text_timeout_payload.
+        _broad_loc = project_path or path
+        _broad_example: dict = {
+            "query": "REPLACE_WITH_A_DISTINCTIVE_STRING_OF_3_CHARS_OR_MORE",
+            "mode": mode,
+        }
+        if _broad_loc:
+            _broad_example["project_path" if project_path else "path"] = _broad_loc
+        _broad_example["file_pattern"] = "REPLACE_WITH_ONE_FILENAME_OR_A_SUBDIR_GLOB"
         return json.dumps({
             "ok": False,
             "error": f"SEARCH_TOO_BROAD: query {_q_sel!r} would scan every file with near-zero selectivity",
             "error_name": "SEARCH_TOO_BROAD",
             "retryable": True,
-            "hint": "Narrow the query (>=3 chars), add file_pattern, or use query_index(file_pattern=...) / project_context_pack for inventory. Pass force=true to run anyway.",
+            "hint": "The QUERY is the problem, not the budget: under 3 chars against "
+                    "file_pattern='*' has near-zero selectivity. Make the query "
+                    "distinctive, or name the ONE file you actually mean, or use "
+                    "query_index / project_context_pack when the goal is an "
+                    "inventory rather than a match. '*.py' is NOT a narrowing on a "
+                    "same-language repo -- measured ~70x the cost of naming the "
+                    "file. force=true only disables this check and pays the "
+                    "full-tree scan; it is not the corrected payload.",
             "ca_next_action": "narrow_query_or_use_query_index",
-            "corrected_payload": {"query": _q_sel, "file_pattern": "*.py", "force": True},
+            "accepted_narrowing_fields": ["query", "file_pattern", "path"],
+            "payload_example": _broad_example,
+            "retry_sequence": [
+                {"tool": "search_code", "payload": _broad_example,
+                 "note": "BOTH placeholders must be replaced -- this payload is not "
+                         "sendable as-is, and widening the glob is the expensive "
+                         "direction"},
+            ],
         }, ensure_ascii=False)
     base = Path(_path)
     if path and project_path and not base.is_absolute():
@@ -1606,10 +1771,17 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                         effective_context, effective_max_results,
                         text_record_cap,
                     )
+                    # D7 2026-09-21: third copy of the same wrong remedy (see the
+                    # first _narrow_warn above). Found only by a comment-aware source
+                    # sweep -- a plain grep for the guard's error_name had missed it,
+                    # which is why the fix is stated as a CLASS: never name a
+                    # language-wide glob as the narrowing.
                     _narrow_warn = (
                         "Regex on full repo timed out at initial deadline; "
-                        "retrying with extended deadline. "
-                        "Add file_pattern='*.py' or path='orchestrator/' to narrow."
+                        "retrying with extended deadline. Narrow it with "
+                        "file_pattern='<the one filename you mean>' or "
+                        "path='<subdir>/' -- a language-wide glob such as '*.py' "
+                        "is NOT a narrowing on a same-language repo."
                     )
                 except Exception as exc:
                     if (regex_worker is not None
