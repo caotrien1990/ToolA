@@ -1,25 +1,30 @@
 # Project Map
 
 - Schema: 2
-- Generated: 2026-09-10T15:27:48
+- Generated: 2026-09-21T21:15:59
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\orchestrator`
-- Files indexed: 6
+- Files indexed: 101
 
 ## Groups
 
-- `source`: 6 files, 5742 LOC
+- `source`: 100 files, 38430 LOC
+- `ui`: 1 files, 62 LOC
 
 ## Entrypoints
 
 
 ## Hotspots
 
-- `session/store.py`: complexity 324, 1824 LOC, group `source`
-- `search_snapshots.py`: complexity 246, 1003 LOC, group `source`
-- `tools/search.py`: complexity 166, 631 LOC, group `source`
-- `server/accounting.py`: complexity 54, 299 LOC, group `source`
-- `server/executor_lanes.py`: complexity 39, 365 LOC, group `source`
-- `core/registry_data.py`: complexity 2, 1620 LOC, group `source`
+- `tools/write/core.py`: complexity 492, 1995 LOC, group `source`
+- `session/store.py`: complexity 337, 1908 LOC, group `source`
+- `tools/search.py`: complexity 330, 1449 LOC, group `source`
+- `search_snapshots.py`: complexity 309, 1304 LOC, group `source`
+- `graph/tools.py`: complexity 257, 1149 LOC, group `source`
+- `council/glass_dashboard.html`: complexity 236, 62 LOC, group `ui`
+- `server/mcp_stdio.py`: complexity 219, 1419 LOC, group `source`
+- `tools/ocr_review.py`: complexity 183, 753 LOC, group `source`
+- `server/audit_writer.py`: complexity 179, 1089 LOC, group `source`
+- `graph/rules.py`: complexity 175, 671 LOC, group `source`
 
 ## Agent Usage
 

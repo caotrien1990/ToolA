@@ -26,6 +26,7 @@ Use [A] as the PRIMARY project channel instead of raw file ops.
 - Invoke [A] tools through HTTP:
   `POST http://localhost:8083/api/call/<tool>`
 - [Q] = Query Machine / clau-mem librarian memory layer. [Q:A] `http://127.0.0.1:8082`; [Q:P] `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\21. ToolQ`; [Q:S] `[Q:P]\Q_S.bat`; [Q:S:install] `[Q:P]\bin\Q_S_install_task.ps1`. Use [Q] before search/scan/fetch/history when old memory may matter; [Q] never replaces [A].
+- [L] = Laya System One decision engine (local, non-generative). [L:A] `http://127.0.0.1:8091/v1/systemone` (POST `{state,questions}` -> `{answers}`; answer keys: `choice`|`noul`|`score`); [L:H] `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\47. LAYA_JEV_AI` (service start/stop .bat; skill `laya-assistant` in global skills, trigger "gọi laya"). Use [L] for repeated structured judgments (routing/triage/rank/gate) before burning LLM context; batch many questions into one request; unusual-low confidence = OOD signal → fall back to [A] tools; [L] never replaces [A].
 
 ## Mode Triggers
 - CA/default mode: first prompt received in a CA session.
