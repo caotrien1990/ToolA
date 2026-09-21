@@ -3,8 +3,8 @@
 This file is generated for CA routing. Read it before opening source files.
 
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator`
-- Generated: 2026-09-21T21:56:12
-- Files indexed: 989
+- Generated: 2026-09-22T02:00:58
+- Files indexed: 991
 
 ## First Actions
 
@@ -28,16 +28,16 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 
 - `config`: 41 files, 16119 LOC
 - `doc`: 345 files, 26563 LOC
-- `entrypoint`: 1 files, 15247 LOC
+- `entrypoint`: 1 files, 15276 LOC
 - `script`: 10 files, 1089 LOC
-- `source`: 208 files, 88908 LOC
-- `test`: 353 files, 62104 LOC
+- `source`: 209 files, 88995 LOC
+- `test`: 354 files, 62346 LOC
 - `ui`: 3 files, 87 LOC
 - `unknown`: 28 files, 3663 LOC
 
 ## Highest Value Files
 
-- `orchestrator_server.py` | group `entrypoint` | lang `python` | LOC 15247 | weight 24: large_file: use symbols, search, or bounded ranges before full read
+- `orchestrator_server.py` | group `entrypoint` | lang `python` | LOC 15276 | weight 24: large_file: use symbols, search, or bounded ranges before full read
 - `code_tools.py` | group `source` | lang `python` | LOC 15015 | weight 20: large_file: use symbols, search, or bounded ranges before full read
 - `surgical_mapper.py` | group `source` | lang `python` | LOC 1159 | weight 20: large_file: use symbols, search, or bounded ranges before full read
 - `.council/tmp_ahealthhung/GROC_FIX_SNAPSHOT_1315/surgical_mapper.py` | group `source` | lang `python` | LOC 1066 | weight 20: large_file: use symbols, search, or bounded ranges before full read
@@ -64,7 +64,7 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 
 ## Hotspots
 
-- `orchestrator_server.py`: complexity 3629, 15247 LOC, group `entrypoint`
+- `orchestrator_server.py`: complexity 3639, 15276 LOC, group `entrypoint`
 - `.council/_r3_before/os_head.py`: complexity 3253, 13917 LOC, group `source`
 - `code_tools.py`: complexity 3124, 15015 LOC, group `source`
 - `tools_v15.py`: complexity 1793, 8452 LOC, group `source`

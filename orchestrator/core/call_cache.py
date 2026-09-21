@@ -167,6 +167,71 @@ def lookup(tool: str, body: dict) -> dict | None:
         }
 
 
+# ── Single-flight (A41 tier 1c, measured 2026-09-22) ──────────────────────────────
+#
+# MEASURED DEFECT: a CA abandoned cbm_dead_code at 3s; a second caller sent the
+# IDENTICAL payload while that computation was STILL RUNNING and paid a full
+# 7227ms recompute. `lookup` could not help -- nothing is stored until a call
+# finishes -- so two identical expensive questions burned the CPU twice and no
+# counter anywhere showed it. Neither call was wrong; the waste was invisible.
+#
+# Whitelist INHERITED, not widened: only CACHEABLE_TOOLS may join, so a joiner can
+# only ever receive a report. Four of those names are T2 `mutating` tools whose
+# mutation_scope is `derived_index`; joining them is still correct because the
+# mutation is the index refresh the leader already performed -- the same reasoning
+# `store` relies on, written down here so the next reader need not re-derive it
+# (the dae3f265 lesson: never claim "read-only graph reads only" about this set).
+#
+# Polled, not evented, ON PURPOSE. The dispatcher is async: a threading.Event
+# .wait() there would block the event loop for the whole wait and freeze every
+# other CA, and moving it to an executor would burn a pool thread per joiner. The
+# sync idiom in code_tools.py:3084 (_MATRIX_AUDIT_OPEN_SESSION_INFLIGHT) is right
+# for threads and wrong here, so this keeps only the claim dict and lets the
+# caller await between checks.
+_INFLIGHT_LOCK = threading.Lock()
+_INFLIGHT: dict[str, float] = {}  # key -> time.time() the leader claimed it
+_JOINS_WAITED = 0
+
+
+def begin(tool: str, body: dict) -> tuple[bool, str]:
+    """Claim this question, or report that an identical one is already in flight.
+
+    Returns (is_leader, key). is_leader=True: compute it, then call `finish(key)`
+    AFTER storing the result. is_leader=False: an identical payload is mid-flight;
+    poll `is_inflight(key)`, then `lookup` it. A non-cacheable tool never joins.
+    """
+    global _JOINS_WAITED
+    if not is_cacheable(tool):
+        return True, ""
+    key = call_signature(tool, body)
+    now = time.time()
+    with _INFLIGHT_LOCK:
+        started = _INFLIGHT.get(key)
+        if started is not None and now - started <= CALL_SINGLEFLIGHT_WAIT_S:
+            _JOINS_WAITED += 1
+            return False, key
+        # Absent, or a claim older than any leader is allowed to live: a leader that
+        # died without releasing must not wedge this key until the process restarts.
+        _INFLIGHT[key] = now
+        return True, key
+
+
+def is_inflight(key: str) -> bool:
+    if not key:
+        return False
+    with _INFLIGHT_LOCK:
+        return key in _INFLIGHT
+
+
+def finish(key: str) -> None:
+    """Release joiners. MUST run AFTER `store`, or a joiner wakes to a cache miss
+    and recomputes the very work it waited for."""
+    if not key:
+        return
+    with _INFLIGHT_LOCK:
+        _INFLIGHT.pop(key, None)
+
+
 def mark_undelivered(key: str) -> bool:
     """Flag a stored answer whose client socket was already gone (tier 3a)."""
     if not key:
@@ -239,10 +304,23 @@ def pending_advisory(agent_id: str = "", project_path: str = "",
 
 def cache_status() -> dict:
     now = time.time()
+    # Snapshot the single-flight view BEFORE taking _LOCK. Nesting the two locks
+    # would create a second lock order for no gain -- the A32 deadlock came from
+    # exactly that kind of nesting, and a status call is the wrong place to risk it.
+    with _INFLIGHT_LOCK:
+        inflight = len(_INFLIGHT)
+        joins = _JOINS_WAITED
     with _LOCK:
         return {
             "entries": len(_ENTRIES),
             "undelivered": sum(1 for e in _ENTRIES.values() if e["undelivered"]),
+            "inflight": inflight,
+            "joins_waited": joins,
+            "joins_waited_semantics": (
+                "callers that DECIDED to wait for an identical in-flight payload -- "
+                "not joins that were then served: a leader failing, or finishing "
+                "under min_ms, leaves its joiner to compute anyway"),
+            "singleflight_wait_s": CALL_SINGLEFLIGHT_WAIT_S,
             "ttl_s": CALL_CACHE_TTL_S,
             "max_entries": CALL_CACHE_MAX_ENTRIES,
             "min_ms": CALL_CACHE_MIN_MS,
@@ -264,9 +342,15 @@ def reset_for_tests() -> None:
     disk. That is the correct behaviour for the daemon (a floor must survive a
     restart) and the wrong behaviour for a reset, so the reset is what changes.
     """
-    global _COST_LOADED, _COST_DIRTY, _COST_LAST_SAVE
+    global _COST_LOADED, _COST_DIRTY, _COST_LAST_SAVE, _JOINS_WAITED
     with _LOCK:
         _ENTRIES.clear()
+    # Single-flight state is part of "BOTH stores" too: a claim left behind by one
+    # test makes the NEXT test a joiner that waits CALL_SINGLEFLIGHT_WAIT_S on a
+    # leader that no longer exists, which reads as a hang, not as leaked state.
+    with _INFLIGHT_LOCK:
+        _INFLIGHT.clear()
+        _JOINS_WAITED = 0
     with _COST_LOCK:
         _COST.clear()
         _COST_LOADED = True
@@ -466,6 +550,14 @@ atexit.register(flush_cost_observatory)
 # headroom for serialisation and the response trip on a 30s client.
 CALL_BUDGET_S = float(os.environ.get("ORCHESTRATOR_CALL_BUDGET_S", "25"))
 
+# Tier 1c ceiling for a JOINER (see `begin`). DERIVED from the budget, never set
+# independently: tier 1a guarantees a budgeted leader answers within CALL_BUDGET_S,
+# so a joiner that waited longer could only be waiting on a leader already gone.
+# An unbudgeted cacheable leader (`ocr_*`, `search_code`) is capped by the same
+# number for the same reason -- a joiner must never outlive the answer it wants.
+CALL_SINGLEFLIGHT_WAIT_S = float(
+    os.environ.get("ORCHESTRATOR_SINGLEFLIGHT_WAIT_S", str(CALL_BUDGET_S)))
+
 # The cbm graph surface. NOT "read-only", despite what this comment used to claim:
 # `cbm_dead_code` and `cbm_test_gap` are both declared T2 / mutating:true with
 # mutation_scope="derived_index", and cbm_dead_code calls _ensure_graph_fresh
@@ -540,4 +632,5 @@ __all__ = [
     "store", "lookup", "mark_undelivered", "pending_advisory", "cache_status",
     "reset_for_tests", "observe", "measured_cost",
     "CALL_BUDGET_S", "BUDGETED_TOOLS", "budget_for", "budget_exceeded_payload",
+    "CALL_SINGLEFLIGHT_WAIT_S", "begin", "is_inflight", "finish",
 ]

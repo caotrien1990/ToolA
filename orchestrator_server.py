@@ -13666,6 +13666,16 @@ async def handle_health(request):
         if isinstance(value, (list, tuple, set)):
             return [json_safe(item) for item in value]
         return str(value)
+    # A41 tier 1c observability: `call_cache.cache_status()` had NO production reader --
+    # only tests called it -- so a join that silently stopped firing would look exactly
+    # like a workload that simply had no duplicate calls. /health is already where
+    # queue_depth and the accounting_* counters live, so the join belongs here too.
+    # Wrapped because /health must still answer if the cache module is broken.
+    try:
+        from orchestrator.core import call_cache as _cc_health
+        _cc_stat = _cc_health.cache_status()
+    except Exception as _cc_health_exc:
+        _cc_stat = {"error": type(_cc_health_exc).__name__}
 
     payload = {
         "ok": ready,
@@ -13721,6 +13731,11 @@ async def handle_health(request):
         "accounting_last_error": accounting["last_error"],
         "accounting_oldest_age_ms": accounting["oldest_age_ms"],
         "accounting_worker_alive": accounting["worker_alive"],
+        # A41 tier 1c: the single-flight counters, flat like the accounting_* rows above.
+        "call_cache_entries": _cc_stat.get("entries"),
+        "call_cache_inflight": _cc_stat.get("inflight"),
+        "call_cache_joins_waited_total": _cc_stat.get("joins_waited"),
+        "call_cache_joins_waited_semantics": _cc_stat.get("joins_waited_semantics"),
         "durable_audit_ok": durable_audit_ok,
         "durable_audit_pending": durable_audit.get("pending"),
         "durable_audit_applied": durable_audit.get("applied"),
@@ -15188,6 +15203,10 @@ accepted_fields=sorted(accepted_fields),
     _admission_tokens = set_admission_identity(_principal_id, control_plane=False)
     _sem = None
     _sem_category = ""
+    # A41 tier 1c: initialised BEFORE the try below, because the release site lives
+    # in that try's `finally` -- an exception raised early would otherwise NameError
+    # inside the finally and mask the real error.
+    _sf_key = ""
     _current_task = asyncio.current_task()
     if _current_task is not None:
         _INFLIGHT_OPERATIONS[_request_op_id] = _current_task
@@ -15225,8 +15244,30 @@ accepted_fields=sorted(accepted_fields),
         try:
             from orchestrator.core import call_cache as _cc_in
             _cache_hit = _cc_in.lookup(tool_name, body)
+            if _cache_hit is None:
+                # A41 tier 1c: the identical payload may be MID-FLIGHT right now.
+                # `lookup` cannot see it (nothing is stored until a call finishes), so
+                # without this a second caller recomputes work already running --
+                # measured 7227ms of duplicated cbm_dead_code. Polled with
+                # asyncio.sleep, never Event.wait: blocking here would freeze every
+                # other CA sharing this event loop.
+                _sf_leader, _sf_k = _cc_in.begin(tool_name, body)
+                if _sf_leader:
+                    _sf_key = _sf_k
+                else:
+                    _sf_deadline = time.time() + _cc_in.CALL_SINGLEFLIGHT_WAIT_S
+                    while time.time() < _sf_deadline and _cc_in.is_inflight(_sf_k):
+                        await asyncio.sleep(0.05)
+                    _cache_hit = _cc_in.lookup(tool_name, body)
+                    if _cache_hit is None:
+                        # Leader failed, finished under CALL_CACHE_MIN_MS, or hit the
+                        # ceiling. Computing it ourselves is the correct outcome, never
+                        # an error -- so take the claim and carry on.
+                        _sf_leader, _sf_k = _cc_in.begin(tool_name, body)
+                        _sf_key = _sf_k if _sf_leader else ""
         except Exception:
             _cache_hit = None
+            _sf_key = ""
         try:
             if _cache_hit is not None:
                 _cached = dict(_cache_hit["result"])
@@ -15835,6 +15876,15 @@ accepted_fields=sorted(accepted_fields),
                 _cc.mark_undelivered(_cache_key)
         except Exception:
             pass  # a cache is an optimisation; it must never fail a real answer
+        if _sf_key:
+            # A41 tier 1c: release joiners HERE -- after `store` above, never in the
+            # semaphore `finally` further up. A joiner woken before the answer is
+            # stored would `lookup` a miss and recompute exactly what it waited for.
+            try:
+                from orchestrator.core import call_cache as _cc_sf
+                _cc_sf.finish(_sf_key)
+            except Exception:
+                pass
         if _client_gone:
             logger.warning(
                 "CALL_ORPHANED tool=%s ms=%d status=%s cached=%s: client socket was "

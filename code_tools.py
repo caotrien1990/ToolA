@@ -17678,8 +17678,8 @@ try:
                 "properties": {
                     "project_path": {"type": "string", "description": "Absolute project root."},
                     "limit": {"type": "integer", "description": "Max candidates (clamped to 200). Default: 50."},
-                    "scope": {"type": "string", "enum": ["full", "core"], "default": "full", "description": "Scan scope. core restricts to orchestrator/. To restrict to any other subtree (e.g. skip a large data directory), use file_filter."},
-                    "file_filter": {"type": "string", "default": "", "description": "Optional glob relative to scan scope (recursive ** supported), e.g. 'src/**/*.js'. Restricts BOTH engines. The response echoes file_filter, file_filter_applied and files_matched, so a glob that matched nothing is visible as files_matched:0 rather than looking like a full scan."},
+                    "scope": {"type": "string", "enum": ["full", "core"], "default": "full", "description": "Scan scope. core restricts to orchestrator/. Unlike every other cbm_* tool this is a SUBPROCESS SCAN OF REAL FILES, not a graph-index query, so scope decides how much work runs -- not just how much answer comes back. Narrow it before calling, and combine with file_filter for any other subtree."},
+                    "file_filter": {"type": "string", "default": "", "description": "Optional glob relative to scan scope (recursive ** supported), e.g. 'src/**/*.js'. Restricts BOTH engines, and restricts the SCAN itself, not merely the findings. The response echoes file_filter, file_filter_applied and files_matched, so a glob that matched nothing is visible as files_matched:0 rather than looking like a full scan."},
                 },
                 "required": ["project_path"],
             },
