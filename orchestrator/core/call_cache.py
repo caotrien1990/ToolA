@@ -466,9 +466,20 @@ atexit.register(flush_cost_observatory)
 # headroom for serialisation and the response trip on a 30s client.
 CALL_BUDGET_S = float(os.environ.get("ORCHESTRATOR_CALL_BUDGET_S", "25"))
 
-# cbm read-only graph reads only. `ocr_*` is deliberately absent: it MEASURES 23-42s on
-# real work, so a 25s ceiling would break a tool that is behaving correctly -- for those
-# the answer is the measured-floor gate on the caller's own `timeout`, not a server cap.
+# The cbm graph surface. NOT "read-only", despite what this comment used to claim:
+# `cbm_dead_code` and `cbm_test_gap` are both declared T2 / mutating:true with
+# mutation_scope="derived_index", and cbm_dead_code calls _ensure_graph_fresh
+# (orchestrator/graph/tools.py), so a REINDEX can run inside a ceiling sized for a
+# read. That is deliberate -- the budget guards the CALL, not the purity of the tool
+# -- but it means 25s must cover reindex + both scanners, which is exactly how the
+# DEFAULT cbm_dead_code(scope="full") came to exceed it: measured 2026-09-22,
+# ok:false / SERVER_BUDGET_EXCEEDED at elapsed_s 25.017, of which 66.1s was vulture
+# walking venv312/ (fixed in 092c5be5: 5.5s now, so the ceiling holds again with
+# headroom). Leave the number alone without a measurement -- raising a budget to fit
+# a scan that should not have been running is the vá-ngọn B029c already tried.
+# `ocr_*` is deliberately absent: it MEASURES 23-42s on real work, so a 25s ceiling
+# would break a tool that is behaving correctly -- for those the answer is the
+# measured-floor gate on the caller's own `timeout`, not a server cap.
 BUDGETED_TOOLS = frozenset({
     "cbm_graph_status", "cbm_get_architecture", "cbm_dsm", "cbm_trace_path",
     "cbm_nodes_query", "cbm_edges_query", "cbm_what_if", "cbm_dead_code",
