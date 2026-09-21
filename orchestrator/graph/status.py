@@ -21,6 +21,14 @@ from . import store as _store
 CBM_STATUS_SCAN_MIN_BUDGET_S = float(
     os.environ.get("CBM_STATUS_SCAN_MIN_BUDGET_S", "1.0"))
 
+# D1: the integrity probe needs a budget of its OWN. The scan floor above only
+# guarantees the scan gets wall clock; it does nothing to stop an unbounded
+# `PRAGMA quick_check` from spending 53.7s first and blowing the whole call past
+# any client timeout. Measured healthy cost is ~109ms, so 1.0s is ~9x headroom
+# and an abort means "slow disk", never "corrupt".
+CBM_STATUS_INTEGRITY_BUDGET_S = float(
+    os.environ.get("CBM_STATUS_INTEGRITY_BUDGET_S", "1.0"))
+
 # EXTRACTOR_VERSION moved to config (W5): the indexer and store need it to
 # decide staleness, and they cannot import status.py (it imports store).
 # Re-exported here so `from .status import EXTRACTOR_VERSION` keeps working.
@@ -156,13 +164,44 @@ def graph_status(project_path: str) -> dict:
             # structural corruption (verified on a page-scrambled copy);
             # integrity_check only adds index-content cross-checks that
             # init/migrate already cover.
+            # D1: ISS-05 left quick_check itself UNBOUNDED. response_budget_s
+            # never reached the probe, so a measured 53.7s probe on an HDD still
+            # starved the scan down to its floor and the answer degraded to
+            # freshness=unknown at files_checked=156/838 -- exactly the failure
+            # the comment below claims is fixed. A PRAGMA takes no deadline, so
+            # bound it the only way sqlite3 offers: a progress handler that
+            # aborts the statement once the probe's own budget is spent.
             _t_ic = time.monotonic()
-            _ic_row = conn.execute("PRAGMA quick_check;").fetchone()
-            ic = (_ic_row[0] if _ic_row else "unknown")
+            _ic_deadline = _t_ic + CBM_STATUS_INTEGRITY_BUDGET_S
+            _ic_aborted = False
+            try:
+                conn.set_progress_handler(
+                    lambda: 1 if time.monotonic() > _ic_deadline else 0, 2000)
+                _ic_row = conn.execute("PRAGMA quick_check;").fetchone()
+                ic = (_ic_row[0] if _ic_row else "unknown")
+            except sqlite3.Error as _ic_exc:
+                # Aborted by OUR handler is not corruption. Reporting "corrupt"
+                # for a slow disk would be worse than the starvation it replaces,
+                # so only a failure BEFORE the deadline keeps the corrupt path.
+                if time.monotonic() >= _ic_deadline:
+                    _ic_aborted = True
+                    ic = "unknown"
+                else:
+                    ic = "error: %s" % type(_ic_exc).__name__
+            finally:
+                conn.set_progress_handler(None, 0)
             payload["integrity"] = ic
-            payload["integrity_probe"] = "quick_check"
+            payload["integrity_probe"] = (
+                "quick_check_aborted_budget" if _ic_aborted else "quick_check")
             payload["integrity_ms"] = round((time.monotonic() - _t_ic) * 1000, 1)
-            if ic != "ok":
+            payload["integrity_budget_s"] = CBM_STATUS_INTEGRITY_BUDGET_S
+            if _ic_aborted:
+                # Honest gap, not a verdict: the scan below still gets its budget.
+                payload["integrity_note"] = (
+                    "quick_check exceeded CBM_STATUS_INTEGRITY_BUDGET_S=%ss and was"
+                    " aborted; integrity is NOT a corruption verdict here"
+                    % CBM_STATUS_INTEGRITY_BUDGET_S)
+            elif ic != "ok":
                 payload["freshness"] = "corrupt"
                 payload["error"] = f"quick_check: {ic}"
                 return payload

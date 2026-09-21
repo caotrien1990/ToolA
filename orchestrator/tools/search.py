@@ -39,6 +39,26 @@ MAX_SEARCH_RESULTS = fo.MAX_SEARCH_RESULTS
 # never dropped silently, and `max_file_bytes=0` turns the cap off for that one call.
 MAX_TEXT_RECORD_BYTES = 2_000_000
 
+# D2 2026-09-21: MAX_TEXT_RECORD_BYTES above caps the size of ONE record; nothing
+# capped the WALL CLOCK of the whole non-regex call. Only mode='regex' self-bounded
+# (regex_deadline_seconds, 0.05-15.0), so text/smart reached
+# _run_search_singleflight with timeout=None and ran as long as the glob's bytes
+# took. Measured on ToolQ (838 files, one query, mode='text', warm): the exact
+# filename answered in 0.36s, file_pattern='*.py' in 25.33s -- ~70x for a scope the
+# caller widened for free. At 25.33s warm a cold run walks past a 30s client
+# timeout, and the abandoned call left only `"POST /api/call/search_code" 200 0` in
+# the access log while USAGE_LOG recorded ok=True: "CA says timeout" and "[A] says
+# success" were both true and nothing in [A] could reconcile them.
+#
+# 60.0s is chosen, not tuned: it is 2.4x the measured worst HEALTHY call, so no
+# working search starts failing, and it equals executor_lanes._QUEUE_WAIT_MAX_SECONDS
+# so the FAIR_ADMISSION deadline derived from it stays inside an already-designed
+# range. It is a module constant and NOT a caller parameter on purpose -- see the
+# comment at the wait_timeout site for why a knob would be raised in the wrong
+# direction. Set SEARCH_TEXT_DEADLINE_SECONDS=0 to disable the bound entirely.
+SEARCH_TEXT_DEADLINE_SECONDS = float(
+    os.environ.get("SEARCH_TEXT_DEADLINE_SECONDS", "60.0"))
+
 _SEARCH_MODE_ALIASES = {
     "plain": "text", "literal": "text", "raw": "text", "exact": "text",
     "string": "text", "fixed": "text", "re": "regex", "pattern": "regex", "regexp": "regex",
@@ -795,6 +815,57 @@ def _attach_regex_input_phase(resp: dict, partial_source: object | None) -> dict
     return resp
 
 
+def _text_timeout_payload(query: str, mode: str, budget_seconds: float,
+                          path: str, project_path: str, file_pattern: str) -> dict:
+    """Build the SEARCH_TIMEOUT payload for the non-regex lanes (D2).
+
+    Kept separate from ``_regex_timeout_payload`` on purpose: that one talks
+    about backtracking, per-phase clocks and ``regex_deadline_seconds``, none of
+    which exist on this lane. A text/smart search that runs long is a SCOPE
+    problem -- the cost is bytes scanned -- so the only remedy offered here is a
+    narrower ``file_pattern``/``path``. No deadline knob is advertised, because
+    raising one would buy a bigger bill rather than an answer.
+
+    There is deliberately NO ``corrected_payload``: the narrowing is a decision
+    only the caller can make (which file did it actually mean?), and inventing
+    one would hand the CA fabricated authority to resend verbatim.
+    """
+    q_echo = _regex_timeout_query_echo(query)
+    loc = project_path or path
+    loc_key = "project_path" if project_path else "path"
+    scope_txt = file_pattern if (file_pattern and file_pattern != "*") else "*"
+    example: dict = {"query": q_echo, "mode": mode}
+    if loc:
+        example[loc_key] = loc
+    example["file_pattern"] = "REPLACE_WITH_ONE_FILENAME_OR_NARROWER_GLOB"
+    return {
+        "ok": False,
+        "error": ("mode='%s' search exceeded its %.1fs wall-clock budget at "
+                  "file_pattern='%s'. This is a SCOPE cost, not a hung tool: the "
+                  "same query measured 0.36s against one exact filename and "
+                  "25.33s against '*.py' on an 838-file repo (~70x, warm)."
+                  % (mode, float(budget_seconds), scope_txt)),
+        "error_name": "SEARCH_TIMEOUT",
+        "wall_clock_budget_seconds": round(float(budget_seconds), 3),
+        "retryable": True,
+        "bounded": True,
+        "mode": mode,
+        "query": q_echo,
+        "file_pattern": scope_txt,
+        "ca_next_action": "narrow_file_pattern_or_path_then_retry",
+        "payload_example": example,
+        "retry_sequence": [
+            {"tool": "search_code", "payload": example,
+             "note": "substitute the real filename or subdirectory for the "
+                     "placeholder -- there is no deadline knob on this lane and "
+                     "widening the glob is the expensive direction"},
+        ],
+        "hint": ("Narrow the scope: name the exact file, or pass path=<subdir>. "
+                 "No timeout parameter helps here -- the wall clock tracks the "
+                 "bytes the glob admits, so only a smaller glob is cheaper."),
+    }
+
+
 def _regex_timeout_payload(query: str, effective_regex_deadline: float | None,
                            path: str, project_path: str, file_pattern: str,
                            partial_source: object | None = None,
@@ -1458,6 +1529,21 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
             )
             wait_timeout = None
             producer_deadline_at = None
+            if mode != "regex" and SEARCH_TEXT_DEADLINE_SECONDS > 0:
+                # D2: only mode='regex' ever self-bounded; text/smart passed
+                # timeout=None and ran as long as the bytes took. The budget is
+                # deliberately NOT a caller parameter -- a knob gets raised on
+                # retry, and widening is the expensive direction (the cost is
+                # bytes scanned, so a bigger deadline buys a bigger bill, never an
+                # answer). It sits far above every measured healthy call (25.33s
+                # worst on 838 files) so it can only fire on a pathological scope,
+                # and it stays inside the lane's own documented queue-wait ceiling
+                # (_QUEUE_WAIT_MAX_SECONDS = 60.0) so the FAIR_ADMISSION deadline
+                # derived from it at _run_search_singleflight:152 is not a new
+                # regime. Ops can still move it with SEARCH_TEXT_DEADLINE_SECONDS.
+                wait_timeout = max(
+                    0.05,
+                    search_started_at + SEARCH_TEXT_DEADLINE_SECONDS - time.monotonic())
             if mode == "regex":
                 # ISS-20: the producer runs TWO separately-clocked phases --
                 # input (pin + read candidate files + line budget) and matching
@@ -1583,6 +1669,20 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
             **aliases,
         )
     except asyncio.TimeoutError:
+        if mode != "regex":
+            # D2: the non-regex lanes reached _run_search_singleflight with
+            # timeout=None -- genuinely UNBOUNDED. Measured 2026-09-21 on ToolQ
+            # (838 files, same query, mode='text', warm): file_pattern with the
+            # exact filename = 0.36s, file_pattern='*.py' = 25.33s, ~70x. The
+            # wide form ran until the CLIENT gave up, leaving `"POST
+            # /api/call/search_code" 200 0` in the access log against an ok=True
+            # USAGE_LOG row -- both sides honest, neither reconcilable. Bounding
+            # it here makes the blowup the TOOL's own answer, and names the scope
+            # as the cause instead of leaving the CA to guess it hung.
+            return json.dumps(
+                _text_timeout_payload(query, mode, SEARCH_TEXT_DEADLINE_SECONDS,
+                                      path, project_path, file_pattern),
+                ensure_ascii=False)
         # ISS-12: _last_regex_timeout, not the asyncio.TimeoutError we are
         # holding -- that one is a synthetic re-raise and carries no matches.
         _timeout_resp = _regex_timeout_payload(query, effective_regex_deadline, path, project_path, file_pattern,

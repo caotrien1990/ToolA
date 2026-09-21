@@ -99,7 +99,16 @@ def _log_to_file(log_path: Path, entry: dict, max_entries: int = 500) -> bool:
 
 
 def _log_usage(tool: str, params: dict, ok: bool, ms: int, error: str = "") -> bool:
-    """Ghi vào USAGE_LOG của Orchestrator (meta-log về chính Orchestrator)."""
+    """Ghi vao USAGE_LOG cua Orchestrator (meta-log ve chinh Orchestrator).
+
+    D6: the row used to be {ts, tool, ok, ms, project} where `project` was only a
+    folder BASENAME. Two different repos sharing a basename collapsed into one
+    row, and nothing recorded WHO called or WITH WHICH fields -- so a CA report of
+    "search_code timed out" could not be matched against the call [A] itself
+    recorded as ok=True. Param KEY NAMES only, never values: attribution without
+    copying payloads (or secrets) into a log. This is a log-only change, so it
+    costs nothing per call in the response.
+    """
     cache_dir = _project_cache_dir(str(_ORCHESTRATOR_ROOT))
     project_hint = params.get("project_path", params.get("file_path", ""))
     entry = {
@@ -107,6 +116,16 @@ def _log_usage(tool: str, params: dict, ok: bool, ms: int, error: str = "") -> b
         "tool": tool, "ok": ok, "ms": ms,
         "project": Path(project_hint).name if project_hint else "",
     }
+    if project_hint:
+        entry["project_path"] = str(project_hint)[:260]
+    try:
+        entry["params"] = sorted(str(k) for k in params)[:40]
+    except Exception:
+        pass
+    for _attr in ("agent_id", "session_id"):
+        _val = params.get(_attr)
+        if _val:
+            entry[_attr] = str(_val)[:80]
     if error:
         entry["error"] = error[:120]
     return _log_to_file(cache_dir / "USAGE_LOG.jsonl", entry, max_entries=1000)

@@ -168,6 +168,22 @@ async def _ocr_run(args, root: str, timeout: int) -> dict:
             encoding="utf-8", errors="replace", timeout=timeout, check=False,
             env=child_env,
         )
+    except subprocess.TimeoutExpired:
+        # D3: a deadline hit is a CALLER-PARAMETER problem (timeout too small for
+        # this repo), not a broken binary. Folding it into OCR_EXEC_FAILED handed
+        # the CA the generic "retry the same payload" advice, which times out
+        # again; the distinct name is what lets _ca_next_action say raise-timeout.
+        return {
+            "ok": False,
+            "error_name": "OCR_TIMEOUT",
+            "error": "ocr did not finish within timeout=%ss" % timeout,
+            "binary": resolved["path"],
+            "binary_source": resolved["source"],
+            "command": command,
+            "timeout": timeout,
+            "timeout_exceeded": True,
+            "duration_s": round(time.time() - started, 3),
+        }
     except Exception as exc:
         return {
             "ok": False,

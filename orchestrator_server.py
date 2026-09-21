@@ -615,7 +615,32 @@ async def _http_defense_middleware(request, handler):
                     status=429,
                     headers=_cors(request.headers.get('Origin'), {'Retry-After': str(retry_after)}),
                 )
-        return await handler(request)
+        _response = await handler(request)
+        if is_api_call:
+            # D4: aiohttp writes the body AFTER this middleware returns, so a
+            # completed-but-undelivered call left exactly ONE trace -- the access
+            # line `"POST /api/call/<tool>" 200 0`: status chosen, zero bytes out.
+            # Measured 2026-09-21 13:30: five calls of 22-133s each answered 200 0
+            # while USAGE_LOG recorded ok=True, and the whole window held not one
+            # ERROR or WARNING line. So "the client reported a timeout" and "[A]
+            # says it succeeded" were both true and nothing in [A]'s own log could
+            # reconcile them. Checking the transport here is the earliest point
+            # that knows the socket is already gone.
+            try:
+                _tr = getattr(request, "transport", None)
+                if _tr is None or _tr.is_closing():
+                    _response.headers["X-Orchestrator-Undelivered"] = "1"
+                    logger.warning(
+                        "RESPONSE_UNDELIVERED tool=%s elapsed_ms=%d bytes=%s: the tool "
+                        "COMPLETED but the client socket was already closed; expect "
+                        "'200 0' in the access log and an ok=True USAGE_LOG row for "
+                        "this same call",
+                        request.match_info.get('tool_name', '?'),
+                        int((time.time() - started) * 1000),
+                        getattr(_response, "content_length", None))
+            except Exception:
+                pass  # telemetry only: never fail a good response over it
+        return _response
     finally:
         if is_api_call:
             _record_api_call_latency((time.time() - started) * 1000.0)
@@ -3682,6 +3707,7 @@ def _ca_next_action(error_name: str, tool_name: str) -> str:
         "ACTIVE_SESSION_REQUIRED": "open_session",
         "FILE_CHANGED_OUTSIDE_ORCHESTRATOR": "read_file_range",
         "FILE_ACCESS_DENIED": "check_file_permissions_or_run_with_access_to_project",
+        "OCR_TIMEOUT": "raise_timeout_or_narrow_scope_then_retry",
     }.get(error_name, "inspect_ca_guidance")
 
 
@@ -3873,6 +3899,7 @@ def _default_hint(tool_name: str, error_name: str) -> str:
         "ACTIVE_SESSION_REQUIRED": "Call open_session(session_title, project_path), then retry.",
         "FILE_CHANGED_OUTSIDE_ORCHESTRATOR": "R39 recovery: (1) read_file_range(file_path, start, end, force_reseed=true) (2) retry SINGLE write_fix. For multi-hunk same file use write_transaction. Never refresh_project_map on a large root such as [A:P].",
         "FILE_ACCESS_DENIED": "Check file permissions for the workflow state path and retry with project access.",
+        "OCR_TIMEOUT": "The ocr binary hit the timeout YOU passed, not a broken install: raise timeout or narrow the scope (exclude, min_changed_lines). Read duration_s and timeout on the payload for the measured budget; retrying the same payload times out again.",
     }.get(error_name, "Follow ca_guidance.payload_example and retry.")
 
 
@@ -14036,6 +14063,10 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
     origin = request.headers.get('Origin')
     cors = _cors(origin)
     tool_name = request.match_info.get('tool_name', '')
+    # D5: snapshot the in-flight count at entry. The middleware has already
+    # counted THIS request, so >1 means somebody else is genuinely sharing the
+    # daemon with us. Read-only access to the global, like _server_load_snapshot.
+    _inflight_at_entry = _requests_in_flight
 
     # R101: read field selector from HTTP ?fields= now; body `fields` is unioned after parse.
     try:
@@ -15519,6 +15550,21 @@ accepted_fields=sorted(accepted_fields),
                                 "read_file_range before retrying — do NOT blindly "
                                 "re-patch, that risks a double-write.")
                             _result.setdefault("ca_next_action", "read_file_range")
+            # D5: contention is stamped ONLY when it actually held. An
+            # unconditional field would spend tokens on every call forever just to
+            # say "1", and the measured case is the one a CA misreads: five heavy
+            # calls in flight at once, each running 3-10x its own warm wall clock,
+            # reported by the caller as "the tool is slow". Not R101-projected on
+            # purpose -- a wall-clock explanation must not be hidden by fields=.
+            _inflight_peak = max(_inflight_at_entry, _requests_in_flight)
+            if _inflight_peak > 1:
+                _result.setdefault("concurrent_api_calls_observed", _inflight_peak)
+                _result.setdefault(
+                    "contention_note",
+                    "%d /api/call requests were in flight around this one; the wall "
+                    "clock includes queueing, so a slow answer here is NOT evidence "
+                    "of a slow tool -- re-measure serially before tuning scope"
+                    % _inflight_peak)
             # A37 #4: the R101 projection above ran BEFORE this block stamped
             # generation / operation_id / write_status_url / operation_* and the
             # refreshed task metadata, so fields_unknown could name a key that IS
