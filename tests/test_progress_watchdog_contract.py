@@ -63,6 +63,86 @@ def test_graph_status_partial_scan_never_claims_fresh(tmp_path, monkeypatch):
     assert "pre_scan_ms" in result["stale_scan"]
 
 
+def _gap_c_status(tmp_path, monkeypatch, counts_delay=0.0):
+    """Run graph_status against a mocked db, like the ISS-05 test above.
+
+    Deliberately a separate helper rather than a refactor of that test: it pins a
+    different defect, and rewriting it to share a fixture would put both at risk.
+    counts_delay makes the PRE-SCAN phase cost real wall-clock, which is the only way
+    to reach the overrun branch on Windows, where time.monotonic() has ~15.6ms
+    granularity and an all-mock pre-scan can measure exactly 0.0ms.
+    """
+    conn = mock.MagicMock()
+
+    def _execute(sql, *_args, **_kwargs):
+        row = ("ok",) if "quick_check" in str(sql).lower() else ("wal",)
+        return mock.MagicMock(fetchone=mock.MagicMock(return_value=row))
+
+    def _counts(*_args):
+        if counts_delay:
+            time.sleep(counts_delay)
+        return {"nodes": 1, "edges": 0, "files": 5,
+                "last_run": {"finished_at": 1, "status": "completed"}}
+
+    conn.execute.side_effect = _execute
+    monkeypatch.setattr(graph_status._store, "graph_db_path",
+                        lambda _: str(tmp_path / "graph.db"))
+    (tmp_path / "graph.db").write_bytes(b"x")
+    monkeypatch.setattr(graph_status._store, "get_db", lambda *a, **k: conn)
+    monkeypatch.setattr(graph_status._store, "status_counts", _counts)
+    monkeypatch.setattr(graph_status, "_stale_count", lambda *a, **k: {
+        "stale_files": 0, "files_checked": 5, "files_total": 5,
+        "complete": True, "stop_reason": None})
+    return graph_status.graph_status(str(tmp_path)), conn
+
+
+def test_integrity_budget_wires_its_interval_and_publishes_the_enforcement(
+        tmp_path, monkeypatch):
+    """Gap C: integrity_budget_s alone reads as a ceiling this code cannot honour.
+
+    MEASURED 2026-09-21 on the ToolQ graph db (spinning D:): the live tool answered
+    integrity_ms=3828 for a declared 1000ms, and then discarded the result as
+    "unknown" -- 2.8s of pure waste. A PRAGMA takes no deadline, so the budget is
+    enforced only by a progress handler that runs BETWEEN vm opcodes: at the old
+    interval of 2000 it fired 9 times in 1172ms, max gap 828ms. The interval IS the
+    resolution of the budget, so both halves are pinned here -- the value actually
+    handed to set_progress_handler (a hardcoded literal is how the resolution would
+    silently go back to 828ms) and the disclosure that the bound is best-effort.
+    """
+    result, conn = _gap_c_status(tmp_path, monkeypatch)
+    interval = graph_status.CBM_STATUS_INTEGRITY_OPCODE_INTERVAL
+    armed = [c for c in conn.set_progress_handler.call_args_list if c.args[1]]
+    assert armed, "integrity probe ran with no progress handler: nothing bounds it"
+    assert armed[0].args[1] == interval, (
+        "handler armed with %r, not CBM_STATUS_INTEGRITY_OPCODE_INTERVAL=%r"
+        % (armed[0].args[1], interval))
+    assert str(interval) in result["integrity_budget_enforcement"], (
+        "integrity_budget_enforcement must be built from the live constant or it keeps"
+        " advertising an interval the code no longer uses")
+    assert "best_effort" in result["integrity_budget_enforcement"]
+
+
+def test_scan_budget_discloses_which_branch_produced_it(tmp_path, monkeypatch):
+    """Gap C: a floored scan budget was indistinguishable from a healthy remainder.
+
+    MEASURED 2026-09-21 on ToolQ: pre_scan_ms=6328 against a 2.0s response budget, so
+    `budget - elapsed` went negative, max() returned CBM_STATUS_SCAN_MIN_BUDGET_S, and
+    budget_s read 1.0 -- exactly what a healthy remainder looks like. elapsed_ms was
+    6843, so a CA sizing its client timeout off the declared 2.0s abandons a call that
+    completed. Both branches are asserted: either one alone would also pass on a
+    constant expression that never looks at the budget at all.
+    """
+    monkeypatch.setattr(graph_status, "CBM_STATUS_RESPONSE_BUDGET_S", 0.0)
+    over, _ = _gap_c_status(tmp_path, monkeypatch, counts_delay=0.05)
+    assert over["stale_scan"]["budget_source"] == "scan_min_floor"
+    assert over["stale_scan"]["budget_overrun_ms"] > 0.0
+    assert over["stale_scan"]["budget_s"] == graph_status.CBM_STATUS_SCAN_MIN_BUDGET_S
+
+    monkeypatch.setattr(graph_status, "CBM_STATUS_RESPONSE_BUDGET_S", 3600.0)
+    under, _ = _gap_c_status(tmp_path, monkeypatch)
+    assert under["stale_scan"]["budget_source"] == "response_budget_remainder"
+    assert "budget_overrun_ms" not in under["stale_scan"]
+
 def test_auto_reindex_skips_incomplete_stale_scan(monkeypatch):
     from orchestrator.graph import query
     conn = mock.MagicMock()

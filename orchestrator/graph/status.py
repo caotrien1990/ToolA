@@ -29,6 +29,36 @@ CBM_STATUS_SCAN_MIN_BUDGET_S = float(
 CBM_STATUS_INTEGRITY_BUDGET_S = float(
     os.environ.get("CBM_STATUS_INTEGRITY_BUDGET_S", "1.0"))
 
+# Gap C: how OFTEN the integrity budget above is checked, in sqlite vm opcodes -- so
+# the two constants only mean anything together. A PRAGMA takes no deadline and sqlite
+# is interruptible only between opcodes, so the budget can be overshot by one
+# inter-call gap and no value here changes that.
+# MEASURED 2026-09-21, ToolQ graph db on a spinning D:, deadline 1.0s:
+#   interval 2000 (the value shipped until now): handler fired 9 times in 1172ms,
+#     max gap 828ms -- and the live tool answered integrity_ms=3828 for a declared
+#     1000ms, i.e. 3.8x, with the result then thrown away as "unknown".
+#   interval 100: max gap 313ms (0.38x of 2000).
+# Cost of the finer interval where it is actually paid -- a HEALTHY probe that never
+# aborts (ToolA graph db, same warm state): 172ms over 24838 callbacks at 100 vs 187ms
+# over 1236 at 2000. Inside the noise band, so resolution here is free.
+# Why not lower: at 25 the max gap measured 16ms, which is just the Windows clock
+# granularity, and no interval can interrupt a single slow page read. That floor is
+# why the payload publishes integrity_budget_enforcement as best_effort instead of
+# letting integrity_budget_s read as a guarantee.
+CBM_STATUS_INTEGRITY_OPCODE_INTERVAL = max(1, int(
+    os.environ.get("CBM_STATUS_INTEGRITY_OPCODE_INTERVAL", "100")))
+
+# Gap C: the wall-clock the whole status answer aims at. This was a magic local
+# `response_budget_s = 2.0` inside graph_status() that NAMED the response but sized
+# only the stale-scan slice (scan_budget = budget - elapsed_so_far). MEASURED
+# 2026-09-21 on ToolQ: pre_scan_ms=6328, so that subtraction went negative, max()
+# quietly returned CBM_STATUS_SCAN_MIN_BUDGET_S, and the answer took elapsed_ms=6843
+# against a declared 2.0s. Module-level and env-overridable for the same reason the
+# other two are: an operator on a slow disk must be able to raise it without editing
+# code, and stale_scan.budget_source / budget_overrun_ms now say when it was blown.
+CBM_STATUS_RESPONSE_BUDGET_S = float(
+    os.environ.get("CBM_STATUS_RESPONSE_BUDGET_S", "2.0"))
+
 # EXTRACTOR_VERSION moved to config (W5): the indexer and store need it to
 # decide staleness, and they cannot import status.py (it imports store).
 # Re-exported here so `from .status import EXTRACTOR_VERSION` keeps working.
@@ -127,7 +157,6 @@ def graph_status(project_path: str) -> dict:
     Fail-open: any DB error returns enabled=False + error (no raise).
     """
     t0 = time.monotonic()
-    response_budget_s = 2.0
     payload = {
         "enabled": graph_enabled(),
         "db_present": False,
@@ -175,8 +204,13 @@ def graph_status(project_path: str) -> dict:
             _ic_deadline = _t_ic + CBM_STATUS_INTEGRITY_BUDGET_S
             _ic_aborted = False
             try:
+                # The interval is the budget's ENFORCEMENT RESOLUTION, not a tuning
+                # detail: the handler runs BETWEEN vm opcodes, so the deadline can only
+                # be honoured to within one inter-call gap. See
+                # CBM_STATUS_INTEGRITY_OPCODE_INTERVAL for the measurements.
                 conn.set_progress_handler(
-                    lambda: 1 if time.monotonic() > _ic_deadline else 0, 2000)
+                    lambda: 1 if time.monotonic() > _ic_deadline else 0,
+                    CBM_STATUS_INTEGRITY_OPCODE_INTERVAL)
                 _ic_row = conn.execute("PRAGMA quick_check;").fetchone()
                 ic = (_ic_row[0] if _ic_row else "unknown")
             except sqlite3.Error as _ic_exc:
@@ -195,12 +229,22 @@ def graph_status(project_path: str) -> dict:
                 "quick_check_aborted_budget" if _ic_aborted else "quick_check")
             payload["integrity_ms"] = round((time.monotonic() - _t_ic) * 1000, 1)
             payload["integrity_budget_s"] = CBM_STATUS_INTEGRITY_BUDGET_S
+            # integrity_budget_s alone reads as a ceiling this code can guarantee, and
+            # it cannot: MEASURED integrity_ms=3828 for a declared 1000ms. Publishing
+            # the mechanism next to the number is what keeps a CA from sizing a client
+            # timeout off a bound nobody enforces.
+            payload["integrity_budget_enforcement"] = (
+                "best_effort_progress_handler_every_%d_vm_opcodes"
+                % CBM_STATUS_INTEGRITY_OPCODE_INTERVAL)
             if _ic_aborted:
                 # Honest gap, not a verdict: the scan below still gets its budget.
                 payload["integrity_note"] = (
                     "quick_check exceeded CBM_STATUS_INTEGRITY_BUDGET_S=%ss and was"
-                    " aborted; integrity is NOT a corruption verdict here"
-                    % CBM_STATUS_INTEGRITY_BUDGET_S)
+                    " aborted after %sms; the budget is best-effort because sqlite is"
+                    " interruptible only between vm opcodes, so an I/O-bound probe"
+                    " overshoots by up to one page read; integrity is NOT a corruption"
+                    " verdict here"
+                    % (CBM_STATUS_INTEGRITY_BUDGET_S, payload["integrity_ms"]))
             elif ic != "ok":
                 payload["freshness"] = "corrupt"
                 payload["error"] = f"quick_check: {ic}"
@@ -221,14 +265,30 @@ def graph_status(project_path: str) -> dict:
                 # must show up as integrity_ms, not silently starve the scan
                 # into a permanent freshness=unknown.
                 _pre_scan_ms = (time.monotonic() - t0) * 1000
-                scan_budget = max(CBM_STATUS_SCAN_MIN_BUDGET_S,
-                                  response_budget_s - (time.monotonic() - t0))
+                scan_budget = max(
+                    CBM_STATUS_SCAN_MIN_BUDGET_S,
+                    CBM_STATUS_RESPONSE_BUDGET_S - (time.monotonic() - t0))
                 _t_scan = time.monotonic()
                 stale_result = _stale_count(conn, project_path, budget_s=scan_budget)
                 payload["stale_files"] = stale_result["stale_files"]
                 stale_result["budget_s"] = round(scan_budget, 3)
                 stale_result["scan_ms"] = round((time.monotonic() - _t_scan) * 1000, 1)
                 stale_result["pre_scan_ms"] = round(_pre_scan_ms, 1)
+                # MEASURED 2026-09-21 on the ToolQ graph db: pre_scan_ms=6328 against
+                # a 2.0s response budget, so the subtraction went NEGATIVE, max() fell
+                # back to the scan floor, and nothing in the payload said the budget
+                # had stopped governing anything -- budget_s just read 1.0, which is
+                # exactly what a healthy remainder would look like. A CA that sizes its
+                # client timeout from the declared budget then abandons a call that
+                # completed (elapsed_ms 6843), which is the wasted-call story this
+                # campaign exists to close. The floor stays -- starving the scan is the
+                # worse failure -- but which branch produced it is now on the record.
+                if _pre_scan_ms > CBM_STATUS_RESPONSE_BUDGET_S * 1000:
+                    stale_result["budget_source"] = "scan_min_floor"
+                    stale_result["budget_overrun_ms"] = round(
+                        _pre_scan_ms - CBM_STATUS_RESPONSE_BUDGET_S * 1000, 1)
+                else:
+                    stale_result["budget_source"] = "response_budget_remainder"
                 payload["stale_scan"] = stale_result
                 payload["scan_ms"] = stale_result["scan_ms"]
             except Exception as e:

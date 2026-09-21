@@ -290,6 +290,35 @@ def _cost_path() -> Path:
     return here / ".orchestrator_cache" / "CALL_COST.json"
 
 
+def _cost_key_is_junk(key: str) -> bool:
+    """True for a bucket no future call can ever match, so keeping it is pure leak.
+
+    MEASURED 2026-09-21 on the live CALL_COST.json: 3 of 4 buckets were unmatchable --
+    `__fast_accounting_probe__|` (25 samples from an internal probe, not a tool any CA
+    can call) and two `backup_project|` buckets whose project_path pointed inside a
+    test's TemporaryDirectory (OS temp dir, .../tmp*/proj_a), a directory already
+    deleted by the time the samples were flushed. `observe()` recorded whatever it was
+    handed, and nothing ever bounded the NUMBER of buckets (_COST_MAX_SAMPLES bounds
+    samples WITHIN one), so the file could only grow and every campaign ended with a
+    hand purge. Per truy goc, khong va ngon: refuse at the producer AND self-heal on
+    load, so the garbage cannot come back.
+
+    What is NOT junk, deliberately: a key with an EMPTY project_path. A real call may
+    legitimately carry none -- live example `search_code|` -- and that bucket is the
+    only floor such a call can ever be held to. Dropping it would silently disable a
+    working gate, so the rule names what it removes and removes nothing else.
+    """
+    tool, _, path = str(key).partition("|")
+    if len(tool) > 4 and tool.startswith("__") and tool.endswith("__"):
+        return True
+    if not path:
+        return False
+    tmp = os.path.normcase(str(tempfile.gettempdir() or "")).rstrip("\\/")
+    if not tmp:
+        return False
+    return path == tmp or path.startswith(tmp + os.sep) or path.startswith(tmp + "/")
+
+
 def _cost_load_locked() -> None:
     global _COST_LOADED
     if _COST_LOADED:
@@ -300,8 +329,11 @@ def _cost_load_locked() -> None:
         data = json.loads(raw)
         if isinstance(data, dict):
             for k, v in data.items():
-                if isinstance(v, dict) and isinstance(v.get("samples"), list):
-                    _COST[str(k)] = {"samples": [float(s) for s in v["samples"]][-_COST_MAX_SAMPLES:]}
+                if not isinstance(v, dict) or not isinstance(v.get("samples"), list):
+                    continue
+                if _cost_key_is_junk(str(k)):
+                    continue  # self-heal: junk written before the guard existed
+                _COST[str(k)] = {"samples": [float(s) for s in v["samples"]][-_COST_MAX_SAMPLES:]}
     except Exception:
         pass  # no history yet is a normal state, never an error
 
@@ -367,6 +399,8 @@ def observe(tool: str, project_path: str, duration_s: float) -> None:
     if seconds <= 0:
         return
     key = _cost_key(tool, project_path)
+    if _cost_key_is_junk(key):
+        return  # never floors anything; recording it only grows the file
     with _COST_LOCK:
         _cost_load_locked()
         bucket = _COST.setdefault(key, {"samples": []})
