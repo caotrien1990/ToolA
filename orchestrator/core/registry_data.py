@@ -1704,7 +1704,12 @@ V15_R8_NEW_SCHEMA_SPECS = (
             # without registry exposure the dispatcher rejected it as
             # UNSUPPORTED_FIELD, leaving callers stuck at the baked 1s default
             # that cannot fit the live daemon execution path.
-            "regex_deadline_seconds": {"type": "number", "default": 5.0, "description": "Hard deadline for the regex worker, seconds (0.05-10)."},
+            # B031 (2026-09-21): the published default/range had drifted BOTH ways from
+            # search_regex_worker (default 5.0 vs DEFAULT_DEADLINE_SECONDS 8.0; range
+            # "0.05-10" vs the real clamp max(MIN 0.05, min(parsed, MAX 15.0))), so a CA
+            # reading the schema under-asked by 5s at the ceiling and mis-predicted the
+            # default. Numbers here must track search_regex_worker.py:17-19.
+            "regex_deadline_seconds": {"type": "number", "default": 8.0, "description": "Hard deadline for the regex worker, seconds (clamped to 0.05-15.0; default 8.0). Bounds ONE phase of ONE attempt: input and match phases are budgeted separately, and a timeout with no explicit value here is retried once under a doubled deadline, so the call's wall clock can reach ~4x this number. Read wall_clock_budget_seconds on a REGEX_SEARCH_TIMEOUT payload for the measured budget."},
 
         }, ["pattern", "project_path"]),
 

@@ -106,7 +106,115 @@ def test_same_tool_many_payloads_picks_the_newest():
     assert rec["operation_id"] == "new"
     assert ambiguous is False
     assert len(candidates) == 2
+    # B031: "same tool" is not what makes this resolvable -- both rows are
+    # `committed`, so recency picks the evidence row and not the verdict.
 
+
+def test_same_tool_with_disagreeing_status_is_ambiguous():
+    # B031 (#6): two write_fix on the SAME target key, one committed and one
+    # failed. ISS-01 banned answering with the newest row ACROSS tool names and
+    # left it in place INSIDE one, so a caller polling by project_path +
+    # file_path -- the documented route when no response ever arrived, hence no
+    # operation_id to fall back on -- was handed another payload's verdict.
+    rows = [_row("committed-one", "write_fix", "committed", 100.0),
+            _row("failed-one", "write_fix", "failed", 200.0)]
+    rec, candidates, ambiguous = srv._write_ledger_pick_candidate(rows)
+    assert rec is None
+    assert ambiguous is True
+    assert {c["operation_id"] for c in candidates} == {"committed-one", "failed-one"}
+
+
+def test_same_tool_status_conflict_still_resolves_the_in_flight_row():
+    # Tightening the rule must not cost the case that matters most: exactly one
+    # row can still be the operation the caller has had no answer for.
+    rows = [_row("old-failed", "write_fix", "failed", 100.0),
+            _row("live", "write_fix", "in_flight", 200.0)]
+    rec, candidates, ambiguous = srv._write_ledger_pick_candidate(rows)
+    assert rec["operation_id"] == "live"
+    assert ambiguous is False
+    assert len(candidates) == 2
+
+
+def test_write_status_refuses_a_same_tool_status_conflict_over_http():
+    root = "D:/b031-same-tool-conflict"
+    rows = [_row("committed-one", "write_fix", "committed", 100.0),
+            _row("failed-one", "write_fix", "failed", 200.0)]
+    key = _install(rows, root)
+    try:
+        status, payload = _status_by_target(root)
+    finally:
+        _uninstall(rows, key)
+    assert status == 409
+    assert payload["error_name"] == "WRITE_STATUS_AMBIGUOUS_TARGET"
+    # NOT "failed" from the newest row, NOR "committed" from the other one.
+    assert payload["commit_state"] == "unknown"
+    assert payload["safe_to_retry"] is False
+    assert payload["tools"] == ["write_fix"]
+
+
+def test_the_scope_split_this_advice_depends_on_is_real():
+    # Positive control, and it names the SOT handle_write_status actually reads. If the
+    # registry ever reclassifies one of these tools, the two tests below would flip with
+    # no explanation -- this one says WHICH classification moved. Measured 2026-09-21:
+    # cbm_what_if="derived_index", write_fix="file_artifact".
+    scope_of = srv.ct.tool_mutation_scope
+    assert scope_of("cbm_what_if") in srv._R102_NON_SOURCE_SCOPES
+    assert scope_of("write_fix") not in srv._R102_NON_SOURCE_SCOPES
+
+
+def test_committed_derived_index_run_invites_a_rerun_for_its_result():
+    # B031 (#7): the run DID commit (graph.db was refreshed) and the ledger is honest
+    # about what it kept -- _WRITE_LEDGER_RESULT_KEYS holds small scalars ON PURPOSE, so
+    # the analysis is not in this row and never will be. Measured on cbm_what_if after a
+    # client timeout: result={"ok": true, "result_keys": ["ok", "result"], "summary_note":
+    # "no known evidence field ..."} -- the row correctly says the product lives under
+    # `result`, and then the advice told the caller not to go get it. That tool's own
+    # schema says the simulation "never edits source/DB" and a warm re-run cost 1.6s, so
+    # the one cheap side-effect-free recovery was the one being refused.
+    root = "D:/b031-derived-index-rerun"
+    rows = [_row("whatif-done", "cbm_what_if", "committed", 100.0)]
+    key = _install(rows, root)
+    try:
+        status, payload = _status_by_target(root)
+    finally:
+        _uninstall(rows, key)
+    assert status == 200
+    assert payload["commit_state"] == "committed"
+    assert payload["safe_to_retry"] is True
+    assert payload["ca_next_action"] == "rerun_tool_for_result_not_kept_in_ledger"
+
+
+def test_committed_source_write_still_refuses_a_replay():
+    # The case the old single answer was written for, and the reason the fix keys on
+    # mutation_scope instead of dropping do_not_retry: replaying a committed write_fix
+    # applies the same edit twice.
+    root = "D:/b031-source-write-no-replay"
+    rows = [_row("fix-done", "write_fix", "committed", 100.0)]
+    key = _install(rows, root)
+    try:
+        status, payload = _status_by_target(root)
+    finally:
+        _uninstall(rows, key)
+    assert status == 200
+    assert payload["commit_state"] == "committed"
+    assert payload["safe_to_retry"] is False
+    assert payload["ca_next_action"] == "do_not_retry_write_already_committed"
+
+
+def test_an_in_flight_derived_index_run_is_wait_not_rerun():
+    # Scope changes what a COMMITTED row advises, nothing else. A run still moving must
+    # not be told to start a second one.
+    root = "D:/b031-derived-index-inflight"
+    rows = [_row("whatif-live", "cbm_what_if", "in_flight", 100.0)]
+    key = _install(rows, root)
+    try:
+        status, payload = _status_by_target(root)
+    finally:
+        _uninstall(rows, key)
+    assert status == 200
+    assert payload["commit_state"] == "in_flight"
+    assert payload["safe_to_retry"] is False
+    assert payload["ca_next_action"] == "wait_and_poll_write_status_do_not_retry"
 
 def test_different_tools_with_no_in_flight_is_ambiguous():
     rows = [_row("idx", "cbm_incremental_index", "committed", 100.0),

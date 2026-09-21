@@ -300,7 +300,25 @@ async def find_symbol(name: str = "", path: str = "", project_path: str = "",
         }, ensure_ascii=False)
     base = Path(path)
     if not base.exists():
-        return json.dumps({"error": f"Path not found: {path}"})
+        # B028: this was the ONE unshaped exit in find_symbol. The two
+        # MISSING_REQUIRED_FIELD returns just above carry ok / error_name / type
+        # / retryable / payload_example, and orchestrator_server ALREADY
+        # registers a ("find_symbol", "PATH_NOT_FOUND") remediation chain. With
+        # no `error_name` that chain could never fire, and with no `ok` no CA
+        # error check saw a failure at all -- the error was silent on BOTH
+        # channels. Shape mirrors read/fs.py's PATH_NOT_FOUND so one tool family
+        # answers one way. Note `path` here has already absorbed project_path
+        # (see the assignment above), so there is no second candidate to report.
+        return json.dumps({
+            "ok": False,
+            "error": f"Path not found: {path}",
+            "error_name": "PATH_NOT_FOUND",
+            "retryable": False,
+            "path": str(base),
+            "hint": "Pass an absolute path, or pass project_path pointing at the "
+                    "project root.",
+            "ca_next_action": "verify_path_or_pass_project_path_with_relative_path",
+        }, ensure_ascii=False)
     project_root = str(base) if base.is_dir() else (fo.find_project_root(str(base)) or str(base.parent))
     stale = await fo.ensure_fresh_index(project_root)
     stale_info = json.loads(stale) if stale else None
@@ -550,7 +568,18 @@ async def find_symbol(name: str = "", path: str = "", project_path: str = "",
         return results
 
     results = await asyncio.to_thread(_search)
-    response: dict = {"results": results, "count": len(results)}
+    # B028: `ok` belongs at the PRODUCER, not at the return. Between here and
+    # the return this dict is only ever ENRICHED (stale warning, callers/usages,
+    # include= reshape) and never turned into an error, so True holds for every
+    # exit below -- including the `callers` reshape that pops results/count.
+    # Why it was missing: the graph-adapter path above returns what
+    # find_symbol_as_search_response built, and that already carries `ok`. Only
+    # this live-filesystem fallback did not, so the three modes that reach it
+    # (symbol / callers / definition_usage) answered a SUCCESS with no `ok` --
+    # and every CA error check reads a missing `ok` as FAILURE. B018 fixed this
+    # class in search_code, B024 in cache_status; this is the third site, which
+    # is why B029 adds a test gate instead of a third one-line patch.
+    response: dict = {"ok": True, "results": results, "count": len(results)}
     if stale_info:
         response.update({
             "warning": "INDEX stale; returned live filesystem search results",
@@ -710,24 +739,42 @@ _REGEX_MATCH_PHASE_SLACK = 2.0
 
 
 def _attach_regex_input_phase(resp: dict, partial_source: object | None) -> dict:
-    """ISS-20: name the phase that ran out of budget instead of guessing.
+    """ISS-20 / B030: name the phase that ran out of budget instead of guessing.
 
     A regex search spends its budget in two phases -- reading the candidate
     files off disk, then matching them in the isolated child -- and only the
     second one has ever seen the pattern. The payload said
     `narrow_or_simplify_regex` either way, so a repo on a slow disk was told to
     rewrite a regex that had never been compiled against its data, when the
-    real answer was "scan fewer files or raise the deadline". Nothing is
-    attached unless the producer actually tagged the phase, so a match-phase
-    timeout -- and every test that raises the worker exception directly --
-    keeps its exact previous shape.
+    real answer was "scan fewer files or raise the deadline".
+
+    B030: ISS-20 shipped that disclosure on the INPUT shape only, and
+    REGEX_SEARCH_TIMEOUT has THREE. The match-phase RegexSearchTimeout already
+    carries `timeout_phase` (the producer stamps it off the shared progress
+    dict) and the synthetic asyncio.TimeoutError carries nothing at all, so two
+    of the three shapes dropped the single fact that decides between narrowing
+    the input and simplifying the pattern. Every shape now states a phase.
+    Where nothing was observed it says so in `timeout_phase_unknown_reason`
+    instead of picking one: the counters that would back a claim are 0, and
+    guessing here would be the same confident-empty-answer lie the input branch
+    refuses to tell. The input branch keeps sole ownership of the rewritten
+    error/hint/ca_next_action, because it is the only phase whose remedy
+    differs -- the other two are correctly told to narrow or simplify.
 
     `partial_*` keys are deliberately NOT set here; ISS-12 owns those. An
     input-phase death spawned no child, so there is no scanned prefix of a
     result set to hand back, and dressing 0 matches up as a partial would be
     the same confident-empty-answer lie that fix exists to prevent.
     """
-    if str(getattr(partial_source, "timeout_phase", "") or "") != "input":
+    phase = str(getattr(partial_source, "timeout_phase", "") or "")
+    if phase != "input":
+        resp["timeout_phase"] = phase or "unknown"
+        if not phase:
+            resp["timeout_phase_unknown_reason"] = (
+                "the caller's own wait fired before the worker reported a phase, "
+                "and no file-read counter had advanced -- neither input nor match "
+                "can be claimed from what was actually observed"
+            )
         return resp
     files_read = int(getattr(partial_source, "input_files_read", 0) or 0)
     bytes_read = int(getattr(partial_source, "input_bytes_read", 0) or 0)
@@ -750,7 +797,24 @@ def _attach_regex_input_phase(resp: dict, partial_source: object | None) -> dict
 
 def _regex_timeout_payload(query: str, effective_regex_deadline: float | None,
                            path: str, project_path: str, file_pattern: str,
-                           partial_source: object | None = None) -> dict:
+                           partial_source: object | None = None,
+                           attempts: int = 1,
+                           initial_deadline: float | None = None) -> dict:
+    """Build the one shared REGEX_SEARCH_TIMEOUT payload.
+
+    B031 (#4): ``effective_regex_deadline`` is the deadline of the LAST attempt, not
+    the budget the call actually spent, for two independent reasons. R39 doubles it
+    in place on the first timeout when the caller passed no explicit
+    ``regex_deadline_seconds`` (8.0 -> min(16.0, MAX 15.0) = 15.0), and ISS-20 gives
+    the input phase and the match phase of EACH attempt a separate clock. So the old
+    message -- "regex search exceeded hard deadline of 15.000s", one number and no
+    mention of either multiplier -- understated the measured wall clock
+    (26.60 / 26.64 / 26.74 / 26.81 / 27.73s) by more than 1.7x, and a CA that sized
+    its own client timeout from that number would have called a live search hung.
+    ``attempts`` / ``initial_deadline`` must come from the caller because the retry
+    destroys the pre-doubling value; with them ``error`` states the budget really
+    spent, and ``wall_clock_budget_seconds`` carries it as a number to compute with.
+    """
     from orchestrator import search_regex_worker as _rw
     q_echo = _regex_timeout_query_echo(query)
     if effective_regex_deadline is not None:
@@ -759,6 +823,29 @@ def _regex_timeout_payload(query: str, effective_regex_deadline: float | None,
     else:
         deadline_txt = "default"
         wider = _rw.MAX_DEADLINE_SECONDS
+    attempts_n = attempts if isinstance(attempts, int) and attempts >= 1 else 1
+    first_deadline = initial_deadline if initial_deadline is not None else effective_regex_deadline
+    if first_deadline is None or effective_regex_deadline is None:
+        wall_budget = None
+    else:
+        # attempt 1 ran under first_deadline, every retry under the doubled one, and
+        # ISS-20 bounds input and match SEPARATELY inside each -- hence the x2.
+        wall_budget = round((float(first_deadline)
+                             + float(effective_regex_deadline) * (attempts_n - 1)) * 2.0, 3)
+    first_txt = f"{float(first_deadline):.3f}" if first_deadline is not None else "default"
+    if attempts_n > 1:
+        error_txt = (f"regex search exhausted {attempts_n} attempts: the first under a "
+                     f"{first_txt}s deadline, then the R39 adaptive retry under "
+                     f"{deadline_txt}s. Input phase and match phase are budgeted "
+                     f"separately inside each attempt, so a client timeout must allow "
+                     f"~{wall_budget}s worst case -- not {deadline_txt}s (measured "
+                     f"typical for the 8.0->15.0 default pair: 26.6-27.7s)")
+    elif wall_budget is not None:
+        error_txt = (f"regex search exceeded its {deadline_txt}s deadline on attempt 1 of 1. "
+                     f"Input phase and match phase are budgeted separately, so a client "
+                     f"timeout must allow ~{wall_budget}s worst case -- not {deadline_txt}s")
+    else:
+        error_txt = f"regex search exceeded hard deadline of {deadline_txt}s"
     loc = project_path or path
     loc_key = "project_path" if project_path else "path"
     corrected: dict = {"query": q_echo, "mode": "text"}
@@ -773,7 +860,8 @@ def _regex_timeout_payload(query: str, effective_regex_deadline: float | None,
         payload_example["file_pattern"] = file_pattern
     resp = _attach_regex_partials({
         "ok": False,
-        "error": f"regex search exceeded hard deadline of {deadline_txt}s",
+        "error": error_txt,
+        "wall_clock_budget_seconds": wall_budget,
         "error_name": "REGEX_SEARCH_TIMEOUT",
         "retryable": True,
         "bounded": True,
@@ -948,6 +1036,13 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
 
     regex_worker = None
     effective_regex_deadline = None
+    # B031 (#4): R39 below DOUBLES effective_regex_deadline IN PLACE, so by the time a
+    # timeout payload is built the value the call STARTED from no longer exists and the
+    # attempt count is nowhere recorded. The payload then printed the final number alone
+    # and called it "the hard deadline" -- measured 15.000s printed against a 26.6-27.7s
+    # wall clock. These two survive the doubling so the payload can state the real budget.
+    _regex_initial_deadline = None
+    _regex_attempts_used = 1
     _narrow_warn = ""
     # ISS-12: the RegexSearchTimeout instance that carries the salvaged partial
     # matches. It has to be held here because the R39 adaptive-retry loop below
@@ -963,6 +1058,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
             if regex_deadline_seconds is not None
             else regex_worker.DEFAULT_DEADLINE_SECONDS,
         )
+        _regex_initial_deadline = effective_regex_deadline
         regex_deadline_at = search_started_at + effective_regex_deadline
         # Task 3 auto-chain fix: proactive narrow hint for regex on root
         if (not file_pattern or file_pattern == "*") and not path:
@@ -1032,7 +1128,26 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         try:
             pat = re.compile(pattern, re_flags)
         except re.error as exc:
-            return json.dumps({"error": f"Invalid regex: {exc}", "error_name": "INVALID_REGEX"})
+            # B028: one condition, one name -- and `ok` on the error path too.
+            # REGEX_INVALID is the REGISTERED spelling: the error taxonomy in
+            # orchestrator_server, the worker's RegexSearchInvalid.error_name,
+            # the sibling branch below (same user-visible failure, reached via
+            # the regex worker instead of this local compile), and
+            # test_search_regex_budget all use it. INVALID_REGEX existed at THIS
+            # ONE site and nowhere else in the repo, so a CA matching the
+            # registered name never saw this branch at all -- the pattern-compile
+            # failure for mode='text'/'smart' was silently unclassifiable.
+            return json.dumps({
+                "ok": False,
+                "error": f"Invalid regex: {exc}",
+                "error_name": "REGEX_INVALID",
+                "retryable": True,
+                "bounded": True,
+                "corrected_payload": {"query": query, "mode": "text"},
+                "hint": "Pattern fails to compile. If you meant a literal/symbol, "
+                        "resend with mode='text'; otherwise escape the metacharacters.",
+                "ca_next_action": "resend_with_mode_text_or_escaped_regex",
+            }, ensure_ascii=False)
     try:
         effective_context = max(0, min(int(max_context_lines), 5))
     except (TypeError, ValueError):
@@ -1387,6 +1502,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                             or regex_deadline_seconds is not None):
                         raise
                     _regex_retried = True
+                    _regex_attempts_used = 2
                     effective_regex_deadline = min(
                         effective_regex_deadline * 2.0,
                         regex_worker.MAX_DEADLINE_SECONDS,
@@ -1423,6 +1539,9 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                             or regex_deadline_seconds is not None):
                         raise
                     _regex_retried = True
+                    # B031: the payload builder needs the attempt count; effective_regex_deadline
+                    # is about to be overwritten and the pre-doubling value would be lost.
+                    _regex_attempts_used = 2
                     effective_regex_deadline = min(
                         effective_regex_deadline * 2.0,
                         regex_worker.MAX_DEADLINE_SECONDS,
@@ -1467,7 +1586,9 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         # ISS-12: _last_regex_timeout, not the asyncio.TimeoutError we are
         # holding -- that one is a synthetic re-raise and carries no matches.
         _timeout_resp = _regex_timeout_payload(query, effective_regex_deadline, path, project_path, file_pattern,
-                                              partial_source=_regex_input_phase_source(_last_regex_timeout))
+                                               partial_source=_regex_input_phase_source(_last_regex_timeout),
+                                               attempts=_regex_attempts_used,
+                                               initial_deadline=_regex_initial_deadline)
         if _narrow_warn:
             _timeout_resp["ca_chain_hint"] = _narrow_warn
             _timeout_resp["ca_chain_next"] = "search_code with file_pattern or path"
@@ -1492,7 +1613,9 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         # builder so the caller always gets query + corrected_payload + retry_sequence.
         if regex_worker is not None and isinstance(exc, regex_worker.RegexSearchTimeout):
             _rt_resp = _regex_timeout_payload(query, effective_regex_deadline, path, project_path, file_pattern,
-                                              partial_source=_regex_input_phase_source(exc))
+                                              partial_source=_regex_input_phase_source(exc),
+                                              attempts=_regex_attempts_used,
+                                              initial_deadline=_regex_initial_deadline)
             if _narrow_warn:
                 _rt_resp["ca_chain_hint"] = _narrow_warn
                 _rt_resp["ca_chain_next"] = "search_code with file_pattern or path"

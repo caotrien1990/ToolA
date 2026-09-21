@@ -647,8 +647,22 @@ def _mcp_proxy_call(name: str, payload: dict | None = None,
                     failure["operation_state"] = probe.get("operation_state")
                     failure["operation_id"] = probe.get("operation_id")
                     failure["progress"] = probe.get("progress")
-                    failure["safe_to_retry"] = measured == "not_committed"
-                    failure["ca_next_action"] = {
+                    # B031 (#7): the daemon already answered both of these, with
+                    # registry authority this process does not have -- it knows the
+                    # tool's mutation_scope, so it knows a committed derived_index
+                    # run is safe to replay for its result while a committed source
+                    # write is not. Re-deriving the verdict from `measured` alone is
+                    # the A34 defect shape (the tier gate answered from the map the
+                    # BRIDGE imported at launch, not from the live daemon), and it
+                    # is what made a timed-out cbm_what_if report
+                    # do_not_retry_write_already_committed to a caller holding no
+                    # analysis. The local map stays ONLY as the fallback for a
+                    # daemon too old to send these keys.
+                    if probe.get("safe_to_retry") is None:
+                        failure["safe_to_retry"] = measured == "not_committed"
+                    else:
+                        failure["safe_to_retry"] = bool(probe.get("safe_to_retry"))
+                    failure["ca_next_action"] = str(probe.get("ca_next_action") or "") or {
                         "committed": "do_not_retry_write_already_committed",
                         "not_committed": "retry_write",
                         "in_flight": "wait_and_poll_write_status_do_not_retry",

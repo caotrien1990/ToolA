@@ -2042,8 +2042,16 @@ async def cache_status(project_path: str) -> str:
             except Exception as exc:
                 result["drift_check_error"] = str(exc)
         # B024: answer `ok` on BOTH paths. B018 fixed this same defect in
-        # search_code and recorded that every other tool answered `ok` --
-        # cache_status was not in that survey. `ok` means "the check ran",
+        # search_code and recorded that every other tool answered `ok`.
+        # B031 (2026-09-21): that survey was WRONG, twice over -- cache_status
+        # (this site) was missing from it, and so were find_symbol's live-scanner
+        # success path and its path-not-found branch, both still ok-less a year
+        # later. A one-off survey cannot hold this class shut, so B031 replaces the
+        # claim with an enforced gate: tests/test_ok_envelope_gate_b031.py.
+        # `ok` means "the check ran",
+        # NOT "the cache is fresh": staleness stays in status/stale_warning/
+        # drift_warning, or a stale cache would be indistinguishable from a
+        # broken check to `if not resp.get("ok")`.
         # NOT "the cache is fresh": staleness stays in status/stale_warning/
         # drift_warning, or a stale cache would be indistinguishable from a
         # broken check to `if not resp.get("ok")`.

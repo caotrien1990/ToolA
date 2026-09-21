@@ -2194,8 +2194,17 @@ def _write_ledger_pick_candidate(records: list, tool_filter: str = "") -> tuple:
     if len(records) == 1:
         return records[0], [_write_ledger_candidate_summary(records[0])], False
     tools = {str(r.get("tool") or "") for r in records}
-    if len(tools) == 1:
-        # Same tool, several payloads: newest is a meaningful answer.
+    statuses = {str(r.get("status") or "") for r in records}
+    if len(tools) == 1 and len(statuses) == 1:
+        # Same tool AND every candidate in the same state: recency then only
+        # picks WHICH evidence row answers, never WHAT the verdict is.
+        # B031: the `len(statuses) == 1` half is new. ISS-01 closed this swap
+        # across tool names and left it open inside one -- two write_fix on the
+        # same target key, one committed and one failed, were answered with
+        # whichever landed last. Querying by project_path+file_path is the
+        # DOCUMENTED route when no response ever arrived, so that caller has no
+        # operation_id to fall back on and read a verdict belonging to another
+        # payload as its own.
         newest = max(records, key=lambda r: float(r.get("updated_at") or 0.0))
         return newest, [_write_ledger_candidate_summary(r) for r in records], False
     in_flight = [r for r in records if str(r.get("status") or "") == "in_flight"]
@@ -17445,15 +17454,35 @@ async def handle_write_status(request):
         stall_window = max(30.0, float(os.environ.get(
             "ORCHESTRATOR_OPERATION_STALL_SECONDS", "120") or 120))
         progress_state = "stalled" if idle >= stall_window else "running"
+    # B031 (#7): "committed" settles a SOURCE write -- resending it would apply the
+    # edit twice, so do_not_retry is the right answer there. It is the WRONG answer
+    # for a non-source scope (derived_index / cache / audit_log): the caller's
+    # product is the RESULT, and _WRITE_LEDGER_RESULT_KEYS keeps small scalars on
+    # purpose, so the analysis is not in this row and never will be. Measured on
+    # cbm_what_if after a client timeout: commit_state=committed with
+    # result={"ok": true, "result_keys": ["ok", "result"], "summary_note": "no known
+    # evidence field ..."} -- the ledger correctly says the evidence lives under
+    # `result`, and then the advice told the caller not to go get it. That tool's
+    # own schema says the simulation "never edits source/DB" and a warm re-run cost
+    # 1.6s, so the caller was refused a cheap, side-effect-free replay and left
+    # holding neither the analysis nor permission to recompute it. Scope comes from
+    # the registry (ct.NON_SOURCE_MUTATION_SCOPES, one SOT), never from the name.
+    try:
+        rerun_safe = ct.tool_mutation_scope(
+            str(rec.get("tool") or "")) in _R102_NON_SOURCE_SCOPES
+    except Exception:
+        rerun_safe = False  # unknown scope: keep the conservative source-write answer
     return web.json_response({
         "ok": True,
         "lookup": lookup,
         "ledger_source": ledger_source,
         "commit_state": state,
         "operation_state": progress_state,
-        "safe_to_retry": state == "not_committed",
+        "safe_to_retry": (state == "not_committed"
+                          or (state == "committed" and rerun_safe)),
         "ca_next_action": {
-            "committed": "do_not_retry_write_already_committed",
+            "committed": ("rerun_tool_for_result_not_kept_in_ledger" if rerun_safe
+                          else "do_not_retry_write_already_committed"),
             "not_committed": "retry_write",
             "in_flight": "wait_and_poll_write_status_do_not_retry",
         }.get(state, "read_file_range_to_confirm_before_retry"),

@@ -17,8 +17,13 @@ branch and the RegexSearchTimeout sub-branch of the generic handler. Per the A40
 shape; these tests pin both.
 
 NOT in scope (campaign lesson L-x): the deadline NUMBER is not widened here.
-regex_deadline_seconds is a real, schema-declared param clamped to [0.05, 10.0]s,
-so the payload may *suggest* a larger one, but the tool's own default is left as-is.
+regex_deadline_seconds is a real, schema-declared param clamped to
+[MIN_DEADLINE_SECONDS, MAX_DEADLINE_SECONDS] by
+search_regex_worker.normalize_deadline_seconds, so the payload may *suggest* a
+larger one, but the tool's own default is left as-is. (B031 2026-09-21: this
+docstring used to spell that range "[0.05, 10.0]s" -- the ceiling has been 15.0
+since the constant was introduced, and registry_data published yet a third pair
+of numbers. Name the constants here; a literal drifts silently.)
 """
 from __future__ import annotations
 
