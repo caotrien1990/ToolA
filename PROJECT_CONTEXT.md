@@ -3,8 +3,8 @@
 This file is generated for CA routing. Read it before opening source files.
 
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator`
-- Generated: 2026-09-22T19:03:09
-- Files indexed: 998
+- Generated: 2026-09-22T19:15:40
+- Files indexed: 999
 
 ## First Actions
 
@@ -30,8 +30,8 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 - `doc`: 346 files, 26925 LOC
 - `entrypoint`: 1 files, 15378 LOC
 - `script`: 10 files, 1089 LOC
-- `source`: 210 files, 89296 LOC
-- `test`: 359 files, 63060 LOC
+- `source`: 210 files, 89413 LOC
+- `test`: 360 files, 63312 LOC
 - `ui`: 3 files, 87 LOC
 - `unknown`: 28 files, 3663 LOC
 
@@ -50,8 +50,8 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 - `orchestrator/search_snapshots.py` | group `source` | lang `python` | LOC 1304 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/graph/tools.py` | group `source` | lang `python` | LOC 1149 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/server/mcp_stdio.py` | group `source` | lang `python` | LOC 1520 | weight 15: large_file: use symbols, search, or bounded ranges before full read
+- `orchestrator/server/audit_writer.py` | group `source` | lang `python` | LOC 1206 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/tools/ocr_review.py` | group `source` | lang `python` | LOC 753 | weight 15: large_file: use symbols, search, or bounded ranges before full read
-- `orchestrator/server/audit_writer.py` | group `source` | lang `python` | LOC 1089 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/core/ca_policy_matrix.py` | group `source` | lang `python` | LOC 843 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `.council/tmp_ahealthhung/GROC_FIX_SNAPSHOT_1315/orchestrator__lifecycle__restart_control_service.py` | group `source` | lang `python` | LOC 843 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/lifecycle/restart_control_service.py` | group `source` | lang `python` | LOC 842 | weight 15: large_file: use symbols, search, or bounded ranges before full read

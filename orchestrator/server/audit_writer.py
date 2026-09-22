@@ -43,6 +43,29 @@ def _durable_audit_synchronous() -> str:
     return mode if mode in {"OFF", "NORMAL", "FULL", "EXTRA"} else "NORMAL"
 
 
+_DURABLE_AUDIT_RETENTION_DAYS_ENV = "ORCHESTRATOR_DURABLE_AUDIT_RETENTION_DAYS"
+_DURABLE_AUDIT_RETENTION_DAYS_DEFAULT = 14
+_DURABLE_AUDIT_RETENTION_BATCH = 2000
+
+
+def _durable_audit_retention_days() -> int:
+    """Return the LIVE retention window in days for APPLIED outbox rows.
+
+    Re-read from the environment on every call, never snapshotted at import -- same
+    contract as ``_session_retention_days`` in orchestrator/session/store.py (A22).
+    An unset, blank, non-integer or NON-POSITIVE value falls back to the 14-day
+    default: a window of 0 would mean "prune everything up to now", so a
+    misconfigured value must never be allowed to WIDEN a destructive delete.
+    """
+    raw = os.environ.get(_DURABLE_AUDIT_RETENTION_DAYS_ENV, "")
+    try:
+        val = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return _DURABLE_AUDIT_RETENTION_DAYS_DEFAULT
+    if val <= 0:
+        return _DURABLE_AUDIT_RETENTION_DAYS_DEFAULT
+    return val
+
 class AuditWriterError(RuntimeError):
     """Base error for durable audit writer failures."""
 
@@ -238,6 +261,10 @@ class DurableAuditWriter:
             "lease_released_total": 0,
             "lease_lost_total": 0,
             "sink_retry_deferred_total": 0,
+            # D4 retention. Declared here because _bump() indexes _counters
+            # directly and would raise KeyError on an undeclared key.
+            "retention_runs_total": 0,
+            "retention_deleted_total": 0,
         }
         self._last_error: str | None = None
         self._last_error_kind: str | None = None
@@ -975,8 +1002,119 @@ class DurableAuditWriter:
             self._condition.notify_all()
         return changed
 
+    # --- retention (D4) ---------------------------------------------------- #
+    def prune_applied_older_than(
+        self,
+        days: int | None = None,
+        *,
+        dry_run: bool = False,
+        limit: int = _DURABLE_AUDIT_RETENTION_BATCH,
+    ) -> dict:
+        """Delete APPLIED outbox rows older than the retention window.
+
+        Why this exists (measured 2026-09-22): durable_audit.db had reached 38.4MB /
+        ~47800 applied rows and this module contained no DELETE, no prune and no
+        VACUUM anywhere -- the outbox is append-only. An applied row has already been
+        mirrored into the session store and nothing ever reads it back, so it is pure
+        history. sessions.db got exactly this treatment in A22.
+
+        WHITELIST, never blacklist. The predicate is positively
+        ``state='applied' AND created_at <= cutoff``. A row in ANY other state --
+        pending, or a state a future version adds -- is unreachable from here, so an
+        in-flight or failed audit can never be removed by retention. That is also why
+        this is not written as "delete everything except pending".
+
+        Cutoff TYPE (the A22 trap): ``created_at`` is REAL epoch seconds, so the
+        cutoff is an epoch float. SQLite orders storage classes REAL < TEXT, so
+        comparing this column against an ISO *string* would match EVERY row and empty
+        the table while looking like a correct query.
+
+        The delete is BATCHED, each batch its own implicit commit, driven by the
+        existing ``ix_durable_audit_outbox_state_created(state, created_at,
+        audit_id)`` index -- so the worker thread never holds one long exclusive lock
+        on a HDD while producers are staging. ``limit`` bounds ONE batch, not the run.
+
+        VACUUM is deliberately NOT run here: it cannot run inside a transaction and
+        would hold an exclusive lock over the whole file. Reclaiming file space stays
+        a separate, explicit operation.
+
+        ``dry_run=True`` counts the eligible rows and deletes nothing, which is the
+        shape a destructive-gate review needs.
+        """
+        window = _durable_audit_retention_days() if days is None else max(0, int(days))
+        if int(limit) < 1:
+            raise ValueError("limit must be >= 1")
+        cutoff = time.time() - (window * 86400.0)
+
+        def count() -> int:
+            conn = self._connect()
+            try:
+                return int(
+                    conn.execute(
+                        f"SELECT COUNT(*) FROM {self.TABLE} "
+                        "WHERE state='applied' AND created_at <= ?",
+                        (cutoff,),
+                    ).fetchone()[0],
+                )
+            finally:
+                conn.close()
+
+        eligible = int(self._retry_db("count prunable audits", count))
+        out: dict[str, Any] = {
+            "ok": True,
+            "retention_days": window,
+            "cutoff_epoch": cutoff,
+            "eligible": eligible,
+            "deleted": 0,
+            "batches": 0,
+            "dry_run": bool(dry_run),
+        }
+        if dry_run or eligible <= 0:
+            return out
+
+        def delete_batch() -> int:
+            conn = self._connect()
+            try:
+                cur = conn.execute(
+                    f"DELETE FROM {self.TABLE} WHERE audit_id IN ("
+                    f"SELECT audit_id FROM {self.TABLE} "
+                    "WHERE state='applied' AND created_at <= ? "
+                    "ORDER BY created_at, audit_id LIMIT ?)",
+                    (cutoff, int(limit)),
+                )
+                return int(cur.rowcount or 0)
+            finally:
+                conn.close()
+
+        while not self._stop.is_set():
+            removed = int(self._retry_db("prune applied audits", delete_batch))
+            if removed <= 0:
+                break
+            out["deleted"] += removed
+            out["batches"] += 1
+            self._bump("retention_deleted_total", removed)
+        self._bump("retention_runs_total")
+        return out
+
+    def _prune_applied_on_start(self) -> None:
+        """Run retention once per writer start, ON THE WORKER THREAD.
+
+        Not in ``start()``: that method holds ``self._condition``, and a multi-batch
+        delete under that lock would block every producer staging an audit row. Here
+        it costs the first poll interval and nothing else.
+
+        Failures are recorded and swallowed. Retention is housekeeping; it must never
+        be the reason audits stop being applied.
+        """
+        try:
+            self.prune_applied_older_than()
+        except BaseException as exc:  # housekeeping must never kill the worker
+            self._set_last_error(exc, kind="retention",
+                                 context="prune_applied_on_start")
+
     def _worker_main(self) -> None:
         try:
+            self._prune_applied_on_start()
             while not self._stop.is_set():
                 try:
                     batch = self._retry_db(
