@@ -12,7 +12,7 @@ import sys
 import warnings
 from pathlib import Path
 
-from orchestrator.skip_rules import SKIP_DIRS
+from orchestrator.skip_rules import effective_skip_dir_names
 
 # B029c 2026-08-22. Was 30s, against a measured 56s for vulture on ToolA full
 # scope -- so every full run timed out, and (before B029b) said nothing. The
@@ -29,9 +29,9 @@ _SCAN_TIMEOUT_S = float(os.environ.get("CBM_SCAN_TIMEOUT_S", "180"))
 # virtualenv as if it were source: measured 2026-09-22 on ToolA, 66.1s and 1001
 # of 2004 findings inside venv312/, against 727ms for orchestrator/ alone. Ruff
 # needs no such list -- its own default exclude already drops site-packages,
-# which is why only this scanner blew the budget. SKIP_DIRS is the project-wide
-# SOT (orchestrator/skip_rules.py) the graph walk already honours, so the
-# dead-code advisory now agrees with the INDEX instead of contradicting it.
+# which is why only this scanner blew the budget. The skip-name SOT is
+# orchestrator/skip_rules.py, so the dead-code advisory now agrees with the
+# INDEX instead of contradicting it.
 #
 # DIRECTORY-ANCHORED on purpose, and both separators are listed:
 #   * vulture wraps a bare pattern into *pattern* (core.py:268-271), so the bare
@@ -41,11 +41,28 @@ _SCAN_TIMEOUT_S = float(os.environ.get("CBM_SCAN_TIMEOUT_S", "180"))
 #     alone on POSIX, so neither separator alone covers both platforms.
 # Residual cost is vulture's own unpruned os.walk (it enumerates, then filters):
 # full scope lands near 6s, not at the 727ms of a tree with no venv in it.
-_VULTURE_EXCLUDE = ",".join(
-    pattern
-    for name in sorted(SKIP_DIRS)
-    for pattern in (f"*/{name}/*", f"*\\{name}\\*")
-)
+
+
+def _vulture_exclude(project_root=None) -> str:
+    """Build `--exclude` for ONE project from its resolved skip-name set.
+
+    B027g 2026-09-22: a FUNCTION, not the module constant it replaces. That
+    constant froze the GLOBAL skip set at import time, so `.orchestrator_ignore`
+    -- the per-project overlay B027 built, honoured by both the directory gate
+    and the file gate -- never reached this scanner. Measured on ToolQ: 218
+    findings from `.TENCENTDB_MEMORY` + 174 from `_iso_campaign` + 28 from
+    `_backup_*T*Z` = 73% of 577, in three trees that project already declares are
+    not its source, and the only lever was writing ToolQ's directory names into
+    ToolA's global set.
+
+    Resolved per call on purpose: `load_project_ignore` caches on (root, mtime,
+    size), so editing the ignore file takes effect without restarting [A].
+    """
+    return ",".join(
+        pattern
+        for name in sorted(effective_skip_dir_names(project_root))
+        for pattern in (f"*/{name}/*", f"*\\{name}\\*")
+    )
 
 # B029a 2026-08-22. The daemon inherits FORCE_COLOR from whatever launched it
 # (measured =3), so ruff painted ANSI even into a pipe and `_RUFF_RE` matched
@@ -328,7 +345,7 @@ def scan_vulture(project_path: str, min_conf: int = 60,
     # `--exclude` only when vulture is handed a TREE to walk. An explicit `files`
     # list is the caller's own choice of targets, so filtering it here would drop
     # files that were asked for by name and report nothing about the omission.
-    exclude = [] if files else ["--exclude", _VULTURE_EXCLUDE]
+    exclude = [] if files else ["--exclude", _vulture_exclude(project_path)]
     try:
         completed = subprocess.run(
             [

@@ -47,8 +47,8 @@ def test_a_plain_typo_gets_the_top_level_names():
     out = srv._r101_filter(payload, {"ok", "content"})
     assert out["fields_unknown"] == ["content"]
     # Derived from the payload, not from a hand-written list.
-    assert out["fields_available"][""] == sorted(payload)
-    assert "result" in out["fields_available"][""], (
+    assert out["fields_available"][srv._R101_TOP_NAMESPACE] == sorted(payload)
+    assert "result" in out["fields_available"][srv._R101_TOP_NAMESPACE], (
         "the key the caller actually wanted must appear in the answer, or the "
         "retry is still a guess")
 
@@ -59,7 +59,7 @@ def test_a_dotted_head_that_is_a_dict_gets_its_subkeys():
     assert out["fields_unknown"] == ["selection.junk_sub"]
     avail = out["fields_available"]
     assert avail["selection"] == sorted(payload["selection"])
-    assert "" not in avail, (
+    assert srv._R101_TOP_NAMESPACE not in avail, (
         "the head resolved, so the mistake is NOT at the top level; naming the "
         "top level here would aim the retry at the wrong namespace")
 
@@ -79,7 +79,7 @@ def test_a_dotted_head_that_does_not_exist_is_a_top_level_typo():
     payload = _payload()
     out = srv._r101_filter(payload, {"ok", "selektion.scope"})
     avail = out["fields_available"]
-    assert avail[""] == sorted(payload)
+    assert avail[srv._R101_TOP_NAMESPACE] == sorted(payload)
     assert "selektion" not in avail, (
         "a namespace keyed by the typo itself teaches nothing")
 
@@ -95,7 +95,7 @@ def test_the_cap_is_real():
     wide = {"k%03d" % i: i for i in range(cap * 3)}
     wide["ok"] = True
     out = srv._r101_filter(wide, {"ok", "nope"})
-    names = out["fields_available"][""]
+    names = out["fields_available"][srv._R101_TOP_NAMESPACE]
     assert len(names) == cap + 1, "the cap plus exactly one overflow marker"
     assert names[-1] == "...+%d more" % (len(wide) - cap), (
         "truncation has to be disclosed with the real remainder")
@@ -108,3 +108,31 @@ def test_the_hint_still_says_the_result_is_not_empty():
     assert "NOT empty" in hint
     assert "fields_available" in hint, (
         "the hint has to name the new key, or a caller reads straight past it")
+
+
+def test_the_top_namespace_label_is_never_an_empty_key():
+    """F1 2026-09-22: a "" key is legal JSON that no PowerShell CA can read.
+
+    PowerShell 5.1 `ConvertFrom-Json` rejects the ENTIRE document with `Cannot
+    process argument because the value of argument "name" is not valid` when any
+    object carries an empty-string key, because a PSObject property may not have
+    an empty name.  So every fields_unknown response -- the one payload built to
+    spare the caller a second full call -- was unparseable for a PowerShell CA
+    and forced exactly the re-call it exists to prevent.  Measured three times in
+    one session before the cause was found.
+
+    The other tests assert THROUGH _R101_TOP_NAMESPACE, so they would keep
+    passing if the label went back to "".  The label itself is pinned here.
+    """
+    assert srv._R101_TOP_NAMESPACE, "an empty namespace key breaks PowerShell CAs"
+
+    out = srv._r101_filter(_payload(), {"ok", "content"})
+    assert all(out["fields_available"]), "no namespace key may be empty"
+
+    # Collision-proof by construction: a response key is an identifier, so a
+    # label that could itself be one would be ambiguous with a real field.
+    assert not srv._R101_TOP_NAMESPACE.isidentifier()
+
+    # And the hint has to spell the label, or the caller cannot map the
+    # namespace it just received back onto anything.
+    assert srv._R101_TOP_NAMESPACE in out["fields_unknown_hint"]

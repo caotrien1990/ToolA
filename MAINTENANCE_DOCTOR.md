@@ -916,6 +916,12 @@ the output.** `grep -rn "should_scan_for_text" --include=*.py .` took seconds an
 found all six. This is the `grep` for the *question*, not for the caller you just
 changed -- the same survey B027c/B027d needed, at a sixth layer.
 
+**And its sibling was still short one.** `grep -rn "SKIP_DIRS" --include=*.py .`,
+credited below with finding every layer of this family, could not see B027g
+(2026-09-22): `scan_vulture` never mentions `SKIP_DIRS` -- it imports the set once and
+re-expresses it as `--exclude` globs for a subprocess. A survey keyed on the SOT's NAME
+is blind to any consumer that re-spells the SOT in another tool's syntax.
+
 A second defect sat in the same call, in the opposite direction, and predated B027
 entirely. R82 bound `project_root` at the refresh publish so deep data-JSON is
 judged by depth; the search-first fallback publish stayed unbound, where depth is
@@ -937,6 +943,37 @@ omits a real directory is CASE-2008's shape. Search is the opposite by design --
 hiding produced records is the entire reason the overlay exists -- so B027f binds
 both directions. Do not "unify" these two gates into one helper: they answer
 deliberately different questions, and the tests say so.
+
+### A survey keyed on the SOT's NAME cannot see a consumer that re-spells it (B027g, 2026-09-22)
+
+The seventh layer. `cbm_dead_code` answers through `scan_vulture`, which shells out to
+vulture with `--exclude` patterns, because vulture has no built-in exclude. That pattern
+list was a MODULE CONSTANT built once from the global `SKIP_DIRS` at import time. So a
+project's `.orchestrator_ignore` reached the directory gate, the snapshot filters, the file
+gate, the graph walk, the structure listing and the search filter -- and then the one
+advisory that claims to describe that graph scanned by a different rule set.
+
+Why six rounds went past it, and why the `grep -rn "SKIP_DIRS" --include=*.py .` survey
+recorded above is not a defence: **`scan_vulture` never contains the string `SKIP_DIRS`.**
+It imports the set once and re-expresses it as `*/name/*` globs for another process. Both
+surveys in this file (`should_scan_for_text`, `SKIP_DIRS`) are keyed on a NAME, and a
+consumer that translates the SOT into a third party's syntax carries neither name. "The
+grep found all of them" is a claim about the grep, never about the layers.
+
+The fix is one function in the SOT -- `orchestrator/skip_rules.py`
+`effective_skip_dir_names(project_root=None)` -- which folds the overlay into the global
+set, so `_vulture_exclude(project_root=None)` DERIVES the exclude list per call instead of
+freezing it at import. Two tests, both failing first:
+`test_vulture_exclude_honours_the_project_ignore_overlay` and
+`test_a_project_cannot_hide_the_council_from_the_scanner`. The second pins B027e's
+asymmetry at this layer as well: a project may REVEAL a directory to the scanner, never
+hide `.council` from it.
+
+**Residual, deliberately not fixed.** The overlay only helps a project that HAS an
+`.orchestrator_ignore`. `SKIP_DIRS` is still a fixed global name list, so a repo scanning
+its own junk directories is a config task for that repo -- see "A shared global set is not
+a place to put one project's name (B027)" below. Widening [A]'s shared set with one
+project's directory names is exactly what B025 claim 4.2 was refused for.
 
 ### `log_native_event` classifies on `tool_name`, not on what you touched
 
@@ -1301,8 +1338,11 @@ default in opposite directions.
 ## Test inventory added by the overlay + guard batch (2026-08-22 -> 08-23)
 
 132 tests across eleven files, all written **before** their fix and confirmed failing
-first, all mutation-verified. The B027 family is one defect found **six** times at six
-layers -- directory gate, snapshot filters, file gate, graph walk, structure listing, search filter -- which is the point of the entry above: each new layer was found by testing
+first, all mutation-verified. The B027 family is one defect found **seven** times at seven
+layers -- directory gate, snapshot filters, file gate, graph walk, structure listing, search
+filter, and (2026-09-22, B027g) the `cbm_dead_code` vulture advisory, whose 2 tests live in
+`tests/test_cbm_dead_code_vulture_ruff.py` and are therefore NOT counted in the dated table
+below -- which is the point of the entry above: each new layer was found by testing
 the previous fix through the surface a caller actually uses, never by re-reading the
 diff.
 

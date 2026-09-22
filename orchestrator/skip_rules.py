@@ -219,3 +219,34 @@ def load_project_ignore(project_root) -> "tuple[frozenset[str], frozenset[str]]"
         _IGNORE_CACHE.clear()
     _IGNORE_CACHE[key] = parsed
     return parsed
+
+
+def effective_skip_dir_names(project_root=None) -> "frozenset[str]":
+    """The resolved skip-name SET for one project, same precedence as `should_skip_dir`.
+
+    B027g 2026-09-22. For a caller that needs the NAMES rather than a yes/no per
+    directory: a subprocess scanner handed an `--exclude` list does its own walk
+    and can never call `should_skip_dir` at all. `vulture_ruff` was exactly that
+    caller and imported the raw global `SKIP_DIRS`, so `.orchestrator_ignore` --
+    the whole point of B027 -- reached the directory gate and the file gate but
+    never the dead-code advisory. Measured on ToolQ: 218 findings from
+    `.TENCENTDB_MEMORY` + 174 from `_iso_campaign` + 28 from `_backup_*T*Z` = 73%
+    of 577, in three trees that project already declares are not its source, and
+    the only lever was writing one project's directory names into this global set.
+
+    Precedence lives HERE rather than in the caller, for the reason B027c already
+    records above: two gates that each re-derive it are two gates that drift.
+
+    The leading-dot rule in `should_skip_dir` is deliberately NOT folded in -- it
+    is a predicate over unbounded names, not a name set, so a caller that needs
+    it has to keep asking per directory.
+    """
+    names = set(SKIP_DIRS)
+    if project_root is not None:
+        extra_skips, unskips = load_project_ignore(project_root)
+        names |= set(extra_skips)
+        names -= set(unskips)
+    # .council is not hideable here either: a project able to exclude the SOT
+    # transcript tree would make "the council never spoke" indistinguishable
+    # from "the council is not scanned".
+    return frozenset(names - DOT_DIRS_SEARCHABLE)

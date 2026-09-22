@@ -1,18 +1,18 @@
 # Project Map
 
 - Schema: 2
-- Generated: 2026-09-22T02:00:58
+- Generated: 2026-09-22T08:48:06
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator`
 - Files indexed: 991
 
 ## Groups
 
 - `config`: 41 files, 16119 LOC
-- `doc`: 345 files, 26563 LOC
-- `entrypoint`: 1 files, 15276 LOC
+- `doc`: 345 files, 26686 LOC
+- `entrypoint`: 1 files, 15279 LOC
 - `script`: 10 files, 1089 LOC
-- `source`: 209 files, 88995 LOC
-- `test`: 354 files, 62346 LOC
+- `source`: 209 files, 89046 LOC
+- `test`: 354 files, 62395 LOC
 - `ui`: 3 files, 87 LOC
 - `unknown`: 28 files, 3663 LOC
 
@@ -22,7 +22,7 @@
 
 ## Hotspots
 
-- `orchestrator_server.py`: complexity 3639, 15276 LOC, group `entrypoint`
+- `orchestrator_server.py`: complexity 3639, 15279 LOC, group `entrypoint`
 - `.council/_r3_before/os_head.py`: complexity 3253, 13917 LOC, group `source`
 - `code_tools.py`: complexity 3124, 15015 LOC, group `source`
 - `tools_v15.py`: complexity 1793, 8452 LOC, group `source`

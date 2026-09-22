@@ -1,6 +1,60 @@
 # CHANGELOG
 
-## 2026-08-23 (latest) — B027f: the named line was real, and it was not the one that decided
+## 2026-09-22 (latest) — B027g, F1, F3: a seventh layer, and a JSON key no PowerShell CA can read
+
+- **B027g — the `cbm_dead_code` advisory scanned by a rule set the graph does not use.**
+  `scan_vulture` shells out to vulture with `--exclude` globs (vulture has no built-in
+  exclude), and that pattern list was a MODULE CONSTANT built once from the global
+  `SKIP_DIRS` at import. A project's `.orchestrator_ignore` therefore reached six layers
+  and stopped at the seventh — the one advisory that claims to describe the graph.
+  Fixed in the SOT: `orchestrator/skip_rules.py effective_skip_dir_names(project_root=None)`
+  folds the overlay into the global set, and `_vulture_exclude(project_root=None)` derives
+  the list per call instead of freezing it at import. 2 tests, both failing first;
+  `tests/test_cbm_dead_code_vulture_ruff.py` **109 passed**.
+  **The survey that was supposed to prevent this could not see it.**
+  `grep -rn "SKIP_DIRS" --include=*.py .` is credited in `MAINTENANCE_DOCTOR.md` with
+  finding all six layers — but `scan_vulture` never contains the string `SKIP_DIRS`; it
+  re-spells the set as another process's syntax. A survey keyed on the SOT's NAME is blind
+  to any consumer that re-expresses the SOT. Both claims in that file are now corrected to
+  seven layers.
+  Residual, deliberately not fixed: `SKIP_DIRS` is still a fixed global name list, so a
+  repo scanning its own junk directories configures its own `.orchestrator_ignore`. Putting
+  one project's directory names into another project's SOT is what B025 4.2 was refused for.
+
+- **F1 — `fields_available` used `""` as its top-level namespace key, so the one payload
+  built to prevent a second full call was unparseable for a PowerShell CA.**
+  Windows PowerShell 5.1 `ConvertFrom-Json` rejects the ENTIRE document with `Cannot
+  process argument because the value of argument "name" is not valid` when any object
+  carries an empty-string key, because a PSObject property may not have an empty name. So
+  every `fields_unknown` response forced exactly the re-call it exists to prevent —
+  measured three times in one session before the cause was found. Fixed with one constant,
+  `_R101_TOP_NAMESPACE = "(top)"`, referenced by the docstring, the hint (an f-string, so
+  it cannot drift) and all five existing asserts; a new test pins the LABEL itself, because
+  the other tests assert *through* the constant and would keep passing if it reverted.
+  Parentheses are collision-proof by construction: a response key is an identifier.
+  No production consumer read `fields_available[""]`, so no compatibility shim was needed.
+  `examples/CORE_RULE.txt` and `examples/SLIM_RULE.txt` updated at source, and `sync_rule`
+  rendered all **8** CA rule files (`persona_preserved:true` on every one).
+  **712 passed** across the 15 test files that touch `_r101_filter` / `fields_available`.
+
+- **F3 — one cost bucket is project-blind, and that is now a documented decision instead
+  of an unexplained line.** `search_code` resolves its root as `path or project_path`
+  (`orchestrator/tools/search.py:1165`), so the schema-declared legacy `path` is a fully
+  working way to name a project — while the dispatcher's `store`/`observe` sites read only
+  `body["project_path"]` (`orchestrator_server.py:15877`, `:15886`). The live
+  `search_code|` bucket therefore collects calls that DID name a project. Measured on the
+  live `CALL_COST.json`: **12 of 13 buckets are correctly per-project** and the separation
+  is real (`ocr_spawn:delegate` ToolQ avg 3.134s vs ToolA 0.366s, 8.6x); the blind bucket
+  is n=25, 0.046s..5.941s, avg 2.568s. **Not patched, on purpose:** `budget_for` is flat
+  and cost-independent so no gate decision is ever wrong, producer and consumer read the
+  same expression so the bucket is self-consistent, and the only consequence is an advisory
+  `measured_cost` figure averaged over a mixed bucket. Every fix measures worse — bucketing
+  the raw `path` breaks where it is a FILE path (`ruff_fix`, `ocr_scan`), fragmenting the
+  bucket per file until `_cost_key_is_junk` prunes real data, and resolving a real root
+  costs a `find_project_root` filesystem walk on EVERY observed call to improve one
+  advisory number. The `_cost_key_is_junk` docstring now records the measurement and why
+  each fix is worse, so the next reader does not "fix" it into a regression.
+## 2026-08-23 — B027f: the named line was real, and it was not the one that decided
 
 - **B027f — `!name` reached INDEX.json and `list_structure` but never `search_code`.**
   Anh's independent function-layer verification named the site exactly:

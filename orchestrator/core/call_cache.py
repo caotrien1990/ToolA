@@ -387,10 +387,25 @@ def _cost_key_is_junk(key: str) -> bool:
     hand purge. Per truy goc, khong va ngon: refuse at the producer AND self-heal on
     load, so the garbage cannot come back.
 
-    What is NOT junk, deliberately: a key with an EMPTY project_path. A real call may
-    legitimately carry none -- live example `search_code|` -- and that bucket is the
-    only floor such a call can ever be held to. Dropping it would silently disable a
-    working gate, so the rule names what it removes and removes nothing else.
+    What is NOT junk, deliberately: a key with an EMPTY project_path. The reason is
+    narrower -- and far more useful to the next reader -- than "a real call may carry
+    none", which is what this text claimed until 2026-09-22. MEASURED: `search_code`
+    resolves its root as `path or project_path` (orchestrator/tools/search.py:1165,
+    :903, :1011, :1068, :1305), so `path` is a schema-declared, fully working way to
+    name the project -- while the dispatcher's store/observe sites read ONLY
+    body["project_path"] (orchestrator_server.py:15877, :15886). The live
+    `search_code|` bucket therefore collects calls that DID name a project, through
+    the documented legacy alias.
+    NOT patched, and that is a decision rather than an oversight: `budget_for` is flat
+    and cost-independent, so no gate decision is ever wrong; producer and consumer
+    (budget_exceeded_payload -> measured_cost) read the SAME expression, so the bucket
+    is self-consistent; the only consequence is an advisory `measured_cost` figure
+    averaged over a mixed bucket. Every available fix measures worse: bucketing on the
+    raw `path` breaks on the tools where it is a FILE path (ruff_fix, ocr_scan), which
+    fragments the bucket per file and makes THIS function prune real data, and
+    resolving a real root costs a find_project_root filesystem walk on every observed
+    call to improve one advisory number. Dropping the bucket would silently disable a
+    working floor. So the rule names what it removes and removes nothing else.
     """
     tool, _, path = str(key).partition("|")
     if len(tool) > 4 and tool.startswith("__") and tool.endswith("__"):

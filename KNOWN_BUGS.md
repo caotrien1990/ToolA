@@ -3072,4 +3072,53 @@ statement about the tests, not always about the fix.**
 
 ---
 
-_Last updated: 2026-08-23 (campaign-1608 + JS-repo audit + stabilisation + real-test follow-up + verification of the verification: added B002-B029 plus B027f, all fixed and mutation-verified. B027c/B027d/B027e/B028c came from Anh's independent function-layer verification of B027+B028, B029 from measuring what those reports pointed at, and B027f from his verification of *those* -- where the line he named was real but not the one that decided the answer. None of them from re-reading a diff. Triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_
+## B027g - the `cbm_dead_code` advisory scanned by a rule set the graph does not use
+
+**Status**: FIXED 2026-09-22
+**Severity**: MEDIUM (the advisory contradicted the INDEX it describes; no data loss,
+but a project that had declared a directory private still saw findings from it)
+
+**Found by** finishing the `cbm_dead_code` latency fix (`092c5be5`, which derived
+vulture's `--exclude` from the `SKIP_DIRS` SOT) and then asking the B027 question of the
+new code: does the per-project `.orchestrator_ignore` overlay reach this layer too?
+It did not.
+
+**Cause**: `scan_vulture` shells out to vulture with `--exclude` globs, because vulture
+has no built-in exclude. That pattern list was a **module constant**, built once from the
+global `SKIP_DIRS` at import time. The overlay therefore reached the directory gate
+(B027), the snapshot filters (B027b), the FILE gate (B027c), the graph walk (B027d),
+`list_structure` (B027e) and the search filter (B027f) -- and stopped at the seventh
+layer, the one advisory that claims to describe that graph.
+
+**Why six rounds went past it, and why the recorded survey is no defence**:
+`grep -rn "SKIP_DIRS" --include=*.py .` is credited in `MAINTENANCE_DOCTOR.md` with
+finding every layer of this family. **`scan_vulture` never contains the string
+`SKIP_DIRS`** -- it imports the set once and re-expresses it as another process's glob
+syntax. A survey keyed on the SOT's NAME is blind to any consumer that re-spells the
+SOT. Both the "found all six" claim and the "found six times at six layers" count in
+that file are corrected to seven.
+
+**Fix**, in the SOT rather than a fourth copy of the ignore set:
+
+| change | why |
+|---|---|
+| `orchestrator/skip_rules.py` `effective_skip_dir_names(project_root=None)` | one function folds the overlay into the global set; `project_root=None` answers the global rule byte for byte, so every pre-B027g caller is unchanged |
+| `orchestrator/graph/extractors/vulture_ruff.py` module constant -> `_vulture_exclude(project_root=None)` | the exclude list is DERIVED per call instead of frozen at import, and the call site passes the `project_path` the scan was asked about |
+
+**Direction is B027e's, not B027f's**: a project may **REVEAL** a directory to the
+scanner, never **HIDE** `.council` from it. That asymmetry is pinned, not incidental.
+
+**Pinned by**: `tests/test_cbm_dead_code_vulture_ruff.py` --
+`test_vulture_exclude_honours_the_project_ignore_overlay` and
+`test_a_project_cannot_hide_the_council_from_the_scanner`, both written failing first.
+Whole file **109 passed**.
+
+**Residual, deliberately not fixed**: the overlay only helps a project that HAS an
+`.orchestrator_ignore`. `SKIP_DIRS` remains a fixed global name list, so a repo that
+scans its own junk directories configures its own overlay file. Widening [A]'s shared
+set with one project's directory names is exactly what B025 claim 4.2 (row 2224 above)
+was refused for, and the refusal still holds.
+
+---
+
+_Last updated: 2026-09-22 (campaign-1608 + JS-repo audit + stabilisation + real-test follow-up + verification of the verification: added B002-B029 plus B027f, all fixed and mutation-verified; then B027g on 2026-09-22 as the seventh layer of the B027 family, found by asking the family's own question of a fix that had just closed a latency defect. B027c/B027d/B027e/B028c came from Anh's independent function-layer verification of B027+B028, B029 from measuring what those reports pointed at, and B027f from his verification of *those* -- where the line he named was real but not the one that decided the answer. None of them from re-reading a diff. Triage lives in MAINTENANCE_DOCTOR.md, and `scripts/live_answer_doctor.py` checks the live answers)_

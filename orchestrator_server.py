@@ -4669,6 +4669,18 @@ def _r101_project_nested(value, specs):
 
 _R101_AVAILABLE_CAP = 24
 
+# The namespace key for the TOP level of fields_available.  It was "" until
+# 2026-09-22, which is legal JSON that a real CA client cannot read: Windows
+# PowerShell 5.1 `ConvertFrom-Json` fails the whole document with `Cannot
+# process argument because the value of argument "name" is not valid`, because
+# a PSObject property may not have an empty name.  So EVERY fields_unknown
+# response -- the one payload built to spare the caller a second full call --
+# was unparseable for a PowerShell CA and forced exactly the re-call it exists
+# to prevent.  Measured three times in one session before the cause was found.
+# Parentheses make the label collision-proof: a response key is an identifier,
+# so no tool can ever publish a real field named "(top)".
+_R101_TOP_NAMESPACE = "(top)"
+
 
 def _r101_available_names(payload, unknown):
     """CASE-1809-E: name the keys that DO exist, per namespace, for every miss.
@@ -4682,8 +4694,9 @@ def _r101_available_names(payload, unknown):
     "check spelling".
 
     Bounded on purpose: at most _R101_AVAILABLE_CAP names per namespace, since
-    an unbounded key dump is the very cost fields= buys off.  Namespace "" is
-    the top level.  A dotted head that exists but is not a dict reports its
+    an unbounded key dump is the very cost fields= buys off.  The top level is
+    keyed by _R101_TOP_NAMESPACE (never ""), for the reason that constant
+    records.  A dotted head that exists but is not a dict reports its
     type instead of a list -- no sub-selector can descend into a scalar, and
     that is a different mistake from a misspelled key.
     """
@@ -4703,7 +4716,7 @@ def _r101_available_names(payload, unknown):
         if not dot or head not in payload:
             # A plain key, or a dotted key whose HEAD is the typo: either way
             # the choice to be made is at the top level.
-            spaces.setdefault("", _bounded(payload))
+            spaces.setdefault(_R101_TOP_NAMESPACE, _bounded(payload))
             continue
         inner = payload.get(head)
         if isinstance(inner, dict):
@@ -4818,8 +4831,9 @@ def _r101_filter(payload, fields):
             "ignored; the result is NOT empty because of them. Check spelling "
             "(e.g. 'results' not 'result') or omit fields= to see every key. "
             "fields_available names the keys that DO exist per namespace "
-            "('' = top level), so the retry needs no second full call; a "
-            "dotted key keeps one nested branch, e.g. fields=result.files.")
+            f"(the namespace {_R101_TOP_NAMESPACE} is the top level), so the "
+            "retry needs no second full call; a dotted key keeps one nested "
+            "branch, e.g. fields=result.files.")
         # CASE-1809-E: naming the miss is not enough to prevent a retry loop.
         # Measured: `content` instead of `result` on read_file_range, and
         # `total_lines.deeper` aimed at an int, both left the caller with no

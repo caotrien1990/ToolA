@@ -10,7 +10,7 @@ from orchestrator.graph.extractors.vulture_ruff import (
     scan_vulture,
 )
 from orchestrator.graph.tools import cbm_dead_code, ruff_fix
-from orchestrator.skip_rules import SKIP_DIRS
+from orchestrator.skip_rules import SKIP_DIRS, clear_project_ignore_cache
 
 
 class _Completed:
@@ -280,3 +280,49 @@ def test_an_explicit_file_list_is_never_filtered(monkeypatch, tmp_path):
     argv = _captured_vulture_argv(monkeypatch, tmp_path, files=[str(target)])
     assert "--exclude" not in argv
     assert str(target) in argv
+
+
+def test_vulture_exclude_honours_the_project_ignore_overlay(monkeypatch, tmp_path):
+    """`.orchestrator_ignore` must reach THIS scanner, not only the graph walk.
+
+    B027g 2026-09-22. The exclude used to be a module CONSTANT built from the
+    global SKIP_DIRS at import time, so the per-project overlay B027 added --
+    already honoured by should_skip_dir (directory gate) and
+    ignored_directory_name (file gate) -- could never touch the dead-code
+    advisory. Measured on ToolQ: `.TENCENTDB_MEMORY` 218 findings +
+    `_iso_campaign` 174 + `_backup_*T*Z` 28 = 73% of 577, none of it that
+    project's source, and the only lever was writing ToolQ's directory names
+    into ToolA's global SOT.
+    """
+    (tmp_path / ".orchestrator_ignore").write_text(
+        "_iso_campaign\n!build\n", encoding="utf-8")
+    clear_project_ignore_cache()
+
+    argv = _captured_vulture_argv(monkeypatch, tmp_path)
+    patterns = argv[argv.index("--exclude") + 1].split(",")
+
+    for path in (r"D:\repo\_iso_campaign\mod.py", "/repo/_iso_campaign/mod.py"):
+        assert _excluded(path, patterns), "a project-declared skip never reached vulture"
+
+    # `!build` un-skips a GLOBAL entry for this project only. Without it the
+    # overlay could only ever ADD names, and the JS repo whose real source lives
+    # in build/ -- the case B027 names -- still could not opt in.
+    assert not _excluded("/repo/build/mod.py", patterns)
+    assert "*/build/*" not in patterns
+
+
+def test_a_project_cannot_hide_the_council_from_the_scanner(monkeypatch, tmp_path):
+    """.council stays scannable no matter how the overlay is written.
+
+    The same rule both gates in skip_rules enforce, for the same reason: if a
+    project could exclude the SOT transcript tree, "the council never spoke" and
+    "the council was never scanned" would stop being distinguishable.
+    """
+    (tmp_path / ".orchestrator_ignore").write_text(".council\n", encoding="utf-8")
+    clear_project_ignore_cache()
+
+    argv = _captured_vulture_argv(monkeypatch, tmp_path)
+    patterns = argv[argv.index("--exclude") + 1].split(",")
+
+    assert "*/.council/*" not in patterns
+    assert not _excluded("/repo/.council/mod.py", patterns)
