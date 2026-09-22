@@ -11,7 +11,6 @@ import base64
 import concurrent.futures
 import contextvars
 import copy
-import functools
 import hashlib
 import hmac
 import inspect
@@ -60,7 +59,6 @@ except Exception as exc:
 
 import code_tools as ct
 import path_runtime
-from orchestrator.core import errors as _legacy_errors
 from orchestrator.council.identity import assert_unique_canonical_ids, canonical_id
 from orchestrator.council.route_metrics import (
     append_measurement as _route_append_measurement,
@@ -7844,7 +7842,7 @@ def _council_build_broker_context(target, sender, text, budget_chars=16000, task
         running = status.get("request_id") if status.get("state") == "running" else "none"
         lines = [
             "[Council broker context - compact]",
-            f"session: current",
+            "session: current",
             f"target: {target}",
             f"sender: {sender}",
             "route_filter: to/from target + sender recent + thread ancestors"
@@ -14322,8 +14320,15 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
             body = (await asyncio.to_thread(json.loads, decoded_body)
                     if len(raw_bytes) >= 65536 else json.loads(decoded_body))
         except (json.JSONDecodeError, ValueError) as e:
-            # Log raw bytes for debugging
-            logger.error(f"Invalid JSON body (raw length {len(raw_bytes)}): {raw_bytes[:200]!r}")
+            # D5 2026-09-22: `e` was bound and never read (F841), so this log said a
+            # body was invalid without ever saying WHY -- the one fact the caller needs
+            # to fix its payload. Consuming it closes the rule by ADDING information;
+            # deleting `as e` would have closed it by deleting the only diagnosis this
+            # handler can give. %-style so the formatting is skipped when the level is
+            # off, matching the other logger calls in this module.
+            logger.error(
+                "Invalid JSON body (%s; raw length %d): %r",
+                e, len(raw_bytes), raw_bytes[:200])
             return _error_response(
                 tool_name,
                 "Invalid JSON body",

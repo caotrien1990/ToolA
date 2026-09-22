@@ -67,7 +67,38 @@ select = ['E9', 'F63', 'F7']
 # The counts above stay honest because tests/test_a38b_lint_contract.py
 # re-measures them with --isolated, which deliberately bypasses this table.
 # ---------------------------------------------------------------------------
+#
+# D5, measured 2026-09-22 on orchestrator_server.py with `ruff check --isolated
+# --select <rule>`: 13 findings, of which 4 were REAL and are fixed in code and
+# 9 are E402 and are structural. Deliberately written as prose, not as another
+# "#   RULE  N  ..." line: that shape is parsed by
+# tests/test_a38b_lint_contract.py and every count there is measured against
+# code_tools.py, so a second file's numbers in that format would read as a
+# stale baseline for the first.
+#
+# Fixed, not ignored: two dead imports (`functools`, and the
+# `orchestrator.core.errors as _legacy_errors` alias left behind by the
+# strangler migration -- that module is 128 lines of pure class definitions
+# with no import-time side effect, nothing in the repo calls `__subclasses__`,
+# and its only other importer is its own test, so the binding was load-bearing
+# for nothing); one f-string with no placeholder; and one `except ... as e`
+# whose `e` was never read, which is why an invalid-JSON log never said WHY the
+# parse failed. That last one was closed by CONSUMING `e` in the log, not by
+# deleting `as e` -- F841 there was pointing at missing information, not at a
+# stray name.
+#
+# The 9 E402 that remain are code_tools.py's shape exactly: this module
+# registers tools in stages and imports each stage where it is used. Three of
+# them are `register_tool` imported immediately above its own registration
+# loop, and the comment at the third of those says out loud that mutating
+# ct.TOOL_MAP outside register_tool is the drift bug class that broke the
+# contract tests. Hoisting those imports to the top is a refactor of the
+# registration order, never a lint fix. The entry below exists for the same
+# reason the E7 entries do: a comment cannot stop the next CA from running a
+# wider --select, but ruff answering zero can.
+# ---------------------------------------------------------------------------
 
 [lint.per-file-ignores]
 'code_tools.py' = ['E701', 'E702']
 'tools_v15.py' = ['E701', 'E702']
+'orchestrator_server.py' = ['E402']

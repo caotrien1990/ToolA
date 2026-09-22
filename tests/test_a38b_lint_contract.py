@@ -146,3 +146,70 @@ def test_that_e7_ignore_is_scoped_and_hides_nothing_else():
     assert proc.returncode != 0, (
         "the whole repo now reports zero E701/E702/E741 -- the per-file-ignores entry was widened "
         "past code_tools.py and tools_v15.py, which turns a scoped note into a blanket suppression")
+
+
+# ---------------------------------------------------------------------------
+# D5, 2026-09-22. Same two-test shape applied to orchestrator_server.py: one test
+# that the ignore entry actually silences the rule, and one positive control that
+# it is scoped. Without the second, widening the entry to the whole repo would
+# leave the first one green while hiding findings nobody measured.
+#
+# `_count` above is hardcoded to code_tools.py on purpose -- the baseline block it
+# guards is that file's -- so these use their own target rather than widening it.
+# ---------------------------------------------------------------------------
+
+SERVER = "orchestrator_server.py"
+
+
+def _count_in(target: str, rule: str) -> int:
+    """`_count`, for a file other than the baseline TARGET. Same `--isolated` reason."""
+    proc = _ruff(target, "--isolated", "--select", rule, "--statistics")
+    if proc.returncode == 0:
+        return 0
+    total = 0
+    for line in proc.stdout.splitlines():
+        head = line.split("\t", 1)[0].strip()
+        if head.isdigit():
+            total += int(head)
+    return total
+
+
+def test_the_d5_real_findings_in_the_server_stay_closed():
+    """The 4 of 13 that were defects, not style. `--isolated`, so the E402 entry below
+    cannot launder any of them away:
+
+      F401 x2 -- `functools`, and the `orchestrator.core.errors as _legacy_errors`
+                 alias from the strangler migration. Audited before deleting: that
+                 module is pure class definitions with no import-time side effect,
+                 nothing in the repo calls `__subclasses__`, and its only other
+                 importer is its own test.
+      F541    -- an f-string with no placeholder in the broker context block.
+      F841    -- `except ... as e` where `e` was never read, so an invalid-JSON log
+                 never said WHY the parse failed. Closed by USING `e`, which is why
+                 this assert would also catch someone "fixing" it back to a bare
+                 `except` and dropping the diagnosis again.
+    """
+    live = {rule: _count_in(SERVER, rule) for rule in ("F401", "F541", "F841")}
+    assert live == {"F401": 0, "F541": 0, "F841": 0}, live
+
+
+def test_the_server_e402_is_silenced_by_scope_not_by_line_noise():
+    """9 structural late imports, same shape as code_tools.py's 17: the module registers
+    tools in stages and imports each stage where it is used. No `--isolated` here, on
+    purpose -- this run reads ruff.toml, so it measures the table."""
+    proc = _ruff(SERVER, "--select", "E402")
+    assert proc.returncode == 0, (
+        "ruff still reports E402 on orchestrator_server.py -- the per-file-ignores entry "
+        "in ruff.toml was removed, renamed or narrowed:\n%s" % proc.stdout)
+
+
+def test_that_e402_ignore_is_scoped_and_hides_nothing_else():
+    """Positive control: code_tools.py's 17 E402 are NOT covered by that entry and must
+    still be reported, so the entry cannot have been widened into a blanket one."""
+    proc = _ruff(".", "--select", "E402", "--statistics")
+    assert proc.returncode != 0, (
+        "the whole repo now reports zero E402 -- the per-file-ignores entry was widened "
+        "past orchestrator_server.py, which turns a scoped note into a blanket suppression")
+    assert _count_in(TARGET, "E402") > 0, (
+        "code_tools.py reports zero E402 under --isolated, so the count in the ruff.toml "
+        "baseline block is stale and the control above proves nothing")

@@ -1,9 +1,9 @@
 """Progress-based watchdog primitives for unbounded explicit repository work."""
 from __future__ import annotations
 
+import sys
 import threading
 import time
-import sys
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Callable
