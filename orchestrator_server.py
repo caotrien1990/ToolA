@@ -17098,10 +17098,24 @@ async def _scan_filtered(project_path: str) -> list[dict]:
 
     from magika import Magika
 
+    # B027j 2026-09-22: was `d not in SKIP_DIRS`, the global EXACT set only -- blind to
+    # `.orchestrator_ignore` (B027) and to the global glob layer (D2), and
+    # case-sensitive, so `Venv312` was scanned. `should_skip_dir` is the dir gate and
+    # carries all three layers plus `!unskip`.
+    #
+    # The `.startswith(".")` test STAYS even though the gate has its own dot rule: the
+    # gate carves out `.council`, and inheriting that carve-out here would feed every
+    # magika scan the whole council transcript tree (thousands of `.jsonl`). That is a
+    # widening, not a fix, so this walk keeps the stricter rule.
+    from orchestrator.skip_rules import should_skip_dir as _should_skip_dir
+
     base = Path(project_path)
     files: list[Path] = []
     for root, dirs, filenames in _os.walk(base):
-        dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith('.')]
+        dirs[:] = [
+            d for d in dirs
+            if not _should_skip_dir(d, project_path) and not d.startswith(".")
+        ]
         for fn in filenames:
             files.append(Path(root) / fn)
 

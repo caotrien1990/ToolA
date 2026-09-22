@@ -45,6 +45,11 @@ from orchestrator.server.executor_lanes import (
     ExecutorLaneError,
     run_in_executor_lane,
 )
+from orchestrator.skip_rules import (
+    effective_skip_dir_names,
+    ignored_directory_name,
+    name_matches_ignore,
+)
 from rule_core import get_rule_core, get_rule_core_metadata
 
 # ─── Shared constants ─────────────────────────────────────────────────────────
@@ -4315,31 +4320,66 @@ async def _backup_project_locked(
         skipped: list[str] = []
         written = 0
         targets = normalized_targets
-        skip_dir_names = {d.lower() for d in getattr(surgical_mapper, "SKIP_DIRS", set())}
+        # B027j 2026-09-22: was `{d.lower() for d in surgical_mapper.SKIP_DIRS}`, i.e.
+        # the global EXACT set only -- no `.orchestrator_ignore` overlay, no global
+        # globs. `effective_skip_dir_names` carries all three layers plus the `!unskip`
+        # lines, so a project that unskips `archive` now gets `archive` into its backup.
+        # The 11 names below were EVERY ONE already in SKIP_DIRS when measured; they
+        # stay as a floor so a future edit to the global set cannot make a backup start
+        # zipping `node_modules`. frozenset so the `_glob_patterns` lru_cache inside
+        # `name_matches_ignore` hits instead of rebuilding the subset per directory.
+        skip_dir_names = set(effective_skip_dir_names(root))
         skip_dir_names.update({
             ".git", "node_modules", "__pycache__", "venv", "venv312", ".venv",
             ".tox", ".mypy_cache", ".pytest_cache", "dist", "build",
         })
+        skip_dir_names = frozenset(skip_dir_names)
         skip_file_names = {
             "orchestrator.lock", "sessions.db-journal", "sessions.db-wal",
             "sessions.db-shm", "Thumbs.db", "desktop.ini",
         }
         try:
             with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-                walk_entries = []
-                for target in (targets if targets is not None else [root]):
-                    if target.is_file():
-                        walk_entries.append((str(target.parent), [], [target.name]))
-                    elif target.is_dir():
-                        walk_entries.extend(os.walk(target))
-                    else:
-                        skipped.append(str(target.relative_to(root)).replace("\\", "/"))
-                for walk_root, dirs, files in walk_entries:
+                # B027j 2026-09-22: this used to be a LIST built with
+                # `walk_entries.extend(os.walk(target))`, and that made the whole
+                # directory filter below dead code. `os.walk` is a generator that
+                # honours an in-place edit of its `dirnames` list only while it is
+                # still being iterated; `extend` drains it to the last leaf FIRST, so
+                # by the time the loop pruned `dirs[:]` the descent had already
+                # happened and every pruned tree was already in `walk_entries`.
+                # Measured 2026-09-22: a full backup archived `.git/`,
+                # `node_modules/` and every other name in the skip set, under
+                # ok:true -- only the per-FILE skips had any effect. Yielding lazily
+                # is what connects the filter to the walk.
+                def _walk_targets():
+                    for target in (targets if targets is not None else [root]):
+                        if target.is_file():
+                            yield (str(target.parent), [], [target.name])
+                        elif target.is_dir():
+                            yield from os.walk(target)
+                        else:
+                            skipped.append(
+                                str(target.relative_to(root)).replace("\\", "/"))
+
+                for walk_root, dirs, files in _walk_targets():
                     if stop_backup.is_set():
                         raise InterruptedError("backup cancelled")
+                    # B027j 2026-09-22: a raw `not in` here was blind to the overlay
+                    # AND to the global glob layer, so a backup zipped the junk trees
+                    # the index prunes. Deliberately NOT `should_skip_dir`: that gate
+                    # also drops every leading-dot directory, and a BACKUP silently
+                    # losing `.github` / `.claude` / `.vscode` is the CASE-2008 shape
+                    # aimed at the one tool whose entire job is to lose nothing.
+                    #
+                    # `.git` is matched EXACTLY for that same reason. The old clause
+                    # was `not d.startswith(".git")`, which ALSO dropped `.github` and
+                    # `.gitlab` -- a backup quietly losing the CI workflows it was
+                    # taken to preserve, under ok:true. `.git` is already in SKIP_DIRS,
+                    # so this clause is only a floor; making it exact costs nothing.
                     dirs[:] = [
                         d for d in dirs
-                        if d.lower() not in skip_dir_names and not d.startswith(".git")
+                        if not name_matches_ignore(d.lower(), skip_dir_names)
+                        and d.lower() != ".git"
                     ]
                     for fn in files:
                         if stop_backup.is_set():
@@ -6399,7 +6439,18 @@ async def run_test_profile(project_path: str, profile: str = "unittest", timeout
                     py_files.append(str(rel).replace("/", os.sep))
             if not py_files:
                 for fp in root.rglob("*.py"):
-                    if any(part in SKIP_DIRS for part in fp.parts):
+                    # B027j 2026-09-22: was `any(part in SKIP_DIRS for part in fp.parts)`,
+                    # wrong in two independent ways. It ignored `.orchestrator_ignore`
+                    # and the global glob layer, and -- because `fp.parts` is ABSOLUTE --
+                    # a project living under a parent folder named `build`, `archive` or
+                    # `logs` matched on that PARENT and compiled NOTHING, reporting a
+                    # clean py_compile over zero files. Relative parts fix the second.
+                    # The file gate is the right gate: the walk is already finished and
+                    # we are filtering paths, not pruning a descent. It also must NOT be
+                    # `should_skip_dir`, which drops every leading-dot directory --
+                    # `.github/scripts/*.py` has to stay compilable.
+                    rel_parts = fp.relative_to(root).parts  # rglob only yields under root
+                    if ignored_directory_name(rel_parts, root) is not None:
                         continue
                     if embedded_root and embedded_root != root:
                         try:
@@ -6883,14 +6934,25 @@ def _scan_folder_size_and_assets(root: Path) -> dict:
         if hit and (now - hit[0]) < _PROJECT_SIZE_TTL_SEC:
             return hit[1]
 
-    skip_low = SKIP_DIRS | {".orchestrator_cache"}
+    # B027j 2026-09-22: was `SKIP_DIRS | {".orchestrator_cache"}` compared with a raw
+    # `in`, so this walk was blind to `.orchestrator_ignore` (B027) AND to the global
+    # glob layer (B027i/D2) -- the size it reported counted the very junk trees the
+    # index skips, and being case-sensitive it counted `Venv312` too. The union was
+    # redundant: `.orchestrator_cache` has been in SKIP_DIRS since CAN-042.
+    #
+    # Resolved ONCE per scan rather than once per directory. The overlay parse is
+    # cached on (root, mtime, size), but rebuilding a frozenset per directory is not,
+    # and this walk is the one that used to block the event loop for minutes.
+    skip_names = effective_skip_dir_names(root)
     folder_size_mb = None
     truncated = False
     try:
         total_bytes = 0
         seen = 0
         for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [d for d in dirnames if d not in skip_low]
+            dirnames[:] = [
+                d for d in dirnames if not name_matches_ignore(d.lower(), skip_names)
+            ]
             for fn in filenames:
                 try:
                     total_bytes += os.stat(os.path.join(dirpath, fn)).st_size

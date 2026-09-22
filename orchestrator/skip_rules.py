@@ -31,10 +31,15 @@ SKIP_DIRS = {
     # index and break regex/symbol search + cause INDEX/manifest scan-vs-walk drift: an
     # embedded venv, backup snapshots, staging clones, codex mission dirs, pytest temp.
     ".venv_bge_m3", "backups", "staging", ".codex", ".pytest_tmp",
-    # Runtime output and leaked pytest roots are derived state, not project source.
-    # In ToolQ, /ask rewrites logs/supervisor_state_*.json after every successful
-    # rebuild, making the next zero-hit search correctly report a stale INDEX.
-    "logs", "%temp%toolq_tests", "pytest_tmp_lintfix",
+    # Runtime output is derived state, not project source. In ToolQ, /ask rewrites
+    # logs/supervisor_state_*.json after every successful rebuild, making the next
+    # zero-hit search correctly report a stale INDEX.
+    #
+    # B027j 2026-09-22: `%temp%toolq_tests` and `pytest_tmp_lintfix` were retired
+    # from this line. They were ONE project's directory names carried as every
+    # project's global cost -- the D2 defect itself -- and the `%temp%*` /
+    # `pytest_tmp*` families in SKIP_DIR_GLOBS cover them for every project.
+    "logs",
     # R82 2026-08-19: runtime/archival DATA trees. Measured on ToolQ: qsleep/runs
     # (19953 files) + qsleep/queue (8289) + archive/ (13470) made generate_project_map
     # scan 31608 files of which 31079 were .json runtime records and only 367 were .py
@@ -78,13 +83,23 @@ DOT_DIRS_SEARCHABLE = {".council"}
 # writes `!name` in its overlay -- un-skip is checked FIRST in every gate, so it
 # beats this layer exactly as it already beats SKIP_DIRS and the dot rule.
 #
-# This is an ADDITIONAL layer, not a replacement: the exact set stays the fast
-# path, and four consumers still test that set by raw membership (`code_tools`
-# backup-zip walk, `code_tools` size walk, `code_tools` rglob fallback,
-# `orchestrator_server` magika walk). None of them was ever overlay-aware either
-# -- that is a separate, pre-existing gap -- so the two ToolQ literals above STAY
-# in SKIP_DIRS until those four are routed through a gate. Deleting them first
-# would trade this defect for a silent regression in four walks.
+# This is an ADDITIONAL layer, not a replacement: the exact set above stays the
+# fast path and is still tested first in every gate.
+#
+# B027j 2026-09-22 closed the condition this block used to record. Four consumers
+# read SKIP_DIRS directly and tested it with a raw `in` -- the `code_tools`
+# backup-zip walk, size walk and py_compile rglob fallback, plus the
+# `orchestrator_server` magika walk -- so none of them saw an overlay OR a glob,
+# and the two ToolQ instance names had to STAY in the exact set to keep those four
+# walks correct. All four now go through a gate (`effective_skip_dir_names` +
+# `name_matches_ignore`, `ignored_directory_name`, `should_skip_dir`), so
+# `%temp%toolq_tests` and `pytest_tmp_lintfix` are retired from SKIP_DIRS above and
+# covered by `%temp%*` / `pytest_tmp*` below.
+#
+# A NEW consumer must call a gate. Reading SKIP_DIRS raw is what let one defect
+# ship three times (B027c, B027d, B027i/D2): every walk that re-derives the
+# precedence locally is a walk that drifts, and the symptom is always two answers
+# that disagree with `ok:true` on both sides.
 # ---------------------------------------------------------------------------
 SKIP_DIR_GLOBS = frozenset({
     # Isolation-campaign work trees: full source COPIES, so every symbol inside is
