@@ -3,7 +3,7 @@
 This file is generated for CA routing. Read it before opening source files.
 
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\orchestrator`
-- Generated: 2026-09-21T21:15:59
+- Generated: 2026-09-22T17:10:54
 - Files indexed: 101
 
 ## First Actions
@@ -26,17 +26,17 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 
 ## Groups
 
-- `source`: 100 files, 38430 LOC
+- `source`: 100 files, 38722 LOC
 - `ui`: 1 files, 62 LOC
 
 ## Highest Value Files
 
 - `tools/write/core.py` | group `source` | lang `python` | LOC 1995 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `session/store.py` | group `source` | lang `python` | LOC 1908 | weight 15: large_file: use symbols, search, or bounded ranges before full read
-- `tools/search.py` | group `source` | lang `python` | LOC 1449 | weight 15: large_file: use symbols, search, or bounded ranges before full read
+- `tools/search.py` | group `source` | lang `python` | LOC 1480 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `search_snapshots.py` | group `source` | lang `python` | LOC 1304 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `graph/tools.py` | group `source` | lang `python` | LOC 1149 | weight 15: large_file: use symbols, search, or bounded ranges before full read
-- `server/mcp_stdio.py` | group `source` | lang `python` | LOC 1419 | weight 15: large_file: use symbols, search, or bounded ranges before full read
+- `server/mcp_stdio.py` | group `source` | lang `python` | LOC 1520 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `tools/ocr_review.py` | group `source` | lang `python` | LOC 753 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `server/audit_writer.py` | group `source` | lang `python` | LOC 1089 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `core/ca_policy_matrix.py` | group `source` | lang `python` | LOC 843 | weight 15: large_file: use symbols, search, or bounded ranges before full read
@@ -59,11 +59,11 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 
 - `tools/write/core.py`: complexity 492, 1995 LOC, group `source`
 - `session/store.py`: complexity 337, 1908 LOC, group `source`
-- `tools/search.py`: complexity 330, 1449 LOC, group `source`
+- `tools/search.py`: complexity 335, 1480 LOC, group `source`
 - `search_snapshots.py`: complexity 309, 1304 LOC, group `source`
 - `graph/tools.py`: complexity 257, 1149 LOC, group `source`
+- `server/mcp_stdio.py`: complexity 245, 1520 LOC, group `source`
 - `council/glass_dashboard.html`: complexity 236, 62 LOC, group `ui`
-- `server/mcp_stdio.py`: complexity 219, 1419 LOC, group `source`
 - `tools/ocr_review.py`: complexity 183, 753 LOC, group `source`
 - `server/audit_writer.py`: complexity 179, 1089 LOC, group `source`
 - `graph/rules.py`: complexity 175, 671 LOC, group `source`
