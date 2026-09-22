@@ -48,6 +48,64 @@ DOT_DIRS_SEARCHABLE = {".council"}
 
 
 # ---------------------------------------------------------------------------
+# B027i / D2 2026-09-22: the GLOBAL default layer gets glob patterns too.
+#
+# B027h gave the per-project overlay globs and left the global set above
+# exact-membership-only in all three gates. That asymmetry IS the D2 defect:
+# [A]'s own defaults can name an instance of a junk tree but never the FAMILY it
+# belongs to. Two consequences, both still readable in this file and the next:
+#
+#   * ToolQ-specific instance names had to be written into SKIP_DIRS above --
+#     `%temp%toolq_tests`, `pytest_tmp_lintfix` -- because the families they
+#     belong to (`%temp%*`, `pytest_tmp*`) were unsayable. One project's
+#     directory names became every project's cost, the thing B027 exists to stop.
+#   * `graph/analysis_view.py` grew a SECOND private authority on the same
+#     question, carrying `_backup`, `_iso_campaign/` and `%temp%` under the
+#     comment "(indexer SKIP_DIRS does not know them)". It existed only because
+#     this layer could not express them; D2 retires it.
+#
+# Measured on ToolQ 2026-09-22, which ships NO `.orchestrator_ignore` at all:
+# `search_code` still answered out of `_iso_campaign/fix277/*.py` (304 .py files
+# in that one tree), so every filter B027/B027h built was inert there. An overlay
+# only helps a project that ships one; a default helps every project.
+#
+# The bar for adding a pattern here is HIGHER than for an overlay entry, because
+# widening a global skip drops directories from the index under a success exit
+# code -- the CASE-2008 shape. Each entry below is a derived-state family whose
+# name cannot plausibly be project source. ToolQ's dated `backup_*t*z` tree is
+# deliberately NOT here: measured, it holds 0 .py files, so it costs the index
+# nothing and stays an overlay concern. A project that disagrees with any pattern
+# writes `!name` in its overlay -- un-skip is checked FIRST in every gate, so it
+# beats this layer exactly as it already beats SKIP_DIRS and the dot rule.
+#
+# This is an ADDITIONAL layer, not a replacement: the exact set stays the fast
+# path, and four consumers still test that set by raw membership (`code_tools`
+# backup-zip walk, `code_tools` size walk, `code_tools` rglob fallback,
+# `orchestrator_server` magika walk). None of them was ever overlay-aware either
+# -- that is a separate, pre-existing gap -- so the two ToolQ literals above STAY
+# in SKIP_DIRS until those four are routed through a gate. Deleting them first
+# would trade this defect for a silent regression in four walks.
+# ---------------------------------------------------------------------------
+SKIP_DIR_GLOBS = frozenset({
+    # Isolation-campaign work trees: full source COPIES, so every symbol inside is
+    # a duplicate hit on the real file. 304 .py under ToolQ's `_iso_campaign`.
+    # Narrower than `_iso_*` on purpose -- that would reach a name like
+    # `_iso_utils`, which could well be source.
+    "_iso_campaign*",
+    # `_backup_stabilize_*` and its siblings: a fresh name per run, so listing
+    # them was never possible. Same coverage as the `_backup` prefix retired from
+    # `analysis_view`, which is what lets that band-aid go.
+    "_backup*",
+    # A pytest temp root written with `%TEMP%` left unexpanded. A literal `%`
+    # cannot begin a real source directory, so this family is unambiguous.
+    "%temp%*",
+    # Leaked pytest temp roots (`pytest_tmp_lintfix`, ...). `.pytest_tmp` keeps
+    # its exact entry above: a leading dot is not matched by this pattern.
+    "pytest_tmp*",
+})
+
+
+# ---------------------------------------------------------------------------
 # B027h 2026-09-22: glob patterns in `.orchestrator_ignore`.
 #
 # The overlay could only ever name a directory EXACTLY -- the parser stored a
@@ -142,7 +200,9 @@ def should_skip_dir(name: str, project_root=None) -> bool:
             return False
         if name_matches_ignore(lowered, extra_skips):
             return True
-    return lowered in SKIP_DIRS or name.startswith(".")
+    if lowered in SKIP_DIRS or name_matches_ignore(lowered, SKIP_DIR_GLOBS):
+        return True
+    return name.startswith(".")
 
 
 def ignored_directory_name(parts, project_root=None) -> "str | None":
@@ -178,7 +238,7 @@ def ignored_directory_name(parts, project_root=None) -> "str | None":
             continue
         if name_matches_ignore(name, extra_skips):
             return name
-        if name in SKIP_DIRS:
+        if name in SKIP_DIRS or name_matches_ignore(name, SKIP_DIR_GLOBS):
             return name
     return None
 
@@ -319,7 +379,11 @@ def effective_skip_dir_names(project_root=None) -> "frozenset[str]":
     is a predicate over unbounded names, not a name set, so a caller that needs
     it has to keep asking per directory.
     """
-    names = set(SKIP_DIRS)
+    # B027i: the global GLOB layer travels as PATTERNS here for the same reason the
+    # overlay globs do -- the one consumer of this set feeds each entry to an
+    # fnmatch-based subprocess `--exclude`, so `_iso_campaign*` arrives as a working
+    # exclusion. A caller that needs exact names only must ask per directory.
+    names = set(SKIP_DIRS) | set(SKIP_DIR_GLOBS)
     if project_root is not None:
         extra_skips, unskips = load_project_ignore(project_root)
         # B027h: a glob entry is carried through as a PATTERN, not a name. The one

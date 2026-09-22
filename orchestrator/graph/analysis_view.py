@@ -17,6 +17,7 @@ import os
 import time
 from typing import Any, Callable, Iterable
 
+from ..skip_rules import ignored_directory_name
 from .config import EXTRACTOR_VERSION, graph_db_path
 from .schema import SCHEMA_VERSION
 from . import status as _status
@@ -40,14 +41,19 @@ _PROD_EXCLUDE_PREFIXES = (
     "venv312/",
     ".venv/",
     "__pycache__/",
-    # STT-26b: measured on ToolQ DSM output - backup snapshots, isolation
-    # campaign trees and pytest %TEMP% fixtures all sit in the graph DB
-    # files table (indexer SKIP_DIRS does not know them) and polluted the
-    # included scope: 348 "production" files contained _backup_*/ copies
-    # and %TEMP%toolq_tests/ fixtures. Matched casefolded, prefix style.
-    "_backup",
-    "_iso_campaign/",
-    "%temp%",
+    # B027i / D2 2026-09-22: three entries were REMOVED from this tuple --
+    # `_backup`, `_iso_campaign/` and `%temp%`, added under STT-26b with the note
+    # "(indexer SKIP_DIRS does not know them)". That note was the whole defect: they
+    # were never production-SCOPE policy, they were a second private copy of the
+    # global skip layer, written here because that layer could only name a directory
+    # exactly and so could not express a FAMILY of junk names. It takes globs now
+    # (`skip_rules.SKIP_DIR_GLOBS`), and `_is_excluded_production` below asks it
+    # instead -- one authority, and the ToolQ coverage got WIDER, not narrower,
+    # because matching is part-wise rather than anchored at the repo root.
+    #
+    # So every entry left above is genuine production-scope policy: `tests/` and
+    # `research/` are real source that simply is not production. Add a junk-tree
+    # name to `skip_rules`, never here.
 )
 _PROD_SEEDS = ("orchestrator_server.py", "code_tools.py", "tools_v15.py")
 _CONFIDENCE_POLICY = {
@@ -125,7 +131,23 @@ def _is_excluded_production(rel: str) -> bool:
     if base.endswith(".bak") or base.startswith("_baseline_"):
         return True
     folded = norm.casefold() + "/"
-    return any(folded.startswith(p) for p in _PROD_EXCLUDE_PREFIXES)
+    if any(folded.startswith(p) for p in _PROD_EXCLUDE_PREFIXES):
+        return True
+    # D2 2026-09-22: the JUNK question belongs to `skip_rules`, not to this view.
+    # The three project-specific prefixes this used to carry (`_backup`,
+    # `_iso_campaign/`, `%temp%`) only existed because the global skip layer could
+    # not express a FAMILY of names; B027i gave it globs, so there is one authority
+    # again and the tuple above went back to being a pure PRODUCTION-SCOPE policy
+    # (`tests/` and `research/` are real source -- they are simply not production).
+    #
+    # Root-less on purpose. This asks only for the DEFAULT junk set, which is
+    # identical for every project. Honouring a per-project `.orchestrator_ignore`
+    # here would mean an overlay edit silently moving `_included_set_hash`, and a
+    # provenance hash that changes without the code changing is the A03 shape.
+    #
+    # Part-wise rather than prefix-wise, so a nested `orchestrator/x/_backup_1/` is
+    # excluded too; the retired prefixes only ever anchored at the repo root.
+    return ignored_directory_name(norm.split("/")) is not None
 
 
 def _candidate_python_files(

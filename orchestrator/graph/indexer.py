@@ -38,7 +38,11 @@ from .extractors import javascript as _extractor_js
 # dirs the existing [A] search tools skip.
 import surgical_mapper  # resolved from project root (code_tools does the same)
 SKIP_DIRS = surgical_mapper.SKIP_DIRS
-from orchestrator.skip_rules import load_project_ignore  # noqa: E402
+from orchestrator.skip_rules import (  # noqa: E402
+    SKIP_DIR_GLOBS,
+    load_project_ignore,
+    name_matches_ignore,
+)
 
 PYTHON_EXTS = (".py",)
 JS_EXTS = _extractor_js.SUPPORTED_EXTS
@@ -160,11 +164,21 @@ def _walk_files(project_root: str, *, exts: tuple[str, ...] = PYTHON_EXTS,
 
     def _prune(d: str) -> bool:
         low = d.lower()
-        if low in unskips:
+        # B027i 2026-09-22: matched through the SAME shared matcher the three gates in
+        # `skip_rules` use. Before this both overlay sets were tested with a raw `in`,
+        # so a GLOB line -- the whole point of B027h -- reached search and the file
+        # gate but never this walk, and the graph was built from a different file set
+        # again. That is the B027c/B027d defect a third time: a precedence each walk
+        # re-derives is a precedence that drifts.
+        if name_matches_ignore(low, unskips):
             return False  # explicit opt-in wins over every skip, dot rule included
-        if low in extra_skips:
+        if name_matches_ignore(low, extra_skips):
             return True
-        return d in skip or d.startswith(".")
+        if d in skip or d.startswith("."):
+            return True
+        # The global glob DEFAULTS apply only when the caller did not name a set:
+        # an explicit `skip_dirs=` still means "use exactly this set".
+        return skip_dirs is None and name_matches_ignore(low, SKIP_DIR_GLOBS)
 
     out: list[str] = []
     root = os.path.normpath(project_root)
