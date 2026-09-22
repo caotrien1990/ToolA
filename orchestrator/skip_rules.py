@@ -15,6 +15,9 @@ CAN-042 single-source contract (`test_orchestrator_server_contract.py`) intact.
 """
 from __future__ import annotations
 
+import fnmatch
+import functools
+
 SKIP_DIRS = {
     "node_modules", "venv", "venv312", ".venv", ".git", ".svn",
     ".orchestrator_cache", "__pycache__", ".pytest_cache", ".mypy_cache",
@@ -44,6 +47,78 @@ SKIP_DIRS = {
 DOT_DIRS_SEARCHABLE = {".council"}
 
 
+# ---------------------------------------------------------------------------
+# B027h 2026-09-22: glob patterns in `.orchestrator_ignore`.
+#
+# The overlay could only ever name a directory EXACTLY -- the parser stored a
+# lowercased literal and all three gates asked `name in patterns` -- so the most
+# common junk shape was unsayable: a dated backup tree. Measured on ToolQ,
+# `q_agent/state/backup_prebaseurl_20260804T032924Z` and
+# `qsleep/ledger/backup_modelpath_20260804T033537Z` sit under two different
+# parents, plus the `_backup_stabilize_*` family. Every one of those names is
+# fresh on every run, so a project could never keep up by listing them, and the
+# only lever left was writing them into the GLOBAL SKIP_DIRS -- exactly what B027
+# exists to stop. The B027g note further down already writes that tree as the glob
+# `_backup_*T*Z`, so the design intended globs; only the matcher was missing.
+#
+# Matching lives in ONE function that all three gates call, for the reason B027c
+# records below: a precedence each gate re-derives is a precedence that drifts.
+#
+# NON-WIDENING BY CONSTRUCTION, which is a stronger promise than "exact membership
+# is tested first". `_GLOB_META` holds only `*` and `?`, the two characters Windows
+# FORBIDS in a file or directory name. A pattern carrying one of them therefore
+# cannot be the literal name of anything on disk, so reading it as a glob can never
+# shadow a real directory -- and an overlay with no metacharacter at all is still
+# resolved purely by set membership, byte-for-byte as before B027h.
+#
+# `[` is deliberately NOT in that set even though fnmatch honours it. `[` is LEGAL
+# in a Windows name, so it is ambiguous, and the ambiguity resolves the wrong way:
+# with `[` classified as a metacharacter the entry `foo[1]` ALSO skipped `foo1` --
+# measured 2026-09-22, it failed test_a_bracket_in_a_name_is_still_a_name. Skipping
+# MORE than the project declared is the fail-shut direction the FAILS OPEN note
+# below rejects: a directory dropped from the index under a success exit code, the
+# CASE-2008 shape. A project that genuinely wants a character class writes one next
+# to a `*` (`backup_[0-9]*`), which is unambiguous because of the `*`.
+# ---------------------------------------------------------------------------
+_GLOB_META = ("*", "?")
+
+
+def _pattern_has_glob(pattern: str) -> bool:
+    return any(ch in pattern for ch in _GLOB_META)
+
+
+@functools.lru_cache(maxsize=256)
+def _glob_patterns(patterns: "frozenset[str]") -> "tuple[str, ...]":
+    """The glob-bearing subset of one overlay set, computed once per set.
+
+    A walk asks the gates tens of thousands of times; re-filtering the set on every
+    question would spend exactly the cost the (root, mtime, size) parse cache exists
+    to avoid. frozensets are hashable and `load_project_ignore` hands back the same
+    cached object every time, so this hits.
+    """
+    return tuple(sorted(p for p in patterns if _pattern_has_glob(p)))
+
+
+def name_matches_ignore(lowered_name: str, patterns) -> bool:
+    """True when one lowercased directory name is covered by one overlay set.
+
+    THE matcher for all three gates below. `fnmatchcase`, not `fnmatch`: both sides
+    are already lowercased by the parser, and `fnmatch` would additionally run
+    os.path.normcase, which on Windows also rewrites a forward slash into a
+    backslash -- making this predicate answer differently per platform for no gain.
+    """
+    if not patterns:
+        return False
+    if lowered_name in patterns:
+        return True
+    if not isinstance(patterns, frozenset):
+        patterns = frozenset(patterns)
+    for pattern in _glob_patterns(patterns):
+        if fnmatch.fnmatchcase(lowered_name, pattern):
+            return True
+    return False
+
+
 def should_skip_dir(name: str, project_root=None) -> bool:
     """True when a directory named `name` must not be walked.
 
@@ -61,10 +136,11 @@ def should_skip_dir(name: str, project_root=None) -> bool:
         extra_skips, unskips = load_project_ignore(project_root)
         # unskip wins over skip. A `!name` has to beat BOTH the global set and the
         # leading-dot rule, otherwise `!.venv_bge_m3` -- a real case -- does
-        # nothing and the escape hatch is not one.
-        if lowered in unskips:
+        # nothing and the escape hatch is not one. B027h: a `!` line globs too, so
+        # an un-skip can still answer a skip pattern of the same shape.
+        if name_matches_ignore(lowered, unskips):
             return False
-        if lowered in extra_skips:
+        if name_matches_ignore(lowered, extra_skips):
             return True
     return lowered in SKIP_DIRS or name.startswith(".")
 
@@ -98,9 +174,9 @@ def ignored_directory_name(parts, project_root=None) -> "str | None":
             # SOT transcript tree: a project must not be able to hide it, so it is
             # checked before the overlay here for the same reason it is there.
             continue
-        if name in unskips:
+        if name_matches_ignore(name, unskips):
             continue
-        if name in extra_skips:
+        if name_matches_ignore(name, extra_skips):
             return name
         if name in SKIP_DIRS:
             return name
@@ -124,7 +200,9 @@ def ignored_directory_name(parts, project_root=None) -> "str | None":
 #
 #     2.working          # skip this tree in THIS project only
 #     1.footage/         # trailing slash tolerated
+#     _backup_*t*z       # B027h: glob. Patterns are lowercased, so is the name
 #     !build             # UN-skip a global entry, THIS project only
+#     !_iso_*            # a `!` line globs too; un-skip still wins
 #     # comments and blank lines ignored
 #
 # Design constraints that shaped this, each learned from a prior incident:
@@ -244,8 +322,17 @@ def effective_skip_dir_names(project_root=None) -> "frozenset[str]":
     names = set(SKIP_DIRS)
     if project_root is not None:
         extra_skips, unskips = load_project_ignore(project_root)
+        # B027h: a glob entry is carried through as a PATTERN, not a name. The one
+        # consumer of this set feeds each entry to a subprocess --exclude that is
+        # itself fnmatch-based (`vulture_ruff._vulture_exclude` wraps every entry as
+        # `*/entry/*` and `*\entry\*`), so `_backup_*t*z` arrives as a working
+        # exclusion. A caller that needs exact names only must ask per directory.
         names |= set(extra_skips)
-        names -= set(unskips)
+        # Not `names -= set(unskips)`: exact subtraction cannot express
+        # `!_backup_*t*z`, and it could never remove a glob-matched GLOBAL name
+        # either. The shared matcher keeps this gate's precedence identical to the
+        # other two instead of re-deriving it here.
+        names = {n for n in names if not name_matches_ignore(n, unskips)}
     # .council is not hideable here either: a project able to exclude the SOT
     # transcript tree would make "the council never spoke" indistinguishable
     # from "the council is not scanned".

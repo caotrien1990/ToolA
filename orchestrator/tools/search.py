@@ -1616,7 +1616,14 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                         if len(results) >= effective_max_results:
                             return
 
+            # D3 2026-09-22: count what the glob ADMITS, not only what matched. The
+            # filter already visits every record, so both counters are free, and
+            # without them a 0-hit answer cannot tell the caller whether the query
+            # was absent from real files or whether the glob admitted no file at all.
+            pattern_admitted = 0
+            records_seen = 0
             for record in pin.iter_records(base_resolved):
+                records_seen += 1
                 relative_path = str(record["path"])
                 relative = PurePosixPath(relative_path)
                 if not base_is_file and file_pattern != "*":
@@ -1633,6 +1640,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                     )
                     if not pattern_matches:
                         continue
+                pattern_admitted += 1
                 if base_is_file:
                     label = base.name
                 elif base_prefix is None:
@@ -1667,6 +1675,13 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                     records_pre_validated=True,
                 )
             payload_out = {"results": results, "snapshot_id": pin.snapshot_id}
+            # D3: the two counters the 0-hit branch needs to tell "your glob matched
+            # nothing" apart from "the text really is absent". They are only
+            # MEANINGFUL when results is empty: the scan loop breaks at
+            # effective_max_results, so on a hit-bearing answer these are partial by
+            # design and the consumer must not read them there.
+            payload_out["pattern_admitted_files"] = pattern_admitted
+            payload_out["records_scanned"] = records_seen
             if skipped_large:
                 payload_out["skipped_large_files"] = skipped_large
                 payload_out["skipped_large_count"] = skipped_large_total
@@ -1973,7 +1988,48 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
     #   stale_index=True   -- measured, drift found
     #   stale_index=False  -- measured, clean
     #   stale_index=None   -- NOT measured; inconclusive + stale_index_reason says why
-    if not results:
+    # D3 2026-09-22: a 0-hit answer has TWO completely different causes and this
+    # function used to conflate them. Either the glob admitted files and none of
+    # them contained the query (a real absence, modulo staleness), or the glob
+    # admitted NOTHING -- a typo'd path, a file not created yet, a glob aimed at a
+    # tree the indexer never took -- in which case the query never ran at all.
+    # The second cause is DETERMINISTIC and it outranks every guess below it: the
+    # drift probe hashes the whole repo and still cannot make a nonexistent path
+    # appear, and the multi-word tip blames a query that was never the problem.
+    # Measured on ToolQ: search_code(query='clm_qsleep_session',
+    # file_pattern='tests/test_qsleep_session_pause_54.py') answered ok:true /
+    # results:[] with no cause at all, so one CA guessed "the file does not exist"
+    # (right) while the same payload reads equally well as "the code is missing"
+    # (wrong, and expensive). Answering the real cause here also SKIPS the O(repo)
+    # probe, so the honest answer is the cheap one -- this is not a new advisory
+    # field bolted on to explain a caller mistake, it replaces two advisories that
+    # were actively naming the wrong cause.
+    _fp_scoped = bool(file_pattern) and file_pattern != "*"
+    _fp_admitted = producer_payload.get("pattern_admitted_files")
+    if not results and _fp_scoped and _fp_admitted == 0:
+        _scanned = int(producer_payload.get("records_scanned") or 0)
+        response["file_pattern_matched_files"] = 0
+        response["indexed_files_scanned"] = _scanned
+        response["inconclusive"] = True
+        if _scanned:
+            response["ca_next_action"] = "fix_file_pattern_or_drop_it"
+            response["tip"] = (
+                "0 hits because file_pattern=%r matched NONE of the %d indexed "
+                "files, so the query never ran against anything. This is NOT "
+                "'the text is absent' and NOT index drift. Check the path for a "
+                "typo, confirm the file exists AND is code (this index holds code "
+                "only -- .txt/.md/.log are never admitted), or drop file_pattern "
+                "to search the whole scope." % (file_pattern, _scanned)
+            )
+        else:
+            # Nothing at all under this scope: file_pattern is not the only suspect.
+            response["ca_next_action"] = "check_project_path_then_refresh_project_map"
+            response["tip"] = (
+                "0 hits and the index holds NO file under this scope, so "
+                "file_pattern is not the only suspect: verify project_path/path "
+                "points at the intended repo, then refresh_project_map."
+            )
+    elif not results:
         drift_root = project_path or str(snapshot_root)
         stale_reason = ""
         delta = None
@@ -2011,7 +2067,11 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                 response["ca_next_action"] = "refresh_or_narrow"
             else:
                 response["stale_index"] = False
-    if not results and mode == "text" and len(query.split()) > 1:
+    # D3: never let the query-shape guess overwrite a measured cause. When the glob
+    # admitted zero files the query shape is irrelevant, and this tip used to fire
+    # anyway and send the caller off to rewrite a perfectly good query.
+    if (not results and mode == "text" and len(query.split()) > 1
+            and "file_pattern_matched_files" not in response):
         response.setdefault("tip", "0 hits for text multi-word query. Try regex "
                                    "OR-split or search_code(mode='symbol').")
         response.setdefault("ca_next_action", "retry_with_regex_or_symbol_mode")
