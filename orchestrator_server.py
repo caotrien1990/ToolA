@@ -745,6 +745,51 @@ def _compact_accounting_body(body: dict) -> dict:
     return compact
 
 
+def _error_detail_from_result(result) -> str:
+    """Name the failure a tool reported, or say plainly that it named none.
+
+    Rule 7 (fail LOUD). An accounting row with error="" is permanently undiagnosable:
+    _infer_error_name misses every substring branch by construction and degrades to its
+    catch-all TOOL_ERROR, so neither a CA nor an audit can tell a timeout from a crash.
+    Measured 2026-09-22: run_project_test_script logged ms=231713, error_name=TOOL_ERROR,
+    error="".
+
+    The order is MEASURED, not guessed, over 44 days of durable_audit:
+
+    * `error` is canonical -- every _error_response sets it.
+    * `stderr` next, which is what a shell tool uses.
+    * then **stdout**, because pytest and python write a failing run's diagnosis there.
+      A chain that stopped at stderr recorded "" for the single most common failure in
+      the whole log: of the 441 run_project_test_script rows that reached
+      EMPTY_ERROR_DETAIL, 441 carried stdout and 425 had stderr EMPTY. stdout is read
+      from its TAIL -- the short summary and the `=== N failed ===` line are printed
+      last, so a head slice would keep only the collection banner.
+    * last the exit status. `exit_code` is the schema's own name for what this chain
+      used to look up as `returncode` (run_project_test_script answers `exit_code` and
+      has no `returncode` at all), and a bare number still separates a nonzero exit
+      from a timeout.
+    """
+    if not isinstance(result, dict):
+        return "EMPTY_ERROR_DETAIL: tool failed with no result body"
+    for key in ("error", "stderr", "warning"):
+        value = result.get(key)
+        if value:
+            return str(value)[:300]
+    tail = str(result.get("stdout") or "")[-300:].strip()
+    if tail:
+        return tail
+    for rc_key in ("returncode", "exit_code"):
+        rc = result.get(rc_key)
+        if rc is not None:
+            detail = f"{rc_key}={rc}"
+            if result.get("timed_out"):
+                detail += " timed_out=true"
+            return detail
+    # An empty string READS like "no error". Name the gap AS a gap and keep the
+    # error_name that was actually served, so the row stays greppable on one token.
+    return ("EMPTY_ERROR_DETAIL: tool answered ok=false with no error text"
+            f" (error_name={result.get('error_name') or 'unknown'})")
+
 def _compact_accounting_result(result, task_meta: dict) -> dict:
     compact: dict = {}
     if isinstance(result, dict):
@@ -754,6 +799,17 @@ def _compact_accounting_result(result, task_meta: dict) -> dict:
         for key in ("stdout", "stderr"):
             if result.get(key) is not None:
                 compact[key] = str(result.get(key) or "")[-400:]
+        # A43: error_name is the one error field a later reader can GROUP BY, and
+        # store.py:_log_session_event already reads it off this very dict -- the column,
+        # its consumer (_record_error_resolution inherits the source row's error_name)
+        # and its producer (_error_response always sets it) all existed; only this
+        # whitelist in between dropped it. Measured 2026-09-22: events.error_name was
+        # NOT NULL on 0 of 9317 rows, 635 of which are status='error', so every error in
+        # the audit degraded to an ungroupable free-text `reason`. Kept short and NOT
+        # accompanied by `error` itself: the message is already stored as `reason`, and
+        # writing it twice per row buys nothing.
+        if result.get("error_name") is not None:
+            compact["error_name"] = str(result.get("error_name"))[:80]
         validation = result.get("validation")
         if isinstance(validation, dict) and validation.get("warnings"):
             compact["validation"] = {"warnings": True}
@@ -4619,6 +4675,26 @@ def _r40_suggest_alternative(tool_name: str, error_name: str) -> dict:
 # returns the FULL envelope (backward compatible). Set per-dispatch via ContextVar so both the
 # success path and every _error_response return can filter without rewriting call sites.
 _R101_FIELDS = contextvars.ContextVar("_r101_fields", default=None)
+# A43: the FULL dispatch answer, before fields= projection. dispatch_tool_call
+# reassigns `_result` to the projected copy on every return path, and its `finally`
+# fills the write ledger and the A41 result cache from that same name -- so one
+# projected call poisoned the cache for every later caller asking for other keys.
+# Set ONLY from _r101_dispatch_result, i.e. only for a real dispatch result:
+# _error_response projects through _r101_filter too, and recording there would
+# overwrite this with an error payload on paths that never reached the tool.
+_R101_DISPATCH_FULL = contextvars.ContextVar("_r101_dispatch_full", default=None)
+
+
+def _r101_dispatch_result(result):
+    """Project one dispatch result for the wire while remembering the full answer.
+
+    The projection is a per-call VIEW; the cache and the write ledger have to keep
+    the answer itself. One helper for all four dispatch return paths makes that true
+    by construction -- four call sites agreeing is exactly what rotted here.
+    """
+    if isinstance(result, dict):
+        _R101_DISPATCH_FULL.set(result)
+    return _r101_filter(result, _R101_FIELDS.get())
 # A37 #0b: the agent id of the dispatch in flight, set once in
 # _dispatch_tool_call_request and read by _error_response, which is called from dozens of
 # sites that never carry identity. Same reason as _R101_FIELDS above: per-dispatch state
@@ -15374,7 +15450,7 @@ accepted_fields=sorted(accepted_fields),
             }
             _result["ca_guidance"] = _ca_guidance(tool_name, _result["error"], body, _result["error_name"])
             _status = "error"
-            _result = _r101_filter(_result, _R101_FIELDS.get())
+            _result = _r101_dispatch_result(_result)
             return web.json_response(_result, status=422, headers=cors)
         if isinstance(_result, dict) and _queue_wait_ms:
             _result.setdefault("queue_wait_ms", _queue_wait_ms)
@@ -15633,7 +15709,7 @@ accepted_fields=sorted(accepted_fields),
                 _result.setdefault("normalization_applied", _mode_norm)
         # with ensure_ascii=False so CA sees raw UTF-8 text.
         try:
-            _result = _r101_filter(_result, _R101_FIELDS.get())
+            _result = _r101_dispatch_result(_result)
             # A29: an unprojected fat response is a silent context tax. Name
             # its heaviest keys so the NEXT call can pass fields=. Runs after
             # the filter so a caller who already projected never sees a hint.
@@ -15845,7 +15921,7 @@ accepted_fields=sorted(accepted_fields),
         if _contention is not None:
             logger.warning(
                 "Tool '%s' hit session-store contention: %s", tool_name, exc)
-            _result = _r101_filter(_contention, _R101_FIELDS.get())
+            _result = _r101_dispatch_result(_contention)
             return web.json_response(_result, status=503, headers=cors)
         # `_error_msg` came from _exception_text() at the top of this arm, so it is
         # never "" -- which is the whole point: `error`, `reason`, the error_name
@@ -15862,9 +15938,21 @@ accepted_fields=sorted(accepted_fields),
         _result["retry_sequence"] = _retry_sequence(tool_name, _result["error_name"], body)
         _result["ca_guidance"] = _ca_guidance(tool_name, _error_msg, body, _result["error_name"])
         logger.error(f"Tool '{tool_name}' error: {exc}")
-        _result = _r101_filter(_result, _R101_FIELDS.get())
+        _result = _r101_dispatch_result(_result)
         return web.json_response(_result, status=500, headers=cors)
     finally:
+        # A43: every return path above reassigns `_result` to the fields=-projected
+        # copy, so this `finally` -- the write ledger here, and the A41 result cache
+        # below -- would record the TRIMMED view as if it were the tool's own answer.
+        # Measured 2026-09-22: a second call with the SAME payload and a different
+        # fields= was served ok:true with ZERO data plus a hint blaming the caller's
+        # spelling, because the cache held the projection of call #1. A projection is
+        # a per-call view of one answer; what gets stored has to be the answer.
+        # _r101_dispatch_result records it at the single producer, so no return path
+        # can forget to -- four call sites agreeing is what rotted here.
+        _result_full = _R101_DISPATCH_FULL.get()
+        if not isinstance(_result_full, dict):
+            _result_full = _result
         # Every begun write must leave in_flight, including non-JSON, TypeError,
         # and CancelledError paths that return/raise before the normal finish call.
         try:
@@ -15872,7 +15960,7 @@ accepted_fields=sorted(accepted_fields),
             if _pending_ledger and _pending_ledger.get("status") == "in_flight":
                 await _write_ledger_finish_async(
                     _op_id,
-                    _result if isinstance(_result, dict) else {},
+                    _result_full if isinstance(_result_full, dict) else {},
                     _status,
                 )
         except Exception as exc:
@@ -15890,30 +15978,12 @@ accepted_fields=sorted(accepted_fields),
             except Exception:
                 pass
         _ms = int((time.time() - _t0) * 1000)
-        # Capture error detail from result body when tool returns ok=False
-        # (Fix 16: _log_usage was getting empty error for non-exception fails)
-        if _status == "error" and not _error_msg and isinstance(_result, dict):
-            _error_msg = (
-                str(_result.get("error") or
-                    _result.get("stderr") or
-                    _result.get("warning") or
-                    _result.get("returncode") or "")
-            )[:300]
+        # A43: ONE producer for the whole error-detail decision, so the accounting row
+        # and the durable audit row cannot disagree -- and so the decision can be tested
+        # at all. Inline in this `finally`, the only thing a test could assert about it
+        # was its source text.
         if _status == "error" and not _error_msg:
-            # Rule 7 (fail LOUD). An accounting row with error="" is permanently
-            # undiagnosable: _infer_error_name misses every substring branch by
-            # construction and degrades to its catch-all TOOL_ERROR, so neither a CA
-            # nor an audit can tell a timeout from a crash. Measured 2026-09-22:
-            # run_project_test_script logged ms=231713, error_name=TOOL_ERROR,
-            # error="". An empty string READS like "no error"; this names the gap AS a
-            # gap and keeps the error_name that was actually served, so the row stays
-            # greppable on one token.
-            _error_msg = (
-                "EMPTY_ERROR_DETAIL: tool answered ok=false with no error text"
-                f" (error_name={_result.get('error_name') or 'unknown'})"
-                if isinstance(_result, dict)
-                else "EMPTY_ERROR_DETAIL: tool failed with no result body"
-            )
+            _error_msg = _error_detail_from_result(_result)
         # A41 tier 1b/3a: the socket is already closed by the time this `finally`
         # runs, so THIS is the only place that can tell a delivered answer from an
         # orphan BEFORE the accounting row is written. The middleware check at the
@@ -15926,7 +15996,7 @@ accepted_fields=sorted(accepted_fields),
         try:
             from orchestrator.core import call_cache as _cc
             _cache_key = _cc.store(
-                tool_name, body, _result if isinstance(_result, dict) else None,
+                tool_name, body, _result_full if isinstance(_result_full, dict) else None,
                 _ms, str(body.get("project_path", "") or "") if isinstance(body, dict) else "",
                 _task_agent_id or "")
             if _status == "ok" and _cc.budget_for(tool_name) is not None:
