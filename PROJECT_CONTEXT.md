@@ -3,8 +3,8 @@
 This file is generated for CA routing. Read it before opening source files.
 
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator`
-- Generated: 2026-09-22T08:48:06
-- Files indexed: 991
+- Generated: 2026-09-22T16:22:20
+- Files indexed: 993
 
 ## First Actions
 
@@ -27,17 +27,17 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 ## Groups
 
 - `config`: 41 files, 16119 LOC
-- `doc`: 345 files, 26686 LOC
-- `entrypoint`: 1 files, 15279 LOC
+- `doc`: 346 files, 26925 LOC
+- `entrypoint`: 1 files, 15310 LOC
 - `script`: 10 files, 1089 LOC
-- `source`: 209 files, 89046 LOC
-- `test`: 354 files, 62395 LOC
+- `source`: 210 files, 89234 LOC
+- `test`: 354 files, 62405 LOC
 - `ui`: 3 files, 87 LOC
 - `unknown`: 28 files, 3663 LOC
 
 ## Highest Value Files
 
-- `orchestrator_server.py` | group `entrypoint` | lang `python` | LOC 15279 | weight 24: large_file: use symbols, search, or bounded ranges before full read
+- `orchestrator_server.py` | group `entrypoint` | lang `python` | LOC 15310 | weight 24: large_file: use symbols, search, or bounded ranges before full read
 - `code_tools.py` | group `source` | lang `python` | LOC 15015 | weight 20: large_file: use symbols, search, or bounded ranges before full read
 - `surgical_mapper.py` | group `source` | lang `python` | LOC 1159 | weight 20: large_file: use symbols, search, or bounded ranges before full read
 - `.council/tmp_ahealthhung/GROC_FIX_SNAPSHOT_1315/surgical_mapper.py` | group `source` | lang `python` | LOC 1066 | weight 20: large_file: use symbols, search, or bounded ranges before full read
@@ -49,7 +49,7 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 - `orchestrator/tools/search.py` | group `source` | lang `python` | LOC 1449 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/search_snapshots.py` | group `source` | lang `python` | LOC 1304 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/graph/tools.py` | group `source` | lang `python` | LOC 1149 | weight 15: large_file: use symbols, search, or bounded ranges before full read
-- `orchestrator/server/mcp_stdio.py` | group `source` | lang `python` | LOC 1419 | weight 15: large_file: use symbols, search, or bounded ranges before full read
+- `orchestrator/server/mcp_stdio.py` | group `source` | lang `python` | LOC 1520 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/tools/ocr_review.py` | group `source` | lang `python` | LOC 753 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/server/audit_writer.py` | group `source` | lang `python` | LOC 1089 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/core/ca_policy_matrix.py` | group `source` | lang `python` | LOC 843 | weight 15: large_file: use symbols, search, or bounded ranges before full read
@@ -64,7 +64,7 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 
 ## Hotspots
 
-- `orchestrator_server.py`: complexity 3639, 15279 LOC, group `entrypoint`
+- `orchestrator_server.py`: complexity 3648, 15310 LOC, group `entrypoint`
 - `.council/_r3_before/os_head.py`: complexity 3253, 13917 LOC, group `source`
 - `code_tools.py`: complexity 3124, 15015 LOC, group `source`
 - `tools_v15.py`: complexity 1793, 8452 LOC, group `source`

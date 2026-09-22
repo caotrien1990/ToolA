@@ -691,10 +691,131 @@ def _mcp_proxy_call(name: str, payload: dict | None = None,
     return body
 
 
+_MCP_STDIO_INLINE_METHODS = frozenset({"initialize", "notifications/initialized"})
+
+
+def _mcp_stdio_concurrent(mcp, max_workers: int | None = None) -> None:
+    """ToolA's own stdio pump: read serially, dispatch CONCURRENTLY, write under a lock.
+
+    Replaces ``zeromcp.McpServer.stdio()``, which is a strictly serial
+    read -> dispatch -> write loop: one request is handled to completion before the
+    next line is even read, so every MCP tool call blocks every call queued behind it
+    for its FULL duration. Measured 2026-09-22: five read-only calls fired in ONE
+    batch ran strictly back-to-back (search_code 60276ms, cbm_graph_status 1ms,
+    cbm_nodes_query 0ms, ocr_map 41608ms, read_file_range 120ms) -- wall clock became
+    the SUM instead of the MAX, and the 120ms read waited ~102s behind the other four.
+    That is the campaign's own failure story (a CA times out, the work keeps running,
+    the result is discarded) reproduced by the transport rather than by any tool.
+
+    Safe because every layer underneath was already written for concurrency:
+    ``JsonRpcRegistry.dispatch`` keeps no per-request state (its ``_cache`` is a
+    reflection memo keyed by function, so a duplicate write is byte-identical),
+    ``_MCP_FIELDS_LOCAL`` is a thread-local read on the handler thread before the
+    HTTP call starts, and ``srv._run_mcp_coro`` hands the coroutine to a persistent
+    background event loop through ``asyncio.run_coroutine_threadsafe``.
+
+    ``initialize`` and ``notifications/initialized`` are handled INLINE on the reader
+    thread so the handshake keeps its ordering guarantee; everything after it goes to
+    the pool. JSON-RPC responses carry their own ``id``, so answering out of order is
+    protocol-legal -- and zeromcp's own HTTP transport in the same package has always
+    dispatched concurrently, so this makes stdio match it instead of diverging.
+    """
+    # Local import: this pump is the only consumer, so the module header stays untouched.
+    from concurrent.futures import ThreadPoolExecutor
+
+    stdin = sys.stdin.buffer
+    stdout = sys.stdout.buffer
+    if max_workers is None:
+        try:
+            max_workers = int(os.environ.get("ORCHESTRATOR_MCP_STDIO_WORKERS", "8") or 8)
+        except (TypeError, ValueError):
+            max_workers = 8
+    max_workers = max(1, min(64, int(max_workers)))
+    write_lock = threading.Lock()
+
+    def _request_id(raw: bytes):
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            return None
+        return parsed.get("id") if isinstance(parsed, dict) else None
+
+    def _emit(response) -> None:
+        if response is None:  # notification: there is nothing to answer
+            return
+        try:
+            line = json.dumps(response).encode("utf-8") + b"\n"
+        except Exception as exc:
+            # Fail loud (rule 7): a response we cannot serialise must STILL answer the
+            # id, or the caller blocks forever on work that already ran to completion.
+            line = json.dumps({
+                "jsonrpc": "2.0",
+                "id": response.get("id") if isinstance(response, dict) else None,
+                "error": {
+                    "code": -32603,
+                    "message": f"MCP_RESPONSE_NOT_SERIALIZABLE: {type(exc).__name__}: {exc}",
+                },
+            }).encode("utf-8") + b"\n"
+        with write_lock:
+            try:
+                stdout.write(line)
+                stdout.flush()
+            except (BrokenPipeError, OSError):
+                pass
+
+    def _handle(raw: bytes) -> None:
+        try:
+            _emit(mcp.registry.dispatch(raw))
+        except BaseException as exc:  # a worker must never die silently
+            _emit({
+                "jsonrpc": "2.0",
+                "id": _request_id(raw),
+                "error": {
+                    "code": -32603,
+                    "message": f"MCP_DISPATCH_CRASHED: {type(exc).__name__}: {exc}",
+                },
+            })
+
+    pool = ThreadPoolExecutor(max_workers=max_workers,
+                              thread_name_prefix="mcp-stdio-dispatch")
+    try:
+        while True:
+            try:
+                raw = stdin.readline()
+            except (BrokenPipeError, KeyboardInterrupt):
+                break
+            if not raw:  # EOF -- the client closed the pipe
+                break
+            raw = raw.strip()
+            if not raw:
+                continue
+            method = ""
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    method = str(parsed.get("method") or "")
+            except Exception:
+                method = ""
+            if method in _MCP_STDIO_INLINE_METHODS:
+                _handle(raw)
+                continue
+            try:
+                pool.submit(_handle, raw)
+            except RuntimeError:
+                # Pool already shutting down: still answer, just on this thread.
+                _handle(raw)
+    finally:
+        # In-flight calls have already paid their cost; let them finish and answer.
+        pool.shutdown(wait=True)
+
+
 # A37 #1b: the one place a named MCP tool's `fields=` value lives between the wrapper
-# that accepted it and the call that has to send it. A thread-local (not a global) because
-# zeromcp may serve concurrent calls, and each must send its OWN projection or a caller
-# could silently receive another caller's fields= -- a correctness bug, not a token bug.
+# that accepted it and the call that has to send it. A thread-local (not a global)
+# because ToolA's own stdio pump (_mcp_stdio_concurrent) DOES serve concurrent calls,
+# and each must send its OWN projection or a caller could silently receive another
+# caller's fields= -- a correctness bug, not a token bug. Before 2026-09-22 this held
+# for the HTTP transport only: zeromcp's stdio loop was strictly serial, so under
+# stdio the thread-local was correct by accident, never by the transport's design.
 _MCP_FIELDS_LOCAL = threading.local()
 
 
@@ -1843,7 +1964,7 @@ def run_mcp_stdio() -> None:
             except Exception:
                 pass
 
-        _mcp.stdio()
+        _mcp_stdio_concurrent(_mcp)
 
     except ImportError:
         print("zeromcp not installed. Run: pip install zeromcp")

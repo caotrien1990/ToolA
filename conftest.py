@@ -336,3 +336,73 @@ if _pytest_pathlib is not None and hasattr(_pytest_pathlib, "cleanup_dead_symlin
 
     _pytest_pathlib.cleanup_dead_symlinks = _cleanup_dead_symlinks_tolerantly
 
+
+# --- A42: a source file written DURING a run makes source-reading tests lie ----
+
+# Measured 2026-09-22, and it cost 68 minutes plus 13 red lines that were not bugs.
+# A full suite was launched detached; while it ran, production files were edited
+# through the orchestrator (orchestrator_server.py, code_tools.py, registry_data.py).
+# Seven tests that assert on SOURCE -- inspect.getsource, AST walks over
+# mcp_stdio.py, "is this guard still present in the file" checks -- then failed, and
+# every one of them passed when re-run afterwards. inspect.getsource reads the file
+# from DISK, not the module already imported, so a write landing mid-run shifts line
+# numbers under a test whose module was imported minutes earlier.
+#
+# In the report that failure is indistinguishable from a real regression: same red,
+# same assertion text. The only thing separating them is knowing a write happened
+# inside the window -- exactly what a CA loses across a compaction, and exactly the
+# campaign's own story (work completes, nobody can tell what the result means). So
+# the run must say it out loud, next to the failures, instead of relying on memory.
+#
+# Deliberately observational: nothing is failed, skipped or reordered. A guard that
+# could fail the run would let one unlucky edit destroy a 68-minute result instead of
+# annotating it. mtime, not a hash: hashing every source file is a second full read
+# of the tree on a HDD, and mtime already answers the only question being asked.
+_SOURCE_MTIMES_AT_START: dict[str, float] = {}
+
+
+def _iter_repo_source_files():
+    root = Path(__file__).resolve().parent
+    yield from root.glob("*.py")
+    package = root / "orchestrator"
+    if package.is_dir():
+        yield from package.rglob("*.py")
+
+
+def pytest_sessionstart(session):  # noqa: ARG001 - pytest hook signature
+    for path in _iter_repo_source_files():
+        try:
+            _SOURCE_MTIMES_AT_START[str(path)] = path.stat().st_mtime
+        except OSError:
+            continue
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):  # noqa: ARG001
+    changed: list[tuple[str, str]] = []
+    for path, before in _SOURCE_MTIMES_AT_START.items():
+        try:
+            after = os.stat(path).st_mtime
+        except OSError:
+            changed.append((path, "gone"))
+            continue
+        if after > before:
+            changed.append((path, "modified"))
+    if not changed:
+        return
+    root = str(Path(__file__).resolve().parent)
+    terminalreporter.write_sep("=", "SOURCE CHANGED WHILE THIS RUN WAS IN FLIGHT")
+    terminalreporter.write_line(
+        f"{len(changed)} source file(s) changed after collection started. A failure that"
+    )
+    terminalreporter.write_line(
+        "reads source from DISK (inspect.getsource, AST walks, 'guard is present in the"
+    )
+    terminalreporter.write_line(
+        "file' assertions) may be an artefact of that write and NOT a regression --"
+    )
+    terminalreporter.write_line("re-run those tests alone before believing them.")
+    for path, how in changed[:10]:
+        shown = path[len(root) + 1:] if path.startswith(root) else path
+        terminalreporter.write_line(f"  {how}: {shown}")
+    if len(changed) > 10:
+        terminalreporter.write_line(f"  ... and {len(changed) - 10} more")

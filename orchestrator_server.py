@@ -2608,6 +2608,14 @@ def _write_ledger_finish(op_id: str, result: dict, status: str) -> None:
         rec["status"] = target_status
         rec["finished_at"] = time.time()
         rec["updated_at"] = rec["finished_at"]
+        # SPAN, so the next auditor does not re-open this as a measurement bug:
+        # duration_ms covers _write_ledger_begin_async -> this finish call only. The
+        # USAGE_LOG `ms` of the SAME call is a WIDER span (post-semaphore _t0 through
+        # the end of dispatch), so it legitimately reads LARGER: measured 2026-09-22 on
+        # one 10MB write_fix, duration_ms=243503 against ms=297337. The 53.8s between
+        # them is the post-commit tail (response assembly, auto-chain, validation
+        # summary, cache sync) -- work that must NOT be charged to "how long did the
+        # write take", which is why the two numbers are kept apart rather than merged.
         rec["duration_ms"] = int((rec["finished_at"] - float(rec["started_at"])) * 1000)
         if isinstance(result, dict):
             summary = {k: _write_ledger_scalar(result.get(k))
@@ -3699,6 +3707,33 @@ _PAYLOAD_EXAMPLES = {
 }
 
 _RUN_TEST_PROFILES = list(getattr(ct, "SUPPORTED_TEST_PROFILES", ["unittest", "pytest", "py_compile_core", "py_compile", "npm_test"]))
+
+
+def _exception_text(exc) -> str:
+    """Diagnosable text of an exception -- NEVER the empty string (rule 7).
+
+    str(exc) is "" for a bare TimeoutError()/CancelledError(), and four except arms
+    fed that into _error_msg, _result['error'], _result['reason'] and
+    _infer_error_name, which then returns its catch-all TOOL_ERROR because every
+    substring branch misses an empty string by construction. Measured 2026-09-22: a
+    run_project_test_script failure logged ms=231713, error_name=TOOL_ERROR,
+    error="" -- 231s whose cause is unrecoverable from the log. ONE helper, not the
+    same expression at four sites, so a fifth arm inherits the guarantee instead of
+    copying an older one-liner.
+    """
+    try:
+        text = str(exc).strip()
+    except Exception:
+        text = ""  # a broken __str__ must not crash an error handler
+    if text:
+        return text
+    try:
+        args = getattr(exc, "args", ()) or ()
+        detail = ", ".join(str(a) for a in args if str(a).strip())
+    except Exception:
+        detail = ""
+    name = type(exc).__name__
+    return f"{name}: {detail}" if detail else name
 
 
 def _infer_error_name(tool_name: str, error: str, body: dict | None = None) -> str:
@@ -15750,7 +15785,7 @@ accepted_fields=sorted(accepted_fields),
             return web.json_response(_result, headers=cors,
                                       dumps=lambda x: json.dumps(x, ensure_ascii=False))
     except (ToolAdmissionOverloaded, FairAdmissionError, ExecutorLaneError) as exc:
-        _error_msg = str(exc)
+        _error_msg = _exception_text(exc)  # never "": admission rejections are audited
         _status = "error"
         await _write_ledger_finish_async(_op_id, {}, "error")
         _result = exc.as_payload()
@@ -15767,7 +15802,7 @@ accepted_fields=sorted(accepted_fields),
         logger.warning("Tool '%s' admission rejected: %s", tool_name, exc)
         return web.json_response(_r101_filter(_result, _R101_FIELDS.get()), status=status_code, headers=response_headers)
     except TypeError as exc:
-        _error_msg = str(exc)
+        _error_msg = _exception_text(exc)  # never "": the substring probes below need text
         # Surface canonical schema hint for the agent
         canonical = _alias_metadata(tool_name)
         hint = f" (accepted aliases: {canonical})" if canonical else ""
@@ -15796,7 +15831,7 @@ accepted_fields=sorted(accepted_fields),
             accepted_aliases=canonical,
         )
     except Exception as exc:
-        _error_msg = str(exc)
+        _error_msg = _exception_text(exc)  # never "": a bare TimeoutError() names itself
         await _write_ledger_finish_async(_op_id, {}, "error")  # BK34: crash => not_committed off-loop
         # A40: tools_v15 durable-write tools (record_error_resolution,
         # record_session_audit_checkpoint) let a transient
@@ -15812,16 +15847,20 @@ accepted_fields=sorted(accepted_fields),
                 "Tool '%s' hit session-store contention: %s", tool_name, exc)
             _result = _r101_filter(_contention, _R101_FIELDS.get())
             return web.json_response(_result, status=503, headers=cors)
+        # `_error_msg` came from _exception_text() at the top of this arm, so it is
+        # never "" -- which is the whole point: `error`, `reason`, the error_name
+        # inference and the CA guidance all read the SAME non-empty text, so none of
+        # them can degrade to a catch-all while another shows detail.
         _result = {
             "ok": False,
-            "error": str(exc),
-            "error_name": _infer_error_name(tool_name, str(exc), body),
-            "reason": str(exc),
+            "error": _error_msg,
+            "error_name": _infer_error_name(tool_name, _error_msg, body),
+            "reason": _error_msg,
         }
         _result["hint"] = _default_hint(tool_name, _result["error_name"])
         _result["ca_next_action"] = _ca_next_action(_result["error_name"], tool_name)
         _result["retry_sequence"] = _retry_sequence(tool_name, _result["error_name"], body)
-        _result["ca_guidance"] = _ca_guidance(tool_name, str(exc), body, _result["error_name"])
+        _result["ca_guidance"] = _ca_guidance(tool_name, _error_msg, body, _result["error_name"])
         logger.error(f"Tool '{tool_name}' error: {exc}")
         _result = _r101_filter(_result, _R101_FIELDS.get())
         return web.json_response(_result, status=500, headers=cors)
@@ -15860,6 +15899,21 @@ accepted_fields=sorted(accepted_fields),
                     _result.get("warning") or
                     _result.get("returncode") or "")
             )[:300]
+        if _status == "error" and not _error_msg:
+            # Rule 7 (fail LOUD). An accounting row with error="" is permanently
+            # undiagnosable: _infer_error_name misses every substring branch by
+            # construction and degrades to its catch-all TOOL_ERROR, so neither a CA
+            # nor an audit can tell a timeout from a crash. Measured 2026-09-22:
+            # run_project_test_script logged ms=231713, error_name=TOOL_ERROR,
+            # error="". An empty string READS like "no error"; this names the gap AS a
+            # gap and keeps the error_name that was actually served, so the row stays
+            # greppable on one token.
+            _error_msg = (
+                "EMPTY_ERROR_DETAIL: tool answered ok=false with no error text"
+                f" (error_name={_result.get('error_name') or 'unknown'})"
+                if isinstance(_result, dict)
+                else "EMPTY_ERROR_DETAIL: tool failed with no result body"
+            )
         # A41 tier 1b/3a: the socket is already closed by the time this `finally`
         # runs, so THIS is the only place that can tell a delivered answer from an
         # orphan BEFORE the accounting row is written. The middleware check at the
