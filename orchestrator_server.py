@@ -745,6 +745,41 @@ def _compact_accounting_body(body: dict) -> dict:
     return compact
 
 
+_POST_COMMIT_VALIDATION_CAP = 10
+
+
+def _post_commit_validation_summary(committed, validations,
+                                    cap=_POST_COMMIT_VALIDATION_CAP):
+    """Say how much of a commit `all_ok` actually covers.
+
+    D1, measured 2026-09-22 while tracing the post-commit tail: the hook validates at
+    most `cap` committed files, but the answer only ever carried `validated` + `all_ok`.
+    Commit 439a04e touched 16 files, so 6 were never checked and the row still read
+    `all_ok: true` -- byte-identical to a commit where everything passed. That is the
+    same false-OK shape as a 0-hit search answering ok: the truncated answer and the
+    complete one could not be told apart.
+
+    The cap stays. Validating 16 files serially costs 0.2-2.2s each on this HDD (measured
+    per file), and a commit is not the place to pay it -- the fix is to stop the answer
+    from CLAIMING more than it checked.
+
+    The extra keys are emitted ONLY when truncation really happened, so the ordinary
+    commit keeps its exact previous shape and costs no extra tokens.
+    """
+    summary = {
+        "committed": len(committed),
+        "validated": len(validations),
+        "all_ok": all(v.get("ok") for v in validations),
+        "details": validations,
+    }
+    unvalidated = len(committed) - len(validations)
+    if unvalidated > 0:
+        summary["unvalidated"] = unvalidated
+        summary["all_ok_scope"] = (
+            f"all_ok covers the first {len(validations)} of {len(committed)} committed"
+            f" files (cap {cap}); the remaining {unvalidated} were NOT validated")
+    return summary
+
 def _error_detail_from_result(result) -> str:
     """Name the failure a tool reported, or say plainly that it named none.
 
@@ -15461,7 +15496,7 @@ accepted_fields=sorted(accepted_fields),
                 _committed = _result.get("committed_files") or _result.get("committed_paths") or []
                 if _committed:
                     _validations = []
-                    for _cf in _committed[:10]:
+                    for _cf in _committed[:_POST_COMMIT_VALIDATION_CAP]:
                         _cf_path = _cf if isinstance(_cf, str) else str(_cf)
                         try:
                             import code_tools as _ct_post
@@ -15476,11 +15511,8 @@ accepted_fields=sorted(accepted_fields),
                         except Exception:
                             _validations.append({"file": _cf_path, "ok": False, "error": "validation_unavailable"})
                     if _validations:
-                        _result["post_commit_validation"] = {
-                            "validated": len(_validations),
-                            "all_ok": all(v["ok"] for v in _validations),
-                            "details": _validations,
-                        }
+                        _result["post_commit_validation"] = _post_commit_validation_summary(
+                            _committed, _validations)
             except Exception:
                 pass  # non-fatal, don't block commit result
         # Task 4 auto-chain: git_status → git_commit hint when staged files exist
