@@ -30,6 +30,10 @@ import unittest
 from orchestrator.core.ca_policy_matrix import classify_action
 
 A_ROOT = r"D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator"
+# A user project that does not exist on disk. It is a project only because it is
+# DECLARED as project_path: since the 2026-09-23 scope matcher, an undeclared path
+# under no project marker is outside_project (as %TEMP% is), so a call that means
+# "a file in the user's project" has to say which project that is.
 PROJ = r"D:\userproj"
 
 
@@ -47,7 +51,7 @@ class KeywordBoundaryFalsePositives(unittest.TestCase):
             with self.subTest(fname=fname):
                 r = classify_action(
                     tool_name="SomeUnmappedTool", action_type="",
-                    scope="project", target=PROJ + "\\" + fname,
+                    scope="project", target=PROJ + "\\" + fname, project_path=PROJ,
                 )
                 self.assertNotEqual(
                     r["task_class"], "upgrade_orchestrator",
@@ -87,9 +91,10 @@ class KeywordBoundaryTruePositives(unittest.TestCase):
     def test_upgrade_signals_still_classify(self):
         cases = [
             dict(tool_name="Edit", action_type="upgrade", target=A_ROOT + "\\code_tools.py"),
-            dict(tool_name="SomeTool", action_type="", scope="hybrid", target=PROJ + "\\y.txt"),
+            dict(tool_name="SomeTool", action_type="", scope="hybrid", target=PROJ + "\\y.txt",
+                 project_path=PROJ),
             dict(tool_name="SomeTool", action_type="", scope="edit orchestrator",
-                 target=PROJ + "\\y.txt"),
+                 target=PROJ + "\\y.txt", project_path=PROJ),
         ]
         for kw in cases:
             with self.subTest(kw=kw):

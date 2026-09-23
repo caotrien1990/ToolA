@@ -30,7 +30,8 @@
   },
   "native_policy_vocabulary": {
     "forbid": "Native forbidden; [A] provides governed capability.",
-    "allow_readonly": "Read-only outside project governance/explicit environment probe.",
+    "allow_readonly": "Read-only: an outside-project/environment probe, or in-project INSPECTION. A read that feeds an edit is not inspection.",
+    "allow_native": "Native write, no audit owed: outside every project, in a tree the host harness itself mandates (the agent's own memory).",
     "allow_with_log_native_event": "Approved exception; immediate log; if down pending audit then sync.",
     "hybrid_upgrade_only": "Only [A] self-upgrade with authorization, audit, validation, restart gate, verification."
   },
@@ -105,10 +106,10 @@
         "read_file_range"
       ],
       "toolset_fallback": "none",
-      "native_policy": "forbid",
+      "native_policy": "allow_readonly",
       "session_required": false,
       "token_required": false,
-      "verification": "exact bounded range",
+      "verification": "exact bounded range; native read is inspection only (Read Routing 2026-08-19) -- a read that feeds an edit must be read_file_range, the only read that seeds the write_fix read_token",
       "why_cslt": "Correct and token/context efficient."
     },
     {
@@ -125,10 +126,10 @@
         "import_graph"
       ],
       "toolset_fallback": "none",
-      "native_policy": "forbid",
+      "native_policy": "allow_readonly",
       "session_required": false,
       "token_required": false,
-      "verification": "mode and bounded matches",
+      "verification": "mode and bounded matches; native grep/glob is plain inspection (Read Routing 2026-08-19), [A] search_code when INDEX semantics are needed",
       "why_cslt": "Project intelligence beats raw grep."
     },
     {
@@ -418,6 +419,20 @@
       "token_required": false,
       "verification": "current cited sources",
       "why_cslt": "Outside project mutation governance."
+    },
+    {
+      "task_class": "agent_memory_write",
+      "match": "file mutation in the agent's own harness memory: <dirname(rule_file)>/projects/<slug>/memory/ (rule_file from agents_registry.json)",
+      "tier": "native",
+      "toolset_primary": [
+        "native Write/Edit"
+      ],
+      "toolset_fallback": "none",
+      "native_policy": "allow_native",
+      "session_required": false,
+      "token_required": false,
+      "verification": "target resolves under a registered agent's projects/<slug>/memory/ and under no project root",
+      "why_cslt": "The harness mandates native writes there and no [A] tool governs that tree; denying it breaks memory, not governance."
     },
     {
       "task_class": "unknown",

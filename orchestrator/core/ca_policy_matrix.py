@@ -61,6 +61,10 @@ _TOOL_TO_CLASS: dict[str, str] = {
     "write_text": "write_existing_file",
     "Edit": "write_existing_file",
     "Write": "write_existing_file",
+    # The host's other two file-mutation tools. Unmapped, they fell through to
+    # `unknown` -- the same forbid by accident, and no audit class to log under.
+    "MultiEdit": "write_existing_file",
+    "NotebookEdit": "write_existing_file",
     "Read": "read_project_file",
     "Bash": "project_command",
     "Grep": "search_project_code",
@@ -168,11 +172,112 @@ _SELF_DECLARABLE_CLASSES = frozenset({
     "project_path_resolution",
 })
 
-_OUTSIDE_PROJECT_MARKERS = (
-    r"\\windows\\", r"/windows/", r"\\system32\\", r"/system32/",
-    r"\\users\\", r"/users/", r"\\appdata\\", r"/appdata/",
-    r"c:\\program", r"c:/program", r"%temp%", r"%localappdata%",
-)
+# ONE scope matcher (2026-09-23). classify_action and hermes_host_gate each
+# derived "inside the project?" on their own and disagreed: one required both
+# paths to exist, the other did not, and an empty project_path made EVERY target
+# inside -- so %TEMP%\x.txt answered scope=project / deny, and a native write to
+# the agent's own memory was refused through both entry points.
+#
+# A project is recognised by find_project_root's markers MINUS [A]'s own
+# `.orchestrator_cache`. [A] writes that directory wherever it operates --
+# measured in %TEMP%, in the agent memory dir, in the agent home and in the
+# parent folder of every app -- so it proves [A] touched a directory, not that
+# the directory is a project. (The _OUTSIDE_PROJECT_MARKERS tuple that sat here
+# before had no reader anywhere in the repo.)
+_PROJECT_ROOT_MARKERS = (".git", "package.json", "requirements.txt")
+_OS_PATH_MARKERS = ("\\windows\\", "\\system32\\", "\\users\\public")
+_OS_SCOPES = ("os", "outside_project", "env", "host")
+
+
+def governed_project_root(target: str) -> Path | None:
+    """Nearest existing ancestor of `target` that carries a project marker.
+
+    HOME, HOME's ancestors and a drive root never count, for the reason
+    find_project_root skips them: a stray marker there would turn every path
+    under HOME (%TEMP% included) into a project.
+    """
+    t = (target or "").strip()
+    if not t or t.startswith(("\\\\", "//")):
+        return None
+    try:
+        tp = Path(t)
+        if not tp.is_absolute():
+            return None
+        tp = tp.resolve()
+        home = Path.home().resolve()
+        for parent in (tp, *tp.parents):
+            if parent == parent.parent or not parent.is_dir():
+                continue
+            if home.is_relative_to(parent):
+                continue
+            if any((parent / mk).exists() for mk in _PROJECT_ROOT_MARKERS):
+                return parent
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return None
+
+
+def target_scope(*, target: str = "", project_path: str = "", scope: str = "") -> str:
+    """"project" or "outside_project" for one target -- the only place that decides.
+
+    Governance is the default: no target, a relative one, or a path that cannot
+    be resolved is "project". A target under the declared project_path is
+    "project" whether or not it exists yet (a new file). Otherwise the target's
+    OWN root decides, so a write into a different project than the declared one
+    is still governed, and a path under no project is outside.
+    """
+    if (scope or "").strip().lower() in _OS_SCOPES:
+        return "outside_project"
+    t = (target or "").strip()
+    if any(x in t.lower().replace("/", "\\") for x in _OS_PATH_MARKERS):
+        return "outside_project"
+    if not t:
+        return "project"
+    try:
+        tp = Path(t)
+        if not tp.is_absolute():
+            return "project"
+        if project_path and tp.resolve().is_relative_to(Path(project_path).resolve()):
+            return "project"
+    except (OSError, RuntimeError, ValueError):
+        return "project"
+    return "project" if governed_project_root(t) is not None else "outside_project"
+
+
+def is_agent_memory_target(target: str) -> bool:
+    """True when `target` sits in a registered agent's own harness memory tree.
+
+    Shape: <dirname(rule_file)>/projects/<slug>/memory/... -- the tree the host
+    harness tells its CA to write with native file tools. The agent home comes
+    from agents_registry.json (the SOT), never from a path written here.
+    """
+    t = (target or "").strip()
+    if not t:
+        return False
+    try:
+        tp = Path(t)
+        if not tp.is_absolute():
+            return False
+        tp = tp.resolve()
+        home = Path.home().resolve()
+        agents = load_agents_registry_file(_AGENT_REGISTRY_PATH).get("agents") or {}
+    except Exception:
+        return False
+    for rec in agents.values():
+        rule_file = str(rec.get("rule_file") or "").strip() if isinstance(rec, dict) else ""
+        if not rule_file:
+            continue
+        try:
+            agent_home = Path(rule_file).resolve().parent
+            # A rule file directly in HOME must not make HOME\projects "memory".
+            if home.is_relative_to(agent_home):
+                continue
+            parts = tp.relative_to(agent_home / "projects").parts
+        except (OSError, RuntimeError, ValueError):
+            continue
+        if len(parts) >= 3 and parts[1].lower() == "memory":
+            return True
+    return False
 
 
 @lru_cache(maxsize=4)
@@ -343,35 +448,28 @@ def classify_action(
         if stem != action:
             task_class = _ACTION_TO_CLASS.get(stem)
 
-    # Scope heuristics
-    outside = False
-    if scope_l in ("os", "outside_project", "env", "host"):
-        outside = True
-    elif any(x in target_l.replace("/", "\\") for x in (
-        "\\windows\\", "\\system32\\", "\\users\\public",
-    )):
-        outside = True
-    elif project_path and target:
-        try:
-            pp = Path(project_path).resolve()
-            tp = Path(target).resolve()
-            if pp.exists() and tp.exists():
-                try:
-                    tp.relative_to(pp)
-                except ValueError:
-                    outside = True
-        except Exception:
-            pass
+    # Scope: target_scope is the ONE matcher, shared with hermes_host_gate.
+    outside = target_scope(
+        target=target, project_path=project_path, scope=scope,
+    ) == "outside_project"
 
     # Outside project: prefer outside_project_os_read so allow_readonly applies.
-    # Tool maps like Read→read_project_file must not force project-forbid off-root.
+    # Tool maps like Read->read_project_file must not force project-forbid off-root.
     if outside:
         if action in ("write", "execute", "delete", "command") or task_class in (
             "write_existing_file", "create_project_file", "batch_project_write",
             "delete_or_copy_project_file", "project_command", "project_test",
         ):
-            # mutating-ish outside still classified; host_gate enforces deny unless approved
-            if not task_class:
+            # A file mutation in the agent's OWN harness memory is mandated by the
+            # harness and governed by no [A] tool, so it gets its own class. Any
+            # other mutating-ish op outside stays classified; host_gate denies it
+            # unless approved.
+            if is_agent_memory_target(target) and (
+                task_class in _MUTATING_CLASSES_FOR_SELF_EDIT
+                or _is_mutating_self_edit_action(action)
+            ):
+                task_class = "agent_memory_write"
+            elif not task_class:
                 task_class = "outside_project_os_read"
         else:
             task_class = "outside_project_os_read"
@@ -416,6 +514,7 @@ def classify_action(
         is_native
         and native_policy in (
             "allow_readonly",
+            "allow_native",
             "allow_with_log_native_event",
             "hybrid_upgrade_only",
         ),
@@ -497,6 +596,9 @@ def hermes_host_gate(
     Inside project root: [A]-first; native only when Matrix allows + audit.
     Outside project: allow_readonly OS probe only; mutating host ops forbidden
     unless explicit Anh go-ahead (signaled via scope=user_approved_os_mutate).
+    The one outside mutation that needs no go-ahead is the agent's own harness
+    memory (native_policy=allow_native): the harness mandates it and no [A] tool
+    governs that tree.
     """
     aid = (agent_id or "").strip().lower()
     is_hermes = aid in ("hermes", "hermc", "herm")
@@ -505,43 +607,33 @@ def hermes_host_gate(
         "user_approved_os_mutate", "anh_approved", "user_go_ahead",
     )
 
-    outside = task_class == "outside_project_os_read" or scope_l in (
-        "os", "outside_project", "env", "host",
+    # Scope comes from target_scope, the matcher classify_action uses too. This
+    # gate used to derive it a second way (no exists() check; an empty
+    # project_path made every target inside), so the two could disagree on the
+    # very same target.
+    outside = task_class in ("outside_project_os_read", "agent_memory_write") or (
+        target_scope(target=target, project_path=project_path, scope=scope)
+        == "outside_project"
     )
-    if not outside and project_path and target:
-        try:
-            pp = Path(project_path).resolve()
-            tp = Path(target)
-            if not tp.is_absolute():
-                outside = False
-            else:
-                tp = tp.resolve()
-                try:
-                    tp.relative_to(pp)
-                    outside = False
-                except ValueError:
-                    outside = True
-        except Exception:
-            pass
 
     if outside:
-        allowed = (
-            native_policy == "allow_readonly"
-            or user_approved
-            or transport == "via_a"
-        )
-        decision = "allow_readonly" if allowed and not user_approved else (
-            "allow_user_approved" if user_approved else "deny_outside_project_mutate"
-        )
+        reason = "Outside project: readonly OS probe OK; mutating host ops need Anh go-ahead"
+        if user_approved:
+            decision = "allow_user_approved"
+        elif native_policy == "allow_native":
+            decision = "allow_native"
+            reason = "Outside project: the agent's own harness memory, written natively by mandate"
+        elif native_policy == "allow_readonly" or transport == "via_a":
+            decision = "allow_readonly"
+        else:
+            decision = "deny_outside_project_mutate"
         return {
             "agent_id": aid or None,
             "is_hermes": is_hermes,
             "scope": "outside_project",
             "decision": decision,
             "allowed": decision.startswith("allow"),
-            "reason": (
-                "Outside project: readonly OS probe OK; mutating host ops need Anh go-ahead"
-            ),
+            "reason": reason,
             "native_policy": native_policy,
         }
 
