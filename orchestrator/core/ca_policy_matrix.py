@@ -2,7 +2,7 @@
 
 North star CSLt: Correctness > Save token > Less context > Time fee.
 
-SOT file: .council/CA_TOOL_POLICY_MATRIX.json (status=active_sot).
+SOT file: .council/CA_TOOL_POLICY_MATRIX.json.
 This module is the request-time classifier + metrics aggregator. It does not
 duplicate Matrix content — it loads SOT and derives:
   - task_class from tool_name / action_type / scope / target
@@ -571,8 +571,6 @@ def classify_action(
             "token_required": row.get("token_required"),
         } if row else {},
         "host_gate": host,
-        "matrix_version": m.get("version"),
-        "matrix_status": m.get("status"),
         "north_star": north_star(m),
         "preferred_via_a": preferred,
         "preflight_hard_stop": preflight_hard_stop,
@@ -1086,8 +1084,6 @@ def open_session_policy_payload(agent_id: str = "", project_path: str = "") -> d
         "agent_transport_policy": runtime_policy,
         "matrix": {
             "path": matrix_path(),
-            "version": m.get("version"),
-            "status": m.get("status"),
             "task_class_count": len(m.get("rows") or []),
         },
         "a_first": True,

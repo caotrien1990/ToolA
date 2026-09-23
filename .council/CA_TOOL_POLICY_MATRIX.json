@@ -1,8 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "CA Tool Policy Matrix",
-  "version": "1.0.0",
-  "status": "active_sot",
   "acronym": "CSLt",
   "north_star": [
     "Correctness",
