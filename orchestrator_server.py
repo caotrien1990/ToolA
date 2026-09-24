@@ -12806,6 +12806,33 @@ def _body_path_hint(body: dict | None) -> str:
     return ""
 
 
+def _lookup_caller_session(project: str, agent_id: str | None) -> tuple[str | None, str, str | None]:
+    """The caller's active session for a project: (session_id, project_key, resolved_root).
+
+    ONE lookup for the session gate and for an xroot-admitted write (#17). The raw key
+    is tried first; a subdir/variant path then retries under the root open_session
+    would have registered (V15 R8 C.1). resolved_root is set only when that retry found
+    the session, so the gate can rebase the body onto it. Never opens a session and
+    never answers another agent's (_session_owner_clause).
+    """
+    key = ct._session_project_key(project)
+    session_id = ct._get_active_session_id(key, agent_id)
+    if session_id:
+        return session_id, key, None
+    try:
+        resolution = ct._resolve_project_path_payload(project, mode="folder")
+        resolved_root = resolution.get("project_path") if isinstance(resolution, dict) else None
+    except Exception:
+        resolved_root = None
+    if resolved_root and resolved_root != project:
+        resolved_key = ct._session_project_key(resolved_root)
+        if resolved_key != key:
+            session_id = ct._get_active_session_id(resolved_key, agent_id)
+            if session_id:
+                return session_id, resolved_key, resolved_root
+    return None, key, None
+
+
 def _restart_busy_is_stale_or_hung(busy: dict) -> bool:
     """True when leftover work is stale accounting or hung in-process work.
 
@@ -15332,25 +15359,14 @@ accepted_fields=sorted(accepted_fields),
         # paths map to the registered project root. Falls back to raw key if resolution
         # yields a different key with no active session (handles legacy sessions opened
         # before R1).
-        _project_key = ct._session_project_key(_project_for_session)
         _session_agent_id = _task_agent_id or None
-        _session_id = await asyncio.to_thread(ct._get_active_session_id, _project_key, _session_agent_id)
-        if not _session_id:
-            try:
-                _resolution = await asyncio.to_thread(ct._resolve_project_path_payload, _project_for_session, mode="folder")
-                _resolved_root = _resolution.get("project_path") if isinstance(_resolution, dict) else None
-            except Exception:
-                _resolved_root = None
-            if _resolved_root and _resolved_root != _project_for_session:
-                _resolved_key = ct._session_project_key(_resolved_root)
-                if _resolved_key != _project_key:
-                    _session_id = await asyncio.to_thread(ct._get_active_session_id, _resolved_key, _session_agent_id)
-                    if _session_id:
-                        # Best-effort: rewrite body so downstream tool uses resolved path.
-                        # CAN-048: rebase relative file_path/path to the resolved root first.
-                        _rebase_relative_paths(body, body.get("project_path"), _resolved_root)
-                        body["project_path"] = _resolved_root
-                        _project_key = _resolved_key
+        _session_id, _project_key, _resolved_root = await asyncio.to_thread(
+            _lookup_caller_session, _project_for_session, _session_agent_id)
+        if _resolved_root:
+            # Best-effort: rewrite body so downstream tool uses resolved path.
+            # CAN-048: rebase relative file_path/path to the resolved root first.
+            _rebase_relative_paths(body, body.get("project_path"), _resolved_root)
+            body["project_path"] = _resolved_root
         # PC1-SESSION (2026-08-11): rename_session is a session-lifecycle tool
         # whose contract ("Closed sessions cannot be renamed") requires an
         # EXISTING active session. Letting AUTO_WRITE auto-open a brand-new
@@ -15456,6 +15472,24 @@ accepted_fields=sorted(accepted_fields),
                 ),
             )
         _admitted_session_id = str(_session_id)
+    elif (_xroot_gate_allowed and tool_name in _MUTATING_TOOLS and tool_name not in _NO_SESSION_REQUIRED
+          and not _is_readonly_rpc and not _ephemeral_del):
+        # #17 (live 2026-09-25): the xroot policy admits an absolute path outside [A]'s tree
+        # without REQUIRING a session. That is admission, not attribution: skipping the
+        # lookup as well left every such write -- ToolQ, %TEMP%, any project spelled
+        # absolute -- in the ledger with session_id "". Name the caller's own session;
+        # never require, open or rebase anything here.
+        _xr_project = (body.get("project_path")
+                       or await asyncio.to_thread(ct.find_project_root, _body_path_hint(body)) or "")
+        if _xr_project:
+            try:
+                _xr_session_id, _, _ = await asyncio.to_thread(
+                    _lookup_caller_session, _xr_project, _task_agent_id or None)
+            except Exception as _xr_exc:
+                # The write is already admitted; a failed attribution must not fail it.
+                logger.warning(f"XROOT_SESSION_LOOKUP_FAILED tool={tool_name}: {_xr_exc!r}")
+                _xr_session_id = None
+            _admitted_session_id = str(_xr_session_id or "")
 
     logger.info(f"Tool call: {tool_name}({list(body.keys())})")
     _t0 = time.time()

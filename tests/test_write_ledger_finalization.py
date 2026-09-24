@@ -286,6 +286,59 @@ class WriteLedgerFinalizationTests(unittest.IsolatedAsyncioTestCase):
         result = orchestrator_server._WRITE_LEDGER[self._operation_id()]["result"]
         self.assertNotIn("progress", result)
 
+    async def test_an_xroot_admitted_write_still_names_the_callers_session(self):
+        """#17, measured live 2026-09-25: write_status said session_id "" for a CA that
+        HAD opened its session.
+
+        An absolute path outside [A]'s own tree is admitted by the xroot policy with no
+        session required, and the dispatcher skipped the session LOOKUP along with the
+        requirement -- so every write spelled absolute into ToolQ, %TEMP% or any other
+        project reached the ledger anonymous. Admission stays as it is; what the ledger
+        names is the caller's OWN open session, and a caller that has none gets "":
+        the lookup never opens a session and never borrows another agent's.
+        """
+        orchestrator_server._NO_SESSION_REQUIRED.discard(TOOL_NAME)
+        project = Path(self.temp_dir.name) / "repo"
+        project.mkdir()
+        # The path the xroot gate must see as outside [A]: otherwise this pins nothing.
+        self.assertTrue(orchestrator_server.is_outside_project_root(
+            project / "mine.py", orchestrator_server._HERE))
+        key = code_tools._session_project_key(str(project))
+        mine = code_tools._auto_open_session(str(project), {}, agent_id="ledger-agent")
+        other = code_tools._auto_open_session(str(project), {}, agent_id="other-agent")
+        self.assertNotEqual(mine, other)
+
+        async def xroot_write(project_path: str = "", file_path: str = "") -> str:
+            return json.dumps({"ok": True, "write_performed": True})
+
+        code_tools.TOOL_MAP[TOOL_NAME] = xroot_write
+        real_schema = orchestrator_server._schema_for_tool
+
+        def schema_for(name):
+            if name == TOOL_NAME:
+                return {"name": TOOL_NAME, "parameters": {"type": "object", "properties": {
+                    "project_path": {"type": "string"}, "file_path": {"type": "string"}}}}
+            return real_schema(name)
+
+        async def ledger_session_of(agent: str, name: str) -> str:
+            # One target per caller: the ledger replays an identical payload.
+            body = {"project_path": str(project), "file_path": str(project / name)}
+            request = make_mocked_request(
+                "POST", f"/api/call/{TOOL_NAME}", headers={"X-Agent-Id": agent},
+                payload=_body_reader(body), match_info={"tool_name": TOOL_NAME})
+            with unittest.mock.patch.object(orchestrator_server, "_schema_for_tool", schema_for):
+                response = await orchestrator_server._dispatch_tool_call_request(request)
+            self.assertEqual(response.status, 200, response.text)
+            operation_id = self._operation_id(body)
+            live = orchestrator_server._WRITE_LEDGER[operation_id]["session_id"]
+            durable = orchestrator_server._write_ledger_db_get(operation_id=operation_id)
+            self.assertEqual(durable["session_id"], live)
+            return live
+
+        self.assertEqual(await ledger_session_of("ledger-agent", "mine.py"), mine)
+        self.assertEqual(await ledger_session_of("stranger-agent", "stranger.py"), "")
+        self.assertIsNone(code_tools._get_active_session_id(key, "stranger-agent"))
+
 
 if __name__ == "__main__":
     unittest.main()
