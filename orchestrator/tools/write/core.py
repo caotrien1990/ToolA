@@ -11,9 +11,10 @@ import threading
 import time
 
 from orchestrator.skip_rules import write_backup_path
+from orchestrator.progress_watchdog import current_watchdog
 _logger = logging.getLogger(__name__)
 
-_VALIDATE_EXTS = {".html", ".js", ".ts", ".mjs", ".cjs", ".py", ".jsx", ".tsx", ".json", ".css", ".vue"}
+_VALIDATE_EXTS = {".html", ".js", ".ts", ".mjs", ".cjs", ".py", ".jsx", ".tsx", ".json", ".css", ".vue", ".toml"}
 
 
 # ── Hybrid per-path gate primitive (Shard A) ──
@@ -206,6 +207,20 @@ def _gate_for_paths(paths: list[Path]) -> _GateHandle:
     return _GateHandle(_gates_for_paths(paths))
 
 
+def _mark_phase(phase: str) -> None:
+    """Charge the wall time from here on to `phase` in the bound operation's ledger progress.
+
+    Timing only: it never raises and is never a cancellation point, because a write
+    marks phases between committing a file and validating it.
+    """
+    try:
+        watchdog = current_watchdog()
+        if watchdog is not None:
+            watchdog.mark(phase)
+    except Exception:
+        pass
+
+
 @contextmanager
 def _path_lock(paths: list[Path]):
     """Synchronous gate for thread-only callers (boot sweep, restore).
@@ -307,7 +322,8 @@ async def _pre_write_syntax_check(fp: Path, content: str) -> dict:
 
     if suffix == ".py":
         try:
-            ast.parse(content)
+            # A BOM is file framing (#8); ast.parse refuses U+FEFF as a token.
+            ast.parse(content[1:] if content.startswith("\ufeff") else content)
         except SyntaxError as exc:
             lineno = exc.lineno or 0
             detail = f"line {lineno}: {exc.msg}"
@@ -350,6 +366,23 @@ async def _pre_write_syntax_check(fp: Path, content: str) -> dict:
             "error_name":"JSON_INVALID_PRE_WRITE",
             "detail":str(exc),
             "ca_next_action":"fix JSON syntax then retry",
+            }
+        return {"ok":True}
+
+    if suffix == ".toml":
+        # #5: a TOML write reached disk unchecked; this mirrors the json gate.
+        try:
+            import tomllib
+        except ImportError:
+            return {"ok":True}
+        try:
+            tomllib.loads(content)
+        except tomllib.TOMLDecodeError as exc:
+            return {
+            "ok":False ,
+            "error_name":"TOML_INVALID_PRE_WRITE",
+            "detail":str(exc),
+            "ca_next_action":"fix TOML syntax then retry",
             }
         return {"ok":True}
 
@@ -432,26 +465,65 @@ async def _post_write_symbol_check(fp: Path, backup_path: Path, project_path: st
 
         Only NEW top-level modules (diff vs the old source) are checked — a
         pre-existing import must never block an unrelated patch. Resolution
-        order: stdlib -> file dir / project root / src / bin -> PathFinder over
-        those dirs -> [A] environment (legacy, last). Never executes project code.
+        order: stdlib -> file dir / project root / src / bin / the project's
+        own venv site-packages -> PathFinder over those dirs -> [A] environment
+        (legacy, last). Never executes project code.
+
+        #13, measured 2026-09-24: an import the code already guards -- inside a
+        try that catches ImportError (or broader), or under TYPE_CHECKING --
+        was refused as missing, though a missing module is exactly what that
+        code handles. And a project venv's packages were invisible, so any
+        third-party import resolved only if [A]'s own interpreter had it.
         """
-        def _mods(tree) -> set:
+        _catches = {"ImportError", "ModuleNotFoundError", "Exception", "BaseException"}
+
+        def _handler_catches(h) -> bool:
+            if h.type is None:
+                return True
+            names = h.type.elts if isinstance(h.type, ast.Tuple) else [h.type]
+            return any((n.id if isinstance(n, ast.Name) else getattr(n, "attr", "")) in _catches
+                       for n in names)
+
+        def _guarded_ids(tree) -> set:
             out = set()
-            if tree is None:
-                return out
             for node in ast.walk(tree):
-                if isinstance(node, ast.Import):
-                    for alias in node.names:
-                        m = (alias.name or "").split(".")[0]
-                        if m:
-                            out.add(m)
-                elif isinstance(node, ast.ImportFrom) and node.level == 0:
-                    m = (node.module or "").split(".")[0]
-                    if m:
-                        out.add(m)
+                body = None
+                if isinstance(node, (ast.Try, getattr(ast, "TryStar", ast.Try))):
+                    if any(_handler_catches(h) for h in node.handlers):
+                        body = node.body
+                elif isinstance(node, ast.If):
+                    t = node.test
+                    if (isinstance(t, ast.Name) and t.id == "TYPE_CHECKING") or (
+                            isinstance(t, ast.Attribute) and t.attr == "TYPE_CHECKING"):
+                        body = node.body
+                for stmt in body or ():
+                    for sub in ast.walk(stmt):
+                        if isinstance(sub, (ast.Import, ast.ImportFrom)):
+                            out.add(id(sub))
             return out
 
-        new_modules = sorted(_mods(new_tree) - _mods(old_tree))
+        def _mods(tree) -> dict:
+            """Unguarded top-level module -> first line importing it."""
+            out = {}
+            if tree is None:
+                return out
+            guarded = _guarded_ids(tree)
+            for node in ast.walk(tree):
+                if id(node) in guarded:
+                    continue
+                if isinstance(node, ast.Import):
+                    names = [(alias.name or "").split(".")[0] for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.level == 0:
+                    names = [(node.module or "").split(".")[0]]
+                else:
+                    continue
+                for m in names:
+                    if m:
+                        out[m] = min(out.get(m, node.lineno), node.lineno)
+            return out
+
+        new_mods = _mods(new_tree)
+        new_modules = sorted(set(new_mods) - set(_mods(old_tree)))
         if not new_modules:
             return {"ok": True}
         import sys as _sys
@@ -460,7 +532,15 @@ async def _post_write_symbol_check(fp: Path, backup_path: Path, project_path: st
             root = ct.Path(project_path).resolve() if project_path else fp.parent
         except Exception:
             root = fp.parent
-        search_dirs = [fp.parent, root, root / "src", root / "bin"]
+        venv_sites = []
+        try:
+            for cfg in root.glob("*/pyvenv.cfg"):
+                base = cfg.parent
+                venv_sites += [p for p in [base / "Lib" / "site-packages",
+                                           *base.glob("lib/python*/site-packages")] if p.is_dir()]
+        except Exception:
+            pass
+        search_dirs = [fp.parent, root, root / "src", root / "bin", *venv_sites]
         searched = [str(d) for d in search_dirs]
         stdlib = set(getattr(_sys, "stdlib_module_names", ()) or ())
         for module in new_modules:
@@ -478,13 +558,15 @@ async def _post_write_symbol_check(fp: Path, backup_path: Path, project_path: st
                     continue
             except Exception:
                 pass
-            return {"ok": False, "module": module, "searched_paths": searched,
-                    "new_modules_checked": new_modules}
+            return {"ok": False, "module": module, "line": new_mods[module],
+                    "searched_paths": searched, "new_modules_checked": new_modules}
         return {"ok": True}
 
     def _run() -> dict:
-        new_text = fp.read_text(encoding="utf-8", errors="replace")
-        old_text = backup_path.read_text(encoding="utf-8", errors="replace")
+        # utf-8-sig (#8): a BOM'd .py made ast.parse raise, and the SyntaxError
+        # branch below answered ok -- both checks silently skipped the file.
+        new_text = fp.read_text(encoding="utf-8-sig", errors="replace")
+        old_text = backup_path.read_text(encoding="utf-8-sig", errors="replace")
         try:
             new_tree = ast.parse(new_text)
             old_tree = ast.parse(old_text)
@@ -495,7 +577,7 @@ async def _post_write_symbol_check(fp: Path, backup_path: Path, project_path: st
             return {
             "ok":False,
             "error_name":"IMPORT_ERROR_PRE_WRITE",
-            "error":f"Import not found: {import_check.get('module')} (new import; resolved against project paths, not only [A] env)",
+            "error":f"line {import_check.get('line')}: Import not found: {import_check.get('module')} (new import; resolved against project paths, not only [A] env)",
             "searched_paths": import_check.get("searched_paths"),
             "new_modules_checked": import_check.get("new_modules_checked"),
             }
@@ -504,7 +586,7 @@ async def _post_write_symbol_check(fp: Path, backup_path: Path, project_path: st
             return {
             "ok":False,
             "error_name":"SYMBOL_DRIFT_AUTO_REVERT",
-            "error":f"Top-level symbol(s) removed: {removed}",
+            "error":f"Top-level symbol(s) removed: {removed} - a removal this call did not declare intended (skip_symbol_check)",
             "symbols_removed":removed,
             }
         return {"ok":True}
@@ -545,26 +627,55 @@ backup_paths: dict[str, str]) -> dict:
     }
 
 
+def _token_text_hash(fp: Path) -> str:
+    """The read-token digest: sha256 of the text read_file_range hands a CA (utf-8,
+    errors="replace", universal newlines, BOM stripped) -- NOT the raw bytes, which
+    differ on a BOM or CRLF file. The token producer and the guard share this recipe."""
+    import code_tools as ct
+    text = fp.read_text(encoding="utf-8", errors="replace")
+    if text.startswith("\ufeff"):
+        text = text[1:]
+    return ct.hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
+
+
+def _seal_read_token(fp: Path, project_path: str = "") -> bool:
+    """[A] vouches for the bytes its own write just left, so the CA's next write_fix is
+    not refused FILE_CHANGED_OUTSIDE_ORCHESTRATOR for a change [A] made.
+
+    The ONE token producer for write_fix, write_new_file, the auto-reverts, the
+    write_transaction rollback and the expected_hash pin: keyed (project_path, else
+    find_project_root) and hashed (_token_text_hash) exactly as _write_fix_guard_result
+    reads it back. Measured 2026-09-24: the inline copies it replaces used two digests
+    and two keys, and write_new_file had none, so [A] stranded its own write on a BOM
+    or CRLF file, under a nested marker, and after every overwrite. Call it under the
+    path gate right after the write, or it vouches for bytes someone else wrote."""
+    import code_tools as ct
+    root = project_path or ct.find_project_root(str(fp))
+    if not root:
+        return False
+    try:
+        resolved = ct.Path(root).resolve()
+        rel = str(fp.relative_to(resolved)).replace("\\", "/")
+        stat = fp.stat()
+        return bool(ct._read_token_upsert(str(resolved), rel, _token_text_hash(fp),
+                                          stat.st_mtime, stat.st_size))
+    except Exception:
+        return False
+
+
 def _restore_backup_and_reseed(fp: Path, backup_path: Path, project_path: str = "", already_gated: bool = False) -> bool:
+    """Put the .bak's bytes back and leave the CA a file it can write again.
+
+    Returns whether the INDEX sync landed; callers report it as cache_synced.
+    Measured 2026-09-24: this restored through read_text()+_atomic_write_text, which
+    folded CRLF to LF (and would turn undecodable bytes into U+FFFD) under
+    auto_reverted:true, and it returned True whatever the sync did."""
     import code_tools as ct
     def _do() -> bool:
-        original = backup_path.read_text(encoding="utf-8", errors="replace")
-        ct._atomic_write_text(fp, original, encoding="utf-8")
-        ct._update_cache_after_write(str(fp), project_path or None)
-        # BUG-01: reseed read token so the restored content is fresh --
-        # without this, the next write_fix sees FILE_CHANGED because
-        # the token still carries the pre-revert hash.
-        _synced = True
-        try:
-            _root = ct.find_project_root(str(fp))
-            if _root:
-                _rel = str(fp.relative_to(ct.Path(_root).resolve())).replace("\\\\", "/")
-                _stat = fp.stat()
-                _h = ct._sha256_file(fp)
-                ct._read_token_upsert(str(ct.Path(_root).resolve()), _rel, _h, _stat.st_mtime, _stat.st_size)
-        except Exception:
-            pass
-        return _synced
+        ct._atomic_write_bytes(fp, backup_path.read_bytes())
+        synced = bool(ct._update_cache_after_write(str(fp), project_path or None))
+        _seal_read_token(fp, project_path)
+        return synced
     if already_gated:
         return _do()
     with _path_lock([fp]):
@@ -643,11 +754,7 @@ def _write_fix_guard_result(fp: Path, project_path: str, _file_path: str, expect
             _current_hash = ct._sha256_file(fp)
 
         if expected_hash and _current_hash == expected_hash:
-            try:
-                ct._read_token_upsert(str(ct.Path(_root).resolve()), _rel,
-                                      _current_hash, _stat.st_mtime, _stat.st_size)
-            except Exception:
-                pass
+            _seal_read_token(fp, project_path)
             return True, {}, False
 
         # BUG-02: explicit expected_hash was set but did not match current
@@ -659,17 +766,10 @@ def _write_fix_guard_result(fp: Path, project_path: str, _file_path: str, expect
             # read_file_range.content_hash is sha256 of the normalized text (BOM
             # stripped, decoded with errors="replace") while expected_hash is the raw
             # bytes; both are 64 hex characters, so without this probe [A] could only
-            # warn that the caller might have confused them. Same recipe as the
-            # read-token comparison below, deliberately duplicated rather than
-            # hoisted: this branch returns before that code can run.
-            _probe_text_hash = ""
+            # warn that the caller might have confused them. _token_text_hash is the
+            # same recipe the read-token comparison below uses.
             try:
-                _probe_text = fp.read_text(encoding="utf-8", errors="replace")
-                if _probe_text.startswith("﻿"):
-                    _probe_text = _probe_text[1:]
-                _probe_text_hash = ct.hashlib.sha256(
-                    _probe_text.encode("utf-8", errors="replace"),
-                ).hexdigest()
+                _probe_text_hash = _token_text_hash(fp)
             except Exception:
                 _probe_text_hash = ""
             return True, _expected_hash_error(
@@ -687,12 +787,7 @@ def _write_fix_guard_result(fp: Path, project_path: str, _file_path: str, expect
             _read_size = _entry.get("read_size_bytes")
         if _read_hash or _read_mtime:
             if _read_hash:
-                _current_text = fp.read_text(encoding="utf-8", errors="replace")
-                if _current_text.startswith("\ufeff"):
-                    _current_text = _current_text[1:]
-                _current_read_hash = ct.hashlib.sha256(
-                    _current_text.encode("utf-8", errors="replace"),
-                ).hexdigest()
+                _current_read_hash = _token_text_hash(fp)
             _hash_changed = bool(_read_hash and _current_read_hash != _read_hash)
             _mtime_changed = bool(_read_mtime and abs(_stat.st_mtime - _read_mtime) > 0.5)
             _size_changed = _read_size is not None and int(_read_size) != _stat.st_size
@@ -1431,6 +1526,7 @@ skip_symbol_check :bool =False )->str :
     chain sequential write_fix without re-reading. Pass expected_hash from previous
     response to skip FILE_CHANGED guardrail (CA confirms its own prior write).
     """
+    _mark_phase("prepare")
     session_id = ""
     if project_path:
         try:
@@ -1473,10 +1569,16 @@ skip_symbol_check :bool =False )->str :
         # .bat/.ps1 files on edit. Detect the file's dominant ending and keep it.
         original_bytes = fp.read_bytes()
         original = original_bytes.decode('utf-8', errors='replace')
-        _crlf =original .count ('\r\n')
-        _lone_lf =original .count ('\n')-_crlf
+        # #8, measured 2026-09-24: the BOM rode inside line 1's text, so
+        # replacing line 1 dropped it and any other edit handed the pre-write
+        # parser a U+FEFF it refused. A BOM is file framing, not line content:
+        # split it off, splice the text, put it back. `original` stays raw.
+        _bom =original .startswith ('\ufeff')
+        _text =original [1 :]if _bom else original
+        _crlf =_text .count ('\r\n')
+        _lone_lf =_text .count ('\n')-_crlf
         _eol ='\r\n' if _crlf and _crlf >=_lone_lf else '\n'
-        lines =original .splitlines (keepends =True )
+        lines =_text .splitlines (keepends =True )
         total =len (lines )
         if start_line <1 or start_line >total :
             return {
@@ -1494,6 +1596,10 @@ skip_symbol_check :bool =False )->str :
         # Normalize the caller's new_content to the file's ending so the splice
         # never leaves a mixed CRLF/LF file.
         _nc =new_content .replace ('\r\n','\n')
+        if start_line ==1 and _nc .startswith ('\ufeff'):
+            # Line 1 re-sent WITH its BOM: the BOM is framing, keep it as such.
+            _nc =_nc [1 :]
+            _bom =True
         if _eol !='\n':
             _nc =_nc .replace ('\n',_eol )
         new_lines =_nc .splitlines (keepends =True )
@@ -1508,7 +1614,7 @@ skip_symbol_check :bool =False )->str :
                         "ca_next_action": "use_start_line_equal_end_line_for_banner"}
         if new_lines and not new_lines [-1 ].endswith (('\n','\r')):
             new_lines [-1 ]+=_eol
-        proposed =''.join (lines [:start_line -1 ]+new_lines +lines [end :])
+        proposed =('\ufeff' if _bom else '')+''.join (lines [:start_line -1 ]+new_lines +lines [end :])
         span =(end -start_line )+len (new_lines )
         return {
         "original":original ,
@@ -1520,6 +1626,7 @@ skip_symbol_check :bool =False )->str :
         "eol":"CRLF" if _eol =='\r\n' else "LF",
         }
 
+    _mark_phase("build")
     built =await ct.asyncio .to_thread (_build )
     if "error"in built :
         err ={"ok":False ,"error":built ["error"]}
@@ -1537,6 +1644,7 @@ skip_symbol_check :bool =False )->str :
         # The real write auto-seeds a minimal INDEX (cache-only, no O(repo)
         # generate_project_map). Dry-run stays side-effect free and reports
         # the same apply-will-succeed contract via index_auto_seed_pending.
+        _mark_phase("dry_run")
         _idx_err =_index_missing_error (fp ,project_path )
         _index_auto_seed_pending =bool (_idx_err )
         val_result =None 
@@ -1610,6 +1718,7 @@ skip_symbol_check :bool =False )->str :
            if _index_auto_seed_pending else "")),
         })
 
+    _mark_phase("index_check")
     _idx_err =_index_missing_error (fp ,project_path )
     _index_auto_seeded =False 
     if _idx_err :
@@ -1625,6 +1734,7 @@ skip_symbol_check :bool =False )->str :
         if not _index_auto_seeded and not (ct._project_cache_dir (_seed_root )/"INDEX.json").exists ():
             return ct.json .dumps (_idx_err ,ensure_ascii =False )
 
+    _mark_phase("pre_write_check")
     if skip_pre_write_check :
         _audit_skip_pre_write_check (str (fp ),"write_fix")
     else :
@@ -1699,29 +1809,17 @@ skip_symbol_check :bool =False )->str :
         }
 
     from orchestrator.fileops.xroot import log_intent, log_result
+    _mark_phase("path_gate_wait")
     async with _gate_for_paths([fp]):
+        _mark_phase("write")
         if _xroot_managed:
             log_intent(fp, "write_fix", session_id)
         try:
             result = await ct.asyncio.to_thread(_write)
-            # Auto-refresh read token after successful write to prevent
-            # FILE_CHANGED_OUTSIDE_ORCHESTRATOR on next write_fix without re-read.
+            # Seal the read token for the bytes this write left, so the next write_fix
+            # does not answer FILE_CHANGED_OUTSIDE_ORCHESTRATOR without a re-read.
             if result.get("ok"):
-                try:
-                    _refresh_root = project_path or ct.find_project_root(str(fp))
-                    if _refresh_root:
-                        _stat_after = fp.stat()
-                        _after_text = fp.read_text(encoding="utf-8", errors="replace")
-                        if _after_text.startswith("﻿"):
-                            _after_text = _after_text[1:]
-                        _new_hash = ct.hashlib.sha256(
-                            _after_text.encode("utf-8", errors="replace"),
-                        ).hexdigest()
-                        _resolved_root = str(ct.Path(_refresh_root).resolve())
-                        _rel_path = str(fp.relative_to(ct.Path(_refresh_root).resolve())).replace("\\", "/")
-                        ct._read_token_upsert(_resolved_root, _rel_path, _new_hash, _stat_after.st_mtime, _stat_after.st_size)
-                except Exception:
-                    pass
+                await ct.asyncio.to_thread(_seal_read_token, fp, project_path)
             if _xroot_managed:
                 log_result(fp, "write_fix", session_id, ok=bool(result.get("ok")))
         except Exception:
@@ -1735,12 +1833,14 @@ skip_symbol_check :bool =False )->str :
         # validate too, so the audited "write this deliberately-bad file" kill-switch
         # behaves identically in write_fix and write_new_file (was asymmetric).
         if result .get ("ok")and fp .suffix .lower ()in _VALIDATE_EXTS and not skip_pre_write_check :
+            _mark_phase("validate")
             val =ct.json .loads (await ct.validate_file (str (fp )))
             if fp .suffix .lower ()==".html":
                 for key in ("truncated","unclosed_tags","tag_errors"):
                     if key in val :
                         result [key]=val [key]
             if not val .get ("ok"):
+                _mark_phase("auto_revert")
                 bak =write_backup_path (fp )
                 reverted_synced =False
                 if bak .exists ():
@@ -1761,11 +1861,11 @@ skip_symbol_check :bool =False )->str :
                     "read_file_range(force_reseed=true) truoc khi ghi tiep. "
                     "KHONG goi refresh_project_map tren mot root lon nhu [A:P]."
                     )
-                result ["ca_next_action"]="fix_only_failed_range_via_write_draft_patch"
+                result ["ca_next_action"]="write_draft_patch"
                 result ["hint"]=(
                 "Backend ghi xong nhưng validation báo file bị lỗi → đã tự revert về .bak. "
-                "KHÔNG phải lỗi token/auth. Draft đã mở sẵn: sửa ĐÚNG range trong failed_parts "
-                "bằng write_draft_patch(draft_id, start_line, end_line, new_content) — sạch là tự ship."
+                "KHÔNG phải lỗi token/auth. Draft giữ nguyên bản đề xuất; failed_parts chỉ ra "
+                "range cần sửa — draft sạch thì tự ship."
                 )
                 try :
                     from orchestrator .tools .write import draft as _draft
@@ -1775,14 +1875,21 @@ skip_symbol_check :bool =False )->str :
                 except Exception as _draft_exc :
                     result ["draft_error"]=str (_draft_exc )[:200 ]
                 return ct.json .dumps (result ,ensure_ascii =False )
+            if fp .suffix .lower ()==".py" and val .get ("lint_warning"):
+                # #7: a write answers for what IT introduced, not for the file's
+                # lint history -- validate_file still reports the full state.
+                _mark_phase("lint_introduced")
+                val =await ct.asyncio .to_thread (ct._lint_only_introduced ,val ,fp ,built ["original"])
             result ["validation"]=val
             result ["syntax_ok"]=bool (val .get ("ok"))
             if not skip_symbol_check:
+                _mark_phase("symbol_check")
                 bak =write_backup_path (fp )
                 sym =await _post_write_symbol_check (fp ,bak ,project_path )
                 if sym .get ("warn"):
                     result ["symbol_check_warning"]=sym .get ("warn")
                 if not sym .get ("ok"):
+                    _mark_phase("auto_revert")
                     reverted_synced =False
                     if bak .exists ():
                         reverted_synced = await ct.asyncio.to_thread(_restore_backup_and_reseed, fp, bak, project_path, True)
@@ -1799,12 +1906,21 @@ skip_symbol_check :bool =False )->str :
                     )
                     if sym .get ("symbols_removed"):
                         result ["symbols_removed"]=sym .get ("symbols_removed")
-                    result ["ca_next_action"]="fix_only_failed_range_via_write_draft_patch"
+                    if result ["error_name"]=="SYMBOL_DRIFT_AUTO_REVERT":
+                        # No draft for a removed symbol (#13): the removed text is
+                        # not in the proposal for a draft to locate, and a draft
+                        # ships under THIS call's skip_symbol_check, so it could
+                        # only ship by putting the symbol back. Both real exits --
+                        # restore the symbol, or declare the removal intended --
+                        # are a fresh write_fix.
+                        result ["ca_next_action"]="write_fix"
+                        return ct.json .dumps (result ,ensure_ascii =False )
+                    result ["ca_next_action"]="write_draft_patch"
                     try :
                         from orchestrator .tools .write import draft as _draft
                         result .update (await _draft .draft_fields_for_failure (
                         "write_fix",fp ,project_path ,file_path ,built ["proposed"],
-                        sym .get ("error","")or "symbol drift",{"skip_symbol_check":skip_symbol_check }))
+                        sym .get ("error","")or "import check failed",{"skip_symbol_check":skip_symbol_check }))
                     except Exception as _draft_exc :
                         result ["draft_error"]=str (_draft_exc )[:200 ]
                     return ct.json .dumps (result ,ensure_ascii =False )
@@ -1816,6 +1932,7 @@ skip_symbol_check :bool =False )->str :
 
             # Fix 3: escalate cache_sync fail
         if result .get ("ok"):
+            _mark_phase("cache_sync")
             if _index_auto_seeded :
                 result ["index_auto_seeded"]=True 
             synced = await ct.asyncio.to_thread(ct._update_cache_after_write, str(fp), project_path)
@@ -1838,6 +1955,7 @@ skip_symbol_check :bool =False )->str :
                 # R43 P0 #3-A: surface new_hash + new_mtime for sequential write chains.
                 # CA can pass new_hash as expected_hash in next write_fix on the same file to
                 # bypass FILE_CHANGED guardrail without re-reading.
+            _mark_phase("finalize")
             try :
                 result ["new_hash"]=ct._sha256_file (fp )
                 result ["new_mtime"]=fp .stat ().st_mtime 
@@ -1863,8 +1981,14 @@ skip_symbol_check :bool =False )->str :
         if result.get("ok") and fp.suffix.lower() == ".py":
             try:
                 import code_tools as _ct
-                ruff_raw = await _ct.validate_file(str(fp))
-                ruff_val = _ct.json.loads(ruff_raw) if isinstance(ruff_raw, str) else ruff_raw
+                # Reuse the post-write validate above (already reduced to what
+                # this write introduced) -- a second ruff run re-reported every
+                # pre-existing finding. skip_pre_write_check leaves no
+                # `validation` key; fall back to a fresh validate then.
+                ruff_val = result.get("validation")
+                if not isinstance(ruff_val, dict):
+                    ruff_raw = await _ct.validate_file(str(fp))
+                    ruff_val = _ct.json.loads(ruff_raw) if isinstance(ruff_raw, str) else ruff_raw
                 result["ruff_preview"] = _ruff_preview_from_validation(ruff_val, str(fp))
             except Exception as _ruff_exc:
                 # Was a bare `pass`: still non-fatal, but a dead check now says
@@ -1947,6 +2071,7 @@ overwrite :bool =False ,new_content :str |None =None ,
 escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
     import code_tools as ct
     from orchestrator.fileops.xroot import is_outside_project_root, log_intent, log_result, xroot_check
+    _mark_phase("prepare")
     if new_content is None :
         new_content =content 
     new_content ,encoding_check ,decode_error =ct._decode_text_payload (new_content ,content_encoding )
@@ -2068,6 +2193,7 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
         if not _idx_path .exists ():
             _cache_warning ="INDEX chưa tồn tại — gọi generate_project_map sau khi tạo xong các file để index project."
 
+    _mark_phase("pre_write_check")
     if skip_pre_write_check :
         _audit_skip_pre_write_check (str (fp ),"write_new_file")
     else :
@@ -2115,14 +2241,17 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
         "diff_preview":diff_preview ,
         }
 
+    _mark_phase("path_gate_wait")
     # Was `with _path_lock([fp])`: a synchronous threading lock held across an await.
     # Use the async gate so same-loop writers actually serialise (and so this path
     # cannot block the loop the way the old sync acquire did).
     async with _gate_for_paths ([fp]):
+        _mark_phase("write")
         result =await ct.asyncio .to_thread (_write )
         if result .get ("ok"):
             write_generation =_next_write_generation (fp )
             written_signature =_disk_signature (fp ,written_hash )
+            await ct.asyncio.to_thread(_seal_read_token, fp, project_path)
     synced =False
     if isinstance (result ,dict )and result .get ("ok"):
         # A-AUTO-UPGRADE (2026-07-12): write_new_file used to skip ALL
@@ -2133,12 +2262,14 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
         # deliberately-bad file, I take responsibility" — honor it here too so
         # the flag keeps its documented escape-hatch semantics.
         if fp .suffix .lower ()in _VALIDATE_EXTS and not skip_pre_write_check :
+            _mark_phase("validate")
             val =ct.json .loads (await ct.validate_file (str (fp )))
             if fp .suffix .lower ()==".html":
                 for key in ("truncated","unclosed_tags","tag_errors"):
                     if key in val :
                         result [key]=val [key]
             if not val .get ("ok"):
+                _mark_phase("auto_revert")
                 superseded =False
                 async with _gate_for_paths ([fp]):
                     current_hash =ct._sha256_file (fp )if fp .exists ()else ""
@@ -2152,6 +2283,7 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
                     elif target_exists and original_bytes is not None :
                         await ct.asyncio .to_thread (ct._atomic_write_bytes ,fp ,original_bytes )
                         synced = await ct.asyncio.to_thread(ct._update_cache_after_write, str(fp), project_path)
+                        await ct.asyncio.to_thread(_seal_read_token, fp, project_path)
                     else :
                         try :
                             fp .unlink ()
@@ -2171,7 +2303,7 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
                     result ["error_name"]="VALIDATION_FAILED_AUTO_REVERT"
                     result ["error"]=f"File failed validation and was restored: {val.get('error', 'validation failed')}"
                     result ["auto_reverted"]=True
-                    result ["ca_next_action"]="fix_only_failed_range_via_write_draft_patch"
+                    result ["ca_next_action"]="write_draft_patch"
                 try :
                     from orchestrator .tools .write import draft as _draft
                     result .update (await _draft .draft_fields_for_failure (
@@ -2185,8 +2317,11 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
         # used to run update_file_cache (and a possible 180s snapshot full-walk)
         # synchronously on the asyncio loop, so /health could not answer and
         # auto-heal killed the process after the file had already been committed.
+        _mark_phase("cache_sync")
         synced =await ct.asyncio .to_thread (ct._update_cache_after_write ,str (fp ),project_path )
         result ["cache_synced"]=synced
+        # Same chain contract as write_fix: the next write_fix pins expected_hash to it.
+        result["new_hash"] = written_hash
         if not synced :
             result["write_performed"] = True
             result["cache_sync_status"] = "pending_or_failed"

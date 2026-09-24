@@ -2286,10 +2286,12 @@ def _write_ledger_async_lock() -> asyncio.Lock:
     return _WRITE_LEDGER_ASYNC_LOCK
 
 
-async def _write_ledger_begin_async(tool_name: str, body: dict, session_id: str) -> str:
+async def _write_ledger_begin_async(tool_name: str, body: dict, session_id: str,
+                                    admitted_session_id: str = "") -> str:
     """Persist begin durably without blocking the aiohttp event loop."""
     async with _write_ledger_async_lock():
-        return await asyncio.to_thread(_write_ledger_begin, tool_name, body, session_id)
+        return await asyncio.to_thread(_write_ledger_begin, tool_name, body, session_id,
+                                       admitted_session_id)
 
 
 async def _write_ledger_finish_async(op_id: str, result: dict, status: str) -> None:
@@ -2448,6 +2450,18 @@ def _write_ledger_db_upsert(rec: dict) -> bool:
                     rec.get("updated_at") or time.time(),
                 ),
             )
+            # #9: the WHERE above freezes a committed row -- its status and result
+            # never regress -- but a replay of it is still a SEND. Only the count may
+            # move, or the committed branch of _write_ledger_begin reads back a stale
+            # attempts and every later replay answers the same number.
+            if rec.get("status") == "committed":
+                attempts = rec.get("attempts") or 1
+                conn.execute(
+                    "UPDATE write_operations SET attempts=?, updated_at=? "
+                    "WHERE operation_id=? AND status='committed' AND attempts < ?",
+                    (attempts, rec.get("updated_at") or time.time(),
+                     rec.get("operation_id"), attempts),
+                )
             conn.commit()
             return True
         finally:
@@ -2609,7 +2623,8 @@ def _write_ledger_commit_state(rec: dict) -> str:
     return {"committed": "committed", "failed": "not_committed"}.get(status, "unknown")
 
 
-def _write_ledger_begin(tool_name: str, body: dict, session_id: str = "") -> str:
+def _write_ledger_begin(tool_name: str, body: dict, session_id: str = "",
+                        admitted_session_id: str = "") -> str:
     """Open a ledger entry before a mutating tool runs. Returns "" for read-only tools."""
     try:
         if tool_name not in _MUTATING_TOOLS:
@@ -2621,9 +2636,14 @@ def _write_ledger_begin(tool_name: str, body: dict, session_id: str = "") -> str
             _write_ledger_db_get(operation_id=op_id),
         )
         if prior.get("status") == "committed":
-            # A deterministic retry cannot make an already-committed operation in-flight.
+            # A deterministic retry cannot make an already-committed operation
+            # in-flight -- but it IS another send. Uncounted, the replay of a
+            # committed write answered operation_replayed=false (#9).
+            prior["attempts"] = int(prior.get("attempts") or 1) + 1
+            prior["updated_at"] = time.time()
             _WRITE_LEDGER[op_id] = prior
             _write_ledger_target_remember(pp, fp, op_id)
+            _write_ledger_db_upsert(prior)
             return op_id
         now = time.time()
         rec = {
@@ -2632,7 +2652,7 @@ def _write_ledger_begin(tool_name: str, body: dict, session_id: str = "") -> str
             "status": "in_flight",
             "project_path": pp,
             "file_path": fp,
-            "session_id": str(session_id or ""),
+            "session_id": str(admitted_session_id or session_id or ""),
             "started_at": now,
             "finished_at": None,
             "duration_ms": None,
@@ -2691,6 +2711,19 @@ def _write_ledger_scalar(value):
     return text[:_WRITE_LEDGER_SCALAR_MAX]
 
 
+def _write_ledger_bound_watchdog(op_id: str):
+    """The watchdog the dispatcher bound for THIS operation, else None.
+
+    The finish runs on a worker thread that inherits the dispatch context, so the
+    context's watchdog is this call's own unless its operation_id says otherwise.
+    """
+    if not op_id:
+        return None
+    from orchestrator.progress_watchdog import current_watchdog
+    watchdog = current_watchdog()
+    return watchdog if watchdog is not None and watchdog.operation_id == op_id else None
+
+
 def _write_ledger_finish(op_id: str, result: dict, status: str) -> None:
     """Close a ledger entry without allowing committed state to regress."""
     try:
@@ -2701,6 +2734,15 @@ def _write_ledger_finish(op_id: str, result: dict, status: str) -> None:
         if rec.get("status") == "committed" and target_status != "committed":
             return
         final_progress = rec.get("progress")
+        # #2: the last heartbeat is published when the last phase BEGINS, so a summary
+        # built from it never charged that phase -- the one a slow call most needs
+        # named. The bound watchdog is the live clock; its snapshot closes the phase.
+        # rec["progress"] follows, because write_status reads it before the result.
+        watchdog = _write_ledger_bound_watchdog(op_id)
+        if watchdog is not None and watchdog.revision:
+            final_progress = watchdog.snapshot(
+                detail=str((final_progress or {}).get("detail") or ""))
+            rec["progress"] = final_progress
         rec["status"] = target_status
         rec["finished_at"] = time.time()
         rec["updated_at"] = rec["finished_at"]
@@ -3885,7 +3927,7 @@ def _ca_next_action(error_name: str, tool_name: str) -> str:
         "FILE_CHANGED_OUTSIDE_ORCHESTRATOR": "read_file_range",
         "FILE_ACCESS_DENIED": "check_file_permissions_or_run_with_access_to_project",
         "OCR_TIMEOUT": "raise_timeout_or_narrow_scope_then_retry",
-    }.get(error_name, "inspect_ca_guidance")
+    }.get(error_name, "read_error")
 
 
 def _error_contract_meta(error_name: str, status: int) -> dict:
@@ -4077,7 +4119,9 @@ def _default_hint(tool_name: str, error_name: str) -> str:
         "FILE_CHANGED_OUTSIDE_ORCHESTRATOR": "R39 recovery: (1) read_file_range(file_path, start, end, force_reseed=true) (2) retry SINGLE write_fix. For multi-hunk same file use write_transaction. Never refresh_project_map on a large root such as [A:P].",
         "FILE_ACCESS_DENIED": "Check file permissions for the workflow state path and retry with project access.",
         "OCR_TIMEOUT": "The ocr binary hit the timeout YOU passed, not a broken install: raise timeout or narrow the scope (exclude, min_changed_lines). Read duration_s and timeout on the payload for the measured budget; retrying the same payload times out again.",
-    }.get(error_name, "Follow ca_guidance.payload_example and retry.")
+        # No entry = no known remediation. The old fallback "...and retry." invited a
+        # blind retry of failures that are deterministic (a rejecting git hook).
+    }.get(error_name, "")
 
 
 def _required_field_names(tool_name: str) -> list[str]:
@@ -4275,6 +4319,13 @@ _PAYLOAD_EXAMPLE_OVERRIDES: dict[str, dict] = {
         # registry enum is text|regex|symbol|callers|...; "text" is the literal/plain-text
         # mode. Use "regex" for pattern matching. Do NOT use "literal" — not in enum.
         "mode": "text",
+    },
+    # expected_staged_hash is enforced by the git layer, not the schema, so the
+    # derived example (schema-required only) taught a call that always fails.
+    "git_commit": {
+        "project_path": "D:/path/to/project",
+        "message": "<commit message>",
+        "expected_staged_hash": "<git_status.staged_hash>",
     },
 }
 
@@ -4736,6 +4787,7 @@ _R101_ENVELOPE_WARNS = {  # key -> still_warns(value)
     "likely_already_applied": lambda v: v is True,
     "replay_hint": bool,
     "contention_note": bool,
+    "cache_note": bool,  # P5: a projected cache hit must still say it is not fresh
 }
 
 
@@ -4769,7 +4821,9 @@ def _r101_dispatch_result(result, envelope=None):
 # sites that never carry identity. Same reason as _R101_FIELDS above: per-dispatch state
 # without rewriting every call site. Default "" resolves to bootstrap ctx "default", so a
 # route outside the dispatcher re-arms nothing instead of re-arming the wrong CA.
-_A37_AGENT_CTX = contextvars.ContextVar("_a37_agent_id", default="")
+# #17/#19: it IS the session store's caller var, not a second one, so a session lookup
+# that passes no agent_id answers for this same caller.
+_A37_AGENT_CTX = ct._session_store_module._CALLER_AGENT_ID
 _R101_ALWAYS_KEEP = {"ok", "error", "error_name"}
 # ISS-14: keys a projection must never be able to hide, because dropping them
 # turns a correct answer into a dangerous one. `hash_domain` and
@@ -4837,7 +4891,7 @@ def _r101_split_specs(fields):
 
 
 def _r101_project_nested(value, specs):
-    """Project one nested dict. Returns (out, dropped, rescued, unknown).
+    """Project one nested dict. Returns (out, rescued, unknown).
 
     Safety keys are rescued at EVERY level, not just the envelope: for an
     _ok()-wrapped tool the hash-domain markers live inside `result`, so a
@@ -4848,7 +4902,6 @@ def _r101_project_nested(value, specs):
     rescued = _r101_rescued(value, plain | set(nested))
     keep = plain | set(nested) | _R101_ALWAYS_KEEP | set(rescued)
     out = {k: v for k, v in value.items() if k in keep}
-    dropped = len(value) - len(out)
     unknown = sorted(plain - set(value) - _R101_ALWAYS_KEEP)
     for head, subs in nested.items():
         if head in plain:
@@ -4859,13 +4912,11 @@ def _r101_project_nested(value, specs):
             # could not be honoured, and saying so beats a silent bare branch.
             unknown.extend(f"{head}.{s}" for s in sorted(subs))
             continue
-        sub_out, sub_dropped, sub_rescued, sub_unknown = _r101_project_nested(
-            inner, subs)
+        sub_out, sub_rescued, sub_unknown = _r101_project_nested(inner, subs)
         out[head] = sub_out
-        dropped += sub_dropped
         rescued.extend(f"{head}.{name}" for name in sub_rescued)
         unknown.extend(f"{head}.{name}" for name in sub_unknown)
-    return out, dropped, sorted(set(rescued)), sorted(set(unknown))
+    return out, sorted(set(rescued)), sorted(set(unknown))
 
 
 _R101_AVAILABLE_CAP = 24
@@ -4986,7 +5037,6 @@ def _r101_filter(payload, fields):
     rescued = _r101_rescued(payload, plain | set(nested))
     keep = plain | set(nested) | _R101_ALWAYS_KEEP | set(rescued)
     out = {k: v for k, v in payload.items() if k in keep}
-    dropped = len(payload) - len(out)
     # A23-P2: name the keys we could not honour. Without this a typo in
     # `fields=` is indistinguishable from an empty result -- `fields=result`
     # instead of `results` returned a bare envelope and read as "the tool
@@ -5002,10 +5052,8 @@ def _r101_filter(payload, fields):
         if not isinstance(inner, dict):
             unknown.extend(f"{head}.{s}" for s in sorted(subs))
             continue
-        sub_out, sub_dropped, sub_rescued, sub_unknown = _r101_project_nested(
-            inner, subs)
+        sub_out, sub_rescued, sub_unknown = _r101_project_nested(inner, subs)
         out[head] = sub_out
-        dropped += sub_dropped
         rescued.extend(f"{head}.{name}" for name in sub_rescued)
         unknown.extend(f"{head}.{name}" for name in sub_unknown)
     rescued = sorted(set(rescued))
@@ -5033,15 +5081,11 @@ def _r101_filter(payload, fields):
         # way forward except repeating the SAME call without fields= -- the
         # full payload the projection existed to avoid.
         out["fields_available"] = _r101_available_names(payload, unknown)
-    # ISS-14: say that this response IS a projection -- but only when the
-    # projection was already problematic. A23-P2 pinned the negative case
-    # (`CorrectFilterStaysClean`): a marker present on every filtered response
-    # carries no information, and the whole point of fields= is fewer tokens.
-    # So these two keys ride along with a rescue or an unhonoured key, never on
-    # a clean subset the caller asked for exactly.
-    if dropped > 0 and (rescued or unknown):
-        out["response_truncated"] = True
-        out["fields_dropped_count"] = dropped
+    # #28a: a projection is not a truncation. fields= drops KEYS the caller chose
+    # not to read and never cuts a value, so `response_truncated` (ISS-14, until
+    # 2026-09-24) said "your data was cut" on exactly the calls fields= exists for,
+    # and invited the full re-call it was meant to spare. What did go wrong is
+    # already named above: response_incomplete for a rescue, fields_unknown for a miss.
     return out
 
 
@@ -5172,7 +5216,6 @@ def _session_contention_error_payload(tool_name: str, exc: BaseException,
         "ok": False,
         "error": str(exc),
         "error_name": fields["error_name"],
-        "reason": str(exc),
         "retryable": fields["retryable"],
         "ca_next_action": fields["ca_next_action"],
         "hint": fields["hint"],
@@ -5216,10 +5259,9 @@ def _error_response(tool_name: str, error: str, status: int, headers: dict,
         "ok": False,
         "error": error or error_name,
         "error_name": error_name,
-        "reason": error or error_name,
         "phase": _phase,
         **contract_meta,
-        "hint": hint,
+        **({"hint": hint} if hint else {}),
         "ca_next_action": ca_next_action,
         "payload_example": guidance.get("payload_example", {}),
         "retry_sequence": extra.pop("retry_sequence", _retry_sequence(
@@ -15452,7 +15494,11 @@ accepted_fields=sorted(accepted_fields),
             _t0 = time.time()
         # FixA2407 P1-1: record a mutating call BEFORE it runs. The server always knows
         # whether the write landed; the caller that timed out does not.
-        _op_id = await _write_ledger_begin_async(tool_name, body, _task_session_id)
+        # #17: the record names the session the call was ADMITTED to, the one its
+        # events land in. `_task_session_id` is only an X-Session-Id header or a body
+        # session_id, empty on a plain call; it stays the operation-id input (#9).
+        _op_id = await _write_ledger_begin_async(tool_name, body, _task_session_id,
+                                                 _admitted_session_id)
         if _op_id:
             from orchestrator.progress_watchdog import ProgressWatchdog, bind_watchdog
             _cancel_event = threading.Event()
@@ -15498,15 +15544,18 @@ accepted_fields=sorted(accepted_fields),
             _sf_key = ""
         try:
             if _cache_hit is not None:
-                _cached = dict(_cache_hit["result"])
-                _cached["cache_hit"] = True
-                _cached["cache_age_s"] = _cache_hit["age_s"]
-                _cached["cache_note"] = (
+                # P5: these three say something about THIS call, so they are envelope,
+                # not answer. Stamped into the text they were ordinary keys that a
+                # fields= projection dropped -- a minutes-old answer read as a fresh
+                # measurement, on exactly the fat cached reads fields= is for.
+                _envelope["cache_hit"] = True
+                _envelope["cache_age_s"] = _cache_hit["age_s"]
+                _envelope["cache_note"] = (
                     "Served from the result cache: the identical payload was computed "
                     "%.0fs ago in %dms. Read it as an answer of that age, not as a "
                     "fresh measurement."
                     % (_cache_hit["age_s"], _cache_hit["duration_ms"]))
-                raw = json.dumps(_cached, ensure_ascii=False)
+                raw = json.dumps(_cache_hit["result"], ensure_ascii=False)
             else:
                 # A41 tier 1a: pin the inequality `server budget < client timeout` that
                 # produced the orphan. asyncio.wait_for cancels the coroutine, so work
@@ -15538,6 +15587,12 @@ accepted_fields=sorted(accepted_fields),
                     raw = await fn(**body)
         finally:
             _release_tool_semaphore(_sem, _sem_category, _request_op_id)
+        # #2: the tool's own last phase ends HERE. Parsing, auto-chain and hints below
+        # are the dispatcher's, and unmarked they were charged to whatever phase the
+        # tool entered last. A tool that never reported progress stays unmarked.
+        _post_watchdog = _write_ledger_bound_watchdog(_op_id)
+        if _post_watchdog is not None and _post_watchdog.revision:
+            _post_watchdog.mark("dispatch_post")
         try:
             _result = json.loads(raw)
         except (json.JSONDecodeError, TypeError) as _json_exc:
@@ -15704,8 +15759,14 @@ accepted_fields=sorted(accepted_fields),
                     err_name = "DUPLICATE_RETRY_BLOCKED"
             _result.setdefault("ok", False)
             _result.setdefault("error_name", err_name)
-            _result.setdefault("reason", err_text)
-            _result.setdefault("hint", _default_hint(tool_name, err_name))
+            # #27: `error` is the key every reader takes first; the envelope used to
+            # guarantee a `reason` COPY instead, so a tool answering `reason` alone
+            # left `error` empty while every other one paid for the same text twice.
+            if not _result.get("error"):
+                _result["error"] = err_text
+            _tb_hint = _default_hint(tool_name, err_name)
+            if _tb_hint:
+                _result.setdefault("hint", _tb_hint)
             _result.setdefault("ca_next_action", _ca_next_action(err_name, tool_name))
             # CASE-1919 item 1: the REGISTRY-driven example, not the legacy
             # _PAYLOAD_EXAMPLES table -- that dict has no search_code entry, so its
@@ -15741,6 +15802,8 @@ accepted_fields=sorted(accepted_fields),
                         else _mrf_example)
                 if _mrf_detail:
                     for _msg_key in ("error", "reason"):
+                        if _msg_key not in _result:
+                            continue
                         _msg_old = str(_result.get(_msg_key) or "")
                         if _mrf_detail not in _msg_old:
                             _result[_msg_key] = (
@@ -15855,27 +15918,26 @@ accepted_fields=sorted(accepted_fields),
                         _attempts = int(_led.get("attempts") or 1)
                         _envelope.setdefault("operation_attempts", _attempts)
                         _envelope.setdefault("operation_replayed", _attempts > 1)
-                        # TA-4 fix (2026-08-18): a REPLAY that now reports
-                        # SYNTAX_ERROR_PRE_WRITE / FILE_CHANGED_OUTSIDE_ORCHESTRATOR
-                        # is a known false-alarm shape: the FIRST attempt already
-                        # shipped the write (server completed, client timed out),
-                        # so the deterministic retry recomputes the draft/AST
-                        # against the ALREADY-PATCHED file — the old line range no
-                        # longer matches and the tool cries "unmatched ')'" on code
-                        # that is in fact correct. Tell the caller so it verifies by
-                        # read instead of blindly re-patching (which would double-write).
+                        # #9 (2026-09-24): the flag is the LEDGER's fact, never a guess
+                        # from error_name. TA-4 (2026-08-18) set it on any failing replay
+                        # that named SYNTAX_ERROR_PRE_WRITE / FILE_CHANGED_OUTSIDE_ORCHESTRATOR,
+                        # so two sends that BOTH failed answered "the first attempt likely
+                        # already wrote" while /api/write_status for the same operation said
+                        # not_committed + safe_to_retry: two opposite answers to one question.
+                        # A committed entry never regresses (_write_ledger_finish), so a
+                        # failing send that finds its operation committed means an earlier
+                        # send of this exact payload shipped, and re-patching would
+                        # double-write. Source writes only: a derived-index rerun is safe.
                         if (_attempts > 1 and _result.get("ok") is False
-                                and _result.get("error_name") in {
-                                    "SYNTAX_ERROR_PRE_WRITE",
-                                    "FILE_CHANGED_OUTSIDE_ORCHESTRATOR"}):
+                                and _write_ledger_commit_state(_led) == "committed"
+                                and ct.tool_mutation_scope(tool_name)
+                                not in ct.NON_SOURCE_MUTATION_SCOPES):
                             _envelope.setdefault("likely_already_applied", True)
                             _envelope.setdefault(
                                 "replay_hint",
-                                "This exact payload was sent before; the first "
-                                "attempt likely already wrote successfully (client "
-                                "timeout, server completed). VERIFY with "
-                                "read_file_range before retrying — do NOT blindly "
-                                "re-patch, that risks a double-write.")
+                                "An earlier send of this exact payload is committed in the "
+                                "write ledger; VERIFY with read_file_range before retrying "
+                                "-- re-patching would double-write.")
                             _envelope.setdefault("ca_next_action", "read_file_range")
             # D5: contention is stamped ONLY when it actually held AND actually cost
             # something. An unconditional field would spend tokens on every call
@@ -16047,16 +16109,17 @@ accepted_fields=sorted(accepted_fields),
             _result = _r101_dispatch_result(_contention)
             return web.json_response(_result, status=503, headers=cors)
         # `_error_msg` came from _exception_text() at the top of this arm, so it is
-        # never "" -- which is the whole point: `error`, `reason`, the error_name
-        # inference and the CA guidance all read the SAME non-empty text, so none of
-        # them can degrade to a catch-all while another shows detail.
+        # never "" -- which is the whole point: `error`, the error_name inference and
+        # the CA guidance all read the SAME non-empty text, so none of them can
+        # degrade to a catch-all while another shows detail.
         _result = {
             "ok": False,
             "error": _error_msg,
             "error_name": _infer_error_name(tool_name, _error_msg, body),
-            "reason": _error_msg,
         }
-        _result["hint"] = _default_hint(tool_name, _result["error_name"])
+        _exc_hint = _default_hint(tool_name, _result["error_name"])
+        if _exc_hint:
+            _result["hint"] = _exc_hint
         _result["ca_next_action"] = _ca_next_action(_result["error_name"], tool_name)
         _result["retry_sequence"] = _retry_sequence(tool_name, _result["error_name"], body)
         _result["ca_guidance"] = _ca_guidance(tool_name, _error_msg, body, _result["error_name"])
@@ -16442,25 +16505,15 @@ def _tool_names_payload(tier: str = "", name_contains: str = "", category: str =
             f"limit={_limit_int} capped {total} matches; pass limit={total} for all of them."
         ) if len(returned) < total else "",
         "ca_next_action": "filter_or_use_total_available_as_limit" if len(returned) < total else "",
-        "ca_hint": (
-            "MUST-KNOW: 1) After a NEW [A] PID/generation, first get_rule_core_text MUST include text "
-            "(force=true if already_fetched and text is missing). "
-            "2) FILE_CHANGED / STALE_INDEX on a large root such as [A:P] => "
-            "read_file_range + project_path + force_reseed, then retry write_fix once; "
-            "NEVER refresh_project_map. "
-            f"3) /api/tools/names {_full_catalog_hint()}. "
-            "4) ruff_fix canonical field is path, not file_path. "
-            "5) list_structure uses depth/path (max_depth/file_path are aliases). "
-            "6) GET /health default is compact; use ?fields= or ?verbose=1 for more."
-        ),
-        "must_know_hints": [
-            "first get_rule_core_text after new process must include text",
-            "FILE_CHANGED on [A:P]: read_file_range + force_reseed; never refresh_project_map",
-            f"names {_full_catalog_hint()}",
-            "ruff_fix field is path (file_path alias accepted)",
-            "list_structure uses depth not max_depth; file_path aliases to path",
-            "GET /health default compact; ?fields= subset, ?verbose=1 full lanes",
-        ],
+        # N3 (2026-09-24): this was a six-item MUST-KNOW manual -- rule reload, write
+        # recovery, the catalog limit, two tools' field names, the /health views --
+        # plus a second copy in must_know_hints, paid on every discovery call. Each
+        # lesson already has the producer a CA meets when it matters: the core rule,
+        # _default_hint on the error, _ARG_ALIASES on the call, next_query_hint and
+        # the /health hint. A hint says what the answer is for; how to call a tool is
+        # its schema's job.
+        "ca_hint": ("Names the tools [A] can run, each with its tier, category and "
+                    "mutation scope; a tool's schema says how to call it."),
         "hint": _R102_CATEGORY_HINT,
         "categories_available": _r102_category_names(),
     }
@@ -16469,15 +16522,13 @@ def _tool_names_payload(tier: str = "", name_contains: str = "", category: str =
         # next_query_hint / ca_next_action / hint populated, so a caller that asked
         # for silence still paid for three advisory strings -- the name promised the
         # whole advisory class, so it now clears the whole advisory class and says
-        # which keys it emptied (silence must still be auditable).
-        for _hint_key in ("ca_hint", "next_query_hint", "ca_next_action", "hint"):
+        # which keys it emptied (silence must still be auditable). One tuple names
+        # both, so the report cannot list a key the answer does not carry.
+        _hint_keys = ("ca_hint", "next_query_hint", "ca_next_action", "hint")
+        for _hint_key in _hint_keys:
             payload[_hint_key] = ""
-        payload["must_know_hints"] = []
         payload["hints_suppressed"] = True
-        payload["hints_suppressed_keys"] = [
-            "ca_hint", "next_query_hint", "ca_next_action", "hint",
-            "must_know_hints",
-        ]
+        payload["hints_suppressed_keys"] = list(_hint_keys)
     return payload
 
 

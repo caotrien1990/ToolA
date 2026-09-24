@@ -210,6 +210,31 @@ class P12OperationReplayDisclosureTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second.get("operation_attempts"), 2, msg=second)
         self.assertTrue(second.get("operation_replayed"), msg=second)
 
+    def _with_scope(self, scope: str = "file_artifact"):
+        # The replay flag speaks only for tools that write source (#9): a synthetic
+        # probe has no mutation_scope, and "none" is a non-source scope.
+        old = code_tools._MUTATION_SCOPE_MAP.get(TOOL_NAME)
+        code_tools._MUTATION_SCOPE_MAP[TOOL_NAME] = scope
+
+        def restore():
+            if old is None:
+                code_tools._MUTATION_SCOPE_MAP.pop(TOOL_NAME, None)
+            else:
+                code_tools._MUTATION_SCOPE_MAP[TOOL_NAME] = old
+        self.addCleanup(restore)
+
+    def _commits_then_fails(self):
+        sends = []
+
+        async def probe(**_kwargs) -> str:
+            sends.append(1)
+            if len(sends) == 1:
+                return json.dumps({"ok": True, "new_hash": "h1"})
+            return json.dumps({"ok": False, "error": "still stale",
+                               "error_name": "FILE_CHANGED_OUTSIDE_ORCHESTRATOR"})
+
+        code_tools.TOOL_MAP[TOOL_NAME] = probe
+
     async def test_a_projected_replay_still_warns_and_drops_the_rest(self):
         """fields=ok keeps what changes the next step and drops what only describes the call.
 
@@ -217,33 +242,63 @@ class P12OperationReplayDisclosureTests(unittest.IsolatedAsyncioTestCase):
         answered generation / operation_id / write_status_url / operation_attempts --
         keys nobody asked for, on every call. Moving it through the projection must not
         hide the replay warning: a caller cannot ask for a key it does not know is coming,
-        and this one says "the first attempt likely already wrote".
+        and this one says "an earlier send of this payload already wrote".
         """
-        async def always_fails(**_kwargs) -> str:
-            return json.dumps({"ok": False, "error": "still stale",
-                               "error_name": "FILE_CHANGED_OUTSIDE_ORCHESTRATOR"})
-
-        code_tools.TOOL_MAP[TOOL_NAME] = always_fails
+        self._with_scope()
+        self._commits_then_fails()
         info_only = ("generation", "operation_id", "write_status_url", "operation_attempts")
 
         first = json.loads((await self._dispatch({}, "?fields=ok")).text)
-        self.assertFalse(first.get("ok"), msg=first)
+        self.assertIs(first.get("ok"), True, msg=first)
         # A first attempt is not a replay, and a false flag warns of nothing.
         self.assertNotIn("operation_replayed", first, msg=first)
         for key in info_only:
             self.assertNotIn(key, first, msg=first)
 
         second = json.loads((await self._dispatch({}, "?fields=ok")).text)
+        self.assertIs(second.get("ok"), False, msg=second)
         self.assertIs(second.get("operation_replayed"), True, msg=second)
         self.assertIs(second.get("likely_already_applied"), True, msg=second)
         self.assertIn("read_file_range", second.get("replay_hint", ""), msg=second)
         for key in info_only:
             self.assertNotIn(key, second, msg=second)
 
-        # Naming an envelope key keeps it, like any other key.
+        # Naming an envelope key keeps it, like any other key. A replay of a
+        # committed operation is still a send, so it is still counted.
         third = json.loads((await self._dispatch({}, "?fields=ok,operation_attempts")).text)
         self.assertEqual(third.get("operation_attempts"), 3, msg=third)
         self.assertNotIn("fields_unknown", third, msg=third)
+
+    async def test_a_replay_whose_sends_all_failed_is_not_called_applied(self):
+        """#9, measured 2026-09-24: two sends that BOTH failed answered
+        likely_already_applied:true while /api/write_status for the same
+        operation said not_committed + safe_to_retry. The ledger is the one
+        answer; nothing was committed, so nothing is claimed."""
+        self._with_scope()
+
+        async def always_fails(**_kwargs) -> str:
+            return json.dumps({"ok": False, "error": "still stale",
+                               "error_name": "FILE_CHANGED_OUTSIDE_ORCHESTRATOR"})
+
+        code_tools.TOOL_MAP[TOOL_NAME] = always_fails
+        await self._dispatch({})
+        second = json.loads((await self._dispatch({})).text)
+        self.assertIs(second.get("operation_replayed"), True, msg=second)
+        self.assertNotIn("likely_already_applied", second, msg=second)
+        self.assertNotIn("replay_hint", second, msg=second)
+        led = orchestrator_server._WRITE_LEDGER[second["operation_id"]]
+        self.assertEqual(orchestrator_server._write_ledger_commit_state(led),
+                         "not_committed", msg=led)
+
+    async def test_a_committed_rerun_of_a_derived_index_is_not_a_double_write(self):
+        """A derived-index rebuild after a committed run re-derives; it cannot
+        double-write source, so the flag would send the CA to verify nothing."""
+        self._with_scope("derived_index")
+        self._commits_then_fails()
+        await self._dispatch({})
+        second = json.loads((await self._dispatch({})).text)
+        self.assertIs(second.get("operation_replayed"), True, msg=second)
+        self.assertNotIn("likely_already_applied", second, msg=second)
 
 
 def _body_reader(payload: dict):

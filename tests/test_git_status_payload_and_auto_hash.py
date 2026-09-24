@@ -327,3 +327,34 @@ def test_the_schema_description_does_not_promise_the_schema_enforces_it() -> Non
 
     assert "EXPECTED_STAGED_HASH_REQUIRED" in desc, desc
     assert "auto" in desc, "the opt-out is undocumented at the surface CAs read"
+
+
+def test_a_mutation_answers_the_state_not_the_file_list(tmp_path) -> None:
+    """#28b: stage/unstage/commit/stale_check embedded status() UNCAPPED.
+
+    records is the only unbounded part of a status, so a dirty tree the caller never
+    touched grew every answer with it (measured: one git_commit 66 KB for ~620 foreign
+    paths). The embedded state keeps what a caller acts on -- the lock hashes, HEAD and
+    counts over EVERY record -- and must not grow with the tree.
+    """
+    root = _repo(tmp_path)
+    _dirty(root, 200)
+    (root / "b.txt").write_text("b\n", encoding="utf-8")
+
+    staged = g.stage(str(root), ["b.txt"])
+    unstaged = g.unstage(str(root), ["b.txt"], expected_staged_hash=staged["after"]["staged_hash"])
+    restaged = g.stage(str(root), ["b.txt"])
+    committed = g.commit(str(root), "add b", restaged["after"]["staged_hash"])
+    stale = g.stale_check(str(root))
+    live = g.status(str(root))
+
+    for name, state in (("stage.after", staged["after"]), ("unstage.after", unstaged["after"]),
+                        ("commit.status", committed["status"]), ("stale_check.status", stale["status"])):
+        assert "records" not in state, name + " carries the tree's file list again"
+        assert len(json.dumps(state)) < 800, (name, len(json.dumps(state)))
+    assert staged["after"]["counts"]["staged"] == 1 and unstaged["after"]["counts"]["staged"] == 0
+    assert committed["status"]["head"] == committed["commit"] == live["head"]
+    assert committed["status"]["staged_hash"] == live["staged_hash"]
+    assert committed["status"]["counts"] == live["counts"] and live["counts"]["untracked"] >= 200
+    assert committed["committed_files"] == ["b.txt"]
+    assert stale["status"]["state_hash"] == live["state_hash"] and "dirty_worktree" in stale["reasons"]

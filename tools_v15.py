@@ -971,12 +971,15 @@ async def write_transaction(operations: list, project_path: str = "",
             return _err(f"backup_project failed: {exc}", error_name="BACKUP_FAILED")
 
     snapshots = {}
-    for _root, target, _relative in resolved_operations:
+    snapshot_roots = {}
+    for op_root, target, relative in resolved_operations:
         key = str(target)
         if key not in snapshots:
             snapshots[key] = target.read_bytes() if target.exists() else None
+            snapshot_roots[key] = str(op_root) if relative is not None else ""
 
     import code_tools as _ct_r41
+    from orchestrator.tools.write.core import _seal_read_token
 
     def _rollback(reason):
         restored = []
@@ -988,18 +991,11 @@ async def write_transaction(operations: list, project_path: str = "",
                     target.unlink(missing_ok=True)
                 else:
                     _ct_r41._atomic_write_bytes(target, original)
-                _ct_r41._update_cache_after_write(str(target))
-                # BUG-01b: reseed read token after rollback so the
-                # restored content does not trigger stale FILE_CHANGED.
-                try:
-                    _rb = _ct_r41.find_project_root(str(target))
-                    if _rb:
-                        _rl = str(target.relative_to(Path(_rb).resolve())).replace("\\\\", "/")
-                        _rs = target.stat()
-                        _rh = _ct_r41._sha256_file(target)
-                        _ct_r41._read_token_upsert(str(Path(_rb).resolve()), _rl, _rh, _rs.st_mtime, _rs.st_size)
-                except Exception:
-                    pass
+                _ct_r41._update_cache_after_write(str(target), snapshot_roots.get(target_label) or None)
+                # BUG-01b: reseed read token after rollback so the restored content does not
+                # trigger a stale FILE_CHANGED -- through the one producer the guard reads.
+                if original is not None:
+                    _seal_read_token(target, snapshot_roots.get(target_label, ""))
                 restored.append(target_label)
             except Exception as exc:
                 rollback_errors.append({"file": target_label, "error": str(exc)})
@@ -1423,6 +1419,11 @@ async def record_session_audit_checkpoint(project_path: str = "", session_id: st
                 "checkpoint": compact, "note": (note or "")[:200]})
 
 
+# N2 (2026-09-24): `tool` names ONE callable tool and `also` the companions of the
+# same intent. The composite strings 18 of these 26 rows carried ("find_symbol(include=
+# all) OR search_code(mode=smart)", "Edit + log_native_event") came back verbatim as
+# `recommended_tool`, which a CA reads as a name to call. How to call a tool is its
+# schema's job; a row states which tool fits.
 _DECISION_RULES = [
      # R56 semantic routing: schema/gotcha-specific hints must precede broad rules
      {"re": r"\b(bundle.?version|marker.?regex|capture.?group)\b",
@@ -1430,11 +1431,13 @@ _DECISION_RULES = [
       "skill": "16_server_lifecycle",
       "why": "Use schema-guided capture-group validation before retry."},
      {"re": r"\b(page.?id|baseline|dom.?state|stale.?baseline)\b",
-      "tier": "T4", "tool": "dom_state_diff / checkpoint_loop_dom_state",
+      "tier": "T4", "tool": "dom_state_diff",
+      "also": ("checkpoint_loop_dom_state",),
       "skill": "18_runtime_dom_T4",
       "why": "Require live pg-* page IDs and a fresh baseline after restart/page replacement."},
      {"re": r"\b(playwright|python.?fixture|node.?fixture|module.?not.?found)\b",
-      "tier": "T2 + T4", "tool": "run_playwright_test / run_project_test_script",
+      "tier": "T2 + T4", "tool": "run_playwright_test",
+      "also": ("run_project_test_script",),
       "skill": "09_testing_validation",
       "why": "Match runner to fixture language and check the dependency preflight."},
      {"re": r"\b(copy.?file|dst.?exists|overwrite|backup.?existing)\b",
@@ -1446,7 +1449,8 @@ _DECISION_RULES = [
       "skill": "05_write_pipeline",
       "why": "Use draft_id and deterministic replacement content; never retry a stale range blindly."},
      {"re": r"\b(utf.?8|base64|btoa|powershell)\b",
-      "tier": "T2", "tool": "write_new_file / run_project_test_script",
+      "tier": "T2", "tool": "write_new_file",
+      "also": ("run_project_test_script",),
       "skill": "05_write_pipeline + 08_command_windows",
       "why": "Encode UTF-8 explicitly; do not assume btoa exists in the host runtime."},
     # --- W0 (SYNTRUX-AU1/AU2, AUTO_USE_MATRIX muc 10): CBM quality tools — cụ thể hơn CAN-053 nên phải đứng trước ---
@@ -1475,60 +1479,73 @@ _DECISION_RULES = [
     # CAN-053 (codo P1): architecture/dependency/entrypoint/blast-radius intents
     # must hit CBM graph tools BEFORE broad find/search rules shadow them.
     {"re": r"\b(architecture|kien.?truc|module.?dep\w*|dependenc\w+|phu.?thuoc|entry.?points?|blast.?radius|impact.?scope|data.?flow|component.?map|nam.*kien.?truc|so.?do.*(module|he.?thong))\b",
-     "tier": "T1", "tool": "cbm_get_architecture / cbm_template_query / cbm_graph_status / cbm_trace_path",
+     "tier": "T1", "tool": "cbm_get_architecture",
+     "also": ("cbm_template_query", "cbm_graph_status", "cbm_trace_path"),
      "skill": "15_search_code_intel",
      "why": "CAN-053 graph-first: CBM tools answer architecture/dependency/entrypoint/impact questions in one bounded call; raw find/search cannot."},
     # R20: click+watch combo — recommend atomic macro instead of separate calls
     {"re": r"\b(click).*\b(watch|poll|wait|monitor|state|change|toggle|transition)\b",
-     "tier": "T4", "tool": "click_and_checkpoint_loop / click_selector / checkpoint_loop_dom_state",
+     "tier": "T4", "tool": "click_and_checkpoint_loop",
+     "also": ("click_selector", "checkpoint_loop_dom_state"),
      "skill": "18_runtime_dom_T4",
      "why": "R16.10 atomic macro: baseline pre-click + click + poll until state change. Saves 3+ round-trips vs manual sequence."},
     # R20: log/error capture — recommend artifact mode for S/L (placed BEFORE generic DOM rules)
     {"re": r"\b(extract|read|get|capture|save|fetch|dump).*\b(log|error|system.?error|trace|stack)\b",
-     "tier": "T4 + T2", "tool": "save_log_snapshot (artifact) / extract_log_section(mode='ref'|'preview') / read_value",
+     "tier": "T4 + T2", "tool": "save_log_snapshot",
+     "also": ("extract_log_section", "read_value"),
      "skill": "17_session_audit + 18_runtime_dom_T4",
      "why": "R17 save_log_snapshot writes log to .orchestrator_cache/artifacts/<round_id>/<slug>.txt; final cites path+sha256+head/tail_200 instead of pasting 8K log → ~90% S/L saving."},
     {"re": r"\b(log|error|system.?error|trace|stack).*\b(extract|read|get|capture|save|fetch|dump)\b",
-     "tier": "T4 + T2", "tool": "save_log_snapshot (artifact) / extract_log_section(mode='ref'|'preview') / read_value",
+     "tier": "T4 + T2", "tool": "save_log_snapshot",
+     "also": ("extract_log_section", "read_value"),
      "skill": "17_session_audit + 18_runtime_dom_T4",
      "why": "R17 save_log_snapshot writes log to artifacts; cite path+sha256 instead of pasting 8K log → ~90% S/L saving."},
     # R16.8: Electron/CDP-specific rule comes FIRST (more specific than generic UI rule)
     # R43.3 H8: removed `rawcut` (project-specific) — generic terms (electron/cdp/9223/launch app) are sufficient
     {"re": r"\b(electron|cdp|remote.?debugging|9223|launch.*app|attach.*electron)\b",
-     "tier": "T4", "tool": "launch_electron_with_cdp / cdp_attach_target / click / fill_value / read_value",
+     "tier": "T4", "tool": "launch_electron_with_cdp",
+     "also": ("cdp_attach_target", "click", "fill_value", "read_value"),
      "skill": "22_electron_automation + 18_runtime_dom_T4",
      "why": "Electron renderer rejects page-level WS; use browser-level WS fallback via launch_electron_with_cdp."},
     {"re": r"\b(textarea|read.*log|extract.*log|view.?panel|button.*state|fill.*input|dom.*diff)\b",
-     "tier": "T4", "tool": "read_all_logs / read_value / extract_log_section / fill_value / dom_state_diff / query_dom_candidates",
+     "tier": "T4", "tool": "read_all_logs",
+     "also": ("read_value", "extract_log_section", "fill_value", "dom_state_diff"),
      "skill": "18_runtime_dom_T4",
      "why": "R16+ DOM helpers replace evaluate_js boilerplate — saves 60-80% context."},
     {"re": r"\b(ui|dom|browser|render|click|button|css)\b",
-     "tier": "T4", "tool": "open_browser_page (web) OR launch_electron_with_cdp (Electron) → click / read_page / query_selector",
+     "tier": "T4", "tool": "open_browser_page",
+     "also": ("launch_electron_with_cdp", "click", "read_page", "query_selector"),
      "skill": "18_runtime_dom_T4",
      "why": "UI/runtime visible only at runtime. Prefer Electron-specific tools when target is Electron app."},
     {"re": r"\b(port|server|stale|cache|admin|restart|pid|host)\b",
-     "tier": "T4c", "tool": "server_lifecycle_status / port_owner_inspect",
+     "tier": "T4c", "tool": "server_lifecycle_status",
+     "also": ("port_owner_inspect",),
      "skill": "16_server_lifecycle",
      "why": "2+ failed code cycles + unchanged runtime → check lifecycle first."},
     {"re": r"\b(auth|token|password|credential|secret|delete|migration|schema)\b",
-     "tier": "T2 [A]", "tool": "write_fix + apply_after_dry_run",
+     "tier": "T2 [A]", "tool": "write_fix",
+     "also": ("apply_after_dry_run",),
      "skill": "05_write_pipeline + 06_token_auth",
     "why": "Critical path: governance > speed."},
     {"re": r"\b(callers|usage|find|search|lookup|where is|symbol)\b",
-     "tier": "T1", "tool": "find_symbol(include=all) OR search_code(mode=smart)",
+     "tier": "T1", "tool": "find_symbol",
+     "also": ("search_code",),
      "skill": "15_search_code_intel",
      "why": "Read-only; indexed lookup saves context vs grep."},
     {"re": r"\b(session|audit|handoff|close|summary|log)\b",
-     "tier": "T3", "tool": "open_session / log_native_event / close_session",
+     "tier": "T3", "tool": "open_session",
+     "also": ("log_native_event", "close_session"),
      "skill": "17_session_audit",
      "why": "Audit trail required for governance."},
     # R43.3 M7: missing coverage — folder dialog, workflow dispenser, invoke_app_function
     {"re": r"\b(folder.?dialog|file.?dialog|pick.?folder|browse.?folder|select.?folder|native.?dialog)\b",
-     "tier": "T4", "tool": "fill_folder_dialog / folder_dialog_snapshot / click_and_handle_folder_dialog / cancel_native_dialog",
+     "tier": "T4", "tool": "fill_folder_dialog",
+     "also": ("folder_dialog_snapshot", "click_and_handle_folder_dialog", "cancel_native_dialog"),
      "skill": "18_runtime_dom_T4",
      "why": "Native picker dialogs need owner_pid + dialog class filter. Snapshot first if ambiguous."},
     {"re": r"\b(workflow|step.?\d|next.?step|advance.?step|workflow.?dispenser|step.?manifest)\b",
-     "tier": "T1+T3", "tool": "workflow_list → workflow_start → workflow_get_current → workflow_submit_step (+ workflow_goto_step for jump)",
+     "tier": "T1+T3", "tool": "workflow_list",
+     "also": ("workflow_start", "workflow_get_current", "workflow_submit_step", "workflow_goto_step"),
      "skill": "26_workflow_ingestion",
      "why": "MD-driven workflow runner (R35+) is the canonical multi-step orchestrator."},
     {"re": r"\b(invoke.?app|call.?renderer|call.?electron.?api|app.?function|window\.app\.|executejs.?app)\b",
@@ -1536,14 +1553,21 @@ _DECISION_RULES = [
      "skill": "22_electron_automation",
      "why": "Direct renderer-side function call when click doesn't open expected dialog (custom Electron UI)."},
     {"re": r"\b(refactor|across.*files|migrate|atomic|rollback|multi.?file|batch)\b",
-     "tier": "T2 [A]", "tool": "write_transaction + post_write_batch_verify",
+     "tier": "T2 [A]", "tool": "write_transaction",
+     "also": ("post_write_batch_verify",),
      "skill": "05_write_pipeline",
      "why": "Multi-file: [A] rollback essential."},
     {"re": r"\b(typo|comment|css|color|1 line|small|tweak|simple)\b",
-     "tier": "Native", "tool": "Edit + log_native_event",
-     "skill": "12_native_audit",
-        "why": "Single-file low-risk: native ~10× faster."},
+     "tier": "T2", "tool": "write_fix",
+     "skill": "05_write_pipeline",
+     "why": "A small edit is still one write_fix region: it carries the read_token, the "
+            "backup and the auto-verify that a native edit skips."},
 ]
+
+
+def _rule_names(rule: dict) -> list:
+    """The callable tools a decision row names: `tool` first, then `also` (N2)."""
+    return list(dict.fromkeys([rule["tool"], *rule.get("also", ())]))
 
 
 _WT_VN_HINTS = (
@@ -1747,6 +1771,44 @@ def _campaign_routing_prepass(folded_raw: str, live_tools: set) -> list:
         if not _source_lookup:
             _add("desktop_screenshot", "T4", "18_runtime_dom_T4",
                  "R2 C8: chup man hinh / screenshot, not a source snapshot.")
+    # N2 (2026-09-24): graph.db MAINTENANCE had no route. "build or refresh the cbm
+    # code graph index" fell to CAN-053 (expansion reads `graph` as architecture) and
+    # got read-only graph tools, so the step that makes a graph answer true never
+    # surfaced. The noun must be the cbm graph: a bare `index` is the search_code
+    # index (STALE_INDEX -> cache_delta), and a bare `graph` counts only with a
+    # maintenance-only verb, so "build the dependency graph" stays a structure question.
+    _cbm_graph = (r"(cbm|graph[ ._-]?db|(code|call)[ _-]?graph|graph[ _-]?index|"
+                  r"do[ _-]?thi[ _-]?code)")
+    _any_graph = r"(cbm|graph|do[ _-]?thi)"
+    _maintain = (r"(rebuild|re[ _-]?build|refresh|re[ _-]?index|reindex|regenerate|"
+                 r"resync|update|cap[ _-]?nhat|tao[ _-]?lai|lam[ _-]?moi|index[ _-]?lai)")
+    _build = r"(build|sync|index|xay[ _-]?dung|dong[ _-]?bo)"
+    _why_incremental = ("N2: brings graph.db up to date from source hashes; on an empty "
+                        "graph every file counts as added, so it is also the first build.")
+    if (
+        re.search(r"\bcbm_(incremental_)?index\b", folded_raw)
+        or re.search(rf"\b{_maintain}\b[^.,;]{{0,30}}\b{_any_graph}\b", folded_raw)
+        or re.search(rf"\b{_build}\b[^.,;]{{0,30}}\b{_cbm_graph}\b", folded_raw)
+        or re.search(rf"\b{_cbm_graph}\b[^.,;]{{0,12}}\b({_maintain}|{_build})\b",
+                     folded_raw)
+    ):
+        if "cbm_incremental_index" in live:
+            _add("cbm_incremental_index", "T2", "15_search_code_intel", _why_incremental)
+        if "cbm_index" in live:
+            _add("cbm_index", "T2", "15_search_code_intel",
+                 "N2: full (re)index of a chosen scope into graph.db.")
+    _fresh = (r"(stale|fresh|freshness|outdated|out[ _-]?of[ _-]?date|up[ _-]?to[ _-]?date|"
+              r"loi[ _-]?thoi|moi[ _-]?nhat)")
+    if (
+        re.search(rf"\b{_fresh}\b[^.,;]{{0,30}}\b{_any_graph}\b", folded_raw)
+        or re.search(rf"\b{_any_graph}\b[^.,;]{{0,30}}\b{_fresh}\b", folded_raw)
+    ):
+        if "cbm_graph_status" in live:
+            _add("cbm_graph_status", "T1", "15_search_code_intel",
+                 "N2: reports whether graph.db is current against the source, before "
+                 "a graph answer is trusted.")
+        if "cbm_incremental_index" in live:
+            _add("cbm_incremental_index", "T2", "15_search_code_intel", _why_incremental)
     # A36 (2026-09-19): three LOWEST-priority rows, appended after every existing
     # rule so they can never shadow a campaign primary - they only catch the
     # phrasings that used to fall through to a bulk read. The gap they close:
@@ -1804,6 +1866,17 @@ def _campaign_routing_prepass(folded_raw: str, live_tools: set) -> list:
     return out
 
 
+def _deprecated_tool_names() -> frozenset:
+    """Tools the server itself marks deprecated (orchestrator_server._DEPRECATED_TOOLS;
+    code_tools flags its own through the schema's `deprecated` key). Machine-readable
+    marks only, never description prose. Measured 2026-09-24: "find callers of foo"
+    offered the deprecated alias find_callers as an alternate, because the ranker
+    scores a name segment the query repeats."""
+    try:
+        from orchestrator_server import _DEPRECATED_TOOLS as _dep
+    except Exception:
+        return frozenset()
+    return frozenset(_dep)
 
 
 def _wt_rank_lexical(task_expanded: str, top_k: int = 3) -> list:
@@ -1820,10 +1893,11 @@ def _wt_rank_lexical(task_expanded: str, top_k: int = 3) -> list:
     if not tokens:
         return []
     scored = []
+    deprecated = _deprecated_tool_names()
     for sch in schemas:
         fn = sch.get("function", {})
         name = fn.get("name") or ""
-        if not name:
+        if not name or fn.get("deprecated") or name in deprecated:
             continue
         name_words = set(name.split("_"))
         desc = _wt_vn_fold(str(fn.get("description") or "")[:400])
@@ -1886,7 +1960,16 @@ def _a07_should_defer(raw_task: str, rule: dict, lex_ranked: list) -> bool:
     return len(words & set(top_name.split("_"))) > hits
 
 
-def _a07_named_tool_alternate(raw_task: str, lex_ranked: list, shown: str) -> list:
+def _a07_name_set(names) -> set:
+    """Tool names as a set, from a space-joined string or any iterable of names.
+    Exact membership: a substring test counts `write_fix` as shown when only
+    `write_fix_html` is."""
+    if isinstance(names, str):
+        return set(names.split())
+    return {str(n) for n in (names or ()) if n}
+
+
+def _a07_named_tool_alternate(raw_task: str, lex_ranked: list, shown) -> list:
     """A07, second reader. `_a07_should_defer` only rescues the case where ONE
     rule fired; when two or more fire, `_matched[1:3]` fills `alternates` with
     rule siblings and the escape hatch never runs -- so a tool the query names
@@ -1905,17 +1988,17 @@ def _a07_named_tool_alternate(raw_task: str, lex_ranked: list, shown: str) -> li
         return []
     words = {w for w in re.findall(r"[a-z0-9_]+", raw_task or "") if w}
     name = lex_ranked[0][1]
-    if len(words & set(name.split("_"))) < 2 or name in (shown or ""):
+    if len(words & set(name.split("_"))) < 2 or name in _a07_name_set(shown):
         return []
     return _a07_alternates(lex_ranked[:1], exclude="", limit=1)
 
 
-def _a07_alternates(lex_ranked: list, exclude: str, limit: int = 2) -> list:
+def _a07_alternates(lex_ranked: list, exclude, limit: int = 2) -> list:
     """A07 escape hatch: even a correct stage-1 primary must surface a second
     option. When the rule-based `_matched[1:3]` slice is empty (only one rule
     fired), fill `alternates` from the lexical ranker so the caller always has
     a fallback. Tools already named in the primary recommendation are skipped."""
-    ex = str(exclude or "")
+    ex = _a07_name_set(exclude)
     out = []
     for _score, name, fn, tier in lex_ranked:
         if name in ex:
@@ -1968,19 +2051,14 @@ async def tool_decision_hint(task_description: str = "", scope_hint: str = "",
     except Exception:
         live_tools = set()
 
-    def _validate_tools_in_rec(rec_text: str) -> dict:
-        # CAN-053: parse tool ids robustly — composite recs like
-        # "find_symbol(include=all) OR search_code(mode=smart)" used to yield
-        # checked=[] while still reporting all_recommended_tools_live=true.
-        import re as _re_v
-        candidates = []
-        for tok in _re_v.findall(r"[a-z][a-z0-9_]{2,}", rec_text or ""):
-            if "_" in tok and tok not in candidates:
-                candidates.append(tok)
-        missing = [c for c in candidates if live_tools and c not in live_tools]
-        present = [c for c in candidates if c in live_tools]
-        return {"checked": candidates, "present": present, "missing": missing,
-                "inconclusive": not candidates}
+    def _validate_tools(names: list) -> dict:
+        # N2: rows name callable tools, so this is membership. The CAN-053 regex
+        # over a prose string read `(artifact)` / `mode='ref'` as tool ids.
+        checked = [n for n in dict.fromkeys(names) if n]
+        missing = [n for n in checked if live_tools and n not in live_tools]
+        present = [n for n in checked if n in live_tools]
+        return {"checked": checked, "present": present, "missing": missing,
+                "inconclusive": not checked}
 
     # R16.10: per-tool payload examples — CA needs field schema, not just names
     def _examples_for(tool_names: list) -> dict:
@@ -2085,7 +2163,7 @@ async def tool_decision_hint(task_description: str = "", scope_hint: str = "",
     _seen_tools = set()
     _campaign_primary = False
     for rule in _campaign:
-        _key = str(rule["tool"])
+        _key = tuple(_rule_names(rule))
         if _key not in _seen_tools:
             _seen_tools.add(_key)
             _matched.append(rule)
@@ -2096,7 +2174,7 @@ async def tool_decision_hint(task_description: str = "", scope_hint: str = "",
     for probe in (task, task_expanded):
         for rule in _DECISION_RULES:
             if re.search(rule["re"], probe):
-                _key = str(rule["tool"])
+                _key = tuple(_rule_names(rule))
                 if _key not in _seen_tools:
                     _seen_tools.add(_key)
                     _matched.append(rule)
@@ -2116,21 +2194,28 @@ async def tool_decision_hint(task_description: str = "", scope_hint: str = "",
         _matched = []
     if _matched:
         rule = _matched[0]
-        validation = _validate_tools_in_rec(rule["tool"])
+        _names = _rule_names(rule)
+        validation = _validate_tools(_names)
         examples = _examples_for(validation["present"])
         # A07 escape hatch: prefer distinct sibling rules; if only one rule
-        # fired the slice is empty, so fall back to lexical candidates so the
-        # caller always sees a second option.
-        _alternates = [{"tool": r["tool"], "tier": r["tier"], "why": r["why"]}
-                       for r in _matched[1:3]]
+        # fired there are none, so fall back to lexical candidates so the
+        # caller always sees a second option. A sibling is shown by its first
+        # tool the answer does not already name.
+        _shown = set(_names)
+        _alternates = []
+        for r in _matched[1:]:
+            _alt = next((n for n in _rule_names(r) if n not in _shown), "")
+            if _alt:
+                _shown.add(_alt)
+                _alternates.append({"tool": _alt, "tier": r["tier"], "why": r["why"]})
+                if len(_alternates) == 2:
+                    break
         if not _alternates:
-            _alternates = _a07_alternates(_lex_ranked, exclude=rule["tool"])
+            _alternates = _a07_alternates(_lex_ranked, exclude=_names)
         else:
-            # Two+ rules fired, so the slice above is non-empty and the hatch
+            # Two+ rules fired, so the siblings above are non-empty and the hatch
             # did not run. A tool the query names outright must still be
             # reachable -- see _a07_named_tool_alternate.
-            _shown = rule["tool"] + " " + " ".join(
-                str(a.get("tool") or "") for a in _alternates)
             _alternates = _alternates + _a07_named_tool_alternate(
                 task, _lex_ranked, _shown)
         resp = {
@@ -2151,11 +2236,9 @@ async def tool_decision_hint(task_description: str = "", scope_hint: str = "",
             "alternates": _alternates,
         }
         resp["suggestion"] = {
-            "tool": (validation["present"][0] if validation.get("present")
-                     else str(rule["tool"]).split("/")[0].strip()),
+            "tool": rule["tool"],
             "tier": rule["tier"],
-            "payload_example": (examples.get(validation["present"][0], {})
-                                if validation.get("present") else {}),
+            "payload_example": examples.get(rule["tool"], {}),
             "reason": rule["why"],
         }
         return _ok(_apply_verbosity(resp, verbosity, "decision_hint"))
@@ -2202,7 +2285,7 @@ async def tool_decision_hint(task_description: str = "", scope_hint: str = "",
         return _ok(_apply_verbosity(resp, verbosity, "decision_hint"))
     return _ok(_apply_verbosity({
         "recommended_tier": "T1 (default)",
-        "recommended_tool": "find_symbol / search_code",
+        "recommended_tool": "search_code",
         "recommended_skill": "00_skill_router",
         "rationale": "No specific signal in task; default to read-only analysis first.",
         "confidence": 0.4,

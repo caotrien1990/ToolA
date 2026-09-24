@@ -652,6 +652,26 @@ def nodes_query(project_path: str, *, kind: str = "", name_prefix: str = "",
     return payload
 
 
+def _node_ids_matching(needle: str) -> tuple[str, list]:
+    """Subquery for the ids of nodes whose qualified_name or file_path contains `needle`.
+
+    N1: edges_query used to join every edge of `kind` to both of its nodes and
+    LIKE-test the joined rows, so its I/O grew with the EDGE count however narrow the
+    needle was. Measured 2026-09-24 on ToolQ's 44 MB graph.db: a 13-row target_contains
+    answer read 41 MB in 10038 reads. Warm that is 63 ms; cold, on the HDD the project
+    and so its .orchestrator_cache/graph.db live on, it was the 25 s
+    SERVER_BUDGET_EXCEEDED. Filtering nodes first reaches edges through
+    idx_edges_(source|target)_kind, and the rowid UNION lets each LIKE scan a narrow
+    covering index instead of the nodes table with its docstrings: 1340 reads, the same
+    rows. A plain `WHERE qualified_name LIKE ? OR file_path LIKE ?` here scans that fat
+    table again (3630 reads).
+    """
+    pat = "%" + needle + "%"
+    return ("(SELECT id FROM nodes WHERE rowid IN ("
+            "SELECT rowid FROM nodes WHERE qualified_name LIKE ? "
+            "UNION SELECT rowid FROM nodes WHERE file_path LIKE ?))", [pat, pat])
+
+
 def edges_query(project_path: str, *, kind: str = "", source_contains: str = "",
                 target_contains: str = "", limit: int = 100, offset: int = 0) -> dict:
     """Filter/browse raw graph edges with a cursor. Fail-open."""
@@ -668,11 +688,11 @@ def edges_query(project_path: str, *, kind: str = "", source_contains: str = "",
             if kind:
                 where.append("e.kind=?"); args.append(kind)
             if source_contains:
-                where.append("(s.qualified_name LIKE ? OR s.file_path LIKE ?)")
-                args += ["%" + source_contains + "%", "%" + source_contains + "%"]
+                sub, sub_args = _node_ids_matching(source_contains)
+                where.append("e.source IN " + sub); args += sub_args
             if target_contains:
-                where.append("(t.qualified_name LIKE ? OR t.file_path LIKE ?)")
-                args += ["%" + target_contains + "%", "%" + target_contains + "%"]
+                sub, sub_args = _node_ids_matching(target_contains)
+                where.append("e.target IN " + sub); args += sub_args
             w = (" WHERE " + " AND ".join(where)) if where else ""
             base_sql = ("FROM edges e JOIN nodes s ON s.id=e.source "
                         "JOIN nodes t ON t.id=e.target" + w)

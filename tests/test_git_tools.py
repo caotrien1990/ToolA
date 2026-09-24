@@ -1,5 +1,6 @@
 import tempfile, subprocess
 from pathlib import Path
+from unittest import mock
 from orchestrator import git_tools as g
 
 def run(root,*args): return subprocess.run(['git','-C',str(root),*args],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,stdin=subprocess.DEVNULL,text=True)
@@ -45,3 +46,15 @@ def test_paths_file_rejection_names_exact_offending_entry():
  result=g.safe_call(g.stage,str(r),paths_file=str(path_file))
  assert result['error_name']=='GIT_PATH_OUTSIDE_ROOT'
  assert result['offending_entry']=='../outside.txt' and '../outside.txt' in result['error']; d.cleanup()
+
+
+def test_run_failure_keeps_the_reason_behind_long_hook_noise():
+ # #27: git relays hook output on stderr BEFORE its own reason and some reasons arrive on
+ # stdout, so the old head-only `(stderr or stdout)[:1000]` answered the noise alone.
+ noise='hook: '+'n'*3000+'\nREAL-REASON: subject rejected'
+ done=subprocess.CompletedProcess(['git'],1,stdout='nothing added to commit\n',stderr=noise)
+ with mock.patch.object(g.subprocess,'run',return_value=done):
+  try: g._run('.',['commit','-m','x']); raise AssertionError('a failing git call did not raise')
+  except g.GitToolError as e: text=str(e); name=e.error_name
+ assert name=='GIT_COMMAND_FAILED' and len(text)<=1000 and text.startswith('hook: ')
+ assert 'REAL-REASON: subject rejected' in text and 'nothing added to commit' in text

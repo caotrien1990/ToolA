@@ -1327,13 +1327,15 @@ def run_mcp_stdio() -> None:
             })
 
         @_mcp.tool
-        def log_native_event(action_type: str, tool_name: str, target: str,
-                              duration_ms: int = 0, status: str = "ok",
-                              reason: str = "", project_path: str = "") -> str:
+        def log_native_event(action_type: str, tool_name: str, project_path: str,
+                             target: str = "", duration_ms: int = 0, status: str = "ok",
+                             reason: str = "") -> str:
             """Log one realtime native event into the session. Call immediately after native fallback for Rule C."""
             # A33-C: daemon-only transport. ct.log_native_event takes 16 params; this
-            # wrapper exposes the first 7, so the payload names exactly those 7 and the
-            # daemon keeps its own defaults for the rest.
+            # wrapper exposes 7 of them, so the payload names exactly those 7 and the
+            # daemon keeps its own defaults for the rest. #23: what it requires is what
+            # the daemon requires -- the daemon refuses every call without project_path
+            # and has always defaulted target.
             return _mcp_call_text("log_native_event", {
                 "action_type": action_type, "tool_name": tool_name, "target": target,
                 "duration_ms": duration_ms, "status": status, "reason": reason,

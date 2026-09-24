@@ -4,7 +4,6 @@ import json
 import sqlite3
 import threading
 import time
-from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -149,24 +148,37 @@ def test_different_agents_can_have_distinct_sessions(
     assert store._get_active_session_id(str(project), agent_id="agent-b") == second
 
 
-def test_legacy_lookup_remains_project_only(session_db: Path, tmp_path: Path) -> None:
+def test_an_unscoped_lookup_never_adopts_another_agents_session(
+    session_db: Path, tmp_path: Path
+) -> None:
+    """#17/#19: lookup and open answer "which session is mine" with ONE rule.
+
+    CASE-1909-H2 made an anonymous OPEN resume only an anonymous session, but the
+    lookup kept the opposite default: omit agent_id and it returned the newest
+    active session of ANY agent. write_fix, copy_file and mission pinning all look
+    up without an agent_id, so one CA's work was attributed to another CA's session.
+    An omitted agent_id now means the caller the dispatch runs as, and only a
+    caller with no identity at all is anonymous.
+    """
     project = tmp_path / "project"
     project.mkdir()
-    norm = store._session_project_key(str(project))
-    now = datetime.now().isoformat(timespec="seconds")
-    with sqlite3.connect(session_db) as conn:
-        conn.execute(
-            """INSERT INTO sessions
-               (session_id, session_title, project_path, mode, status, coverage, started_at, agent_id)
-               VALUES (?,?,?,?,?,?,?,?)""",
-            ("scoped", "Scoped", norm, "T1", "active", "A-only", now, "agent-a"),
-        )
+    theirs = store._auto_open_session(str(project), {}, agent_id="agent-a")
 
-    evidence = store._get_active_session(str(project))
+    assert store._get_active_session(str(project)) is None
+    assert store._get_active_session_id(str(project)) is None
 
-    assert evidence["session_id"] == "scoped"
-    assert evidence["agent_id"] == "agent-a"
-    assert store._get_active_session_id(str(project)) == "scoped"
+    mine = store._auto_open_session(str(project), {})
+    assert mine not in (None, theirs)
+    assert store._get_active_session_id(str(project)) == mine
+    assert store._get_active_session_id(str(project), agent_id="agent-a") == theirs
+
+    token = store._CALLER_AGENT_ID.set("agent-a")
+    try:
+        assert store._get_active_session_id(str(project)) == theirs
+        assert store._auto_open_session(str(project), {}) == theirs
+    finally:
+        store._CALLER_AGENT_ID.reset(token)
+    assert store._get_active_session_id(str(project)) == mine
 
 
 def test_concurrent_same_scope_auto_open_returns_one_session(

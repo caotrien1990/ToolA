@@ -7,8 +7,10 @@ keep these tests independent from filesystem and session side effects.
 
 import asyncio
 import json
+import sqlite3
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -79,6 +81,9 @@ class WriteLedgerFinalizationTests(unittest.IsolatedAsyncioTestCase):
         orchestrator_server.SERVER_GENERATION = self.old_generation
         code_tools._SESSIONS_DB = self.old_db
         code_tools._sync_session_db_alias()
+        # A test that reaches the session gate leaves read connections open on
+        # worker threads; Windows cannot remove a sessions.db they still hold.
+        code_tools._session_store_module.close_writer()
         self.temp_dir.cleanup()
 
     async def _dispatch(self, body: dict | None = None):
@@ -189,6 +194,97 @@ class WriteLedgerFinalizationTests(unittest.IsolatedAsyncioTestCase):
         second_response = await asyncio.wait_for(second, timeout=1)
         self.assertEqual(second_response.status, 500)
         self._assert_ledger_status("committed")
+
+    async def test_the_ledger_records_the_session_the_call_was_admitted_to(self):
+        """#17 + #19: write_status must name the session the write was admitted to.
+
+        The ledger stored `_task_session_id`, which is only an X-Session-Id header
+        or a body session_id -- empty on every plain call -- so write_status could
+        never say whose write it was. And a tool that looked its session up without
+        an agent_id got the newest active session of ANY agent. Here a second
+        agent's session is the newest one in the project on purpose.
+        """
+        orchestrator_server._NO_SESSION_REQUIRED.discard(TOOL_NAME)
+        project = Path(self.temp_dir.name) / "repo"
+        project.mkdir()
+        key = code_tools._session_project_key(str(project))
+        other = code_tools._auto_open_session(str(project), {}, agent_id="other-agent")
+        conn = sqlite3.connect(code_tools._SESSIONS_DB)
+        try:
+            with conn:  # commits; only close() releases the file
+                conn.execute("UPDATE sessions SET started_at=? WHERE session_id=?",
+                             (datetime.now().strftime("%Y-%m-%dT23:59:59"), other))
+        finally:
+            conn.close()
+        seen = []
+
+        async def scoped_write(project_path: str = "") -> str:
+            # The lookup shape write/core and copy_file use: no agent_id at all.
+            seen.append(code_tools._get_active_session_id(key))
+            return json.dumps({"ok": True, "write_performed": True})
+
+        code_tools.TOOL_MAP[TOOL_NAME] = scoped_write
+        request = make_mocked_request(
+            "POST", f"/api/call/{TOOL_NAME}",
+            headers={"X-Agent-Id": "ledger-agent"},
+            payload=_body_reader({"project_path": str(project)}),
+            match_info={"tool_name": TOOL_NAME},
+        )
+        real_schema = orchestrator_server._schema_for_tool
+
+        def schema_for(name):
+            # The probe has no registry entry, and the field gate reads only the
+            # registry: publish the one field it takes so the SESSION gate is reached.
+            if name == TOOL_NAME:
+                return {"name": TOOL_NAME, "parameters": {
+                    "type": "object", "properties": {"project_path": {"type": "string"}}}}
+            return real_schema(name)
+
+        with unittest.mock.patch.object(orchestrator_server, "_schema_for_tool", schema_for):
+            response = await orchestrator_server._dispatch_tool_call_request(request)
+        self.assertEqual(response.status, 200, response.text)
+
+        admitted = code_tools._get_active_session_id(key, "ledger-agent")
+        self.assertTrue(admitted)
+        self.assertNotEqual(admitted, other)
+        self.assertEqual(seen, [admitted])
+        live = [rec for rec in orchestrator_server._WRITE_LEDGER.values()
+                if rec.get("tool") == TOOL_NAME]
+        self.assertEqual([rec["session_id"] for rec in live], [admitted])
+        durable = orchestrator_server._write_ledger_db_get(
+            operation_id=live[0]["operation_id"])
+        self.assertEqual(durable["session_id"], admitted)
+
+    async def test_the_ledger_charges_the_dispatch_tail_to_its_own_phase(self):
+        """#2: a slow call's ledger must say WHERE the time went, not only duration_ms.
+
+        The tool's own last phase ends when it returns; parsing, auto-chain and hints
+        after that are the dispatcher's. Unmarked, they were charged to whatever phase
+        the tool entered last.
+        """
+        from orchestrator.progress_watchdog import current_watchdog
+
+        async def marking_write() -> str:
+            current_watchdog().mark("write")
+            return json.dumps({"ok": True, "write_performed": True})
+
+        code_tools.TOOL_MAP[TOOL_NAME] = marking_write
+        response = await self._dispatch()
+
+        self.assertEqual(response.status, 200)
+        progress = orchestrator_server._WRITE_LEDGER[self._operation_id()]["result"]["progress"]
+        self.assertEqual(list(progress["phase_ms"]), ["starting", "write", "dispatch_post"])
+
+    async def test_a_tool_that_reports_no_progress_keeps_its_ledger_shape(self):
+        async def silent_write() -> str:
+            return json.dumps({"ok": True, "write_performed": True})
+
+        code_tools.TOOL_MAP[TOOL_NAME] = silent_write
+        response = await self._dispatch()
+
+        self.assertEqual(response.status, 200)
+        result = orchestrator_server._WRITE_LEDGER[self._operation_id()]["result"]
+        self.assertNotIn("progress", result)
 
 
 if __name__ == "__main__":

@@ -1,8 +1,12 @@
 import asyncio
+import io
 import json
+import os
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -10,17 +14,23 @@ from unittest import mock
 import code_tools
 
 class FakeProcess:
+    """Popen as the runner reads it: text pipes it drains itself, plus wait()."""
     def __init__(self, timeout=False, stdout="stdout", stderr="stderr"):
         self.pid, self.returncode, self.timeout, self.calls = 43210, 0, timeout, 0
-        self.stdout_value, self.stderr_value = stdout, stderr
-    def communicate(self, timeout=None):
+        self.stdout, self.stderr = (io.TextIOWrapper(io.BytesIO(v.encode("utf-8")), encoding="utf-8") for v in (stdout, stderr))
+    def wait(self, timeout=None):
         self.calls += 1
         if self.timeout and self.calls == 1:
             raise subprocess.TimeoutExpired("runner", timeout)
         if self.timeout: self.returncode = 1
-        return self.stdout_value, self.stderr_value
+        return self.returncode
     def poll(self): return self.returncode
     def kill(self): self.returncode = -9
+
+
+def _kill_holder(out):
+    try: os.kill(int(out.split()[1]), signal.SIGTERM)
+    except (IndexError, ValueError, OSError): pass
 
 class CommandTransportC2Tests(unittest.TestCase):
     def setUp(self):
@@ -53,6 +63,7 @@ class CommandTransportC2Tests(unittest.TestCase):
         self.assertTrue(result["timed_out"])
         self.assertEqual(result["stderr"], "final stderr")
         taskkill.assert_called_once_with(["taskkill", "/PID", str(fake.pid), "/T", "/F"], capture_output=True, text=True, timeout=10)
+        self.assertEqual(result["process_evidence"]["tree_kill"]["method"], "taskkill")
 
     def test_script_runner_uses_shared_tree_timeout_and_clean_env(self):
         fake = FakeProcess(timeout=True, stdout="script stdout", stderr="script stderr")
@@ -64,6 +75,7 @@ class CommandTransportC2Tests(unittest.TestCase):
         self.assertEqual(result["stderr"], "script stderr")
         self.assertNotIn("GIT_PAGER", popen.call_args.kwargs["env"])
         communicate.assert_called_once()
+        self.assertEqual(result["process_evidence"], {"method": "taskkill"})
 
     def test_nul_suppression_is_not_log_redirection(self):
         source = Path(code_tools.__file__).read_text(encoding="utf-8")
@@ -128,5 +140,41 @@ class CommandTransportC2Tests(unittest.TestCase):
         launched_s = launched if isinstance(launched, str) else " ".join(str(x) for x in launched)
         self.assertIn("-Command", launched_s)
         self.assertNotIn("-File", launched_s)
+
+    # #29: the answer is due when the SCRIPT exits, not when every process that
+    # inherited its pipes lets go of them.
+    HOLDER = ("import subprocess, sys, tempfile\n"
+              "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'],"
+              " stdout=sys.stdout, stderr=sys.stderr, cwd=tempfile.gettempdir())\n"
+              "print('holder', g.pid, flush=True)\n")
+
+    def test_descendant_holding_the_pipes_does_not_hold_the_answer(self):
+        proc = subprocess.Popen([sys.executable, "-c", self.HOLDER], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        t0 = time.monotonic()
+        out, err, timed_out, evidence = code_tools._communicate_with_tree_timeout(proc, 60, is_windows=sys.platform == "win32")
+        elapsed = time.monotonic() - t0
+        _kill_holder(out)
+        self.assertLess(elapsed, 10, evidence)
+        self.assertEqual((proc.returncode, timed_out, out.split()[0]), (0, False, "holder"))
+        self.assertTrue(evidence["pipe_held_after_exit"], evidence)
+
+    def test_script_runner_answers_ok_at_script_exit_while_a_descendant_holds_the_pipes(self):
+        t0 = time.monotonic()
+        result = json.loads(asyncio.run(code_tools.run_project_test_script(str(self.project), self.HOLDER, runtime="python", timeout=60)))
+        elapsed = time.monotonic() - t0
+        _kill_holder(result.get("stdout") or "")
+        self.assertLess(elapsed, 15, result)
+        self.assertEqual((result["ok"], result["timed_out"]), (True, False), result)
+        self.assertTrue(result["process_evidence"]["pipe_held_after_exit"], result)
+
+    def test_timeout_kills_the_live_tree_within_a_bound(self):
+        flags = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if sys.platform == "win32" else {"start_new_session": True}
+        proc = subprocess.Popen([sys.executable, "-c", "import time; print('started', flush=True); time.sleep(60)"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **flags)
+        t0 = time.monotonic()
+        out, err, timed_out, evidence = code_tools._communicate_with_tree_timeout(proc, 3, is_windows=sys.platform == "win32")
+        self.assertLess(time.monotonic() - t0, 12, evidence)
+        self.assertEqual((timed_out, out), (True, "started\n"))
+        self.assertTrue(evidence["tree_kill"]["attempted"], evidence)
+        self.assertIsNotNone(proc.poll())
 
 if __name__ == "__main__": unittest.main()

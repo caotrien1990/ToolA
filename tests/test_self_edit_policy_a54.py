@@ -501,3 +501,85 @@ def test_metrics_never_count_an_a_origin_row_as_native():
               "is_allowed_native": False, "is_forbidden_native": True}
     c = _counters([_tagged_row(forbid, origin="A", target=A_ROOT / "code_tools.py")])
     assert (c["forbidden_native_count"], c["via_a_count"]) == (0, 1), c
+
+
+# --- 2026-09-24 (#18): off-root, the class still names the operation ---
+#
+# The outside branch relabelled every op missing from a private 4-verb / 6-class
+# list as outside_project_os_read, which the host gate allows. Measured on %TEMP%:
+# PowerShell move / rm / scratch_write / "", a restart, a council dispatch and a
+# click were all recorded as ALLOWED reads -- the Matrix row for an operation no
+# table knows says "Never guess unknown operations."
+
+
+@pytest.mark.parametrize("action", ["move", "rm", "scratch_write", ""])
+def test_an_unknown_verb_off_root_stays_unknown_and_is_refused(bare_dir, action):
+    r = _hook_shaped("PowerShell", action, bare_dir / "x.txt")
+    assert r["task_class"] == "unknown"
+    assert r["host_gate"]["scope"] == "outside_project"
+    assert r["host_gate"]["allowed"] is False
+    assert r["error_name"] == "HOST_GATE_DENY"
+
+
+@pytest.mark.parametrize("tool, cls", [
+    ("restart_orchestrator_via_bat", "orchestrator_lifecycle"),
+    ("council_message", "council_dispatch"),
+    ("click", "t4_action"),
+])
+def test_a_privileged_class_off_root_keeps_its_row(bare_dir, tool, cls):
+    r = _hook_shaped(tool, "", bare_dir / "x.txt")
+    assert r["task_class"] == cls
+    assert r["host_gate"]["allowed"] is False
+
+
+@pytest.mark.parametrize("tool, action, cls", [
+    ("Write", "write", "write_existing_file"),
+    ("PowerShell", "create_file", "create_project_file"),
+    ("Bash", "command", "project_command"),
+])
+def test_a_mutation_off_root_keeps_its_operation_class(bare_dir, tool, action, cls):
+    """Not a new outside class: write_fix / write_new_file take an absolute
+    outside target (xroot, tests/test_xroot_policy.py), so the row's preferred
+    [A] tool is a working route off-root too. host_gate.scope carries the scope."""
+    r = _hook_shaped(tool, action, bare_dir / "x.txt")
+    assert r["task_class"] == cls
+    assert r["host_gate"]["decision"] == "deny_outside_project_mutate"
+
+
+@pytest.mark.parametrize("tool, action", [
+    ("Read", "read"), ("Grep", "search"), ("PowerShell", "read"), ("read_file_range", ""),
+])
+def test_a_read_off_root_is_the_readonly_probe(bare_dir, tool, action):
+    r = _hook_shaped(tool, action, bare_dir / "x.txt")
+    assert r["task_class"] == "outside_project_os_read"
+    assert r["host_gate"]["allowed"] is True
+
+
+def test_one_mutation_matcher_for_memory_and_self_edit(fake_agent_home):
+    """A mapped read class is never a write because its action verb says so,
+    and a command-runner is a write only when its action is one -- in the
+    memory dir exactly as in [A]'s own tree."""
+    target = fake_agent_home / "projects" / "slug" / "memory" / "note.md"
+    assert _hook_shaped("Read", "write", target)["task_class"] == "outside_project_os_read"
+    assert _hook_shaped("Read", "write", A_ROOT / "code_tools.py")["task_class"] == (
+        "read_project_file")
+    assert _hook_shaped("Bash", "write", target)["task_class"] == "agent_memory_write"
+    assert _hook_shaped("Bash", "command", target)["task_class"] == "project_command"
+
+
+def test_a_path_segment_never_decides_a_keyword_class(tmp_path):
+    """F021's boundary match still read the PATH: a native PowerShell move of
+    <project>/web/index.html matched "web" and was ALLOWED as
+    general_web_research inside a governed project."""
+    proj = tmp_path / "proj"
+    (proj / ".git").mkdir(parents=True)
+    for rel in ("web/index.html", "upgrade/plan.md", "code_tools.py"):
+        r = _hook_shaped("PowerShell", "move", proj / rel)
+        assert r["task_class"] == "unknown", rel
+        assert r["host_gate"]["allowed"] is False, rel
+
+
+@pytest.mark.parametrize("tool", ["WebFetch", "WebSearch"])
+def test_the_host_web_tools_are_web_research_by_name(tool):
+    r = _hook_shaped(tool, "fetch", "https://web.dev/x")
+    assert r["task_class"] == "general_web_research"

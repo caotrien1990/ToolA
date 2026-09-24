@@ -23,7 +23,7 @@ from orchestrator.graph import store as store
 from orchestrator.graph.extractors.python import extract as py_extract
 from orchestrator.graph.indexer import index_project
 from orchestrator.graph.status import graph_status
-from orchestrator.graph.query import graph_find_symbol, cbm_trace_path
+from orchestrator.graph.query import graph_find_symbol, cbm_trace_path, edges_query
 
 FIX_MOD_A = '''import os
 from mod_b import gamma
@@ -339,6 +339,91 @@ class P0GraphFixtureSuite(unittest.TestCase):
         finally:
             target.write_text(original, encoding="utf-8")
             index_project(self.proj, scope="full")  # restore graph freshness
+
+    # ── N1: edges_query reaches edges through the matched NODES ──
+    def _edges_reference(self, kind, src, tgt):
+        """The pre-N1 shape: join every edge, then LIKE-test the joined node rows."""
+        where, args = [], []
+        if kind:
+            where.append("e.kind=?"); args.append(kind)
+        for side, needle in (("s", src), ("t", tgt)):
+            if needle:
+                where.append(f"({side}.qualified_name LIKE ? OR {side}.file_path LIKE ?)")
+                args += ["%" + needle + "%"] * 2
+        conn = store.get_db(self.proj, readonly=True)
+        try:
+            rows = conn.execute(
+                "SELECT e.kind, s.qualified_name, s.file_path, t.qualified_name, t.file_path "
+                "FROM edges e JOIN nodes s ON s.id=e.source JOIN nodes t ON t.id=e.target"
+                + (" WHERE " + " AND ".join(where) if where else ""), args).fetchall()
+        finally:
+            conn.close()
+        return sorted(tuple(r) for r in rows)
+
+    def test_edges_query_node_first_filter_returns_the_same_rows(self):
+        """N1 changed HOW edges_query finds rows, never WHICH: source only, target only,
+        both, a file-path needle, no kind, and an empty answer must each return exactly
+        the rows the join-then-LIKE shape returned."""
+        cases = [("calls", "", "beta"), ("calls", "alpha", ""), ("", "", "mod_b"),
+                 ("calls", "mod_a", "gamma"), ("", "Widget", ""), ("calls", "", "zz_none")]
+        sizes = []
+        for kind, src, tgt in cases:
+            want = self._edges_reference(kind, src, tgt)
+            got = edges_query(self.proj, kind=kind, source_contains=src,
+                              target_contains=tgt, limit=500)
+            self.assertIsNone(got["error"], got)
+            self.assertEqual(got["total"], len(want), (kind, src, tgt))
+            self.assertEqual(sorted((r["kind"], r["source"], r["source_file"], r["target"],
+                                     r["target_file"]) for r in got["results"]), want,
+                             (kind, src, tgt))
+            sizes.append(len(want))
+        # Positive control: equal empty answers would prove nothing.
+        self.assertGreaterEqual(sum(1 for n in sizes if n), 4, sizes)
+
+    def test_edges_query_needle_reaches_edges_through_the_node_index(self):
+        """N1 WHY: joining every edge of `kind` and LIKE-testing the joined node rows made
+        the I/O grow with the EDGE count, not with the needle. Measured 2026-09-24 on
+        ToolQ's 44 MB graph.db: a 13-row target_contains answer read 41 MB in 10038
+        reads -- 63 ms warm, and the 25 s SERVER_BUDGET_EXCEEDED cold on the HDD the
+        project lives on. A needle must reach edges through idx_edges_(source|target)_kind,
+        and every SCAN left in the plan must be a covering-index scan: an edge-side scan
+        or a scan of the nodes table (docstrings and all) is the regression."""
+        seen = []
+        real_get_db = store.get_db
+
+        def _traced(*a, **kw):
+            conn = real_get_db(*a, **kw)
+            conn.set_trace_callback(seen.append)
+            return conn
+
+        for kind, src, tgt, idx in (("calls", "", "beta", "idx_edges_target_kind"),
+                                    ("calls", "alpha", "", "idx_edges_source_kind"),
+                                    ("", "", "mod_b", "idx_edges_target_kind")):
+            seen.clear()
+            with mock.patch.object(store, "get_db", _traced):
+                edges_query(self.proj, kind=kind, source_contains=src, target_contains=tgt)
+            count_sql = [s for s in seen if s.lstrip().upper().startswith("SELECT COUNT(*)")]
+            self.assertEqual(len(count_sql), 1, seen)
+            conn = store.get_db(self.proj, readonly=True)
+            try:
+                plan = [r[3] for r in conn.execute("EXPLAIN QUERY PLAN " + count_sql[0])]
+            finally:
+                conn.close()
+            self.assertTrue(any(idx in step for step in plan), plan)
+            self.assertEqual([s for s in plan if s.startswith("SCAN") and "COVERING INDEX" not in s],
+                             [], plan)
+
+    def test_readonly_graph_connection_holds_one_query_pass_in_cache(self):
+        """N1 WHY: a graph read is a COUNT then a PAGE over the same rows. Under SQLite's
+        2 MB default cache the page re-read from the OS what the count had just read --
+        measured 1340 -> 673 reads for a 13-row edges answer on ToolQ, 7953 -> 4471 for
+        an unfiltered browse."""
+        conn = store.get_db(self.proj, readonly=True)
+        try:
+            self.assertEqual(conn.execute("PRAGMA cache_size").fetchone()[0],
+                             -store.READ_CACHE_KIB)
+        finally:
+            conn.close()
 
 
 if __name__ == "__main__":

@@ -34,8 +34,10 @@ to the tool name afterwards.
 """
 
 import ast
+import asyncio
 import importlib
 import inspect
+import json
 import os
 import sys
 import textwrap
@@ -178,6 +180,33 @@ class EveryProxyEligibleShortcutLeavesTheHost(unittest.TestCase):
             node = defs[name]
             self.assertEqual(_mcp_call_text_calls(node)[0][1],
                              _param_names(node), name)
+
+    def test_a_shortcut_requires_exactly_what_the_daemon_requires(self):
+        """#23: the MCP signature and the registry schema are ONE required list.
+
+        log_native_event defaulted project_path="" in both, and the daemon then
+        refused every call that took that default -- the published contract
+        invited the one call that always fails. The shortcut also demanded
+        `target`, which the daemon has always defaulted. agent_id is the one
+        declared difference: the dispatcher fills it from the transport identity
+        before the required check runs, so no caller has to send it.
+        """
+        defs = _bridge_defs()
+        for name in PROXIED:
+            spec = defs[name].args
+            positional = spec.posonlyargs + spec.args
+            required = {a.arg for a in positional[:len(positional) - len(spec.defaults)]}
+            required |= {a.arg for a, d in zip(spec.kwonlyargs, spec.kw_defaults) if d is None}
+            schema = orchestrator_server._tool_schema_payload(name)[0]["tool"]["function"]
+            published = set(schema["parameters"].get("required") or []) - {"agent_id"}
+            self.assertEqual(required, published, name)
+
+    def test_the_daemon_names_the_field_it_refuses(self):
+        """#23: the registry gate checks key PRESENCE, so project_path="" reaches the
+        handler -- whose refusal carried no error_name a CA could route on."""
+        refused = json.loads(asyncio.run(code_tools.log_native_event(
+            action_type="probe", tool_name="probe", project_path="")))
+        self.assertEqual(refused.get("error_name"), "MISSING_REQUIRED_FIELD", refused)
 
     def test_the_only_in_host_registry_call_left_is_the_declared_exception(self):
         # Whole-bridge sweep, not a per-name check: this is what stops a NEW

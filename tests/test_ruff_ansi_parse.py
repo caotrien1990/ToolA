@@ -18,11 +18,12 @@ from unittest import mock
 import code_tools as ct
 
 
-# Realistic ruff --output-format concise lines, one per rule under test.
+# Realistic ruff --output-format concise lines, one per rule under test. Each
+# carries ruff's "[*]" safe-fix mark: only a marked finding promises ruff_fix.
 _PLAIN_LINES = {
     "F401": "code.py:1:8: F401 [*] `os` imported but unused",
-    "F841": "code.py:5:5: F841 Local variable `x` is assigned to but never used",
-    "E402": "code.py:9:1: E402 Module level import not at top of file",
+    "E401": "code.py:3:1: E401 [*] Multiple imports on one line",
+    "F541": "code.py:7:7: F541 [*] f-string without any placeholders",
     "I001": "code.py:1:1: I001 [*] Import block is un-sorted or un-formatted",
 }
 
@@ -48,7 +49,7 @@ def test_plain_lines_match_expected_rule():
 
 def test_ansi_lines_still_match():
     """The core regression: ANSI-wrapped lines MUST match (before fix -> []).
-    Covers more than F401: F401, F841, E402 and the I\\d{3} isort branch."""
+    Covers more than F401: F401, E401, F541 and the I\\d{3} isort branch."""
     for rule, line in _PLAIN_LINES.items():
         ansi = _ansi_wrap(line)
         assert "\x1b[" in ansi, "test scaffold must actually inject ANSI"
@@ -75,7 +76,7 @@ def test_multiline_ansi_block_matches_all_rules():
     ansi_result = ct._py_error_ruff_hint(ansi_block)
     assert plain_result == ansi_result
     _, matched, _ = ansi_result
-    for expected in ("F401", "F841", "E402", "I"):
+    for expected in ("F401", "E401", "F541", "I"):
         assert expected in matched, f"{expected} missing from {matched}"
 
 
@@ -102,3 +103,12 @@ def test_validate_file_argv_carries_no_color():
     assert "--color" in argv, f"--color flag missing from argv: {argv}"
     assert argv[argv.index("--color") + 1] == "never", (
         f"--color must be 'never', got argv: {argv}")
+
+
+def test_findings_without_the_safe_fix_mark_promise_nothing():
+    """F841/E402 print without "[*]": ruff has no safe fix for them, so the safe
+    pass ruff_fix runs would change nothing. Plain or ANSI, no promise."""
+    for line in ("code.py:5:5: F841 Local variable `x` is assigned to but never used",
+                 "code.py:9:1: E402 Module level import not at top of file"):
+        assert ct._py_error_ruff_hint(line) == (False, [], "")
+        assert ct._py_error_ruff_hint(_ansi_wrap(line)) == (False, [], "")

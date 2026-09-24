@@ -69,6 +69,11 @@ _TOOL_TO_CLASS: dict[str, str] = {
     "Bash": "project_command",
     "Grep": "search_project_code",
     "Glob": "search_project_code",
+    # The host's web tools. Unmapped, they reached general_web_research only
+    # through a keyword -- "http" in the action, or "web" somewhere in the URL --
+    # and the keyword heuristics no longer read the target.
+    "WebFetch": "general_web_research",
+    "WebSearch": "general_web_research",
     "write_fix_html": "write_existing_file",
     "write_new_file": "create_project_file",
     "write_transaction": "batch_project_write",
@@ -359,6 +364,28 @@ def _is_mutating_self_edit_action(action: str) -> bool:
             or action in _MUTATING_CLASSES_FOR_SELF_EDIT)
 
 
+def _is_native_mutation(task_class: str | None, action: str) -> bool:
+    """ONE answer to "does this op change its target file?".
+
+    Asked by the [A] self-edit branch and by the outside-project memory branch,
+    which used to spell it a second way. A mutating class is a mutation, a
+    command-runner only when its declared action is a file mutation, and a bare
+    verb only when no class resolved -- so a Read that says action="write"
+    stays a read.
+    """
+    return bool(
+        task_class in _MUTATING_CLASSES_FOR_SELF_EDIT
+        or (task_class in _COMMAND_CLASSES_FOR_SELF_EDIT
+            and _is_mutating_self_edit_action(action))
+        or (not task_class and _is_mutating_self_edit_action(action))
+    )
+
+
+# The classes that only LOOK at their target. Off-root they become the readonly
+# OS probe; every other class keeps its own row there (#18).
+_OS_READ_CLASSES = frozenset({"read_project_file", "search_project_code"})
+
+
 def is_orchestrator_self_target(target: str) -> bool:
     """True when `target` lives inside [A]'s own source tree (_ROOT).
 
@@ -409,16 +436,13 @@ def classify_action(
         tr = "native"
 
     scope_l = (scope or "").strip().lower()
-    target_l = (target or "").strip().lower()
-    blob = f"{tool} {action} {scope_l} {target_l}"
-    # W7 (F021, 2026-08-19): the keyword heuristics below used plain `k in blob`.
-    # `blob` ends with a FILE PATH, so an ordinary filename could flip policy:
+    # W7 (F021, 2026-08-19): the keyword heuristics below used plain `k in blob`,
+    # and that blob ended with the TARGET PATH, so an ordinary filename flipped
+    # policy:
     #   "my_code_tools_notes.txt" -> upgrade_orchestrator (then hybrid_upgrade_only)
     #   "data download.csv"       -> a_unreachable_mid_task (then allow_with_log_native_event)
-    # Both LOOSENED native_policy away from `forbid` for files that have nothing
-    # to do with [A]. Match on token boundaries instead, so "upgrade" no longer
-    # fires on "downgrade"/"upgrade_notes.md" and "code_tools" no longer fires
-    # on "my_code_tools_notes". Underscore is a word char, so \b already
+    # Match on token boundaries, so "upgrade" no longer fires on
+    # "downgrade"/"upgrade_notes.md". Underscore is a word char, so \b already
     # handles the _notes/_helper suffixes; the dot in ".txt" is a boundary.
     def _kw_hit(text: str, keywords: tuple[str, ...]) -> bool:
         return any(
@@ -426,9 +450,11 @@ def classify_action(
             for k in keywords
         )
 
-    # "[A] is unreachable" describes the SESSION, never a path. Keeping the
-    # target out of this one blob is what kills the "data download.csv" ->
-    # a_unreachable_mid_task false positive at the root.
+    # Every keyword heuristic reads the CALLER'S words only, never the path. The
+    # boundary match still let one path segment decide (#18, 2026-09-24): a
+    # native PowerShell move of <project>\web\index.html matched "web" and was
+    # ALLOWED as general_web_research. What a path means has its own matchers --
+    # target_scope, is_orchestrator_self_target, is_agent_memory_target.
     signal_blob = f"{tool} {action} {scope_l}".lower()
 
     task_class = _TOOL_TO_CLASS.get(tool) or _ACTION_TO_CLASS.get(action)
@@ -453,30 +479,25 @@ def classify_action(
         target=target, project_path=project_path, scope=scope,
     ) == "outside_project"
 
-    # Outside project: prefer outside_project_os_read so allow_readonly applies.
-    # Tool maps like Read->read_project_file must not force project-forbid off-root.
+    # Outside every project the class still names the OPERATION (#18). A write
+    # keeps write_existing_file because [A] governs it off-root too: write_fix /
+    # write_new_file take an absolute outside target (xroot), so the row's
+    # preferred tool is a working route, and host_gate.scope carries the scope.
+    # Only a read becomes the readonly OS probe. Anything else keeps what it
+    # resolved to -- a privileged class keeps its row, a verb no table knows stays
+    # unknown. Relabelling those a read recorded PowerShell move/rm/"" and a
+    # restart as ALLOWED reads, where the Matrix says never guess.
     if outside:
-        if action in ("write", "execute", "delete", "command") or task_class in (
-            "write_existing_file", "create_project_file", "batch_project_write",
-            "delete_or_copy_project_file", "project_command", "project_test",
-        ):
-            # A file mutation in the agent's OWN harness memory is mandated by the
-            # harness and governed by no [A] tool, so it gets its own class. Any
-            # other mutating-ish op outside stays classified; host_gate denies it
-            # unless approved.
-            if is_agent_memory_target(target) and (
-                task_class in _MUTATING_CLASSES_FOR_SELF_EDIT
-                or _is_mutating_self_edit_action(action)
-            ):
-                task_class = "agent_memory_write"
-            elif not task_class:
-                task_class = "outside_project_os_read"
-        else:
+        if is_agent_memory_target(target) and _is_native_mutation(task_class, action):
+            # The agent's OWN harness memory is written natively by mandate and
+            # governed by no [A] tool, so it gets its own class.
+            task_class = "agent_memory_write"
+        elif task_class in _OS_READ_CLASSES:
             task_class = "outside_project_os_read"
-    if _kw_hit(blob, ("web",)) or "http" in action:
+    if _kw_hit(signal_blob, ("web",)) or "http" in action:
         if not task_class:
             task_class = "general_web_research"
-    if _kw_hit(blob, ("upgrade", "hybrid", "edit orchestrator", "code_tools")):
+    if _kw_hit(signal_blob, ("upgrade", "hybrid", "edit orchestrator", "code_tools")):
         if not task_class:
             task_class = "upgrade_orchestrator"
     # [A] self-edit: a NATIVE mutation whose target is inside [A]'s own source
@@ -491,12 +512,7 @@ def classify_action(
     if (
         tr == "native"
         and is_orchestrator_self_target(target)
-        and (
-            task_class in _MUTATING_CLASSES_FOR_SELF_EDIT
-            or (task_class in _COMMAND_CLASSES_FOR_SELF_EDIT
-                and _is_mutating_self_edit_action(action))
-            or (not task_class and _is_mutating_self_edit_action(action))
-        )
+        and _is_native_mutation(task_class, action)
     ):
         task_class = "upgrade_orchestrator"
     # The caller's own words. Since 2026-09-24 this row is forbid: a classifier

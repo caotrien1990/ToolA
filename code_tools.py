@@ -38,6 +38,7 @@ from pathlib import Path
 import path_runtime
 import surgical_mapper
 from orchestrator import search_snapshots
+from orchestrator.core.text_cap import cap_head_tail
 from orchestrator.mission import (
     tools as _mission_tools,  # noqa: F401 - eval'd by BASE_TOOL_MAP_SPECS as '_mission_tools.mission_*'
 )
@@ -922,11 +923,7 @@ def _bootstrap_path(project_path: str, agent_id: str = "",
 
 
 def _truncate_output(text: str | None, limit: int = MAX_COMMAND_OUTPUT) -> str:
-    if text is None:
-        return ""
-    if len(text) <= limit:
-        return text
-    return text[:limit] + f"\n...[truncated {len(text) - limit} chars]"
+    return cap_head_tail(text, limit)[0]
 
 
 # V15 R49 — Error phase taxonomy (machine-readable). Every _json_error
@@ -1776,10 +1773,9 @@ def _select_python_interpreter(project_root: Path | None = None, explicit: str =
 def _truncate_stream(value: str, max_chars: int = 0) -> tuple[str, dict]:
     import hashlib as _hashlib
     original = value or ""
-    truncated = bool(max_chars and len(original) > max_chars)
-    returned = original[:max_chars] if truncated else original
+    returned, omitted = cap_head_tail(original, max_chars)
     return returned, {"original_chars": len(original), "returned_chars": len(returned),
-                      "truncated": truncated,
+                      "truncated": bool(omitted),
                       "sha256": _hashlib.sha256(original.encode("utf-8", errors="replace")).hexdigest()}
 
 
@@ -5080,14 +5076,82 @@ def _kill_process_tree(proc, *, is_windows: bool) -> dict:
     return evidence
 
 
-def _communicate_with_tree_timeout(proc, timeout: int, *, is_windows: bool):
+# #29: how long stdout/stderr may stay open once the process itself is gone. A
+# descendant that inherited the pipes (Start-Process -Redirect*, a server the
+# script launched) holds EOF for as long as it lives, so waiting on EOF -- what
+# communicate() does -- blocked a 10 s script for its whole timeout and then
+# without a bound, and taskkill /T on the already-dead child missed the holder.
+_PIPE_DRAIN_GRACE_S = 2.0
+
+
+def _pipe_reader(stream, sink: list) -> None:
+    """Append chunks as they arrive, so what was read so far is never lost."""
+    raw = getattr(stream, "buffer", stream)
+    read = getattr(raw, "read1", None) or raw.read
     try:
-        stdout, stderr = proc.communicate(timeout=timeout)
-        return stdout or "", stderr or "", False, None
+        while True:
+            chunk = read(65536)
+            if not chunk:
+                break
+            sink.append(chunk)
+    except (OSError, ValueError):
+        pass
+    finally:
+        # Only this thread may close it: close() takes the lock a blocked read holds.
+        try:
+            stream.close()
+        except (OSError, ValueError):
+            pass
+
+
+def _pipe_text(stream, sink: list):
+    data = b"".join(list(sink))
+    if not hasattr(stream, "encoding"):
+        return data
+    # The decode Popen(text=True) does: the stream's codec, then universal newlines.
+    text = data.decode(stream.encoding or "utf-8", stream.errors or "strict")
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _communicate_with_tree_timeout(proc, timeout: int, *, is_windows: bool,
+                                   drain_grace: float = _PIPE_DRAIN_GRACE_S):
+    """Wait on the PROCESS, not on pipe EOF: (stdout, stderr, timed_out, evidence).
+
+    evidence is None on a clean run; it carries the tree kill of a timeout, and
+    pipe_held_after_exit when a descendant still held the pipes at return. A
+    descendant is never killed on a normal exit -- it may be a server on purpose.
+    """
+    pipes = [(s, []) for s in (proc.stdout, proc.stderr)]
+    readers = []
+    for stream, sink in pipes:
+        if stream is not None:
+            reader = threading.Thread(target=_pipe_reader, args=(stream, sink), daemon=True)
+            reader.start()
+            readers.append(reader)
+    evidence = {}
+    timed_out = False
+    try:
+        proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
-        tree_kill = _kill_process_tree(proc, is_windows=is_windows)
-        stdout, stderr = proc.communicate()
-        return stdout or "", stderr or "", True, tree_kill
+        timed_out = True
+        # The child is still alive here, so /T still reaches every descendant.
+        evidence["tree_kill"] = _kill_process_tree(proc, is_windows=is_windows)
+        try:
+            proc.wait(timeout=drain_grace)
+        except subprocess.TimeoutExpired:
+            evidence["still_running_after_kill"] = True
+    deadline = time.monotonic() + drain_grace
+    for reader in readers:
+        reader.join(max(0.0, deadline - time.monotonic()))
+    if any(r.is_alive() for r in readers) and "still_running_after_kill" not in evidence:
+        evidence.update({
+            "pipe_held_after_exit": True,
+            "drain_grace_s": drain_grace,
+            "note": ("a process the script started still holds stdout/stderr; "
+                     "anything it writes after this answer is not in it"),
+        })
+    out, err = (_pipe_text(s, sink) if s is not None else "" for s, sink in pipes)
+    return out or "", err or "", timed_out, evidence or None
 
 
 async def run_project_command(
@@ -5792,10 +5856,10 @@ async def run_project_command(
         # stdout_max_chars -- this is a nested function, so an assignment would
         # rebind the name as a local and every non-destructive call would raise
         # UnboundLocalError before reaching the cap it was meant to apply.
-        if not _cmd_no_truncate and stdout_max_chars and isinstance(p.get("stdout"), str) and len(p["stdout"]) > stdout_max_chars:
-            p["stdout"] = p["stdout"][:stdout_max_chars] + f"\n...[truncated {len(p['stdout']) - stdout_max_chars} chars (stdout_max_chars)]"
-        if not _cmd_no_truncate and stderr_max_chars and isinstance(p.get("stderr"), str) and len(p["stderr"]) > stderr_max_chars:
-            p["stderr"] = p["stderr"][:stderr_max_chars] + f"\n...[truncated {len(p['stderr']) - stderr_max_chars} chars (stderr_max_chars)]"
+        if not _cmd_no_truncate and stdout_max_chars and isinstance(p.get("stdout"), str):
+            p["stdout"] = cap_head_tail(p["stdout"], stdout_max_chars)[0]
+        if not _cmd_no_truncate and stderr_max_chars and isinstance(p.get("stderr"), str):
+            p["stderr"] = cap_head_tail(p["stderr"], stderr_max_chars)[0]
         # CASE-2008 — a destructive run says so in its OWN result, so the audit
         # trail does not depend on anyone having kept the refusal that preceded it,
         # and a backed-up run stays distinguishable from a skipped one afterwards.
@@ -6215,7 +6279,7 @@ async def run_project_command(
                     payload["error"] = "Background process spawned but expected readiness target was not verified."
                     payload["readiness_protocol"] = _proto
                 return _r43_apply_command_filter(payload)
-            stdout, stderr, timed_out, tree_kill = _communicate_with_tree_timeout(
+            stdout, stderr, timed_out, proc_evidence = _communicate_with_tree_timeout(
                 proc, timeout, is_windows=_is_win,
             )
             launch_evidence = _verify_launch(proc.pid) if (expected_port or expected_process_name or health_url) else {
@@ -6246,6 +6310,7 @@ async def run_project_command(
                 "stdout": _truncate_output(stdout),
                 "stderr": _truncate_output(stderr),
                 "timed_out": timed_out,
+                **({"process_evidence": proc_evidence} if proc_evidence else {}),
                 "background": False,
                 "interactive": bool(interactive),
                 "elevated": False,
@@ -8294,6 +8359,19 @@ _DESTRUCTIVE_OVERWRITE = [
     (r"\bcopytree\s*\([^\n]*\bdirs_exist_ok\s*=\s*True\b", "copytree_merge"),
 ]
 
+# #26 / #30 (2026-09-24): the Python-level destructive calls, in ONE table. The
+# python regex rows below are DERIVED from it -- runtime "any" still reads
+# ``python -c "..."`` as shell text -- and `_py_destructive_lines` judges a
+# python body against the same names as code.
+_PY_DESTRUCTIVE_CALLEES = {
+    "rmtree": "rmtree",
+    "remove": "os_remove",
+    "unlink": "os_remove",
+    "rmdir": "os_remove",
+    "removedirs": "os_remove",
+    "truncate": "os_remove",
+}
+
 # PowerShell aliases matter as much as the cmdlet names: rm / del / ri / rd /
 # rmdir / erase are all Remove-Item, and a guard that only knew "Remove-Item"
 # would wave through ``rm -Recurse -Force $dir``.
@@ -8336,9 +8414,12 @@ _DESTRUCTIVE_PATTERNS = {
         (r"\btruncate(?:Sync)?\s*\(", "fs_truncate"),
         (r"\brimraf\b", "rimraf"),
     ],
+    # Derived from _PY_DESTRUCTIVE_CALLEES, one row per kind.
     "python": [
-        (r"\brmtree\s*\(", "rmtree"),
-        (r"\b(?:remove|unlink|rmdir|removedirs|truncate)\s*\(", "os_remove"),
+        (r"\b(?:%s)\s*\(" % "|".join(
+            name for name, of_kind in _PY_DESTRUCTIVE_CALLEES.items() if of_kind == kind),
+         kind)
+        for kind in dict.fromkeys(_PY_DESTRUCTIVE_CALLEES.values())
     ],
     "sh": [
         (r"(?:^\s*|[;|&(]\s*)rm\b", "rm"),
@@ -8492,6 +8573,19 @@ def _ps_here_string_line_span(script: str) -> set:
     return inside
 
 
+def _body_runs_strings(script: str) -> bool:
+    """True when the body's TEXT shows any way to evaluate a string as code.
+
+    The one answer B028's here-string prose and the python AST scan both ask for,
+    so the two cannot drift apart on what an eval route is.
+    """
+    if any(re.search(pattern, script) for pattern in _STRING_EVAL_ROUTES):
+        return True
+    # B028c: the cmdlet write forms, which need a target check the pattern list
+    # cannot express (see `_writes_string_to_executable`).
+    return _writes_string_to_executable(script)
+
+
 def _ps_prose_line_span(script: str, runtime: str) -> set:
     """Here-string lines that may be treated as data for THIS body.
 
@@ -8502,14 +8596,7 @@ def _ps_prose_line_span(script: str, runtime: str) -> set:
     if runtime not in ("powershell", "any"):
         return set()
     span = _ps_here_string_line_span(script)
-    if not span:
-        return set()
-    for pattern in _STRING_EVAL_ROUTES:
-        if re.search(pattern, script):
-            return set()
-    # B028c: the cmdlet write forms, which need a target check the pattern list
-    # cannot express (see `_writes_string_to_executable`).
-    if _writes_string_to_executable(script):
+    if not span or _body_runs_strings(script):
         return set()
     return span
 
@@ -8524,6 +8611,148 @@ def _ps_join_continuations(script: str) -> str:
     return re.sub(r"`[ \t]*\r?\n[ \t]*", " ", script)
 
 
+# A python body can turn a string into code only through one of these, on top of
+# the text routes every runtime shares (`_body_runs_strings`). Present, and every
+# textual mention counts again -- fail safe, the old answer. Broad on purpose: a
+# write counts, because a string written to a .py and imported is the slow route
+# to the same exec.
+_PY_STRING_RUN_MODULES = frozenset({
+    "subprocess", "runpy", "importlib", "code", "codeop", "pty", "multiprocessing",
+    "pickle", "marshal", "ctypes",
+})
+_PY_STRING_RUN_CALLEES = frozenset({
+    "exec", "eval", "compile", "execfile", "__import__", "system", "popen",
+    "startfile", "loads", "import_module", "run_path", "run_module", "write",
+    "write_text", "write_bytes", "writelines", "create_subprocess_exec",
+    "create_subprocess_shell",
+})
+# ``.remove`` is the one destructive name that ordinary containers share. Only a
+# receiver PROVEN to live in memory -- a list/set display, a name bound to nothing
+# else, an attribute of ``sys`` -- is left uncounted: sftp.remove and fs.remove
+# delete files, so a receiver the scan cannot prove never passes.
+_PY_CONTAINER_BUILDERS = frozenset({"list", "set", "sorted", "deque"})
+_PY_CONTAINER_NODES = ("List", "Set", "ListComp", "SetComp")
+# A destructive function handed on as a VALUE deletes just the same:
+# map(os.unlink, paths), atexit.register(rmtree, d), handlers = [shutil.rmtree].
+_PY_VALUE_PARENTS = ("Call", "keyword", "Assign", "AnnAssign", "NamedExpr", "Return",
+                     "Lambda", "List", "Tuple", "Set", "Dict")
+
+
+def _py_destructive_lines(body: str) -> dict | None:
+    """Judge a python body's destructive calls on its AST; None when it does not parse.
+
+    #26 / #30 (2026-09-24). The python regex rows read the raw text and were wrong
+    both ways: ``x = "path.unlink()"``, a comment and ``sys.path.remove(...)`` each
+    counted, while ``from os import remove as rm; rm(p)`` and
+    ``map(os.unlink, paths)`` did not. Answers::
+
+        counted       {line: [kind, ...]}  a destructive call, or one passed on as a value
+        in_memory     {line, ...}          ``.remove`` on a receiver proven in memory
+        runs_strings  bool                 the body can run a string as python code
+    """
+    import ast
+
+    try:
+        tree = ast.parse(body)
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
+        return None
+    parents: dict = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
+
+    # Pass 1: what every name is bound to, and what each from-import brings in.
+    # Collected module-wide, so a name is "in memory" only if EVERY binding says so.
+    imported: dict[str, str] = {}
+    bindings: dict[str, list] = {}
+    runs_strings = False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".")[0]
+                runs_strings = runs_strings or root in _PY_STRING_RUN_MODULES
+                bindings.setdefault(alias.asname or root, []).append(
+                    ("import", alias.name if alias.asname else root))
+        elif isinstance(node, ast.ImportFrom):
+            if (node.module or "").split(".")[0] in _PY_STRING_RUN_MODULES:
+                runs_strings = True
+            for alias in node.names:
+                imported[alias.asname or alias.name] = alias.name
+                bindings.setdefault(alias.asname or alias.name, []).append(("other", None))
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            parent = parents.get(node)
+            value = getattr(parent, "value", None)
+            if isinstance(parent, (ast.Assign, ast.AnnAssign)) and value is not None:
+                bindings.setdefault(node.id, []).append(("value", value))
+            else:  # for / with / unpacking / augmented / walrus: unknown
+                bindings.setdefault(node.id, []).append(("other", None))
+        elif not isinstance(node, ast.alias):
+            # def / class / except-as / match capture / a parameter
+            name = node.arg if isinstance(node, ast.arg) else getattr(node, "name", None)
+            if isinstance(name, str):
+                bindings.setdefault(name, []).append(("other", None))
+
+    def callee_names(func) -> set:
+        if isinstance(func, ast.Attribute):
+            return {func.attr}
+        if isinstance(func, ast.Name):
+            return {func.id, imported.get(func.id, func.id)}
+        return set()
+
+    def container(expr) -> bool:
+        if type(expr).__name__ in _PY_CONTAINER_NODES:
+            return True
+        return isinstance(expr, ast.Call) and bool(
+            callee_names(expr.func) & _PY_CONTAINER_BUILDERS)
+
+    def proven_in_memory(receiver) -> bool:
+        if container(receiver):
+            return True
+        if isinstance(receiver, ast.Name):
+            hows = bindings.get(receiver.id, [])
+            return bool(hows) and all(how == "value" and container(v) for how, v in hows)
+        root = receiver
+        while isinstance(root, ast.Attribute):
+            root = root.value
+        if root is receiver or not isinstance(root, ast.Name):
+            return False
+        hows = bindings.get(root.id, [])
+        return bool(hows) and all(how == ("import", "sys") for how in hows)
+
+    # Pass 2: every call, and every destructive function handed on as a value.
+    funcs = {id(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)}
+    counted: dict[int, list[str]] = {}
+    in_memory: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            names = callee_names(node.func)
+            if (names & _PY_STRING_RUN_CALLEES
+                    or any(n.startswith(("exec", "spawn")) for n in names)
+                    or ("print" in names and any(k.arg == "file" for k in node.keywords))):
+                runs_strings = True
+            target = node.func
+        elif (isinstance(node, (ast.Attribute, ast.Name)) and isinstance(node.ctx, ast.Load)
+              and id(node) not in funcs
+              and type(parents.get(node)).__name__ in _PY_VALUE_PARENTS):
+            target = node
+            if isinstance(node, ast.Attribute):
+                names = {node.attr}
+            else:  # a bare name is a destructive function only if imported as one
+                names = {imported[node.id]} if node.id in imported else set()
+        else:
+            continue
+        hits = [name for name in sorted(names) if name in _PY_DESTRUCTIVE_CALLEES]
+        if not hits:
+            continue
+        line = target.end_lineno if isinstance(target, ast.Attribute) else target.lineno
+        if (hits == ["remove"] and isinstance(target, ast.Attribute)
+                and proven_in_memory(target.value)):
+            in_memory.add(line)
+            continue
+        counted.setdefault(line, []).append(_PY_DESTRUCTIVE_CALLEES[hits[0]])
+    return {"counted": counted, "in_memory": in_memory, "runs_strings": runs_strings}
+
+
 def _scan_destructive_script(script_content: str, runtime: str) -> dict:
     """Classify a script body: destructive matches, silent-ignore footguns, warnings.
 
@@ -8533,6 +8762,11 @@ def _scan_destructive_script(script_content: str, runtime: str) -> dict:
     ``confirm_destructive``, whereas a false negative costs files. Parsing
     PowerShell well enough to know a token sits inside a string is not something
     a guard should be betting the filesystem on.
+
+    A python body is the exception, because Python ships its own parser: its
+    Python-level rows are judged on the AST (``_py_destructive_lines``), which is
+    stricter than the text in BOTH directions. A body that does not parse keeps
+    the text scan.
     """
     body = script_content or ""
     # runtime="any" scans the union of every runtime's patterns. It exists for
@@ -8553,6 +8787,16 @@ def _scan_destructive_script(script_content: str, runtime: str) -> dict:
                 + list(_DESTRUCTIVE_COMMON)
                 + list(_DESTRUCTIVE_EMBEDDED_SHELL)
                 + list(_DESTRUCTIVE_OVERWRITE))
+    # #26/#30: on a python body that parses, the AST owns the Python rows. Their
+    # regex stays only to REPORT a mention the AST did not count -- or to count it
+    # after all, once the body has a way to run a string as code. The other lists
+    # stay text on purpose: they are strings handed to a shell.
+    py = _py_destructive_lines(body) if runtime == "python" else None
+    py_rows = _DESTRUCTIVE_PATTERNS["python"]
+    runs_strings = False
+    if py is not None:
+        patterns = [row for row in patterns if row not in py_rows]
+        runs_strings = py["runs_strings"] or _body_runs_strings(body)
     # One finding per LINE, not per (line, kind). ``confirm_destructive`` is a
     # number the caller has to reproduce, so it has to mean "destructive
     # statements I reviewed" -- and a line is the unit a reader counts. Keying on
@@ -8571,10 +8815,25 @@ def _scan_destructive_script(script_content: str, runtime: str) -> dict:
     prose_matches: list[dict] = []
     for line_no, line in enumerate(body.splitlines(), 1):
         kinds = [kind for pattern, kind in patterns if re.search(pattern, line)]
-        if not kinds:
+        text_kinds: list[str] = []
+        why_not = ""
+        if py is not None:
+            kinds += py["counted"].get(line_no, [])
+            text_kinds = [kind for pattern, kind in py_rows if re.search(pattern, line)]
+            if text_kinds and not kinds:
+                if line_no in py["in_memory"]:
+                    why_not = ("`.remove` on a list, a set or an attribute of sys: it "
+                               "edits memory, not a file")
+                elif runs_strings:
+                    kinds = text_kinds
+                else:
+                    why_not = ("inside a string literal or a comment, and this script "
+                               "has no way to run a string as Python code, so the "
+                               "match is data, not a call")
+        if not kinds and not why_not:
             continue
         deduped: list[str] = []
-        for kind in kinds:
+        for kind in kinds or text_kinds:
             if kind not in deduped:
                 deduped.append(kind)
         record = {
@@ -8583,6 +8842,10 @@ def _scan_destructive_script(script_content: str, runtime: str) -> dict:
             "kinds": deduped,
             "text": line.strip()[:200],
         }
+        if why_not:
+            record["why_not_counted"] = why_not
+            prose_matches.append(record)
+            continue
         if line_no in prose_lines:
             record["why_not_counted"] = (
                 "inside a PowerShell here-string and this script contains no way to "
@@ -8652,7 +8915,14 @@ def _scan_destructive_script(script_content: str, runtime: str) -> dict:
                 "so a dry_run preview cannot cover them."
             )
 
-    if prose_matches:
+    if prose_matches and py is not None:
+        warnings.append(
+            "%d line(s) mention a destructive Python call but were NOT counted: the "
+            "parsed script makes no such call there (see prose_matches for each "
+            "reason). Once a script can run a string as code -- exec, eval, "
+            "subprocess, a write to a .py -- its strings count again." % len(prose_matches)
+        )
+    elif prose_matches:
         warnings.append(
             "%d line(s) inside a here-string mention a destructive command but were "
             "NOT counted: this script has no way to execute a string, so they are "
@@ -9003,7 +9273,7 @@ async def run_project_test_script(
 
     start_t = time.time()
     timed_out = False
-    tree_kill = None
+    proc_evidence = None
     try:
         creationflags = getattr(_sp_rpts, "CREATE_NEW_PROCESS_GROUP", 0) if sys.platform == "win32" else 0
         proc = await run_in_executor_lane(
@@ -9012,7 +9282,7 @@ async def run_project_test_script(
             env=child_env, creationflags=creationflags,
             start_new_session=(sys.platform != "win32"),
         )
-        stdout, stderr, timed_out, tree_kill = await run_in_executor_lane(
+        stdout, stderr, timed_out, proc_evidence = await run_in_executor_lane(
             "test", _communicate_with_tree_timeout, proc, timeout,
             is_windows=(sys.platform == "win32"),
         )
@@ -9068,6 +9338,9 @@ async def run_project_test_script(
         "script_label": script_label,
         "runtime_used": runtime_clean,
         "timed_out": timed_out,
+        # #29: the tree kill of a timeout, or a descendant that still held the
+        # pipes after the script exited -- evidence; ok stays rc/timed_out.
+        **({"process_evidence": proc_evidence} if proc_evidence else {}),
         # A35: say so when [A] forced the child's stdout codec, so a CA never has
         # to guess whether a clean non-ASCII line was luck or policy.
         **({"child_encoding": child_encoding_note} if child_encoding_note else {}),
@@ -13492,28 +13765,130 @@ _RUFF_SAFE_FIX_RULES = ("F401", "F841", "E711", "E712", "E731", "E401", "E402",
 # selected for the lint pass and reported, and `ruff_preview` answers
 # `violations_not_auto_fixable`, which is why that state is no longer
 # unreachable (see the docstring of RuffRuleSetsMustNotDrift).
-_RUFF_REPORT_ONLY_RULES = ("B006", "E722")
+# F821 (undefined name) joined 2026-09-24 (#7): report-only -- a missing name
+# has no mechanical repair, and a write that introduces one is exactly what the
+# write-time lint exists to catch.
+_RUFF_REPORT_ONLY_RULES = ("B006", "E722", "F821")
 _RUFF_LINT_SELECT = ",".join((*_RUFF_SAFE_FIX_RULES, *_RUFF_REPORT_ONLY_RULES, "I"))
+_RUFF_FIX_CA_HINT = "ruff_fix available to auto-fix lint issues"
+# One concise-format finding: "path:line:col: CODE [*] message". The optional
+# "[*] " is ruff's own "has a safe fix" mark.
+_RUFF_FINDING_RE = re.compile(
+    r"^(?P<path>.+?):(?P<line>\d+):(?P<col>\d+): (?P<code>[A-Z]+[0-9]+) (?P<fix>\[\*\] )?(?P<msg>[^\r\n]*)$",
+    re.MULTILINE)
+_RUFF_SUMMARY_RE = re.compile(r"^(?:Found \d+ error|\[\*\] \d+ fixable|No fixes available|\d+ fixable)")
+
+
+def _ruff_lint_argv(fp, stdin: bool = False) -> list[str]:
+    """The one ruff argv for the write-time lint pass and its baseline.
+
+    --extend-select, not --select (#7, measured 2026-09-24): --select REPLACES
+    the project's own rule set, so a project whose ruff.toml selects "F" had
+    ``x = pytest.mark`` (F821) answer validation.ok with no finding. Extending
+    keeps the project's rules and adds [A]'s advisory set on top. The fixable
+    override makes ``[*]`` mean "ruff has a safe fix", not "this project allows
+    fixing it" -- the same override ruff_fix itself runs with.
+    """
+    target = ["--stdin-filename", str(fp), "-"] if stdin else [str(fp)]
+    return [_console_python(), "-m", "ruff", "check", *target,
+            "--extend-select", _RUFF_LINT_SELECT,
+            "--config", 'lint.fixable = ["ALL"]',
+            "--output-format", "concise", "--color", "never"]
 
 
 def _py_error_ruff_hint(error_msg: str) -> tuple[bool, list[str], str]:
-    """Map Ruff diagnostics to safe-fix preview guidance without applying fixes."""
+    """Map Ruff diagnostics to safe-fix preview guidance without applying fixes.
+
+    A finding counts only when ruff itself marks it ``[*]`` (it has a safe fix)
+    AND its rule is one ruff_fix's safe pass selects. Measured 2026-09-24: E711
+    and F841 print WITHOUT ``[*]`` -- their fixes are unsafe -- yet a match on
+    the rule name alone promised ruff_fix, and the ruff_fix that followed
+    changed nothing.
+    """
     # campaign-1608 (A51): strip ANSI SGR escapes before matching (layer 2 /
-    # defence in depth). Rule detection is case-insensitive, so an escape's
-    # trailing letter (every SGR ends in one, e.g. \x1b[31m) satisfies the
-    # (?<![A-Z0-9]) lookbehind and suppresses EVERY match -- both the loop below
-    # and the I\d{3} isort branch. Layer 1 passes "--color never" so the ruff we
+    # defence in depth). An escape inside a line breaks the finding pattern and
+    # suppresses every match. Layer 1 passes "--color never" so the ruff we
     # spawn never colours; this guards any future/foreign call site that forgets.
     text = _strip_ansi(error_msg)
-    supported_rules = _RUFF_SAFE_FIX_RULES
-    matched = [rule for rule in supported_rules if re.search(rf"(?<![A-Z0-9]){rule}(?![A-Z0-9])", text, re.IGNORECASE)]
-    if re.search(r"(?<![A-Z0-9])I\d{3}(?![A-Z0-9])", text, re.IGNORECASE):
-        matched.append("I")
-    matched = list(dict.fromkeys(matched))
+    found = set()
+    for m in _RUFF_FINDING_RE.finditer(text):
+        if not m.group("fix"):
+            continue
+        code = m.group("code")
+        if re.fullmatch(r"I\d{3}", code):
+            found.add("I")
+        elif code in _RUFF_SAFE_FIX_RULES:
+            found.add(code)
+    matched = [rule for rule in (*_RUFF_SAFE_FIX_RULES, "I") if rule in found]
     if not matched:
         return False, [], ""
     rules = ", ".join(matched)
-    return True, matched, f"Ruff safe-fix co the sua (rules: {rules}). Goi ruff_fix(path=<file>,apply=false) de preview truoc - CA tu quyet dinh."
+    return True, matched, f"ruff_fix's safe pass repairs these findings (rules: {rules})."
+
+
+def _lint_only_introduced(val: dict, fp, baseline) -> dict:
+    """Reduce a post-write lint result to the findings THIS write introduced.
+
+    Measured 2026-09-24: a pre-existing I001 at orchestrator_server.py:15914 was
+    reported -- with a ruff_fix hint -- on every write to that file, whatever
+    the write touched. A write answers for its own change; the file's full lint
+    state stays one validate_file call away. The baseline is the pre-write text,
+    linted through stdin with the same argv, and findings are matched as a
+    multiset on (code, message) so a line shift does not re-report them.
+    Anything this cannot measure returns ``val`` unchanged: an unfiltered
+    report is noisy, a wrongly filtered one would hide a real finding.
+    """
+    after = str(val.get("lint_warning") or "") if isinstance(val, dict) else ""
+    if not after or not isinstance(baseline, str):
+        return val
+    try:
+        # BYTES, not text: text-mode stdin turns a CRLF file's "\r\n" into
+        # "\r\r\n" on Windows, so ruff lints a different file and the baseline
+        # misses findings the real file has (measured: its I001 vanished, and the
+        # write re-reported it as introduced).
+        r = subprocess.run(_ruff_lint_argv(fp, stdin=True),
+                           input=baseline.removeprefix("\ufeff").encode("utf-8"),
+                           capture_output=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return val
+    if r.returncode not in (0, 1):
+        return val
+    before = {}
+    for m in _RUFF_FINDING_RE.finditer(_strip_ansi((r.stdout or b"").decode("utf-8", "replace"))):
+        key = (m.group("code"), m.group("msg"))
+        before[key] = before.get(key, 0) + 1
+    if not before:
+        return val
+    kept, introduced, preexisting = [], 0, 0
+    for line in _strip_ansi(after).splitlines():
+        m = _RUFF_FINDING_RE.fullmatch(line)
+        if m is None:
+            if line.strip() and not _RUFF_SUMMARY_RE.match(line):
+                kept.append(line)
+            continue
+        key = (m.group("code"), m.group("msg"))
+        if before.get(key):
+            before[key] -= 1
+            preexisting += 1
+        else:
+            kept.append(line)
+            introduced += 1
+    if not preexisting:
+        return val
+    out = {k: v for k, v in val.items() if k != "lint_warning"}
+    if out.get("ca_hint") == _RUFF_FIX_CA_HINT:
+        out.pop("ca_hint")
+        if out.get("ca_next_action") == "ruff_fix":
+            out.pop("ca_next_action")
+    if kept:
+        kept.append(f"Found {introduced} error(s) introduced by this write ({preexisting} pre-existing not shown).")
+        out["lint_warning"] = "\n".join(kept)
+    applicable, matched, hint = _py_error_ruff_hint(out.get("lint_warning", ""))
+    out.update(ruff_fix_applicable=applicable, ruff_rules_matched=matched, ruff_fix_hint=hint)
+    if applicable:
+        out["ca_hint"] = _RUFF_FIX_CA_HINT
+        out.setdefault("ca_next_action", "ruff_fix")
+    return out
 
 
 # Every lang `validate_file` actually implements a checker for. The registered
@@ -13523,7 +13898,7 @@ def _py_error_ruff_hint(error_msg: str) -> tuple[bool, list[str], str]:
 # to a typo. This set is the single source of truth for both the refusal message
 # and the schema text.
 _VALIDATE_LANGS = frozenset({
-    "auto", "python", "js", "ts", "esbuild", "html", "vue", "json", "css",
+    "auto", "python", "js", "ts", "esbuild", "html", "vue", "json", "css", "toml",
 })
 
 # Spellings that mean one of the above. These are the values a caller naturally
@@ -13611,6 +13986,8 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
             lang = "json"
         elif ext == ".css":
             lang = "css"
+        elif ext == ".toml":
+            lang = "toml"
         else:
             lang = "none"
 
@@ -13653,7 +14030,10 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                 # _RUFF_FIX_OVERRIDES), so the flag -- not an env scrub -- is the
                 # authoritative fix and matches the house idiom. Parser also strips
                 # ANSI now (layer 2) in case a future call site forgets this flag.
-                r = subprocess.run([_console_python(), "-m", "ruff", "check", str(fp), "--select", _RUFF_LINT_SELECT, "--output-format", "concise", "--color", "never"], capture_output=True, text=True, timeout=10)
+                # argv lives in _ruff_lint_argv: the write-time baseline in
+                # _lint_only_introduced must lint with exactly these rules.
+                r = subprocess.run(_ruff_lint_argv(fp), capture_output=True, text=True,
+                                   encoding="utf-8", errors="replace", timeout=10)
                 if r.returncode == 1:
                     err = (r.stdout or "").strip() or (r.stderr or "").strip()
                     if not err:
@@ -13663,6 +14043,12 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                         return {"ok": True, "lang": "python", "file": str(fp), "lint_skipped_reason": "ruff exited 1 (findings exist) but produced no output on stdout/stderr - lint result is UNKNOWN, not clean", "ruff_fix_applicable": False, "ruff_rules_matched": [], "ruff_fix_hint": ""}
                     applicable, matched_rules, hint_text = _py_error_ruff_hint(err)
                     return {"ok": True, "lang": "python", "file": str(fp), "lint_warning": err, "ruff_fix_applicable": applicable, "ruff_rules_matched": matched_rules, "ruff_fix_hint": hint_text}
+                if r.returncode != 0:
+                    # Fail loud too: rc 2 is ruff itself refusing (an unparseable
+                    # project ruff.toml, an unknown selector). It linted nothing,
+                    # and the bare return below read exactly like a clean file.
+                    detail = ((r.stderr or "").strip() or (r.stdout or "").strip())[:300]
+                    return {"ok": True, "lang": "python", "file": str(fp), "lint_skipped_reason": f"ruff exited {r.returncode} ({detail}) - lint result is UNKNOWN, not clean", "ruff_fix_applicable": False, "ruff_rules_matched": [], "ruff_fix_hint": ""}
             except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
                 # Also fail loud: a missing or hung linter is not a clean file.
                 return {"ok": True, "lang": "python", "file": str(fp), "lint_skipped_reason": f"ruff could not run ({type(exc).__name__}) - lint result is UNKNOWN, not clean", "ruff_fix_applicable": False, "ruff_rules_matched": [], "ruff_fix_hint": ""}
@@ -13844,6 +14230,23 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                 return {"ok": True, "lang": "css", "file": str(fp)}
             except Exception as exc:
                 return {"ok": False, "lang": "css", "file": str(fp), "error": str(exc)}
+        elif lang == "toml":
+            # #5, measured 2026-09-24: a .toml write answered ok with no check at
+            # all while the file on disk no longer parsed. tomllib is the stdlib
+            # reader Python's own consumers load TOML with; its message carries
+            # "line N", which the line/col parse below reads. utf-8, not
+            # utf-8-sig: tomllib refuses a BOM, so a BOM'd file is reported as
+            # the consumer will see it, the same stance as the json branch.
+            try:
+                import tomllib
+            except ImportError:
+                return {"ok": True, "lang": "toml", "file": str(fp), "checked": False,
+                        "note": "tomllib unavailable (Python < 3.11) - TOML NOT validated"}
+            try:
+                tomllib.loads(fp.read_text(encoding="utf-8"))
+                return {"ok": True, "lang": "toml", "file": str(fp)}
+            except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
+                return {"ok": False, "lang": "toml", "file": str(fp), "error": str(exc)}
         else:
             # Reachable only via lang="auto" on an extension with no checker --
             # the caller asked us to guess and there was nothing to run. That
@@ -13891,7 +14294,7 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
         result.setdefault("ruff_fix_hint", "")
     # Task 4 auto-chain: hint ruff_fix when applicable
     if result.get("ruff_fix_applicable"):
-        result["ca_hint"] = "ruff_fix available to auto-fix lint issues"
+        result["ca_hint"] = _RUFF_FIX_CA_HINT
         result.setdefault("ca_next_action", "ruff_fix")
     return json.dumps(result, ensure_ascii=False)
 
@@ -14994,7 +15397,8 @@ async def log_native_event(action_type: str = "", tool_name: str = "", target: s
         }, ensure_ascii=False)
     try:
         if not project_path:
-            return _json_error("project_path required for log_native_event")
+            return _json_error("project_path required for log_native_event",
+                               error_name="MISSING_REQUIRED_FIELD")
         audit_parts = []
         for key, value in [
             ("instead_of", instead_of),

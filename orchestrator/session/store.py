@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import base64
+import contextvars
 import gc
 import hashlib
 import json
@@ -1646,25 +1647,47 @@ _SESSION_EVIDENCE_COLUMNS = (
 )
 
 
-def _get_active_session(project_path: str, agent_id: str | None = None) -> dict | None:
-    """Return persisted evidence for the active session in the requested scope.
+# #17/#19: the agent the dispatch in flight runs as. The dispatcher sets it once per
+# request (orchestrator_server._A37_AGENT_CTX IS this object), so a lookup that passes
+# no agent_id still answers for its own caller. It copies into tasks and
+# asyncio.to_thread, NOT into a bare ThreadPoolExecutor.submit: a lookup on an
+# executor lane sees "" and is anonymous.
+_CALLER_AGENT_ID: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "_a37_agent_id", default="")
 
-    Supplying agent_id uses an agent-scoped lookup. Omitting it preserves the
-    legacy project-only behavior and returns the latest active project session.
+
+def _session_owner_clause(agent_id: str | None) -> tuple[str | None, str, tuple[str, ...]]:
+    """Resolve whose session a lookup means, as (owner, sql, params).
+
+    ONE rule for open and lookup. CASE-1909-H2 made an anonymous open resume only
+    an anonymous session, while the lookup kept adopting the newest active session
+    of ANY agent (#17/#19): write_fix, copy_file and mission pinning look up without
+    an agent_id, so one CA's work landed in another CA's session. The owner is the
+    explicit agent_id, else the dispatch's caller, else nobody -- and nobody matches
+    only a session that has no agent either.
+    """
+    owner = agent_id or _CALLER_AGENT_ID.get() or None
+    if owner:
+        return owner, " AND agent_id=?", (owner,)
+    return None, " AND agent_id IS NULL", ()
+
+
+def _get_active_session(project_path: str, agent_id: str | None = None) -> dict | None:
+    """Return persisted evidence for the caller's active session in this project.
+
+    An omitted agent_id means the caller the dispatch runs as (_session_owner_clause),
+    never "whichever agent opened last".
     """
     try:
         norm = _session_project_key(project_path)
         _close_stale_active_sessions(norm)
+        _owner, owner_sql, owner_params = _session_owner_clause(agent_id)
         sql = (
             f"SELECT {', '.join(_SESSION_EVIDENCE_COLUMNS)} FROM sessions "
-            "WHERE project_path=? AND status='active'"
+            "WHERE project_path=? AND status='active'" + owner_sql
+            + " ORDER BY started_at DESC, session_id DESC LIMIT 1"
         )
-        params: tuple[str, ...] = (norm,)
-        if agent_id:
-            sql += " AND agent_id=?"
-            params += (agent_id,)
-        sql += " ORDER BY started_at DESC LIMIT 1"
-        row = _session_read_connection().execute(sql, params).fetchone()
+        row = _session_read_connection().execute(sql, (norm, *owner_params)).fetchone()
         return dict(zip(_SESSION_EVIDENCE_COLUMNS, row, strict=True)) if row else None
     except Exception:
         return None
@@ -1776,6 +1799,9 @@ def _open_or_resume_session(project_path: str, session_title: str, mode: str,
                             apply_requested_title: bool = False) -> tuple[dict, bool]:
     """Serialize resume, opt-in rename, or close-then-create in one transaction."""
     norm = _session_project_key(project_path)
+    # Resolved HERE, not inside _open: _open may run on the session writer thread,
+    # which does not carry the dispatch's context.
+    agent_id, owner_sql, owner_params = _session_owner_clause(agent_id)
     now = datetime.now().isoformat(timespec="seconds")
 
     def _open(conn):
@@ -1796,19 +1822,13 @@ def _open_or_resume_session(project_path: str, session_title: str, mode: str,
                 "UPDATE sessions SET status='closed', ended_at=? WHERE session_id=?",
                 [(now, sid) for sid in stale_ids],
             )
+        # CASE-1909-H2: an unscoped lookup ADOPTS whichever agent's session sorts
+        # first and then writes this caller's events into it. The owner clause is
+        # shared with _get_active_session, so resume and lookup cannot disagree.
         sql = ("SELECT session_id, session_title, started_at, mode FROM sessions "
-               "WHERE project_path=? AND status='active'")
-        params = (norm,)
-        if agent_id:
-            sql += " AND agent_id=?"
-            params += (agent_id,)
-        else:
-            # CASE-1909-H2: an unscoped lookup ADOPTS whichever agent's session
-            # sorts first and then writes this caller's events into it. An
-            # anonymous open may only ever resume an anonymous session.
-            sql += " AND agent_id IS NULL"
-        sql += " ORDER BY started_at DESC, session_id DESC LIMIT 1"
-        existing = conn.execute(sql, params).fetchone()
+               "WHERE project_path=? AND status='active'" + owner_sql
+               + " ORDER BY started_at DESC, session_id DESC LIMIT 1")
+        existing = conn.execute(sql, (norm, *owner_params)).fetchone()
         closed_session_id = None
         if existing and force_new_session:
             blockers = _session_rotation_blockers(conn, norm, existing[0])

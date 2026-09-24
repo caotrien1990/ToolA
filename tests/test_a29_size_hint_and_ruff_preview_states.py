@@ -285,11 +285,10 @@ class NestedProjectionMakesFieldsUsable(unittest.TestCase):
         self.assertEqual(plain, {"result."})
         self.assertEqual(nested, {})
 
-    def test_project_nested_counts_what_it_dropped(self):
-        out, dropped, rescued, unknown = _r101_project_nested(
-            {"a": 1, "b": 2, "c": 3}, {"a"})
-        self.assertEqual((out, dropped, rescued, unknown),
-                         ({"a": 1}, 2, [], []))
+    def test_project_nested_keeps_what_was_asked_and_names_the_miss(self):
+        out, rescued, unknown = _r101_project_nested(
+            {"a": 1, "b": 2, "c": 3}, {"a", "zz"})
+        self.assertEqual((out, rescued, unknown), ({"a": 1}, [], ["zz"]))
 
 
 class SizeHintDescendsIntoTheWrapper(unittest.TestCase):
@@ -340,15 +339,16 @@ class SizeHintDescendsIntoTheWrapper(unittest.TestCase):
 class RuffRuleSetsMustNotDrift(unittest.TestCase):
     """A29-P4 / A32-1.2: what validate_file LINTS vs what ruff_fix may repair.
 
-    validate_file lints with one --select list and _py_error_ruff_hint decides
+    validate_file lints with one --extend-select list and _py_error_ruff_hint decides
     fixability from another. Until A32-1.2 the two were the SAME set, and this
     docstring claimed `violations_not_auto_fixable` was therefore unreachable --
     which was never quite true: E999 is reported by lint and matched by no rule
     in the hint, so test_ruff_preview_states already reaches that branch at :167
     and :197 already pins it as one of the four live states. A32-1.2 makes it
-    reachable from ORDINARY lint too, deliberately: B006 and E722 are selected so
-    a mutable default argument and a bare except are SEEN, but ruff cannot repair
-    them unattended (B006's fix is `unsafe`, E722 has none), so they must never be
+    reachable from ORDINARY lint too, deliberately: B006, E722 and F821 are selected
+    so a mutable default argument, a bare except and an undefined name are SEEN, but
+    ruff cannot repair them unattended (B006's fix is `unsafe`, E722 and F821 have
+    none), so they must never be
     advertised as fixable. The invariant these tests pin is therefore no longer
     equality but containment: _RUFF_LINT_SELECT == fixable + report-only + I,
     while _RUFF_FIX_SELECT (the third copy, in orchestrator/graph/tools.py -- the
@@ -356,7 +356,7 @@ class RuffRuleSetsMustNotDrift(unittest.TestCase):
     """
 
     FIXABLE_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541,RUF100,I"
-    LINT_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541,RUF100,B006,E722,I"
+    LINT_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541,RUF100,B006,E722,F821,I"
 
     def test_refactor_did_not_change_what_ruff_is_asked_to_check(self):
         import code_tools
@@ -393,7 +393,7 @@ class RuffRuleSetsMustNotDrift(unittest.TestCase):
 
         for rule in self.FIXABLE_SELECT.split(","):
             code = "I001" if rule == "I" else rule
-            line = f"probe.py:1:1: {code} something ruff dislikes"
+            line = f"probe.py:1:1: {code} [*] something ruff dislikes"
             applicable, matched, hint = code_tools._py_error_ruff_hint(line)
             self.assertTrue(applicable, f"{code} not recognised as fixable")
             self.assertTrue(matched, f"{code} matched no rule")
@@ -426,15 +426,15 @@ class RuffRuleSetsMustNotDrift(unittest.TestCase):
             self.assertIn(rule, preview["lint_warning"])
 
     def test_an_unselected_rule_would_take_the_not_fixable_branch(self):
-        # The drift case, proven by construction: F821 is deliberately NOT in
-        # the select set, so if a future widening let it reach lint_warning
-        # without updating the matcher, ruff_preview reports real lint instead
-        # of laundering it into "clean".
+        # The drift case, proven by construction: E501 is deliberately NOT in
+        # the select set, yet a project's own rules still reach lint_warning
+        # (--extend-select keeps them), so ruff_preview must report real lint
+        # instead of laundering it into "clean".
         import code_tools
         from orchestrator.tools.write.core import _ruff_preview_from_validation
 
-        self.assertNotIn("F821", code_tools._RUFF_LINT_SELECT)
-        warning = "probe.py:2:12: F821 Undefined name `nope`"
+        self.assertNotIn("E501", code_tools._RUFF_LINT_SELECT)
+        warning = "probe.py:2:80: E501 Line too long (99 > 79)"
         applicable, matched, _ = code_tools._py_error_ruff_hint(warning)
         self.assertFalse(applicable)
         self.assertEqual(matched, [])
@@ -445,7 +445,7 @@ class RuffRuleSetsMustNotDrift(unittest.TestCase):
         self.assertEqual(preview["state"], "violations_not_auto_fixable")
         self.assertTrue(preview["checked"])
         self.assertFalse(preview["applicable"])
-        self.assertIn("F821", preview["lint_warning"])
+        self.assertIn("E501", preview["lint_warning"])
 
 
 class WriteNewFileGetsTheSameAutoChainAsWriteFix(unittest.TestCase):

@@ -2,6 +2,7 @@
 from __future__ import annotations
 import fnmatch, hashlib, json, os, re, subprocess, tempfile, time
 from pathlib import Path
+from orchestrator.core.text_cap import cap_head_tail
 
 class GitToolError(RuntimeError):
     def __init__(self, name, message, **extra):
@@ -14,7 +15,11 @@ def _run(root, args, timeout=60, check=True):
     except FileNotFoundError as e: raise GitToolError('GIT_NOT_INSTALLED','git executable not found') from e
     except subprocess.TimeoutExpired as e: raise GitToolError('GIT_TIMEOUT',f'git command timed out after {timeout}s') from e
     out={'exit_code':p.returncode,'stdout':p.stdout,'stderr':p.stderr}
-    if check and p.returncode: raise GitToolError('GIT_COMMAND_FAILED',(p.stderr or p.stdout or 'git failed').strip()[:1000],exit_code=p.returncode)
+    if check and p.returncode:
+        # git relays hook output on stderr BEFORE its own reason, and some reasons
+        # ("nothing to commit") arrive on stdout: keep both streams, cap head+tail.
+        detail='\n'.join(s for s in ((p.stderr or '').strip(),(p.stdout or '').strip()) if s) or 'git failed'
+        raise GitToolError('GIT_COMMAND_FAILED',cap_head_tail(detail,1000)[0],exit_code=p.returncode)
     return out
 
 def resolve_root(project_path):
@@ -213,6 +218,14 @@ def status(project_path, include_ignored=False, max_records=0, compact_untracked
                                      'counts.staged to tell pending from already-committed.'),
             'counts':counts,'clean':not records,'records_total':total,'records_truncated':bool(cap and len(display_records)>cap),'records_grouped':bool(compact_untracked),'display_records_total':len(display_records),'records':shown}
 
+
+# #28b: a call that CHANGES or CHECKS the tree answers the state it saw, never the tree's
+# file list. records is the one unbounded part of status() (see above), and stage/unstage/
+# commit/stale_check embedded it UNCAPPED -- measured 66 KB for one git_commit on a tree
+# whose ~620 dirty paths were not even the caller's. Hashes and counts are computed over
+# every record, so the lock and the proof survive the cut; git_status lists paths.
+def _state(s): return {k:s[k] for k in ('head','branch','ahead','behind','state_hash','staged_hash','counts','clean')}
+
 def stale_check(project_path, max_commit_age_hours=168, expected_state_hash=''):
     root=resolve_root(project_path); s=status(str(root)); git=root/'.git'; states=[n for n in ['MERGE_HEAD','CHERRY_PICK_HEAD','REVERT_HEAD','BISECT_LOG','rebase-merge','rebase-apply'] if (git/n).exists()]
     ts=_run(root,['log','-1','--format=%ct'],check=False)['stdout'].strip(); age=(time.time()-int(ts))/3600 if ts.isdigit() else None; stale=[]
@@ -224,7 +237,7 @@ def stale_check(project_path, max_commit_age_hours=168, expected_state_hash=''):
     if age is not None and age>float(max_commit_age_hours): stale.append('old_head_commit')
     changed=bool(expected_state_hash and expected_state_hash!=s['state_hash'])
     if changed: stale.append('state_hash_mismatch')
-    return {'ok':True,'stale':bool(stale),'reasons':stale,'operation_states':states,'commit_age_hours':age,'expected_state_changed':changed,'status':s,'note':'ahead/behind uses local refs only; no fetch performed'}
+    return {'ok':True,'stale':bool(stale),'reasons':stale,'operation_states':states,'commit_age_hours':age,'expected_state_changed':changed,'status':_state(s),'note':'ahead/behind uses local refs only; no fetch performed'}
 
 def diff(project_path, scope='worktree', paths=None, context_lines=3, max_chars=50000, check_whitespace=False):
     root=resolve_root(project_path); specs=_pathspecs(root,paths); scope=str(scope).lower(); base=['--literal-pathspecs','diff','--no-ext-diff','--no-textconv','--no-color',f'--unified={max(0,min(int(context_lines),20))}']
@@ -264,14 +277,14 @@ def stage(project_path, paths=None, paths_file='', allow_all=False, expected_sta
     # read that status to obtain expected_state_hash. Only the hashes and counts are
     # kept, which is what a caller can actually act on: proof of which state it
     # staged from.
-    out={'ok':True,'paths':specs,'paths_file':str(paths_file or ''),'allow_all':bool(allow_all),'before':{'state_hash':before['state_hash'],'staged_hash':before['staged_hash'],'counts':before['counts']},'after':status(str(root))}
+    out={'ok':True,'paths':specs,'paths_file':str(paths_file or ''),'allow_all':bool(allow_all),'before':{'state_hash':before['state_hash'],'staged_hash':before['staged_hash'],'counts':before['counts']},'after':_state(status(str(root)))}
     # A30-B: hint-only, zero token. Verified BEFORE writing this line -- ocr_review with
     # no refs returns mode "workspace" and reads the UNCOMMITTED tree (exit 0, 0.19s,
     # 15 files). So the hint names a call that really works on content that is staged but
     # not yet committed; a hint pointing at a failing call is worse than no hint at all.
     out['ca_hint_review']='ocr_review(project_path=...) reviews the uncommitted working tree before you commit; mode "workspace", delegate, 0 token'
     # A39: M-8 was designed as `git_stage -> git_status`, and the DESIGN was wrong. 'after'
-    # is a full status(), so after.staged_hash IS the hash git_commit wants: a chain to
+    # is the post-stage _state(), so after.staged_hash IS the hash git_commit wants: a chain to
     # git_status would have shipped a round-trip [A] never needed. Measured 2026-09-20 -- a
     # CA probed fields=staged_hash on git_stage, got fields_unknown, concluded "git_stage
     # does not return it" and paid for a git_status. The value was one level down the whole
@@ -291,7 +304,7 @@ def unstage(project_path, paths=None, paths_file='', allow_all=False, expected_s
     if allow_all: raise GitToolError('GIT_ALLOW_ALL_REFUSED','allow_all is disabled; pass explicit paths')
     if paths_file: _run_pathspec_file(root,['--literal-pathspecs','restore','--staged'],specs)
     else: _run(root,['--literal-pathspecs','restore','--staged','--',*specs])
-    return {'ok':True,'paths':specs,'paths_file':str(paths_file or ''),'after':status(str(root))}
+    return {'ok':True,'paths':specs,'paths_file':str(paths_file or ''),'after':_state(status(str(root)))}
 
 def commit(project_path, message, expected_staged_hash, allow_empty=False, no_verify=False):
     root=resolve_root(project_path); s=status(str(root)); msg=str(message or '').strip()
@@ -351,7 +364,7 @@ def commit(project_path, message, expected_staged_hash, allow_empty=False, no_ve
     if no_verify: args.append('--no-verify')
     committed_paths=[str(r.get('path')) for r in s.get('records',[]) if str(r.get('xy','.'))[:1] not in ('.',' ','?','!') and r.get('path')]
     res=_run(root,args,timeout=300); head=_run(root,['rev-parse','HEAD'])['stdout'].strip()
-    out={'ok':True,'commit':head,'stdout':res['stdout'],'stderr':res['stderr'],'status':status(str(root)),'committed_files':committed_paths}
+    out={'ok':True,'commit':head,'stdout':res['stdout'],'stderr':res['stderr'],'status':_state(status(str(root))),'committed_files':committed_paths}
     # A30-B: hint-only, zero token. OCR consumes a commit range, which is exactly what
     # just came into existence -- verified live on c25bb81 (exit 0, 10 reviewable of 13).
     # This attaches a STRING, never a subprocess: a commit must not pay for a review the

@@ -344,7 +344,13 @@ class TestMultiCATransportInvariants(unittest.IsolatedAsyncioTestCase):
                 begun = orchestrator_server._write_ledger_begin(tool_name, body, session_id)
                 self.assertEqual(begun, op_id)
                 self.assertEqual(orchestrator_server._WRITE_LEDGER[op_id]["status"], "committed")
-                self.assertEqual(orchestrator_server._WRITE_LEDGER[op_id]["attempts"], 1)
+                # The count is the committed row's (1) plus this send -- never the
+                # stale memory's 99. A replay of a committed operation is still a
+                # send (#9), and SQLite keeps it without regressing status/result.
+                self.assertEqual(orchestrator_server._WRITE_LEDGER[op_id]["attempts"], 2)
+                disk = orchestrator_server._write_ledger_db_get(operation_id=op_id)
+                self.assertEqual((disk["status"], disk["attempts"]), ("committed", 2))
+                self.assertEqual(disk["result"], {"ok": True})
             finally:
                 orchestrator_server._WRITE_LEDGER.clear()
                 orchestrator_server._WRITE_LEDGER.update(old_ledger)

@@ -5,7 +5,12 @@ import time
 from unittest import mock
 
 import orchestrator_server as srv
-from orchestrator.progress_watchdog import OperationCancelled, ProgressWatchdog
+from orchestrator.progress_watchdog import (
+    OperationCancelled,
+    ProgressWatchdog,
+    bind_watchdog,
+    reset_watchdog,
+)
 from orchestrator.graph import status as graph_status
 
 
@@ -229,3 +234,159 @@ def test_cancel_endpoint_sets_cooperative_event():
         assert event.is_set()
     finally:
         srv._OPERATION_CANCEL_EVENTS.pop(op, None)
+
+
+def test_phase_ms_charges_each_phase_its_own_wall_time():
+    # #2: a 5-line write_fix took 323602ms and its ledger could not say where. A phase
+    # is charged from its own entry to the next one, cumulatively per name, and the
+    # phase still open is charged up to the snapshot. Both phases are re-entered, so a
+    # lost accumulation undercounts build and a lost start reset overcounts write.
+    # Sleeps are sized for the ~15.6ms granularity of time.monotonic() on Windows.
+    seen = []
+    wd = ProgressWatchdog(operation_id="phases", heartbeat=seen.append)
+    wd.mark("build")
+    time.sleep(0.2)
+    wd.mark("write")
+    time.sleep(0.05)
+    wd.mark("build")
+    time.sleep(0.12)
+    wd.mark("write")
+    time.sleep(0.02)
+    phase_ms = wd.snapshot()["phase_ms"]
+    assert list(phase_ms) == ["starting", "build", "write"]
+    assert phase_ms["build"] >= 280.0, phase_ms
+    assert 30.0 <= phase_ms["write"] < 150.0, phase_ms
+    assert seen[-1]["phase"] == "write" and seen[-1]["progress_revision"] == 4
+
+
+def test_mark_is_not_a_cancellation_point():
+    # A write marks "validate" after the file is committed: a cancel raised there would
+    # leave a committed file that nothing validated or reverted.
+    event = threading.Event()
+    event.set()
+    wd = ProgressWatchdog(cancel_event=event)
+    wd.mark("validate")
+    assert wd.phase == "validate" and wd.revision == 1
+
+
+def _in_flight(op):
+    srv._WRITE_LEDGER[op] = {"operation_id": op, "tool": "write_fix", "status": "in_flight",
+                             "attempts": 1, "started_at": time.time(),
+                             "origin_generation": srv.SERVER_GENERATION}
+    return srv._WRITE_LEDGER[op]
+
+
+def _finish_with(op, watchdog, monkeypatch, before_finish=None):
+    rec = _in_flight(op)
+    monkeypatch.setattr(srv, "_write_ledger_db_upsert", lambda _rec: True)
+    token = bind_watchdog(watchdog)
+    try:
+        if before_finish is not None:
+            before_finish()
+        srv._write_ledger_finish(op, {"ok": True}, "ok")
+    finally:
+        reset_watchdog(token)
+        srv._WRITE_LEDGER.pop(op, None)
+    return rec
+
+
+def test_ledger_finish_closes_the_phase_that_was_running(monkeypatch):
+    # The last heartbeat is published when the last phase BEGINS, so a summary built
+    # from it never charged that phase -- the one a slow call most needs named.
+    op = "watchdog-finish-test"
+    wd = ProgressWatchdog(operation_id=op, heartbeat=lambda p: srv._write_ledger_heartbeat(op, p))
+
+    def _validate_for_a_while():
+        wd.mark("validate")
+        time.sleep(0.08)
+
+    rec = _finish_with(op, wd, monkeypatch, _validate_for_a_while)
+    assert rec["result"]["progress"]["phase_ms"]["validate"] >= 60.0
+    # write_status reads rec["progress"] before the result, so the two must agree.
+    assert rec["progress"] == rec["result"]["progress"]
+
+
+def test_ledger_finish_takes_only_its_own_operations_watchdog(monkeypatch):
+    other = ProgressWatchdog(operation_id="some-other-operation")
+    other.mark("validate")
+    op = "watchdog-finish-own"
+    rec = _finish_with(op, other, monkeypatch,
+                       lambda: srv._WRITE_LEDGER[op].update(progress={"phase": "write"}))
+    assert rec["result"]["progress"] == {"phase": "write"}
+    # A tool that never reported progress keeps the ledger shape it had before #2.
+    rec = _finish_with("watchdog-finish-silent", ProgressWatchdog(
+        operation_id="watchdog-finish-silent"), monkeypatch)
+    assert "progress" not in rec["result"]
+
+
+_WRITE_MARKS = {"starting", "prepare", "build", "dry_run", "index_check", "pre_write_check",
+                "path_gate_wait", "write", "validate", "auto_revert", "lint_introduced",
+                "symbol_check", "cache_sync", "finalize"}
+
+
+def _write_phases(call):
+    """Run one write with a bound watchdog; return its result and its OWN marks in order.
+
+    cache_sync hands the watchdog on to the snapshot layer, which reports snapshot_*
+    phases of its own, so only the write's marks are compared.
+    """
+    wd = ProgressWatchdog(operation_id="write-phases")
+    token = bind_watchdog(wd)
+    try:
+        out = json.loads(asyncio.run(call()))
+    finally:
+        reset_watchdog(token)
+    return out, [name for name in wd.snapshot()["phase_ms"] if name in _WRITE_MARKS]
+
+
+_NEW = ["starting", "prepare", "pre_write_check", "path_gate_wait", "write", "validate"]
+_FIX = ["starting", "prepare", "build", "index_check", "pre_write_check", "path_gate_wait",
+        "write", "validate"]
+
+
+def test_write_new_file_and_write_fix_publish_their_phases(tmp_path):
+    import code_tools
+    import surgical_mapper
+    root = str(tmp_path)
+    surgical_mapper.ensure_minimal_index(root)
+    fp = str(tmp_path / "m.py")
+    out, seen = _write_phases(lambda: code_tools.write_new_file(
+        fp, "def a():\n    return 1\n\n\ndef b():\n    return 2\n", project_path=root))
+    assert out["ok"] and seen == _NEW + ["cache_sync"], seen
+    out, seen = _write_phases(lambda: code_tools.write_fix(
+        fp, 2, 2, "    return 3\n", project_path=root))
+    assert out["ok"] and seen == _FIX + ["symbol_check", "cache_sync", "finalize"], seen
+    out, seen = _write_phases(lambda: code_tools.write_fix(
+        fp, 2, 2, "    return 4\n", project_path=root, dry_run=True))
+    assert out["ok"] and seen == ["starting", "prepare", "build", "dry_run"], seen
+    out, seen = _write_phases(lambda: code_tools.write_fix(
+        fp, 1, 1, "import os\ndef a():\n", project_path=root))
+    assert out["ok"] and seen == _FIX + ["lint_introduced", "symbol_check", "cache_sync",
+                                         "finalize"], seen
+
+
+def test_every_auto_revert_branch_publishes_its_phase(tmp_path, monkeypatch):
+    # write_fix reverts from TWO branches under one phase name, so each is reached here
+    # on its own: a mark lost from either one would still pass on the other.
+    import code_tools
+    import surgical_mapper
+    root = str(tmp_path)
+    surgical_mapper.ensure_minimal_index(root)
+    fp = str(tmp_path / "m.py")
+    out, _ = _write_phases(lambda: code_tools.write_new_file(
+        fp, "def a():\n    return 1\n\n\ndef b():\n    return 2\n", project_path=root))
+    assert out["ok"]
+    out, seen = _write_phases(lambda: code_tools.write_fix(fp, 5, 6, "", project_path=root))
+    assert out["error_name"] == "SYMBOL_DRIFT_AUTO_REVERT"
+    assert seen == _FIX + ["symbol_check", "auto_revert"], seen
+
+    async def _failing_validation(_path):
+        return json.dumps({"ok": False, "error": "forced by test"})
+
+    monkeypatch.setattr(code_tools, "validate_file", _failing_validation)
+    out, seen = _write_phases(lambda: code_tools.write_fix(
+        fp, 2, 2, "    return 5\n", project_path=root))
+    assert not out["ok"] and seen == _FIX + ["auto_revert"], seen
+    out, seen = _write_phases(lambda: code_tools.write_new_file(
+        str(tmp_path / "n.py"), "x = 1\n", project_path=root))
+    assert not out["ok"] and seen == _NEW + ["auto_revert"], seen

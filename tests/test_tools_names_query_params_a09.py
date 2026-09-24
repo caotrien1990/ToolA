@@ -108,13 +108,15 @@ class ToolsNamesValidParamStillWorks(unittest.IsolatedAsyncioTestCase):
     async def test_suppress_hints_is_known_and_default_still_emits(self):
         payload = await _call("/api/tools/names")
         self.assertNotIn("ignored_query_params", payload)
-        self.assertGreaterEqual(len(payload.get("must_know_hints") or []), 6)
         self.assertTrue(payload.get("ca_hint"))
 
     async def test_suppress_hints_true_clears_repeat_hints(self):
         payload = await _call("/api/tools/names?suppress_hints=true")
         self.assertNotIn("ignored_query_params", payload)
-        self.assertEqual(payload.get("must_know_hints"), [])
+        self.assertTrue(payload.get("hints_suppressed_keys"))
+        for key in payload["hints_suppressed_keys"]:
+            self.assertIn(key, payload)
+            self.assertFalse(payload[key], key)
         self.assertEqual(payload.get("ca_hint"), "")
         self.assertTrue(payload.get("hints_suppressed"))
         self.assertIn("tools", payload)
@@ -123,7 +125,7 @@ class ToolsNamesValidParamStillWorks(unittest.IsolatedAsyncioTestCase):
     async def test_suppress_hints_false_keeps_default_hints(self):
         payload = await _call("/api/tools/names?suppress_hints=false")
         self.assertNotIn("ignored_query_params", payload)
-        self.assertGreaterEqual(len(payload.get("must_know_hints") or []), 6)
+        self.assertTrue(payload.get("ca_hint"))
         self.assertFalse(payload.get("hints_suppressed"))
 
 
@@ -203,7 +205,8 @@ class FullCatalogLimitIsTheCatalogSize(unittest.IsolatedAsyncioTestCase):
 
     async def test_every_full_catalog_claim_names_the_catalog_size(self):
         size = len(orchestrator_server.ct.TOOL_MAP)
-        for path in ("/api/tools/names", "/api/tools/names?name_contains=git_st",
+        # An uncapped filter has no next_query_hint; the A09 notice states the limit there.
+        for path in ("/api/tools/names", "/api/tools/names?name_contains=git_st&bogus=1",
                      "/api/tools/names?tier=T1&limit=3&bogus=1"):
             claims = {int(n) for n in self.FULL.findall(json.dumps(await _call(path)))}
             self.assertTrue(claims, f"positive control: {path} states the catalog limit")
@@ -215,6 +218,58 @@ class FullCatalogLimitIsTheCatalogSize(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(total, 3)
         self.assertIn(f"pass limit={total} for all of them", payload["next_query_hint"])
         self.assertNotIn("full catalog", payload["next_query_hint"])
+
+
+# ---------------------------------------------------------------------------
+# N3 (2026-09-24): the discovery hint states what the answer is FOR. It was a
+# six-item MUST-KNOW manual plus a second copy in must_know_hints, paid on every
+# discovery call, although each lesson already has the producer a CA meets when
+# it matters. How to call a tool is its schema's job.
+# ---------------------------------------------------------------------------
+class DiscoveryHintStatesPurpose(unittest.IsolatedAsyncioTestCase):
+    async def test_the_hint_names_no_tool_and_no_number(self):
+        """A tool name in the hint is a lesson about that tool, and a number is
+        either a stale fact or a call argument -- both belong elsewhere."""
+        payload = await _call("/api/tools/names")
+        hint = payload.get("ca_hint")
+        self.assertTrue(hint, "positive control: the default answer carries a hint")
+        words = set(re.findall(r"[a-z][a-z0-9_]+", hint.lower()))
+        self.assertFalse(words & set(orchestrator_server.ct.TOOL_MAP), hint)
+        self.assertNotRegex(hint, r"\d")
+        self.assertNotIn("must_know_hints", payload)
+
+    async def test_suppression_reports_only_keys_the_answer_carries(self):
+        loud = await _call("/api/tools/names")
+        quiet = await _call("/api/tools/names?suppress_hints=true")
+        keys = quiet.get("hints_suppressed_keys")
+        self.assertTrue(keys)
+        self.assertLessEqual(set(keys), set(loud))
+        self.assertEqual(set(quiet) - set(loud),
+                         {"hints_suppressed", "hints_suppressed_keys"})
+        for key in keys:
+            with self.subTest(key=key):
+                self.assertTrue(loud[key], f"positive control: {key} speaks by default")
+                self.assertFalse(quiet[key], key)
+
+    async def test_each_dropped_lesson_has_its_own_producer(self):
+        """The rule-reload lesson is the core rule's own; the other five are
+        pinned where a CA meets them -- on the call, on the error, on the answer
+        that is capped, and on /health."""
+        aliases = orchestrator_server._ARG_ALIASES
+        self.assertEqual(aliases["ruff_fix"]["file_path"], "path")
+        self.assertEqual(aliases["list_structure"]["max_depth"], "depth")
+        self.assertEqual(aliases["list_structure"]["file_path"], "path")
+        for error_name in ("FILE_CHANGED_OUTSIDE_ORCHESTRATOR", "STALE_INDEX"):
+            with self.subTest(error_name=error_name):
+                hint = orchestrator_server._default_hint("write_fix", error_name)
+                self.assertIn("force_reseed=true", hint)
+                self.assertIn("Never refresh_project_map", hint)
+        size = len(orchestrator_server.ct.TOOL_MAP)
+        self.assertIn(f"limit={size}", (await _call("/api/tools/names"))["next_query_hint"])
+        health = orchestrator_server._apply_health_view(
+            {}, make_mocked_request("GET", "/health"))
+        self.assertIn("verbose=1", health["ca_hint"])
+        self.assertIn("fields=", health["ca_hint"])
 
 
 if __name__ == "__main__":

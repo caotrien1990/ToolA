@@ -324,3 +324,26 @@ class TestTheDispatcherCachesTheToolsOwnAnswer:
 
         asyncio.run(scenario())
         assert self.calls == 1, "the two later calls must be served by the cache"
+
+    def test_a_projected_hit_still_says_it_is_a_cached_answer(self):
+        """P5: the cache stamps were written INTO the text, so they were ordinary keys.
+
+        A hit answered cache_hit / cache_age_s / cache_note as if the tool had, and
+        fields= -- which exists for exactly these fat cached reads -- dropped all
+        three: a minutes-old answer read as a fresh measurement. They are the
+        dispatcher's word about THIS call, so they ride the envelope, and the note
+        that the answer is not fresh survives a projection that asked for none.
+        """
+        async def scenario():
+            await self._dispatch()
+            return await self._dispatch(), await self._dispatch("?fields=ok,callers")
+
+        plain, projected = asyncio.run(scenario())
+        assert self.calls == 1, "both later calls must be cache hits"
+        assert plain.get("cache_hit") is True and "cache_age_s" in plain, plain
+        assert "result cache" in plain.get("cache_note", ""), plain
+        assert projected.get("callers"), projected
+        assert "result cache" in projected.get("cache_note", ""), (
+            "a projected hit reads exactly like a fresh answer: %r" % projected)
+        for key in ("cache_hit", "cache_age_s", "fields_unknown", "response_incomplete"):
+            assert key not in projected, (key, projected)

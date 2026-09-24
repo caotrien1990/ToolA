@@ -4561,5 +4561,90 @@ class TestAT139CouncilContracts(unittest.IsolatedAsyncioTestCase):
         self.assertIn('restart', body['reason'])
 
 
+class TestErrorEnvelopeSingleText(unittest.IsolatedAsyncioTestCase):
+    """#27: a failed call carries its text once, under `error`, and invites no blind retry.
+
+    The envelope used to guarantee a `reason` COPY of the text, so every failure paid
+    for it twice while a tool answering `reason` alone still left `error` empty. An
+    unclassified failure got "Follow ca_guidance.payload_example and retry." -- a
+    retry invitation for failures that are deterministic: a git hook that rejects a
+    commit message rejects the identical retry too.
+    """
+
+    def setUp(self):
+        orchestrator_server._DUPLICATE_FAILURE_STATE.clear()
+        orchestrator_server._DUPLICATE_FIRST_SEEN.clear()
+
+    async def _dispatch(self, tool_body):
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.dict(code_tools.TOOL_MAP, {'workflow_list': tool_body}):
+            response = await orchestrator_server.dispatch_tool_call(
+                'workflow_list', {'project_path': tmp}, transport='http')
+        return json.loads(response.text)
+
+    async def test_tool_error_text_is_not_copied_into_reason(self):
+        async def failing(**_payload):
+            return json.dumps({'ok': False, 'error': 'hook rejected the subject'})
+
+        body = await self._dispatch(failing)
+        self.assertEqual(body['error'], 'hook rejected the subject')
+        self.assertNotIn('reason', body)
+
+    async def test_tool_answering_reason_alone_still_fills_error(self):
+        async def failing(**_payload):
+            return json.dumps({'ok': False, 'reason': 'hook rejected the subject'})
+
+        body = await self._dispatch(failing)
+        self.assertEqual(body['error'], 'hook rejected the subject')
+
+    async def test_unclassified_failure_gets_no_retry_hint(self):
+        async def failing(**_payload):
+            return json.dumps({'ok': False, 'error': 'hook rejected the subject'})
+
+        body = await self._dispatch(failing)
+        self.assertNotIn('hint', body)
+        self.assertEqual(body['ca_next_action'], 'read_error')
+
+    async def test_raising_tool_answers_error_without_reason_copy(self):
+        async def raising(**_payload):
+            raise RuntimeError('disk vanished mid-call')
+
+        body = await self._dispatch(raising)
+        self.assertIn('disk vanished mid-call', body['error'])
+        self.assertNotIn('reason', body)
+        self.assertNotIn('hint', body)
+
+    def test_refusal_carries_no_reason_copy_and_no_empty_hint(self):
+        response = orchestrator_server._error_response(
+            'workflow_list', 'refused for a cause nobody classified', 400, {},
+            error_name='ZZ_UNCLASSIFIED_REFUSAL')
+        body = json.loads(response.text)
+        self.assertEqual(body['error'], 'refused for a cause nobody classified')
+        self.assertNotIn('reason', body)
+        self.assertNotIn('hint', body)
+        self.assertEqual(body['ca_next_action'], 'read_error')
+
+    def test_git_commit_example_carries_the_hash_the_git_layer_enforces(self):
+        # The schema does not require expected_staged_hash, so an example derived from
+        # the schema alone taught a git_commit that the git layer always refuses.
+        response = orchestrator_server._error_response(
+            'git_commit', 'expected_staged_hash is required', 400, {},
+            error_name='EXPECTED_STAGED_HASH_REQUIRED')
+        example = json.loads(response.text)['payload_example']
+        self.assertIn('expected_staged_hash', example)
+        self.assertIn('message', example)
+
+    async def test_handler_missing_field_detail_lands_in_error_only(self):
+        # The MISSING_REQUIRED_FIELD branch names the field inside every text key the
+        # payload has; it must not mint a `reason` the tool never answered.
+        async def failing(**_payload):
+            return json.dumps({'ok': False, 'error': 'fields is required',
+                               'error_name': 'MISSING_REQUIRED_FIELD'})
+
+        body = await self._dispatch(failing)
+        self.assertIn('fields', body['error'])
+        self.assertNotIn('reason', body)
+
+
 if __name__ == '__main__':
     unittest.main()

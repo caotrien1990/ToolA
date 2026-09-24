@@ -115,3 +115,37 @@ class TestRegistryExamples(unittest.TestCase):
                 if spec.get("type") == "array" and len(value) < spec.get("minItems", 0):
                     failures.append((name, field, "minItems"))
         self.assertEqual(failures, [])
+
+
+class TestToolqPackRouteContract(unittest.TestCase):
+    def test_q_capture_sends_the_turn_shape_the_capture_route_reads(self):
+        # ToolQ handle_capture (bin/clm_lib/routes_write.py) reads turns[i].user_prompt /
+        # .assistant_response and silently skips any other turn -> {ok: true, inserted: 0}.
+        # Measured 2026-09-23: the generated q_capture sent turns=[{role, content}], so
+        # every capture through the pack stored nothing and still answered ok.
+        from orchestrator.mcp_packs.generator import (
+            _resolve_catalog,
+            _server_template_http_relay,
+        )
+
+        tools, sent = {}, []
+
+        class _Server:
+            def __init__(self, _name):
+                pass
+
+            def tool(self, fn):
+                tools[fn.__name__] = fn
+                return fn
+
+            def stdio(self):
+                pass
+
+        ns = {"__name__": "pack"}
+        exec(_server_template_http_relay(_resolve_catalog("toolq"), {"ca_id": "t"}), ns)
+        ns["_http"] = lambda method, path, payload=None: sent.append((method, path, payload)) or "{}"
+        with mock.patch.dict("sys.modules", {"zeromcp": mock.Mock(McpServer=_Server)}):
+            ns["run"]()
+        tools["q_capture"](session_id="s1", user_prompt="u", assistant_response="a")
+        self.assertEqual(sent, [("POST", "/capture", {
+            "session_id": "s1", "turns": [{"user_prompt": "u", "assistant_response": "a"}]})])

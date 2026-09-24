@@ -678,6 +678,8 @@ async def _find_symbol_unbounded(name: str = "", path: str = "", project_path: s
             # find_callers indistinguishable from find_symbol(include='def')
             # plus a callers array — the defining node itself was surfaced
             # as a top-level result. Drop it so the response is callers-only.
+            # Kept on purpose (#24): the `mode` schema description publishes this
+            # shape, so a caller knows the key before it guesses fields=results.
             response.pop("results", None)
             response.pop("count", None)
             response["include"] = "callers"

@@ -1281,7 +1281,7 @@ class TestCodeToolsCache(unittest.TestCase):
             proc = popen.return_value
             proc.pid = 123
             proc.returncode = 0
-            proc.communicate.return_value = ('ok', '')
+            proc.stdout = proc.stderr = None  # the runner reads the pipes itself, then wait()s
             result = json.loads(asyncio.run(code_tools.run_project_command(
                 str(self.project_path), 'pytest --basetemp=%TEMP%\\quoted', shell_mode='cmd',
             )))
@@ -1296,7 +1296,7 @@ class TestCodeToolsCache(unittest.TestCase):
             proc = popen.return_value
             proc.pid = 123
             proc.returncode = 0
-            proc.communicate.return_value = ('ok', '')
+            proc.stdout = proc.stderr = None  # the runner reads the pipes itself, then wait()s
             asyncio.run(code_tools.run_project_command(
                 str(self.project_path), 'echo %%LITERAL%%', shell_mode='cmd',
             ))
@@ -1338,6 +1338,42 @@ class TestCodeToolsCache(unittest.TestCase):
         self.assertEqual(metadata['returned_chars'], 10)
         self.assertGreater(metadata['original_chars'], metadata['returned_chars'])
         self.assertEqual(len(metadata['sha256']), 64)
+
+    def test_script_output_cap_keeps_the_verdict_tail(self):
+        # #22: a test runner prints its verdict LAST; the head-only cut returned the
+        # setup noise and dropped the one line the caller ran the script for.
+        result = json.loads(asyncio.run(code_tools.run_project_test_script(
+            str(self.project_path),
+            "print('SETUP-HEAD'); print('x' * 5000); print('FINAL VERDICT: 3 passed')",
+            runtime='python', stdout_max_chars=200,
+        )))
+        self.assertTrue(result.get('ok'), msg=result)
+        stdout = result['stdout']
+        self.assertLessEqual(len(stdout), 200)
+        self.assertTrue(stdout.startswith('SETUP-HEAD'), msg=stdout)
+        self.assertIn('FINAL VERDICT: 3 passed', stdout)
+        self.assertIn('truncated', stdout)
+        self.assertEqual(result['stdout_metadata']['returned_chars'], len(stdout))
+
+    def test_command_output_cap_keeps_the_verdict_tail(self):
+        # #22: run_project_command's own stdout_max_chars filter cut head-only too.
+        report = self.project_path / 'report.txt'
+        report.write_text('HEAD\n' + 'x' * 3000 + '\nFINAL VERDICT\n', encoding='utf-8')
+        result = json.loads(asyncio.run(code_tools.run_project_command(
+            str(self.project_path), 'type "%s"' % report, stdout_max_chars=200)))
+        self.assertTrue(result.get('ok'), msg=result)
+        stdout = result['stdout']
+        self.assertLessEqual(len(stdout), 200)
+        self.assertTrue(stdout.startswith('HEAD'), msg=stdout)
+        self.assertIn('FINAL VERDICT', stdout)
+        self.assertIn('truncated', stdout)
+
+    def test_output_cap_keeps_head_and_tail_within_the_limit(self):
+        capped = code_tools._truncate_output('HEAD\n' + 'x' * 5000 + '\nFINAL VERDICT', 300)
+        self.assertLessEqual(len(capped), 300)
+        self.assertTrue(capped.startswith('HEAD'), msg=capped)
+        self.assertTrue(capped.endswith('FINAL VERDICT'), msg=capped)
+        self.assertIn('truncated', capped)
 
     def test_script_required_modules_are_forwarded_to_interpreter_selector(self):
         selected = {'ok': False, 'error_name': 'INTERPRETER_CAPABILITY_MISSING'}
@@ -2053,6 +2089,105 @@ class TestCodeToolsCache(unittest.TestCase):
         self.assertFalse(result.get('ok'), msg=result)
         self.assertEqual(result.get('error_name'), 'IMPORT_ERROR_PRE_WRITE')
         self.assertNotIn('nonexistent_mod_xyz', self.sample_file.read_text(encoding='utf-8'))
+
+    def test_pre_write_gate_rejects_invalid_toml(self):
+        # #5: a .toml write reached disk unchecked; the gate mirrors the json one.
+        result = json.loads(asyncio.run(code_tools.write_new_file(
+            'bad.toml',
+            project_path=str(self.project_path),
+            new_content='[lint\nselect = 5\n',
+        )))
+
+        self.assertFalse(result.get('ok'), msg=result)
+        self.assertEqual(result.get('error_name'), 'TOML_INVALID_PRE_WRITE')
+        self.assertFalse((self.project_path / 'bad.toml').exists())
+
+    def test_write_fix_keeps_the_bom_as_framing(self):
+        # #8: the BOM rode inside line 1's text -- replacing line 1 dropped it, and
+        # any other edit handed the pre-write parser a U+FEFF it refused.
+        bom = '\ufeff'.encode('utf-8')
+        self.sample_file.write_bytes(bom + b'# header\n\ndef foo():\n    return 1\n')
+        asyncio.run(code_tools.generate_project_map(str(self.project_path)))
+
+        for start, end, text in ((3, 4, 'def foo():\n    return 2\n'),
+                                 (1, 1, '# new header\n'),
+                                 (1, 1, '\ufeff# resent with its bom\n')):
+            with self.subTest(start=start, text=text):
+                result = json.loads(asyncio.run(code_tools.write_fix(
+                    str(self.sample_file), start, end, text,
+                )))
+                self.assertTrue(result.get('ok'), msg=result)
+                data = self.sample_file.read_bytes()
+                self.assertTrue(data.startswith(bom), data[:8])
+                self.assertFalse(data[len(bom):].startswith(bom), data[:8])
+
+    def test_write_fix_allows_a_guarded_missing_import(self):
+        # #13: code that already handles a missing module must not be refused
+        # for importing it.
+        guarded = {
+            'guarded_try.py': 'try:\n    import nonexistent_mod_xyz\nexcept ImportError:\n'
+                              '    nonexistent_mod_xyz = None\n',
+            'guarded_typing.py': 'from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n'
+                                 '    import nonexistent_mod_abc\n',
+        }
+        for name in guarded:
+            (self.project_path / name).write_text('# header\n', encoding='utf-8')
+        asyncio.run(code_tools.generate_project_map(str(self.project_path)))
+
+        for name, text in guarded.items():
+            with self.subTest(name=name):
+                target = self.project_path / name
+                result = json.loads(asyncio.run(code_tools.write_fix(str(target), 1, 1, text)))
+                self.assertTrue(result.get('ok'), msg=result)
+                self.assertIn('nonexistent_mod_', target.read_text(encoding='utf-8'))
+
+    def test_write_fix_import_error_names_the_line(self):
+        asyncio.run(code_tools.generate_project_map(str(self.project_path)))
+
+        result = json.loads(asyncio.run(code_tools.write_fix(
+            str(self.sample_file), 1, 1, '# header\nimport os\nimport nonexistent_mod_xyz\n',
+        )))
+
+        self.assertEqual(result.get('error_name'), 'IMPORT_ERROR_PRE_WRITE', msg=result)
+        self.assertIn('line 3: Import not found: nonexistent_mod_xyz', result.get('error', ''))
+        self.assertEqual(result.get('ca_next_action'), 'write_draft_patch')
+
+    def test_symbol_drift_opens_no_draft_and_points_at_write_fix(self):
+        # #13: a draft ships under THIS call's skip_symbol_check, so it could only
+        # ship by restoring the symbol; the real exits are a fresh write_fix.
+        self.sample_file.write_text('# header\n\ndef foo():\n    return 1\n\ndef bar():\n    return 2\n',
+                                    encoding='utf-8')
+        asyncio.run(code_tools.generate_project_map(str(self.project_path)))
+
+        result = json.loads(asyncio.run(code_tools.write_fix(
+            str(self.sample_file), 6, 7, '# bar removed\n',
+        )))
+
+        self.assertEqual(result.get('error_name'), 'SYMBOL_DRIFT_AUTO_REVERT', msg=result)
+        self.assertEqual(result.get('ca_next_action'), 'write_fix')
+        self.assertNotIn('draft_id', result)
+        self.assertIn('skip_symbol_check', result.get('error', ''))
+
+    def test_write_fix_lint_reports_only_what_the_write_introduced(self):
+        # #7/#13: a pre-existing finding was re-reported, with a ruff_fix hint, on
+        # every write to the file whatever the write touched.
+        self.sample_file.write_text('import os\n# header\n\ndef foo():\n    return 1\n', encoding='utf-8')
+        asyncio.run(code_tools.generate_project_map(str(self.project_path)))
+
+        clean = json.loads(asyncio.run(code_tools.write_fix(
+            str(self.sample_file), 2, 2, '# edited header\n',
+        )))
+        self.assertTrue(clean.get('ok'), msg=clean)
+        self.assertNotIn('lint_warning', clean.get('validation', {}), msg=clean)
+
+        dirty = json.loads(asyncio.run(code_tools.write_fix(
+            str(self.sample_file), 2, 2, 'import sys\n# edited header\n',
+        )))
+        warning = dirty.get('validation', {}).get('lint_warning', '')
+        self.assertIn('`sys` imported but unused', warning, msg=dirty)
+        self.assertNotIn('`os` imported but unused', warning, msg=dirty)
+        # The unused `os` and the I001 block shape were both there before.
+        self.assertIn('(2 pre-existing not shown)', warning, msg=dirty)
 
     def test_ac_g4_parallel_write_fix_same_file_serializes_full_content(self):
         asyncio.run(code_tools.generate_project_map(str(self.project_path)))

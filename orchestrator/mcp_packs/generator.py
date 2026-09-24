@@ -54,7 +54,10 @@ BUILTIN_PACKS: dict[str, dict[str, Any]] = {
                 "name": "q_capture",
                 "method": "POST",
                 "path": "/capture",
-                "body_keys": ["session_id", "content", "role"],
+                # ToolQ handle_capture: body {session_id, project?, turns: [{user_prompt,
+                # assistant_response}]}; a turn carrying neither is skipped, not refused.
+                "body_keys": ["session_id", "project", "user_prompt", "assistant_response"],
+                "list_body": {"turns": ["user_prompt", "assistant_response"]},
             },
             {
                 "name": "q_ingest_path",
@@ -257,14 +260,13 @@ def _server_template_http_relay(cat: dict[str, Any], identity: dict[str, Any]) -
                 for k in body_keys:
                     lines.append(f"        if {k}:")
                     lines.append(f"            payload[{k!r}] = {k}")
-                # special-case capture: build turns from content
-                if name == "q_capture":
+                # a route that reads its fields inside one list item declares them in list_body;
+                # the catalog owns the shape, so no tool name is special-cased here
+                for list_key, item_keys in (t.get("list_body") or {}).items():
                     lines += [
-                        "        if 'content' in payload and 'turns' not in payload:",
-                        "            role = payload.pop('role', None) or 'user'",
-                        "            content = payload.pop('content')",
-                        "            payload['turns'] = [{'role': role, 'content': content}]",
-                        "        payload.pop('role', None)",
+                        f"        item = {{k: payload.pop(k) for k in {item_keys!r} if k in payload}}",
+                        "        if item:",
+                        f"            payload[{list_key!r}] = [item]",
                     ]
                 lines.append(f"        return _http({method!r}, {path!r}, payload or None)")
             else:

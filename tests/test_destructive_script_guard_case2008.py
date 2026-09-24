@@ -554,3 +554,93 @@ def test_a_forced_copy_is_refused_until_acknowledged_and_clobbers_nothing(sandbo
         str(sandbox), script, confirm_destructive=payload["destructive_count"], skip_backup=True))
     assert payload["ok"] is True, payload
     assert (sandbox / "keep.txt").read_text(encoding="utf-8") == "disposable"
+
+
+# --- 2026-09-24 (#26 / #30): a python body is judged as CODE ---------------------
+#
+# The python rows were a regex over the raw text, and it was wrong in BOTH
+# directions. Measured on the old scan: a string literal ``x = "path.unlink()"``,
+# a comment, ``sys.path.remove(...)`` and ``items.remove(1)`` each scored 1 -- a
+# CA running a harmless probe was asked to confirm a deletion -- while
+# ``from os import remove as rm; rm(p)`` and ``map(os.unlink, paths)`` scored 0
+# and would have run unannounced. A false positive trains the reflexive confirm;
+# a false negative costs files.
+
+_PY_DELETES = [
+    ("import os\nos.remove(p)\n", "os_remove"),
+    ("import os as o\no.remove(p)\n", "os_remove"),
+    ("from os import remove as rm\nrm(p)\n", "os_remove"),
+    ("from shutil import rmtree as nuke\nnuke(p)\n", "rmtree"),
+    ("import shutil\n(shutil.rmtree\n (p))\n", "rmtree"),
+    ("import os\nlist(map(os.unlink, paths))\n", "os_remove"),
+    ("import atexit\nfrom shutil import rmtree\natexit.register(rmtree, d)\n", "rmtree"),
+    ("p.unlink()\n", "os_remove"),
+    # A receiver the scan cannot PROVE lives in memory still counts: sftp.remove,
+    # fs.remove and a parameter's .remove may all delete a file.
+    ("def f(xs):\n    xs.remove(1)\n", "os_remove"),
+    ("lst = []\nlst = get()\nlst.remove(1)\n", "os_remove"),
+    ("class C:\n    def f(self, p):\n        self.fs.remove(p)\n", "os_remove"),
+    ("from somewhere import *\nitems.remove(p)\n", "os_remove"),
+    ('import os\nx = f"{os.remove(p)}"\n', "os_remove"),
+    ('open(p, "r+").truncate()\n', "os_remove"),
+]
+
+
+@pytest.mark.parametrize("body, kind", _PY_DELETES)
+def test_a_python_delete_is_counted_however_it_is_spelled(body, kind) -> None:
+    scan = ct._scan_destructive_script(body, "python")
+    assert scan["count"] == 1, scan
+    assert scan["findings"][0]["kind"] == kind
+
+
+_PY_NOT_A_DELETE = [
+    'print(1)\nimport pathlib\nx = "path.unlink()"\n',  # the #26 repro, as measured
+    'x = """\nshutil.rmtree(d)\n"""\n',
+    "# os.remove(p)\nprint(1)\n",
+    'import os, sys\nsys.path.remove(os.path.join(ROOT, "bin"))\n',  # #30
+    "items = [1, 2]\nitems.remove(1)\n",
+    "s = set()\ns.remove(1)\n",
+    "[1, 2].remove(1)\n",
+]
+
+
+@pytest.mark.parametrize("body", _PY_NOT_A_DELETE)
+def test_python_data_and_an_in_memory_remove_are_reported_not_counted(body) -> None:
+    scan = ct._scan_destructive_script(body, "python")
+    assert scan["count"] == 0, scan
+    assert scan["prose_matches"], "a mention is reported, never silently dropped"
+    assert all(match["why_not_counted"] for match in scan["prose_matches"])
+
+
+_PY_RUNS_A_STRING = [
+    'exec("os.remove(p)")\n',
+    'import subprocess, sys\nsubprocess.run([sys.executable, "-c", "import os; os.remove(p)"])\n',
+    'src = "os.remove(p)"\nopen("h.py", "w").write(src)\n',
+    'import runpy\ncode = "shutil.rmtree(d)"\n',
+]
+
+
+@pytest.mark.parametrize("body", _PY_RUNS_A_STRING)
+def test_a_string_counts_again_once_the_script_can_run_one(body) -> None:
+    assert ct._scan_destructive_script(body, "python")["count"] == 1
+
+
+def test_an_unparseable_python_body_keeps_the_text_scan() -> None:
+    assert ct._scan_destructive_script("os.remove(p) (((\n", "python")["count"] == 1
+
+
+def test_the_python_text_rows_come_from_the_one_callee_table() -> None:
+    """run_project_command reads ``python -c "..."`` as TEXT (runtime "any"), so
+    the regex rows must know every name the AST knows: one table, two readers."""
+    for name, kind in ct._PY_DESTRUCTIVE_CALLEES.items():
+        scan = ct._scan_destructive_script(f'python -c "import x; x.{name}(p)"\n', "any")
+        assert scan["count"] == 1, (name, scan)
+        assert kind in scan["findings"][0]["kinds"], (name, scan)
+
+
+def test_a_harmless_probe_that_names_a_delete_in_a_string_just_runs(sandbox) -> None:
+    """#26 end to end: this is the shape of the body a CA sent, and it was refused."""
+    body = 'print("probe-ran")\nimport pathlib\nx = "path.unlink()"\n'
+    payload = _run(ct.run_project_test_script(str(sandbox), body, runtime="python"))
+    assert payload["ok"] is True, payload
+    assert "probe-ran" in payload["stdout"]

@@ -219,5 +219,227 @@ class NamedToolStaysReachableWhenDeferralIsWrong(unittest.TestCase):
                 "audit tool matrix and log the session", lex, "open_session")), 1)
 
 
+# ── N2 (2026-09-24): an answer names tools a CA can call ─────────────────────
+
+
+def _n2_answer(query: str) -> dict:
+    import asyncio
+    import json
+    raw = asyncio.run(v.tool_decision_hint(task_description=query,
+                                           verbosity="full"))
+    payload = json.loads(raw)
+    return payload.get("result", payload)
+
+
+def _n2_offered(result: dict) -> list:
+    """Every tool name an answer puts in front of a CA as something to call."""
+    return [result.get("recommended_tool"),
+            (result.get("suggestion") or {}).get("tool"),
+            *[a.get("tool") for a in result.get("alternates") or []],
+            *[c.get("tool") for c in result.get("candidates") or []]]
+
+
+def _n2_registry() -> tuple[set, set, set]:
+    """(live, server-marked deprecated, schema-flagged deprecated), read from the
+    registries themselves and not through the helper under test, so a helper
+    that stops reading one of the two marks goes RED here."""
+    import code_tools as ct
+    from orchestrator_server import _DEPRECATED_TOOLS
+    flagged = {s["function"]["name"] for s in ct.TOOL_SCHEMAS
+               if s.get("function", {}).get("deprecated")}
+    return set(ct.TOOL_MAP), set(_DEPRECATED_TOOLS), flagged
+
+
+class DecisionRowsNameCallableTools(unittest.TestCase):
+    """N2. A row's `tool` came back verbatim as `recommended_tool`, and 18 of
+    the 26 rows carried prose there -- "find_symbol(include=all) OR
+    search_code(mode=smart)", "Edit + log_native_event". A CA reads that field
+    as a name to call. Which tool fits is the row's job; how to call it is the
+    schema's."""
+
+    def test_every_row_names_identifiers_only(self):
+        for i, rule in enumerate(v._DECISION_RULES):
+            for name in [rule["tool"], *rule.get("also", ())]:
+                with self.subTest(row=i, name=name):
+                    self.assertRegex(name, r"^[a-z][a-z0-9_]*$")
+
+    def test_every_row_names_live_tools_that_are_not_deprecated(self):
+        live, marked, flagged = _n2_registry()
+        for i, rule in enumerate(v._DECISION_RULES):
+            for name in [rule["tool"], *rule.get("also", ())]:
+                with self.subTest(row=i, name=name):
+                    self.assertIn(name, live)
+                    self.assertNotIn(name, marked | flagged)
+
+    def test_rule_names_is_the_primary_then_each_companion_once(self):
+        self.assertEqual(v._rule_names({"tool": "a", "also": ("b", "a", "c")}),
+                         ["a", "b", "c"])
+        self.assertEqual(v._rule_names({"tool": "a"}), ["a"])
+
+    def test_validation_checks_the_row_names_not_prose_tokens(self):
+        """The CAN-053 regex read `(artifact)` and `mode='ref'` inside the
+        prose as tool ids, so `all_recommended_tools_live` was False on a row
+        whose every tool was live. The same names bound the alternates: a
+        companion the primary row already names is not a second option."""
+        live, _m, _f = _n2_registry()
+        for query in ("pick a folder in the folder dialog", "save log snapshot",
+                      "find symbol foo", "diff the dom state",
+                      # one row fired, so the alternates come from the ranker
+                      "find symbol foo with search code",
+                      # two rows fired, and the query spells out a companion
+                      "folder dialog snapshot then a small tweak"):
+            with self.subTest(query=query):
+                result = _n2_answer(query)
+                checked = result["tools_validation"]["checked"]
+                alts = [a["tool"] for a in result.get("alternates") or []]
+                self.assertEqual(checked[0], result["recommended_tool"])
+                self.assertGreater(len(checked), 1,
+                                   "a row with companions is checked whole")
+                self.assertLessEqual(set(checked), live)
+                self.assertEqual(result["tools_validation"]["missing"], [])
+                self.assertIs(result["all_recommended_tools_live"], True)
+                self.assertLessEqual(set(result["payload_example_per_tool"]),
+                                     set(checked))
+                self.assertFalse(set(checked) & set(alts))
+                self.assertEqual(len(alts), len(set(alts)))
+
+    def test_a_plainer_row_firing_first_keeps_the_companion_reachable(self):
+        """"fix the auth token bug" fires the plain write_fix row before the
+        auth row. Both name write_fix, so a dedupe keyed on the primary alone
+        drops the auth row -- and with it the dry-run preview an auth change
+        wants. Two rows are the same only when they name the same tools."""
+        result = _n2_answer("fix the auth token bug in file x")
+        self.assertEqual(result["recommended_tool"], "write_fix")
+        offered = set(result["tools_validation"]["checked"]) | {
+            a["tool"] for a in result.get("alternates") or []}
+        self.assertIn("apply_after_dry_run", offered)
+
+
+class AnswersOnlyNameCallableTools(unittest.TestCase):
+    """N2, end to end: every path of the answer -- campaign prepass, rule,
+    recipe, lexical and the no-signal default -- names tools a CA can call.
+    The default path answered "find_symbol / search_code" while its own
+    suggestion said search_code."""
+
+    QUERIES = (
+        "build or refresh the cbm code graph index", "who calls foo",
+        "find callers of foo", "fix a typo in the css",
+        "audit tool matrix and log the session", "understand this repo",
+        "read all files in the repo", "screenshot the app", "zzz qqq",
+        "click the button and watch the state", "restart the server port",
+        "submit the workflow step", "refactor across many files",
+        "pick a folder in the folder dialog",
+    )
+
+    def test_every_offered_name_is_live_and_not_deprecated(self):
+        live, marked, flagged = _n2_registry()
+        for query in self.QUERIES:
+            result = _n2_answer(query)
+            for name in _n2_offered(result):
+                with self.subTest(query=query, name=name):
+                    self.assertIn(name, live)
+                    self.assertNotIn(name, marked | flagged)
+
+    def test_the_recommended_tool_is_the_suggested_tool(self):
+        for query in self.QUERIES:
+            with self.subTest(query=query):
+                result = _n2_answer(query)
+                self.assertEqual(result["recommended_tool"],
+                                 result["suggestion"]["tool"])
+
+
+class GraphMaintenanceRoutesToTheIndexTools(unittest.TestCase):
+    """N2. "build or refresh the cbm code graph index" had no route: expansion
+    reads `graph` as architecture, so the answer was read-only graph tools and
+    the step that makes a graph answer true -- bringing graph.db up to date --
+    never surfaced. cbm_incremental_index leads because it diffs source hashes
+    and, on an empty graph, counts every file as added, so it is also the first
+    build; cbm_index (a full re-index of a chosen scope) stays one step away."""
+
+    MAINTAIN = ("build or refresh the cbm code graph index", "refresh the code graph",
+                "reindex the project graph", "build cbm index",
+                "run cbm_incremental_index", "cap nhat index cbm",
+                "tao lai do thi code", "build the code graph", "code graph refresh")
+    FRESHNESS = ("is the cbm graph stale", "graph is stale, rebuild it",
+                 "check freshness of the cbm graph",
+                 "do thi code da moi nhat chua")
+    INDEX_TOOLS = frozenset({"cbm_index", "cbm_incremental_index"})
+
+    def test_maintenance_leads_with_the_incremental_index(self):
+        for query in self.MAINTAIN:
+            with self.subTest(query=query):
+                result = _n2_answer(query)
+                self.assertEqual(result["recommended_tool"], "cbm_incremental_index")
+                self.assertIn("cbm_index",
+                              [a["tool"] for a in result.get("alternates") or []])
+
+    def test_a_freshness_question_reads_the_status_before_a_rebuild(self):
+        for query in self.FRESHNESS:
+            with self.subTest(query=query):
+                result = _n2_answer(query)
+                self.assertEqual(result["recommended_tool"], "cbm_graph_status")
+                self.assertIn("cbm_incremental_index",
+                              [a["tool"] for a in result.get("alternates") or []])
+
+    def test_other_indexes_and_graphs_do_not_route_to_graph_db(self):
+        """A bare `index` is the search_code index (STALE_INDEX -> cache_delta),
+        and building a dependency graph is a structure question."""
+        for query in ("refresh the search index", "build the search index",
+                      "build the dependency graph"):
+            with self.subTest(query=query):
+                self.assertNotIn(_n2_answer(query)["recommended_tool"],
+                                 self.INDEX_TOOLS)
+
+
+class DeprecatedAliasesAreNeverOffered(unittest.TestCase):
+    """N2. "find callers of foo" offered find_callers, a deprecated alias of
+    search_code(mode=callers), because the ranker scores a name segment the
+    query repeats. The server marks deprecation in two machine-readable places
+    -- orchestrator_server._DEPRECATED_TOOLS and a schema's `deprecated` key --
+    and the ranker has to honour both."""
+
+    def test_the_measured_queries_offer_no_alias(self):
+        _live, marked, flagged = _n2_registry()
+        for query in ("find callers of foo", "find definition and usage of foo",
+                      "regex search for foo"):
+            with self.subTest(query=query):
+                self.assertFalse(set(_n2_offered(_n2_answer(query))) & (marked | flagged))
+
+    def test_the_ranker_skips_a_marked_tool_even_when_the_query_is_its_name(self):
+        _live, marked, flagged = _n2_registry()
+        self.assertTrue(marked and flagged - marked,
+                        "each mark needs a tool it alone carries, or it is unmeasured")
+        for name in sorted(marked | flagged):
+            with self.subTest(name=name):
+                ranked = v._wt_rank_lexical(f"{name.replace('_', ' ')} {name}", top_k=50)
+                self.assertTrue(ranked, "the query must still rank something")
+                self.assertNotIn(name, [r[1] for r in ranked])
+
+
+class ShownNamesMatchExactly(unittest.TestCase):
+    """N2. "Already shown" was a substring test on a joined string, so
+    `write_fix` counted as shown when only `write_fix_html` was and dropped out
+    of the alternates. A row now names several tools, so what is shown is a set
+    of names and membership is exact."""
+
+    LEX = ((10.0, "write_fix", {"description": "edit one region"}, "T2"),)
+
+    def test_a_longer_name_does_not_hide_its_prefix(self):
+        self.assertEqual(
+            [a["tool"] for a in v._a07_alternates(self.LEX, exclude="write_fix_html")],
+            ["write_fix"])
+        self.assertEqual(
+            [a["tool"] for a in v._a07_named_tool_alternate(
+                "write fix now", self.LEX, "write_fix_html")],
+            ["write_fix"])
+
+    def test_a_shown_name_is_excluded_from_a_string_or_a_collection(self):
+        for shown in ("write_fix", "open_session write_fix", ["write_fix"], {"write_fix"}):
+            with self.subTest(shown=shown):
+                self.assertEqual(v._a07_alternates(self.LEX, exclude=shown), [])
+                self.assertEqual(
+                    v._a07_named_tool_alternate("write fix now", self.LEX, shown), [])
+
+
 if __name__ == "__main__":
     unittest.main()

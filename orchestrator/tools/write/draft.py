@@ -105,7 +105,8 @@ async def _structured_validate(suffix: str, content: str) -> list[dict[str, Any]
 
     if suffix == ".py":
         try:
-            compile(content, "<draft>", "exec")
+            # A BOM is file framing (#8); compile() refuses U+FEFF as a token.
+            compile(content.removeprefix("\ufeff"), "<draft>", "exec")
         except SyntaxError as exc:
             errors.append({"line": int(exc.lineno or 0) or None,
                            "col": int(exc.offset or 0) or None,
@@ -215,11 +216,7 @@ def _view(rec: dict[str, Any]) -> dict[str, Any]:
         "failed_parts": failed_parts,
         "file_level_errors": file_level,
         "draft_expires_in_sec": max(0, int(rec["expires_at_epoch"] - _now())),
-        "ca_next_action": (
-            "clean" if not errors else
-            "Sửa ĐÚNG range lỗi: write_draft_patch(draft_id, start_line, end_line, "
-            "new_content, content_encoding='base64' nếu multiline). KHÔNG cần gửi lại "
-            "toàn file — sạch hết lỗi là backend tự ship qua đúng pipeline write."),
+        "ca_next_action": "clean" if not errors else "write_draft_patch",
     }
 
 
@@ -257,9 +254,12 @@ async def draft_fields_for_failure(tool: str, fp: Path, project_path: str,
     """Attach a draft to an existing failure response (post-write revert path)."""
     errors = await _structured_validate(fp.suffix.lower(), proposed_text)
     if not errors:
-        errors = [{"line": None, "col": None,
-                   "message": (error_text or "validation failed")[:400],
-                   "checker": "post_write"}]
+        # The post-write gates (import check) name their line in the error text;
+        # locate it so failed_parts points at the range to fix (#13).
+        msg = (error_text or "validation failed")[:400]
+        errors = [{"line": loc["line"], "col": loc.get("col"), "message": msg,
+                   "checker": "post_write"} for loc in _parse_lines_from_text(error_text or "")[:20]]
+        errors = errors or [{"line": None, "col": None, "message": msg, "checker": "post_write"}]
     rec = _store(tool, fp, project_path, file_path_param, proposed_text,
                  orig or {}, errors)
     return _view(rec)

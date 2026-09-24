@@ -61,11 +61,20 @@ def test_hash_domain_markers_survive_a_projection_that_dropped_them():
     assert "write_fix.expected_hash" in out["fields_force_kept_hint"]
 
 
-def test_projection_discloses_that_it_is_a_projection():
-    out = srv._r101_filter(_sha_payload(), {"ok", "sha256"})
-    # 6 keys in, 4 kept (2 of them force-kept) -> 2 dropped.
-    assert out["response_truncated"] is True
-    assert out["fields_dropped_count"] == 2
+def test_a_projection_is_not_a_truncation():
+    # #28a: fields= drops KEYS the caller chose not to read and never cuts a
+    # value, so "truncated" was false on every call it fired on -- and a CA that
+    # believed it re-called without fields=, the payload the projection spared.
+    # A rescue and a miss already carry their own, true keys.
+    rescued = srv._r101_filter(_sha_payload(), {"ok", "sha256"})
+    missed = srv._r101_filter(_sha_payload(), {"ok", "nope"})
+    nested = srv._r101_filter({"ok": True, "result": {"a": 1, "b": 2}}, {"result.zz"})
+    assert rescued["response_incomplete"] == "RESPONSE_INCOMPLETE"
+    assert missed["fields_unknown"] == ["nope"]
+    assert nested["fields_unknown"] == ["result.zz"]
+    for out in (rescued, missed, nested):
+        assert "response_truncated" not in out, out
+        assert "fields_dropped_count" not in out, out
 
 
 def test_asking_for_the_markers_explicitly_raises_no_rescue_notice():
@@ -80,9 +89,9 @@ def test_asking_for_the_markers_explicitly_raises_no_rescue_notice():
 
 def test_a_payload_without_markers_gets_no_safety_keys():
     # A clean subset stays clean: nothing was rescued and every key asked for
-    # existed, so the projection adds NOTHING -- not even the truncation
-    # disclosure. A23-P2's CorrectFilterStaysClean owns that invariant, and a
-    # marker present on every filtered response carries no information.
+    # existed, so the projection adds NOTHING. A23-P2's CorrectFilterStaysClean
+    # owns that invariant, and a marker present on every filtered response
+    # carries no information.
     out = srv._r101_filter({"ok": True, "results": [1, 2], "count": 2}, {"results"})
     assert out == {"ok": True, "results": [1, 2]}
 

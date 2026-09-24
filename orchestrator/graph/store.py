@@ -12,6 +12,11 @@ from typing import Any, Iterable
 from .config import graph_db_path, EXTRACTOR_VERSION
 from . import schema as _schema
 
+# Page cache of a READONLY graph connection, in KiB. Sized to hold one full pass of the
+# widest read: an unfiltered edges browse touched ~18 MB of ToolQ's 44 MB graph.db
+# (measured 2026-09-24), so 32 MB lets its PAGE query reuse what its COUNT read.
+READ_CACHE_KIB = 32000
+
 
 def get_db(project_path: str, *, readonly: bool = False) -> sqlite3.Connection:
     """Open (and lazily create) the graph DB for a project.
@@ -35,6 +40,12 @@ def get_db(project_path: str, *, readonly: bool = False) -> sqlite3.Connection:
     uri = f"file:{path.replace(os.sep, '/')}?mode=ro" if readonly else f"file:{path.replace(os.sep, '/')}"
     conn = sqlite3.connect(uri, uri=True, timeout=15.0)
     conn.row_factory = sqlite3.Row
+    if readonly:
+        # N1: a graph read is a COUNT then a PAGE over the same rows (edges_query,
+        # nodes_query). Under SQLite's 2 MB default cache the page re-read from the OS
+        # what the count had just read -- on a cold HDD that is the whole cost twice.
+        # The cache fills only as pages are read, so a narrow query never pays for it.
+        conn.execute("PRAGMA cache_size=-%d;" % READ_CACHE_KIB)
     if not readonly:
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA foreign_keys=ON;")

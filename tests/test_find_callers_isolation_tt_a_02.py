@@ -17,6 +17,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import orchestrator_server as srv
 from orchestrator.tools.search import find_symbol
 
 
@@ -125,6 +126,29 @@ class TestFindCallersIsolation(unittest.TestCase):
                          "callers response must not duplicate find_symbol's results key")
         self.assertIn("callers", d_call)
         self.assertNotIn("callers", d_def)
+
+    def test_each_mode_answers_under_the_keys_its_schema_names(self) -> None:
+        """#24: the per-mode answer key is deliberate, so the CONTRACT must say it.
+
+        mode='callers' answers callers/callers_count and no results (TT-A-02
+        above), and the schema said only "Search mode or legacy-tool preset" --
+        a caller learned the shape by guessing fields=results and reading
+        fields_unknown. This pins the published mode description to what the
+        scanner actually returns, in both directions.
+        """
+        def keys(include: str) -> set:
+            return set(json.loads(asyncio.run(find_symbol(
+                name="target_fn", project_path=str(self.root), include=include))))
+
+        self.assertTrue({"results", "count"} <= keys("def"))
+        callers = keys("callers")
+        self.assertTrue({"callers", "callers_count"} <= callers)
+        self.assertNotIn("results", callers)
+        self.assertTrue({"results", "definition", "callers", "usages"} <= keys("all"))
+        desc = srv._tool_schema_payload("search_code")[0]["tool"]["function"][
+            "parameters"]["properties"]["mode"]["description"]
+        for key in ("results", "callers_count", "definition", "usages"):
+            self.assertIn(key, desc, "the mode schema no longer names " + key)
 
 
 if __name__ == "__main__":
