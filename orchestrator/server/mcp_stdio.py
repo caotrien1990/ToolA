@@ -1151,10 +1151,12 @@ def _mcp_add_generation(text: str, generation, fields=None) -> str:
     bare string (back-compat). When the probe failed, the response says so
     explicitly instead of carrying a stamp that would be read as the daemon's.
 
-    ``fields`` is the caller's projection. On the daemon path it gates the
-    advisory host stamps (see _mcp_generation_disclosure). The stamps of a failed
-    probe and the ``tool_supplied`` disclosure are never gated: without them a
-    ``generation`` the caller holds would read as the daemon's when it is not.
+    ``fields`` is the caller's projection. On the daemon path it gates every host
+    stamp, ``generation`` included: a stamp the body carries is corrected to the
+    daemon's, one the projection left out is not added back (the advisory stamps:
+    _mcp_generation_disclosure). The stamps of a failed probe and the
+    ``tool_supplied`` disclosure are never gated: without them a ``generation``
+    the caller holds would read as the daemon's when it is not.
     """
     try:
         payload = json.loads(text)
@@ -1180,10 +1182,18 @@ def _mcp_add_generation(text: str, generation, fields=None) -> str:
             # `daemon_gen` in the tuple: a payload that ALREADY carries the daemon
             # stamp agrees with the probe, so it is a daemon stamp -- labelling it
             # "tool_supplied" would be a second wrong label in the other direction.
-            if payload.get("generation") in (None, local_gen, daemon_gen):
-                payload["generation"] = daemon_gen
-                if requested is None or "generation_source" in requested:
-                    payload.setdefault("generation_source", "daemon")
+            current = payload.get("generation")
+            if current in (None, local_gen, daemon_gen):
+                # R101, the rule the daemon envelope follows since 154a98db: a
+                # stamp the body carries is CORRECTED to the daemon's, one the
+                # caller's projection left out is not ADDED back. Adding it grew
+                # every projected MCP answer past its fields= (measured 2026-09-24:
+                # call_tool(git_status, fields=ok) answered ok + generation, the
+                # same call over HTTP answered ok alone).
+                if current is not None or requested is None or "generation" in requested:
+                    payload["generation"] = daemon_gen
+                    if requested is None or "generation_source" in requested:
+                        payload.setdefault("generation_source", "daemon")
             else:
                 # A43-P1 follow-up: keeping a tool's deliberate value is right,
                 # but then `generation` is NOT the daemon's and saying "daemon"

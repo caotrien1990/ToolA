@@ -216,6 +216,21 @@ def test_a_projected_answer_gets_no_advisory_host_stamps():
     assert out["generation"] == "daemon-gen"
 
 
+def test_a_projection_that_left_generation_out_is_not_grown_back():
+    # 2026-09-24, live: call_tool(git_status, fields=ok) answered ok + generation
+    # while HTTP answered ok alone. Since 154a98db the daemon envelope follows the
+    # projection, so the body arrives without generation; the host must not add it.
+    out = _stamp({"ok": True}, "ok")
+    assert set(out) == {"ok"}, out
+
+
+@pytest.mark.parametrize("fields", ["ok,generation", ["ok", "generation"]])
+def test_a_named_generation_is_the_daemons(fields):
+    out = _stamp({"ok": True}, fields)
+    assert out["generation"] == "daemon-gen"
+    assert "generation_source" not in out
+
+
 def test_a_projection_does_not_spend_the_one_copy_of_the_note():
     _stamp({"ok": True, "generation": "host-gen"}, "ok")
     out = _stamp({"ok": True, "generation": "host-gen"})
