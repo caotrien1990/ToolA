@@ -1,6 +1,7 @@
 """via_bat must queue a python.exe helper, not a titled cmd.exe wrapper."""
 from __future__ import annotations
 
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -23,12 +24,22 @@ class TestViaBatHelper(unittest.TestCase):
         self.assertNotIn('["cmd", "/c", str(helper_path)]', chunk)
         self.assertNotIn('["cmd.exe", "/c", str(helper_path)]', chunk)
 
-    def test_run_as_bat_hides_console(self):
-        with mock.patch.object(console_warp, "has_console", return_value=False), \
+    def _run_as_bat(self, has_console: bool):
+        # The log goes to a tmpdir, never ROOT/.orchestrator_cache: that file is the
+        # helper_log restart_orchestrator_via_bat hands a CA as restart proof, and
+        # every run of this module used to append "helper done rc=0" with no restart.
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(console_warp, "has_console", return_value=has_console), \
              mock.patch.object(via_bat_helper.subprocess, "run") as run:
             run.return_value = mock.Mock(returncode=0)
-            log = ROOT / ".orchestrator_cache" / "restart_bat_helper.log"
+            log = Path(tmp) / "restart_bat_helper.log"
             via_bat_helper.run_as_bat(ROOT / "start_orchestrator.bat", ROOT, log)
+            text = log.read_text(encoding="utf-8")
+        self.assertEqual(text, "run [A:S] start_orchestrator.bat\nhelper done rc=0\n")
+        return run
+
+    def test_run_as_bat_hides_console(self):
+        run = self._run_as_bat(has_console=False)
         kwargs = run.call_args.kwargs
         self.assertEqual(kwargs.get("creationflags"), via_bat_helper.CREATE_NO_WINDOW)
         self.assertTrue(kwargs.get("startupinfo").dwFlags & console_warp.STARTF_USESHOWWINDOW)
@@ -37,11 +48,7 @@ class TestViaBatHelper(unittest.TestCase):
         self.assertEqual(argv[1], "/c")
 
     def test_run_as_bat_inherits_hidden_console(self):
-        with mock.patch.object(console_warp, "has_console", return_value=True), \
-             mock.patch.object(via_bat_helper.subprocess, "run") as run:
-            run.return_value = mock.Mock(returncode=0)
-            log = ROOT / ".orchestrator_cache" / "restart_bat_helper.log"
-            via_bat_helper.run_as_bat(ROOT / "start_orchestrator.bat", ROOT, log)
+        run = self._run_as_bat(has_console=True)
         flags = int(run.call_args.kwargs.get("creationflags") or 0)
         self.assertFalse(flags & via_bat_helper.CREATE_NO_WINDOW)
         self.assertFalse(flags & console_warp.CREATE_NEW_CONSOLE)
