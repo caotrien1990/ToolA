@@ -13,9 +13,9 @@ P12 — the duplicate/response cache returns a prior verdict without
 re-evaluating external conditions. When it does, the response must disclose
 that it is cached (cached:true + when the verdict was first produced) so a CA
 can tell "still wrong" apart from "not re-run". The deterministic write-ledger
-operation_id is stable across identical retries; a replay must be identifiable
-(operation_attempts>1 / operation_replayed) so a stable operation_id is not
-mistaken for a stale cached object.
+operation_id is stable across identical retries; a later send must be identifiable
+(operation_attempts>1) so a stable operation_id is not mistaken for a stale cached
+object. #36 dropped operation_replayed: it restated that count and read as "not run".
 """
 
 import asyncio
@@ -200,15 +200,16 @@ class P12OperationReplayDisclosureTests(unittest.IsolatedAsyncioTestCase):
         first = json.loads((await self._dispatch(dict(body))).text)
         self.assertFalse(first.get("ok"), msg=first)
         self.assertEqual(first.get("operation_attempts"), 1, msg=first)
-        self.assertFalse(first.get("operation_replayed"), msg=first)
+        self.assertNotIn("operation_replayed", first, msg=first)
 
         second = json.loads((await self._dispatch(dict(body))).text)
         self.assertFalse(second.get("ok"), msg=second)
         # Same deterministic operation_id proves it is the same payload...
         self.assertEqual(first.get("operation_id"), second.get("operation_id"), msg=second)
-        # ...and the replay is disclosed, so a stable id is not read as "cached".
+        # ...and the count says it is a later send, so a stable id is not read as
+        # "cached". #36: the count is the whole fact -- no operation_replayed beside it.
         self.assertEqual(second.get("operation_attempts"), 2, msg=second)
-        self.assertTrue(second.get("operation_replayed"), msg=second)
+        self.assertNotIn("operation_replayed", second, msg=second)
 
     def _with_scope(self, scope: str = "file_artifact"):
         # The replay flag speaks only for tools that write source (#9): a synthetic
@@ -257,16 +258,18 @@ class P12OperationReplayDisclosureTests(unittest.IsolatedAsyncioTestCase):
 
         second = json.loads((await self._dispatch({}, "?fields=ok")).text)
         self.assertIs(second.get("ok"), False, msg=second)
-        self.assertIs(second.get("operation_replayed"), True, msg=second)
+        # #36: attempts > 1 is not a warning, so no operation_replayed is rescued.
+        self.assertNotIn("operation_replayed", second, msg=second)
         self.assertIs(second.get("likely_already_applied"), True, msg=second)
         self.assertIn("read_file_range", second.get("replay_hint", ""), msg=second)
         for key in info_only:
             self.assertNotIn(key, second, msg=second)
 
-        # Naming an envelope key keeps it, like any other key. A replay of a
-        # committed operation is still a send, so it is still counted.
+        # Naming an envelope key keeps it, like any other key. Every send is counted,
+        # and the commit of the first send stays a warning on every later failure.
         third = json.loads((await self._dispatch({}, "?fields=ok,operation_attempts")).text)
         self.assertEqual(third.get("operation_attempts"), 3, msg=third)
+        self.assertIs(third.get("likely_already_applied"), True, msg=third)
         self.assertNotIn("fields_unknown", third, msg=third)
 
     async def test_a_replay_whose_sends_all_failed_is_not_called_applied(self):
@@ -283,12 +286,16 @@ class P12OperationReplayDisclosureTests(unittest.IsolatedAsyncioTestCase):
         code_tools.TOOL_MAP[TOOL_NAME] = always_fails
         await self._dispatch({})
         second = json.loads((await self._dispatch({})).text)
-        self.assertIs(second.get("operation_replayed"), True, msg=second)
+        self.assertEqual(second.get("operation_attempts"), 2, msg=second)
         self.assertNotIn("likely_already_applied", second, msg=second)
         self.assertNotIn("replay_hint", second, msg=second)
         led = orchestrator_server._WRITE_LEDGER[second["operation_id"]]
         self.assertEqual(orchestrator_server._write_ledger_commit_state(led),
                          "not_committed", msg=led)
+
+    async def _write_status(self, op_id: str) -> dict:
+        request = make_mocked_request("GET", f"/api/write_status?operation_id={op_id}")
+        return json.loads((await orchestrator_server.handle_write_status(request)).text)
 
     async def test_a_committed_rerun_of_a_derived_index_is_not_a_double_write(self):
         """A derived-index rebuild after a committed run re-derives; it cannot
@@ -297,8 +304,87 @@ class P12OperationReplayDisclosureTests(unittest.IsolatedAsyncioTestCase):
         self._commits_then_fails()
         await self._dispatch({})
         second = json.loads((await self._dispatch({})).text)
-        self.assertIs(second.get("operation_replayed"), True, msg=second)
+        self.assertEqual(second.get("operation_attempts"), 2, msg=second)
         self.assertNotIn("likely_already_applied", second, msg=second)
+        # write_status asks the same helper, so it gives the same answer: rerun.
+        status = await self._write_status(second["operation_id"])
+        self.assertEqual((status["commit_state"], status["previous_status"]),
+                         ("not_committed", "committed"), msg=status)
+        self.assertIs(status["safe_to_retry"], True, msg=status)
+        self.assertEqual(status["ca_next_action"], "retry_write", msg=status)
+
+    async def test_a_committed_operation_resent_runs_and_the_row_describes_that_send(self):
+        """#36, measured 2026-09-25: restart_orchestrator_via_bat re-sent with the
+        payload of a 09-20 restart RAN, yet its ledger row stayed the 09-20 row --
+        status committed, started_at 09-20, origin_generation of the dead daemon --
+        and the answer said operation_replayed:true, which reads as "did not run".
+        The row must describe the send that just ran, on disk as in memory."""
+        self._with_scope()
+        sends = []
+
+        async def always_commits(**_kwargs) -> str:
+            sends.append(1)
+            return json.dumps({"ok": True, "new_hash": f"h{len(sends)}"})
+
+        code_tools.TOOL_MAP[TOOL_NAME] = always_commits
+        first = json.loads((await self._dispatch({})).text)
+        op_id = first["operation_id"]
+        first_row = dict(orchestrator_server._WRITE_LEDGER[op_id])
+        orchestrator_server.SERVER_GENERATION = "p12-replay-generation-after-restart"
+        second = json.loads((await self._dispatch({})).text)
+
+        self.assertEqual(len(sends), 2)
+        self.assertEqual(second.get("operation_id"), op_id, msg=second)
+        self.assertEqual(second.get("operation_attempts"), 2, msg=second)
+        self.assertNotIn("operation_replayed", second, msg=second)
+        self.assertNotIn("likely_already_applied", second, msg=second)
+        for label, row in (
+                ("memory", orchestrator_server._WRITE_LEDGER[op_id]),
+                ("sqlite", orchestrator_server._write_ledger_db_get(operation_id=op_id))):
+            self.assertEqual((row["status"], row["attempts"], row["previous_status"]),
+                             ("committed", 2, "committed"), msg=(label, row))
+            self.assertEqual(row["origin_generation"],
+                             "p12-replay-generation-after-restart", msg=(label, row))
+            self.assertGreater(row["started_at"], first_row["started_at"], msg=(label, row))
+            self.assertEqual(row["result"]["new_hash"], "h2", msg=(label, row))
+
+    async def test_write_status_after_commit_then_fail_does_not_invite_a_resend(self):
+        """#36: the row is the LATEST send, so commit-then-fail reads not_committed --
+        true of that send, and still no reason to resend source: the first send's
+        edit already landed. The envelope and write_status must say the same thing."""
+        self._with_scope()
+        self._commits_then_fails()
+        await self._dispatch({})
+        second = json.loads((await self._dispatch({})).text)
+        third = json.loads((await self._dispatch({})).text)
+        # previous_status is sticky: a later failure does not erase the commit.
+        for answer in (second, third):
+            self.assertIs(answer.get("likely_already_applied"), True, msg=answer)
+            self.assertEqual(answer.get("ca_next_action"), "read_file_range", msg=answer)
+        status = await self._write_status(third["operation_id"])
+        self.assertEqual((status["commit_state"], status["previous_status"],
+                          status["attempts"]), ("not_committed", "committed", 3), msg=status)
+        self.assertIs(status["safe_to_retry"], False, msg=status)
+        self.assertEqual(status["ca_next_action"],
+                         "read_file_range_to_confirm_before_retry", msg=status)
+
+    async def test_a_newer_send_on_disk_beats_an_older_committed_row(self):
+        """#36: _write_ledger_choose used to return ANY committed record first, so a
+        committed row outranked every later send and begin counted from it."""
+        committed = {"operation_id": "op-36", "tool": TOOL_NAME, "status": "committed",
+                     "attempts": 1, "updated_at": 1.0}
+        newer = dict(committed, status="failed", attempts=2, previous_status="committed",
+                     updated_at=2.0)
+        for memory, disk, winner in ((committed, newer, "sqlite"),
+                                     (newer, committed, "memory")):
+            chosen, source = orchestrator_server._write_ledger_choose(memory, disk)
+            self.assertEqual((source, chosen["attempts"]), (winner, 2))
+        # Equal attempts: a terminal phase beats in_flight, committed beats failed.
+        racing = dict(committed, status="in_flight")
+        self.assertEqual(orchestrator_server._write_ledger_choose(racing, committed)[1],
+                         "sqlite")
+        self.assertEqual(orchestrator_server._write_ledger_choose(
+            committed, dict(committed, status="failed"))[1], "memory")
 
 
 def _body_reader(payload: dict):

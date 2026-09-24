@@ -8,6 +8,7 @@ import asyncio
 import glob
 import json as _json
 import os
+import re
 import subprocess
 import shutil
 import tempfile
@@ -156,14 +157,21 @@ _GRAPH_REFRESH_LOCKS: dict = {}
 # finding is a missed hint; corrupting a correct file is damage. So: override what
 # to look for and what may be fixed, keep the project config for how to fix.
 #
-# Scope: the safe-fixable rules validate_file already advertises, nothing wider --
-# ruff_fix EDITS code, so a rule that lands here must be one we are willing to
-# apply unattended. A32-1.2: this select is therefore deliberately NARROWER than
-# code_tools.py's _RUFF_LINT_SELECT, which also carries _RUFF_REPORT_ONLY_RULES
-# (B006 = unsafe fix, E722 = no fix at all). Do NOT "resync" the two strings back
-# together: the relationship is superset (lint) vs fixable subset (fix), and
-# tests/test_a29_size_hint_and_ruff_preview_states.py pins exactly that.
-_RUFF_FIX_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541,RUF100,I"
+# Scope: the safe-fixable DEFECT rules validate_file already advertises, nothing
+# wider -- ruff_fix EDITS code, so a rule that lands here must be one we are
+# willing to apply unattended. A32-1.2: this select is therefore deliberately
+# NARROWER than code_tools.py's _RUFF_LINT_SELECT, which also carries
+# _RUFF_REPORT_ONLY_RULES (B006 = unsafe fix, E722 = no fix at all). Do NOT
+# "resync" the two strings back together: the relationship is superset (lint)
+# vs fixable subset (fix), and tests/test_a29_size_hint_and_ruff_preview_states.py
+# pins exactly that.
+# #7 (measured 2026-09-25): RUF100 and I left this string. They are a project's
+# POLICY, not a defect (see code_tools._RUFF_POLICY_FIX_RULES), and --select
+# REPLACES the project's rule set, so naming them here imposed them: a preview
+# of this very file, 0 defect findings, proposed 15 hunks of import and noqa
+# rewrites in a repo whose config enables neither. ruff_fix adds the ones the
+# project's own config enables (_project_policy_rules) and nothing else.
+_RUFF_FIX_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541"
 _RUFF_FIX_OVERRIDES = (
     "--config", 'lint.fixable = ["ALL"]',
     "--config", "lint.per-file-ignores = {}",
@@ -177,6 +185,49 @@ _RUFF_FIX_OVERRIDES = (
     # wins over FORCE_COLOR; NO_COLOR does not.
     "--color", "never",
 )
+# #7: a policy code (code_tools._RUFF_POLICY_FIX_RULES: RUF100 and every I code)
+# as ruff prints it inside `linter.rules.enabled`, one "name (CODE)," per line.
+# Anchored on the whole code: INT001 and ISC004 start with an I as well.
+_RUFF_POLICY_CODE_RE = re.compile(r"\((RUF100|I\d{3})\),?$")
+
+
+def _project_policy_rules(target: str, root: str) -> tuple[list[str], str]:
+    """The policy codes the project's own ruff config enables for ``target``.
+
+    Returns ``(codes, "")``, or ``([], reason)`` when that config could not be
+    read -- the caller then fixes the defect rules alone, which can miss a
+    finding but never rewrites a file into a style the project did not pick.
+    ``--show-settings`` resolves the settings of ONE file (a directory answers
+    for its first file), and its text is ruff's output rather than a contract,
+    so a missing block is a reason, never "enables nothing".
+    """
+    try:
+        completed = subprocess.run(
+            [_console_python(), "-m", "ruff", "check", target, "--show-settings"],
+            cwd=root, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=30, check=False)
+    except Exception as exc:
+        return [], f"{type(exc).__name__}: {exc}"
+    if completed.returncode != 0:
+        detail = " ".join((completed.stderr or completed.stdout or "").split())
+        return [], f"ruff --show-settings exited {completed.returncode}: {detail[:300]}"
+    lines = (completed.stdout or "").splitlines()
+    start = next((index for index, line in enumerate(lines)
+                  if line.startswith("linter.rules.enabled = [")), None)
+    if start is None:
+        return [], "ruff --show-settings printed no linter.rules.enabled block"
+    if lines[start].rstrip().endswith("[]"):
+        return [], ""
+    codes = []
+    for entry in lines[start + 1:]:
+        if entry.strip() == "]":
+            return codes, ""
+        match = _RUFF_POLICY_CODE_RE.search(entry.strip())
+        if match:
+            codes.append(match.group(1))
+    return [], "ruff --show-settings: the linter.rules.enabled block never closed"
+
+
 def _graph_write_lock(project_path: str):
     """R50 (2026-08-12): serialize graph WRITES (cbm_index / cbm_incremental_index) per
     project. Concurrent rebuilds contend on the single graph.db writer; under extreme load
@@ -493,8 +544,12 @@ async def ruff_fix(project_path: str = "", path: str = ".", apply: bool = False,
     # diff all empty -- ruff found the error and the answer vanished. scan_ruff
     # already resolves python.exe from the same directory; reuse that helper
     # instead of a third copy.
+    # #7: the defect rules always; a policy rule only when the project enables it.
+    policy_codes, policy_unresolved = await asyncio.to_thread(
+        _project_policy_rules, target, root)
     command = [_console_python(), "-m", "ruff", "check", target, "--fix",
-               "--select", _RUFF_FIX_SELECT, *_RUFF_FIX_OVERRIDES]
+               "--select", ",".join((_RUFF_FIX_SELECT, *policy_codes)),
+               *_RUFF_FIX_OVERRIDES]
     if not apply:
         command.append("--diff")
     if unsafe_fixes:
@@ -580,6 +635,10 @@ async def ruff_fix(project_path: str = "", path: str = ".", apply: bool = False,
         "select": (command[command.index("--select") + 1]
                    if "--select" in command else "project-default"),
     }
+    if policy_unresolved:
+        # #7, fail loud: the project's I/RUF100 choice could not be read, so this
+        # run fixed the defect rules alone -- say so instead of looking complete.
+        resp["policy_rules_unresolved"] = policy_unresolved
     if post_ruff_validation:
         resp["post_ruff_validation"] = post_ruff_validation
     if backup_root:

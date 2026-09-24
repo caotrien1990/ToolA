@@ -70,9 +70,10 @@ _PROBE_SHAPES = {
     "cbm_quality_gate": {"ok", "result", "generation"},
     "cbm_dsm": {"ok", "result", "generation"},
     "cbm_evolution": {"ok", "result", "generation"},
+    # #36 (2026-09-25): operation_replayed left the envelope (it restated attempts > 1),
+    # so it is dropped from both recorded shapes rather than kept as a key nothing emits.
     "cbm_what_if": {
         "ok", "result", "generation", "operation_id", "write_status_url", "operation_attempts",
-        "operation_replayed",
     },
     # A38-B, probed live 2026-09-20 over HTTP /api/call/<tool>. Same envelope story as A38:
     # `generation` and the operation_* keys are the transport, the tool's own answer is `result`,
@@ -81,7 +82,6 @@ _PROBE_SHAPES = {
     "cbm_edges_query": {"ok", "result", "generation"},
     "cbm_test_gap": {
         "ok", "result", "generation", "operation_id", "write_status_url", "operation_attempts",
-        "operation_replayed",
     },
 }
 

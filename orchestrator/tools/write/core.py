@@ -1460,11 +1460,11 @@ def _resolve_mutable_target(
     session_id: str = "",
     escape_project_root: bool = False,
 ):
-    """Resolve a write target. Absolute paths outside project_path use xroot_check.
+    """Resolve a write target and read the xroot verdict for it (classify_write_target).
 
     Returns (fp, xroot_managed, policy, error_json_or_none).
     """
-    from orchestrator.fileops.xroot import is_outside_project_root, xroot_check
+    from orchestrator.fileops.xroot import classify_write_target, is_outside_project_root
 
     absolute_target = False
     try:
@@ -1480,12 +1480,11 @@ def _resolve_mutable_target(
     except ValueError as exc:
         return None, False, None, _json_path_resolve_error(ct, exc)
 
-    policy = xroot_check(fp, tool_name, session_id)
-    managed = (
-        (absolute_target and is_outside_project_root(fp, project_path or None))
-        or policy.get("group") == "live_files"
-    )
-    if managed and not policy.get("allowed"):
+    # #35: the deny list is read for every target, however it is spelled; being
+    # inside project_path grants nothing (see classify_write_target).
+    target = classify_write_target(fp, project_path or None, tool_name, session_id)
+    policy, managed = target["policy"], target["managed"]
+    if not target["allowed"]:
         return None, managed, policy, ct._json_error(
             policy.get("reason", "xroot policy denied write"),
             error_name="XROOT_DENIED",
@@ -2070,7 +2069,7 @@ content_encoding :str ="plain",dry_run :bool =False ,
 overwrite :bool =False ,new_content :str |None =None ,
 escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
     import code_tools as ct
-    from orchestrator.fileops.xroot import is_outside_project_root, log_intent, log_result, xroot_check
+    from orchestrator.fileops.xroot import classify_write_target, is_outside_project_root, log_intent, log_result
     _mark_phase("prepare")
     if new_content is None :
         new_content =content 
@@ -2099,9 +2098,12 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
             session_id =ct._get_active_session_id (ct._session_project_key (project_path ))or ""
         except Exception :
             session_id =""
-    _xroot_policy =xroot_check (fp ,"write_new_file",session_id )
-    _xroot_managed =(_absolute_target and is_outside_project_root (fp ,project_path or None ))or _xroot_policy .get ("group")=="live_files"
-    if _xroot_managed and not _xroot_policy .get ("allowed"):
+    # #35: the deny list is read for every target, however it is spelled; being
+    # inside project_path grants nothing (see classify_write_target).
+    _xroot_target = classify_write_target(fp, project_path or None, "write_new_file", session_id)
+    _xroot_policy = _xroot_target["policy"]
+    _xroot_managed = _xroot_target["managed"]
+    if not _xroot_target["allowed"]:
         return ct._json_error (
         _xroot_policy .get ("reason","xroot policy denied write"),
         error_name ="XROOT_DENIED",

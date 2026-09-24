@@ -644,3 +644,81 @@ def test_a_harmless_probe_that_names_a_delete_in_a_string_just_runs(sandbox) -> 
     payload = _run(ct.run_project_test_script(str(sandbox), body, runtime="python"))
     assert payload["ok"] is True, payload
     assert "probe-ran" in payload["stdout"]
+
+
+# --- 2026-09-25 (#37): a command can start inside a shell introducer -------------
+#
+# Every statement-anchored row had its own copy of the "command starts here" test,
+# and every copy missed the argument of a shell introducer: ``powershell -c "ri x"``
+# and ``cmd /c del x`` delete, yet scored 0. One matcher (``_CMD_START``) now owns
+# the question. Each row is pinned by its own kind, so a row that drops the shared
+# matcher names itself.
+
+_INTRODUCED_SHAPES = [
+    ("powershell", 'powershell -NoProfile -c "ri x -Recurse"', "remove_item"),
+    ("powershell", 'pwsh -Command "clc log.txt"', "clear_content"),
+    ("powershell", 'powershell -c "mi a b"', "move_item"),
+    ("powershell", 'powershell -c "cp a b -Force"', "copy_item_force"),
+    ("sh", "bash -c 'rm x'", "rm"),
+    ("sh", "sh -c 'rmdir d'", "rmdir"),
+    ("sh", "bash -c 'mv a b'", "sh_destructive"),
+    ("any", 'cmd /c del "x"', "remove_item"),
+    ("any", "cmd.exe /k erase x", "remove_item"),
+]
+
+
+@pytest.mark.parametrize("runtime,line,kind", _INTRODUCED_SHAPES)
+def test_a_shell_introducer_argument_is_a_command_start(runtime, line, kind) -> None:
+    scan = ct._scan_destructive_script(line, runtime)
+    assert scan["count"] == 1, "%s scanned as %r" % (line, scan["findings"])
+    assert kind in scan["findings"][0]["kinds"], scan["findings"]
+
+
+# The switch opens a command only when a SHELL owns it; anywhere else a quote is a
+# quoted word and ``-c`` is some other program's flag. Counting these would trip the
+# guard on ordinary commits and greps, and a guard that trips on everything gets
+# acknowledged reflexively.
+_NOT_A_COMMAND_START = [
+    ("any", 'git commit -m "move the rm call"'),
+    ("any", "grep -c rm notes.txt"),
+    ("sh", "gcc -c rm.c"),
+    ("powershell", 'Write-Host "ri is an alias"'),
+]
+
+
+@pytest.mark.parametrize("runtime,line", _NOT_A_COMMAND_START)
+def test_a_quoted_word_or_a_non_shell_switch_is_not_a_command(runtime, line) -> None:
+    scan = ct._scan_destructive_script(line, runtime)
+    assert scan["count"] == 0, "%s scanned as %r" % (line, scan["findings"])
+
+
+# A python call that hands a COMMAND to a process carries it as literal strings. The
+# AST judged such a call by its NAME (``system`` / ``run`` delete nothing) and the text
+# rows saw only quoted words, so both scored 0. The literal argv is rejoined and
+# judged by the same shell matcher; a command built at run time stays unjudged.
+_PY_PROCESS_DELETES = [
+    'import os\nos.system("del x")\n',
+    'import subprocess\nsubprocess.run(["cmd", "/c", "rd", "/s", "/q", d])\n',
+    'import subprocess\nsubprocess.Popen(["powershell", "-c", "ri x"])\n',
+    'import subprocess\nsubprocess.run(args=["rm", "-f", p])\n',
+    'import os\nos.execvp("rm", ["rm", "x"])\n',
+]
+
+
+@pytest.mark.parametrize("body", _PY_PROCESS_DELETES)
+def test_a_process_call_is_judged_by_the_command_it_carries(body) -> None:
+    scan = ct._scan_destructive_script(body, "python")
+    assert scan["count"] == 1, scan
+
+
+_PY_PROCESS_NOT_A_DELETE = [
+    "import subprocess\nsubprocess.run(cmd)\n",
+    'import subprocess\nsubprocess.run(["git", "status"])\n',
+    'import os\nos.system("echo hi")\n',
+    'import subprocess\nsubprocess.run(["git", "commit", "-m", "move x"])\n',
+]
+
+
+@pytest.mark.parametrize("body", _PY_PROCESS_NOT_A_DELETE)
+def test_a_process_call_that_carries_no_delete_is_not_counted(body) -> None:
+    assert ct._scan_destructive_script(body, "python")["count"] == 0

@@ -350,13 +350,15 @@ class RuffRuleSetsMustNotDrift(unittest.TestCase):
     ruff cannot repair them unattended (B006's fix is `unsafe`, E722 and F821 have
     none), so they must never be
     advertised as fixable. The invariant these tests pin is therefore no longer
-    equality but containment: _RUFF_LINT_SELECT == fixable + report-only + I,
+    equality but containment: _RUFF_LINT_SELECT == defect-fixable + report-only,
     while _RUFF_FIX_SELECT (the third copy, in orchestrator/graph/tools.py -- the
-    one handed to --fix) tracks the FIXABLE half alone.
+    one handed to --fix) tracks the defect-fixable half alone. #7: the POLICY
+    rules (RUF100, I) are fixable but in neither select -- the project's own
+    config decides whether they run at all.
     """
 
-    FIXABLE_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541,RUF100,I"
-    LINT_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541,RUF100,B006,E722,F821,I"
+    FIXABLE_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541"
+    LINT_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541,B006,E722,F821"
 
     def test_refactor_did_not_change_what_ruff_is_asked_to_check(self):
         import code_tools
@@ -376,28 +378,67 @@ class RuffRuleSetsMustNotDrift(unittest.TestCase):
         self.assertNotEqual(graph_tools._RUFF_FIX_SELECT,
                             code_tools._RUFF_LINT_SELECT)
 
-    def test_the_lint_select_is_the_fixable_set_plus_the_report_only_set(self):
+    def test_the_lint_select_is_the_defect_set_plus_the_report_only_set(self):
         import code_tools
+        from orchestrator.graph import tools as graph_tools
 
         self.assertEqual(
             code_tools._RUFF_LINT_SELECT,
-            ",".join((*code_tools._RUFF_SAFE_FIX_RULES,
-                      *code_tools._RUFF_REPORT_ONLY_RULES, "I")))
+            ",".join((*code_tools._RUFF_DEFECT_FIX_RULES,
+                      *code_tools._RUFF_REPORT_ONLY_RULES)))
+        self.assertEqual(code_tools._RUFF_SAFE_FIX_RULES,
+                         (*code_tools._RUFF_DEFECT_FIX_RULES,
+                          *code_tools._RUFF_POLICY_FIX_RULES))
         for rule in code_tools._RUFF_REPORT_ONLY_RULES:
             self.assertNotIn(rule, code_tools._RUFF_SAFE_FIX_RULES,
                              "a report-only rule in the fixable tuple would make "
                              "_py_error_ruff_hint promise a fix ruff refuses")
+        # #7: a policy rule in either select is [A] imposing it on the project.
+        for rule in code_tools._RUFF_POLICY_FIX_RULES:
+            self.assertNotIn(rule, code_tools._RUFF_LINT_SELECT.split(","))
+            self.assertNotIn(rule, graph_tools._RUFF_FIX_SELECT.split(","))
 
     def test_every_selected_rule_is_recognised_as_fixable(self):
+        # #7: the policy rules too -- [A] no longer selects them, but a project
+        # that enables one still reports it, and ruff_fix then selects it as well.
         import code_tools
 
-        for rule in self.FIXABLE_SELECT.split(","):
+        for rule in code_tools._RUFF_SAFE_FIX_RULES:
             code = "I001" if rule == "I" else rule
             line = f"probe.py:1:1: {code} [*] something ruff dislikes"
             applicable, matched, hint = code_tools._py_error_ruff_hint(line)
             self.assertTrue(applicable, f"{code} not recognised as fixable")
             self.assertTrue(matched, f"{code} matched no rule")
             self.assertIn("ruff_fix", hint)
+
+    def test_a_policy_rule_is_reported_only_where_the_project_enables_it(self):
+        """#7, measured 2026-09-25: [A] added I and RUF100 to every project's lint,
+        so this repo -- whose own config reports 0 -- got 216 I001 + 169 RUF100
+        from it. The same unsorted file is linted under a config without I and
+        under one with it: the finding follows the project, not [A]."""
+        import asyncio
+        import json
+        import tempfile
+
+        import code_tools
+
+        source = "import sys\nimport os\n\nprint(os, sys)\n"
+        seen = {}
+        for name, config in (("without", "[lint]\nselect = ['E9']\n"),
+                             ("with", "[lint]\nselect = ['E9', 'I']\n")):
+            with tempfile.TemporaryDirectory() as tmp:
+                (Path(tmp) / "ruff.toml").write_text(config, encoding="utf-8")
+                probe = Path(tmp) / "probe.py"
+                probe.write_text(source, encoding="utf-8")
+                raw = asyncio.run(code_tools.validate_file(str(probe)))
+                seen[name] = json.loads(raw) if isinstance(raw, str) else raw
+        without, with_i = seen["without"], seen["with"]
+        self.assertTrue(without.get("ok"), without)
+        self.assertNotIn("lint_skipped_reason", without)
+        self.assertNotIn("I001", without.get("lint_warning", ""), without)
+        # Positive control: the rule is real, and the hint still names it.
+        self.assertIn("I001", with_i.get("lint_warning", ""), with_i)
+        self.assertEqual(with_i.get("ruff_rules_matched"), ["I"], with_i)
 
     def test_a_report_only_rule_is_linted_but_never_called_fixable(self):
         # A32-1.2: the live route into `violations_not_auto_fixable`. Measured on

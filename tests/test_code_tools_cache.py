@@ -2186,8 +2186,9 @@ class TestCodeToolsCache(unittest.TestCase):
         warning = dirty.get('validation', {}).get('lint_warning', '')
         self.assertIn('`sys` imported but unused', warning, msg=dirty)
         self.assertNotIn('`os` imported but unused', warning, msg=dirty)
-        # The unused `os` and the I001 block shape were both there before.
-        self.assertIn('(2 pre-existing not shown)', warning, msg=dirty)
+        # The unused `os` was there before. (#7: no I001 is counted any more -- this
+        # tmp project's config does not enable I, so [A] no longer lints for it.)
+        self.assertIn('(1 pre-existing not shown)', warning, msg=dirty)
 
     def test_ac_g4_parallel_write_fix_same_file_serializes_full_content(self):
         asyncio.run(code_tools.generate_project_map(str(self.project_path)))

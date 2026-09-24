@@ -841,22 +841,23 @@ async def write_transaction(operations: list, project_path: str = "",
         return "write_fix"
 
     def _operation_target(op):
+        from orchestrator.fileops.xroot import classify_write_target
+
         effective_root = Path(op.get("project_path") or project_path).resolve()
         if not effective_root.exists():
             raise ValueError(f"Operation project root not found: {effective_root}")
         raw_path = Path(op["file_path"])
         target = raw_path.resolve() if raw_path.is_absolute() else (effective_root / raw_path).resolve()
-        try:
-            relative = target.relative_to(effective_root)
-            return effective_root, target, str(relative).replace("\\", "/")
-        except ValueError:
-            from orchestrator.fileops.xroot import xroot_check
-            policy = xroot_check(target, "write_transaction", "")
-            if not policy.get("allowed"):
-                raise ValueError(
-                    f"XROOT_DENIED: {policy.get('reason', 'xroot policy denied write')}"
-                )
+        # #35: the deny list is read before any operation runs, for every target;
+        # being inside the operation's root grants nothing (see classify_write_target).
+        verdict = classify_write_target(target, effective_root, "write_transaction", "")
+        if not verdict["allowed"]:
+            raise ValueError(
+                f"XROOT_DENIED: {verdict['policy'].get('reason', 'xroot policy denied write')}"
+            )
+        if verdict["cross_root"]:
             return effective_root, target, None
+        return effective_root, target, str(target.relative_to(effective_root)).replace("\\", "/")
 
     async def _dispatch(op, dry_run: bool):
         """Run write_fix / write_new_file / replace_between_anchors depending on op.tool."""

@@ -419,3 +419,57 @@ def test_an_overwrite_command_is_gated_like_a_delete(sandbox) -> None:
             unguarded.append((label, payload.get("error_name"), payload.get("ok")))
     assert not unguarded, "these overwrite shapes passed the gate: %r" % unguarded
     assert (sandbox / "keep.txt").read_text(encoding="utf-8") == "PRECIOUS"
+
+
+# --- 2026-09-25 (#37) ------------------------------------------------------------
+
+
+def test_dry_run_never_executes_a_command_the_scan_calls_benign(sandbox) -> None:
+    """The preview used to depend on the scan's verdict.
+
+    ``destructive and dry_run`` let every command the scan scored 0 fall through
+    and RUN -- measured live, ``echo`` executed under dry_run=true. The scan is a
+    lower bound, so its miss must never become a change on disk. ``mkdir`` changes
+    the disk and scores 0, and the last step is the positive control: it really
+    creates the directory once allowed to run.
+    """
+    marker = sandbox / "marker_dir"
+    command = 'mkdir "%s"' % marker
+    assert ct._scan_destructive_script(command, "any")["count"] == 0
+
+    payload = _run(ct.run_project_command(str(sandbox), command, dry_run=True))
+    assert payload["ok"] is True, payload
+    assert payload["executed"] is False
+    assert payload["dry_run"] is True
+    assert payload["destructive"] is False
+    assert payload["confirm_destructive_required"] == 0
+    assert payload["ca_next_action"] == "rerun_without_dry_run"
+    assert not marker.exists(), "a dry run executed the command"
+
+    payload = _run(ct.run_project_command(str(sandbox), command))
+    assert payload["ok"] is True, payload
+    assert marker.is_dir(), "positive control: the command did not run when allowed"
+
+
+def test_a_destructive_dry_run_still_asks_for_the_count(sandbox) -> None:
+    payload = _run(ct.run_project_command(
+        str(sandbox), 'cmd /c del "%s"' % (sandbox / "junk" / "a.tmp"), dry_run=True))
+    assert payload["executed"] is False, payload
+    assert payload["destructive_count"] == 1
+    assert payload["ca_next_action"] == "review_then_retry_with_confirm_destructive"
+    assert (sandbox / "junk" / "a.tmp").exists()
+
+
+def test_the_footgun_is_caught_inside_a_shell_introducer(sandbox) -> None:
+    """The CASE-2008 shape, spelled as an alias behind ``powershell -c``.
+
+    The footgun check reads the same command-start matcher as the count, so the
+    alias reached through an introducer is refused as the footgun it is -- not
+    merely counted, which a caller could confirm past.
+    """
+    before = _survivors(sandbox)
+    command = ('powershell -c "ri -LiteralPath \'%s\' -Include *.tmp -Recurse -Force"'
+               % (sandbox / "junk"))
+    payload = _run(ct.run_project_command(str(sandbox), command))
+    assert payload["error_name"] == "DESTRUCTIVE_SCRIPT_FOOTGUN", payload
+    assert _survivors(sandbox) == before

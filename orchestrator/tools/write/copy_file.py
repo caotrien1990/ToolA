@@ -8,7 +8,7 @@ async def copy_file(src: str = "", dst: str = "", project_path: str = "",
     import code_tools as ct
     import shutil
     import time as _t
-    from orchestrator.fileops.xroot import is_outside_project_root, log_intent, log_result, xroot_check
+    from orchestrator.fileops.xroot import classify_write_target, log_intent, log_result
 
     if not src or not dst:
         return ct._json_error("src and dst are required", error_name="MISSING_REQUIRED_FIELD")
@@ -39,17 +39,18 @@ async def copy_file(src: str = "", dst: str = "", project_path: str = "",
             session_id = ct._get_active_session_id(ct._session_project_key(project_path)) or ""
         except Exception:
             session_id = ""
-    xroot_managed = False
-    check = xroot_check(dp, "copy_file", session_id)
-    if (dp.is_absolute() and is_outside_project_root(dp, project_path or None)) or check.get("group") == "live_files":
-        xroot_managed = True
-        if not check.get("allowed"):
-            return ct._json_error(
-                check.get("reason", "xroot policy denied write"),
-                error_name="XROOT_DENIED",
-                group=check.get("group", ""),
-                reason=check.get("reason", ""),
-            )
+    # #35: the deny list is read for every dst, however it is spelled; being inside
+    # project_path grants nothing (see classify_write_target).
+    target = classify_write_target(dp, project_path or None, "copy_file", session_id)
+    xroot_managed = target["managed"]
+    check = target["policy"]
+    if not target["allowed"]:
+        return ct._json_error(
+            check.get("reason", "xroot policy denied write"),
+            error_name="XROOT_DENIED",
+            group=check.get("group", ""),
+            reason=check.get("reason", ""),
+        )
     dst_existed = dp.exists()
     if dst_existed and not overwrite:
         return ct._json_error(

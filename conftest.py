@@ -125,20 +125,12 @@ _GENERATION_FILE_ENV = "ORCHESTRATOR_GENERATION_FILE"
 # vars and skipped the mkdtemp branch entirely. It only surfaced when a child ran
 # with a clean environment.
 _B031_OWNED_TEMP_DIRS: list[Path] = []
-_B031_INITIAL_TEMP_ENTRIES: set[str] = set()
-_B031_TEMP_ROOT: Path | None = None
 
 
 def pytest_configure(config):  # noqa: ARG001 - pytest hook signature
-    global _B031_TEMP_ROOT
     for name in _COLOUR_FORCING_VARS:
         os.environ.pop(name, None)
     os.environ["NO_COLOR"] = "1"
-    _B031_TEMP_ROOT = Path(tempfile.gettempdir()).resolve()
-    try:
-        _B031_INITIAL_TEMP_ENTRIES.update(child.name for child in _B031_TEMP_ROOT.iterdir())
-    except OSError:
-        pass
 
     # A53: only fill in a default. An explicit value from the caller wins, so a
     # run that deliberately targets a specific DB is left alone.
@@ -202,45 +194,25 @@ def pytest_unconfigure(config):  # noqa: ARG001 - pytest hook signature
             store.close_writer()
         except Exception:  # pragma: no cover - teardown must never fail a run
             pass
-    for _owned in _B031_OWNED_TEMP_DIRS:
-        shutil.rmtree(_owned, ignore_errors=True)
-    _B031_OWNED_TEMP_DIRS.clear()
-    # Test-only process: remove temp entries created during this pytest run.
-    # The baseline snapshot prevents touching caller-owned pre-existing paths.
-    if _B031_TEMP_ROOT is not None:
-        try:
-            current = list(_B031_TEMP_ROOT.iterdir())
-        except OSError:
-            current = []
-        for child in current:
-            if child.name in _B031_INITIAL_TEMP_ENTRIES or child.name.startswith("pytest-of-"):
-                continue
-            if child.is_dir():
-                shutil.rmtree(child, ignore_errors=True)
-            else:
-                try:
-                    child.unlink()
-                except OSError:
-                    pass
-        # Windows can release the last SQLite WAL handle just after the first
-        # cleanup pass. Retry only suite-created entries with bounded backoff.
-        for delay in _CLEANUP_RETRY_DELAYS:
-            remaining = [
-                child for child in _B031_TEMP_ROOT.iterdir()
-                if child.name not in _B031_INITIAL_TEMP_ENTRIES
-                and not child.name.startswith("pytest-of-")
-            ]
-            if not remaining:
-                break
+    # #34 (2026-09-25): delete ONLY the directories registered above -- a
+    # whitelist. The earlier pass also swept every %TEMP% entry missing from a
+    # start-of-run snapshot, i.e. "everything except what existed before", and
+    # %TEMP% is shared with every process on the machine: a CA's scratch created
+    # while the suite ran was deleted with the suite's (measured: a HEAD baseline
+    # tree). The same sweep made the B031/B032 guards unable to fail, because it
+    # removed the very leftovers they count. A module that leaks is fixed in that
+    # module; this hook never cleans up after it.
+    # Windows can release the last SQLite WAL handle just after the first pass,
+    # so the registered directories get the same bounded retry as W5 below.
+    for delay in (0.0, *_CLEANUP_RETRY_DELAYS):
+        if delay:
             time.sleep(delay)
-            for child in remaining:
-                if child.is_dir():
-                    shutil.rmtree(child, ignore_errors=True)
-                else:
-                    try:
-                        child.unlink()
-                    except OSError:
-                        pass
+        for _owned in _B031_OWNED_TEMP_DIRS:
+            shutil.rmtree(_owned, ignore_errors=True)
+        _B031_OWNED_TEMP_DIRS[:] = [p for p in _B031_OWNED_TEMP_DIRS if p.exists()]
+        if not _B031_OWNED_TEMP_DIRS:
+            break
+    _B031_OWNED_TEMP_DIRS.clear()
 
 
 _orig_tmpdir_cleanup = tempfile.TemporaryDirectory.cleanup

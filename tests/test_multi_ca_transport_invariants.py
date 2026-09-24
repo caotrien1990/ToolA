@@ -268,7 +268,11 @@ class TestMultiCATransportInvariants(unittest.IsolatedAsyncioTestCase):
                 orchestrator_server._MUTATING_TOOLS.discard(tool_name)
                 code_tools.TOOL_MAP.pop(tool_name, None)
 
-    def test_committed_row_wins_higher_attempt_memory_and_db_records(self):
+    def test_a_send_never_regresses_its_own_commit_and_a_later_send_replaces_it(self):
+        # #36 (2026-09-25): the row describes the LATEST send. "Committed wins over any
+        # attempt count" froze a 09-20 restart row through every later send; what must
+        # hold instead is narrower -- a send's own commit is never undone by a racing
+        # in_flight/failed record of the SAME attempt, and a later send replaces it.
         old_db = None
         old_ledger = dict(orchestrator_server._WRITE_LEDGER)
         old_targets = dict(orchestrator_server._WRITE_LEDGER_BY_TARGET)
@@ -284,29 +288,41 @@ class TestMultiCATransportInvariants(unittest.IsolatedAsyncioTestCase):
                 "result": {"ok": True, "winner": "committed"},
                 "origin_generation": "test", "updated_at": now,
             }
+
+            def disk_row():
+                conn = sqlite3.connect(str(code_tools._SESSIONS_DB))
+                try:
+                    return conn.execute(
+                        "SELECT status, attempts, previous_status, result_json "
+                        "FROM write_operations WHERE operation_id=?", (op_id,)
+                    ).fetchone()
+                finally:
+                    conn.close()
+
             try:
                 self.assertTrue(orchestrator_server._write_ledger_db_upsert(committed))
-                for status, attempts in (("in_flight", 9), ("failed", 10)):
+                for status in ("in_flight", "failed"):
                     challenger = dict(committed)
                     challenger.update({
-                        "status": status, "attempts": attempts,
-                        "previous_status": "committed",
-                        "result": {"ok": False, "challenger": status},
-                        "updated_at": now + attempts,
+                        "status": status, "result": {"ok": False, "challenger": status},
+                        "updated_at": now + 1,
                     })
                     self.assertTrue(orchestrator_server._write_ledger_db_upsert(challenger))
                 orchestrator_server._WRITE_LEDGER[op_id] = dict(committed)
                 orchestrator_server._write_ledger_finish(
                     op_id, {"ok": False, "error_name": "TEST_FAILURE"}, "error"
                 )
-                with sqlite3.connect(str(code_tools._SESSIONS_DB)) as conn:
-                    row = conn.execute(
-                        "SELECT status, attempts, result_json FROM write_operations "
-                        "WHERE operation_id=?", (op_id,)
-                    ).fetchone()
+                row = disk_row()
                 self.assertEqual(row[:2], ("committed", 1))
-                self.assertEqual(json.loads(row[2])["winner"], "committed")
+                self.assertEqual(json.loads(row[3])["winner"], "committed")
                 self.assertEqual(orchestrator_server._WRITE_LEDGER[op_id]["status"], "committed")
+
+                later = dict(committed)
+                later.update({"status": "in_flight", "attempts": 2,
+                              "previous_status": "committed", "result": None,
+                              "updated_at": now + 2})
+                self.assertTrue(orchestrator_server._write_ledger_db_upsert(later))
+                self.assertEqual(disk_row()[:3], ("in_flight", 2, "committed"))
             finally:
                 orchestrator_server._WRITE_LEDGER.clear()
                 orchestrator_server._WRITE_LEDGER.update(old_ledger)
@@ -314,7 +330,7 @@ class TestMultiCATransportInvariants(unittest.IsolatedAsyncioTestCase):
                 orchestrator_server._WRITE_LEDGER_BY_TARGET.update(old_targets)
                 self._restore_sessions_db(old_db)
 
-    def test_begin_reconciles_stale_memory_to_committed_sqlite_record(self):
+    def test_begin_counts_from_the_newest_send_and_keeps_an_older_commit(self):
         old_db = None
         old_ledger = dict(orchestrator_server._WRITE_LEDGER)
         old_targets = dict(orchestrator_server._WRITE_LEDGER_BY_TARGET)
@@ -336,21 +352,28 @@ class TestMultiCATransportInvariants(unittest.IsolatedAsyncioTestCase):
                 "duration_ms": 1, "attempts": 1, "previous_status": "in_flight",
                 "result": {"ok": True}, "origin_generation": "test", "updated_at": now,
             }
-            stale_memory = dict(committed)
-            stale_memory.update({"status": "failed", "attempts": 99, "result": {"ok": False}})
+            # A newer send whose disk upsert was lost (busy DB): memory is AHEAD of
+            # disk, and its own previous_status does not carry the commit.
+            newer_memory = dict(committed)
+            newer_memory.update({"status": "failed", "attempts": 3,
+                                 "result": {"ok": False}, "updated_at": now + 3})
             try:
                 self.assertTrue(orchestrator_server._write_ledger_db_upsert(committed))
-                orchestrator_server._WRITE_LEDGER[op_id] = stale_memory
+                orchestrator_server._WRITE_LEDGER[op_id] = newer_memory
                 begun = orchestrator_server._write_ledger_begin(tool_name, body, session_id)
                 self.assertEqual(begun, op_id)
-                self.assertEqual(orchestrator_server._WRITE_LEDGER[op_id]["status"], "committed")
-                # The count is the committed row's (1) plus this send -- never the
-                # stale memory's 99. A replay of a committed operation is still a
-                # send (#9), and SQLite keeps it without regressing status/result.
-                self.assertEqual(orchestrator_server._WRITE_LEDGER[op_id]["attempts"], 2)
-                disk = orchestrator_server._write_ledger_db_get(operation_id=op_id)
-                self.assertEqual((disk["status"], disk["attempts"]), ("committed", 2))
-                self.assertEqual(disk["result"], {"ok": True})
+                # #36: every send is a send -- in_flight, counted from the NEWEST
+                # record (3, not the committed row's 1), and the older commit is kept
+                # as previous_status because the double-write risk it signals holds.
+                for label, rec in (
+                        ("memory", orchestrator_server._WRITE_LEDGER[op_id]),
+                        ("sqlite", orchestrator_server._write_ledger_db_get(operation_id=op_id))):
+                    self.assertEqual(
+                        (rec["status"], rec["attempts"], rec["previous_status"]),
+                        ("in_flight", 4, "committed"), msg=(label, rec))
+                    self.assertEqual(rec["origin_generation"],
+                                     orchestrator_server.SERVER_GENERATION, msg=(label, rec))
+                    self.assertIsNone(rec["result"], msg=(label, rec))
             finally:
                 orchestrator_server._WRITE_LEDGER.clear()
                 orchestrator_server._WRITE_LEDGER.update(old_ledger)

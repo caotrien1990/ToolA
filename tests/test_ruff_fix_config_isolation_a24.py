@@ -128,6 +128,8 @@ def test_disclosure_tracks_the_command_actually_run(tmp_path, monkeypatch):
 def test_rules_cover_what_validate_file_promises(tmp_path):
     # validate_file's ruff_fix_hint tells the caller these rules are fixable by
     # ruff_fix. If ruff_fix's own select does not contain them, the hint lies.
+    # (#7: the policy rules are selected only where the project enables them --
+    # pinned by the #7 tests at the bottom of this file.)
     import code_tools
 
     source = tmp_path / "mod.py"
@@ -135,7 +137,7 @@ def test_rules_cover_what_validate_file_promises(tmp_path):
     select = _run(project_path=str(tmp_path), path="mod.py")["result"]["select"]
     selected = {token.strip() for token in str(select).split(",")}
 
-    promised = ("F401", "F841", "E711", "E712", "E731", "E401", "E402", "F541", "RUF100")
+    promised = code_tools._RUFF_DEFECT_FIX_RULES
     for rule in promised:
         # A prefix like "F" or "E" legitimately covers "F401"/"E711".
         covered = any(rule.startswith(token) for token in selected if token)
@@ -144,7 +146,7 @@ def test_rules_cover_what_validate_file_promises(tmp_path):
 
 
 FIRST_PARTY_RUFF_TOML = (
-    "[lint]\nselect = ['E9']\n\n[lint.isort]\nknown-first-party = ['acme_shared']\n"
+    "[lint]\nselect = ['E9', 'I']\n\n[lint.isort]\nknown-first-party = ['acme_shared']\n"
 )
 # Already sorted the way that config wants: third-party block, blank line, first-party.
 ALREADY_SORTED = "import requests\n\nimport acme_shared\n\nprint(acme_shared, requests)\n"
@@ -163,7 +165,11 @@ def test_apply_does_not_rewrite_imports_that_the_project_config_calls_correct(tm
     source = tmp_path / "mod.py"
     source.write_text(ALREADY_SORTED, encoding="utf-8")
 
-    _run(project_path=str(tmp_path), path="mod.py", apply=True)
+    result = _run(project_path=str(tmp_path), path="mod.py", apply=True)["result"]
+
+    # #7: isort only runs where the project enables it, and this config does --
+    # without that, the assertion below would pass with isort never having run.
+    assert any(t.startswith("I0") for t in str(result["select"]).split(",")), result
 
     assert source.read_text(encoding="utf-8") == ALREADY_SORTED, (
         "ruff_fix reordered imports the project's own isort config calls correct; "
@@ -318,3 +324,134 @@ def test_no_validate_or_scan_call_site_spells_ruff_format():
             assert spelling not in compact, (
                 f"{target.name} now builds a ruff format command: {spelling!r}"
             )
+
+
+
+# --- #7: the POLICY rules follow the project ---------------------------------
+# RUF100 and I used to sit in the --select, and --select REPLACES the project's
+# rule set, so every preview imposed them: on this repo, whose config enables
+# neither, a preview of orchestrator/graph/tools.py with 0 defect findings
+# proposed 15 hunks of import and noqa rewrites (measured 2026-09-25).
+UNSORTED_WITH_STALE_NOQA = "import sys\nimport os  # noqa: E501\n\nprint(os, sys)\n"
+POLICY_FIXED = "import os\nimport sys\n\nprint(os, sys)\n"
+
+
+def _selected(result: dict) -> list[str]:
+    return [token.strip() for token in str(result["select"]).split(",") if token.strip()]
+
+
+def test_a_project_without_the_policy_rules_gets_no_policy_rewrite(tmp_path):
+    (tmp_path / "ruff.toml").write_text("[lint]\nselect = ['E9']\n", encoding="utf-8")
+    (tmp_path / "mod.py").write_text(UNSORTED_WITH_STALE_NOQA, encoding="utf-8")
+
+    result = _run(project_path=str(tmp_path), path="mod.py")["result"]
+
+    assert result["diff"] == "" and result["changed"] is False, result
+    selected = _selected(result)
+    assert "RUF100" not in selected and not any(t.startswith("I") for t in selected), (
+        selected
+    )
+    assert "policy_rules_unresolved" not in result, result
+
+
+def test_a_project_that_enables_the_policy_rules_still_gets_them_fixed(tmp_path):
+    # Positive control for the test above, in both config shapes: the rewrite is
+    # real, and ruff_fix still performs it wherever the project asks for it.
+    shapes = {
+        "ruff_toml": ("ruff.toml", "[lint]\nselect = ['E9', 'I', 'RUF100']\n"),
+        "pyproject_extend": (
+            "pyproject.toml", "[tool.ruff.lint]\nextend-select = ['I', 'RUF100']\n"
+        ),
+    }
+    for name, (config_name, config) in shapes.items():
+        project = tmp_path / name
+        project.mkdir()
+        (project / config_name).write_text(config, encoding="utf-8")
+        source = project / "mod.py"
+        source.write_text(UNSORTED_WITH_STALE_NOQA, encoding="utf-8")
+
+        result = _run(project_path=str(project), path="mod.py", apply=True)["result"]
+
+        assert source.read_text(encoding="utf-8") == POLICY_FIXED, (name, result)
+        selected = _selected(result)
+        assert "RUF100" in selected and any(t.startswith("I0") for t in selected), (
+            name, selected
+        )
+        assert "policy_rules_unresolved" not in result, (name, result)
+
+
+def _policy_from(monkeypatch, stdout: str, returncode: int = 0):
+    import subprocess
+
+    from orchestrator.graph import tools as graph_tools
+
+    def fake(command, *args, **kwargs):
+        return subprocess.CompletedProcess(command, returncode, stdout, "")
+
+    monkeypatch.setattr(graph_tools.subprocess, "run", fake)
+    return graph_tools._project_policy_rules("mod.py", ".")
+
+
+def test_policy_parser_reads_the_enabled_block_and_nothing_else(monkeypatch):
+    enabled = (
+        "linter.rules.enabled = [\n\tunsorted-imports (I001),\n\tunused-noqa (RUF100),\n"
+        "\tmissing-required-import (I002),\n\tunused-import (F401),\n]\n"
+    )
+    assert _policy_from(monkeypatch, "linter.x = 1\n" + enabled) == (
+        ["I001", "RUF100", "I002"], ""
+    )
+    # A code that merely STARTS with I belongs to another plugin.
+    lookalikes = (
+        "linter.rules.enabled = [\n\tf-string-in-get-text-func-call (INT001),\n"
+        "\tsingle-line-implicit-string-concatenation (ISC001),\n]\n"
+    )
+    assert _policy_from(monkeypatch, lookalikes) == ([], "")
+    # An empty set is an answer; a LATER block listing I001 is not the enabled set.
+    empty_then_other = (
+        "linter.rules.enabled = []\nlinter.rules.should_fix = [\n"
+        "\tunsorted-imports (I001),\n]\n"
+    )
+    assert _policy_from(monkeypatch, empty_then_other) == ([], "")
+
+
+def test_policy_parser_gives_a_reason_whenever_it_cannot_answer(monkeypatch):
+    # ([], "") means "the project enables no policy rule" -- a claim none of these
+    # inputs can back, so each must come back with a reason instead.
+    cases = {
+        "no_block": ("linter.rules.other = []\n", 0),
+        "never_closed": ("linter.rules.enabled = [\n\tunsorted-imports (I001),\n", 0),
+        "ruff_failed": ("ruff failed\n  Cause: bad toml\n", 2),
+    }
+    for name, (stdout, returncode) in cases.items():
+        codes, reason = _policy_from(monkeypatch, stdout, returncode)
+        assert codes == [] and reason, (name, codes, reason)
+
+    from orchestrator.graph import tools as graph_tools
+
+    def boom(command, *args, **kwargs):
+        raise graph_tools.subprocess.TimeoutExpired(command, 30)
+
+    monkeypatch.setattr(graph_tools.subprocess, "run", boom)
+    codes, reason = graph_tools._project_policy_rules("mod.py", ".")
+    assert codes == [] and "TimeoutExpired" in reason, (codes, reason)
+
+
+def test_unreadable_policy_falls_back_to_the_defect_rules_and_says_so(tmp_path, monkeypatch):
+    from orchestrator.graph import tools as graph_tools
+
+    real_run = graph_tools.subprocess.run
+
+    def broken_show_settings(command, *args, **kwargs):
+        if "--show-settings" in command:
+            return graph_tools.subprocess.CompletedProcess(command, 2, "", "ruff failed")
+        return real_run(command, *args, **kwargs)
+
+    monkeypatch.setattr(graph_tools.subprocess, "run", broken_show_settings)
+    (tmp_path / "ruff.toml").write_text("[lint]\nselect = ['E9', 'I']\n", encoding="utf-8")
+    (tmp_path / "mod.py").write_text(UNUSED_IMPORT, encoding="utf-8")
+
+    result = _run(project_path=str(tmp_path), path="mod.py")["result"]
+
+    assert result["select"] == graph_tools._RUFF_FIX_SELECT, result
+    assert "-import os" in result["diff"], f"the defect rules must still run: {result}"
+    assert "exited 2" in result.get("policy_rules_unresolved", ""), result

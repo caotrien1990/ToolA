@@ -5315,15 +5315,22 @@ async def run_project_command(
     if _cmd_backup_refusal is not None:
         return json.dumps(_cmd_backup_refusal, ensure_ascii=False)
 
-    if _cmd_scan["destructive"] and dry_run:
-        # Preview only. Static: nothing is executed, so a shell-expanded target
+    if dry_run:
+        # Preview only, whatever the scan says. #37 (2026-09-25): this branch used
+        # to be ``destructive and dry_run``, so a command the scan scored 0 fell
+        # through and RAN under dry_run=true -- measured live, ``echo`` executed with
+        # returncode 0 and no ``executed`` field. The scan is a lower bound (a
+        # command built at run time, or a shape no row knows, scores 0), so letting
+        # its verdict decide whether anything runs made every scan miss a real
+        # write. The contract already said "Nothing runs"; run_project_test_script
+        # has always returned here unconditionally. Static: a shell-expanded target
         # (a variable, a wildcard) is reported as written rather than resolved.
         return json.dumps({
             "ok": True,
             "executed": False,
             "dry_run": True,
             "project_path": str(root),
-            "destructive": True,
+            "destructive": _cmd_scan["destructive"],
             "destructive_count": _cmd_scan["count"],
             "destructive_statements": _cmd_scan["findings"],
             # B028: what the here-string rule EXCLUDED from the count, so a caller
@@ -5335,9 +5342,14 @@ async def run_project_command(
             "warnings": _cmd_scan["warnings"],
             "preview_kind": "static_source_scan",
             "preview_limits": ("Static scan of the command text. Targets are NOT "
-                               "expanded, so the real file set may differ."),
+                               "expanded, so the real file set may differ, and a "
+                               "command built at run time is not judged: treat the "
+                               "count as a lower bound."),
             "confirm_destructive_required": _cmd_scan["count"],
-            "ca_next_action": "review_then_retry_with_confirm_destructive",
+            "ca_next_action": (
+                "review_then_retry_with_confirm_destructive"
+                if _cmd_scan["destructive"] else "rerun_without_dry_run"
+            ),
         }, ensure_ascii=False)
 
     # A destructive command must never have its output truncated: the cap is what
@@ -5349,8 +5361,9 @@ async def run_project_command(
     # branches pass ``stdout_max_chars or 12000`` on to run_project_test_script,
     # so zeroing the field would silently RE-IMPOSE a 12000 cap -- the same class
     # of accident as the truncation being fixed. Only the final filter treats 0 as
-    # off. Each site therefore reads the flag; nothing assigns to the caps.
-    _cmd_no_truncate = bool(_cmd_scan["destructive"]) and not dry_run
+    # off. Each site therefore reads the flag; nothing assigns to the caps. A
+    # dry_run has already returned above, so this is reached only by a real run.
+    _cmd_no_truncate = bool(_cmd_scan["destructive"])
 
     def _standalone_ps1_path(value: object) -> str:
         """Return a script path only when the whole command is that path.
@@ -8308,6 +8321,20 @@ async def verify_active_electron_source(page_id: str, expected_path: str = "",
 # A script with no destructive match takes exactly the old path, so benign
 # callers see no behaviour change at all.
 
+# #37 (2026-09-25): where a shell COMMAND can start, in ONE place. Every
+# statement-anchored row below, and the CASE-2008 footgun check, kept its own copy
+# of ``(?:^\s*|[;|&{(]\s*)`` -- and every copy missed the same start: the argument
+# of a shell introducer. ``powershell -c "ri x"``, ``cmd /c del x`` and ``bash -c
+# "rm x"`` each delete, yet scored 0, because ``ri`` / ``del`` / ``rm`` sit after
+# ``-c "`` or ``/c ``. Only an introducer's argument opens a command: the switch
+# counts when a SHELL owns it (``grep -c rm f`` counts matches, it runs nothing),
+# and a quote anywhere else is a quoted word (``git commit -m "move X"``).
+_CMD_START = (r"(?:^\s*|[;|&{(]\s*|\b(?:powershell|pwsh|cmd|bash|sh|zsh)(?:\.exe)?\b"
+              r"[^;|&\n]*?\s(?:-c|-Command|/c|/k)\s+[\"']?)")
+# rm / del / ri / rd / rmdir / erase are all Remove-Item; the footgun check asks
+# the same question as the remove_item row, so both read this one pattern.
+_PS_REMOVE_AT_START = _CMD_START + r"(?:Remove-Item|ri|rm|rmdir|rd|del|erase)\b"
+
 _DESTRUCTIVE_COMMON = [
     (r"(?i)\bgit\s+clean\b", "git_clean"),
     (r"(?i)\bgit\s+reset\s+--hard\b", "git_reset_hard"),
@@ -8345,13 +8372,15 @@ _DESTRUCTIVE_EMBEDDED_SHELL = [
 # "Overwrite?" prompt, dirs_exist_ok past copytree's FileExistsError, cp -f -- or
 # to delete what the source lacks (robocopy /MIR /PURGE /MOV /MOVE, rsync --delete
 # / --remove-source-files). A plain copy, Set-Content or Out-File stays uncounted:
-# that is an ordinary write. Known limit, stated rather than hidden: a copy that
-# overwrites WITHOUT saying so (``Copy-Item -Recurse`` into an existing tree) is
-# still invisible to a source scan. Runtime-independent, like the embedded list:
-# every one of these can arrive as a string handed to a shell.
+# that is an ordinary write -- and so is a truncating ``>`` redirect, the same
+# write in shell spelling (#37 left it uncounted on purpose, for the same reason).
+# Known limit, stated rather than hidden: a copy that overwrites WITHOUT saying so
+# (``Copy-Item -Recurse`` into an existing tree) is still invisible to a source
+# scan. Runtime-independent, like the embedded list: every one of these can arrive
+# as a string handed to a shell.
 _DESTRUCTIVE_OVERWRITE = [
     (r"(?i)\bCopy-Item\b[^\n]*\s-Fo(?:r(?:ce?)?)?\b", "copy_item_force"),
-    (r"(?i)(?:^\s*|[;|&{(]\s*)(?:copy|cp|cpi)\s[^\n]*\s-Fo(?:r(?:ce?)?)?\b", "copy_item_force"),
+    (r"(?i)" + _CMD_START + r"(?:copy|cp|cpi)\s[^\n]*\s-Fo(?:r(?:ce?)?)?\b", "copy_item_force"),
     (r"(?i)\bx?copy\b[^\n]*\s/y\b", "copy_overwrite_y"),
     (r"(?i)\brobocopy\b[^\n]*\s/(?:MIR|PURGE|MOVE?)\b", "robocopy_purge"),
     (r"\brsync\b[^\n]*\s--(?:delete|remove-source-files)", "rsync_delete"),
@@ -8389,11 +8418,11 @@ _PY_DESTRUCTIVE_CALLEES = {
 # a commented-out line stays uncounted.
 _DESTRUCTIVE_PATTERNS = {
     "powershell": [
-        (r"(?i)(?:^\s*|[;|&{(]\s*)(?:Remove-Item|ri|rm|rmdir|rd|del|erase)\b", "remove_item"),
+        (r"(?i)" + _PS_REMOVE_AT_START, "remove_item"),
         (r"(?i)\bRemove-Item(?:Property)?\b", "remove_item"),
         (r"(?i)\bClear-Content\b", "clear_content"),
-        (r"(?i)(?:^\s*|[;|&{(]\s*)clc\b", "clear_content"),
-        (r"(?i)(?:^\s*|[;|&{(]\s*)(?:Move-Item|mi|move|mv)\b", "move_item"),
+        (r"(?i)" + _CMD_START + r"clc\b", "clear_content"),
+        (r"(?i)" + _CMD_START + r"(?:Move-Item|mi|move|mv)\b", "move_item"),
         (r"(?i)\bMove-Item\b", "move_item"),
         (r"(?i)\[(?:System\.)?IO\.(?:File|Directory)\]::Delete", "dotnet_delete"),
         (r"(?i)\.Delete\s*\(", "dotnet_instance_delete"),
@@ -8422,9 +8451,9 @@ _DESTRUCTIVE_PATTERNS = {
         for kind in dict.fromkeys(_PY_DESTRUCTIVE_CALLEES.values())
     ],
     "sh": [
-        (r"(?:^\s*|[;|&(]\s*)rm\b", "rm"),
-        (r"(?:^\s*|[;|&(]\s*)rmdir\b", "rmdir"),
-        (r"(?:^\s*|[;|&(]\s*)(?:mv|dd|shred|mkfs\S*)\b", "sh_destructive"),
+        (_CMD_START + r"rm\b", "rm"),
+        (_CMD_START + r"rmdir\b", "rmdir"),
+        (_CMD_START + r"(?:mv|dd|shred|mkfs\S*)\b", "sh_destructive"),
         (r"-delete\b", "find_delete"),
     ],
 }
@@ -8626,6 +8655,14 @@ _PY_STRING_RUN_CALLEES = frozenset({
     "write_text", "write_bytes", "writelines", "create_subprocess_exec",
     "create_subprocess_shell",
 })
+# #37: the calls that hand their arguments to an OS process as a command line (plus
+# every exec*/spawn* name, matched by prefix at the call). Their literal arguments
+# are rescanned as shell text by ``shell_literal_kinds``.
+_PY_PROCESS_CALLEES = frozenset({
+    "system", "popen", "Popen", "run", "call", "check_call", "check_output",
+    "getoutput", "getstatusoutput", "startfile", "create_subprocess_exec",
+    "create_subprocess_shell",
+})
 # ``.remove`` is the one destructive name that ordinary containers share. Only a
 # receiver PROVEN to live in memory -- a list/set display, a name bound to nothing
 # else, an attribute of ``sys`` -- is left uncounted: sftp.remove and fs.remove
@@ -8719,6 +8756,26 @@ def _py_destructive_lines(body: str) -> dict | None:
         hows = bindings.get(root.id, [])
         return bool(hows) and all(how == ("import", "sys") for how in hows)
 
+    def shell_literal_kinds(call) -> list:
+        # #37 (2026-09-25): a call that hands a COMMAND to a process carries it as
+        # literal strings -- ``os.system("del x")``, ``subprocess.run(["cmd", "/c",
+        # "rd", "/s", "/q", d])``. The text rows read neither: shell rows are not
+        # python rows, and a list argv puts quotes and commas between the words.
+        # Rejoined as the command line it becomes, it is judged by the SAME matcher
+        # a shell command gets. A word that is not a literal becomes "_", so a
+        # command built at run time stays unjudged (the preview calls the count a
+        # lower bound).
+        words: list[str] = []
+        for arg in [*call.args, *(k.value for k in call.keywords
+                                   if k.arg in ("args", "cmd", "command"))]:
+            items = arg.elts if isinstance(arg, (ast.List, ast.Tuple)) else [arg]
+            words += [item.value if isinstance(item, ast.Constant)
+                      and isinstance(item.value, str) else "_" for item in items]
+        if all(word == "_" for word in words):
+            return []
+        return [kind for finding in _scan_destructive_script(" ".join(words), "any")["findings"]
+                for kind in finding["kinds"]]
+
     # Pass 2: every call, and every destructive function handed on as a value.
     funcs = {id(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)}
     counted: dict[int, list[str]] = {}
@@ -8730,6 +8787,11 @@ def _py_destructive_lines(body: str) -> dict | None:
                     or any(n.startswith(("exec", "spawn")) for n in names)
                     or ("print" in names and any(k.arg == "file" for k in node.keywords))):
                 runs_strings = True
+            if (names & _PY_PROCESS_CALLEES
+                    or any(n.startswith(("exec", "spawn")) for n in names)):
+                shell_kinds = shell_literal_kinds(node)
+                if shell_kinds:
+                    counted.setdefault(node.lineno, []).extend(shell_kinds)
             target = node.func
         elif (isinstance(node, (ast.Attribute, ast.Name)) and isinstance(node.ctx, ast.Load)
               and id(node) not in funcs
@@ -8873,7 +8935,7 @@ def _scan_destructive_script(script_content: str, runtime: str) -> dict:
             if line_no in folded_prose:
                 continue
             is_remove = re.search(
-                r"(?i)(?:^\s*|[;|&{(]\s*)(?:Remove-Item|ri|rm|rmdir|rd|del|erase)\b", line
+                r"(?i)" + _PS_REMOVE_AT_START, line
             ) or re.search(r"(?i)\bRemove-Item\b", line)
             if not is_remove:
                 continue
@@ -13741,18 +13803,34 @@ def _strip_ansi(text) -> str:
     return _ANSI_CSI_RE.sub("", str(text or ""))
 
 
-# ONE tuple, three uses (campaign-1608 A29-P4; split in A32-1.2): the codes
-# validate_file LINTS for are now a SUPERSET of the codes it advertises as
+# ONE tuple, three uses (campaign-1608 A29-P4; split in A32-1.2, and again in
+# #7): the codes validate_file LINTS for and the codes it advertises as
 # ruff-fixable. They were two literals ~150 lines apart, and the day the fixable
 # half drifts from what ruff can really apply, `_py_error_ruff_hint` starts
 # promising an edit ruff refuses to make -- worse than not reporting the rule at
 # all. orchestrator/graph/tools.py's _RUFF_FIX_SELECT is the third copy (the one
-# ruff_fix hands to --fix) and it tracks the FIXABLE tuple, never the lint
+# ruff_fix hands to --fix) and it tracks the DEFECT tuple, never the lint
 # select; the guard test asserts that relationship instead of importing across
 # the boundary at runtime, which would add a module-level dependency the daemon
 # does not need at boot.
-_RUFF_SAFE_FIX_RULES = ("F401", "F841", "E711", "E712", "E731", "E401", "E402",
-                        "F541", "RUF100")
+#
+# #7 (measured 2026-09-25): the fixable rules are two kinds. A DEFECT rule finds
+# the same thing in every project. A POLICY rule's finding is the project's own
+# choice: I001 depends on the import order the project picked, and RUF100
+# ("unused noqa") is relative to the rule set that is enabled -- code_tools.py
+# has 19 findings under `--select I,RUF100` and 0 under ruff_fix's own set.
+# Adding them on [A]'s side reported 216 I001 + 169 RUF100 across this repo,
+# whose own config reports 0, and a ruff_fix preview of graph/tools.py (0 defect
+# findings) proposed 15 hunks of import and noqa rewrites. So [A] never selects
+# a policy rule: the lint pass sees one only when the project's config enables
+# it (--extend-select keeps the project's rules), and ruff_fix asks the project
+# which ones it enables.
+_RUFF_DEFECT_FIX_RULES = ("F401", "F841", "E711", "E712", "E731", "E401", "E402",
+                          "F541")
+_RUFF_POLICY_FIX_RULES = ("RUF100", "I")
+# What the hint may name. A policy finding only reaches it from a project that
+# enables the rule, and ruff_fix then selects that rule as well.
+_RUFF_SAFE_FIX_RULES = (*_RUFF_DEFECT_FIX_RULES, *_RUFF_POLICY_FIX_RULES)
 # A32-1.2: lint-only, deliberately NOT in the tuple above. Measured on ruff
 # 0.16.7 (positive control: a probe with `def f(x=[])` + a bare `except:` fired
 # B006 at 1:9 and E722 at 4:5; negative control: `--select ZZ999` is rejected as
@@ -13769,7 +13847,7 @@ _RUFF_SAFE_FIX_RULES = ("F401", "F841", "E711", "E712", "E731", "E401", "E402",
 # has no mechanical repair, and a write that introduces one is exactly what the
 # write-time lint exists to catch.
 _RUFF_REPORT_ONLY_RULES = ("B006", "E722", "F821")
-_RUFF_LINT_SELECT = ",".join((*_RUFF_SAFE_FIX_RULES, *_RUFF_REPORT_ONLY_RULES, "I"))
+_RUFF_LINT_SELECT = ",".join((*_RUFF_DEFECT_FIX_RULES, *_RUFF_REPORT_ONLY_RULES))
 _RUFF_FIX_CA_HINT = "ruff_fix available to auto-fix lint issues"
 # One concise-format finding: "path:line:col: CODE [*] message". The optional
 # "[*] " is ruff's own "has a safe fix" mark.
@@ -13819,7 +13897,7 @@ def _py_error_ruff_hint(error_msg: str) -> tuple[bool, list[str], str]:
             found.add("I")
         elif code in _RUFF_SAFE_FIX_RULES:
             found.add(code)
-    matched = [rule for rule in (*_RUFF_SAFE_FIX_RULES, "I") if rule in found]
+    matched = [rule for rule in _RUFF_SAFE_FIX_RULES if rule in found]
     if not matched:
         return False, [], ""
     rules = ", ".join(matched)

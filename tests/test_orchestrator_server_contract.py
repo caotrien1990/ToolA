@@ -174,6 +174,27 @@ def _swap_sessions_db(tmp_db_path):
         code_tools._sync_session_db_alias()
 
 
+@contextlib.contextmanager
+def _sqlite_closing(db_path):
+    """Commit like ``with sqlite3.connect(p) as conn``, then CLOSE the connection.
+
+    The plain form ends the transaction, not the connection: the handle stays open
+    until the object is collected, which for a test-local ``conn`` is after
+    ``TemporaryDirectory.__exit__`` has already tried to remove the directory --
+    WinError 32 on Windows. ``ignore_cleanup_errors=True`` swallowed that, so one
+    tmp* directory holding sessions.db leaked per test, five per run of this module,
+    hidden until #34 stopped conftest sweeping %TEMP% (measured 2026-09-25 by
+    attributing each new %TEMP% entry to the test that made it). Those blocks no
+    longer ignore cleanup errors: a handle that escapes again fails its own test.
+    """
+    conn = sqlite3.connect(str(db_path))
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
+
+
 def _make_body_reader(payload: dict) -> StreamReader:
     """Build an aiohttp StreamReader pre-loaded with JSON bytes.
 
@@ -1436,7 +1457,9 @@ process.stdout.write(JSON.stringify(snapshots));
         # no provider session persisted, no resume id on the follow-up turn.
         old_here = orchestrator_server._HERE
         old_cmd = orchestrator_server._council_agent_command
+        old_cleanup = orchestrator_server._council_cleanup_broker_session_async
         seen = {}
+        cleanups = []
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
@@ -1451,6 +1474,13 @@ process.stdout.write(JSON.stringify(snapshots));
                     return [_s.executable, '-c',
                             'print(\'{"type":"text","part":{"sessionID":"oc-xyz","text":"ok reply"}}\')']
                 orchestrator_server._council_agent_command = fake_cmd
+                # #34: the real cleanup runs `opencode session delete <id>` on a daemon
+                # thread against the LIVE opencode store -- a unit test must never touch
+                # live state (B010). Its only trace was the %TEMP%\opencode directory
+                # the CLI left behind. Recorded instead, because deleting the one-shot
+                # provider session IS part of the broker contract this test pins.
+                orchestrator_server._council_cleanup_broker_session_async = (
+                    lambda agent, raw, prompt, started_at: cleanups.append((agent, raw)))
                 res = orchestrator_server._council_run_agent('ope', 'hello', 30, 'context', str(root))
                 self.assertTrue(res['ok'])
                 self.assertEqual(res['mode'], 'broker')
@@ -1460,9 +1490,12 @@ process.stdout.write(JSON.stringify(snapshots));
                 self.assertEqual(seen['mode'], 'broker')
                 self.assertEqual(seen['resume_id'], '')
                 self.assertTrue(res2['ok'])
+                self.assertEqual([agent for agent, _ in cleanups], ['ope', 'ope'])
+                self.assertTrue(all('oc-xyz' in raw for _, raw in cleanups), cleanups)
         finally:
             orchestrator_server._HERE = old_here
             orchestrator_server._council_agent_command = old_cmd
+            orchestrator_server._council_cleanup_broker_session_async = old_cleanup
 
     async def test_council_events_keeps_recent_broker_events_with_direct_logs(self):
         old_here = orchestrator_server._HERE
@@ -2064,7 +2097,7 @@ process.stdout.write(JSON.stringify(snapshots));
         })
         orchestrator_server._MUTATING_TOOLS.add(tool_name)
         orchestrator_server.AUTO_WRITE_MODE = False
-        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        with tempfile.TemporaryDirectory() as tmp:
             code_tools._SESSIONS_DB = Path(tmp) / 'sessions.db'
             try:
                 code_tools._init_session_db()
@@ -2143,7 +2176,7 @@ process.stdout.write(JSON.stringify(snapshots));
         })
         orchestrator_server._MUTATING_TOOLS.add(tool_name)
         orchestrator_server.AUTO_WRITE_MODE = True
-        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        with tempfile.TemporaryDirectory() as tmp:
             code_tools._SESSIONS_DB = Path(tmp) / 'sessions.db'
             try:
                 code_tools._init_session_db()
@@ -2207,7 +2240,7 @@ process.stdout.write(JSON.stringify(snapshots));
                 },
             },
         })
-        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        with tempfile.TemporaryDirectory() as tmp:
             code_tools._SESSIONS_DB = Path(tmp) / 'sessions.db'
             code_tools._sync_session_db_alias()
             writer = DurableAuditWriter(
@@ -2222,7 +2255,7 @@ process.stdout.write(JSON.stringify(snapshots));
                 Path(project).mkdir()
                 session_b = code_tools._auto_open_session(project, {'agent_id': 'agent-b'})
                 session_a = code_tools._auto_open_session(project, {'agent_id': 'agent-a'})
-                with sqlite3.connect(str(code_tools._SESSIONS_DB)) as conn:
+                with _sqlite_closing(code_tools._SESSIONS_DB) as conn:
                     conn.execute(
                         "UPDATE sessions SET started_at=? WHERE session_id=?",
                         ((datetime.now() - timedelta(seconds=1)).isoformat(timespec='seconds'), session_b),
@@ -2240,7 +2273,7 @@ process.stdout.write(JSON.stringify(snapshots));
                 await orchestrator_server._flush_post_call_accounting(timeout=2.0)
                 self.assertTrue(writer.wait_until_idle(2.0))
                 self.assertTrue(json.loads(response.text)['ok'])
-                with sqlite3.connect(str(code_tools._SESSIONS_DB)) as conn:
+                with _sqlite_closing(code_tools._SESSIONS_DB) as conn:
                     event_sessions = [
                         row[0] for row in conn.execute(
                             "SELECT session_id FROM events WHERE tool_name=?",
@@ -2262,7 +2295,7 @@ process.stdout.write(JSON.stringify(snapshots));
 
     def test_safe_event_logging_uses_explicit_agent_session(self):
         old_db = code_tools._SESSIONS_DB
-        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        with tempfile.TemporaryDirectory() as tmp:
             code_tools._SESSIONS_DB = Path(tmp) / 'sessions.db'
             try:
                 code_tools._init_session_db()
@@ -2270,7 +2303,7 @@ process.stdout.write(JSON.stringify(snapshots));
                 Path(project).mkdir()
                 session_b = code_tools._auto_open_session(project, {'agent_id': 'agent-b'})
                 session_a = code_tools._auto_open_session(project, {'agent_id': 'agent-a'})
-                with sqlite3.connect(str(code_tools._SESSIONS_DB)) as conn:
+                with _sqlite_closing(code_tools._SESSIONS_DB) as conn:
                     conn.execute(
                         "UPDATE sessions SET started_at=? WHERE session_id=?",
                         ((datetime.now() - timedelta(seconds=1)).isoformat(timespec='seconds'), session_b),
@@ -2288,7 +2321,7 @@ process.stdout.write(JSON.stringify(snapshots));
                     agent_id='agent-b',
                 )
 
-                with sqlite3.connect(str(code_tools._SESSIONS_DB)) as conn:
+                with _sqlite_closing(code_tools._SESSIONS_DB) as conn:
                     event_sessions = [
                         row[0] for row in conn.execute(
                             "SELECT session_id FROM events WHERE tool_name='safe_agent_probe'"
@@ -2306,7 +2339,7 @@ process.stdout.write(JSON.stringify(snapshots));
     async def test_open_session_header_agent_overrides_body_for_response_store_and_event(self):
         old_db = code_tools._SESSIONS_DB
         old_writer = orchestrator_server._DURABLE_AUDIT
-        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        with tempfile.TemporaryDirectory() as tmp:
             code_tools._SESSIONS_DB = Path(tmp) / 'sessions.db'
             code_tools._sync_session_db_alias()
             writer = DurableAuditWriter(
@@ -2336,7 +2369,7 @@ process.stdout.write(JSON.stringify(snapshots));
 
                 self.assertTrue(data['ok'])
                 self.assertEqual(data['agent_id'], 'agent-b')
-                with sqlite3.connect(str(code_tools._SESSIONS_DB)) as conn:
+                with _sqlite_closing(code_tools._SESSIONS_DB) as conn:
                     session = conn.execute(
                         'SELECT session_id, agent_id FROM sessions WHERE session_id=?',
                         (data['session_id'],),
@@ -2358,8 +2391,21 @@ process.stdout.write(JSON.stringify(snapshots));
 
     async def test_prepare_ca_session_header_agent_overrides_body_and_returns_bootstrap_ref(self):
         old_db = code_tools._SESSIONS_DB
-        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        old_writer = orchestrator_server._DURABLE_AUDIT
+        with tempfile.TemporaryDirectory() as tmp:
             code_tools._SESSIONS_DB = Path(tmp) / 'sessions.db'
+            # #34: the session event this call emits is applied LATER by the durable-audit
+            # worker, against whatever sessions.db is current at APPLY time. On the
+            # process-global writer that landed after close_writer() and before the path
+            # was restored, re-opened a SessionWriter on this temp DB and leaked the
+            # directory (WinError 32, hidden by conftest's %TEMP% sweep until #34). Own
+            # the writer and wait for it, exactly as the sibling open_session tests do.
+            writer = DurableAuditWriter(
+                Path(tmp) / 'durable-audit.db',
+                orchestrator_server._persist_durable_session_event,
+                poll_interval_s=0.01,
+            )
+            orchestrator_server._DURABLE_AUDIT = writer
             try:
                 code_tools._init_session_db()
                 project_dir = Path(tmp) / 'repo'
@@ -2375,19 +2421,23 @@ process.stdout.write(JSON.stringify(snapshots));
                      transport='http',
                         request_meta={'headers': {'X-Council-Agent': 'agent-header'}},
                     )
+                await orchestrator_server._flush_post_call_accounting(timeout=2.0)
+                self.assertTrue(writer.wait_until_idle(2.0))
                 data = json.loads(response.text)
 
                 self.assertTrue(data['ok'], msg=data)
                 self.assertEqual(data['session']['agent_id'], 'agent-header')
                 self.assertEqual(data['bootstrap']['status'], 'ready')
                 self.assertEqual(len(data['bootstrap_ref']), 16)
-                with sqlite3.connect(str(code_tools._SESSIONS_DB)) as conn:
+                with _sqlite_closing(code_tools._SESSIONS_DB) as conn:
                     stored_agent = conn.execute(
                         'SELECT agent_id FROM sessions WHERE session_id=?',
                         (data['session_id'],),
                     ).fetchone()[0]
                 self.assertEqual(stored_agent, 'agent-header')
             finally:
+                writer.shutdown(timeout=2.0)
+                orchestrator_server._DURABLE_AUDIT = old_writer
                 # STT-27 (B032): release the process-global SessionWriter pinned
                 # to this temp DB before restoring the path (tmp* dir leak).
                 code_tools._session_store_module.close_writer()
@@ -2480,7 +2530,7 @@ process.stdout.write(JSON.stringify(snapshots));
     async def test_open_session_environment_agent_fallback_for_response_store_and_event(self):
         old_db = code_tools._SESSIONS_DB
         old_writer = orchestrator_server._DURABLE_AUDIT
-        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        with tempfile.TemporaryDirectory() as tmp:
             code_tools._SESSIONS_DB = Path(tmp) / 'sessions.db'
             code_tools._sync_session_db_alias()
             writer = DurableAuditWriter(
@@ -2509,7 +2559,7 @@ process.stdout.write(JSON.stringify(snapshots));
 
                 self.assertTrue(data['ok'])
                 self.assertEqual(data['agent_id'], 'agent-env')
-                with sqlite3.connect(str(code_tools._SESSIONS_DB)) as conn:
+                with _sqlite_closing(code_tools._SESSIONS_DB) as conn:
                     session = conn.execute(
                         'SELECT session_id, agent_id FROM sessions WHERE session_id=?',
                         (data['session_id'],),

@@ -7,6 +7,7 @@ keep these tests independent from filesystem and session side effects.
 
 import asyncio
 import json
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -19,6 +20,7 @@ from aiohttp.test_utils import make_mocked_request
 
 import code_tools
 import orchestrator_server
+from orchestrator.fileops import xroot
 
 
 TOOL_NAME = "__ledger_finalization_probe__"
@@ -286,23 +288,37 @@ class WriteLedgerFinalizationTests(unittest.IsolatedAsyncioTestCase):
         result = orchestrator_server._WRITE_LEDGER[self._operation_id()]["result"]
         self.assertNotIn("progress", result)
 
+    def _probe_schema(self, **properties):
+        real_schema = orchestrator_server._schema_for_tool
+
+        def schema_for(name):
+            if name == TOOL_NAME:
+                return {"name": TOOL_NAME, "parameters": {"type": "object", "properties": properties}}
+            return real_schema(name)
+
+        return unittest.mock.patch.object(orchestrator_server, "_schema_for_tool", schema_for)
+
     async def test_an_xroot_admitted_write_still_names_the_callers_session(self):
         """#17, measured live 2026-09-25: write_status said session_id "" for a CA that
         HAD opened its session.
 
-        An absolute path outside [A]'s own tree is admitted by the xroot policy with no
-        session required, and the dispatcher skipped the session LOOKUP along with the
-        requirement -- so every write spelled absolute into ToolQ, %TEMP% or any other
-        project reached the ledger anonymous. Admission stays as it is; what the ledger
-        names is the caller's OWN open session, and a caller that has none gets "":
-        the lookup never opens a session and never borrows another agent's.
+        A cross-root write is admitted by the xroot policy with no session required, and
+        the dispatcher skipped the session LOOKUP along with the requirement -- so every
+        such write reached the ledger anonymous. Admission stays as it is; what the ledger
+        names is the caller's OWN open session, and a caller that has none gets "": the
+        lookup never opens a session and never borrows another agent's.
+
+        #35: cross-root is read against the CALL's project_path, not from the spelling, so
+        the admitted write here lands outside project_path; a target inside it takes the
+        session gate however it is spelled (next test).
         """
         orchestrator_server._NO_SESSION_REQUIRED.discard(TOOL_NAME)
         project = Path(self.temp_dir.name) / "repo"
+        elsewhere = Path(self.temp_dir.name) / "elsewhere"
         project.mkdir()
-        # The path the xroot gate must see as outside [A]: otherwise this pins nothing.
-        self.assertTrue(orchestrator_server.is_outside_project_root(
-            project / "mine.py", orchestrator_server._HERE))
+        # The target the xroot gate must admit as cross-root: otherwise this pins nothing.
+        verdict = xroot.classify_write_target(elsewhere / "mine.py", project)
+        self.assertTrue(verdict["allowed"] and verdict["cross_root"], verdict)
         key = code_tools._session_project_key(str(project))
         mine = code_tools._auto_open_session(str(project), {}, agent_id="ledger-agent")
         other = code_tools._auto_open_session(str(project), {}, agent_id="other-agent")
@@ -312,21 +328,14 @@ class WriteLedgerFinalizationTests(unittest.IsolatedAsyncioTestCase):
             return json.dumps({"ok": True, "write_performed": True})
 
         code_tools.TOOL_MAP[TOOL_NAME] = xroot_write
-        real_schema = orchestrator_server._schema_for_tool
-
-        def schema_for(name):
-            if name == TOOL_NAME:
-                return {"name": TOOL_NAME, "parameters": {"type": "object", "properties": {
-                    "project_path": {"type": "string"}, "file_path": {"type": "string"}}}}
-            return real_schema(name)
 
         async def ledger_session_of(agent: str, name: str) -> str:
             # One target per caller: the ledger replays an identical payload.
-            body = {"project_path": str(project), "file_path": str(project / name)}
+            body = {"project_path": str(project), "file_path": str(elsewhere / name)}
             request = make_mocked_request(
                 "POST", f"/api/call/{TOOL_NAME}", headers={"X-Agent-Id": agent},
                 payload=_body_reader(body), match_info={"tool_name": TOOL_NAME})
-            with unittest.mock.patch.object(orchestrator_server, "_schema_for_tool", schema_for):
+            with self._probe_schema(project_path={"type": "string"}, file_path={"type": "string"}):
                 response = await orchestrator_server._dispatch_tool_call_request(request)
             self.assertEqual(response.status, 200, response.text)
             operation_id = self._operation_id(body)
@@ -338,6 +347,76 @@ class WriteLedgerFinalizationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await ledger_session_of("ledger-agent", "mine.py"), mine)
         self.assertEqual(await ledger_session_of("stranger-agent", "stranger.py"), "")
         self.assertIsNone(code_tools._get_active_session_id(key, "stranger-agent"))
+
+    async def test_an_in_project_target_takes_the_session_gate_however_spelled(self):
+        """#35: the dispatcher judged "cross-root" from the SPELLING -- an absolute path,
+        measured against [A]'s tree -- so an absolute path into the caller's own project
+        skipped the session gate that the same file spelled relative met. The route is
+        read from the resolved target against the call's project_path now.
+        """
+        orchestrator_server._NO_SESSION_REQUIRED.discard(TOOL_NAME)
+        project = Path(self.temp_dir.name) / "repo"
+        project.mkdir()
+        calls = []
+
+        async def probe(project_path: str = "", file_path: str = "") -> str:
+            calls.append(file_path)
+            return json.dumps({"ok": True, "write_performed": True})
+
+        code_tools.TOOL_MAP[TOOL_NAME] = probe
+        for spelling in ("a.py", str(project / "a.py")):
+            body = {"project_path": str(project), "file_path": spelling}
+            with self._probe_schema(project_path={"type": "string"}, file_path={"type": "string"}), \
+                    unittest.mock.patch.object(orchestrator_server, "AUTO_WRITE_MODE", False):
+                response = await self._dispatch(body)
+            self.assertEqual(response.status, 409, (spelling, response.text))
+            self.assertEqual(json.loads(response.text)["error_name"], "ACTIVE_SESSION_REQUIRED", spelling)
+        self.assertEqual(calls, [])
+
+    async def test_the_deny_list_meets_every_target_field_a_call_names(self):
+        """#35, measured 2026-09-25 in a sandbox: with project_path set to the home
+        directory, four of five spellings landed in ``.ssh``, and the dispatcher read only
+        the FIRST of path/file_path/dst/target_file -- move_file's ``destination`` never
+        met the deny list. Each body names ``.ssh/x`` in a different field. The probe is
+        session-EXEMPT: the old deny sites sat behind the session and backup gates, so an
+        exempt tool never met them at all.
+        """
+        home = Path(self.temp_dir.name) / "home"
+        (home / ".ssh").mkdir(parents=True)
+        calls = []
+
+        async def probe(project_path: str = "", file_path: str = "", path: str = "",
+                        destination: str = "", paths: list | None = None,
+                        operations: list | None = None) -> str:
+            calls.append((file_path, path, destination, paths, operations))
+            return json.dumps({"ok": True, "write_performed": True})
+
+        code_tools.TOOL_MAP[TOOL_NAME] = probe
+        text = {"type": "string"}
+        bodies = {
+            "file_path": {"file_path": ".ssh/x"},
+            "path": {"path": ".ssh/x"},
+            "absolute": {"file_path": str(home / ".ssh" / "x")},
+            "destination": {"file_path": "notes.txt", "destination": ".ssh/x"},
+            "paths": {"paths": ["notes.txt", ".ssh/x"]},
+            "operations": {"operations": [{"file_path": "notes.txt"}, {"file_path": ".ssh/x"}]},
+        }
+        with unittest.mock.patch.dict(os.environ, {"USERPROFILE": str(home)}), self._probe_schema(
+                project_path=text, file_path=text, path=text, destination=text,
+                paths={"type": "array", "items": text},
+                operations={"type": "array", "items": {"type": "object"}}):
+            for label, fields in bodies.items():
+                response = await self._dispatch({"project_path": str(home), **fields})
+                self.assertEqual(response.status, 403, (label, response.text))
+                payload = json.loads(response.text)
+                self.assertEqual((payload["error_name"], payload["group"]),
+                                 ("XROOT_DENIED", "user_dotfiles"), label)
+            self.assertEqual(calls, [])
+            # Positive control: the same fields naming allowed targets reach the tool.
+            response = await self._dispatch(
+                {"project_path": str(home), "file_path": "notes.txt", "destination": "kept.txt"})
+        self.assertEqual(response.status, 200, response.text)
+        self.assertEqual(len(calls), 1)
 
 
 if __name__ == "__main__":

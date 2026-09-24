@@ -75,7 +75,7 @@ from orchestrator.council.snapshots import (
     read_jsonl_tail,
     read_tail_bytes,
 )
-from orchestrator.fileops.xroot import is_outside_project_root, xroot_check
+from orchestrator.fileops.xroot import classify_write_target, write_targets
 from orchestrator.lifecycle.request_orchestrator_restart import controller_health
 from orchestrator.lifecycle.restart_protocol import (
     DEFAULT_CONTROL_URL,
@@ -2401,7 +2401,8 @@ def _write_ledger_operation_id(tool_name: str, body: dict, session_id: str) -> s
 
 
 def _write_ledger_db_upsert(rec: dict) -> bool:
-    """Persist one allowlisted ledger record without regressing terminal state."""
+    """Persist one ledger record: a later send replaces an earlier one (#36), and a
+    send never regresses its own terminal state."""
     try:
         result = rec.get("result") if isinstance(rec.get("result"), dict) else None
         result_json = json.dumps(result, ensure_ascii=False) if result is not None else None
@@ -2423,24 +2424,22 @@ def _write_ledger_db_upsert(rec: dict) -> bool:
                     result_json=excluded.result_json,
                     origin_generation=excluded.origin_generation,
                     updated_at=excluded.updated_at
-                   WHERE write_operations.status != 'committed'
-                     AND (
-                       excluded.status = 'committed'
-                       OR excluded.attempts > write_operations.attempts
-                       OR (
-                         excluded.attempts = write_operations.attempts
-                         AND CASE excluded.status
-                               WHEN 'in_flight' THEN 1
-                               WHEN 'failed' THEN 2
-                               ELSE 0
-                             END >=
-                             CASE write_operations.status
-                               WHEN 'in_flight' THEN 1
-                               WHEN 'failed' THEN 2
-                               ELSE 0
-                             END
-                       )
-                     )""",
+                   WHERE excluded.attempts > write_operations.attempts
+                      OR (
+                        excluded.attempts = write_operations.attempts
+                        AND write_operations.status != 'committed'
+                        AND CASE excluded.status
+                              WHEN 'in_flight' THEN 1
+                              WHEN 'failed' THEN 2
+                              WHEN 'committed' THEN 3
+                              ELSE 0
+                            END >=
+                            CASE write_operations.status
+                              WHEN 'in_flight' THEN 1
+                              WHEN 'failed' THEN 2
+                              ELSE 0
+                            END
+                      )""",
                 (
                     rec.get("operation_id"), rec.get("tool"), rec.get("status"),
                     rec.get("project_path"), rec.get("file_path"), rec.get("session_id"),
@@ -2450,18 +2449,6 @@ def _write_ledger_db_upsert(rec: dict) -> bool:
                     rec.get("updated_at") or time.time(),
                 ),
             )
-            # #9: the WHERE above freezes a committed row -- its status and result
-            # never regress -- but a replay of it is still a SEND. Only the count may
-            # move, or the committed branch of _write_ledger_begin reads back a stale
-            # attempts and every later replay answers the same number.
-            if rec.get("status") == "committed":
-                attempts = rec.get("attempts") or 1
-                conn.execute(
-                    "UPDATE write_operations SET attempts=?, updated_at=? "
-                    "WHERE operation_id=? AND status='committed' AND attempts < ?",
-                    (attempts, rec.get("updated_at") or time.time(),
-                     rec.get("operation_id"), attempts),
-                )
             conn.commit()
             return True
         finally:
@@ -2562,18 +2549,21 @@ def _write_ledger_db_list(target: tuple[str, str], limit: int = 20) -> list:
 
 
 def _write_ledger_choose(memory_rec: dict | None, disk_rec: dict | None) -> tuple[dict, str]:
-    """Prefer irrevocable committed truth, then the newest non-terminal attempt."""
+    """Pick the record of the NEWEST send; disk wins an exact tie.
+
+    #36 (2026-09-25): "committed wins" made a committed row outrank every later send,
+    so the row stopped describing what ran. Newest now wins by (attempts, phase,
+    updated_at) -- a terminal phase outranks in_flight at equal attempts, and
+    committed outranks failed there, so a racing finish never regresses a commit.
+    That an earlier send committed is kept as previous_status, not as rank.
+    """
     memory = dict(memory_rec or {})
     disk = dict(disk_rec or {})
-    if disk.get("status") == "committed":
-        return disk, "sqlite"
-    if memory.get("status") == "committed":
-        return memory, "memory"
     if not memory:
         return (disk, "sqlite") if disk else ({}, "")
     if not disk:
         return memory, "memory"
-    phase_rank = {"in_flight": 1, "failed": 2}
+    phase_rank = {"in_flight": 1, "failed": 2, "committed": 3}
     memory_key = (
         int(memory.get("attempts") or 0),
         phase_rank.get(str(memory.get("status") or ""), 0),
@@ -2623,6 +2613,24 @@ def _write_ledger_commit_state(rec: dict) -> str:
     return {"committed": "committed", "failed": "not_committed"}.get(status, "unknown")
 
 
+def _write_ledger_retry_would_double_write(rec: dict) -> bool:
+    """#36: would resending this operation apply its edit a second time?
+
+    True when an EARLIER send of this exact payload committed -- the sticky
+    previous_status _write_ledger_begin keeps -- and the tool writes source. A
+    non-source scope (derived_index / cache / audit_log) recomputes rather than
+    re-patches, so a rerun is safe there. The envelope's likely_already_applied and
+    write_status's safe_to_retry both ask this question, so both ask it HERE.
+    """
+    if str((rec or {}).get("previous_status") or "") != "committed":
+        return False
+    try:
+        return (ct.tool_mutation_scope(str(rec.get("tool") or ""))
+                not in ct.NON_SOURCE_MUTATION_SCOPES)
+    except Exception:
+        return True  # unknown scope: keep the conservative source-write answer
+
+
 def _write_ledger_begin(tool_name: str, body: dict, session_id: str = "",
                         admitted_session_id: str = "") -> str:
     """Open a ledger entry before a mutating tool runs. Returns "" for read-only tools."""
@@ -2631,20 +2639,20 @@ def _write_ledger_begin(tool_name: str, body: dict, session_id: str = "",
             return ""
         op_id = _write_ledger_operation_id(tool_name, body, session_id)
         pp, fp = _write_ledger_target(body)
-        prior, _prior_source = _write_ledger_choose(
-            _WRITE_LEDGER.get(op_id),
-            _write_ledger_db_get(operation_id=op_id),
-        )
-        if prior.get("status") == "committed":
-            # A deterministic retry cannot make an already-committed operation
-            # in-flight -- but it IS another send. Uncounted, the replay of a
-            # committed write answered operation_replayed=false (#9).
-            prior["attempts"] = int(prior.get("attempts") or 1) + 1
-            prior["updated_at"] = time.time()
-            _WRITE_LEDGER[op_id] = prior
-            _write_ledger_target_remember(pp, fp, op_id)
-            _write_ledger_db_upsert(prior)
-            return op_id
+        memory_rec = _WRITE_LEDGER.get(op_id)
+        disk_rec = _write_ledger_db_get(operation_id=op_id)
+        prior, _prior_source = _write_ledger_choose(memory_rec, disk_rec)
+        # #36 (2026-09-25): every send is a send. A committed prior used to absorb this
+        # one -- attempts+1 on the OLD row, never in_flight, and finish refused to touch
+        # a committed row -- so a restart re-sent five days later ran for real while
+        # write_status still narrated the 09-20 run (started_at, origin_generation and
+        # result all frozen). The row now describes THIS send. The one fact a new send
+        # must not erase, "an identical send already committed", rides along as
+        # previous_status and stays sticky: the double-write risk it signals never
+        # expires just because a later send failed.
+        committed_before = any(
+            isinstance(r, dict) and "committed" in (r.get("status"), r.get("previous_status"))
+            for r in (memory_rec, disk_rec))
         now = time.time()
         rec = {
             "operation_id": op_id,
@@ -2657,7 +2665,7 @@ def _write_ledger_begin(tool_name: str, body: dict, session_id: str = "",
             "finished_at": None,
             "duration_ms": None,
             "attempts": int(prior.get("attempts") or 0) + 1,
-            "previous_status": prior.get("status"),
+            "previous_status": "committed" if committed_before else prior.get("status"),
             "result": None,
             "origin_generation": SERVER_GENERATION,
             "updated_at": now,
@@ -4783,7 +4791,6 @@ _R101_DISPATCH_FULL = contextvars.ContextVar("_r101_dispatch_full", default=None
 # apart from _R101_SAFETY_KEEP on purpose: that rescue stamps RESPONSE_INCOMPLETE,
 # which here would be false and would invite the full re-call fields= was avoiding.
 _R101_ENVELOPE_WARNS = {  # key -> still_warns(value)
-    "operation_replayed": lambda v: v is True,
     "likely_already_applied": lambda v: v is True,
     "replay_hint": bool,
     "contention_note": bool,
@@ -12788,10 +12795,11 @@ def _body_path_hint(body: dict | None) -> str:
     W7 (F020, 2026-08-19): "dst"/"src"/"target_file" were missing. copy_file
     declares required=["src","dst"] and no other resolver, so a payload built
     from its schema reached the session gate with nothing to resolve. It only
-    appeared to work because an ABSOLUTE dst outside the [A] root trips the
-    xroot gate first (_xroot_target, L13403) and skips the session gate
-    entirely; a relative dst, or one inside the root, still 400d. Keep the key
-    order aligned with _xroot_target so both gates agree on which path wins.
+    appeared to work because an ABSOLUTE dst outside the [A] root skipped the
+    session gate through the xroot gate; a relative dst, or one inside the root,
+    still 400d. The xroot gate no longer picks one field -- it classifies every
+    target the call names (xroot.write_targets, #35) -- so this order only picks
+    which field the project root is resolved from.
     """
     body = body if isinstance(body, dict) else {}
     for key in ("file_path", "path", "dst", "target_file", "src"):
@@ -15148,23 +15156,17 @@ accepted_fields=sorted(accepted_fields),
                 _r70_skip_backup = True
         except Exception:
             _r70_skip_backup = False
-    _xroot_target = body.get("path") or body.get("file_path") or body.get("dst") or body.get("target_file") or ""
+    # #35: one verdict per write target the call names -- relative, absolute inside the
+    # project or cross-root, in any target field -- refused HERE, before the backup and
+    # session gates, so no exemption below them skips the deny list. ``cross_root``
+    # only picks the audit route (see classify_write_target).
     _xroot_gate_allowed = False
-    _xroot_gate_denied = None
-    if _xroot_target:
-        try:
-            _xroot_path = Path(str(_xroot_target))
-            if _xroot_path.is_absolute() and is_outside_project_root(_xroot_path, _HERE):
-                _xroot_policy = xroot_check(_xroot_path, tool_name, body.get("session_id", ""))
-                if _xroot_policy.get("allowed"):
-                    _xroot_gate_allowed = True
-                else:
-                    _xroot_gate_denied = _xroot_policy
-        except Exception:
-            _xroot_gate_allowed = False
-    if (tool_name in _backup_gated_tools and not body.get('dry_run', False)
-            and not _r70_skip_backup and not _ephemeral_del
-            and not _backup_override):
+    if (tool_name in _MUTATING_TOOLS or tool_name in _backup_gated_tools) and not _is_readonly_rpc:
+        _xroot_verdicts = [
+            classify_write_target(_target, body.get("project_path") or None, tool_name, body.get("session_id", ""))
+            for _target in write_targets(body)
+        ]
+        _xroot_gate_denied = next((v["policy"] for v in _xroot_verdicts if not v["allowed"]), None)
         if _xroot_gate_denied:
             return _error_response(
                 tool_name,
@@ -15176,6 +15178,10 @@ accepted_fields=sorted(accepted_fields),
                 group=_xroot_gate_denied.get("group", ""),
                 reason=_xroot_gate_denied.get("reason", ""),
             )
+        _xroot_gate_allowed = bool(_xroot_verdicts) and all(v["cross_root"] for v in _xroot_verdicts)
+    if (tool_name in _backup_gated_tools and not body.get('dry_run', False)
+            and not _r70_skip_backup and not _ephemeral_del
+            and not _backup_override):
         if _xroot_gate_allowed:
             pass
         else:
@@ -15258,17 +15264,6 @@ accepted_fields=sorted(accepted_fields),
     _admitted_session_id = ""
     # Require explicit session for mutating tools (except bootstrap/session primitives).
     if tool_name in _MUTATING_TOOLS and tool_name not in _NO_SESSION_REQUIRED and not _is_readonly_rpc and not _ephemeral_del and not _xroot_gate_allowed:
-        if _xroot_gate_denied:
-            return _error_response(
-                tool_name,
-                _xroot_gate_denied.get("reason", "xroot policy denied write"),
-                403,
-                cors,
-                body,
-                error_name="XROOT_DENIED",
-                group=_xroot_gate_denied.get("group", ""),
-                reason=_xroot_gate_denied.get("reason", ""),
-            )
         _project_for_session = (
             body.get("project_path")
             or await asyncio.to_thread(ct.find_project_root, _body_path_hint(body))
@@ -15474,10 +15469,10 @@ accepted_fields=sorted(accepted_fields),
         _admitted_session_id = str(_session_id)
     elif (_xroot_gate_allowed and tool_name in _MUTATING_TOOLS and tool_name not in _NO_SESSION_REQUIRED
           and not _is_readonly_rpc and not _ephemeral_del):
-        # #17 (live 2026-09-25): the xroot policy admits an absolute path outside [A]'s tree
+        # #17 (live 2026-09-25): the xroot gate admits a target outside the call's project_path
         # without REQUIRING a session. That is admission, not attribution: skipping the
-        # lookup as well left every such write -- ToolQ, %TEMP%, any project spelled
-        # absolute -- in the ledger with session_id "". Name the caller's own session;
+        # lookup as well left every such write -- ToolQ, %TEMP%, any other project -- in
+        # the ledger with session_id "". Name the caller's own session;
         # never require, open or rebase anything here.
         _xr_project = (body.get("project_path")
                        or await asyncio.to_thread(ct.find_project_root, _body_path_hint(body)) or "")
@@ -15943,29 +15938,28 @@ accepted_fields=sorted(accepted_fields),
                                          f"/api/write_status?operation_id={_op_id}")
                     # P12 (campaign-1608): the operation_id is DETERMINISTIC, so an
                     # identical retry maps onto the same ledger entry and returns the
-                    # same id. Surface the attempt count so a stable id is not
-                    # misread as a stale cached object: operation_replayed=true means
-                    # "you have sent this exact payload before", which lets a CA tell
-                    # a genuine re-run apart from an unchanged id after it reseeded.
+                    # same id. operation_attempts counts the sends of this exact payload,
+                    # so a stable id is not misread as a stale cached object.
+                    # #36 (2026-09-25): no operation_replayed beside it. That flag was
+                    # attempts > 1 under another name, and it read as "this send did not
+                    # run": a restart re-sent on 09-25 ran for real and answered
+                    # operation_replayed:true, because the committed row of 09-20 had
+                    # absorbed every later send. Each send now gets its own row state
+                    # (_write_ledger_begin), so the count is the fact and nothing replays.
                     _led = _WRITE_LEDGER.get(_op_id)
                     if isinstance(_led, dict):
                         _attempts = int(_led.get("attempts") or 1)
                         _envelope.setdefault("operation_attempts", _attempts)
-                        _envelope.setdefault("operation_replayed", _attempts > 1)
-                        # #9 (2026-09-24): the flag is the LEDGER's fact, never a guess
+                        # #9 (2026-09-24): the warning is the LEDGER's fact, never a guess
                         # from error_name. TA-4 (2026-08-18) set it on any failing replay
                         # that named SYNTAX_ERROR_PRE_WRITE / FILE_CHANGED_OUTSIDE_ORCHESTRATOR,
                         # so two sends that BOTH failed answered "the first attempt likely
                         # already wrote" while /api/write_status for the same operation said
                         # not_committed + safe_to_retry: two opposite answers to one question.
-                        # A committed entry never regresses (_write_ledger_finish), so a
-                        # failing send that finds its operation committed means an earlier
-                        # send of this exact payload shipped, and re-patching would
-                        # double-write. Source writes only: a derived-index rerun is safe.
+                        # A failing send whose EARLIER send committed means re-patching would
+                        # double-write; write_status asks the same helper, so they agree.
                         if (_attempts > 1 and _result.get("ok") is False
-                                and _write_ledger_commit_state(_led) == "committed"
-                                and ct.tool_mutation_scope(tool_name)
-                                not in ct.NON_SOURCE_MUTATION_SCOPES):
+                                and _write_ledger_retry_would_double_write(_led)):
                             _envelope.setdefault("likely_already_applied", True)
                             _envelope.setdefault(
                                 "replay_hint",
@@ -18115,23 +18109,30 @@ async def handle_write_status(request):
             str(rec.get("tool") or "")) in _R102_NON_SOURCE_SCOPES
     except Exception:
         rerun_safe = False  # unknown scope: keep the conservative source-write answer
+    # #36 (2026-09-25): the row is the LATEST send, so a send that failed after an
+    # earlier identical send committed reads not_committed -- true of THIS send, and
+    # still the wrong reason to resend: the earlier edit already landed. The envelope's
+    # likely_already_applied asks the same question through the same helper, so the
+    # two answers cannot drift apart again (#9 was exactly that drift).
+    double_write = (state == "not_committed"
+                    and _write_ledger_retry_would_double_write(rec))
     return web.json_response({
         "ok": True,
         "lookup": lookup,
         "ledger_source": ledger_source,
         "commit_state": state,
         "operation_state": progress_state,
-        "safe_to_retry": (state == "not_committed"
+        "safe_to_retry": ((state == "not_committed" and not double_write)
                           or (state == "committed" and rerun_safe)),
-        "ca_next_action": {
+        "ca_next_action": ("read_file_range_to_confirm_before_retry" if double_write else {
             "committed": ("rerun_tool_for_result_not_kept_in_ledger" if rerun_safe
                           else "do_not_retry_write_already_committed"),
             "not_committed": "retry_write",
             "in_flight": "wait_and_poll_write_status_do_not_retry",
-        }.get(state, "read_file_range_to_confirm_before_retry"),
+        }.get(state, "read_file_range_to_confirm_before_retry")),
         **{k: rec.get(k) for k in ("operation_id", "tool", "status", "project_path",
                                    "file_path", "session_id", "started_at", "finished_at",
-                                   "duration_ms", "attempts", "result",
+                                   "duration_ms", "attempts", "previous_status", "result",
                                    "origin_generation", "progress", "last_progress_at")},
         "generation": SERVER_GENERATION,
         "progress": progress,

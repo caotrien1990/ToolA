@@ -107,7 +107,7 @@ def _envelope(**overrides) -> dict:
         "operation_id": "op-1",
         "write_status_url": "/api/write_status?operation_id=op-1",
         "operation_attempts": 2,
-        "operation_replayed": True,
+        # #36 (2026-09-25): no operation_replayed -- it restated operation_attempts > 1.
         "likely_already_applied": True,
         "replay_hint": "the first attempt likely already wrote; verify by read",
     }
@@ -143,16 +143,16 @@ class TestTheEnvelopeIsAPerCallView:
     def test_a_projection_keeps_what_warns(self):
         """A caller cannot ask for a warning it does not know is coming."""
         srv._R101_FIELDS.set({"ok"})
-        out = srv._r101_dispatch_result({"ok": False}, _envelope(contention_note="queued"))
-        assert out["operation_replayed"] is True
+        out = srv._r101_dispatch_result({"ok": False}, _envelope(contention_note="queued",
+                                                                operation_replayed=True))
+        assert "operation_replayed" not in out, "#36: a send count is not a warning"
         assert out["likely_already_applied"] is True
         assert out["replay_hint"] and out["contention_note"] == "queued"
 
     def test_a_value_that_warns_of_nothing_is_dropped(self):
         srv._R101_FIELDS.set({"ok"})
         out = srv._r101_dispatch_result({"ok": True}, _envelope(
-            operation_replayed=False, likely_already_applied=False, replay_hint="",
-            contention_note=""))
+            likely_already_applied=False, replay_hint="", contention_note=""))
         assert set(out) == {"ok"}, out
 
     def test_a_named_envelope_key_is_kept_like_any_other(self):
@@ -163,9 +163,9 @@ class TestTheEnvelopeIsAPerCallView:
 
     def test_the_tools_own_value_is_not_overridden_by_a_warning(self):
         srv._R101_FIELDS.set({"ok"})
-        out = srv._r101_dispatch_result({"ok": True, "operation_replayed": False},
+        out = srv._r101_dispatch_result({"ok": True, "likely_already_applied": False},
                                         _envelope())
-        assert "operation_replayed" not in out, (
+        assert "likely_already_applied" not in out, (
             "the tool answered this key itself; the projection dropped it, and the "
             "envelope must not resurrect a value the tool contradicted")
 

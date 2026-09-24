@@ -219,3 +219,74 @@ def xroot_check(target_path: str | Path, _caller_tool: str, _session_id: str = "
         return {"allowed": True, "group": "whitelist", "reason": "path prefix is whitelisted"}
 
     return {"allowed": True, "group": "external", "reason": "absolute path outside project root allowed by xroot policy"}
+
+
+# The body fields that name a file a mutating tool writes, moves or deletes.
+# ``src`` is not one: copy_file only reads it.
+WRITE_TARGET_FIELDS = ("path", "file_path", "dst", "target_file", "destination")
+
+
+def write_targets(body: dict[str, Any]) -> list[Path]:
+    """Every write target one call names, joined to its project_path the way the tool joins it.
+
+    #35: the dispatcher read only the FIRST of these fields, so move_file's
+    ``destination`` never met the deny list. A relative target with no project_path
+    is left out: resolving it here would measure it against the daemon's cwd, not
+    the root the tool resolves it under -- the tool's own check reads that one.
+    """
+    base = str(body.get("project_path") or "")
+    pairs: list[tuple[Any, str]] = [(body.get(field), base) for field in WRITE_TARGET_FIELDS]
+    paths = body.get("paths")
+    if isinstance(paths, list):
+        pairs.extend((value, base) for value in paths)
+    operations = body.get("operations")
+    if isinstance(operations, list):
+        pairs.extend(
+            (op.get("file_path") or op.get("path"), str(op.get("project_path") or base))
+            for op in operations
+            if isinstance(op, dict)
+        )
+    targets: list[Path] = []
+    for value, root in pairs:
+        if isinstance(value, str) and value.strip():
+            p = Path(value)
+            if p.is_absolute():
+                targets.append(p)
+            elif root:
+                targets.append(Path(root) / p)
+    return targets
+
+
+def classify_write_target(
+    target_path: str | Path,
+    project_root: str | Path | None = None,
+    caller_tool: str = "",
+    session_id: str = "",
+) -> dict[str, Any]:
+    """The one verdict every write gate reads for a RESOLVED target.
+
+    #35 (measured 2026-09-25, sandbox): each gate used to consult the deny list only
+    when it judged the target cross-root, and judged that from the SPELLING -- an
+    absolute path, measured against [A]'s tree by the dispatcher and against
+    project_path by the write tools. With project_path set to the home directory,
+    ``.ssh/x`` relative, ``<home>/.ssh/x`` absolute, copy_file's relative dst and
+    write_fix's relative path all landed in the credential directory; only the
+    absolute spelling with no project_path was refused. The same file now gets the
+    same verdict, however it is spelled:
+
+    * ``allowed`` -- the deny list, for EVERY target. Being inside the project grants
+      nothing: the project root is whatever the caller says it is.
+    * ``cross_root`` -- outside ``project_root`` (default: [A]'s tree, the default the
+      write tools use). It picks only the audit route: a cross-root write needs no
+      session and is logged to the xroot ledger; an in-project write takes the
+      project's session and backup gates, whatever its spelling.
+    * ``managed`` -- cross_root or a live file: what goes to the xroot ledger.
+    """
+    policy = xroot_check(target_path, caller_tool, session_id)
+    cross_root = is_outside_project_root(target_path, project_root)
+    return {
+        "allowed": bool(policy.get("allowed")),
+        "cross_root": cross_root,
+        "managed": cross_root or policy.get("group") == "live_files",
+        "policy": policy,
+    }

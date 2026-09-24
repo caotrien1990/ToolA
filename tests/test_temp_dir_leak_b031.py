@@ -162,5 +162,68 @@ class TempDirectoriesAreRemovedNotJustRegisteredTest(unittest.TestCase):
         self.assertEqual(failures, [], "\n".join(failures))
 
 
+# #34: the probe a child run executes. Skipped everywhere else -- it acts only when
+# the parent below names the entries to create through the environment.
+_B031_PROBE_ENV = "B031_CONFTEST_PROBE_NAMES"
+
+
+class ConftestTempProbe(unittest.TestCase):
+    """Child-only: create what another process, and a leaking test, would create."""
+
+    def test_probe_creates_a_foreign_file_and_a_leaked_directory(self):
+        names = os.environ.get(_B031_PROBE_ENV, "")
+        if not names:
+            self.skipTest("child-only probe; run by ConftestDeletesOnlyWhatItCreatedTest")
+        foreign, leaked_prefix = names.split("|", 1)
+        # A file another process drops into %TEMP% while the suite runs ...
+        (Path(tempfile.gettempdir()) / foreign).write_text("foreign", encoding="utf-8")
+        # ... and a directory a test forgets to remove: the B031 leak shape.
+        tempfile.mkdtemp(prefix=leaked_prefix)
+
+
+class ConftestDeletesOnlyWhatItCreatedTest(unittest.TestCase):
+    """#34: conftest's teardown removes its own registered directories and nothing else.
+
+    Measured before the fix: `pytest_unconfigure` removed every %TEMP% entry that was
+    missing from a start-of-run snapshot, so BOTH entries the probe makes were deleted.
+    The foreign file is how a CA's scratch disappeared mid-run; the leaked directory is
+    why B031/B032 could not fail -- the sweep removed the very leftovers they count.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import uuid
+        from unittest import mock
+
+        cls.sandbox = Path(tempfile.mkdtemp(prefix="b031_probe_"))
+        tag = uuid.uuid4().hex[:8]
+        cls.foreign = f"zz_foreign_{tag}.txt"
+        cls.leaked_prefix = f"b031_leak_probe_{tag}_"
+        node = "test_temp_dir_leak_b031.py::ConftestTempProbe"
+        with mock.patch.dict(os.environ,
+                             {_B031_PROBE_ENV: f"{cls.foreign}|{cls.leaked_prefix}"}):
+            cls.rc, cls.leftovers, cls.output = _run_isolated((node,), cls.sandbox)
+
+    @classmethod
+    def tearDownClass(cls):
+        import shutil
+        shutil.rmtree(cls.sandbox, ignore_errors=True)
+
+    def test_the_probe_ran(self):
+        self.assertEqual(self.rc, 0, self.output[-3000:])
+        self.assertIn("1 passed", self.output, self.output[-3000:])
+
+    def test_a_foreign_temp_entry_survives_the_run(self):
+        self.assertIn(self.foreign, self.leftovers)
+
+    def test_a_leaking_test_stays_visible_to_the_guard(self):
+        self.assertTrue(any(n.startswith(self.leaked_prefix) for n in self.leftovers),
+                        self.leftovers)
+
+    def test_conftest_still_removes_its_own_directories(self):
+        own = [n for n in self.leftovers if n.startswith("orch_pytest_")]
+        self.assertEqual(own, [], own)
+
+
 if __name__ == "__main__":
     unittest.main()
