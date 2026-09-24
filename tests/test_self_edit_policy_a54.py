@@ -1,11 +1,16 @@
-"""A54 — [A] self-edit must classify as upgrade_orchestrator, not write_existing_file.
+"""A54 — [A] self-edit classifies as upgrade_orchestrator, and a NATIVE one is forbidden.
 
-Regression for the policy conflict: the standing rule says "editing [A] itself:
-native edit + log_native_event", but the tool/action map pinned any native write
-to write_existing_file (native_policy=forbid), so log_native_event answered
-ok:false / is_forbidden_native:true for the very edits the rule mandates.
-The Matrix row upgrade_orchestrator=hybrid_upgrade_only already allowed it; only
-the classifier ordering was wrong.
+History: the rule used to say "editing [A] itself: native edit + log_native_event",
+while the tool/action map pinned any native write to write_existing_file, so
+log_native_event answered ok:false for the very edits the rule mandated. The
+classifier ordering was fixed, and the Matrix row upgrade_orchestrator carried
+native_policy=hybrid_upgrade_only so the native self-edit passed.
+
+Since 2026-09-24 that row is native_policy=forbid. Measured: [A] edits itself
+through read_file_range -> write_fix like any project, and a restart loads the new
+code. The class stays upgrade_orchestrator so the ledger still names a self-edit,
+but the host gate denies it. The only native path into [A] is Anh's break-glass
+while [A] itself is broken, and that lives in the host hook, not in this verdict.
 """
 from __future__ import annotations
 
@@ -41,15 +46,15 @@ def test_native_self_edit_is_upgrade_orchestrator(rel):
         agent_id="clau",
     )
     assert r["task_class"] == "upgrade_orchestrator"
-    assert r["native_policy"] == "hybrid_upgrade_only"
-    assert r["is_forbidden_native"] is False
-    assert r["ca_next_action"] != "stop_native_use_a_tool"
+    assert r["native_policy"] == "forbid"
+    assert r["is_forbidden_native"] is True
+    assert r["ca_next_action"] == "stop_native_use_a_tool"
+    assert r["host_gate"]["allowed"] is False
 
 
 def test_native_self_read_still_prefers_a_tool():
-    """The self-edit relaxation is for MUTATIONS only: a read of [A] stays
-    read_project_file, never upgrade_orchestrator, and read_file_range stays its
-    preferred tool.
+    """Only a MUTATION of [A] is upgrade_orchestrator: a read of [A] stays
+    read_project_file, and read_file_range stays its preferred tool.
 
     Its native_policy is allow_readonly since 2026-09-23 -- the slim rule's Read
     Routing (measured 2026-08-19) allows native read for pure inspection, and the
@@ -73,7 +78,7 @@ def test_native_self_read_still_prefers_a_tool():
 
 
 def test_other_project_native_write_still_forbidden():
-    """The relaxation is scoped to [A]'s own tree only."""
+    """Outside [A]'s own tree the class stays write_existing_file."""
     r = classify_action(
         tool_name="Edit",
         action_type="write",
@@ -118,7 +123,8 @@ def test_is_orchestrator_self_target(target, expected):
 # mapping used to win before the self-edit branch was ever consulted. Measured
 # on orchestrator/graph/store.py: Edit/write -> upgrade_orchestrator (ok:true)
 # while Bash/write -> project_command / forbid -> HOST_GATE_DENY. Identical
-# mutation, identical target, opposite verdict.
+# mutation, identical target, opposite verdict. Since 2026-09-24 both spellings
+# answer forbid; the pin is that the verdict is identical, not which way it points.
 
 _SHELL_TOOLS = ["Bash", "run_ps1_script", "run_node_script", "run_project_command"]
 
@@ -136,16 +142,17 @@ def test_shell_tool_self_edit_matches_edit_tool(tool, action):
         agent_id="clau",
     )
     assert r["task_class"] == "upgrade_orchestrator"
-    assert r["native_policy"] == "hybrid_upgrade_only"
-    assert r["is_forbidden_native"] is False
-    assert r["ca_next_action"] != "stop_native_use_a_tool"
+    assert r["native_policy"] == "forbid"
+    assert r["is_forbidden_native"] is True
+    assert r["ca_next_action"] == "stop_native_use_a_tool"
+    assert r["host_gate"]["allowed"] is False
 
 
 @pytest.mark.parametrize("action", ["command", "execute", "test", "read"])
 def test_running_a_real_command_inside_A_stays_project_command(action):
-    """The yield is scoped to MUTATING actions. Running a command inside [A]'s
-    tree is still a command and still has to go through an [A] tool -- this is
-    the boundary that keeps the fix from becoming a blanket shell exemption."""
+    """The upgrade_orchestrator class is scoped to MUTATING actions. Running a
+    command inside [A]'s tree is still a command, classified project_command, so
+    the ledger never files a test run or a git call as a self-edit."""
     r = classify_action(
         tool_name="Bash",
         action_type=action,
@@ -285,11 +292,14 @@ def test_unprovable_target_defaults_to_governed(target):
 
 
 def test_self_edit_is_upgrade_orchestrator_without_declared_project():
-    """The hook shape: [A]'s own tree keeps its authorized native path even
-    though no project_path is sent."""
+    """The hook shape: no project_path is sent, and [A]'s own tree is still
+    scope=project and denied -- the gate has no self-edit carve-out."""
     r = _hook_shaped("Edit", "write", A_ROOT / "code_tools.py")
     assert r["task_class"] == "upgrade_orchestrator"
-    assert r["host_gate"]["allowed"] is True
+    assert r["host_gate"]["scope"] == "project"
+    assert r["host_gate"]["decision"] == "deny_native_forbid"
+    assert r["host_gate"]["allowed"] is False
+    assert r["error_name"] == "HOST_GATE_DENY"
 
 
 def test_agent_memory_write_is_allowed_native(fake_agent_home):
@@ -340,3 +350,102 @@ def test_multiedit_and_notebookedit_are_file_writes(tool):
     r = _hook_shaped(tool, "write", OTHER_ROOT / "q_agent" / "provider.py", OTHER_ROOT)
     assert r["task_class"] == "write_existing_file"
     assert r["host_gate"]["allowed"] is False
+
+
+# --- 2026-09-24: no rule producer may re-authorize a native self-edit ---
+#
+# sync_rule renders every CA rule file from examples/SLIM_RULE.txt (fallback
+# code_tools._SLIM_RULE_BODY / _SLIM_RULE_INLINE) and get_rule_core_text serves
+# examples/CORE_RULE.txt. One stale "native edit + log_native_event" sentence in
+# any of them tells every CA to do what the gate now denies: a refused call plus a
+# retry through [A] on every self-edit.
+
+_STALE_SELF_EDIT = (
+    "native edit + log_native_event",
+    "native edit + `log_native_event`",
+    "hybrid_upgrade_only",
+)
+
+
+def _rule_producers():
+    import code_tools as ct
+
+    ex = A_ROOT / "examples"
+    return {
+        "CORE_RULE.txt": (ex / "CORE_RULE.txt").read_text(encoding="utf-8"),
+        "SLIM_RULE.txt": (ex / "SLIM_RULE.txt").read_text(encoding="utf-8"),
+        "SLIM_RULE_INLINE.txt": (ex / "SLIM_RULE_INLINE.txt").read_text(encoding="utf-8"),
+        "code_tools._SLIM_RULE_BODY": ct._SLIM_RULE_BODY,
+        "code_tools._SLIM_RULE_INLINE": ct._SLIM_RULE_INLINE,
+    }
+
+
+def test_no_rule_producer_authorizes_native_self_edit():
+    producers = _rule_producers()
+    hits = [(name, s) for name, text in producers.items()
+            for s in _STALE_SELF_EDIT if s in text]
+    assert not hits, "a rule producer still invites a native self-edit: %r" % hits
+    # Positive control: an empty or unreadable producer would pass the check above.
+    missing = [name for name, text in producers.items() if "break-glass" not in text]
+    assert not missing, "the break-glass clause is missing from %r" % missing
+
+
+def test_matrix_row_upgrade_orchestrator_is_forbid():
+    """The Matrix is the SOT every verdict above reads: pin the row itself, and
+    the retired policy name, so re-adding hybrid_upgrade_only fails here first."""
+    assert "hybrid_upgrade_only" not in cpm._MATRIX_PATH.read_text(encoding="utf-8")
+    assert cpm._rows_by_class()["upgrade_orchestrator"]["native_policy"] == "forbid"
+
+
+# --- 2026-09-24: the pre-write hook reads /api/native_preflight, not classify_action ---
+#
+# Every verdict above is classify_action's. The hook never reads that verdict: it
+# asks the endpoint, which re-derived error_name and decision with the opposite
+# precedence, so the same native write answered FORBIDDEN_NATIVE before it happened
+# and HOST_GATE_DENY in log_native_event -- and the rule's RULE-LOSS signal names
+# only HOST_GATE_DENY. Pinned through the handler itself, so a second derivation
+# fails here.
+
+
+class _PreflightRequest:
+    headers: dict = {}
+
+    def __init__(self, body):
+        self._body = body
+
+    async def json(self):
+        return self._body
+
+
+def _preflight(tool, action, target):
+    import asyncio
+
+    import orchestrator_server as srv
+
+    resp = asyncio.run(srv.handle_native_preflight(_PreflightRequest({
+        "tool_name": tool, "action_type": action, "target": str(target),
+        "transport": "native", "agent_id": "claultnai",
+    })))
+    return json.loads(resp.text)
+
+
+def test_preflight_names_the_refusal_exactly_as_the_classifier(tmp_path, fake_agent_home):
+    proj = tmp_path / "proj"
+    (proj / ".git").mkdir(parents=True)
+    cases = [
+        ("Edit", "write", A_ROOT / "code_tools.py"),
+        ("Write", "write", proj / "pkg" / "new_module.py"),
+        ("Read", "read", A_ROOT / "code_tools.py"),
+        ("Write", "write", fake_agent_home / "projects" / "slug" / "memory" / "note.md"),
+    ]
+    decisions = set()
+    for tool, action, target in cases:
+        pf = _preflight(tool, action, target)
+        cls = _hook_shaped(tool, action, target)
+        assert pf["ok"] is True, pf
+        assert pf["error_name"] == cls["error_name"], (tool, str(target), pf["error_name"])
+        assert (pf["decision"] == "deny") is cls["preflight_hard_stop"], (tool, str(target))
+        decisions.add(pf["decision"])
+    # Positive control: both verdicts ran, so a constant answer cannot pass.
+    assert decisions == {"deny", "allow"}
+    assert _preflight("Edit", "write", A_ROOT / "code_tools.py")["error_name"] == "HOST_GATE_DENY"

@@ -55,7 +55,7 @@ Sau bootstrap, đọc skill chuyên biệt nếu task vào sâu lĩnh vực cụ
 | Session audit / handoff | [T3] | 17_session_audit |
 | Search exact text multi-word | [T1] search_code (v2 smart) | 15_search_code_intel |
 | Find symbol callers/usage | [T1] find_symbol (v2 include=usage) | 15_search_code_intel |
-| Edit [A] backend itself | [A] HYBRID + log_native_event | 12_native_audit |
+| Edit [A] backend itself | read_file_range → write_fix, then restart_orchestrator_via_bat (native only under Anh's break-glass) | 05_write_pipeline |
 | Launch Electron / electron port / remote-debugging | [T4] launch_electron_with_cdp | 22_electron_automation |
 | Button state / DOM state / color change over time | [T1] dom_state_diff (Recipe D) | 18_runtime_dom_T4 |
 | Extract log / log area / textarea content from DOM | [T1] extract_log_section (Recipe E) | 18_runtime_dom_T4 |

@@ -62,18 +62,19 @@ class SuffixedActionWordsAreUnderstood(unittest.TestCase):
             "file inside [A] is refused (%s) while EDITING one is allowed -- "
             "a distinction no rule makes" % got.get("host_gate"))
 
-    def test_create_file_inside_a_is_allowed_like_an_edit(self):
-        """The standing rule is 'native edit inside [A] + log_native_event'.
+    def test_create_file_inside_a_classifies_like_an_edit(self):
+        """A create and an edit inside [A] are the same self-edit.
 
-        A create is the same authorised path; if these two disagree the audit
-        trail for a new file cannot be written at all.
+        Both are upgrade_orchestrator and, since 2026-09-24, both forbid native.
+        If these two disagree, one of them is judged by a rule nobody wrote.
         """
         created = self._c("create_file", A_ROOT + r"\scripts\new_probe.py")
         edited = self._c("write_existing_file", A_ROOT + r"\scripts\new_probe.py")
+        self.assertEqual(created["task_class"], "upgrade_orchestrator", created)
+        self.assertEqual(created["task_class"], edited["task_class"])
         self.assertEqual(created["native_policy"], edited["native_policy"],
                          "create vs edit inside [A]: %r vs %r"
                          % (created["native_policy"], edited["native_policy"]))
-        self.assertFalse(created["is_forbidden_native"], created)
 
     def test_the_documented_bare_verbs_still_work(self):
         """F021's rows are the regression risk of any change to this table."""

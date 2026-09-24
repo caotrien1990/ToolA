@@ -1152,15 +1152,17 @@ fail; the A54 shim revert kills the **entire session** with the original
 
 ## Editing [A] itself
 
-Reading [A]'s own files is **not** relaxed — use [A] read tools. Writing to them
-is an authorized path, not a bypass:
+[A] edits itself like any project: `read_file_range` → `write_fix` /
+`write_new_file`, then `restart_orchestrator_via_bat` loads the new code (there is
+no hot-reload). A native write into [A]'s tree is still classified
+`task_class=upgrade_orchestrator`, so the ledger names it, but its `native_policy`
+is `forbid`: preflight and `log_native_event` both answer `HOST_GATE_DENY` (one
+matcher, `classify_action`), and the Claude host's PreToolUse gate refuses the
+write before it runs.
 
-* Native edit, then `log_native_event` with **one absolute path**. The classifier
-  maps a native write inside [A]'s tree to `task_class=upgrade_orchestrator` /
-  `native_policy=hybrid_upgrade_only` and returns `ok:true` /
-  `audit_status:logged`.
-* A `HOST_GATE_DENY` / `write_existing_file` answer means the target did not
-  resolve inside [A] — usually several paths joined into one string.
+* [A] refused, or still hung after that restart → STOP and ask Anh to open
+  break-glass. A native write into [A] is never self-authorized; while the gate is
+  OFF, each one is appended to `native-write-gate.offlog.jsonl`.
 * **`examples/CORE_RULE.txt`, `SLIM_RULE.txt` and `SLIM_RULE_INLINE.txt` are SOT
   and must be edited through `write_fix`, not natively** (pinned by
   `test_xroot_core_rule_sot.py`). `sync_rule` only distributes.

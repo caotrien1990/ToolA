@@ -11,6 +11,8 @@ and LOOSEN ``native_policy`` away from ``forbid``:
 The second one is the worse of the two: that branch assigns unconditionally, so
 it overrode an already-correct ``write_existing_file`` classification. A user
 naming a file "data download.csv" should not widen what a native tool may do.
+The first row is history: upgrade_orchestrator is native_policy=forbid since
+2026-09-24, so that misfire now only mislabels the ledger.
 
 The fix is a boundary match (``\\bupgrade\\b``) plus keeping the target OUT of
 the "[A] is unreachable" blob entirely -- unreachability describes the session,
@@ -18,9 +20,8 @@ never a path.
 
 This test pins BOTH directions. The false-positive half is the bug; the
 true-positive half is the regression risk of the fix, and matters just as much:
-``upgrade_orchestrator`` is what makes the standing "edit [A] natively +
-log_native_event" rule answer ``ok:true``, so silently killing it would break
-[A] self-upgrade.
+``upgrade_orchestrator`` is how the audit ledger names a self-edit of [A], so
+silently killing it would file every [A] self-edit as a plain project write.
 
 Run:  ./venv312/Scripts/python.exe -m pytest tests/test_policy_keyword_boundary_f021.py -v
 """
@@ -118,13 +119,13 @@ class KeywordBoundaryTruePositives(unittest.TestCase):
                 self.assertEqual(classify_action(**base)["task_class"], "general_web_research")
 
     def test_native_self_edit_inside_A_stays_upgrade_orchestrator(self):
-        """The standing rule: native edit of [A] + log_native_event must be ok:true."""
+        """A native edit of [A] keeps its class; since 2026-09-24 that class is forbid."""
         r = classify_action(
             tool_name="Edit", action_type="write", transport="native",
             target=A_ROOT + "\\orchestrator_server.py",
         )
         self.assertEqual(r["task_class"], "upgrade_orchestrator")
-        self.assertEqual(r["native_policy"], "hybrid_upgrade_only")
+        self.assertEqual(r["native_policy"], "forbid")
 
 
 if __name__ == "__main__":

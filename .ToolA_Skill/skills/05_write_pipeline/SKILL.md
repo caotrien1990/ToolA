@@ -74,7 +74,7 @@ KHÔNG retry blind cùng payload — read first.
 
 | Situation | Tool | Notes |
 |-----------|------|-------|
-| 1-2 lines, existing file, low risk | `write_fix` | Host forbids native for `write_existing_file`. SOT `examples/CORE_RULE.txt` is also `write_fix`, then `manage_agent sync_rule` distributes. Native only if [A] down / write_fix impossible / HYBRID [A] Python. |
+| 1-2 lines, existing file, low risk | `write_fix` | Host forbids native for `write_existing_file`. SOT `examples/CORE_RULE.txt` is also `write_fix`, then `manage_agent sync_rule` distributes. Native only if [A] down / write_fix impossible, and inside [A]'s own tree only under Anh's break-glass. |
 | Multi-file batch (≥3 files) | `write_fix` per file OR `write_transaction` (V15 P1, R13.4 multi-tool) | Auto-rollback |
 | Content has Unicode/quotes/backslash | `write_fix` with `content_encoding=base64` | Encoding-safe |
 | Mixed batch (edit existing + create new) | `write_transaction` với `op.tool=write_fix\|write_new_file` (R13.4) | One atomic batch |

@@ -18054,9 +18054,11 @@ async def handle_native_preflight(request):
             "generation": SERVER_GENERATION,
         }, status=503, headers=cors)
     host = cls.get("host_gate") or {}
-    host_denied = isinstance(host, dict) and str(host.get("decision") or "").startswith("deny")
-    forbidden = bool(cls.get("is_forbidden_native"))
-    decision = "deny" if (forbidden or host_denied) else (
+    # classify_action already rules on this write and names the refusal. This
+    # endpoint used to re-derive both with the opposite precedence, so one native
+    # write answered FORBIDDEN_NATIVE to the pre-write hook and HOST_GATE_DENY to
+    # log_native_event -- and the rule's RULE-LOSS signal names only the second.
+    decision = "deny" if cls.get("preflight_hard_stop") else (
         "allow" if cls.get("is_allowed_native") or cls.get("is_via_a") else "review")
     preferred = (cls.get("preferred_via_a") or [])[:5]
     return web.json_response({
@@ -18064,12 +18066,11 @@ async def handle_native_preflight(request):
         "decision": decision,
         "allowed": decision == "allow",
         "audit_status": "not_logged_preflight_only",
-        "error_name": ("FORBIDDEN_NATIVE" if forbidden else
-                       "HOST_GATE_DENY" if host_denied else None),
+        "error_name": cls.get("error_name"),
         "task_class": cls.get("task_class"),
         "native_policy": cls.get("native_policy"),
         "classification": cls.get("classification"),
-        "is_forbidden_native": forbidden,
+        "is_forbidden_native": bool(cls.get("is_forbidden_native")),
         "is_allowed_native": cls.get("is_allowed_native"),
         "is_via_a": cls.get("is_via_a"),
         "is_unclassified": cls.get("is_unclassified"),

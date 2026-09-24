@@ -30,8 +30,7 @@
     "forbid": "Native forbidden; [A] provides governed capability.",
     "allow_readonly": "Read-only: an outside-project/environment probe, or in-project INSPECTION. A read that feeds an edit is not inspection.",
     "allow_native": "Native write, no audit owed: outside every project, in a tree the host harness itself mandates (the agent's own memory).",
-    "allow_with_log_native_event": "Approved exception; immediate log; if down pending audit then sync.",
-    "hybrid_upgrade_only": "Only [A] self-upgrade with authorization, audit, validation, restart gate, verification."
+    "allow_with_log_native_event": "Approved exception; immediate log; if down pending audit then sync."
   },
   "decision_workflow": [
     "bootstrap [A] once; stop on connection-refused",
@@ -359,20 +358,21 @@
     {
       "task_class": "upgrade_orchestrator",
       "match": "edit [A] backend/contract",
-      "tier": "HYBRID",
+      "tier": "T2",
       "toolset_primary": [
-        "native edit",
-        "log_native_event",
+        "read_file_range",
+        "write_fix",
+        "write_new_file",
         "validate_file",
         "restart_orchestrator_via_bat",
         "manage_agent"
       ],
-      "toolset_fallback": "none",
-      "native_policy": "hybrid_upgrade_only",
+      "toolset_fallback": "native only after Anh opens break-glass",
+      "native_policy": "forbid",
       "session_required": true,
       "token_required": "tool-specific",
-      "verification": "audit; tests; generation; sync",
-      "why_cslt": "Self-edit is circular but remains governed."
+      "verification": "tests; restart = new pid + changed generation; sync",
+      "why_cslt": "[A] edits itself like any project; a restart loads the new code."
     },
     {
       "task_class": "a_unreachable_mid_task",

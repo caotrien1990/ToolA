@@ -9,7 +9,7 @@ trigger:
   - tool: "log_native_event | create_pending_audit | sync_pending_audit"
 preconditions:
   - "Active session exists"
-  - "Either: User explicit authorization OR [A] API failed after 1 corrected retry OR editing [A] core (circular dependency)"
+  - "Either: User explicit authorization OR [A] API failed after 1 corrected retry OR Anh's break-glass while [A] itself is broken"
 related_skills:
   - 07_error_schema_hints
   - 05_write_pipeline
@@ -21,7 +21,7 @@ risk_level: medium
 ## When native is allowed (HARD)
 
 ONLY in these cases:
-1. **Editing [A] backend itself** — `[Ab:P] = [A:P]` AND User explicit authorization (HYBRID rule)
+1. **[A] itself broken** — Anh opens break-glass (never self-authorized). A working [A] edits itself through `read_file_range` → `write_fix` like any project
 2. **[A] API down** mid-task → `create_pending_audit` + sync when API returns
 3. **Environment permission block** preventing API call (rare)
 4. **Single-file <30 lines** low-risk iteration with active User feedback loop (User must explicitly accept this scope)
@@ -30,14 +30,15 @@ ONLY in these cases:
 Never allowed:
 - Multi-file batch without [A] API
 - Auth/token/delete operations
-- Project files (any project OTHER than [A] itself) when [A] is available — must use API
+- Project files, [A]'s own tree included, when [A] is available — must use API
 
-> Self-edit is the exception, not a bypass. Case 1 above ([Ab:P] = [A:P]) is
-> `task_class=upgrade_orchestrator` / `native_policy=hybrid_upgrade_only` in the
-> Matrix — a NATIVE write to [A]'s own tree is *expected* to pass the gate and
-> return `ok:true`. Governance is preserved by the HYBRID chain (authorization →
-> `log_native_event` → py_compile/validate → restart → verify generation), not by
-> denying the write. Reading [A]'s own files is NOT relaxed: use [A] read tools.
+> Self-edit is NOT an exception. A native write to [A]'s own tree is still
+> `task_class=upgrade_orchestrator`, so the ledger names it, but its
+> `native_policy` is `forbid` like any project write, and preflight and
+> `log_native_event` both answer `HOST_GATE_DENY`. [A] edits itself through
+> `read_file_range` → `write_fix`, and `restart_orchestrator_via_bat` loads the new
+> code. The only native path into [A] is case 1: Anh's break-glass while [A] itself
+> is broken, never self-authorized.
 
 ## Mandatory audit (every native use)
 
@@ -92,12 +93,12 @@ Multi-file path lists belong in `reason`/`target` (truncated), not unsupported n
 
 ## Common scenarios
 
-### Editing [A] write_fix itself (circular)
+### Editing [A] itself
 ```
-- Authorized: User explicit "tiến hành fix [A]"
-- Use: native Edit on code_tools.py
-- Log: instead_of="write_fix base64", failed_error="circular dependency"
-- After: User restart [A] to load new code
+- Default: read_file_range → write_fix / write_new_file; restart_orchestrator_via_bat loads the new code
+- write_fix itself broken (circular), or [A] still hung after restart → STOP, ask Anh for break-glass
+- Under break-glass only: native Edit; the host gate appends each write to its off-log
+- After: restart [A], verify new pid + changed generation; Anh closes break-glass
 ```
 
 ### Quick CSS tweak rapid iteration
@@ -124,7 +125,7 @@ Every native action on a governed project must be classifiable against `.council
 
 | Counter | When |
 |---|---|
-| `forbidden_native_count` | native while row `native_policy=forbid` → **bypass event** (self-edit of [A] is `hybrid_upgrade_only`, so it never lands here) |
+| `forbidden_native_count` | native while row `native_policy=forbid` → **bypass event** (a native self-edit of [A] counts here too) |
 | `allowed_native_count` | native while policy allows **and** audit present |
 | `via_a_count` | same task class executed via `/api/call/<tool>` |
 | `unclassified_count` | action not mapped to any `task_class` |
@@ -136,10 +137,9 @@ Hybrid steering (“A plus native”): still log each native call with accurate 
 
 ## Axis 4 hard reject (ledger enforce — live)
 
-When Matrix row is `native_policy=forbid` (write/search on a project that is NOT [A] itself, via native), **ledger must reject**, not only warn.
-A native write whose target resolves inside [A]'s own source tree is classified
-`upgrade_orchestrator` instead and must NOT hard-reject — see "Self-edit is the
-exception" above:
+When Matrix row is `native_policy=forbid` (write/search on any project via native, [A]'s own tree included), **ledger must reject**, not only warn.
+A native write inside [A]'s own source tree is classified `upgrade_orchestrator`
+and rejected the same way — see "Self-edit is NOT an exception" above:
 
 | Signal | Meaning |
 |--------|---------|

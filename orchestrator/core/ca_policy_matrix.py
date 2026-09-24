@@ -150,8 +150,8 @@ _ACTION_TO_CLASS: dict[str, str] = {
 # vocabularies overlap and the schema description does not spell out which one
 # it wants). Accept that as an identity mapping -- but ONLY for classes whose
 # native_policy is forbid, so a caller can never self-declare its way into
-# upgrade_orchestrator / a_unreachable_mid_task and mint native permission it
-# has not earned. Those still have to be derived from the target path.
+# a_unreachable_mid_task and mint native permission it has not earned. That one
+# comes from session signals, and upgrade_orchestrator from the target path.
 _SELF_DECLARABLE_CLASSES = frozenset({
     "write_existing_file",
     "create_project_file",
@@ -480,11 +480,13 @@ def classify_action(
         if not task_class:
             task_class = "upgrade_orchestrator"
     # [A] self-edit: a NATIVE mutation whose target is inside [A]'s own source
-    # tree is upgrade_orchestrator (hybrid_upgrade_only), not a plain project
-    # write. Without this the tool/action map pinned it to write_existing_file
-    # -> native_policy=forbid, which contradicted the standing rule "editing [A]
-    # itself: native edit + log_native_event" and made log_native_event answer
-    # ok:false / is_forbidden_native:true for the very edits the rule mandates.
+    # tree is upgrade_orchestrator, not a plain project write, so the ledger and
+    # the deny name it for what it is and preferred_via_a carries the self-upgrade
+    # steps (restart_orchestrator_via_bat, manage_agent). Its native_policy is
+    # forbid like every project write: [A] edits itself through read_file_range
+    # -> write_fix, and a restart loads the new code. The hybrid_upgrade_only
+    # carve-out that let this through natively was the widest native channel in
+    # use; a broken [A] is Anh's break-glass on the host, not a Matrix row.
     # Only NATIVE transport is reclassified: via_a stays governed as before.
     if (
         tr == "native"
@@ -516,10 +518,8 @@ def classify_action(
             "allow_readonly",
             "allow_native",
             "allow_with_log_native_event",
-            "hybrid_upgrade_only",
         ),
     )
-    # hybrid_upgrade_only still requires log; treat as allowed-with-condition
     is_unclassified = not classified
 
     host = hermes_host_gate(
