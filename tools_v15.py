@@ -6865,12 +6865,20 @@ async def restart_server_via_bat_hint(bat_path: str, port: int = 0) -> str:
             current = json.loads(raw)
         except Exception:
             current = None
+    # [A]'s own launcher answers with the one [A] restart path, so the hint
+    # can never route a CA into a native bat launch of the daemon.
+    try:
+        is_self = (os.path.normcase(str(Path(bat_path).resolve()))
+                   == os.path.normcase(str(Path(__file__).resolve().parent / "start_orchestrator.bat")))
+    except Exception:
+        is_self = False
     return _ok({
         "bat_path": bat_path,
         "current": current,
-        "restart_command": f"Run \"{bat_path}\"",
-        "post_check": "After restart, verify with a fresh MCP/API call. Do not run a separate health polling loop.",
-        "note": "Hint only; for authorized [A] self-upgrades CA should run [A:S] start_orchestrator.bat and then verify with a fresh call.",
+        "restart_command": ("call restart_orchestrator_via_bat(delay_seconds=2)" if is_self
+                            else f"Run \"{bat_path}\""),
+        "post_check": "Verify with a fresh API call (for [A]: GET /health shows a new pid AND a changed generation).",
+        "note": "Hint only, nothing executed. [A] itself restarts only via restart_orchestrator_via_bat.",
     })
 
 
@@ -8027,8 +8035,8 @@ async def desktop_app_focus(hwnd: int = 0, title_pattern: str = "",
                 if still_off_screen:
                     visibility_state = "off_screen"
                     uipi_warning = ("Window stayed off-screen post-restore; "
-                                    "integrity level mismatch likely. Try restart_orchestrator_via_task "
-                                    "to elevate [A] to High IL.")
+                                    "integrity level mismatch likely. restart_orchestrator_via_bat "
+                                    "relaunches [A] at High IL (needs Anh's go-ahead).")
                 elif was_minimized or was_off_screen:
                     visibility_state = "restored"
                     uipi_warning = None

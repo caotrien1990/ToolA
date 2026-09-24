@@ -466,6 +466,10 @@ _other_rate_buckets: dict = {}
 _api_call_latency_samples = deque(maxlen=512)
 _api_call_latency_window_s = 300.0
 _requests_in_flight = 0
+# Every path (/health, /api/tools/*, SSE) counts above -- that is load for the
+# restart busy gate and queue_depth. Only /api/call/ counts here: this is the one
+# number that can say two TOOL calls shared the daemon (D5 contention_note).
+_api_calls_in_flight = 0
 
 
 def _sse_token_ok(request) -> bool:
@@ -524,10 +528,12 @@ def _api_call_p95_ms(*, now: float | None = None) -> int:
 @web.middleware
 async def _http_defense_middleware(request, handler):
     """Startup gate, body size/rate defense, and load telemetry."""
-    global _requests_in_flight
+    global _requests_in_flight, _api_calls_in_flight
     started = time.time()
     is_api_call = request.path.startswith('/api/call/')
     _requests_in_flight += 1
+    if is_api_call:
+        _api_calls_in_flight += 1
     try:
         if SERVER_STOPPING and request.path not in {'/health', '/api/health'}:
             return web.json_response(
@@ -641,6 +647,7 @@ async def _http_defense_middleware(request, handler):
     finally:
         if is_api_call:
             _record_api_call_latency((time.time() - started) * 1000.0)
+            _api_calls_in_flight = max(0, _api_calls_in_flight - 1)
         _requests_in_flight = max(0, _requests_in_flight - 1)
 
 
@@ -3727,9 +3734,9 @@ _PAYLOAD_EXAMPLES = {
         "_note": "Polls until visible OR timeout. Returns {visible, elapsed_ms}.",
     },
     "restart_server_via_bat_hint": {
-        "bat_path": "D:/path/to/project/start_orchestrator.bat",
-        "port": 8083,
-        "_status": "HINT ONLY — returns command string. Does NOT execute. Mark non-mutating.",
+        "bat_path": "D:/path/to/project/start_server.bat",
+        "port": 5173,
+        "_status": "HINT ONLY — returns command string. Does NOT execute. [A] itself restarts only via restart_orchestrator_via_bat.",
     },
     "electron_devtools_log": {
         "cdp_port": 9223,
@@ -4746,7 +4753,28 @@ _R101_ALWAYS_KEEP = {"ok", "error", "error_name"}
 # CASE-1919 item 3 adds project_path_resolution to the same class: it is the only
 # signal that a relative project_path was resolved against the DAEMON's cwd rather
 # than the caller's, so hiding it turns "wrong project" into "looks correct".
-_R101_SAFETY_KEEP = {"hash_domain", "read_token_seeded", "project_path_resolution"}
+# A key is rescued only while its VALUE still warns, and the hint carries only the
+# rescued keys' sentences: read_token_seeded:true is every good read_file_range's
+# answer, and rescuing it by name stamped RESPONSE_INCOMPLETE plus a ~470-char
+# two-domain hint on every fields= read that held no digest and no relative path.
+_R101_SAFETY_KEEP = {  # key -> (still_warns(value), what hiding it costs)
+    "hash_domain": (
+        lambda v: True,
+        "A raw_file_bytes digest is not a write_fix.expected_hash."),
+    "read_token_seeded": (
+        lambda v: v is not True,
+        "read_token_seeded:false: this answer seeds no write_fix edit authority."),
+    "project_path_resolution": (
+        lambda v: True,
+        "project_path was relative: this names the directory it resolved "
+        "against, which may be another project."),
+}
+
+
+def _r101_rescued(value: dict, asked: set) -> list:
+    """Safety keys a projection of `value` would hide while their value still warns."""
+    return sorted(k for k, (warns, _cost) in _R101_SAFETY_KEEP.items()
+                  if k in value and k not in asked and warns(value[k]))
 
 
 def _r101_parse_fields(value) -> set:
@@ -4788,10 +4816,10 @@ def _r101_project_nested(value, specs):
     closed at the top level.
     """
     plain, nested = _r101_split_specs(specs)
-    keep = plain | set(nested) | _R101_ALWAYS_KEEP | _R101_SAFETY_KEEP
+    rescued = _r101_rescued(value, plain | set(nested))
+    keep = plain | set(nested) | _R101_ALWAYS_KEEP | set(rescued)
     out = {k: v for k, v in value.items() if k in keep}
     dropped = len(value) - len(out)
-    rescued = sorted((set(value) & _R101_SAFETY_KEEP) - plain - set(nested))
     unknown = sorted(plain - set(value) - _R101_ALWAYS_KEEP)
     for head, subs in nested.items():
         if head in plain:
@@ -4926,10 +4954,10 @@ def _r101_filter(payload, fields):
     # nothing in between, i.e. no saving at all on exactly the responses that
     # are too fat to read twice.
     plain, nested = _r101_split_specs(set(fields))
-    keep = plain | set(nested) | _R101_ALWAYS_KEEP | _R101_SAFETY_KEEP
+    rescued = _r101_rescued(payload, plain | set(nested))
+    keep = plain | set(nested) | _R101_ALWAYS_KEEP | set(rescued)
     out = {k: v for k, v in payload.items() if k in keep}
     dropped = len(payload) - len(out)
-    rescued = sorted((set(payload) & _R101_SAFETY_KEEP) - plain - set(nested))
     # A23-P2: name the keys we could not honour. Without this a typo in
     # `fields=` is indistinguishable from an empty result -- `fields=result`
     # instead of `results` returned a bare envelope and read as "the tool
@@ -4959,15 +4987,8 @@ def _r101_filter(payload, fields):
         # failed to existing callers.
         out["response_incomplete"] = "RESPONSE_INCOMPLETE"
         out["fields_force_kept"] = rescued
-        out["fields_force_kept_hint"] = (
-            "fields= would have hidden these hash-domain markers. Read them: a "
-            "raw_file_bytes digest is NOT a read_file_range content_hash and "
-            "seeds no edit authority, so it must not be passed as "
-            "write_fix.expected_hash. project_path_resolution is force-kept for "
-            "the same reason in the path domain: it says the project_path you "
-            "sent was relative and names the directory it actually resolved "
-            "against, so a projection cannot hide that the answer may come from "
-            "a different project.")
+        out["fields_force_kept_hint"] = " ".join(dict.fromkeys(
+            _R101_SAFETY_KEEP[name.rpartition(".")[2]][1] for name in rescued))
     if unknown:
         out["fields_unknown"] = unknown
         out["fields_unknown_hint"] = (
@@ -12903,15 +12924,15 @@ _register_tool(
         "description": "Restart [A] via the canonical [A:S] script (start_orchestrator.bat): spawns a hidden "
                        "helper (CREATE_NO_WINDOW; no console focus-steal) that waits delay_seconds then runs [A:S], which kills the old pythonw and relaunches "
                        "[A] High-IL. Returns immediately with status=restart_queued; poll /health until ok, then "
-                       "verify generation/PID changed. TOKEN REQUIRED (X-Orchestrator-Token). "
+                       "verify generation/PID changed. "
                        "USAGE: for a normal restart call with NO arguments (or just delay_seconds) — the tool auto-"
                        "targets the current generation; you do NOT pass expected_generation/controller_url/request_id "
                        "(those are internal). STALE leftovers and HUNG in-process work "
                        f"(executor oldest_active_age or semaphore held_for_sec>={_RESTART_HUNG_SEMAPHORE_SEC:.0f}s) "
                        "do NOT block [A:S] — the bat kills the process. "
                        "force_drain+force_drain_reason overrides remaining LIVE (fresh) work and still queues [A:S]. "
-                       "This is the CORE_RULE-preferred restart path for CAs; restart_orchestrator_via_task stays as the "
-                       "schtasks-based fallback for admin/UIPI recovery. CSLt 2026-07-16: tier T4->T2 (process-lifecycle "
+                       "This is the only CA restart path for [A]; restart_orchestrator_via_task is kept for "
+                       "Anh-requested admin/UIPI recovery only. CSLt 2026-07-16: tier T4->T2 (process-lifecycle "
                        "mutation with built-in safety guards: process discovery, port-owner filter, wait loop).",
         "parameters": {
             "type": "object",
@@ -13972,8 +13993,16 @@ async def handle_config(request):
 # documented alias of `tier`. Anything else is surfaced via ignored_query_params
 # rather than silently swallowed.
 _TOOL_NAMES_KNOWN_QUERY_PARAMS = frozenset({
-    "tier", "phase", "name_contains", "category", "limit", "suppress_hints",
+    "tier", "phase", "name_contains", "category", "limit", "suppress_hints", "fields",
 })
+
+
+def _discovery_view(request, payload):
+    """A37 #1b: the discovery GETs honour ?fields= through the same _r101_filter every
+    tool answer passes, so fields_unknown / fields_available read identically here.
+    The MCP discovery shortcuts put their fields= on exactly this query string."""
+    fields = _r101_parse_fields(request.query.get("fields"))
+    return _r101_filter(payload, fields) if fields else payload
 
 
 async def handle_tools_names(request):
@@ -13995,6 +14024,9 @@ async def handle_tools_names(request):
     suppress_hints = _health_query_truthy(request.query, "suppress_hints")
     payload = _tool_names_payload(tier_filter, name_contains, category, limit,
                                   suppress_hints=suppress_hints)
+    # Projected BEFORE the A09 notice below is stamped, so fields= can never hide
+    # the report that a param was ignored.
+    payload = _discovery_view(request, payload)
     # A09: this GET used to swallow unknown query params (curated/all/bounded/…)
     # silently, so `?curated=0` and `?bogus=1` were indistinguishable from the
     # baseline. Mirror the A17 precedent (surface what was dropped, don't swallow)
@@ -14018,8 +14050,7 @@ async def handle_tools_names(request):
         payload["ignored_query_params_hint"] = (
             "These query params are not supported by /api/tools/names and were "
             "ignored. Supported: " + ", ".join(sorted(_TOOL_NAMES_KNOWN_QUERY_PARAMS))
-            + f". The unfiltered default is the curated core; pass limit={len(ct.TOOL_MAP)} for the "
-            "full catalog."
+            + f". The /api/tools/names {_full_catalog_hint()}."
         )
     return web.json_response(
         payload,
@@ -14262,7 +14293,7 @@ async def handle_tool_describe(request):
     out_schema = _enriched_tool_schema(name)
     if out_schema:
         return web.json_response(
-            {"ok": True, "tool": out_schema},
+            _discovery_view(request, {"ok": True, "tool": out_schema}),
             headers=_cors(request.headers.get('Origin'), extra={"Cache-Control": "no-store, max-age=0"}),
         )
     # Registered in TOOL_MAP but no schema entry (should not happen)
@@ -14282,10 +14313,10 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
     origin = request.headers.get('Origin')
     cors = _cors(origin)
     tool_name = request.match_info.get('tool_name', '')
-    # D5: snapshot the in-flight count at entry. The middleware has already
-    # counted THIS request, so >1 means somebody else is genuinely sharing the
-    # daemon with us. Read-only access to the global, like _server_load_snapshot.
-    _inflight_at_entry = _requests_in_flight
+    # D5: snapshot the /api/call in-flight count at entry. The middleware has
+    # already counted THIS request, so >1 means another tool call is genuinely
+    # sharing the daemon with us. Read-only access to the global.
+    _inflight_at_entry = _api_calls_in_flight
 
     # R101: read field selector from HTTP ?fields= now; body `fields` is unioned after parse.
     try:
@@ -14598,9 +14629,9 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
         token = request.headers.get('X-Orchestrator-Token')
         _tok_err = _validate_mutation_token(token)
         if _tok_err:
-            # V15 R42 opt-in: auto-inject when ORCHESTRATOR_AUTO_TOKEN=1 (User trust mode).
-            # CAN-002: dev-bypass is audit-logged and waives ONLY the token — the origin
-            # gate (above) and the session gate (below) stay in force. Default OFF.
+            # V15 R42: auto-inject while AUTO_TOKEN_INJECT is on (ORCHESTRATOR_AUTO_TOKEN,
+            # default '1'). CAN-002: the bypass is audit-logged and waives ONLY the token --
+            # the origin gate (above) and the session gate (below) stay in force.
             if AUTO_TOKEN_INJECT:
                 logger.warning(
                     f"AUTO_TOKEN_INJECT active: tool={tool_name} called with {_tok_err} "
@@ -14646,7 +14677,7 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
                     cors,
                     body,
                     error_name="MUTATION_TOKEN_REQUIRED",
-                    hint="Call GET /api/token and send X-Orchestrator-Token with the same request. (Or set env ORCHESTRATOR_AUTO_TOKEN=1 for opt-in auto-inject mode.)",
+                    hint="Call GET /api/token and send X-Orchestrator-Token with the same request (this daemon runs with AUTO_TOKEN_INJECT off).",
                     reason="protected tool requires X-Orchestrator-Token header",
                     accepted_fields=["X-Orchestrator-Token"],
                     payload_example={"headers": {"X-Orchestrator-Token": "<token from GET /api/token>"}},
@@ -15855,7 +15886,10 @@ accepted_fields=sorted(accepted_fields),
             # calls in flight at once, each running 3-10x its own warm wall clock,
             # reported by the caller as "the tool is slow". Not R101-projected on
             # purpose -- a wall-clock explanation must not be hidden by fields=.
-            _inflight_peak = max(_inflight_at_entry, _requests_in_flight)
+            # Counted from _api_calls_in_flight, never _requests_in_flight: a /health
+            # poll overlapping a serial write_fix is not contention, and counting it
+            # told that CA to "re-measure serially" about a call that WAS serial.
+            _inflight_peak = max(_inflight_at_entry, _api_calls_in_flight)
             if _inflight_peak > 1:
                 _result.setdefault("concurrent_api_calls_observed", _inflight_peak)
                 _result.setdefault(
@@ -16263,6 +16297,13 @@ def _bound_tool_result(payload: dict, max_bytes: int = 4_000) -> dict:
     return bounded
 
 
+def _full_catalog_hint() -> str:
+    """The one producer of the catalog-size sentence. N is the WHOLE catalog: a copy
+    that computed it from a filtered answer told ?name_contains=git to pass limit=2
+    "for the full catalog", and limit=2 unfiltered returns two tools."""
+    return f"default is the curated core; pass limit={len(ct.TOOL_MAP)} for the full catalog"
+
+
 def _tool_names_payload(tier: str = "", name_contains: str = "", category: str = "",
                         limit: int = 0, suppress_hints: bool = False) -> dict:
     """Compact discovery payload shared by HTTP names endpoint and MCP."""
@@ -16304,7 +16345,7 @@ def _tool_names_payload(tier: str = "", name_contains: str = "", category: str =
         # CSLt 2026-07-16: the unfiltered default returns the curated core set
         # (registry_data.CURATED_CORE_TOOLS — same SOT the MCP packs build from)
         # instead of the first N alphabetical names, so CA discovery sees the
-        # intended surface. Pass limit=250 (or any filter) for the full catalog.
+        # intended surface; _full_catalog_hint() names the limit for the full catalog.
         try:
             from orchestrator.core.registry_data import (
                 CURATED_CORE_TOOLS as _curated_sot,
@@ -16325,10 +16366,13 @@ def _tool_names_payload(tier: str = "", name_contains: str = "", category: str =
         "filtered": explicit_filter,
         "category": category_filter or "",
         "tools": returned,
+        # The catalog-size sentence has one producer, _full_catalog_hint(): these copies
+        # used `total`, the FILTERED count, so ?name_contains=git answered "use limit=2
+        # for the full catalog" beside an A09 notice that said the real catalog size.
         "next_query_hint": (
-            "Unfiltered /api/tools/names returns curated core only. "
-            f"Filter by name_contains/tier/category, or pass limit={total} for the full catalog. "
-            "ruff_fix field is path (file_path is an alias)."
+            f"/api/tools/names {_full_catalog_hint()}, or filter by name_contains/tier/category."
+            if not explicit_filter else
+            f"limit={_limit_int} capped {total} matches; pass limit={total} for all of them."
         ) if len(returned) < total else "",
         "ca_next_action": "filter_or_use_total_available_as_limit" if len(returned) < total else "",
         "ca_hint": (
@@ -16337,7 +16381,7 @@ def _tool_names_payload(tier: str = "", name_contains: str = "", category: str =
             "2) FILE_CHANGED / STALE_INDEX on a large root such as [A:P] => "
             "read_file_range + project_path + force_reseed, then retry write_fix once; "
             "NEVER refresh_project_map. "
-            f"3) /api/tools/names default is curated; use limit={total} for the full catalog. "
+            f"3) /api/tools/names {_full_catalog_hint()}. "
             "4) ruff_fix canonical field is path, not file_path. "
             "5) list_structure uses depth/path (max_depth/file_path are aliases). "
             "6) GET /health default is compact; use ?fields= or ?verbose=1 for more."
@@ -16345,7 +16389,7 @@ def _tool_names_payload(tier: str = "", name_contains: str = "", category: str =
         "must_know_hints": [
             "first get_rule_core_text after new process must include text",
             "FILE_CHANGED on [A:P]: read_file_range + force_reseed; never refresh_project_map",
-            f"names default is curated; pass limit={total} for full catalog",
+            f"names {_full_catalog_hint()}",
             "ruff_fix field is path (file_path alias accepted)",
             "list_structure uses depth not max_depth; file_path aliases to path",
             "GET /health default compact; ?fields= subset, ?verbose=1 full lanes",

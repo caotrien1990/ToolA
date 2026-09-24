@@ -9,7 +9,7 @@ trigger:
   - tool: "log_native_event | create_pending_audit | sync_pending_audit"
 preconditions:
   - "Active session exists"
-  - "Either: User explicit authorization OR [A] API failed after 1 corrected retry OR Anh's break-glass while [A] itself is broken"
+  - "Either: Anh's break-glass (a broken [A], or a scope Anh names) OR an environment block OR a read-only OS-config read"
 related_skills:
   - 07_error_schema_hints
   - 05_write_pipeline
@@ -21,11 +21,11 @@ risk_level: medium
 ## When native is allowed (HARD)
 
 ONLY in these cases:
-1. **[A] itself broken** — Anh opens break-glass (never self-authorized). A working [A] edits itself through `read_file_range` → `write_fix` like any project
-2. **[A] API down** mid-task → `create_pending_audit` + sync when API returns
-3. **Environment permission block** preventing API call (rare)
-4. **Single-file <30 lines** low-risk iteration with active User feedback loop (User must explicitly accept this scope)
-5. **Read-only OS config** outside any project (`%APPDATA%\Claude\*.json`)
+1. **Anh's own break-glass** — a broken [A], or a scope Anh names (Claude host: Anh's `tắt gate` prompt); never self-authorized. A working [A] edits itself through `read_file_range` → `write_fix` like any project
+2. **Environment permission block** preventing API call (rare)
+3. **Read-only OS config** outside any project (`%APPDATA%\Claude\*.json`)
+
+[A] down / connection-refused is a STOP, not a case: report it. A classifier that answers proves [A] is up, so a claimed outage licenses nothing (`a_unreachable_mid_task` = forbid).
 
 Never allowed:
 - Multi-file batch without [A] API
@@ -65,7 +65,7 @@ log_native_event({
 })
 ```
 
-## Pending audit (API down or off-project host paths)
+## Pending audit (off-project host paths)
 
 Live `create_pending_audit` — do **not** send free-form `details` objects. Stick to documented fields:
 
@@ -74,8 +74,8 @@ Live `create_pending_audit` — do **not** send free-form `details` objects. Sti
      project_path, action_type, tool_name,
      instead_of?, failed_error?, reason?
    })
-2. Continue native work
-3. When API back → sync_pending_audit(project_path)
+2. Do the off-project native action
+3. sync_pending_audit(project_path) folds it into the session log
 ```
 
 Multi-file path lists belong in `reason`/`target` (truncated), not unsupported nested blobs.
@@ -83,11 +83,11 @@ Multi-file path lists belong in `reason`/`target` (truncated), not unsupported n
 ## Workflow per native call
 
 ```
-1. Pre-check: is this case 1-5 above?  
+1. Pre-check: is this case 1-3 above?  
    no → STOP, return to [A] API path
 2. Perform native action
 3. IMMEDIATELY log_native_event (do not batch)
-4. If API down → create_pending_audit
+4. Path outside the open project (host files) → create_pending_audit
 5. Report includes native fallback_count
 ```
 
@@ -103,10 +103,8 @@ Multi-file path lists belong in `reason`/`target` (truncated), not unsupported n
 
 ### Quick CSS tweak rapid iteration
 ```
-- Scope: <30 lines, 1 file
-- User watching live → fast feedback loop
-- Use: native Edit
-- Log: instead_of="write_fix", reason="rapid UI iteration with live User feedback"
+- write_fix per tweak; a live feedback loop does not open native
+- Native only if Anh opens break-glass for it (Claude host: `tắt gate`)
 ```
 
 ### Backup project before destructive
@@ -206,6 +204,6 @@ Before native project write: call `hermes_host_gate_check` / `classify_ca_action
 ## Harness
 
 - Test 1: open session, native Edit 1 file, log_native_event, close session → events table shows 1 native
-- Test 2: API down (stop [A]) → native Edit → create_pending_audit → restart [A] → sync_pending_audit
+- Test 2: native_preflight(action_type="connection refused") on a project file → must deny HOST_GATE_DENY (a claimed outage licenses nothing)
 - Test 3: try native on [Ab:P] file when API is up → must STOP (negative test)
 - Test 4: forbid-row native write → log_native_event returns HOST_GATE_DENY / POLICY_REJECT / logged_and_rejected

@@ -62,7 +62,7 @@ Schema source: selected lifecycle schema.
 
 Skill route: `16_server_lifecycle`.
 
-Guardrail: `restart_server_via_bat_hint` returns guidance only; actual restart requires explicit T4c trigger or user-run batch. `kill_process` is protected T2 cleanup even when used by a T4 lifecycle workflow.
+Guardrail: `restart_server_via_bat_hint` returns guidance only, for a non-[A] server; [A] itself restarts only via `restart_orchestrator_via_bat` (needs "tiến hành"). `kill_process` is protected T2 cleanup even when used by a T4 lifecycle workflow.
 
 Validation: health response, process owner, and bundle/cache state are reported.
 

@@ -1973,13 +1973,13 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["html_url"]),
 
-    ('restart_server_via_bat_hint', 'T4c: structured [A:S] restart hint only; no execution. For authorized [A] self-upgrades, CA should run start_orchestrator.bat and then verify through fresh MCP/API, not Task Scheduler.', {
+    ('restart_server_via_bat_hint', 'T4c: restart-command hint for a NON-[A] project server launched from its .bat; nothing is executed. [A] itself restarts only via restart_orchestrator_via_bat.', {
 
             "bat_path": {"type": "string"}, "port": {"type": "integer", "default": 0},
 
         }, ["bat_path"]),
 
-    ('restart_orchestrator_via_task', 'Legacy T4c High-IL Task Scheduler restart helper. Do not use for normal [A] self-upgrades; current core workflow uses [A:S] start_orchestrator.bat. Kept only for explicit admin/UIPI recovery.', {
+    ('restart_orchestrator_via_task', 'Legacy T4c High-IL Task Scheduler restart helper, kept for Anh-requested admin/UIPI recovery. Not a CA restart path: [A] restarts only via restart_orchestrator_via_bat.', {
 
             "delay_seconds": {"type": "integer", "default": 2, "description": "Helper waits this many seconds before killing the orchestrator (lets HTTP response flush). Clamped [1,10]."},
 

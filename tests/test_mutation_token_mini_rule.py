@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import sys
 import time
 import unittest
@@ -163,6 +164,45 @@ class TestTokenMiniRule(unittest.IsolatedAsyncioTestCase):
             self.assertIn("WHITELIST", text, name)
             self.assertIn("delete ONLY what is named", text, name)
 
+    def test_token_prose_points_at_the_set_instead_of_copying_it(self):
+        """A paragraph that names the token SOT must not also enumerate it.
+
+        CORE_RULE carried a hand list of 16 beside its pointer, and skill 06 a list
+        that had drifted to 9 -- missing restart_orchestrator_via_bat, start_app and
+        stop_app -- beside a claim that auto-inject defaults OFF (it defaults ON).
+        requires_token in the schema is the per-tool answer; prose only points at it.
+        """
+        live = set(orchestrator_server._TOKEN_REQUIRED_TOOLS)
+        docs = [_ROOT / "examples" / "CORE_RULE.txt", _ROOT / "AGENT_BOOTSTRAP_PROMPT.md",
+                *sorted((_ROOT / ".ToolA_Skill" / "skills").glob("*/SKILL.md"))]
+        pointers = 0
+        for doc in docs:
+            text = doc.read_text(encoding="utf-8", errors="ignore")
+            # one unit per paragraph OR bullet: CORE_RULE's DESTRUCTIVE TIER bullet
+            # legitimately names these tools for a different question.
+            for unit in re.split(r"\n\s*\n|\n(?=\s*[-*] )", text):
+                if "TOKEN_REQUIRED_TOOLS" not in unit and "requires_token" not in unit:
+                    continue
+                pointers += 1
+                named = sorted(t for t in live if re.search(rf"\b{t}\b", unit))
+                self.assertLessEqual(len(named), 1,
+                                     f"{doc.name}: a token pointer re-copies the set: {named}")
+        self.assertGreaterEqual(pointers, 3, "positive control: the pointers themselves are gone")
+
+    def test_every_ca_rule_asks_for_the_token_only_after_it_was_refused(self):
+        """AUTO_TOKEN_INJECT defaults ON, so a rule that sends the header up front costs a
+        GET /api/token per session for nothing. CORE_RULE's RESTART line still said
+        "+ X-Orchestrator-Token header" after its Token line had been fixed: the count test
+        above could not see it, since that line names no token SOT.
+        """
+        bare = []
+        for rel in ("examples/CORE_RULE.txt", "examples/SLIM_RULE.txt", "AGENT_BOOTSTRAP_PROMPT.md"):
+            for n, line in enumerate((_ROOT / rel).read_text(encoding="utf-8").splitlines(), 1):
+                if "X-Orchestrator-Token" in line and not re.search(r"MUTATION_TOKEN_REQUIRED|403", line):
+                    bare.append(f"{rel}:{n}")
+        self.assertEqual(bare, [], "these rule lines send the token before any refusal")
+        self.assertIn("X-Orchestrator-Token", (_ROOT / "examples" / "CORE_RULE.txt").read_text(
+            encoding="utf-8"), "positive control: the conditional line itself is gone")
 
 if __name__ == "__main__":
     unittest.main()

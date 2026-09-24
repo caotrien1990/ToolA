@@ -11,8 +11,8 @@ and LOOSEN ``native_policy`` away from ``forbid``:
 The second one is the worse of the two: that branch assigns unconditionally, so
 it overrode an already-correct ``write_existing_file`` classification. A user
 naming a file "data download.csv" should not widen what a native tool may do.
-The first row is history: upgrade_orchestrator is native_policy=forbid since
-2026-09-24, so that misfire now only mislabels the ledger.
+Both rows are history: upgrade_orchestrator and a_unreachable_mid_task are
+native_policy=forbid since 2026-09-24, so a misfire now only mislabels the ledger.
 
 The fix is a boundary match (``\\bupgrade\\b``) plus keeping the target OUT of
 the "[A] is unreachable" blob entirely -- unreachability describes the session,
@@ -102,6 +102,7 @@ class KeywordBoundaryTruePositives(unittest.TestCase):
                 self.assertEqual(classify_action(**kw)["task_class"], "upgrade_orchestrator")
 
     def test_unreachable_signals_still_classify(self):
+        """The class still names the claim for the ledger, but licenses nothing."""
         for action in ("a down", "unreachable", "conn-refused", "connection refused"):
             with self.subTest(action=action):
                 r = classify_action(
@@ -109,7 +110,24 @@ class KeywordBoundaryTruePositives(unittest.TestCase):
                     scope="project", target=PROJ + "\\f.txt",
                 )
                 self.assertEqual(r["task_class"], "a_unreachable_mid_task")
-                self.assertEqual(r["native_policy"], "allow_with_log_native_event")
+                self.assertEqual(r["native_policy"], "forbid")
+
+    def test_a_claimed_outage_cannot_open_a_native_project_write(self):
+        """2026-09-24: the row used to be allow_with_log_native_event, so any
+        caller writing "connection refused" into action_type or scope turned a
+        denied native project write into an allowed one -- while the classifier
+        answering proved [A] was up. SLIM Start says connection-refused = STOP."""
+        for kw in (dict(action_type="connection refused"),
+                   dict(action_type="write", scope="[A] unreachable")):
+            with self.subTest(kw=kw):
+                r = classify_action(tool_name="Write", transport="native",
+                                    target=PROJ + "\\f.py", project_path=PROJ, **kw)
+                self.assertEqual(r["task_class"], "a_unreachable_mid_task")
+                self.assertFalse(r["is_allowed_native"])
+                self.assertTrue(r["preflight_hard_stop"])
+                self.assertFalse(r["host_gate"]["allowed"])
+                self.assertEqual(r["error_name"], "HOST_GATE_DENY")
+                self.assertEqual(r["ca_next_action"], "stop_native_use_a_tool")
 
     def test_web_signals_still_classify(self):
         for kw in (dict(scope="web"), dict(action_type="http fetch")):

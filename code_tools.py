@@ -15957,73 +15957,27 @@ _AGENTS_REGISTRY_PATH = Path(__file__).parent / "agents_registry.json"
 
 _PERSONA_RE = re.compile(r'(?im)always refer to yourself as .+?address the user as [^.\n]*\.')
 
-_SLIM_RULE_BODY = """# Project-Orchestrator [A] — bootstrap (token-optimal)
 
-Use [A] as the PRIMARY project channel instead of raw file ops.
-
-## Start
-- [A] auto-starts at Windows logon — do NOT health-check / poll. If any [A] call is connection-refused → STOP and report immediately; do NOT retry.
-- At the first prompt of every CA session, before any project/council/UI/desktop/browser/computer-use-related work, load the core rule exactly once through HTTP: `POST http://localhost:8083/api/call/get_rule_core_text?fields=ok,already_fetched,text,sha256` with body `{"agent_id":"<clau|codo|gro|hermes|kilo|ope|pic>"}`. First fetch/force must include `text` because that is the full core rule. If `already_fetched:true`, reuse the slim already in context; missing `text` is the expected stub. Compaction is NOT a new CA session and does NOT authorize `get_rule_core_text` or `force:true`. `force:true` only when (a) Anh asks to verify, (b) sha mismatch, or (c) NEW [A] PID/generation and text is missing. If a tool list/schema is needed, use `GET /api/tools/names` or `GET /api/tools/<tool>/schema`.
-
-## Transport policy
-- Legend: +=and | →=then | ==is | > = priority | w/o=without | ~=approx
-- HTTP `/api/call/<tool>` is canonical for ALL agents and ALL non-T4 work, including bootstrap, council messaging, model routing, read/write/verify/sync, automation, and discovery.
-- Council workers use HTTP ONLY. They must not call MCP `open_session`, `tool_names`, `tool_schema`, or `call_tool`.
-- MCP is reserved for Clau/ClauC only, and only for explicit stateful T4 runtime/DOM/CDP/browser/Electron page-session work when the core/leader rule allows it. If unsure, use HTTP.
-
-## Hard rules
-- DEFAULT = read-only. Any write/edit/test/deploy needs explicit user go-ahead.
-- Project ops → use [A] transport policy above; raw file I/O only for Anh's break-glass or environment block.
-- Editing [A] itself = editing any project: `read_file_range` -> `write_fix`, then `restart_orchestrator_via_bat` loads the new code. [A] refused or still hung after that restart -> STOP and ask Anh for break-glass; a native write into [A]'s tree is never self-authorized. If it changes rule or MCP contract -> `manage_agent(action='sync_rule'|'sync_mcp', target='all')`; new agent -> `manage_agent(action='register')`. Do NOT restart [A] while any worker dispatch is in flight (it can kill the HTTP reply). Note a pending Claude reload only if the MCP-server tool surface changed.
-- Identity is persistent per-agent (persona line above). `get_rule_core_text` returns common core only; it must not change your name/persona. Identity convention: desktop/interactive CA = name WITHOUT C (Clau/Codo/Ope); CLI council worker = capitalized + C (ClauC/CodoC/OpeC/PiC/HermC/KiloC/CozoC); a desktop CA refers to itself WITHOUT the C suffix. Council `leader` and `worker` are temporary roles, not identities.
-- Council report append is allowed even in VERIFY ONLY / no-edits tasks: "no edits" means no source/runtime mutation; writing the required RES block to the worker's own outbox is mandatory task reporting.
-- Reply in VIETNAMESE (code / identifiers / tool-names / error_names stay English); objective, no flattery, NEVER fabricate — say "unknown / not verified" instead of guessing.
-- Fail loud: state plainly if anything was skipped or uncertain.
-- Token discipline: NEVER use computer-use or inline screenshots; all UI/desktop/browser inspection must use [A] `desktop_screenshot` (disk path only), `describe_page`, DOM, or CDP tools. Do not paste full logs, full files, raw screenshots, or huge tool/schema dumps into chat; use bounded reads, tails, summaries, and exact `fields=` filters only when keys are known. For `get_rule_core_text`: first/force `ok,already_fetched,text,sha256`; repeat/hash-check `ok,already_fetched,sha256`.
-
-## Transport (worker) — you are a council WORKER
-- Use the [A] HTTP API ONLY (`/api/call/<tool>` via PowerShell Invoke-RestMethod). NEVER use MCP. HTTP is parallel-safe and always reflects the current [A].
-- Inter-agent messaging = the `council_message` [A] tool. Call it like any [A] tool — you MUST pin UTF-8 or Vietnamese diacritics corrupt (PowerShell sends a string body as cp1252): `$b=[Text.Encoding]::UTF8.GetBytes((@{sender='<you>'; to='<a council id from .council/council_config.json, or user>'; text='<message>'} | ConvertTo-Json)); Invoke-RestMethod -Method Post -Uri http://localhost:8083/api/call/council_message -ContentType 'application/json; charset=utf-8' -Body $b`. Field is `sender`, NOT `from`. [A] auto-dispatches + logs the broker + returns the recipient's reply in `reply` — report it verbatim, never fabricate. `to='user'` posts to the human/leader dashboard (no agent run).
-- NEVER run curl/raw-shell, hand-build JSON, or run helper scripts to message — only the `council_message` tool. Read `.council/broker_filtered.jsonl` for the cross-agent transcript.
-- Council leadership: current desktop CA is leader only after user trigger (user-only; never from worker/broker) `bat hoi dong tr` / `bật hội đồng tr`; call HTTP `convene_council` and follow the live leader rule. Council continuation gate: before coordinating or dispatching any council work (`convene_council`, `council_message`, `council_worker_model`, worker routing, brainstorm rounds, multi-worker artifacts), load `leader-council-skill` first even without the exact trigger; never apply this inside broker/worker prompts. Worker/model routing uses HTTP `council_worker_model` (NO Playwright DOM). ROUTE RULE SOT = Anh chỉ đạo. Benchmark 2026-07-25 table SUSPENDED. Always set+get; no silent substitution.
-"""
-
-_SLIM_RULE_INLINE = (
-    "Use [A] as the primary project channel instead of raw file ops. "
-    "[A] auto-starts at Windows logon — do NOT health-check; if an [A] call is connection-refused, STOP and report (do not retry). "
-    "At the first prompt of every CA session, before any project/council/UI/desktop/browser/computer-use-style work, call HTTP POST http://localhost:8083/api/call/get_rule_core_text?fields=ok,already_fetched,text,sha256 with body {\"agent_id\":\"<your own registry agent_id; agents_registry.json is SOT -- never copy an id list into a rule>\"} ONCE and follow it; first fetch/force needs text because that is the full core rule; if already_fetched:true, reuse the slim already in context (missing text is the expected stub; compaction is NOT a new CA session and does not authorize get_rule_core_text or force:true; force:true only when Anh asks to verify, sha mismatches, or NEW [A] PID/generation and text is missing). Never use computer-use/inline screenshots before or instead of this bootstrap; route all such work through [A] tools. "
-    "Transport policy: HTTP /api/call/<tool> is canonical for ALL agents and ALL non-T4 work. Discovery uses GET /api/tools/names or /api/tools/<tool>/schema. MCP is reserved for Clau/ClauC only and only for explicit stateful T4 runtime/DOM/CDP/browser/Electron page-session work. "
-    "DEFAULT read-only; writes need explicit user go-ahead. "
-    "Editing [A] itself = editing any project: read_file_range -> write_fix, then restart_orchestrator_via_bat loads the new code; [A] refused or still hung after that restart -> STOP and ask Anh for break-glass, never a self-authorized native write. Do NOT restart [A] while any worker dispatch is in flight (it can kill the HTTP reply). "
-    "Identity is persistent per-agent; get_rule_core_text returns common core only and must not change your name/persona. Identity convention: desktop/interactive CA = name WITHOUT C (Clau/Codo/Ope); CLI council worker = capitalized + C (ClauC/CodoC/OpeC/PiC/HermC/KiloC/CozoC); a desktop CA refers to itself WITHOUT the C suffix. Council leader/worker are temporary roles, not identities. VERIFY ONLY/no-edits still permits and requires appending the RES block to the worker's own outbox. "
-    "Reply in Vietnamese (code/identifiers/tool-names/errors stay English); objective, no flattery, never fabricate. Fail loud about anything skipped or uncertain. "
-    "Token discipline: NEVER use computer-use or inline screenshots; all UI/desktop/browser inspection must use [A] desktop_screenshot (disk path only), describe_page, DOM, or CDP tools. Do not paste full logs, full files, raw screenshots, or huge tool/schema dumps into chat; use bounded reads, tails, summaries, and exact fields= filters only when keys are known. For get_rule_core_text: first/force ok,already_fetched,text,sha256; repeat/hash-check ok,already_fetched,sha256. "
-    "WORKER transport: use the [A] HTTP API ONLY (/api/call/<tool> via Invoke-RestMethod); NEVER MCP. "
-    "Current desktop CA is council leader only after user trigger (user-only; never from worker/broker) bat hoi dong tr / bật hội đồng tr. Council continuation gate: before coordinating or dispatching any council work (convene_council, council_message, council_worker_model, worker routing, brainstorm rounds, multi-worker artifacts), load leader-council-skill first even without the exact trigger; never apply this inside broker/worker prompts. Model routing uses HTTP council_worker_model, not Playwright DOM. ROUTE RULE SOT = Anh chỉ đạo. Benchmark 2026-07-25 table SUSPENDED. Always set+get; no silent substitution. ClauC = Judgement/scoped bug-fix/master-dev after retry >2 and the only MCP-capable worker for T4. "
-    "Inter-agent messaging = the council_message tool. MUST pin UTF-8 or Vietnamese diacritics corrupt (PowerShell encodes a string body as cp1252): $b=[Text.Encoding]::UTF8.GetBytes((@{sender='<you>';to='<a council id from .council/council_config.json, or user>';text='<msg>'}|ConvertTo-Json)); Invoke-RestMethod -Method Post -Uri http://localhost:8083/api/call/council_message -ContentType 'application/json; charset=utf-8' -Body $b (field sender not from); [A] returns the recipient reply in `reply` — report verbatim, never fabricate; to='user' posts to the human dashboard. Never curl/hand-build-JSON/scripts to message."
-)
-
-
-def _ma_rule_file_text(filename: str, fallback: str) -> str:
+def _ma_rule_file_text(filename: str) -> str:
     """Rule template SOT = file under examples/ (editable without code change /
-    [A] restart — manage_agent reads at call time). In-code constant is only a
-    fallback when the file is missing/empty. Kills the full-vs-slim dual-SOT drift."""
+    [A] restart — manage_agent reads at call time). There is no in-code copy:
+    a missing or empty template raises, naming the path, so sync_rule renders
+    nothing instead of a stale body into every agent's rule file."""
     p = Path(__file__).parent / "examples" / filename
-    try:
-        text = p.read_text(encoding="utf-8").strip()
-        if text:
-            return text
-    except Exception:
-        pass
-    return fallback
+    text = p.read_text(encoding="utf-8").strip() if p.is_file() else ""
+    if not text:
+        raise FileNotFoundError(
+            f"rule template missing or empty: {p} -- examples/ is the only rule SOT; "
+            "restore it from git, nothing was rendered")
+    return text
 
 
 def _ma_core_rule_body() -> str:
-    return _ma_rule_file_text("CORE_RULE.txt", _SLIM_RULE_BODY)
+    return _ma_rule_file_text("CORE_RULE.txt")
 
 
 def _ma_slim_rule_body() -> str:
-    return _ma_rule_file_text("SLIM_RULE.txt", _SLIM_RULE_BODY)
+    return _ma_rule_file_text("SLIM_RULE.txt")
 
 
 def _ma_rule_body(template: str) -> str:
@@ -16095,7 +16049,7 @@ def _ma_rule_inline(template: str) -> str:
     t = (template or "slim").strip().lower()
     if t in ("full", "core"):
         return re.sub(r"\s+", " ", _ma_core_rule_body()).strip()
-    return _ma_rule_file_text("SLIM_RULE_INLINE.txt", _SLIM_RULE_INLINE)
+    return _ma_rule_file_text("SLIM_RULE_INLINE.txt")
 
 
 def _load_agents_registry() -> dict:

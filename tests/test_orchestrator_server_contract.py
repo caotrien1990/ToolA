@@ -3435,6 +3435,55 @@ class TestHttpDefense(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(app._client_max_size,
                          orchestrator_server.MAX_REQUEST_BODY_BYTES)
 
+    async def test_d5_contention_counts_only_concurrent_tool_calls(self):
+        """D5's note says "/api/call requests were in flight". A watcher polls /health
+        every 30s, and that poll was counted too, so a SERIAL write_fix overlapping one
+        poll was told to "re-measure serially". Both requests go through the real
+        middleware into the real dispatcher -- the layer a CA actually reads."""
+        orchestrator_server._RATE_LIMIT_MAX = 0
+        orchestrator_server._OTHER_RATE_LIMIT_MAX = 0
+        orchestrator_server._DASHBOARD_RATE_LIMIT_MAX = 0
+        name = 'server_lifecycle_status'
+        release = asyncio.Event()
+
+        async def parked(_request):
+            await release.wait()
+            return orchestrator_server.web.json_response({"ok": True})
+
+        async def answer_while_parked(method, path):
+            release.clear()
+            parked_task = asyncio.ensure_future(orchestrator_server._http_defense_middleware(
+                make_mocked_request(method, path, match_info={'tool_name': name}), parked))
+            await asyncio.sleep(0)
+            try:
+                resp = await orchestrator_server._http_defense_middleware(
+                    make_mocked_request('POST', '/api/call/' + name,
+                                        payload=_make_body_reader({'port': 1}),
+                                        match_info={'tool_name': name}),
+                    orchestrator_server._dispatch_tool_call_request)
+            finally:
+                release.set()
+                await parked_task
+            return json.loads(resp.text)
+
+        original = code_tools.TOOL_MAP[name]
+        code_tools.TOOL_MAP[name] = mock.AsyncMock(return_value=json.dumps({"ok": True}))
+        try:
+            with mock.patch.object(orchestrator_server, "_requests_in_flight", 0), \
+                 mock.patch.object(orchestrator_server, "_api_calls_in_flight", 0):
+                beside_health = await answer_while_parked('GET', '/health')
+                beside_tool = await answer_while_parked('POST', '/api/call/' + name)
+                self.assertEqual(orchestrator_server._api_calls_in_flight, 0,
+                                 "the middleware leaked an /api/call count")
+        finally:
+            code_tools.TOOL_MAP[name] = original
+        self.assertTrue(beside_health.get("ok"), beside_health)
+        self.assertNotIn("contention_note", beside_health)
+        self.assertNotIn("concurrent_api_calls_observed", beside_health)
+        # Positive control: a second TOOL call in flight is real contention.
+        self.assertEqual(beside_tool.get("concurrent_api_calls_observed"), 2, beside_tool)
+        self.assertIn("contention_note", beside_tool)
+
     async def test_health_reports_queue_depth_p95_and_liveness_contract(self):
         orchestrator_server._requests_in_flight = 3
         orchestrator_server._api_call_latency_samples.clear()

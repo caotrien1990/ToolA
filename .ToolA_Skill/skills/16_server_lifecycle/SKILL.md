@@ -42,9 +42,9 @@ Anti-pattern: ❌ Treat stale as always-blocker. Read-only T1 (search_code/find_
 | `detect_stale_server(port, expected_bundle_version?)` | Hash/etag diff vs last known | No |
 | `static_asset_cache_check(url)` | HEAD + 2nd-fetch hash compare | No |
 | `bundle_version_check(html_url, marker_regex?)` | Extract `<meta name=version>` or `?v=` | No |
-| `restart_server_via_bat_hint(bat_path, port?)` | Returns structured kill+relaunch command | No (hint only, no execute) |
-| `restart_orchestrator_via_task(delay_seconds=2)` | V15 R13.2: spawn detached helper → `schtasks /end` + `/run` → [A] relaunch at High IL, no UAC. Tool returns immediately with `status=restart_queued`. | No (idempotent; mutating self) |
-| `restart_orchestrator_via_bat` | Preferred when [A] still up: queue [A:S] hidden helper (`CREATE_NO_WINDOW`); call only `delay_seconds=2`; do **NOT** pass `expected_generation`; verify **new** `/health.generation` | Needs "tiến hành" / user go-ahead (T4c) |
+| `restart_server_via_bat_hint(bat_path, port?)` | Restart command for a NON-[A] server's .bat ([A]'s own bat → `restart_orchestrator_via_bat`) | No (hint only, no execute) |
+| `restart_orchestrator_via_task(delay_seconds=2)` | V15 R13.2: spawn detached helper → `schtasks /end` + `/run` → [A] relaunch at High IL, no UAC. Not a CA restart path: Anh-requested admin/UIPI recovery only. | Anh asks explicitly |
+| `restart_orchestrator_via_bat` | The CA restart path for [A]: queue [A:S] hidden helper (`CREATE_NO_WINDOW`); call only `delay_seconds=2`; do **NOT** pass `expected_generation`; verify **new** `/health.generation` | Needs "tiến hành" / user go-ahead (T4c) |
 
 ## When to invoke each
 
@@ -75,7 +75,7 @@ Anti-pattern: ❌ Treat stale as always-blocker. Read-only T1 (search_code/find_
    - PASS: LastResult=0, ArgsHasWrapper (not `&&` chain), `/health` ok.
 2. **Every restart (no UAC):**
    - User: double-click `start_orchestrator.bat` → bat detects task → `schtasks /run /tn ToolA_Orchestrator` (no UAC).
-   - CA: call tool `restart_orchestrator_via_bat` (preferred when live; hidden `CREATE_NO_WINDOW` helper, only `delay_seconds=2`) or `restart_orchestrator_via_task` (Task Scheduler fallback). Do not open a visible cmd/powershell.
+   - CA: call tool `restart_orchestrator_via_bat` (hidden `CREATE_NO_WINDOW` helper, only `delay_seconds=2`). Do not open a visible cmd/powershell.
 3. Result: [A] always launched at High IL, no UAC every time.
 
 ### Why cross-elevation kills fail (UIPI)
@@ -83,21 +83,22 @@ Anti-pattern: ❌ Treat stale as always-blocker. Read-only T1 (search_code/find_
 - Fix: `schtasks /end /tn ToolA_Orchestrator` — Task Scheduler runs as SYSTEM, can stop its own High IL children.
 
 ### Tool: `restart_orchestrator_via_task` (V15 R13.2)
+- Not a CA restart path: kept for Anh-requested admin/UIPI recovery only.
 - Spawn-detached helper pattern: tool returns `{ok:true, status:"restart_queued", poll_health_after_seconds:N}` IMMEDIATELY (~500ms), helper kills self+relaunches independently.
 - Caller polls `/health` until ok=true → restart complete.
 - Returns `INSTALL_TASK_REQUIRED` if `install_orchestrator_admin_task.ps1` hasn't been run.
 
-### Tool: `restart_orchestrator_via_bat` (preferred when live)
+### Tool: `restart_orchestrator_via_bat` (the CA restart path)
 - Canonical T0 restart for [A]: POST `/api/call/restart_orchestrator_via_bat` with **only** `delay_seconds=2`.
 - Do **NOT** pass `expected_generation` / `controller_url` / `request_id` (internal). Do **NOT** invent a kill pipeline.
 - Helper is **hidden**: `CREATE_NO_WINDOW` on the cmd helper (never OR with `DETACHED_PROCESS`); `start_orchestrator.bat` powershell uses `-WindowStyle Hidden`. Do not steal Anh's mouse/keyboard.
 - Returns `{status:"restart_queued", mechanism:"[A:S] start_orchestrator.bat (hidden helper)", helper_log, delay_before_restart_seconds}`.
 - **Verify:** capture pre-restart PID + `generation` → poll `/health` every ~2s until `ok=true` **and** PID + `generation` changed.
-- Prefer this over ad-hoc kill / raw `schtasks /Run` alone when [A] is still up enough to queue the helper.
+- The only CA restart path for [A]: no ad-hoc kill, no raw `schtasks /Run`, no native bat launch.
 - Before restart: check council broker / unreplied dispatch (in-flight gate). Empty broker → safe.
 
 ### Tool: `restart_server_via_bat_hint`
-Returns the exact Task-Scheduler-friendly message User can execute (no admin language).
+Restart-command hint for a NON-[A] project server's .bat; nothing is executed. [A]'s own bat answers `restart_orchestrator_via_bat`.
 
 ## High-IL task short-circuit pitfall (CSLt 2026-07)
 
@@ -172,20 +173,22 @@ When code edits did not change runtime after 2 attempts:
 ```json
 {
   "ok": true,
-  "current_pid": 13628,
-  "current_started_at": "2026-05-14T08:15:00",
   "bat_path": "D:/proj/start_app.bat",
-  "kill_command": "Task Manager → end pythonw.exe PID 13628 (or close the cmd window that ran the bat)",
-  "relaunch_command": "Double-click D:/proj/start_app.bat (NO admin required)",
-  "post_check": "node -e \"...health probe...\""
+  "current": {"...": "port_owner_inspect(port) answer, or null without port"},
+  "restart_command": "Run \"D:/proj/start_app.bat\"",
+  "post_check": "Verify with a fresh API call (for [A]: GET /health shows a new pid AND a changed generation).",
+  "note": "Hint only, nothing executed. [A] itself restarts only via restart_orchestrator_via_bat."
 }
 ```
+
+Given [A]'s own `start_orchestrator.bat`, `restart_command` is `call restart_orchestrator_via_bat(delay_seconds=2)`.
 
 CA shows this to User; does NOT execute the kill itself (User in charge of admin/permission boundary).
 
 ## Anti-patterns
 
 - ❌ Suggesting "Run as administrator" (V15 R7 obsolete)
+- ❌ Restarting [A] by launching start_orchestrator.bat natively or via estart_orchestrator_via_task — the CA path is estart_orchestrator_via_bat only
 - ❌ Opening a visible cmd/powershell when restarting [A] (`DETACHED_PROCESS`, `CREATE_NEW_CONSOLE`, powershell without `-WindowStyle Hidden`)
 - ❌ Passing `expected_generation` from a CA call (internal only)
 - ❌ Combining `DETACHED_PROCESS | CREATE_NO_WINDOW` (Win32 combo is invalid / undefined)
@@ -214,6 +217,6 @@ CA shows this to User; does NOT execute the kill itself (User in charge of admin
 - Test 1: kill [A] → `port_owner_inspect(8083)` → returns process_name=null, listening=false
 - Test 2: start [A] → `server_lifecycle_status(8083)` → returns own PID + can_kill=true
 - Test 3: simulate cache stale (Cache-Control: max-age=3600 on CSS) → 2nd fetch differs → flag
-- Test 4: restart_server_via_bat_hint → returns Task-Manager instruction (no admin language)
+- Test 4: restart_server_via_bat_hint on a project .bat → `restart_command` runs that bat; on [A]'s own `start_orchestrator.bat` → it names `restart_orchestrator_via_bat`
 - Test 5: restart_orchestrator_via_bat → pre gen G0 → post gen G1≠G0 + health ok
 - Test 6: task ArgsHasAndAnd=true + restart non-zero → LastResult=1 expected until wrapper rebind

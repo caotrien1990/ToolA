@@ -100,7 +100,33 @@ def test_always_keep_names_are_not_reported_as_unknown():
     # caller mistake would fire the unknown-field warning on every ok:true call.
     out = srv._r101_filter({"ok": True, "results": []}, {"ok", "error_name"})
     assert "fields_unknown" not in out
+    assert "fields_unknown" not in out
 
+
+def test_a_marker_whose_value_warns_of_nothing_is_not_rescued():
+    # read_token_seeded:true is every good read_file_range's answer. Rescued by NAME,
+    # it stamped RESPONSE_INCOMPLETE plus a ~470-char hint about raw digests and
+    # relative paths on every fields= read that carried neither -- measured live.
+    read = {"ok": True, "result": "1: x", "total_lines": 207, "content_hash": "b" * 64,
+            "read_token_seeded": True, "ca_hint": "h" * 300}
+    assert srv._r101_filter(read, {"ok", "total_lines"}) == {"ok": True, "total_lines": 207}
+    # Positive control: the same key still survives while its value IS the warning.
+    unseeded = dict(read, read_token_seeded=False)
+    out = srv._r101_filter(unseeded, {"ok", "total_lines"})
+    assert out["read_token_seeded"] is False
+    assert out["fields_force_kept"] == ["read_token_seeded"]
+
+
+def test_the_hint_carries_only_the_rescued_keys_costs():
+    sha = srv._r101_filter(_sha_payload(), {"ok", "sha256"})["fields_force_kept_hint"]
+    assert "write_fix.expected_hash" in sha
+    assert "project_path" not in sha
+    path = srv._r101_filter({"ok": True, "results": [], "project_path_resolution": {}},
+                            {"results"})["fields_force_kept_hint"]
+    assert "project_path" in path
+    assert "expected_hash" not in path and "read_token_seeded" not in path
+    # Every sentence stays one short fact: the old single string was ~470 chars.
+    assert len(sha) < 160 and len(path) < 160, (len(sha), len(path))
 
 # --------------------------------------------------------------------------
 # ISS-14a -- spawn liveness (real subprocess; no readiness target)

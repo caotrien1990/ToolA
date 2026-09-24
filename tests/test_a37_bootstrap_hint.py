@@ -235,11 +235,20 @@ def test_push_is_stamped_after_the_r101_filter():
     SPENT on a call that delivered no schema -- exactly once, unrecoverably, per tool.
     """
     source = _server_source()
-    filter_at = source.index("_result = _r101_filter(_result")
-    hint_at = source.index("_result = _r101_size_hint(_result")
     push_at = source.index('_result["pushed_schema"] = _pushed_schema')
+    # A43 moved the success-path projection into its one helper, so anchor on the
+    # helper call nearest the push AND pin that the helper is the filter -- an
+    # inline-literal anchor went stale the day the call site was refactored.
+    filter_at = source.rindex("_result = _r101_dispatch_result(_result)", 0, push_at)
+    hint_at = source.rindex("_result = _r101_size_hint(_result", 0, push_at)
+    helper = source[source.index("def _r101_dispatch_result("):]
+    assert "return _r101_filter(" in helper[:helper.index("\ndef ", 1)], \
+        "_r101_dispatch_result no longer applies _r101_filter"
     assert filter_at < hint_at < push_at, \
         "the #0 push must be stamped after _r101_filter and _r101_size_hint"
+    tail = source[push_at:source.index("_json_body = json.dumps(_result", push_at)]
+    assert "_r101_filter(" not in tail and "_r101_dispatch_result(" not in tail, \
+        "a projection after the push prunes pushed_schema for every fields= caller"
 
 
 def test_an_error_rearms_but_never_pushes():

@@ -30,7 +30,7 @@
     "forbid": "Native forbidden; [A] provides governed capability.",
     "allow_readonly": "Read-only: an outside-project/environment probe, or in-project INSPECTION. A read that feeds an edit is not inspection.",
     "allow_native": "Native write, no audit owed: outside every project, in a tree the host harness itself mandates (the agent's own memory).",
-    "allow_with_log_native_event": "Approved exception; immediate log; if down pending audit then sync."
+    "allow_with_log_native_event": "Approved exception; call log_native_event immediately. A claimed [A] outage never qualifies."
   },
   "decision_workflow": [
     "bootstrap [A] once; stop on connection-refused",
@@ -345,13 +345,12 @@
         "server_lifecycle_status",
         "detect_stale_server",
         "port_owner_inspect",
-        "restart_orchestrator_via_bat",
-        "restart_orchestrator_via_task"
+        "restart_orchestrator_via_bat"
       ],
       "toolset_fallback": "none",
       "native_policy": "forbid",
       "session_required": false,
-      "token_required": "task restart only",
+      "token_required": "restart only",
       "verification": "in-flight gate; new PID/generation/health",
       "why_cslt": "Protects workers and proves replacement."
     },
@@ -376,18 +375,18 @@
     },
     {
       "task_class": "a_unreachable_mid_task",
-      "match": "[A] unavailable after bootstrap",
+      "match": "caller claims [A] is down/unreachable (its own words)",
       "tier": "SAFETY",
       "toolset_primary": [
-        "create_pending_audit",
-        "sync_pending_audit"
+        "server_lifecycle_status",
+        "restart_orchestrator_via_bat"
       ],
-      "toolset_fallback": "approved native only",
-      "native_policy": "allow_with_log_native_event",
+      "toolset_fallback": "none: connection-refused = STOP and report; native only after Anh opens break-glass",
+      "native_policy": "forbid",
       "session_required": false,
       "token_required": false,
-      "verification": "pending audit persisted/synced",
-      "why_cslt": "Audited continuity; no silent fallback."
+      "verification": "the classifier answered, so [A] is up; retry the [A] tool",
+      "why_cslt": "A self-declared outage is not evidence; a live [A] answering proves the opposite."
     },
     {
       "task_class": "outside_project_os_read",

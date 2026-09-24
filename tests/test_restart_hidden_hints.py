@@ -56,6 +56,23 @@ class TestHiddenRestartHints(unittest.TestCase):
         self.assertIn("start_orchestrator.bat (hidden helper)", text)
         self.assertNotIn("start_orchestrator.bat (detached helper)", text)
 
+    def test_bat_hint_routes_a_own_bat_to_the_restart_tool(self):
+        # Behavior, not text: [A]'s own launcher must answer with the one CA
+        # restart path, so the hint can never lead to a native bat launch of
+        # the daemon; any other project's bat keeps its own run command.
+        import asyncio
+        import json
+
+        import tools_v15
+
+        own = json.loads(asyncio.run(tools_v15.restart_server_via_bat_hint(
+            str(ROOT / "start_orchestrator.bat"))))
+        self.assertEqual(own["restart_command"],
+                         "call restart_orchestrator_via_bat(delay_seconds=2)")
+        other = json.loads(asyncio.run(tools_v15.restart_server_via_bat_hint(
+            str(ROOT / "examples" / "start_app.bat"))))
+        self.assertIn("start_app.bat", other["restart_command"])
+        self.assertNotIn("restart_orchestrator_via_bat(", other["restart_command"])
 
 if __name__ == "__main__":
     unittest.main()

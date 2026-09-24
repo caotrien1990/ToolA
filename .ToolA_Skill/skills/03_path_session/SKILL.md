@@ -56,7 +56,7 @@ Whenever User mentions any file/folder path (even outside current project):
    - resumed=true means active session existed for this project_path; reuse it
 2. <work>
 3. (Optional) get_session_events(session_id) → audit trail
-4. close_session(project_path) with X-Orchestrator-Token
+4. close_session(project_path)
    - V15 R8 C.1: middleware now resolves subdir → registered root automatically
 ```
 

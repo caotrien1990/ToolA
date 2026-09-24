@@ -59,14 +59,14 @@ Nếu CA script hardcode token → fail sau restart hoặc TTL. **2 giải pháp
 
 ## Scope (DECOUPLED auth model)
 
-Only TOKEN_REQUIRED destructive tools require the token: `delete_file`, `kill_process`,
-`run_project_command`, `run_project_test_script`, `run_ps1_script`,
-`run_node_script`, `write_transaction`, `cep_deploy`, and
-`restart_orchestrator_via_task`. Other mutating tools may be token-free but still
-origin+session gated. `mutation_scope` is informational risk metadata, not the auth gate.
+Which tools need the token is the live set `code_tools.TOKEN_REQUIRED_TOOLS`, read per
+tool as `requires_token` in `GET /api/tools/<tool>/schema` -- never a copied list. Other
+mutating tools are token-free but still origin+session gated. `mutation_scope` is
+informational risk metadata, not the auth gate.
 
-AUTO_TOKEN_INJECT is dev opt-in only (`ORCHESTRATOR_AUTO_TOKEN`, default OFF);
-runtime toggle requires a valid token. CA should not assume backend auto-inject.
+AUTO_TOKEN_INJECT (`ORCHESTRATOR_AUTO_TOKEN`) defaults ON: [A] injects the token itself and
+a CA sends none. Everything below applies only once a call answers MUTATION_TOKEN_REQUIRED,
+which is how a daemon running with it OFF says so.
 
 ## HTTP defenses
 

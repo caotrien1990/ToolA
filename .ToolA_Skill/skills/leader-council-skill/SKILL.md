@@ -29,7 +29,7 @@ trigger:
 4. Treat workers as equal peers unless Anh gives a specific routing hierarchy for the task.
 5. The desktop CA that receives Anh's exact leader trigger coordinates as the temporary leader; the leader keeps its own identity and is never scored as a peer.
 6. Round 1 has no peer scoring. Round 2+ must peer-score `/10`, extract strengths, reject weaknesses, and improve.
-7. If an authorized [A] restart is needed, use `[A:S]` (`start_orchestrator.bat`). Do not use `restart_orchestrator_via_task` unless Anh explicitly asks for admin/UIPI recovery.
+7. If an authorized [A] restart is needed, call `restart_orchestrator_via_bat` (`delay_seconds=2`), never a native `start_orchestrator.bat` launch. Do not use `restart_orchestrator_via_task` unless Anh explicitly asks for admin/UIPI recovery.
 
 ## Task Decomposition And Delegation Gate
 

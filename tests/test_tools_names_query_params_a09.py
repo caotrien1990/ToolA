@@ -19,6 +19,7 @@ unknown params are present. These tests pin BEHAVIOUR in both directions:
 from __future__ import annotations
 
 import json
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -157,6 +158,63 @@ class ToolsNamesReportHygiene(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(shared), before,
                          "handler wrote an HTTP-only field into a payload "
                          "object shared with the MCP discovery path")
+
+
+# ---------------------------------------------------------------------------
+# A37 #1b: the MCP discovery shortcuts forward fields= on THIS query string, so a
+# GET that listed `fields` as ignored made "fields= works on both surfaces" false
+# for the two largest discovery answers. Pinned on the handlers the bridge reads.
+# ---------------------------------------------------------------------------
+class DiscoveryGetsHonourFields(unittest.IsolatedAsyncioTestCase):
+    async def test_tools_names_projects_and_does_not_report_fields_ignored(self):
+        payload = await _call("/api/tools/names?fields=count,nope")
+        self.assertNotIn("tools", payload)
+        self.assertIn("count", payload)
+        self.assertNotIn("fields", payload.get("ignored_query_params", []))
+        self.assertEqual(payload.get("fields_unknown"), ["nope"])
+        # Positive control: without fields= the same GET is full-fat.
+        self.assertIn("tools", await _call("/api/tools/names"))
+
+    async def test_ignored_param_notice_survives_the_projection(self):
+        payload = await _call("/api/tools/names?fields=count&bogus=1")
+        self.assertEqual(payload.get("ignored_query_params"), ["bogus"])
+
+    async def test_schema_get_projects_a_dotted_branch(self):
+        async def schema(query):
+            resp = await orchestrator_server.handle_tool_describe(make_mocked_request(
+                "GET", "/api/tools/read_file_range/schema" + query,
+                match_info={"tool_name": "read_file_range"}))
+            return json.loads(resp.text)
+        full = await schema("")
+        projected = await schema("?fields=tool.function")
+        self.assertEqual(set(projected["tool"]), {"function"})
+        self.assertEqual(projected["tool"]["function"], full["tool"]["function"])
+        self.assertNotEqual(set(full["tool"]), {"function"},
+                            "positive control: the unprojected schema has more branches")
+
+
+# ---------------------------------------------------------------------------
+# The "full catalog" limit is a CATALOG fact, not a per-answer one: three copies
+# computed it from the filtered count, so ?name_contains=<x> advertised limit=<hits>
+# as the full catalog while the A09 notice beside it named the real size.
+# ---------------------------------------------------------------------------
+class FullCatalogLimitIsTheCatalogSize(unittest.IsolatedAsyncioTestCase):
+    FULL = re.compile(r"limit=(\d+) for (?:the )?full catalog")
+
+    async def test_every_full_catalog_claim_names_the_catalog_size(self):
+        size = len(orchestrator_server.ct.TOOL_MAP)
+        for path in ("/api/tools/names", "/api/tools/names?name_contains=git_st",
+                     "/api/tools/names?tier=T1&limit=3&bogus=1"):
+            claims = {int(n) for n in self.FULL.findall(json.dumps(await _call(path)))}
+            self.assertTrue(claims, f"positive control: {path} states the catalog limit")
+            self.assertEqual(claims, {size}, path)
+
+    async def test_a_capped_filter_points_at_its_own_matches(self):
+        payload = await _call("/api/tools/names?tier=T1&limit=3")
+        total = payload["total_available"]
+        self.assertGreater(total, 3)
+        self.assertIn(f"pass limit={total} for all of them", payload["next_query_hint"])
+        self.assertNotIn("full catalog", payload["next_query_hint"])
 
 
 if __name__ == "__main__":

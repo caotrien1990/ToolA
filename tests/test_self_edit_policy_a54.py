@@ -354,8 +354,8 @@ def test_multiedit_and_notebookedit_are_file_writes(tool):
 
 # --- 2026-09-24: no rule producer may re-authorize a native self-edit ---
 #
-# sync_rule renders every CA rule file from examples/SLIM_RULE.txt (fallback
-# code_tools._SLIM_RULE_BODY / _SLIM_RULE_INLINE) and get_rule_core_text serves
+# sync_rule renders every CA rule file from examples/SLIM_RULE.txt (no in-code
+# fallback since 2026-09-24) and get_rule_core_text serves
 # examples/CORE_RULE.txt. One stale "native edit + log_native_event" sentence in
 # any of them tells every CA to do what the gate now denies: a refused call plus a
 # retry through [A] on every self-edit.
@@ -368,15 +368,11 @@ _STALE_SELF_EDIT = (
 
 
 def _rule_producers():
-    import code_tools as ct
-
     ex = A_ROOT / "examples"
     return {
         "CORE_RULE.txt": (ex / "CORE_RULE.txt").read_text(encoding="utf-8"),
         "SLIM_RULE.txt": (ex / "SLIM_RULE.txt").read_text(encoding="utf-8"),
         "SLIM_RULE_INLINE.txt": (ex / "SLIM_RULE_INLINE.txt").read_text(encoding="utf-8"),
-        "code_tools._SLIM_RULE_BODY": ct._SLIM_RULE_BODY,
-        "code_tools._SLIM_RULE_INLINE": ct._SLIM_RULE_INLINE,
     }
 
 

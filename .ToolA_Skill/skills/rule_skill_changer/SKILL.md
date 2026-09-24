@@ -303,15 +303,14 @@ and for every blind spot below the manual step is the only coverage that exists.
   "drift_count=0 means runtime is internally consistent" -- naming a key the payload does not carry
   -- so a CA that trusts the note and projects `fields=drift_count` reads `None` and mistakes it for
   zero. Read `len(drift)`, never `drift_count`.
-- For the three rule files the FILE beats the in-code constant. `_ma_rule_file_text`
-  (`code_tools.py:15925-15933`) returns the `examples/` file whenever it is non-empty and falls back
-  to the constant only when it is missing, and its docstring says so. So a constant that was already
-  corrected proves NOTHING about what ships. Measured 2026-09-20: `_SLIM_RULE_INLINE`
-  (`code_tools.py:15912`) already read "agents_registry.json is SOT -- never copy an id list into a
-  rule", while `examples/SLIM_RULE_INLINE.txt` still shipped the literal
+- For the three rule files the FILE is the only SOT. Since 2026-09-24 there is no in-code copy:
+  `_ma_rule_file_text` raises `FileNotFoundError` naming the path when an `examples/` template is
+  missing or empty, so sync_rule renders nothing instead of a stale body. The constants it replaced
+  had drifted exactly as feared: measured 2026-09-20, `_SLIM_RULE_INLINE` said one thing while
+  `examples/SLIM_RULE_INLINE.txt` still shipped the literal
   `{"agent_id":"<clau|codo|gro|hermes|kilo|ope|pic>"}` to every CA at bootstrap -- naming 2 retired
-  ids and omitting 3 live ones, drifting both ways at once. Fix the FILE first; fix the constant too,
-  only so the fallback cannot regress.
+  ids and omitting 3 live ones, drifting both ways at once; by 2026-09-24 `_SLIM_RULE_BODY` carried
+  that literal and 4 retired workers. A fallback copy is a second SOT; fix the FILE.
 - That same file is the end-to-end PROOF of the `agent_list` hole. `rule_drift_check` DOES open
   `examples/SLIM_RULE_INLINE.txt`, its regex DOES match the `kilo` and `pic` inside that literal, and
   `checks=agent_list` still answered `drift_count: 0` -- because the config side reads

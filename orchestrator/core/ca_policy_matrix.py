@@ -149,9 +149,9 @@ _ACTION_TO_CLASS: dict[str, str] = {
 # F021: callers routinely pass the task_class itself as action_type (the two
 # vocabularies overlap and the schema description does not spell out which one
 # it wants). Accept that as an identity mapping -- but ONLY for classes whose
-# native_policy is forbid, so a caller can never self-declare its way into
-# a_unreachable_mid_task and mint native permission it has not earned. That one
-# comes from session signals, and upgrade_orchestrator from the target path.
+# native_policy is forbid. upgrade_orchestrator comes from the target path;
+# a_unreachable_mid_task comes from the caller's own words and is forbid too,
+# so neither door mints native permission.
 _SELF_DECLARABLE_CLASSES = frozenset({
     "write_existing_file",
     "create_project_file",
@@ -413,9 +413,9 @@ def classify_action(
     blob = f"{tool} {action} {scope_l} {target_l}"
     # W7 (F021, 2026-08-19): the keyword heuristics below used plain `k in blob`.
     # `blob` ends with a FILE PATH, so an ordinary filename could flip policy:
-    #   "my_code_tools_notes.txt" -> upgrade_orchestrator (hybrid_upgrade_only)
-    #   "data download.csv"       -> a_unreachable_mid_task (allow_with_log_native_event)
-    # Both LOOSEN native_policy away from `forbid` for files that have nothing
+    #   "my_code_tools_notes.txt" -> upgrade_orchestrator (then hybrid_upgrade_only)
+    #   "data download.csv"       -> a_unreachable_mid_task (then allow_with_log_native_event)
+    # Both LOOSENED native_policy away from `forbid` for files that have nothing
     # to do with [A]. Match on token boundaries instead, so "upgrade" no longer
     # fires on "downgrade"/"upgrade_notes.md" and "code_tools" no longer fires
     # on "my_code_tools_notes". Underscore is a word char, so \b already
@@ -428,7 +428,7 @@ def classify_action(
 
     # "[A] is unreachable" describes the SESSION, never a path. Keeping the
     # target out of this one blob is what kills the "data download.csv" ->
-    # allow_with_log_native_event false positive at the root.
+    # a_unreachable_mid_task false positive at the root.
     signal_blob = f"{tool} {action} {scope_l}".lower()
 
     task_class = _TOOL_TO_CLASS.get(tool) or _ACTION_TO_CLASS.get(action)
@@ -499,6 +499,8 @@ def classify_action(
         )
     ):
         task_class = "upgrade_orchestrator"
+    # The caller's own words. Since 2026-09-24 this row is forbid: a classifier
+    # that answers proves [A] is up, so the claim names itself and licenses nothing.
     if _kw_hit(signal_blob, ("a down", "unreachable", "conn-refused", "connection refused")):
         task_class = "a_unreachable_mid_task"
 

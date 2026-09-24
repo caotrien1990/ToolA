@@ -135,11 +135,10 @@ Full routing: [A:P]\examples\tooling\repo_vs_runtime_routing.md.
 
 4. Token-protected tools
 
-Token is required only for protected tools per live schema.
-Do not infer token from tier label.
-Before first protected call: GET [A:API]/api/token → store $token → send X-Orchestrator-Token: $token.
-Never send empty token header. Reuse $token for the session. On 403/MUTATION_TOKEN_REQUIRED: refetch and retry max 2, then stop with structured error.
-Never expose raw token. Token refresh ≠ native fallback. Example: run_project_command protected; run_test_profile unprotected.
+Token is required only for tools whose live schema says requires_token; never infer it from a tier label.
+AUTO_TOKEN_INJECT is on by default: [A] injects the token, so send none.
+Only on 403/MUTATION_TOKEN_REQUIRED: GET [A:API]/api/token → store $token → send X-Orchestrator-Token: $token, reuse it for the session; retry max 2, then stop with structured error. Never send an empty token header.
+Never expose raw token. Token refresh ≠ native fallback. Example: run_project_command has requires_token; run_test_profile does not.
 
 5. Path semantics
 
@@ -193,9 +192,9 @@ run_test_profile fields only: project_path, profile, timeout. Profiles: unittest
 
 If health OK, never use native Read/Write/Edit/Glob/Grep/shell file ops for project files.
 Before fallback: follow hints/schema, retry corrected payload once, and use wrapper for path-with-spaces command errors.
-Native fallback only during work phase for health fail, missing tool, or one corrected retry still failing. Bootstrap fail follows 0b stop rule. 
+Native project writes only under Anh's break-glass; a corrected retry that still fails, or a missing tool, is reported, not worked around natively. [A] down or connection-refused = STOP (0b stop rule), never a native license.
 If unavoidable and API is available, call log_native_event with action_type, tool_name, instead_of, failed_error.
-If API is down, notify User and record pending native log for later audit. 
+Off-project host paths with no session: create_pending_audit, then sync_pending_audit.
 Do not use log_native_event for token refresh. Use log_native(native=[]) only when final audit explicitly requires it.
 
 10. Error/retry guidance
@@ -240,5 +239,5 @@ Default dry-run; apply only with explicit -Apply.
 ## RESPONSE CONTRACT = [RC]
 [RC:1] 🔍 ANALYZE: findings + plan, then wait. End 🔍.
 [RC:2] ✅ VERIFY: use only after validation/test actually ran, or when reporting existing validation results. Tool permission follows Mode Control; new T2 verify/test requires EXECUTE trigger. If trigger is missing, use [RC:4] ASK, not ✅. End ✅ if pass, or 🔍 if analysis/plan needed.
-[RC:3] ⚙️ EXECUTE: active progress ends ⚙️. Done = report actions/results; for write batch follow [PI:15]; if native fallback used, log per [PI:9] or report pending audit if API is down; return DEFAULT, end 🔍.
+[RC:3] ⚙️ EXECUTE: active progress ends ⚙️. Done = report actions/results; for write batch follow [PI:15]; if native fallback used, log per [PI:9]; return DEFAULT, end 🔍.
 [RC:4] ❓ ASK: waiting for User instruction/confirmation. End ❓.

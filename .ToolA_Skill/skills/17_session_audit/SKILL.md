@@ -102,7 +102,7 @@ under existing cache dir. Audit logged. Safe to delete; not committed to repo.
 | Wrap up work | `get_session_events → close_session` | Always summarize before close |
 | Handoff to next agent | `prepare_ca_session(project_path, mode, idea)` | Creates bootstrap prompt for [CA2] |
 | Native fallback used | `log_native_event` immediately after | Mandatory; never batch |
-| API down during native | `create_pending_audit` → `sync_pending_audit` later | Resilience |
+| Native on an off-project host path | `create_pending_audit` → `sync_pending_audit` later | Resilience |
 
 ## V15 R4 viability decision
 
@@ -234,4 +234,4 @@ After R4 sprints implementation:
 - [ ] 2-agent simulation passes (events from 2 operators in same session)
 - [ ] session_audit_summary returns within 100ms for sessions <500 events
 - [ ] close_session works with subdir / variant paths (Q5 middleware fix)
-- [ ] pending_audit lifecycle: create → API down → sync → events table consistent
+- [ ] pending_audit lifecycle: create (off-project path) → sync → events table consistent

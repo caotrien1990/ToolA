@@ -11,8 +11,11 @@ rule file shipped in the repo is the same text `manage_agent(sync_rule)`
 propagates to the agent files. `_ma_rule_file_text` reads `examples/` at call
 time, so the binding is real and cheap to pin.
 """
+import asyncio
+import json
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import code_tools
 
@@ -98,6 +101,36 @@ class RuleCoreRuntimeReadsTheCommittedFile(unittest.TestCase):
             with self.subTest(template):
                 self.assertIn(CWD_RULE, code_tools._ma_rule_body(template))
 
+
+class RuleTemplateHasNoInCodeFallback(unittest.TestCase):
+    """2026-09-24: code_tools carried in-code copies of the SLIM bodies that had
+    drifted from examples/ (retired agent ids and workers) and would have been
+    rendered silently into every agent's rule file the day a template went
+    missing. Now a missing or empty template stops sync_rule, naming the file."""
+
+    def test_missing_template_raises_naming_the_path(self):
+        with self.assertRaises(FileNotFoundError) as cm:
+            code_tools._ma_rule_file_text("NO_SUCH_RULE.txt")
+        self.assertIn("NO_SUCH_RULE.txt", str(cm.exception))
+
+    def test_blank_templates_fail_sync_rule_loudly(self):
+        # Through the layer the CA reads: the manage_agent answer, not the helper.
+        real = Path.read_text
+
+        def blank_templates(path, *a, **kw):
+            return "  \n" if path.name in SOT_FILES else real(path, *a, **kw)
+
+        with mock.patch.object(code_tools, "_ma_archive_legacy_bak_ma", return_value={}), \
+                mock.patch.object(Path, "read_text", blank_templates):
+            out = json.loads(asyncio.run(code_tools.manage_agent(
+                action="sync_rule", target="all", dry_run=True)))
+        self.assertIs(out["ok"], False)
+        self.assertIn("rule template missing or empty", out.get("error", ""))
+        # Positive control: the same call renders once the templates are real.
+        with mock.patch.object(code_tools, "_ma_archive_legacy_bak_ma", return_value={}):
+            ok = json.loads(asyncio.run(code_tools.manage_agent(
+                action="sync_rule", target="all", dry_run=True)))
+        self.assertNotIn("rule template missing", json.dumps(ok))
 
 if __name__ == "__main__":
     unittest.main()

@@ -109,7 +109,7 @@ Response shape:
 
 ```
 1. Edit code (add/remove tool, change schema)
-2. Restart [A] (start_orchestrator.bat OR restart_orchestrator_via_task)
+2. Restart [A] (restart_orchestrator_via_bat, delay_seconds=2; needs "tiến hành")
 3. Call audit_tool_matrix(project_path=<root>)
 4. Review drift; fix high-severity first
 5. Re-run audit until drift_count <= acceptable threshold (typically inventory-only)

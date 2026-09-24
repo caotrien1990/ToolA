@@ -37,10 +37,10 @@ Project work?                    → [A]-first via CA_TOOL_POLICY_MATRIX
 Read code/files (project)?       → T1 [A] (read_file_range / search_code) — native forbid
 Need to write/modify?            → T2
 Multi-file or critical write?    → T2 [A] (rollback essential)
-Single-file <30 lines low-risk?  → Native + log_native_event (skill 12) only if matrix allows
+Single-file <30 lines low-risk?  → T2 write_fix; native only under Anh's break-glass (skill 12)
 Auth/token/delete?               → T2 [A] always (governance)
 Open/close session?              → T3
-Native used / API down?          → T3 log_native_event / create_pending_audit
+Native used / off-project host?  → T3 log_native_event / create_pending_audit
 UI bug / runtime / browser?      → T4
 Server stuck / port issue?       → T4c
 CLI C-suffix worker?             → HTTP-only (no native project FS)
@@ -51,15 +51,7 @@ Policy matrix is the **routing SOT** for project task classes; this skill picks 
 
 ## Token-protection map
 
-`/api/tools` returns `protected: bool` per entry (V15 R8 C.5). Protected tools require `X-Orchestrator-Token` header. Read it from `protected` field, do not hardcode.
-
-| Protected (token required) | Unprotected |
-|----------------------------|-------------|
-| All T2 write/mutate tools | All T1 read tools |
-| T3 close/log/audit-mutate | T3 list_sessions / get_session_events (read) |
-| T4b/c/d mutate actions | T4a snapshot/inspect (read-only) |
-
-Fetch token: `GET /api/token` → returns shared secret. Send via `X-Orchestrator-Token` header. Reuse for the session.
+Token-gated tools = `requires_token` in `GET /api/tools/<tool>/schema` (SOT `code_tools.TOKEN_REQUIRED_TOOLS`). `protected` on `/api/tools/names` is the MUTATING gate, not the token gate: `write_fix`/`write_new_file` are protected and need NO token. [A] injects the token itself while AUTO_TOKEN_INJECT is on (the default); a MUTATION_TOKEN_REQUIRED answer is the only cue to fetch one (06_token_auth).
 
 ## Tier transitions in a task
 
