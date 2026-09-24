@@ -1049,7 +1049,26 @@ def _mcp_generation_gate(current_generation: str | None) -> dict | None:
 _MCP_GEN_DIVERGED_SINCE: dict = {}
 
 
-def _mcp_generation_disclosure(payload: dict, daemon_gen, local_gen) -> None:
+def _mcp_requested_keys(fields):
+    """Top-level keys a `fields=` projection named, or None when the caller did not project.
+
+    The daemon's R101 filter already cut the body down to what the caller asked for;
+    the stamps this host adds afterwards must not grow it back. Parsed through the
+    shared csv leaf (orchestrator.core.params) so a JSON-array `fields` reads like a
+    csv string, and a dotted spec counts as its head.
+    """
+    try:
+        from orchestrator.core.params import csv_param
+        specs = csv_param(fields)
+    except Exception:
+        return None  # unparseable -> behave as unprojected: more disclosure, never less
+    if not specs:
+        return None
+    return {s.partition(".")[0].strip() for s in specs}
+
+
+def _mcp_generation_disclosure(payload: dict, daemon_gen, local_gen,
+                               requested=None) -> None:
     """State the daemon-vs-MCP-host relationship instead of leaving it inferable.
 
     ISS-07: after every daemon restart the two stamps diverge permanently for the
@@ -1064,17 +1083,38 @@ def _mcp_generation_disclosure(payload: dict, daemon_gen, local_gen) -> None:
     and on a mismatch the note says what still holds (results come from the live
     daemon) and what does not (this host's own bridge code is whatever it
     imported), plus how long the divergence has been observed.
+
+    2026-09-24: the note is ~400 chars of prose and it rode EVERY call for the
+    whole life of a diverged client, projected or not -- one fact the reader needs
+    once, paid for on every answer. It now ships once per (daemon, host) pair (a
+    further daemon restart is a new pair and is noted again), and it only counts as
+    shipped on an answer that carried it, so a projection cannot swallow the one
+    copy. Under `fields=` (``requested`` is a set) none of these keys is added
+    unless named: on this path every result is the live daemon's, so leaving them
+    out changes the meaning of nothing the caller holds.
     """
+    def wanted(key):
+        return requested is None or key in requested
+
     if not daemon_gen or not local_gen:
-        payload.setdefault("mcp_generation_matches_daemon", None)
+        if wanted("mcp_generation_matches_daemon"):
+            payload.setdefault("mcp_generation_matches_daemon", None)
         return
     matches = str(daemon_gen) == str(local_gen)
-    payload.setdefault("mcp_generation_matches_daemon", matches)
+    if wanted("mcp_generation_matches_daemon"):
+        payload.setdefault("mcp_generation_matches_daemon", matches)
     if matches:
-        _MCP_GEN_DIVERGED_SINCE.pop("since", None)
+        _MCP_GEN_DIVERGED_SINCE.clear()
         return
     since = _MCP_GEN_DIVERGED_SINCE.setdefault("since", time.time())
-    payload.setdefault("mcp_generation_diverged_s", round(time.time() - since, 1))
+    if wanted("mcp_generation_diverged_s"):
+        payload.setdefault("mcp_generation_diverged_s", round(time.time() - since, 1))
+    pair = (str(daemon_gen), str(local_gen))
+    if requested is None:
+        if _MCP_GEN_DIVERGED_SINCE.get("noted") == pair:
+            return
+    elif "mcp_generation_note" not in requested:
+        return
     payload.setdefault("mcp_generation_note", (
         f"daemon is at generation {daemon_gen}; this MCP host process minted "
         f"{local_gen} at its own import and cannot re-mint without a client "
@@ -1082,6 +1122,7 @@ def _mcp_generation_disclosure(payload: dict, daemon_gen, local_gen) -> None:
         "daemon over HTTP. Reconnect the MCP client only when the bridge code "
         "itself (orchestrator/server/mcp_stdio.py or the tool registry it loads) "
         "changed — a plain daemon restart does not require it."))
+    _MCP_GEN_DIVERGED_SINCE["noted"] = pair
 
 
 def _mcp_dump(payload: dict) -> str:
@@ -1102,12 +1143,17 @@ def _mcp_dump(payload: dict) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
-def _mcp_add_generation(text: str, generation) -> str:
+def _mcp_add_generation(text: str, generation, fields=None) -> str:
     """Add generation to JSON-object MCP responses without changing other fields.
 
     ``generation`` is either a probe dict from ``_mcp_probe_generation`` or a
     bare string (back-compat). When the probe failed, the response says so
     explicitly instead of carrying a stamp that would be read as the daemon's.
+
+    ``fields`` is the caller's projection. On the daemon path it gates the
+    advisory host stamps (see _mcp_generation_disclosure). The stamps of a failed
+    probe and the ``tool_supplied`` disclosure are never gated: without them a
+    ``generation`` the caller holds would read as the daemon's when it is not.
     """
     try:
         payload = json.loads(text)
@@ -1129,12 +1175,14 @@ def _mcp_add_generation(text: str, generation) -> str:
             # deliberately to something else is still respected.
             daemon_gen = generation.get("generation")
             local_gen = generation.get("local_generation")
+            requested = _mcp_requested_keys(fields)
             # `daemon_gen` in the tuple: a payload that ALREADY carries the daemon
             # stamp agrees with the probe, so it is a daemon stamp -- labelling it
             # "tool_supplied" would be a second wrong label in the other direction.
             if payload.get("generation") in (None, local_gen, daemon_gen):
                 payload["generation"] = daemon_gen
-                payload.setdefault("generation_source", "daemon")
+                if requested is None or "generation_source" in requested:
+                    payload.setdefault("generation_source", "daemon")
             else:
                 # A43-P1 follow-up: keeping a tool's deliberate value is right,
                 # but then `generation` is NOT the daemon's and saying "daemon"
@@ -1143,10 +1191,12 @@ def _mcp_add_generation(text: str, generation) -> str:
                 # the daemon stamp under its own key so nothing is hidden.
                 payload.setdefault("generation_source", "tool_supplied")
                 payload.setdefault("daemon_generation", daemon_gen)
-            # Always disclose which code actually executed the call, so a reader
-            # can tell "daemon is at gen X" apart from "MCP host is running Y".
-            payload.setdefault("mcp_generation", local_gen)
-            _mcp_generation_disclosure(payload, daemon_gen, local_gen)
+            # Disclose which code actually executed the call, so a reader can tell
+            # "daemon is at gen X" apart from "MCP host is running Y" -- unless the
+            # caller projected it away.
+            if requested is None or "mcp_generation" in requested:
+                payload.setdefault("mcp_generation", local_gen)
+            _mcp_generation_disclosure(payload, daemon_gen, local_gen, requested)
             return _mcp_dump(payload)
         payload.setdefault("generation", generation.get("generation"))
         payload.setdefault("generation_source", generation.get("source"))
@@ -1383,15 +1433,19 @@ def run_mcp_stdio() -> None:
                 return body.decode("utf-8", errors="replace")
             return str(body)
 
-        def _mcp_guard_response(producer) -> str:
+        def _mcp_guard_response(producer, fields=None) -> str:
             # A28-P3: keep the whole probe result, not just the stamp. The
             # gate still takes a bare generation (None = do not compare), but
             # the response has to disclose where the stamp came from.
+            # `fields` is the projection the call was made with; None falls back
+            # to the thread-local the _mcp.tool decorator set.
             probe = _mcp_probe_generation(srv)
             stale = _mcp_generation_gate(probe["generation"])
             if stale is not None:
                 return json.dumps(stale, ensure_ascii=False)
-            return _mcp_add_generation(producer(), probe)
+            if fields is None:
+                fields = _mcp_fields_current()
+            return _mcp_add_generation(producer(), probe, fields)
 
         def _mcp_call_text(name: str, payload: dict | None = None) -> str:
             # A37 #1b: HTTP and MCP have to be usable EQUALLY. `fields=` is accepted on
@@ -1408,8 +1462,10 @@ def run_mcp_stdio() -> None:
             _fields_now = _mcp_fields_current()
             if _fields_now and not payload.get("fields"):
                 payload["fields"] = _fields_now
+            _fields_spec = payload.get("fields") or ""
             return _mcp_guard_response(lambda: _mcp_response_text(
-                srv._run_mcp_coro(srv.dispatch_tool_call(name, payload, transport="mcp"))))
+                srv._run_mcp_coro(srv.dispatch_tool_call(name, payload, transport="mcp"))),
+                _fields_spec)
 
         @_mcp.tool
         def tool_names(tier: str = "", name_contains: str = "", category: str = "",
