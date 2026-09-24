@@ -74,13 +74,14 @@ FIELDS_PARAM_NAME = "fields"
 R101_MARKER = "x_r101_projection"
 
 # Kept short on purpose: this string is repeated once per tool, and GET /api/tools dumps every
-# schema at once. The full rule (dotted specs, fields_force_kept, the hash-domain markers that
-# survive a projection) lives in examples/CORE_RULE.txt and in the fields_unknown_hint the
-# dispatcher returns, which is where a caller who got it wrong is already looking.
+# schema at once. It is the one place that says how to CALL fields= (dotted keys included);
+# the fields_unknown_hint the dispatcher returns says only what a miss means, and the full rule
+# (fields_force_kept, the hash-domain markers that survive a projection) lives in
+# examples/CORE_RULE.txt.
 _DESCRIPTION = (
-    "R101 projection, accepted on every tool: comma list of top-level response keys to keep "
-    "(a JSON array works too). Omit for the full response. Keys this tool does not return "
-    "come back as fields_unknown and drop nothing."
+    "R101 projection, on every tool: comma list (or JSON array) of response keys to keep; a "
+    "dotted key (result.files) keeps one nested branch. Omit for the full response. Keys "
+    "this tool does not return come back as fields_unknown and drop nothing."
 )
 
 
@@ -167,19 +168,21 @@ LATE_STAMPED_KEY = "fields_late_stamped"
 def prune_unknown_fields(payload) -> list:
     """Drop from ``fields_unknown`` every key the caller DOES receive; return those names.
 
-    WHY (A37 #4, measured 2026-09-19 on the live daemon): the R101 projection runs
-    inside ``dispatch_tool_call`` BEFORE the envelope is stamped. ``generation``,
-    ``operation_id``, ``write_status_url``, ``operation_attempts``,
-    ``operation_replayed``, the refreshed task-metadata keys, and on the MCP side
-    ``generation_source`` / ``mcp_generation*`` are all ``setdefault``-ed AFTER the
-    filter has already decided what the caller asked for that does not exist. So
-    ``fields=ok,generation`` came back carrying ``fields_unknown:["generation"]``
-    right next to the very key it said was not in the response -- a false "you
-    typoed it" on a correct request, the same class of harm as a silent drop.
+    WHY (A37 #4, measured 2026-09-19 on the live daemon): a key stamped AFTER the
+    R101 projection is invisible to the filter that decided what the caller asked
+    for that does not exist. ``generation`` was one, so ``fields=ok,generation`` came
+    back carrying ``fields_unknown:["generation"]`` right next to the very key it
+    said was not in the response -- a false "you typoed it" on a correct request,
+    the same class of harm as a silent drop. Since 2026-09-24 the dispatcher's
+    per-call envelope goes THROUGH the projection (orchestrator_server
+    ``_r101_dispatch_result``), so what is still stamped late is only what a caller
+    cannot know to ask for -- ``pushed_schema``, ``schema_rearmed``,
+    ``cached_result_available`` -- plus, on the MCP side, ``generation_source`` /
+    ``mcp_generation*``.
 
     DERIVED, NEVER HAND-TABLED: a frozenset of injected key names would rot the next
-    time the envelope grows a field, and the question the caller actually asks is
-    "is this key in the response I am holding" -- so ask the response, not a table.
+    time a late stamp is added, and the question the caller actually asks is "is
+    this key in the response I am holding" -- so ask the response, not a table.
 
     Dotted specs are left alone: ``a.b`` names a key inside a nested dict, and the
     late stamp only ever lands at the top level.

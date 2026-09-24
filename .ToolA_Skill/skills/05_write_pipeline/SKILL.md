@@ -64,11 +64,10 @@ Pipeline: dry_run all → backup_project → apply (mỗi op atomic) → batch v
 - Cần fuzzy-match anchor text (không biết line number) → CHƯA có (`write_fix_by_anchor` defer R40+). Workaround: `search_code(query="anchor text", mode="literal")` → lấy line, rồi `write_fix(start_line, end_line)`.
 
 **Recovery FILE_CHANGED_OUTSIDE_ORCHESTRATOR (R39 explicit)**:
-1. `refresh_project_map(project_path)` — refresh hash cache
-2. `read_file_range(file_path, start, end)` — re-seed hash for that file
-3. Retry SINGLE `write_fix` HOẶC switch sang `write_transaction` nếu có ≥2 hunks
+1. `read_file_range(project_path, file_path, start, end, force_reseed=true)` — call DUY NHẤT reseed read_token của file đó
+2. Retry SINGLE `write_fix` HOẶC switch sang `write_transaction` nếu có ≥2 hunks
 
-KHÔNG retry blind cùng payload — read first.
+`refresh_project_map` / `cache_delta` KHÔNG reseed read_token (`refresh_project_map` trên root lớn như `[A:P]` còn mất ~170s). KHÔNG retry blind cùng payload — read first.
 
 ## When to use
 
@@ -108,9 +107,8 @@ Pipeline: dry_run all → backup_project → apply all → batch validate.
 If ANY op fails dry_run or apply → entire batch aborts; partial-write `.bak` files left for manual recovery + `backup_path` returned.
 
 Common pitfall: nếu bạn vừa `write_new_file` standalone vào file rồi gọi `write_transaction` với `write_fix` cùng file đó, `write_fix` sẽ reject `FILE_CHANGED_OUTSIDE_ORCHESTRATOR`. Sequence chuẩn:
-1. `refresh_project_map(project_path)` — refresh hash cache
-2. `read_file_range(file_path)` — seed cache hash
-3. `write_transaction(operations=[...])` — proceeds cleanly
+1. `read_file_range(file_path, force_reseed=true)` — reseed read_token
+2. `write_transaction(operations=[...])` — proceeds cleanly
 
 ## Standard workflow (single file)
 
@@ -164,7 +162,7 @@ Invalid base64 → re-encode original UTF-8 once, retry. Never native fallback f
 
 | Error | Action |
 |-------|--------|
-| FILE_CHANGED_OUTSIDE_ORCHESTRATOR | `read_file_range` confirm + `refresh_project_map` OR `generate_project_map(backup_override=true)` if empty |
+| FILE_CHANGED_OUTSIDE_ORCHESTRATOR | `read_file_range(force_reseed=true)` — call DUY NHẤT reseed read_token — rồi retry. `refresh_project_map` / `cache_delta` không reseed |
 | INVALID_BASE64 | Re-encode UTF-8 → base64 once, retry |
 | BINARY_FILE_UNSUPPORTED | STOP, report |
 | Validation auto-revert | Examine `error` field; do not re-apply same content |

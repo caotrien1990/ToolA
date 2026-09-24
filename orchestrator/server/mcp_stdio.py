@@ -537,8 +537,9 @@ def _mcp_proxy_call(name: str, payload: dict | None = None,
     second writer exactly when the daemon was unreachable).
 
     The daemon stamps the response with its OWN ``generation`` (orchestrator_server
-    line ~13662), so proxied blocks need no ``_mcp_guard_response`` wrapper: the
-    stamp they carry is already the authoritative one, which is the whole point.
+    ``_r101_dispatch_result``; a fields= projection that does not name it leaves it
+    out), so proxied blocks need no ``_mcp_guard_response`` wrapper: a stamp they
+    carry is already the authoritative one, and nothing on this side reads it.
     """
     import sys
     srv = sys.modules.get("__main__")

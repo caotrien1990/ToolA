@@ -483,3 +483,74 @@ def test_a_failed_backup_refuses_the_run(sandbox, monkeypatch, mode) -> None:
     )
     assert payload["ok"] is True, payload
     assert "junk/a.tmp" not in _survivors(sandbox)
+
+
+# --- An overwrite is destructive too (2026-09-24) --------------------------------
+# 26 deployed SKILL.md were replaced by ``Copy-Item $src $dst -Force`` through
+# run_ps1_script and the scan answered destructive_count=0: no count reviewed, no
+# backup taken. Each shape names the flag whose only job is to switch an overwrite
+# guard off, or to delete what the source lacks, so a future narrowing of the
+# pattern table names the shape it dropped.
+_OVERWRITE_SHAPES = [
+    ("powershell", "Copy-Item $src $dst -Force", "copy_item_force"),
+    ("powershell", "    cp $src $dst -Fo", "copy_item_force"),
+    ("powershell", "Get-ChildItem $d | Copy-Item -Destination $t -Force:$true", "copy_item_force"),
+    ("any", "xcopy src dst /E /Y", "copy_overwrite_y"),
+    ("any", "copy /y a.txt b.txt", "copy_overwrite_y"),
+    ("any", "robocopy src dst /MIR", "robocopy_purge"),
+    ("any", "robocopy src dst /MOV", "robocopy_purge"),
+    ("sh", "rsync -a --delete src/ dst/", "rsync_delete"),
+    ("sh", "cp -rf src dst", "cp_force"),
+    ("python", "shutil.copytree(src, dst, dirs_exist_ok=True)", "copytree_merge"),
+    ("python", 'subprocess.run("xcopy a b /y", shell=True)', "copy_overwrite_y"),
+]
+
+
+@pytest.mark.parametrize("runtime,line,kind", _OVERWRITE_SHAPES)
+def test_an_overwrite_that_switches_its_guard_off_is_counted(runtime, line, kind) -> None:
+    """One statement, one count -- and the kind says which flag made it destructive."""
+    scan = ct._scan_destructive_script(line, runtime)
+    assert scan["count"] == 1, "%s scanned as %r" % (line, scan["findings"])
+    assert kind in scan["findings"][0]["kinds"]
+
+
+# An ordinary write must stay invisible, or the guard trips on every deploy script
+# and gets acknowledged reflexively. The ``-Format`` row pins that -Force is matched
+# as a parameter prefix, not as any word that starts with "-Fo".
+_ORDINARY_WRITES = [
+    ("powershell", "Copy-Item $src $dst"),
+    ("powershell", "Copy-Item $src $dst -Recurse"),
+    ("powershell", "Copy-Item $src $dst; Get-Date -Format o"),
+    ("powershell", "Set-Content -Path $p -Value $v -Force"),
+    ("powershell", "Out-File -FilePath $p -Force"),
+    ("any", "copy a.txt b.txt"),
+    ("any", "xcopy src dst /E /I"),
+    ("any", "robocopy src dst /E"),
+    ("sh", "cp -r src dst"),
+    ("python", "shutil.copytree(src, dst)"),
+    ("python", "shutil.copy2(src, dst)"),
+]
+
+
+@pytest.mark.parametrize("runtime,line", _ORDINARY_WRITES)
+def test_an_ordinary_write_is_not_counted(runtime, line) -> None:
+    """No overwrite flag, no count: the common path keeps the old behaviour exactly."""
+    scan = ct._scan_destructive_script(line, runtime)
+    assert scan["count"] == 0, "%s scanned as %r" % (line, scan["findings"])
+
+
+def test_a_forced_copy_is_refused_until_acknowledged_and_clobbers_nothing(sandbox) -> None:
+    """The measured shape, end to end: the file it would replace is still there.
+
+    And once acknowledged it runs -- the guard is a review, not a wall.
+    """
+    script = 'Copy-Item -LiteralPath "%s" -Destination "%s" -Force' % (
+        sandbox / "junk" / "a.tmp", sandbox / "keep.txt")
+    payload = _run(ct.run_ps1_script(str(sandbox), script))
+    assert payload["error_name"] == "DESTRUCTIVE_SCRIPT_CONFIRMATION_REQUIRED", payload
+    assert (sandbox / "keep.txt").read_text(encoding="utf-8") == "PRECIOUS"
+
+    payload = _run(ct.run_ps1_script(
+        str(sandbox), script, confirm_destructive=payload["destructive_count"], skip_backup=True))
+    assert payload["ok"] is True, payload
+    assert (sandbox / "keep.txt").read_text(encoding="utf-8") == "disposable"

@@ -1,4 +1,5 @@
 import hashlib
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -95,6 +96,47 @@ class TestManageAgentMarkdownRuleSync(unittest.TestCase):
         self.assertTrue(Path(result["backup"]).is_file())
         self.assertEqual(self.rule_path.read_text(encoding="utf-8"), original)
         write.assert_called_once()
+
+
+class TestManageAgentSkillSyncSkipsWriteBackups(unittest.TestCase):
+    """sync_skill copied the source folder verbatim, so the SKILL.md.bak that write_fix
+    leaves next to the source travelled into every agent's skill folder, and the
+    folder summary counted it as skill content."""
+
+    def setUp(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tempdir.cleanup)
+        root = Path(self.tempdir.name)
+        self.src = root / "repo" / ".ToolA_Skill" / "skills" / "demo"
+        self.src.mkdir(parents=True)
+        (self.src / "SKILL.md").write_text("# demo\n", encoding="utf-8")
+        (self.src / "ref.md").write_text("ref\n", encoding="utf-8")
+        (self.src / "SKILL.md.bak").write_text("# rollback copy\n", encoding="utf-8")
+        self.skill_dir = root / "agent_skills"
+        self.agent = {"id": "test-agent", "skill_dir": str(self.skill_dir), "skill_format": "folder"}
+        # _ma_write_skill resolves its source from code_tools.__file__.
+        patcher = mock.patch.object(code_tools, "__file__", str(root / "repo" / "code_tools.py"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_copy_leaves_the_write_backup_behind(self):
+        result = code_tools._ma_write_skill(self.agent, {}, "demo", dry_run=False)
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(sorted(p.name for p in (self.skill_dir / "demo").iterdir()), ["SKILL.md", "ref.md"])
+        self.assertEqual(result["files"], 2)
+        self.assertTrue(result["match"])
+
+    def test_a_backup_already_deployed_does_not_read_as_drift(self):
+        # Copies synced before the fix still carry SKILL.md.bak, while a clean clone of the
+        # source has none: the two must still compare equal, because only content is the skill.
+        deployed = self.skill_dir / "demo"
+        deployed.mkdir(parents=True)
+        for name in ("SKILL.md", "ref.md", "SKILL.md.bak"):
+            shutil.copyfile(self.src / name, deployed / name)
+        (self.src / "SKILL.md.bak").unlink()
+
+        self.assertEqual(code_tools._ma_skill_dir_summary(deployed), code_tools._ma_skill_dir_summary(self.src))
 
 
 if __name__ == "__main__":

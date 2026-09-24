@@ -9,6 +9,8 @@ import logging
 import os
 import threading
 import time
+
+from orchestrator.skip_rules import write_backup_path
 _logger = logging.getLogger(__name__)
 
 _VALIDATE_EXTS = {".html", ".js", ".ts", ".mjs", ".cjs", ".py", ".jsx", ".tsx", ".json", ".css", ".vue"}
@@ -1208,7 +1210,7 @@ def _boot_sweep_scan(
             abort_reason = _boot_sweep_abort_reason(stop_event, deadline_monotonic)
             if abort_reason:
                 break
-            bak = fp.with_suffix(fp.suffix + ".bak")
+            bak = write_backup_path(fp)
             try:
                 # Nearly every indexed file has no backup. Probe that cheap reject first;
                 # only touch the target/stat metadata for the rare backup candidate.
@@ -1671,7 +1673,7 @@ skip_symbol_check :bool =False )->str :
                      "use write_transaction or sequential write_fix with prior new_hash; "
                      "do not dispatch same-file patches in parallel.",
             ))
-        backup_path =fp .with_suffix (fp .suffix +'.bak')
+        backup_path =write_backup_path (fp )
         # A02 WAL: journal the backup BEFORE it exists on disk, so boot recovery
         # can find it in O(backups) instead of walking every indexed file. Intent
         # ordering (record -> write) means even a crash between the two lines
@@ -1739,7 +1741,7 @@ skip_symbol_check :bool =False )->str :
                     if key in val :
                         result [key]=val [key]
             if not val .get ("ok"):
-                bak =fp .with_suffix (fp .suffix +'.bak')
+                bak =write_backup_path (fp )
                 reverted_synced =False
                 if bak .exists ():
                     reverted_synced = await ct.asyncio.to_thread(_restore_backup_and_reseed, fp, bak, project_path, True)
@@ -1776,7 +1778,7 @@ skip_symbol_check :bool =False )->str :
             result ["validation"]=val
             result ["syntax_ok"]=bool (val .get ("ok"))
             if not skip_symbol_check:
-                bak =fp .with_suffix (fp .suffix +'.bak')
+                bak =write_backup_path (fp )
                 sym =await _post_write_symbol_check (fp ,bak ,project_path )
                 if sym .get ("warn"):
                     result ["symbol_check_warning"]=sym .get ("warn")

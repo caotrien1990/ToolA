@@ -53,6 +53,30 @@ DOT_DIRS_SEARCHABLE = {".council"}
 
 
 # ---------------------------------------------------------------------------
+# One answer to "is this file a write backup?" (2026-09-24).
+#
+# write_fix and its siblings leave <file>.bak next to every file they touch --
+# the auto-revert source. Five producers spelled that name inline and three
+# consumers re-asked the question with their own `endswith(".bak")`: the D4
+# retention sweep, cep_deploy's curated set and analysis_view's production
+# filter. manage_agent sync_skill asked nothing at all, so its `copytree` shipped
+# `.ToolA_Skill/skills/<name>/SKILL.md.bak` into every agent's skill folder. The
+# producers build the name from `write_backup_path` and every consumer asks
+# `is_write_backup`, so the two can only move together.
+# ---------------------------------------------------------------------------
+WRITE_BACKUP_SUFFIX = ".bak"
+
+
+def write_backup_path(fp):
+    """The sibling backup a write leaves for ``fp`` (a ``Path``): ``<name>.bak``."""
+    return fp.with_suffix(fp.suffix + WRITE_BACKUP_SUFFIX)
+
+
+def is_write_backup(name: str) -> bool:
+    """True when a file NAME is a write backup: a rollback copy, never content."""
+    return str(name).endswith(WRITE_BACKUP_SUFFIX)
+
+# ---------------------------------------------------------------------------
 # B027i / D2 2026-09-22: the GLOBAL default layer gets glob patterns too.
 #
 # B027h gave the per-project overlay globs and left the global set above

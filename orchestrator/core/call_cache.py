@@ -117,13 +117,26 @@ def _prune_locked(now: float) -> None:
 
 def store(tool: str, body: dict, result, duration_ms: int,
           project_path: str = "", agent_id: str = "") -> str:
-    """Remember one completed read-only answer. Returns the key, or '' if skipped."""
-    if not is_cacheable(tool) or not isinstance(result, dict):
+    """Remember one completed read-only answer. Returns the key, or '' if skipped.
+
+    `result` is the TOOL's own answer -- a dict, or the JSON text the tool returned,
+    which is parsed only once the cheap gates pass. Never the dispatcher's decorated
+    view: a hit re-enters the dispatcher, which stamps the per-call metadata again
+    for the new caller, and a stored stamp would outlive the call it described.
+    """
+    if not is_cacheable(tool) or result is None:
+        return ""
+    if int(duration_ms or 0) < CALL_CACHE_MIN_MS:
+        return ""
+    if isinstance(result, (str, bytes, bytearray)):
+        try:
+            result = json.loads(result)
+        except (TypeError, ValueError):
+            return ""  # not a JSON answer: there is nothing a hit could replay
+    if not isinstance(result, dict):
         return ""
     if result.get("ok") is False:
         return ""  # never serve a failure twice; the cause may already be gone
-    if int(duration_ms or 0) < CALL_CACHE_MIN_MS:
-        return ""
     key = call_signature(tool, body)
     now = time.time()
     with _LOCK:

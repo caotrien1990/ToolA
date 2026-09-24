@@ -48,6 +48,7 @@ from orchestrator.server.executor_lanes import (
 from orchestrator.skip_rules import (
     effective_skip_dir_names,
     ignored_directory_name,
+    is_write_backup,
     name_matches_ignore,
 )
 from rule_core import get_rule_core, get_rule_core_metadata
@@ -8268,6 +8269,31 @@ _DESTRUCTIVE_EMBEDDED_SHELL = [
     (r"(?i)\bshred\b", "embedded_shred"),
 ]
 
+# An OVERWRITE is destructive too -- Hard Rules name "mass overwrite" beside delete.
+# Measured 2026-09-24: 26 deployed SKILL.md were replaced through run_ps1_script by
+# ``Copy-Item $src $dst -Force`` and the scan answered destructive_count=0, so no
+# count was reviewed and no pre-run backup was taken. A static read cannot tell
+# whether a destination already exists, so flagging every copy would trip on the
+# many copies into a fresh directory, and a guard that trips on everything gets
+# acknowledged reflexively. The objective signal is the FLAG whose only job is to
+# switch an overwrite guard off -- -Force past a read-only target, /y past cmd's
+# "Overwrite?" prompt, dirs_exist_ok past copytree's FileExistsError, cp -f -- or
+# to delete what the source lacks (robocopy /MIR /PURGE /MOV /MOVE, rsync --delete
+# / --remove-source-files). A plain copy, Set-Content or Out-File stays uncounted:
+# that is an ordinary write. Known limit, stated rather than hidden: a copy that
+# overwrites WITHOUT saying so (``Copy-Item -Recurse`` into an existing tree) is
+# still invisible to a source scan. Runtime-independent, like the embedded list:
+# every one of these can arrive as a string handed to a shell.
+_DESTRUCTIVE_OVERWRITE = [
+    (r"(?i)\bCopy-Item\b[^\n]*\s-Fo(?:r(?:ce?)?)?\b", "copy_item_force"),
+    (r"(?i)(?:^\s*|[;|&{(]\s*)(?:copy|cp|cpi)\s[^\n]*\s-Fo(?:r(?:ce?)?)?\b", "copy_item_force"),
+    (r"(?i)\bx?copy\b[^\n]*\s/y\b", "copy_overwrite_y"),
+    (r"(?i)\brobocopy\b[^\n]*\s/(?:MIR|PURGE|MOVE?)\b", "robocopy_purge"),
+    (r"\brsync\b[^\n]*\s--(?:delete|remove-source-files)", "rsync_delete"),
+    (r"\bcp\s+(?:-[a-zA-Z]*f|--force\b|--remove-destination\b)", "cp_force"),
+    (r"\bcopytree\s*\([^\n]*\bdirs_exist_ok\s*=\s*True\b", "copytree_merge"),
+]
+
 # PowerShell aliases matter as much as the cmdlet names: rm / del / ri / rd /
 # rmdir / erase are all Remove-Item, and a guard that only knew "Remove-Item"
 # would wave through ``rm -Recurse -Force $dir``.
@@ -8525,7 +8551,8 @@ def _scan_destructive_script(script_content: str, runtime: str) -> dict:
         selected = list(_DESTRUCTIVE_PATTERNS.get(runtime, []))
     patterns = (selected
                 + list(_DESTRUCTIVE_COMMON)
-                + list(_DESTRUCTIVE_EMBEDDED_SHELL))
+                + list(_DESTRUCTIVE_EMBEDDED_SHELL)
+                + list(_DESTRUCTIVE_OVERWRITE))
     # One finding per LINE, not per (line, kind). ``confirm_destructive`` is a
     # number the caller has to reproduce, so it has to mean "destructive
     # statements I reviewed" -- and a line is the unit a reader counts. Keying on
@@ -11283,10 +11310,10 @@ async def run_ps1_script(project_path: str, script_content: str,
     R46/R49 guards).
 
     CASE-2008: a body containing Remove-Item (or any alias: rm/del/ri/rd/rmdir/
-    erase), Clear-Content, Move-Item or a .NET delete refuses to run until
-    ``confirm_destructive`` matches the scanner count, takes a project backup
-    first, and returns untruncated output. ``dry_run=true`` previews the scan
-    without executing. See ``_scan_destructive_script``.
+    erase), Clear-Content, Move-Item, Copy-Item -Force or a .NET delete refuses
+    to run until ``confirm_destructive`` matches the scanner count, takes a
+    project backup first, and returns untruncated output. ``dry_run=true``
+    previews the scan without executing. See ``_scan_destructive_script``.
     """
     return await run_project_test_script(
         project_path=project_path,
@@ -15711,7 +15738,7 @@ def _cep_default_deploy_files(repo: "Path") -> list:
     for dirpath, dirnames, filenames in os.walk(repo):
         dirnames[:] = [d for d in dirnames if d not in skip_dirs]
         for fn in filenames:
-            if fn.endswith(".bak") or fn.endswith(".backup"):
+            if is_write_backup(fn) or fn.endswith(".backup"):
                 continue
             ext = os.path.splitext(fn)[1].lower()
             if ext not in keep_ext:
@@ -16334,11 +16361,16 @@ def _ma_write_mcp(ag: dict, reg: dict, dry_run: bool) -> dict:
     return {"ok": False, "agent": ag.get("id"), "error": f"unknown mcp_format {fmt}"}
 
 
+def _ma_skip_write_backups(_dirpath, names) -> list:
+    """copytree ignore: a write_fix `.bak` is the source's rollback copy, not part of the skill."""
+    return [n for n in names if is_write_backup(n)]
+
+
 def _ma_skill_dir_summary(root: Path) -> dict:
     h = hashlib.sha256()
     n = 0
     for p in sorted(root.rglob("*"), key=lambda x: x.as_posix()):
-        if p.is_file():
+        if p.is_file() and not is_write_backup(p.name):
             rel = p.relative_to(root).as_posix()
             h.update(rel.encode("utf-8"))
             h.update(hashlib.sha256(p.read_bytes()).hexdigest().encode("utf-8"))
@@ -16423,7 +16455,7 @@ def _ma_write_skill(ag: dict, reg: dict, skill_name: str, dry_run: bool,
                 bak.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(target), str(bak))
                 backup = str(bak)
-            shutil.copytree(src, target)
+            shutil.copytree(src, target, ignore=_ma_skip_write_backups)
         except Exception as e:
             _ma_restore_tree(target, backup)
             return {"ok": False, "agent": aid, "status": "error", "source": str(src), "target": str(target),

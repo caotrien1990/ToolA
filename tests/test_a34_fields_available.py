@@ -108,6 +108,10 @@ def test_the_hint_still_says_the_result_is_not_empty():
     assert "NOT empty" in hint
     assert "fields_available" in hint, (
         "the hint has to name the new key, or a caller reads straight past it")
+    # 2026-09-24: what the miss MEANS, not how to call fields= -- that is the
+    # parameter's schema description, fetched once. Spelled out here it was ~390
+    # chars on every miss, in the one payload built to be small.
+    assert len(hint) <= 200, len(hint)
 
 
 def test_the_top_namespace_label_is_never_an_empty_key():

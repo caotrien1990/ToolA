@@ -899,8 +899,13 @@ def aggregate_metrics_from_events(
                 parsed["is_forbidden_native"] = False
                 parsed["is_allowed_native"] = False
                 parsed["transport"] = "via_a"
-            elif origin_kind == "native" or transport == "native":
-                # Recompute forbid/allow from matrix if tag missing flags inconsistently
+            elif parsed_tag.get("transport") != "native":
+                # The tag's flags were computed for ANOTHER transport, so they answer
+                # a different question; only then is the row re-judged as native.
+                # A native tag is kept as written: log_native_event classified the
+                # row at WRITE time, with the scope and the Matrix live then. Re-judging
+                # it here used the CURRENT Matrix and no scope, so every policy change
+                # (upgrade_orchestrator -> forbid, 2026-09-24) rewrote history.
                 live = classify_action(
                     tool_name=str(tool_name or ""),
                     action_type=str(action_type or ""),
@@ -909,7 +914,6 @@ def aggregate_metrics_from_events(
                     project_path=project_path,
                     agent_id=agent_id,
                 )
-                # Prefer live matrix truth for native events; keep tag task_class if better
                 if parsed.get("task_class") in (None, "", "unknown") and live.get("task_class"):
                     parsed["task_class"] = live["task_class"]
                 parsed["is_via_a"] = False

@@ -174,10 +174,10 @@ class P12OperationReplayDisclosureTests(unittest.IsolatedAsyncioTestCase):
         code_tools._sync_session_db_alias()
         self.temp_dir.cleanup()
 
-    async def _dispatch(self, body: dict):
+    async def _dispatch(self, body: dict, query: str = ""):
         request = make_mocked_request(
             "POST",
-            f"/api/call/{TOOL_NAME}",
+            f"/api/call/{TOOL_NAME}{query}",
             payload=_body_reader(body),
             match_info={"tool_name": TOOL_NAME},
         )
@@ -209,6 +209,41 @@ class P12OperationReplayDisclosureTests(unittest.IsolatedAsyncioTestCase):
         # ...and the replay is disclosed, so a stable id is not read as "cached".
         self.assertEqual(second.get("operation_attempts"), 2, msg=second)
         self.assertTrue(second.get("operation_replayed"), msg=second)
+
+    async def test_a_projected_replay_still_warns_and_drops_the_rest(self):
+        """fields=ok keeps what changes the next step and drops what only describes the call.
+
+        2026-09-24: the envelope used to be stamped after the projection, so fields=ok
+        answered generation / operation_id / write_status_url / operation_attempts --
+        keys nobody asked for, on every call. Moving it through the projection must not
+        hide the replay warning: a caller cannot ask for a key it does not know is coming,
+        and this one says "the first attempt likely already wrote".
+        """
+        async def always_fails(**_kwargs) -> str:
+            return json.dumps({"ok": False, "error": "still stale",
+                               "error_name": "FILE_CHANGED_OUTSIDE_ORCHESTRATOR"})
+
+        code_tools.TOOL_MAP[TOOL_NAME] = always_fails
+        info_only = ("generation", "operation_id", "write_status_url", "operation_attempts")
+
+        first = json.loads((await self._dispatch({}, "?fields=ok")).text)
+        self.assertFalse(first.get("ok"), msg=first)
+        # A first attempt is not a replay, and a false flag warns of nothing.
+        self.assertNotIn("operation_replayed", first, msg=first)
+        for key in info_only:
+            self.assertNotIn(key, first, msg=first)
+
+        second = json.loads((await self._dispatch({}, "?fields=ok")).text)
+        self.assertIs(second.get("operation_replayed"), True, msg=second)
+        self.assertIs(second.get("likely_already_applied"), True, msg=second)
+        self.assertIn("read_file_range", second.get("replay_hint", ""), msg=second)
+        for key in info_only:
+            self.assertNotIn(key, second, msg=second)
+
+        # Naming an envelope key keeps it, like any other key.
+        third = json.loads((await self._dispatch({}, "?fields=ok,operation_attempts")).text)
+        self.assertEqual(third.get("operation_attempts"), 3, msg=third)
+        self.assertNotIn("fields_unknown", third, msg=third)
 
 
 def _body_reader(payload: dict):

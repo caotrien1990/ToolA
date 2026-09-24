@@ -398,3 +398,24 @@ def test_the_schema_accepts_the_three_new_fields() -> None:
         assert '"%s"' % field in source, (
             "%s is not listed in accepted_fields, so UNSUPPORTED_FIELD would teach a "
             "caller the wrong field set" % field)
+
+
+def test_an_overwrite_command_is_gated_like_a_delete(sandbox) -> None:
+    """Replacing a file loses it as surely as deleting it (2026-09-24).
+
+    Each shape clobbers keep.txt or purges the sandbox when it runs, and each one
+    scanned destructive_count=0 before, so it ran unannounced with no backup.
+    """
+    src = sandbox / "junk"
+    commands = {
+        "cmd_copy_y": 'copy /y "%s" "%s"' % (src / "a.tmp", sandbox / "keep.txt"),
+        "cmd_xcopy_y": 'xcopy "%s" "%s" /y' % (src / "a.tmp", sandbox),
+        "robocopy_mir": 'robocopy "%s" "%s" /MIR' % (src, sandbox),
+    }
+    unguarded = []
+    for label, command in commands.items():
+        payload = _run(ct.run_project_command(str(sandbox), command))
+        if payload.get("error_name") != "DESTRUCTIVE_SCRIPT_CONFIRMATION_REQUIRED":
+            unguarded.append((label, payload.get("error_name"), payload.get("ok")))
+    assert not unguarded, "these overwrite shapes passed the gate: %r" % unguarded
+    assert (sandbox / "keep.txt").read_text(encoding="utf-8") == "PRECIOUS"

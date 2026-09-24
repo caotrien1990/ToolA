@@ -17,6 +17,8 @@ import json
 import shutil
 from pathlib import Path
 
+from orchestrator.skip_rules import write_backup_path
+
 
 def _err(msg: str, **extra) -> str:
     d = {"ok": False, "result": "error", "error": msg}
@@ -74,7 +76,7 @@ def _write_lines(fp: Path, lines: list[str], eol: str = "\n",
 
 
 def _backup(fp: Path) -> str:
-    bak = fp.with_suffix(fp.suffix + ".bak")
+    bak = write_backup_path(fp)
     bak.write_bytes(fp.read_bytes())  # byte-exact backup (preserves EOL/encoding)
     return str(bak)
 

@@ -17,7 +17,7 @@ import os
 import time
 from typing import Any, Callable, Iterable
 
-from ..skip_rules import ignored_directory_name
+from ..skip_rules import ignored_directory_name, is_write_backup
 from .config import EXTRACTOR_VERSION, graph_db_path
 from .schema import SCHEMA_VERSION
 from . import status as _status
@@ -128,7 +128,7 @@ def _rel_display(abs_path: str, root: str) -> str:
 def _is_excluded_production(rel: str) -> bool:
     norm = _norm_slash(rel)
     base = os.path.basename(norm)
-    if base.endswith(".bak") or base.startswith("_baseline_"):
+    if is_write_backup(base) or base.startswith("_baseline_"):
         return True
     folded = norm.casefold() + "/"
     if any(folded.startswith(p) for p in _PROD_EXCLUDE_PREFIXES):

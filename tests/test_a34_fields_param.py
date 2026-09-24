@@ -162,6 +162,9 @@ def test_the_declaration_stays_small():
     prop = r101_fields_property()
     assert len(prop["description"]) < 260, len(prop["description"])
     assert set(prop) == {"type", "description", R101_MARKER}
+    # And it is the ONE place that says how to call fields= (fields_unknown_hint says
+    # only what a miss means), so the dotted form has to stay in it.
+    assert "result.files" in prop["description"]
 
 
 # ---------------------------------------------------------------- hook #2, behaviourally

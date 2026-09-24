@@ -3439,7 +3439,12 @@ class TestHttpDefense(unittest.IsolatedAsyncioTestCase):
         """D5's note says "/api/call requests were in flight". A watcher polls /health
         every 30s, and that poll was counted too, so a SERIAL write_fix overlapping one
         poll was told to "re-measure serially". Both requests go through the real
-        middleware into the real dispatcher -- the layer a CA actually reads."""
+        middleware into the real dispatcher -- the layer a CA actually reads.
+
+        2026-09-24: the note also needs a SLOW call -- a fast answer has no slowness to
+        explain. The mocked tool answers instantly, so the counting half lowers the bar
+        to 0 and the negative control keeps the default, which it must stay under. Under
+        fields= the note is a warning and survives; the bare count does not."""
         orchestrator_server._RATE_LIMIT_MAX = 0
         orchestrator_server._OTHER_RATE_LIMIT_MAX = 0
         orchestrator_server._DASHBOARD_RATE_LIMIT_MAX = 0
@@ -3450,14 +3455,14 @@ class TestHttpDefense(unittest.IsolatedAsyncioTestCase):
             await release.wait()
             return orchestrator_server.web.json_response({"ok": True})
 
-        async def answer_while_parked(method, path):
+        async def answer_while_parked(method, path, query=''):
             release.clear()
             parked_task = asyncio.ensure_future(orchestrator_server._http_defense_middleware(
                 make_mocked_request(method, path, match_info={'tool_name': name}), parked))
             await asyncio.sleep(0)
             try:
                 resp = await orchestrator_server._http_defense_middleware(
-                    make_mocked_request('POST', '/api/call/' + name,
+                    make_mocked_request('POST', '/api/call/' + name + query,
                                         payload=_make_body_reader({'port': 1}),
                                         match_info={'tool_name': name}),
                     orchestrator_server._dispatch_tool_call_request)
@@ -3466,13 +3471,20 @@ class TestHttpDefense(unittest.IsolatedAsyncioTestCase):
                 await parked_task
             return json.loads(resp.text)
 
+        from orchestrator.core import call_cache
+        self.assertGreaterEqual(call_cache.CALL_CACHE_MIN_MS, 100,
+                                "the negative control needs a bar an instant mock cannot reach")
         original = code_tools.TOOL_MAP[name]
         code_tools.TOOL_MAP[name] = mock.AsyncMock(return_value=json.dumps({"ok": True}))
         try:
             with mock.patch.object(orchestrator_server, "_requests_in_flight", 0), \
                  mock.patch.object(orchestrator_server, "_api_calls_in_flight", 0):
-                beside_health = await answer_while_parked('GET', '/health')
-                beside_tool = await answer_while_parked('POST', '/api/call/' + name)
+                with mock.patch.object(call_cache, "CALL_CACHE_MIN_MS", 0):
+                    beside_health = await answer_while_parked('GET', '/health')
+                    beside_tool = await answer_while_parked('POST', '/api/call/' + name)
+                    projected = await answer_while_parked(
+                        'POST', '/api/call/' + name, '?fields=ok')
+                fast_beside_tool = await answer_while_parked('POST', '/api/call/' + name)
                 self.assertEqual(orchestrator_server._api_calls_in_flight, 0,
                                  "the middleware leaked an /api/call count")
         finally:
@@ -3483,6 +3495,14 @@ class TestHttpDefense(unittest.IsolatedAsyncioTestCase):
         # Positive control: a second TOOL call in flight is real contention.
         self.assertEqual(beside_tool.get("concurrent_api_calls_observed"), 2, beside_tool)
         self.assertIn("contention_note", beside_tool)
+        # The same contention on a call that answered fast explains nothing.
+        self.assertTrue(fast_beside_tool.get("ok"), fast_beside_tool)
+        self.assertNotIn("contention_note", fast_beside_tool)
+        self.assertNotIn("concurrent_api_calls_observed", fast_beside_tool)
+        # fields=ok keeps the warning a caller cannot know to ask for, and only that.
+        self.assertIn("contention_note", projected)
+        self.assertNotIn("concurrent_api_calls_observed", projected)
+        self.assertNotIn("generation", projected)
 
     async def test_health_reports_queue_depth_p95_and_liveness_contract(self):
         orchestrator_server._requests_in_flight = 3

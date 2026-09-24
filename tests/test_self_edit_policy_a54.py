@@ -445,3 +445,59 @@ def test_preflight_names_the_refusal_exactly_as_the_classifier(tmp_path, fake_ag
     # Positive control: both verdicts ran, so a constant answer cannot pass.
     assert decisions == {"deny", "allow"}
     assert _preflight("Edit", "write", A_ROOT / "code_tools.py")["error_name"] == "HOST_GATE_DENY"
+
+
+# ---------------------------------------------------------------------------
+# ca_policy_metrics keeps the verdict a row was LOGGED with.
+#
+# log_native_event classifies at write time, with the scope and the Matrix live
+# then, and stores the verdict as a CA_POL tag. The aggregator used to re-judge
+# every native tagged row with the CURRENT Matrix and no scope, so turning
+# upgrade_orchestrator into forbid (above) re-counted every earlier, then-allowed
+# self-edit as forbidden_native: a policy change rewrote the ledger.
+# ---------------------------------------------------------------------------
+
+
+def _tagged_row(cls, *, origin="native", tool="Edit", target=""):
+    reason = cpm.encode_classification_reason("probe", cls)
+    return (tool, origin, "write", reason, "", str(target))
+
+
+_SELF_EDIT_THEN = {
+    "task_class": "upgrade_orchestrator", "native_policy": "hybrid_upgrade_only",
+    "transport": "native", "is_allowed_native": True,
+}
+
+
+def _counters(rows):
+    return cpm.aggregate_metrics_from_events(rows, project_path=str(A_ROOT))["counters"]
+
+
+def test_metrics_keep_the_write_time_verdict_of_a_native_row():
+    target = A_ROOT / "code_tools.py"
+    # Positive control: re-judging with today's Matrix WOULD flip this row.
+    assert _hook_shaped("Edit", "write", target, A_ROOT)["is_forbidden_native"] is True
+    c = _counters([_tagged_row(_SELF_EDIT_THEN, target=target)])
+    assert (c["forbidden_native_count"], c["allowed_native_count"]) == (0, 1), c
+
+
+def test_metrics_rejudge_an_untagged_row_with_the_live_matrix():
+    # A legacy row carries no verdict, so the live Matrix is the only judge left.
+    row = ("Edit", "native", "write", "no tag", "", str(A_ROOT / "code_tools.py"))
+    assert _counters([row])["forbidden_native_count"] == 1
+
+
+def test_metrics_rejudge_a_tag_computed_for_another_transport():
+    # Origin says native but the flags were computed as via_a: they answer a
+    # different question, so this row alone is re-judged.
+    via = {"task_class": "upgrade_orchestrator", "native_policy": "forbid",
+           "transport": "via_a", "is_via_a": True}
+    c = _counters([_tagged_row(via, target=A_ROOT / "code_tools.py")])
+    assert (c["forbidden_native_count"], c["via_a_count"]) == (1, 0), c
+
+
+def test_metrics_never_count_an_a_origin_row_as_native():
+    forbid = {**_SELF_EDIT_THEN, "native_policy": "forbid",
+              "is_allowed_native": False, "is_forbidden_native": True}
+    c = _counters([_tagged_row(forbid, origin="A", target=A_ROOT / "code_tools.py")])
+    assert (c["forbidden_native_count"], c["via_a_count"]) == (0, 1), c

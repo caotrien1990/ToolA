@@ -151,7 +151,8 @@ Every [A] error includes:
 | PROJECT_PATH_AMBIGUOUS | `resolve_project_path` first | once |
 | INVALID_BASE64 | Re-encode UTF-8 → base64, retry (V15 R12: applies to `query`/`name`/`content` when `*_encoding="base64"`) | once |
 | INVALID_CONTENT_ENCODING | Set `*_encoding` to `plain` or `base64` (no other values) | once |
-| STALE_INDEX / FILE_CHANGED_OUTSIDE_ORCHESTRATOR | `refresh_project_map` OR `generate_project_map(backup_override=true)` | once |
+| STALE_INDEX | `read_file_range(force_reseed=true)` hoặc `cache_delta`, rồi retry | once |
+| FILE_CHANGED_OUTSIDE_ORCHESTRATOR | `read_file_range(force_reseed=true)` — call DUY NHẤT reseed read_token; `refresh_project_map` / `cache_delta` không reseed | once |
 | PATH_NOT_FOUND | Verify absolute path; for relative inside project → use `file_path` not `project_path` | once |
 | BINARY_FILE_UNSUPPORTED | STOP, report — no retry | no |
 

@@ -4723,18 +4723,47 @@ _R101_FIELDS = contextvars.ContextVar("_r101_fields", default=None)
 # _error_response projects through _r101_filter too, and recording there would
 # overwrite this with an error payload on paths that never reached the tool.
 _R101_DISPATCH_FULL = contextvars.ContextVar("_r101_dispatch_full", default=None)
+# R101 (2026-09-24): the per-call envelope (generation, operation_*, task epoch,
+# queue_wait_ms, contention) goes through the projection like any other key, so
+# fields=ok answers ok. These are the envelope keys a projection must not hide while
+# their VALUE still warns -- each one changes what the caller does next, and a
+# caller cannot ask for a warning it does not know is coming. One key per warning:
+# the note carries the count, so the bare counters are not rescued beside it. Kept
+# apart from _R101_SAFETY_KEEP on purpose: that rescue stamps RESPONSE_INCOMPLETE,
+# which here would be false and would invite the full re-call fields= was avoiding.
+_R101_ENVELOPE_WARNS = {  # key -> still_warns(value)
+    "operation_replayed": lambda v: v is True,
+    "likely_already_applied": lambda v: v is True,
+    "replay_hint": bool,
+    "contention_note": bool,
+}
 
 
-def _r101_dispatch_result(result):
+def _r101_dispatch_result(result, envelope=None):
     """Project one dispatch result for the wire while remembering the full answer.
 
     The projection is a per-call VIEW; the cache and the write ledger have to keep
     the answer itself. One helper for all four dispatch return paths makes that true
     by construction -- four call sites agreeing is exactly what rotted here.
+
+    `envelope` is what the dispatcher says about THIS call. It is offered to the
+    view only -- the tool's own key wins a collision, and the recorded answer never
+    carries it -- so the view is always a copy, projected or not.
     """
-    if isinstance(result, dict):
-        _R101_DISPATCH_FULL.set(result)
-    return _r101_filter(result, _R101_FIELDS.get())
+    fields = _R101_FIELDS.get()
+    if not isinstance(result, dict):
+        return _r101_filter(result, fields)
+    _R101_DISPATCH_FULL.set(result)
+    view = dict(result)
+    for key, value in (envelope or {}).items():
+        view.setdefault(key, value)
+    out = _r101_filter(view, fields)
+    if fields and isinstance(out, dict):
+        for key, warns in _R101_ENVELOPE_WARNS.items():
+            if (key in (envelope or {}) and key not in result and key not in out
+                    and warns(envelope[key])):
+                out[key] = envelope[key]
+    return out
 # A37 #0b: the agent id of the dispatch in flight, set once in
 # _dispatch_tool_call_request and read by _error_response, which is called from dozens of
 # sites that never carry identity. Same reason as _R101_FIELDS above: per-dispatch state
@@ -4991,14 +5020,13 @@ def _r101_filter(payload, fields):
             _R101_SAFETY_KEEP[name.rpartition(".")[2]][1] for name in rescued))
     if unknown:
         out["fields_unknown"] = unknown
+        # What the miss MEANS, not how to call fields=: the usage (dotted keys, arrays)
+        # is the parameter's schema description, fetched once. Spelled out here it was
+        # ~390 chars on every miss, the one payload built to be small.
         out["fields_unknown_hint"] = (
-            "These fields= keys are not in this tool's response and were "
-            "ignored; the result is NOT empty because of them. Check spelling "
-            "(e.g. 'results' not 'result') or omit fields= to see every key. "
-            "fields_available names the keys that DO exist per namespace "
-            f"(the namespace {_R101_TOP_NAMESPACE} is the top level), so the "
-            "retry needs no second full call; a dotted key keeps one nested "
-            "branch, e.g. fields=result.files.")
+            "These fields= keys are not in this response; the result is NOT empty "
+            "because of them. fields_available lists the keys that do exist, "
+            f"{_R101_TOP_NAMESPACE} being the top level.")
         # CASE-1809-E: naming the miss is not enough to prevent a retry loop.
         # Measured: `content` instead of `result` on read_file_range, and
         # `total_lines.deeper` aimed at an int, both left the caller with no
@@ -15401,8 +15429,12 @@ accepted_fields=sorted(accepted_fields),
     _sem_category = ""
     # A41 tier 1c: initialised BEFORE the try below, because the release site lives
     # in that try's `finally` -- an exception raised early would otherwise NameError
-    # inside the finally and mask the real error.
+    # inside the finally and mask the real error. The cache hit, the tool's raw text
+    # and the per-call envelope are read by that finally too, for the same reason.
     _sf_key = ""
+    _cache_hit = None
+    raw = None
+    _envelope: dict = {}
     _current_task = asyncio.current_task()
     if _current_task is not None:
         _INFLIGHT_OPERATIONS[_request_op_id] = _current_task
@@ -15524,7 +15556,7 @@ accepted_fields=sorted(accepted_fields),
             _result = _r101_dispatch_result(_result)
             return web.json_response(_result, status=422, headers=cors)
         if isinstance(_result, dict) and _queue_wait_ms:
-            _result.setdefault("queue_wait_ms", _queue_wait_ms)
+            _envelope["queue_wait_ms"] = _queue_wait_ms
         _status = "error" if _tool_result_failed(_result) else "ok"
         # Task 3 auto-chain rule 6: git_commit post-hook — validate committed files
         if tool_name == "git_commit" and _status == "ok" and isinstance(_result, dict):
@@ -15777,7 +15809,103 @@ accepted_fields=sorted(accepted_fields),
                 _result.setdefault("normalization_applied", _mode_norm)
         # with ensure_ascii=False so CA sees raw UTF-8 text.
         try:
-            _result = _r101_dispatch_result(_result)
+            # CSLt 2026-07-16: refresh the task metadata AFTER the tool ran and stamp
+            # with setdefault so the tool's own response fields win. The old pre-run
+            # `_result.update(_task_meta)` overwrote begin_task's fresh task_epoch with
+            # the stale pre-call snapshot, so HTTP callers saw epoch N-1 (verified).
+            # R101 (2026-09-24): from here to the projection is the per-call ENVELOPE --
+            # it describes this call, not the tool's answer -- so it is collected in
+            # _envelope and offered to _r101_dispatch_result, never written into
+            # _result. Stamped after the projection instead, it reached a caller who
+            # asked for fields=ok as keys it never asked for, and the recorded answer
+            # carried one caller's metadata into the next caller's cache hit. A key the
+            # caller names is still kept, and so is a key whose VALUE warns
+            # (_R101_ENVELOPE_WARNS). Task metadata is not one of those: a stale epoch
+            # is refused with STALE_TASK_EPOCH, and that refusal carries the fresh one.
+            if _task_session_id and isinstance(_result, dict):
+                try:
+                    refreshed_task_meta = await asyncio.to_thread(
+                        _task_metadata, _task_session_id, _task_agent_id
+                    )
+                except ct.TaskCheckpointStorageError as exc:
+                    return _task_checkpoint_storage_response(
+                        exc,
+                        cors,
+                        write_performed=bool(_op_id),
+                    )
+                for _meta_key, _meta_val in refreshed_task_meta.items():
+                    _envelope.setdefault(_meta_key, _meta_val)
+            if isinstance(_result, dict):
+                _envelope.setdefault("generation", SERVER_GENERATION)
+                # FixA2407 P1-1: hand the caller the ledger key, so a client-side timeout
+                # is resolved with GET /api/write_status?operation_id=... instead of an
+                # ambiguous retry or a read-back.
+                if _op_id:
+                    _envelope.setdefault("operation_id", _op_id)
+                    _envelope.setdefault("write_status_url",
+                                         f"/api/write_status?operation_id={_op_id}")
+                    # P12 (campaign-1608): the operation_id is DETERMINISTIC, so an
+                    # identical retry maps onto the same ledger entry and returns the
+                    # same id. Surface the attempt count so a stable id is not
+                    # misread as a stale cached object: operation_replayed=true means
+                    # "you have sent this exact payload before", which lets a CA tell
+                    # a genuine re-run apart from an unchanged id after it reseeded.
+                    _led = _WRITE_LEDGER.get(_op_id)
+                    if isinstance(_led, dict):
+                        _attempts = int(_led.get("attempts") or 1)
+                        _envelope.setdefault("operation_attempts", _attempts)
+                        _envelope.setdefault("operation_replayed", _attempts > 1)
+                        # TA-4 fix (2026-08-18): a REPLAY that now reports
+                        # SYNTAX_ERROR_PRE_WRITE / FILE_CHANGED_OUTSIDE_ORCHESTRATOR
+                        # is a known false-alarm shape: the FIRST attempt already
+                        # shipped the write (server completed, client timed out),
+                        # so the deterministic retry recomputes the draft/AST
+                        # against the ALREADY-PATCHED file — the old line range no
+                        # longer matches and the tool cries "unmatched ')'" on code
+                        # that is in fact correct. Tell the caller so it verifies by
+                        # read instead of blindly re-patching (which would double-write).
+                        if (_attempts > 1 and _result.get("ok") is False
+                                and _result.get("error_name") in {
+                                    "SYNTAX_ERROR_PRE_WRITE",
+                                    "FILE_CHANGED_OUTSIDE_ORCHESTRATOR"}):
+                            _envelope.setdefault("likely_already_applied", True)
+                            _envelope.setdefault(
+                                "replay_hint",
+                                "This exact payload was sent before; the first "
+                                "attempt likely already wrote successfully (client "
+                                "timeout, server completed). VERIFY with "
+                                "read_file_range before retrying — do NOT blindly "
+                                "re-patch, that risks a double-write.")
+                            _envelope.setdefault("ca_next_action", "read_file_range")
+            # D5: contention is stamped ONLY when it actually held AND actually cost
+            # something. An unconditional field would spend tokens on every call
+            # forever just to say "1", and the measured case is the one a CA misreads:
+            # five heavy calls in flight at once, each running 3-10x its own warm wall
+            # clock, reported by the caller as "the tool is slow". A call that answered
+            # fast has no slowness to explain, so it carries no note. The bar is the
+            # A41 cache's CALL_CACHE_MIN_MS -- the same question, "did this call hurt",
+            # asked with one number -- read at call time, and measured on the wall
+            # clock the caller waited through, admission queue included. The note
+            # survives fields= (_R101_ENVELOPE_WARNS): a wall-clock explanation must not
+            # be hidden by a projection; the bare count rides along only unprojected.
+            # Counted from _api_calls_in_flight, never _requests_in_flight: a /health
+            # poll overlapping a serial write_fix is not contention, and counting it
+            # told that CA to "re-measure serially" about a call that WAS serial.
+            _inflight_peak = max(_inflight_at_entry, _api_calls_in_flight)
+            if _inflight_peak > 1:
+                try:
+                    from orchestrator.core.call_cache import CALL_CACHE_MIN_MS as _slow_ms
+                except Exception:
+                    _slow_ms = 0
+                if int((time.time() - _t0) * 1000) + int(_queue_wait_ms or 0) >= _slow_ms:
+                    _envelope.setdefault("concurrent_api_calls_observed", _inflight_peak)
+                    _envelope.setdefault(
+                        "contention_note",
+                        "%d /api/call requests were in flight around this one; the wall "
+                        "clock includes queueing, so a slow answer here is NOT evidence "
+                        "of a slow tool -- re-measure serially before tuning scope"
+                        % _inflight_peak)
+            _result = _r101_dispatch_result(_result, _envelope)
             # A29: an unprojected fat response is a silent context tax. Name
             # its heaviest keys so the NEXT call can pass fields=. Runs after
             # the filter so a caller who already projected never sees a hint.
@@ -15821,88 +15949,12 @@ accepted_fields=sorted(accepted_fields),
                             )
                 except Exception:
                     pass  # a disclosure must never fail the call that already worked
-            # CSLt 2026-07-16: refresh the task metadata AFTER the tool ran and stamp
-            # with setdefault so the tool's own response fields win. The old pre-run
-            # `_result.update(_task_meta)` overwrote begin_task's fresh task_epoch with
-            # the stale pre-call snapshot, so HTTP callers saw epoch N-1 (verified).
-            if _task_session_id and isinstance(_result, dict):
-                try:
-                    refreshed_task_meta = await asyncio.to_thread(
-                        _task_metadata, _task_session_id, _task_agent_id
-                    )
-                except ct.TaskCheckpointStorageError as exc:
-                    return _task_checkpoint_storage_response(
-                        exc,
-                        cors,
-                        write_performed=bool(_op_id),
-                    )
-                for _meta_key, _meta_val in refreshed_task_meta.items():
-                    _result.setdefault(_meta_key, _meta_val)
-            if isinstance(_result, dict):
-                _result.setdefault("generation", SERVER_GENERATION)
-                # FixA2407 P1-1: hand the caller the ledger key, so a client-side timeout
-                # is resolved with GET /api/write_status?operation_id=... instead of an
-                # ambiguous retry or a read-back.
-                if _op_id:
-                    _result.setdefault("operation_id", _op_id)
-                    _result.setdefault("write_status_url",
-                                       f"/api/write_status?operation_id={_op_id}")
-                    # P12 (campaign-1608): the operation_id is DETERMINISTIC, so an
-                    # identical retry maps onto the same ledger entry and returns the
-                    # same id. Surface the attempt count so a stable id is not
-                    # misread as a stale cached object: operation_replayed=true means
-                    # "you have sent this exact payload before", which lets a CA tell
-                    # a genuine re-run apart from an unchanged id after it reseeded.
-                    _led = _WRITE_LEDGER.get(_op_id)
-                    if isinstance(_led, dict):
-                        _attempts = int(_led.get("attempts") or 1)
-                        _result.setdefault("operation_attempts", _attempts)
-                        _result.setdefault("operation_replayed", _attempts > 1)
-                        # TA-4 fix (2026-08-18): a REPLAY that now reports
-                        # SYNTAX_ERROR_PRE_WRITE / FILE_CHANGED_OUTSIDE_ORCHESTRATOR
-                        # is a known false-alarm shape: the FIRST attempt already
-                        # shipped the write (server completed, client timed out),
-                        # so the deterministic retry recomputes the draft/AST
-                        # against the ALREADY-PATCHED file — the old line range no
-                        # longer matches and the tool cries "unmatched ')'" on code
-                        # that is in fact correct. Tell the caller so it verifies by
-                        # read instead of blindly re-patching (which would double-write).
-                        if (_attempts > 1 and _result.get("ok") is False
-                                and _result.get("error_name") in {
-                                    "SYNTAX_ERROR_PRE_WRITE",
-                                    "FILE_CHANGED_OUTSIDE_ORCHESTRATOR"}):
-                            _result.setdefault("likely_already_applied", True)
-                            _result.setdefault(
-                                "replay_hint",
-                                "This exact payload was sent before; the first "
-                                "attempt likely already wrote successfully (client "
-                                "timeout, server completed). VERIFY with "
-                                "read_file_range before retrying — do NOT blindly "
-                                "re-patch, that risks a double-write.")
-                            _result.setdefault("ca_next_action", "read_file_range")
-            # D5: contention is stamped ONLY when it actually held. An
-            # unconditional field would spend tokens on every call forever just to
-            # say "1", and the measured case is the one a CA misreads: five heavy
-            # calls in flight at once, each running 3-10x its own warm wall clock,
-            # reported by the caller as "the tool is slow". Not R101-projected on
-            # purpose -- a wall-clock explanation must not be hidden by fields=.
-            # Counted from _api_calls_in_flight, never _requests_in_flight: a /health
-            # poll overlapping a serial write_fix is not contention, and counting it
-            # told that CA to "re-measure serially" about a call that WAS serial.
-            _inflight_peak = max(_inflight_at_entry, _api_calls_in_flight)
-            if _inflight_peak > 1:
-                _result.setdefault("concurrent_api_calls_observed", _inflight_peak)
-                _result.setdefault(
-                    "contention_note",
-                    "%d /api/call requests were in flight around this one; the wall "
-                    "clock includes queueing, so a slow answer here is NOT evidence "
-                    "of a slow tool -- re-measure serially before tuning scope"
-                    % _inflight_peak)
-            # A37 #4: the R101 projection above ran BEFORE this block stamped
-            # generation / operation_id / write_status_url / operation_* and the
-            # refreshed task metadata, so fields_unknown could name a key that IS
-            # in the very response being returned. Prune by asking the payload,
-            # never a hand-maintained list of envelope keys.
+            # A37 #4: pushed_schema, schema_rearmed and cached_result_available are the
+            # only stamps still added AFTER the R101 projection -- a CA cannot project for
+            # a key it does not yet know exists. fields_unknown may therefore name one of
+            # them although it IS in this response, so prune by asking the payload, never
+            # a hand-maintained list. The per-call envelope no longer needs this: it goes
+            # through the projection itself (see _r101_dispatch_result).
             # A41 (Anh's idea): a CA that abandoned a call on its own timeout never
             # learns the answer arrived. Tell it on its NEXT call -- here, the single
             # success exit every tool passes through. Stamped AFTER _r101_filter for
@@ -16020,10 +16072,19 @@ accepted_fields=sorted(accepted_fields),
         # spelling, because the cache held the projection of call #1. A projection is
         # a per-call view of one answer; what gets stored has to be the answer.
         # _r101_dispatch_result records it at the single producer, so no return path
-        # can forget to -- four call sites agreeing is what rotted here.
+        # can forget to -- four call sites agreeing is what rotted here. The envelope
+        # is a per-call view too, so it is stamped on the returned COPY, never on the
+        # recorded answer; the A41 cache below goes one step further (see there).
         _result_full = _R101_DISPATCH_FULL.get()
         if not isinstance(_result_full, dict):
             _result_full = _result
+        # The audit rows below describe THIS call, so they read the answer plus the
+        # per-call envelope it was offered -- never the fields= view. Read through the
+        # view, events.session_id, stdout/stderr, tests and queue_wait_ms all depended
+        # on what one caller chose to SEE: fields=ok kept none of them.
+        _result_audit = dict(_result_full) if isinstance(_result_full, dict) else {}
+        for _env_key, _env_val in _envelope.items():
+            _result_audit.setdefault(_env_key, _env_val)
         # Every begun write must leave in_flight, including non-JSON, TypeError,
         # and CancelledError paths that return/raise before the normal finish call.
         try:
@@ -16054,7 +16115,7 @@ accepted_fields=sorted(accepted_fields),
         # at all. Inline in this `finally`, the only thing a test could assert about it
         # was its source text.
         if _status == "error" and not _error_msg:
-            _error_msg = _error_detail_from_result(_result)
+            _error_msg = _error_detail_from_result(_result_audit)
         # A41 tier 1b/3a: the socket is already closed by the time this `finally`
         # runs, so THIS is the only place that can tell a delivered answer from an
         # orphan BEFORE the accounting row is written. The middleware check at the
@@ -16066,8 +16127,15 @@ accepted_fields=sorted(accepted_fields),
         _cache_key = ""
         try:
             from orchestrator.core import call_cache as _cc
+            # The cache keeps the TOOL's answer -- `raw`, the text fn() returned -- never
+            # the dispatcher's decorated view of it. A hit re-enters this pipeline at
+            # json.loads(raw), so every per-call stamp (task epoch, pushed_schema,
+            # project_path_resolution, generation, ...) is re-derived for the NEW caller;
+            # a stored stamp would win that setdefault instead and hand caller B caller
+            # A's metadata, because the key ignores agent_id on purpose. A hit computed
+            # nothing, so it stores nothing: re-storing it would reset the entry's age.
             _cache_key = _cc.store(
-                tool_name, body, _result_full if isinstance(_result_full, dict) else None,
+                tool_name, body, raw if _cache_hit is None else None,
                 _ms, str(body.get("project_path", "") or "") if isinstance(body, dict) else "",
                 _task_agent_id or "")
             if _status == "ok" and _cc.budget_for(tool_name) is not None:
@@ -16115,7 +16183,7 @@ accepted_fields=sorted(accepted_fields),
                 _request_op_id,
                 tool_name,
                 dict(body),
-                _result if isinstance(_result, dict) else {},
+                _result_audit,
                 _ms,
                 _status,
                 _error_msg,
@@ -16136,7 +16204,7 @@ accepted_fields=sorted(accepted_fields),
                 "accounting_id": _request_op_id,
                 "tool_name": tool_name,
                 "body": _compact_accounting_body(body),
-                "result": _compact_accounting_result(_result, _accounting_task_meta),
+                "result": _compact_accounting_result(_result_audit, _accounting_task_meta),
                 "duration_ms": _ms,
                 "status": _status,
                 "error_msg": _error_msg,
@@ -16145,8 +16213,7 @@ accepted_fields=sorted(accepted_fields),
                 # string forced a CA to read source to classify a failure.
                 "delivered": _delivered,
                 "client_gone": _client_gone,
-                "error_name": (_result.get("error_name", "")
-                               if isinstance(_result, dict) else ""),
+                "error_name": str(_result_audit.get("error_name", "") or ""),
                 # MEASURED 2026-09-21 on a live row: agent_id landed on 0 of 1000 USAGE_LOG
                 # rows. It was stamped ONLY as `_task_agent_id` inside the RESULT compact --
                 # which exists to carry durable-audit meta -- while the usage sink read it
@@ -18361,6 +18428,8 @@ async def _run_session_retention_prune() -> dict:
 #      by SUFFIX. A symlink/junction is skipped rather than followed, so the
 #      sweep cannot be steered out of the bin.
 # ---------------------------------------------------------------------------
+from orchestrator.skip_rules import is_write_backup as _is_write_backup
+
 _BAK_ARCHIVE_DIR = "_recycle_bin"
 _BAK_ARCHIVE_SUBDIR = "bak_archive"
 _BAK_ARCHIVE_TTL_DAYS = max(
@@ -18405,7 +18474,7 @@ def _bak_archive_sweep(
                 if d not in _BAK_ARCHIVE_SKIP_DIRS and not d.startswith("venv")
             ]
             for fn in filenames:
-                if not fn.endswith(".bak"):
+                if not _is_write_backup(fn):
                     continue
                 src = Path(dirpath) / fn
                 try:
