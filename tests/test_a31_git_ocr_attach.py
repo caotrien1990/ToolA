@@ -216,6 +216,19 @@ class GitOcrSurfaceTest(unittest.TestCase):
         git_tools_src = (_ROOT / "orchestrator" / "git_tools.py").read_text(encoding="utf-8")
         self.assertEqual(git_tools_src.count("ca_hint_review"), 2)
 
+    def test_git_commit_publishes_the_message_limit_the_git_layer_enforces(self):
+        # git_tools.commit refused a message over 4000 chars while the schema said only
+        # "Commit message", so a caller learned the limit from INVALID_COMMIT_MESSAGE
+        # after composing a long message. Read from the REGISTERED schema, the layer
+        # /api/tools/git_commit/schema serves, not from the spec row.
+        from orchestrator import git_tools
+
+        entry = next(s["function"] for s in osrv.ct.TOOL_SCHEMAS
+                     if s.get("function", {}).get("name") == "git_commit")
+        message = entry["parameters"]["properties"]["message"]
+        self.assertEqual(message["type"], "string")
+        self.assertEqual(message["maxLength"], git_tools.COMMIT_MESSAGE_MAX_CHARS)
+
 
 if __name__ == "__main__":
     unittest.main()

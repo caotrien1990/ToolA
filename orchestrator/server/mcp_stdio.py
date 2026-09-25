@@ -894,6 +894,10 @@ def _mcp_plain_text_server(name: str):
     wrappers instead would be worse, because zeromcp then renders the text block itself
     as ``json.dumps(indent=2)`` with ASCII escapes. Module-level, like
     _mcp_tool_fields_decorator, so it is testable without starting the stdio loop.
+
+    orchestrator/mcp_packs/generator.py embeds this function's SOURCE into every
+    generated pack, so it must stay self-contained: zeromcp is imported inside, and it
+    reads no module global.
     """
     from zeromcp import McpServer
 

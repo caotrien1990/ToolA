@@ -199,5 +199,81 @@ class McpDefaultSurfaceIsTheBootstrapCallsTests(unittest.TestCase):
                                  _launch_tool_names())
 
 
+def _generated_pack_server(template_name, pack_id, relay_name, answer):
+    """Exec one generated pack against the real zeromcp and return the server it runs.
+
+    The relay (``_http`` / ``_call``) is replaced so nothing touches the network, and
+    ``stdio`` is replaced so the server is captured instead of pumping stdin."""
+    from zeromcp import McpServer
+
+    from orchestrator.mcp_packs import generator
+
+    template = getattr(generator, template_name)
+    ns = {"__name__": "pack"}
+    exec(template(generator._resolve_catalog(pack_id), {"ca_id": "t"}), ns)
+    ns[relay_name] = lambda *_a, **_k: answer
+    servers = []
+    with mock.patch.object(McpServer, "stdio", lambda self, *_a, **_k: servers.append(self)):
+        ns["run"]()
+    return servers[0]
+
+
+class GeneratedPackAnswersWithTheTextBlockOnlyTests(unittest.TestCase):
+    """orchestrator/mcp_packs/generator.py writes stand-alone MCP servers, and those ran a
+    plain zeromcp McpServer: every pack answer still carried the structuredContent copy
+    the bridge stopped sending in c25f035. A pack now embeds the bridge's own
+    _mcp_plain_text_server source, so there is one override and no second copy to drift.
+    """
+
+    ANSWER = McpToolResultIsTheTextBlockOnlyTests.ANSWER
+    # (template, builtin pack, relay the tool answers through, tool, arguments)
+    PACKS = (
+        ("_server_template_http_relay", "toolq", "_http",
+         "pack_call", {"method": "GET", "path": "/health"}),
+        ("_server_template_orchestrator_call", "council", "_call",
+         "call_tool", {"name": "council_status", "payload_json": "{}"}),
+    )
+
+    @staticmethod
+    def _source(template, pack_id):
+        from orchestrator.mcp_packs import generator
+
+        return getattr(generator, template)(generator._resolve_catalog(pack_id), {"ca_id": "t"})
+
+    def test_every_builtin_pack_answers_with_the_text_block_only(self):
+        for template, pack_id, relay, tool, arguments in self.PACKS:
+            with self.subTest(pack_id):
+                server = _generated_pack_server(template, pack_id, relay, self.ANSWER)
+                listed = _rpc(server, "tools/list")["tools"]
+                self.assertTrue(listed)
+                self.assertEqual([t["name"] for t in listed if "outputSchema" in t], [])
+                called = _rpc(server, "tools/call", {"name": tool, "arguments": arguments})
+                self.assertEqual(called, {
+                    "content": [{"type": "text", "text": self.ANSWER}],
+                    "isError": False,
+                })
+
+    def test_a_pack_embeds_the_bridge_override_rather_than_a_copy(self):
+        """The source is read from the bridge at generation time, so a fix to the
+        override reaches the next generated pack with no second edit."""
+        import inspect
+
+        override = inspect.getsource(mcp_stdio._mcp_plain_text_server)
+        for template, pack_id, *_ in self.PACKS:
+            with self.subTest(pack_id):
+                self.assertEqual(self._source(template, pack_id).count(override), 1)
+
+    def test_a_pack_without_zeromcp_still_exits_2(self):
+        for template, pack_id, *_ in self.PACKS:
+            with self.subTest(pack_id):
+                ns = {"__name__": "pack"}
+                exec(self._source(template, pack_id), ns)
+                with mock.patch.dict("sys.modules", {"zeromcp": None}), \
+                        mock.patch("sys.stderr"), \
+                        self.assertRaises(SystemExit) as caught:
+                    ns["run"]()
+                self.assertEqual(caught.exception.code, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

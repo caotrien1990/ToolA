@@ -307,9 +307,13 @@ def unstage(project_path, paths=None, paths_file='', allow_all=False, expected_s
     else: _run(root,['--literal-pathspecs','restore','--staged','--',*specs])
     return {'ok':True,'paths':specs,'paths_file':str(paths_file or ''),'after':_state(status(str(root)))}
 
+# git_commit publishes this as the `message` maxLength (orchestrator_server), so the
+# schema and the refusal in commit() cannot name two different limits.
+COMMIT_MESSAGE_MAX_CHARS = 4000
+
 def commit(project_path, message, expected_staged_hash, allow_empty=False, no_verify=False):
     root=resolve_root(project_path); s=status(str(root)); msg=str(message or '').strip()
-    if not msg or len(msg)>4000: raise GitToolError('INVALID_COMMIT_MESSAGE','message required and max 4000 chars')
+    if not msg or len(msg)>COMMIT_MESSAGE_MAX_CHARS: raise GitToolError('INVALID_COMMIT_MESSAGE',f'message required and max {COMMIT_MESSAGE_MAX_CHARS} chars')
     if s['counts']['conflicts']: raise GitToolError('GIT_CONFLICTS_PRESENT','resolve conflicts before commit')
     # Three DISTINCT rejections, previously collapsed into one GIT_STATE_STALE that
     # named the wrong cause. A caller that passed a hash matching the live index was

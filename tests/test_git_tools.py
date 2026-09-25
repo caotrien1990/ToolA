@@ -78,3 +78,11 @@ def test_log_keeps_a_subject_holding_a_unicode_line_break():
  finally: msg.unlink(missing_ok=True)
  commits=g.log(str(r))['commits']
  assert [c['subject'] for c in commits]==[subject,'init'], commits; d.cleanup()
+
+
+def test_commit_message_limit_sits_exactly_at_the_published_constant():
+ # git_commit publishes maxLength from COMMIT_MESSAGE_MAX_CHARS, so the refusal must sit
+ # exactly there: n characters commit, n+1 answer INVALID_COMMIT_MESSAGE.
+ d,r=repo(); n=g.COMMIT_MESSAGE_MAX_CHARS; (r/'b.txt').write_text('b'); g.stage(str(r),['b.txt'])
+ over=g.safe_call(g.commit,str(r),'x'*(n+1),'auto'); assert over['error_name']=='INVALID_COMMIT_MESSAGE'
+ assert g.commit(str(r),'x'*n,'auto')['ok']; d.cleanup()

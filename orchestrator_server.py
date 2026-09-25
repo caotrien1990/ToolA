@@ -11820,6 +11820,11 @@ _OCR_ATTACH_PROP = {"type": "boolean", "description": "Run the zero-LLM open-cod
 for _gspec in _GIT_TOOL_SPECS:
     if _gspec[0] in ("git_stage", "git_commit"):
         _gspec[7]["ocr"] = dict(_OCR_ATTACH_PROP)
+    # git_tools.commit refuses a longer message, so the schema publishes the SAME limit
+    # instead of letting a caller learn it from INVALID_COMMIT_MESSAGE. Injected here,
+    # like `ocr`, so the spec row stays byte-identical.
+    if _gspec[0] == "git_commit":
+        _gspec[7]["message"]["maxLength"] = _git_tools.COMMIT_MESSAGE_MAX_CHARS
 for _n,_h,_p,_tok,_sess,_scope,_aliases,_props,_req in _GIT_TOOL_SPECS:
     _register_tool(name=_n,handler=_h,phase=_p,tool_map=ct.TOOL_MAP,tool_schemas=ct.TOOL_SCHEMAS,tool_phases=ct.TOOL_PHASES,arg_aliases=_ARG_ALIASES,phase_labels=ct.PHASE_LABELS,aliases=_aliases,schema={"description":f"Governed Git operation: {_n} (argv-only, no shell).","parameters":{"type":"object","properties":_props,"required":_req}},requires_token=_tok,requires_session=_sess,mutation_scope=(None if _scope == "none" else _scope),token_required_set=_TOKEN_REQUIRED_TOOLS,mutating_set=_MUTATING_TOOLS,mutation_scope_map=getattr(ct,"_MUTATION_SCOPE_MAP",None))
 import tools_v15 as _v15

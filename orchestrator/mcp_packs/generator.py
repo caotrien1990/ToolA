@@ -9,6 +9,7 @@ get isolated MCP processes (no shared tool lock like a shared API socket).
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import re
 import shutil
@@ -184,6 +185,30 @@ def _resolve_catalog(
     return cat
 
 
+def _pack_server_run_head(srv: str) -> list[str]:
+    """The opening of a generated pack's ``run()``, shared by both templates.
+
+    A plain zeromcp McpServer publishes ``outputSchema {result: string}`` for every
+    ``-> str`` pack tool and sends a ``structuredContent`` copy of each answer: the
+    daemon's JSON escaped inside a JSON string, next to the text block that already
+    carries it. The stdio bridge dropped that copy in c25f035 while every generated
+    pack kept it. A pack now runs the bridge's own override, embedded from its source
+    at generation time, so there is one definition and a fix to it reaches the next
+    generated pack with no second edit.
+    """
+    from orchestrator.server.mcp_stdio import _mcp_plain_text_server
+
+    return [
+        inspect.getsource(_mcp_plain_text_server).rstrip("\n"),
+        "def run():",
+        "    try:",
+        f"        mcp = _mcp_plain_text_server({srv!r})",
+        "    except ImportError as e:",
+        "        sys.stderr.write('zeromcp missing\\n')",
+        "        raise SystemExit(2) from e",
+    ]
+
+
 def _server_template_http_relay(cat: dict[str, Any], identity: dict[str, Any]) -> str:
     base_env = cat.get("base_url_env") or "TOOLQ_BASE_URL"
     default_base = cat.get("base_url") or "http://127.0.0.1:8082"
@@ -228,14 +253,8 @@ def _server_template_http_relay(cat: dict[str, Any], identity: dict[str, Any]) -
         "            parsed['_meta'].update({'http_status': code, 'path': path, 'pack_id': PACK_ID, 'ca_id': CA_ID})",
         "        return json.dumps(parsed, ensure_ascii=False)",
         "    return json.dumps({'ok': True, 'http_status': code, 'path': path, 'body': body}, ensure_ascii=False)",
-        "def run():",
-        "    try:",
-        "        from zeromcp import McpServer",
-        "    except ImportError as e:",
-        "        sys.stderr.write('zeromcp missing\\n')",
-        "        raise SystemExit(2) from e",
-        f"    mcp = McpServer({srv!r})",
     ]
+    lines += _pack_server_run_head(srv)
     for t in named:
         name = t["name"]
         method = (t.get("method") or "GET").upper()
@@ -362,13 +381,9 @@ def _server_template_orchestrator_call(cat: dict[str, Any], identity: dict[str, 
         "    except Exception:",
         "        pass",
         "    return body",
-        "def run():",
-        "    try:",
-        "        from zeromcp import McpServer",
-        "    except ImportError as e:",
-        "        sys.stderr.write('zeromcp missing\\n')",
-        "        raise SystemExit(2) from e",
-        f"    mcp = McpServer({srv!r})",
+    ]
+    lines += _pack_server_run_head(srv)
+    lines += [
         "    @mcp.tool",
         "    def call_tool(name: str = '', payload_json: str = '{}') -> str:",
         '        """Gateway: call any tool by name with JSON payload."""',
