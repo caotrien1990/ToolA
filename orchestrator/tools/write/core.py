@@ -11,6 +11,7 @@ import threading
 import time
 
 from orchestrator.skip_rules import write_backup_path
+from orchestrator.text_lines import split_lines
 from orchestrator.progress_watchdog import current_watchdog
 _logger = logging.getLogger(__name__)
 
@@ -1021,7 +1022,9 @@ def _boot_sweep_xroot_files(max_rows: int = 200) -> list[Path]:
         ledger = Path(__file__).resolve().parents[3] / ".orchestrator_cache" / "xroot_writes.jsonl"
         if not ledger.exists():
             return []
-        rows = ledger.read_text(encoding="utf-8", errors="replace").splitlines()[-max_rows:]
+        # One row per "\n" (xroot.ledger_append): a raw U+2028/U+0085 in the path
+        # stays INSIDE a row, and str.splitlines() cut it into unparseable halves.
+        rows = split_lines(ledger.read_text(encoding="utf-8", errors="replace"))[-max_rows:]
     except Exception:
         return []
     files = []
@@ -1113,7 +1116,9 @@ def _boot_sweep_ledger_candidates() -> tuple[dict[str, Path], list[dict]]:
     try:
         if not led.exists():
             return candidates, errors
-        lines = led.read_text(encoding="utf-8", errors="replace").splitlines()
+        # One row per "\n": ensure_ascii=False keeps a raw U+2028/U+0085 of the
+        # target path INSIDE a row, which str.splitlines() cut into corrupt halves.
+        lines = split_lines(led.read_text(encoding="utf-8", errors="replace"))
     except Exception as exc:
         errors.append({
             "ledger": str(led),
@@ -1577,7 +1582,8 @@ skip_symbol_check :bool =False )->str :
         _crlf =_text .count ('\r\n')
         _lone_lf =_text .count ('\n')-_crlf
         _eol ='\r\n' if _crlf and _crlf >=_lone_lf else '\n'
-        lines =_text .splitlines (keepends =True )
+        # #32/F1: universal line ends, the same count read_file_range shows -- see text_lines.
+        lines =split_lines (_text ,keepends =True )
         total =len (lines )
         if start_line <1 or start_line >total :
             return {
@@ -1601,7 +1607,7 @@ skip_symbol_check :bool =False )->str :
             _bom =True
         if _eol !='\n':
             _nc =_nc .replace ('\n',_eol )
-        new_lines =_nc .splitlines (keepends =True )
+        new_lines =split_lines (_nc ,keepends =True )
         # A banner replacement must not swallow the following Markdown sections.
         # Detect the dangerous shape, not a campaign-specific hardcoded line 7.
         if fp.suffix.lower() in {".md", ".markdown"} and len([line for line in new_lines if line.strip()]) == 1 and end > start_line:
@@ -1611,6 +1617,7 @@ skip_symbol_check :bool =False )->str :
                 return {"error": "Single-line banner replacement crosses Markdown section headings",
                         "error_name": "BANNER_RANGE_CROSSES_SECTION",
                         "ca_next_action": "use_start_line_equal_end_line_for_banner"}
+        # A lone "\r" already ends a line (split_lines): adding _eol would make it "\r\n".
         if new_lines and not new_lines [-1 ].endswith (('\n','\r')):
             new_lines [-1 ]+=_eol
         proposed =('\ufeff' if _bom else '')+''.join (lines [:start_line -1 ]+new_lines +lines [end :])
@@ -2233,7 +2240,7 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
         "ok":True ,
         "file":str (fp ),
         "write_mode":write_mode ,
-        "lines_written":len (new_content .splitlines ()),
+        "lines_written":len (split_lines (new_content )),
         "encoding_check":encoding_check ,
         "encoding_used":encoding_check .get ("encoding_used"),
         "bytes_written":len (new_content .encode ("utf-8")),

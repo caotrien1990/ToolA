@@ -2121,6 +2121,163 @@ class TestCodeToolsCache(unittest.TestCase):
                 self.assertTrue(data.startswith(bom), data[:8])
                 self.assertFalse(data[len(bom):].startswith(bom), data[:8])
 
+    def test_line_numbers_count_newlines_only(self):
+        # #32: every line-numbering tool counted with str.splitlines(), which also
+        # breaks on \x0c \x0b \x1c-\x1e \x85 \u2028 \u2029. One form feed in a comment
+        # moved every line below it +1 against git/grep, so a CA that took line 3
+        # from git got line 2 from read_file_range and write_fix edited the line
+        # ABOVE the one it meant -- with ok:true.
+        # Each assert below is the only one that fails if ITS call-site goes back
+        # to splitlines, so a new site needs its own assert, not a shared one.
+        import re
+        import surgical_mapper
+        from orchestrator.text_lines import split_lines
+
+        text = '# a\x0cb\nx = 1\nTARGET = 2\ny = 3\n'
+        self.assertEqual(split_lines(text), ['# a\x0cb', 'x = 1', 'TARGET = 2', 'y = 3'])
+        self.assertEqual(''.join(split_lines(text, keepends=True)), text)
+        self.assertEqual(split_lines('a\r\nb\r\n'), ['a', 'b'])
+        self.assertEqual(split_lines('a\nb'), ['a', 'b'])
+        self.sample_file.write_bytes(text.encode('utf-8'))
+        (self.project_path / 'app.js').write_bytes(b'// a\x0cb\nfunction target() {}\ntarget();\n')
+        asyncio.run(code_tools.generate_project_map(str(self.project_path)))
+        index = code_tools._load_index(str(self.project_path.resolve()))
+        self.assertEqual(index['files']['sample.py'].get('line_count'), 4, msg=index['files'])
+        prev = code_tools._unified_diff_preview(
+            text, text.replace('TARGET = 2', 'TARGET = 9'), 'a', 'b')
+        self.assertEqual(prev['diff_unified'].split('\n')[2], '@@ -1,4 +1,4 @@', msg=prev)
+        self.assertEqual((prev.get('preview_before'), prev.get('preview_after')),
+                         (text[:-1], text.replace('TARGET = 2', 'TARGET = 9')[:-1]), msg=prev)
+        from orchestrator.tools.write import draft
+        self.assertEqual(draft._norm_lines('a\x0cb\nc'), ['a\x0cb\n', 'c\n'])
+        # The regex extractor is what a file gets when tree-sitter is absent, and the
+        # else-branch counts a file type the mapper does not parse.
+        syms, _imports, _complexity = surgical_mapper._extract_symbols_with_regex(
+            '// a\x0cb\nfunction target() {}\n', '.js')
+        self.assertEqual([(s['name'], s['line_start']) for s in syms], [('target', 2)], msg=syms)
+        notes = self.project_path / 'notes.rst'
+        notes.write_bytes(b'a\x0cb\nc\n')
+        self.assertEqual(surgical_mapper.analyze_file(
+            str(notes), str(self.project_path)).get('line_count'), 2)
+        # The here-string body on line 3 is prose; only the line-5 call is real.
+        scan = code_tools._scan_destructive_script(
+            "# a\x0cb\n$x = @'\nRemove-Item x\n'@\nRemove-Item y\n", 'powershell')
+        self.assertEqual([f.get('line') for f in scan.get('findings') or []], [5], msg=scan)
+        # A decoded carrier quotes the line it sits on, and a -Include footgun
+        # names that line too.
+        enc = base64.b64encode('Remove-Item zzzzzz -Recurse'.encode('utf-16-le')).decode()
+        scan = code_tools._scan_destructive_script(
+            '# a\x0cb\npowershell -EncodedCommand ' + enc + '\n', 'powershell')
+        self.assertEqual([(f.get('line'), (f.get('text') or '')[:10])
+                          for f in scan.get('findings') or []], [(2, 'powershell')], msg=scan)
+        scan = code_tools._scan_destructive_script(
+            '# a\x0cb\nRemove-Item -Path zz -Include *.log\n', 'powershell')
+        self.assertEqual([f.get('line') for f in scan.get('footguns') or []], [2], msg=scan)
+
+        read = json.loads(asyncio.run(code_tools.read_file_range(
+            str(self.sample_file), 3, 3, project_path=str(self.project_path))))
+        self.assertTrue(read.get('ok'), msg=read)
+        self.assertEqual(read.get('total_lines'), 4, msg=read)
+        line3 = re.search(r'^\s*3:\s?(.*)$', read.get('result') or '', re.M)
+        self.assertEqual(line3 and line3.group(1).rstrip('\r'), 'TARGET = 2', msg=read)
+        checked = json.loads(asyncio.run(code_tools.validate_symbols(
+            str(self.sample_file), str(self.project_path))))
+        self.assertEqual(checked.get('line_count'), 4, msg=checked)
+
+        found = json.loads(asyncio.run(code_tools.search_code(
+            query='TARGET', project_path=str(self.project_path))))
+        hits = {(hit.get('file'), hit.get('line')) for hit in found.get('results') or []}
+        self.assertIn(('sample.py', 3), hits, msg=found)
+        usage = json.loads(asyncio.run(code_tools.search_code(
+            query='target', mode='definition_usage', project_path=str(self.project_path))))
+        self.assertEqual([(d.get('file'), d.get('line')) for d in usage.get('definition') or []],
+                         [('app.js', 2)], msg=usage)
+        self.assertEqual(sorted(h.get('line') for h in usage.get('callers') or []
+                                if h.get('file') == 'app.js'), [3], msg=usage)
+
+        # The pattern path matches inside a spawned child; drive the child's body
+        # in-process so this pin needs no spawn and no deadline.
+        import pickle
+        from orchestrator import search_regex_worker as regex_worker
+        job, out = self.project_path / 'job.pkl', self.project_path / 'out.pkl'
+        job.write_bytes(pickle.dumps(
+            ('search', 'TARGET', 0, [('sample.py', 'sample.py', text.encode('utf-8'))], 10, 0)))
+        with mock.patch.object(regex_worker, '_WORKER_INPUT_PATH', None), \
+                mock.patch.object(regex_worker, '_WORKER_OUTPUT_PATH', None):
+            regex_worker._bootstrap(str(job), str(out))
+        status, rows = pickle.loads(out.read_bytes())
+        self.assertEqual((status, [row.get('line') for row in rows]), ('ok', [3]), msg=rows)
+
+        symbols = json.loads(asyncio.run(code_tools.get_file_symbols(
+            str(self.project_path / 'app.js'))))
+        self.assertEqual([(s['name'], s['line']) for s in symbols['symbols']], [('target', 2)],
+                         msg=symbols)
+
+        # A form feed INSIDE new_content is one line too: the span a CA re-reads
+        # with must stay 3p1.
+        wrote = json.loads(asyncio.run(code_tools.write_fix(
+            str(self.sample_file), 3, 3, 'TARGET = 9  # \x0c\n')))
+        self.assertTrue(wrote.get('ok'), msg=wrote)
+        self.assertEqual((wrote.get('range_id'), wrote.get('new_lines_count')),
+                         ('sample.py:3p1', 1), msg=wrote)
+        self.assertEqual(self.sample_file.read_bytes().decode('utf-8'),
+                         '# a\x0cb\nx = 1\nTARGET = 9  # \x0c\ny = 3\n')
+        made = json.loads(asyncio.run(code_tools.write_new_file(
+            path=str(self.project_path / 'made.txt'), new_content='a\x0cb\n',
+            project_path=str(self.project_path))))
+        self.assertEqual(made.get('lines_written'), 1, msg=made)
+
+    def test_line_numbers_agree_on_a_lone_cr(self):
+        # F1, review of #32: split_lines broke on "\n" only, but read_file_range
+        # reads through read_text(), which folds a lone "\r" into "\n", while
+        # write_fix splits the raw bytes. On b'a = 1\rb = 2\nc = 3\nd = 4\n' read
+        # showed line 3 as 'c = 3' and write_fix 3..3 replaced 'd = 4' -- the line
+        # after it, ok:true. "Which line does a CA see or send" has one answer:
+        # CRLF, CR and LF, the rule ast follows. The destructive scanner keeps its
+        # "\n" view (split_lf): bash reads a lone CR as part of a word.
+        import ast
+        import pickle
+        import re
+        from orchestrator import search_regex_worker as regex_worker
+        from orchestrator.text_lines import split_lf, split_lines
+
+        self.assertEqual(split_lines('a\rb\r\nc\nd'), ['a', 'b', 'c', 'd'])
+        self.assertEqual(split_lines('a\rb\r\nc\n', keepends=True), ['a\r', 'b\r\n', 'c\n'])
+        self.assertEqual(split_lf('a\rb\r\nc\n'), ['a\rb', 'c'])
+        raw = b'a = 1\rb = 2\nc = 3\nd = 4\n'
+        self.assertEqual([node.lineno for node in ast.parse(raw).body], [1, 2, 3, 4])
+        self.sample_file.write_bytes(raw)
+        read = json.loads(asyncio.run(code_tools.read_file_range(
+            str(self.sample_file), 3, 3, project_path=str(self.project_path))))
+        self.assertEqual(read.get('total_lines'), 4, msg=read)
+        line3 = re.search(r'^\s*3:\s?(.*)$', read.get('result') or '', re.M)
+        self.assertEqual(line3 and line3.group(1).rstrip('\r'), 'c = 3', msg=read)
+        job, out = self.project_path / 'job.pkl', self.project_path / 'out.pkl'
+        job.write_bytes(pickle.dumps(('search', 'c = 3', 0, [('sample.py', 'sample.py', raw)], 10, 0)))
+        with mock.patch.object(regex_worker, '_WORKER_INPUT_PATH', None), \
+                mock.patch.object(regex_worker, '_WORKER_OUTPUT_PATH', None):
+            regex_worker._bootstrap(str(job), str(out))
+        status, rows = pickle.loads(out.read_bytes())
+        self.assertEqual((status, [row.get('line') for row in rows]), ('ok', [3]), msg=rows)
+        # new_content that ends at a lone CR has ended its line already: no "\n" added.
+        wrote = json.loads(asyncio.run(code_tools.write_fix(str(self.sample_file), 3, 3, 'c = 9\r')))
+        self.assertTrue(wrote.get('ok'), msg=wrote)
+        self.assertEqual(self.sample_file.read_bytes(), b'a = 1\rb = 2\nc = 9\rd = 4\n')
+
+    def test_anchor_lines_are_the_lines_write_fix_counts(self):
+        # F2, review of #32: replace_between_anchors numbered its anchors with
+        # str.splitlines(), which also breaks at a form feed, and handed the numbers to
+        # write_fix, which counts CRLF/CR/LF only. A form feed above the anchor made it
+        # replace the END line instead of the START line, ok:true.
+        import tools_v15
+
+        self.sample_file.write_bytes(b'a = 1  # \x0c\nSTART = 2\nEND = 3\n')
+        wrote = json.loads(asyncio.run(tools_v15.replace_between_anchors(
+            str(self.sample_file), 'START', 'END', 'START = 9',
+            project_path=str(self.project_path))))
+        self.assertTrue(wrote.get('ok'), msg=wrote)
+        self.assertEqual(self.sample_file.read_bytes(), b'a = 1  # \x0c\nSTART = 9\nEND = 3\n')
+
     def test_write_fix_allows_a_guarded_missing_import(self):
         # #13: code that already handles a missing module must not be refused
         # for importing it.

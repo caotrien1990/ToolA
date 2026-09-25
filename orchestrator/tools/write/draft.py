@@ -27,6 +27,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from orchestrator.text_lines import split_lines
+
 DRAFT_TTL_SEC = 1800          # 30 min of fixing time per draft
 MAX_DRAFTS = 40               # LRU cap across all projects
 PART_SIZE = 100               # reporting granularity (lines per part)
@@ -59,7 +61,7 @@ def _sweep_locked() -> None:
 
 
 def _norm_lines(text: str) -> list[str]:
-    lines = text.splitlines(keepends=True)
+    lines = split_lines(text, keepends=True)
     if lines and not lines[-1].endswith("\n"):
         lines[-1] += "\n"
     return lines or ["\n"]
@@ -314,7 +316,10 @@ async def _ship(rec: dict[str, Any]) -> dict[str, Any]:
                 "ca_next_action": "read_file_range then re-run the original write "
                                   "(draft content is still available via write_draft_status)",
             }
-        total = len(fp.read_text(encoding="utf-8", errors="replace").splitlines())
+        # #32: routed only so every count in the tree means the same thing. No test can
+        # pin it: write_fix clamps end_line to its OWN count, a splitlines count is never
+        # lower, and both are 0 only for an empty file -- an equivalent mutant.
+        total = len(split_lines(fp.read_text(encoding="utf-8", errors="replace")))
         if total <= 0:
             res_raw = await _core.write_new_file(
                 path=rec["file_path_param"], new_content=proposed,

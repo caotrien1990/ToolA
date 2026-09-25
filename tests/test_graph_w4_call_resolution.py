@@ -298,3 +298,27 @@ class C:
         return 2
 """})
     assert _callers_of(project, "never_called") == []
+
+
+# --- #32: the jedi re-check reads the line the extractor numbered -------------
+
+def test_lsp_recheck_reads_the_call_line_the_extractor_numbered(tmp_path, monkeypatch):
+    """The extractor numbers a call line the way ast does -- "\\n" only -- and
+    lsp_resolver looked that number up in source.splitlines(), which also breaks
+    at a form feed. One FF above the call moved the lookup a line up, the callee
+    was not on it, and the edge read `unresolved`: a call jedi can confirm never
+    reached jedi."""
+    import pytest
+    pytest.importorskip("jedi")
+    from orchestrator.graph.lsp_resolver import resolve_apply, resolve_benchmark
+    project, _ = _index(tmp_path, monkeypatch, "lspff", {
+        "b.py": "def target():\n    return 1\n",
+        "a.py": "import b\n# a\x0cb\n\n\ndef caller():\n    return b.target()\n",
+    })
+    out = resolve_benchmark(project)
+    assert (out["sample"], out["confirmed"], out["errors"]) == (1, 1, []), out
+    # resolve_apply keeps its own copy of the lookup. dry_run writes nothing and
+    # reports applied=0 by design, so the confirmed edge shows in applied_edges.
+    out = resolve_apply(project, dry_run=True)
+    assert (out["sample"], out["confirmed"], len(out["applied_edges"]), out["applied"],
+            out["errors"]) == (1, 1, 1, 0, []), out

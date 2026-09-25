@@ -157,3 +157,16 @@ def release_instance_lock() -> None:
 def is_lock_holder() -> bool:
     """True if this process currently owns the lock."""
     return _LOCK_HANDLE is not None
+
+
+def held_lock_path() -> Optional[Path]:
+    """The lock file this process holds, or None when it holds none.
+
+    Files that belong to ONE running instance (the mutation token) sit next to
+    it. is_lock_holder() is true for any lock, so a server started on its own
+    ORCHESTRATOR_INSTANCE_LOCK (tests/test_task_epoch_cross_process.py) that
+    wrote a fixed path replaced the live daemon's file.
+    """
+    if _LOCK_HANDLE is None or not _LOCK_PATH:
+        return None
+    return Path(_LOCK_PATH)

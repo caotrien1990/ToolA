@@ -268,3 +268,47 @@ def test_the_three_measured_wrappers_are_in_the_sweep(wrapper):
     """Positive control for the AST test: if a rename made the sweep miss these, the
     test above would pass on an empty finding."""
     assert _wrappers_declaring_a_timeout().get(wrapper) is True
+
+
+def _forwarded_kwargs(func_name):
+    """(declared params, keys forwarded to _mcp_proxy_call) for one wrapper def.
+
+    The payload is a positional dict literal, so its keys live in Call.args, not
+    Call.keywords -- read both, or a forwarded key looks dropped."""
+    tree = ast.parse(MCP_STDIO.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name != func_name:
+            continue
+        params = {a.arg for a in node.args.args} | {a.arg for a in node.args.kwonlyargs}
+        forwarded = set()
+        for sub in ast.walk(node):
+            if not (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name)
+                    and sub.func.id == "_mcp_proxy_call"):
+                continue
+            dicts = [a for a in sub.args if isinstance(a, ast.Dict)]
+            for kw in sub.keywords:
+                if isinstance(kw.value, ast.Dict):
+                    dicts.append(kw.value)
+                else:
+                    forwarded.add(kw.arg)
+            for payload in dicts:
+                forwarded |= {k.value for k in payload.keys
+                              if isinstance(k, ast.Constant) and isinstance(k.value, str)}
+        return params, forwarded
+    return set(), set()
+
+
+@pytest.mark.parametrize("param", ["dry_run", "confirm_destructive"])
+def test_run_project_command_forwards_the_case2008_safety_params(param):
+    """CASE-2008 gave run_project_command a preview (dry_run) and an acknowledge
+    (confirm_destructive int). The stdio wrapper declared neither and forwarded
+    neither, so on this surface a destructive command could not be previewed and
+    could not be confirmed -- the daemon refused it with no way through. The
+    wrapper must DECLARE each param AND place it in the forwarded payload."""
+    params, forwarded = _forwarded_kwargs("run_project_command")
+    assert params, "run_project_command wrapper not found -- positive control failed"
+    assert param in params, "%s is not a declared parameter of the wrapper" % param
+    assert param in forwarded, (
+        "%s is declared but never forwarded to _mcp_proxy_call" % param)

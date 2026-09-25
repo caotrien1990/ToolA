@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from orchestrator import search_snapshots
+from orchestrator.text_lines import split_lines
 
 try:
     from tree_sitter_languages import get_parser
@@ -641,7 +642,7 @@ def _extract_symbols_with_regex(source: str, extension: str) -> tuple[list[dict]
     symbols: list[dict] = []
     imports: list[str] = []
     complexity = 0
-    lines = source.splitlines()
+    lines = split_lines(source)
 
     def _estimate_block_end(start_index: int) -> int:
         start_line = lines[start_index - 1]
@@ -749,7 +750,7 @@ def analyze_file(file_path: str, project_root: str) -> dict:
             raw = raw.lstrip("\ufeff")
 
         if extension in SUPPORTED_EXTENSIONS:
-            lines = raw.splitlines()
+            lines = split_lines(raw)
             result["line_count"] = len(lines)
             result["loc"] = count_loc(lines, extension)
             if extension == ".py":
@@ -768,7 +769,7 @@ def analyze_file(file_path: str, project_root: str) -> dict:
             result["imports"] = list(dict.fromkeys(imports))
             result["complexity_score"] = complexity
         else:
-            lines = raw.splitlines()
+            lines = split_lines(raw)
             result["line_count"] = len(lines)
             result["loc"] = len([line for line in lines if line.strip()])
         result["purpose"] = _infer_purpose(rel, result["group"], result["symbols"])

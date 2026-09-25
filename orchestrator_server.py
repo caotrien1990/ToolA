@@ -75,7 +75,7 @@ from orchestrator.council.snapshots import (
     read_jsonl_tail,
     read_tail_bytes,
 )
-from orchestrator.fileops.xroot import classify_write_target, write_targets
+from orchestrator.fileops.xroot import classify_write_target, output_targets, write_targets
 from orchestrator.lifecycle.request_orchestrator_restart import controller_health
 from orchestrator.lifecycle.restart_protocol import (
     DEFAULT_CONTROL_URL,
@@ -100,6 +100,7 @@ from orchestrator.server.fair_admission import (
     set_admission_identity,
 )
 from orchestrator.storage.jsonl_store import append_jsonl as _jsonl_append_locked
+from orchestrator.text_lines import split_lines
 
 # ─── Paths & config ───────────────────────────────────────────────────────────
 
@@ -395,10 +396,29 @@ def _log_session_event_safe(request, tool_name: str, status: str, payload: dict,
             _ct_at._log_session_event(sid, tool_name, payload, {"ok": True}, 0, status, str(payload)[:200])
     except Exception:
         pass
-try:
-    _TOKEN_FILE.write_text(EXPECTED_TOKEN, encoding="utf-8")
-except Exception:
-    pass
+
+
+def _publish_token_file() -> None:
+    """Write EXPECTED_TOKEN where out-of-band readers find it (live_answer_doctor).
+
+    Only the process holding the single-instance lock writes it. This ran at
+    import time, so an `orchestrator_server.py --mcp` host, every test that
+    imported this module or rotated the token, and (#33) every regex worker
+    child replaced the live daemon's file with a token the daemon never issued.
+
+    F4: the file sits next to the lock this process holds -- _TOKEN_FILE for the
+    default lock. A server on a temporary ORCHESTRATOR_INSTANCE_LOCK holds a
+    lock too, and writing the fixed path replaced the live daemon's token.
+    """
+    from orchestrator.mission.instance_lock import held_lock_path
+
+    lock = held_lock_path()
+    if lock is None:
+        return
+    try:
+        (lock.parent / _TOKEN_FILE.name).write_text(EXPECTED_TOKEN, encoding="utf-8")
+    except OSError as exc:
+        logger.error("mutation token file publish failed: %s", exc)
 
 
 def _token_is_expired(now: float = None) -> bool:
@@ -427,10 +447,7 @@ def _rotate_token() -> str:
     with _TOKEN_ROTATE_LOCK:
         EXPECTED_TOKEN = _secrets.token_urlsafe(32)
         TOKEN_CREATED_AT = time.time()
-        try:
-            _TOKEN_FILE.write_text(EXPECTED_TOKEN, encoding="utf-8")
-        except Exception:
-            pass
+        _publish_token_file()
         return EXPECTED_TOKEN
 
 
@@ -1964,6 +1981,33 @@ class ToolAdmissionOverloaded(RuntimeError):
         }
 
 
+class WriteLedgerSendInFlight(RuntimeError):
+    """#36: an identical send of this operation is still running in this process.
+
+    Raised by _write_ledger_begin BEFORE the tool runs, so the refused send changed
+    nothing, and the running twin's row, result and write_status stay its own.
+    """
+    error_name = "OPERATION_IN_FLIGHT"
+    http_status = 409
+
+    def __init__(self, operation_id: str):
+        self.operation_id = operation_id
+        super().__init__(f"operation {operation_id} is already running; this "
+                         "identical send was refused before it ran")
+
+    def as_payload(self) -> dict:
+        return {
+            "ok": False,
+            "error": str(self),
+            "reason": str(self),
+            "error_name": self.error_name,
+            "operation_id": self.operation_id,
+            "write_status_url": f"/api/write_status?operation_id={self.operation_id}",
+            "retryable": False,
+            "ca_next_action": "wait_and_poll_write_status_do_not_retry",
+        }
+
+
 def _tool_semaphore(tool_name: str, body: dict):
     """Return the semaphore guarding this tool, or None (unbounded)."""
     if tool_name in _WRITE_SEM_TOOLS:
@@ -2613,33 +2657,61 @@ def _write_ledger_commit_state(rec: dict) -> str:
     return {"committed": "committed", "failed": "not_committed"}.get(status, "unknown")
 
 
-def _write_ledger_retry_would_double_write(rec: dict) -> bool:
-    """#36: would resending this operation apply its edit a second time?
+def _write_ledger_rerun_repatches(tool_name: str) -> bool:
+    """#36: does a second run of this tool apply its edit a second time?
 
-    True when an EARLIER send of this exact payload committed -- the sticky
-    previous_status _write_ledger_begin keeps -- and the tool writes source. A
-    non-source scope (derived_index / cache / audit_log) recomputes rather than
-    re-patches, so a rerun is safe there. The envelope's likely_already_applied and
-    write_status's safe_to_retry both ask this question, so both ask it HERE.
+    True for a source writer. A non-source scope (derived_index / cache / audit_log)
+    recomputes rather than re-patches, so a rerun is safe there. Both #36 questions --
+    "did an EARLIER send already apply this?" and "may a send run while an identical
+    one is still running?" -- turn on this one answer, so both ask it HERE.
     """
-    if str((rec or {}).get("previous_status") or "") != "committed":
-        return False
     try:
-        return (ct.tool_mutation_scope(str(rec.get("tool") or ""))
+        return (ct.tool_mutation_scope(str(tool_name or ""))
                 not in ct.NON_SOURCE_MUTATION_SCOPES)
     except Exception:
         return True  # unknown scope: keep the conservative source-write answer
 
 
+def _write_ledger_retry_would_double_write(rec: dict) -> bool:
+    """#36: would resending this operation apply its edit a second time?
+
+    True when an EARLIER send of this exact payload committed -- the sticky
+    previous_status _write_ledger_begin keeps -- and a rerun re-patches. The
+    envelope's likely_already_applied and write_status's safe_to_retry both ask this
+    question, so both ask it HERE.
+    """
+    if str((rec or {}).get("previous_status") or "") != "committed":
+        return False
+    return _write_ledger_rerun_repatches(str((rec or {}).get("tool") or ""))
+
+
 def _write_ledger_begin(tool_name: str, body: dict, session_id: str = "",
                         admitted_session_id: str = "") -> str:
-    """Open a ledger entry before a mutating tool runs. Returns "" for read-only tools."""
+    """Open a ledger entry before a mutating tool runs. Returns "" for read-only tools.
+
+    The one exception it lets out is WriteLedgerSendInFlight: refusing a send whose
+    identical twin is still running is not the ledger failing, it is the only answer
+    that keeps that edit from landing twice.
+    """
     try:
         if tool_name not in _MUTATING_TOOLS:
             return ""
         op_id = _write_ledger_operation_id(tool_name, body, session_id)
         pp, fp = _write_ledger_target(body)
         memory_rec = _WRITE_LEDGER.get(op_id)
+        # #36 (2026-09-25): the operation id is f(tool, payload, session), so two
+        # identical sends are ONE operation. A send admitted while its twin was still
+        # running took over the twin's row and ran as well: the edit applied twice
+        # while write_status narrated a single send. "Still running" is the cancel
+        # event the dispatcher holds for exactly the tool's run -- process-local, so a
+        # row an older generation left in_flight never blocks, and a row whose finish
+        # failed stops blocking once its dispatcher returns. Writers the per-project
+        # semaphore serializes meet a finished twin here; every other writer did not.
+        if (op_id in _OPERATION_CANCEL_EVENTS
+                and isinstance(memory_rec, dict)
+                and memory_rec.get("status") == "in_flight"
+                and _write_ledger_rerun_repatches(tool_name)):
+            raise WriteLedgerSendInFlight(op_id)
         disk_rec = _write_ledger_db_get(operation_id=op_id)
         prior, _prior_source = _write_ledger_choose(memory_rec, disk_rec)
         # #36 (2026-09-25): every send is a send. A committed prior used to absorb this
@@ -2676,7 +2748,19 @@ def _write_ledger_begin(tool_name: str, body: dict, session_id: str = "",
             _WRITE_LEDGER.pop(next(iter(_WRITE_LEDGER)), None)
         if _write_ledger_db_upsert(rec):
             _write_ledger_purge()
+        # #36 (2026-09-25): mark this operation LIVE atomically with its in_flight row,
+        # inside the async lock every begin shares. The guard above reads
+        # _OPERATION_CANCEL_EVENTS to tell a running twin from a stale in_flight row; a
+        # concurrent identical begin cannot start until this one has returned, so it now
+        # always sees BOTH the row and the event. Registering the event later, in the
+        # dispatcher, left a window where a twin saw the row without the event and ran a
+        # second time. setdefault never clobbers an event a still-finishing twin left, so
+        # a legitimately-shared operation keeps one marker; the dispatcher binds its
+        # watchdog to this event and its finally pops it.
+        _OPERATION_CANCEL_EVENTS.setdefault(op_id, threading.Event())
         return op_id
+    except WriteLedgerSendInFlight:
+        raise
     except Exception:
         return ""  # the ledger is an observability aid; it must never break a write
 
@@ -4241,7 +4325,7 @@ def _normalize_example_paths(payload: dict) -> dict:
             return [clean(key, v) for v in value]
         if isinstance(value, str) and key in _EXAMPLE_PATH_KEYS:
             # R41: keep forward slashes — backslash paths break JSON when CA
-            # copies payload_example verbatim into a JSON body (\p, 	, 
+            # copies payload_example verbatim into a JSON body (\p, \t, \f
             # become invalid escapes). Forward slashes are valid on Windows
             # and JSON-safe. Only strip control chars.
             if any(ch < " " for ch in value):
@@ -6896,7 +6980,9 @@ def _council_observed_p50_sec(runtime_key: str):
     samples = []
     path = _HERE / ".council" / "usage_log.jsonl"
     try:
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines()[-500:]:
+        # One row per "\n": a raw U+2028/U+0085 INSIDE a row broke json.loads and, with
+        # it, every sample (the try spans the loop).
+        for line in split_lines(path.read_text(encoding="utf-8", errors="replace"))[-500:]:
             row = json.loads(line)
             if row.get("runtime_key") == runtime_key and row.get("duration_sec") is not None:
                 samples.append(float(row["duration_sec"]))
@@ -7397,7 +7483,8 @@ def _council_extract_log_response(log_text: str) -> str:
         return ""
     if isinstance(log_text, bytes):
         log_text = log_text.decode("utf-8", errors="replace")
-    lines = [ln for ln in log_text.splitlines() if ln.strip()]
+    # A JSONL log ends a record at "\n" only; a text part may hold a raw U+2028/U+0085.
+    lines = [ln for ln in split_lines(log_text) if ln.strip()]
 
     # opencode JSONL path.
     text_parts: list[str] = []
@@ -9661,7 +9748,9 @@ def _council_local_clau_usage() -> dict:
             for f in files:
                 try:
                     text = f.read_text(encoding="utf-8", errors="replace")
-                    lines = text.splitlines()[-200:]
+                    # One record per "\n": a transcript record may hold a raw U+2028 /
+                    # U+0085, which str.splitlines() cut out of the count (text_lines).
+                    lines = split_lines(text)[-200:]
                 except Exception:
                     continue
                 result["sessions_scanned"] += 1
@@ -9759,7 +9848,9 @@ def _council_local_codo_usage() -> dict:
                             result["source"] = "codex-state5"
                         else:
                             text = rollout.read_text(encoding="utf-8", errors="replace")
-                            lines = text.splitlines()[-400:]
+                            # One record per "\n": a rollout record may hold a raw
+                            # U+2028 / U+0085, which str.splitlines() cut out (text_lines).
+                            lines = split_lines(text)[-400:]
                     except Exception:
                         lines = []
                     for line in reversed(lines):
@@ -10082,7 +10173,10 @@ def _council_public_events_all(council_dir: Path) -> list[dict]:
         return []
     events: list[dict] = []
     try:
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        # One event per "\n" (_council_append_event): ensure_ascii=False keeps a raw
+        # U+2028/U+0085 INSIDE an event, and str.splitlines() dropped that reply from
+        # the broker_filtered.jsonl mirror every export re-writes.
+        lines = split_lines(path.read_text(encoding="utf-8", errors="replace"))
     except Exception:
         return []
     for line in lines:
@@ -11793,7 +11887,8 @@ def _council_recent_transcript(max_events: int = 12) -> str:
     if not p.exists():
         return ""
     try:
-        lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+        # One event per "\n": a reply holding a raw U+2028/U+0085 stays INSIDE its row.
+        lines = split_lines(p.read_text(encoding="utf-8", errors="replace"))
     except Exception:
         return ""
     out: list[str] = []
@@ -15159,12 +15254,16 @@ accepted_fields=sorted(accepted_fields),
     # #35: one verdict per write target the call names -- relative, absolute inside the
     # project or cross-root, in any target field -- refused HERE, before the backup and
     # session gates, so no exemption below them skips the deny list. ``cross_root``
-    # only picks the audit route (see classify_write_target).
+    # only picks the audit route (see classify_write_target), so it is read from the
+    # mutated files alone. An OUTPUT field is a write target on every tool, a read
+    # tool included: it is where desktop_screenshot puts its PNG.
     _xroot_gate_allowed = False
-    if (tool_name in _MUTATING_TOOLS or tool_name in _backup_gated_tools) and not _is_readonly_rpc:
+    if not _is_readonly_rpc:
+        _xroot_mutating = tool_name in _MUTATING_TOOLS or tool_name in _backup_gated_tools
+        _xroot_writes = write_targets(body) if _xroot_mutating else []
         _xroot_verdicts = [
             classify_write_target(_target, body.get("project_path") or None, tool_name, body.get("session_id", ""))
-            for _target in write_targets(body)
+            for _target in _xroot_writes + output_targets(body)
         ]
         _xroot_gate_denied = next((v["policy"] for v in _xroot_verdicts if not v["allowed"]), None)
         if _xroot_gate_denied:
@@ -15178,7 +15277,8 @@ accepted_fields=sorted(accepted_fields),
                 group=_xroot_gate_denied.get("group", ""),
                 reason=_xroot_gate_denied.get("reason", ""),
             )
-        _xroot_gate_allowed = bool(_xroot_verdicts) and all(v["cross_root"] for v in _xroot_verdicts)
+        _xroot_write_verdicts = _xroot_verdicts[:len(_xroot_writes)]
+        _xroot_gate_allowed = bool(_xroot_write_verdicts) and all(v["cross_root"] for v in _xroot_write_verdicts)
     if (tool_name in _backup_gated_tools and not body.get('dry_run', False)
             and not _r70_skip_backup and not _ephemeral_del
             and not _backup_override):
@@ -15530,7 +15630,14 @@ accepted_fields=sorted(accepted_fields),
                                                  _admitted_session_id)
         if _op_id:
             from orchestrator.progress_watchdog import ProgressWatchdog, bind_watchdog
-            _cancel_event = threading.Event()
+            # #36 (2026-09-25): _write_ledger_begin now registers the liveness marker
+            # under the async lock that serialises every begin, so a concurrent identical
+            # begin has already observed it and refused. Reuse the event begin created --
+            # creating a fresh one here (the old code) split "row is in_flight" from
+            # "a run owns it" across two moments, and a twin whose begin landed in that gap
+            # saw the row without the event and ran as well. Fall back to a new event only
+            # for the paths that never went through begin.
+            _cancel_event = _OPERATION_CANCEL_EVENTS.get(_op_id) or threading.Event()
             _OPERATION_CANCEL_EVENTS[_op_id] = _cancel_event
             _watchdog_token = bind_watchdog(ProgressWatchdog(
                 operation_id=_op_id,
@@ -16073,7 +16180,8 @@ accepted_fields=sorted(accepted_fields),
         except Exception:
             return web.json_response(_result, headers=cors,
                                       dumps=lambda x: json.dumps(x, ensure_ascii=False))
-    except (ToolAdmissionOverloaded, FairAdmissionError, ExecutorLaneError) as exc:
+    except (ToolAdmissionOverloaded, FairAdmissionError, ExecutorLaneError,
+            WriteLedgerSendInFlight) as exc:
         _error_msg = _exception_text(exc)  # never "": admission rejections are audited
         _status = "error"
         await _write_ledger_finish_async(_op_id, {}, "error")
@@ -17200,7 +17308,8 @@ async def handle_matrix_log(request):
     entries = []
     if log_path.exists():
         try:
-            lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            # One record per "\n": ensure_ascii=False keeps a raw U+2028/U+0085 INSIDE one.
+            lines = split_lines(log_path.read_text(encoding="utf-8", errors="replace"))
             for ln in lines[-limit:]:
                 ln = ln.strip()
                 if not ln:
@@ -17233,7 +17342,9 @@ async def handle_ui_log_get(request):
     entries = []
     if UI_LOG_FILE.exists():
         try:
-            lines = UI_LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()
+            # One record per "\n" (handle_ui_log_post): a raw U+2028/U+0085 stays INSIDE a
+            # record; str.splitlines() fragments were dropped AND re-written by the trim.
+            lines = split_lines(UI_LOG_FILE.read_text(encoding="utf-8", errors="replace"))
             for ln in lines[-limit:]:
                 ln = ln.strip()
                 if not ln:
@@ -18693,6 +18804,7 @@ async def _run_server():
             _lock_res.get("holder_pid"), _lock_res.get("holder_port"),
         )
         raise SystemExit(3)
+    _publish_token_file()
     _generation_publish = _publish_server_generation()
     if not _generation_publish.get("ok"):
         logger.error("daemon generation publish failed: %s", _generation_publish)

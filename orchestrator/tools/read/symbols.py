@@ -6,6 +6,8 @@ import json
 import re
 from pathlib import Path
 
+from orchestrator.text_lines import split_lines
+
 
 async def get_file_symbols(file_path: str, project_path: str = "") -> str:
     if project_path and not Path(file_path).is_absolute():
@@ -45,7 +47,7 @@ async def get_file_symbols(file_path: str, project_path: str = "") -> str:
             return {"symbols": symbols, "count": len(symbols), "lang": "python", "kind": "source_symbols"}
         if ext in (".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx"):
             symbols: list[dict] = []
-            for i, line in enumerate(content.splitlines(), 1):
+            for i, line in enumerate(split_lines(content), 1):
                 for pat, sym_type in js_patterns:
                     match = pat.match(line)
                     if match:

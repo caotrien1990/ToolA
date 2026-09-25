@@ -119,9 +119,13 @@ def _deny_group(path: Path) -> tuple[str, str] | None:
         if _is_prefix(path, root):
             return "system_dir", f"writes under system directory are denied: {root}"
 
+    # #35 residual, kept on purpose: a file OR folder whose parent is the anchor
+    # (``C:\x``, ``\\host\share\x``) is refused. Measured 2026-09-25: no ledger or
+    # log under .orchestrator_cache records one drive_root refusal, so the "may
+    # over-block" note had no case behind it; the reason now names what it refuses.
     try:
         if path.is_absolute() and path.parent == Path(path.anchor):
-            return "drive_root", "writing files directly at a drive root is denied"
+            return "drive_root", "creating a file or folder directly at a drive or share root is denied"
     except Exception:
         pass
 
@@ -222,9 +226,14 @@ def xroot_check(target_path: str | Path, _caller_tool: str, _session_id: str = "
 
 
 # The body fields that name a file a mutating tool writes, moves or deletes.
-# ``src`` is not one: copy_file only reads it.
+# ``src`` is not one: copy_file only reads it. A read tool takes these same names
+# for the file it READS, so they are write targets only on a tool that mutates.
 WRITE_TARGET_FIELDS = ("path", "file_path", "dst", "target_file", "destination")
-
+# The body fields that name where a tool puts its OUTPUT -- a screenshot, a backup
+# zip, an MCP pack tree (``out_dir`` is ``out_root``'s alias) -- on EVERY tool that
+# takes them, mutating or not. The tool opens them as spelled, so a relative one
+# lands under the daemon's cwd, not under project_path.
+OUTPUT_TARGET_FIELDS = ("save_path", "output_path", "backup_dir", "out_root", "out_dir")
 
 def write_targets(body: dict[str, Any]) -> list[Path]:
     """Every write target one call names, joined to its project_path the way the tool joins it.
@@ -256,6 +265,20 @@ def write_targets(body: dict[str, Any]) -> list[Path]:
                 targets.append(Path(root) / p)
     return targets
 
+
+def output_targets(body: dict[str, Any]) -> list[Path]:
+    """Every output location one call names, resolved the way the tool resolves it.
+
+    #35 (measured 2026-09-25): only mutating tools met the deny list, and only
+    through WRITE_TARGET_FIELDS, so desktop_screenshot / screenshot_page wrote
+    ``save_path`` and backup_project wrote its zip under ``backup_dir`` into a
+    credential directory with no verdict at all.
+    """
+    return [
+        _resolve_loose(value)
+        for value in (body.get(field) for field in OUTPUT_TARGET_FIELDS)
+        if isinstance(value, str) and value.strip()
+    ]
 
 def classify_write_target(
     target_path: str | Path,

@@ -499,3 +499,23 @@ def test_the_trigger_prose_allowance_is_not_stale():
     present = set(_trigger_tool_tokens())
     stale = sorted(_TRIGGER_PROSE_ALLOWANCE - present)
     assert stale == [], "allowance no longer matches any frontmatter row: %s" % stale
+
+
+def test_harness_and_alias_scans_number_lines_by_newline_only(tmp_path, monkeypatch):
+    """#32: both scans number lines the way git, grep and read_file_range do.
+
+    str.splitlines() also breaks on a form feed. The harness scan took the line
+    NUMBER from a newline count but the line TEXT from splitlines, so it judged
+    the line above and skipped a real obsolete payload. The alias scan placed
+    every retired term below a form feed one line too low.
+    """
+    harness = tmp_path / ".ToolA_Skill" / "harness"
+    harness.mkdir(parents=True)
+    (harness / "case.md").write_text("a\x0cREMOVED\nsearch_text_base64\n", encoding="utf-8")
+    res = _audit_synthetic(
+        tmp_path, monkeypatch, rows=[],
+        skills={"zz_fixture": _frontmatter(body="a\x0cb\ntool_inspector\n")})
+    assert [d["line"] for d in res["drift"]
+            if d.get("type") == "obsolete_payload_in_harness"] == [2]
+    assert [d["line"] for d in res["alias_drift"]
+            if d.get("legacy_term") == "tool_inspector"] == [5]

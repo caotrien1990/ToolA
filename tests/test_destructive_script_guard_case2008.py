@@ -722,3 +722,224 @@ _PY_PROCESS_NOT_A_DELETE = [
 @pytest.mark.parametrize("body", _PY_PROCESS_NOT_A_DELETE)
 def test_a_process_call_that_carries_no_delete_is_not_counted(body) -> None:
     assert ct._scan_destructive_script(body, "python")["count"] == 0
+
+
+# --- 2026-09-25 (#37): a command can ride inside a carrier the per-line scan reads
+#     as opaque -------------------------------------------------------------------
+#
+# A -EncodedCommand base64 payload, the string arguments of a node child_process
+# call, and the trailing command of an ssh line each HIDE a shell command from a
+# per-line regex. Each is decoded back to the shell text it becomes and judged by
+# the SAME matcher (_scan_destructive_script recursed with _scan_carriers=False).
+# Each row is pinned by the kind its decoded command yields, so a row that drops
+# the decode for that carrier names itself.
+
+
+def _enc(command: str) -> str:
+    """A PowerShell -EncodedCommand payload: base64 of UTF-16LE, as pwsh reads it."""
+    import base64
+    return base64.b64encode(command.encode("utf-16-le")).decode("ascii")
+
+
+_ENCODED_CARRIERS = [
+    ("powershell", "powershell -EncodedCommand " + _enc("Remove-Item x"), "remove_item"),
+    ("any", "pwsh -enc " + _enc("ri x"), "remove_item"),
+    ("any", "powershell -NoProfile -ec " + _enc("del x"), "remove_item"),
+    ("any", "powershell -e " + _enc("rm x -Recurse"), "rm"),
+]
+
+
+@pytest.mark.parametrize("runtime,line,kind", _ENCODED_CARRIERS)
+def test_an_encodedcommand_payload_is_decoded_and_judged(runtime, line, kind) -> None:
+    scan = ct._scan_destructive_script(line, runtime)
+    assert scan["count"] == 1, "%s scanned as %r" % (line, scan["findings"])
+    assert kind in scan["findings"][0]["kinds"], scan["findings"]
+
+
+_NODE_SHELL_CARRIERS = [
+    ("node", 'require("child_process").execSync("del x");', "remove_item"),
+    ("node", "execSync('rm x');", "rm"),
+    ("node", 'spawn("cmd", ["/c", "del", "x"]);', "remove_item"),
+    ("node", 'spawnSync("rm", ["x"]);', "rm"),
+    ("node", 'cp.exec(\n  "del x");', "remove_item"),
+    ("any", "node -e \"require('child_process').execSync('del x')\"", "remove_item"),
+]
+
+
+@pytest.mark.parametrize("runtime,line,kind", _NODE_SHELL_CARRIERS)
+def test_a_node_child_process_call_is_judged_by_its_literal_argv(runtime, line, kind) -> None:
+    scan = ct._scan_destructive_script(line, runtime)
+    assert scan["count"] == 1, "%s scanned as %r" % (line, scan["findings"])
+    assert kind in scan["findings"][0]["kinds"], scan["findings"]
+
+
+_SSH_CARRIERS = [
+    ("sh", 'ssh host "rm x"', "rm"),
+    ("any", "ssh -p 22 user@host rm x", "rm"),
+    ("any", "ssh -i key.pem host del x", "remove_item"),
+]
+
+
+@pytest.mark.parametrize("runtime,line,kind", _SSH_CARRIERS)
+def test_an_ssh_line_is_judged_by_its_remote_command(runtime, line, kind) -> None:
+    scan = ct._scan_destructive_script(line, runtime)
+    assert scan["count"] == 1, "%s scanned as %r" % (line, scan["findings"])
+    assert kind in scan["findings"][0]["kinds"], scan["findings"]
+
+
+# Controls: a carrier that runs something harmless, a switch that is not the carrier
+# it looks like, and a command built at run time (a variable, not a literal) must all
+# stay 0 -- a guard that trips on `git status` or an -File launch gets acknowledged
+# reflexively, and a static scan that claims to judge a runtime-built string lies.
+_CARRIER_CONTROLS = [
+    ("any", "powershell -enc " + _enc("Get-ChildItem")),        # decodes to a listing
+    ("any", "powershell -ExecutionPolicy Bypass -File x.ps1"),  # -File, not -enc
+    ("any", "powershell -enc $payload"),                        # variable payload
+    ("node", 'execSync("git status");'),
+    ("node", 'spawn("git", ["commit", "-m", "move x"]);'),
+    ("node", "execSync(cmd);"),                                 # runtime-built argv
+    ("any", "ssh host ls"),
+    ("any", "ssh-keygen -f rm"),                                # not ssh; -f takes a file
+    ("any", "ssh -V"),
+]
+
+
+@pytest.mark.parametrize("runtime,line", _CARRIER_CONTROLS)
+def test_a_carrier_that_hides_nothing_destructive_is_not_counted(runtime, line) -> None:
+    scan = ct._scan_destructive_script(line, runtime)
+    assert scan["count"] == 0, "%s scanned as %r" % (line, scan["findings"])
+
+
+# Declared lower bound: a shell string nested one level further down inside an
+# interpreter's -c argument, or an -ArgumentList wrapper, decodes to nothing here.
+# The scan says so in its own comment; this pins that these SPECIFIC shapes are the
+# boundary, so a future reader does not mistake 0 for "covered".
+_DECLARED_LOWER_BOUND = [
+    ("any", "python -c \"import os; os.system('del x')\""),
+    ("powershell", 'Start-Process cmd -ArgumentList "/c del x"'),
+]
+
+
+@pytest.mark.parametrize("runtime,line", _DECLARED_LOWER_BOUND)
+def test_a_carrier_nested_below_the_first_level_is_a_declared_lower_bound(runtime, line) -> None:
+    assert ct._scan_destructive_script(line, runtime)["count"] == 0
+
+
+def test_a_decoded_carrier_that_matches_two_kinds_is_still_one_count() -> None:
+    """Remove-Item matches both the powershell and the embedded-shell pattern; the
+    decoded finding must merge onto ONE line so confirm_destructive stays 1."""
+    scan = ct._scan_destructive_script(
+        "powershell -EncodedCommand " + _enc("Remove-Item x"), "powershell")
+    assert scan["count"] == 1, scan
+    assert len(scan["findings"]) == 1, scan
+    assert set(scan["findings"][0]["kinds"]) >= {"remove_item", "embedded_remove_item"}, scan
+
+
+def test_an_unreadable_encoded_payload_decodes_to_nothing() -> None:
+    """A payload that is not clean base64, or decodes to mostly non-printable text, is
+    treated as unreadable -- a lower bound, never a false positive. Random bytes are
+    NOT asserted empty here: utf-16-le lands random bytes in printable CJK ranges often
+    enough that the 0.8-printable gate lets some through, and that is fine -- the
+    scanner, not this lenient decoder, then finds no destructive command in the noise."""
+    import base64
+    assert ct._decode_encoded_command(_enc("Remove-Item x")) == "Remove-Item x"
+    assert ct._decode_encoded_command("not!base64!") == ""
+    # utf-16-le code units U+0001..U+0008: all control chars, deterministically under
+    # the printable gate, so the payload is rejected as text (was a flaky os.urandom).
+    control = base64.b64encode(
+        bytes([1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0])).decode("ascii")
+    assert ct._decode_encoded_command(control) == ""
+
+
+def test_an_ssh_remote_command_strips_value_options_and_the_host() -> None:
+    """The host and ssh's own value-taking options are not the command; -p 22 is
+    consumed as a pair, user@host is the host, and the remainder is the command."""
+    assert ct._ssh_remote_command('host "rm x"') == "rm x"
+    assert ct._ssh_remote_command("-p 22 user@host rm x") == "rm x"
+    assert ct._ssh_remote_command("host") == ""       # no command
+    assert ct._ssh_remote_command("-V") == ""         # no host, no command
+
+
+def test_a_primary_finding_and_a_carrier_on_one_line_count_once() -> None:
+    """When the visible text of a line is itself destructive AND it carries a second
+    destructive command in a payload, the two findings merge onto the one line, so
+    confirm_destructive stays 1 -- a line is the unit the caller reproduces."""
+    import base64
+    payload = base64.b64encode("del b".encode("utf-16-le")).decode("ascii")
+    scan = ct._scan_destructive_script("Remove-Item a; powershell -enc " + payload, "any")
+    assert scan["count"] == 1, scan
+    assert len(scan["findings"]) == 1, scan
+
+
+# ───── Fix E (2026-09-25): scan the lines the INTERPRETER runs ─────
+# Each body below really deleted a scratch dir when its interpreter ran it, while
+# the scanner answered count=0 (measured before the fix).
+
+def test_python_ends_a_line_at_a_lone_cr() -> None:
+    """python reads `import shutil<CR>shutil.rmtree(d)` as two lines and runs the
+    rmtree; the text scan saw one line, the AST's line 2 matched none of it, and the
+    call was filed as a string literal."""
+    scan = ct._scan_destructive_script("import shutil\rshutil.rmtree(d)\n", "python")
+    assert scan["count"] == 1, scan
+    assert scan["findings"][0]["line"] == 2, scan
+
+
+def test_powershell_ends_a_line_at_a_lone_cr() -> None:
+    """`ri` is only an alias at the start of a command, and after a lone CR it IS at
+    the start as far as PowerShell is concerned."""
+    scan = ct._scan_destructive_script("Write-Output a\rri -r -fo d\n", "powershell")
+    assert scan["count"] == 1, scan
+
+
+def test_a_here_string_closed_by_a_cr_line_ends_there() -> None:
+    """`x<CR>'@` puts the terminator at the start of a line for PowerShell, so the
+    Remove-Item after it runs -- it is not here-string prose, on either surface."""
+    body = "$a = @'\nx\r'@\nRemove-Item -Recurse -Force d\n$b = @'\n'@\n"
+    for runtime in ("powershell", "any"):
+        scan = ct._scan_destructive_script(body, runtime)
+        assert scan["count"] == 1, (runtime, scan)
+        assert not scan["prose_matches"], (runtime, scan)
+
+
+def test_any_still_reads_a_cr_line_the_way_cmd_does() -> None:
+    """cmd DELETES a CR, so `rd<CR>/s /q d` runs as `rd/s /q d`. Splitting at the CR
+    for PowerShell must not lose that reading on run_project_command's surface."""
+    scan = ct._scan_destructive_script('rd\r/s /q "d"', "any")
+    assert scan["count"] == 1, scan
+    assert scan["findings"][0]["line"] == 1, scan
+
+
+def test_a_form_feed_does_not_end_a_powershell_line() -> None:
+    """PowerShell reads a form feed as whitespace (measured: both arguments bound to
+    ONE Set-Content), so run.ps1 is still this cmdlet's target and the body can run
+    what it writes -- its here-string is not prose. str.splitlines() broke the line
+    at the form feed and read the write as a data write."""
+    body = ("$code = @'\nRemove-Item -Recurse -Force d\n'@\n"
+            "Set-Content -Value 'notes.txt'\x0c-Path run.ps1\n")
+    scan = ct._scan_destructive_script(body, "powershell")
+    assert 2 in [record["line"] for record in scan["findings"]], scan
+    assert 2 not in [record["line"] for record in scan["prose_matches"]], scan
+
+
+def test_any_rejoins_a_cr_split_word_on_the_line_the_caller_sees() -> None:
+    """cmd deletes a CR inside a word too, so `r<CR>d /s /q d` runs `rd /s /q d` --
+    the CR is dropped, not read as a space. The finding lands on the LF-view line
+    (3 here: the lone CR on line 1 already split it in two), because that is the
+    view every other finding in this body is numbered in."""
+    scan = ct._scan_destructive_script('echo a\rb\nr\rd /s /q "d"', "any")
+    assert scan["count"] == 1, scan
+    assert scan["findings"][0]["line"] == 3, scan
+
+
+def test_bash_keeps_a_lone_cr_inside_the_line() -> None:
+    """F1: bash reads a CR as part of a word, so its lines are the LF view
+    (text_lines.split_lf), the view _line_of_offset numbers every carrier in.
+    Splitting the body at the CR moved the rm to line 3 and quoted line `b` for the
+    line-2 carrier."""
+    import base64
+
+    scan = ct._scan_destructive_script("echo a\rb\nrm -rf zz\n", "bash")
+    assert [record["line"] for record in scan["findings"]] == [2], scan
+    enc = base64.b64encode("Remove-Item zzzzzz -Recurse".encode("utf-16-le")).decode()
+    scan = ct._scan_destructive_script("echo a\rb\npowershell -EncodedCommand " + enc + "\n", "bash")
+    assert [(record["line"], record["text"][:10]) for record in scan["findings"]] == [(2, "powershell")], scan

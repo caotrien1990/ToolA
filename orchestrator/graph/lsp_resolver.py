@@ -24,6 +24,7 @@ import sqlite3
 import time
 from collections import defaultdict
 
+from ..text_lines import split_lines
 from .config import graph_db_path, CBM_EXACT
 
 _DEFAULT_SAMPLE = 300
@@ -117,7 +118,10 @@ def resolve_benchmark(project_path: str, *, sample: int = _DEFAULT_SAMPLE) -> di
                               errors="replace") as f:
                         src_cache[rel] = f.read()
                 source = src_cache[rel]
-                lines = source.splitlines()
+                # ast's line ends (CRLF/CR/LF, see text_lines): edge lines are ast
+                # linenos, and a form feed in a comment made splitlines() hand back
+                # the line above (#32).
+                lines = split_lines(source)
                 script = jedi.Script(source, path=abs_p, project=project)
             except Exception as e:
                 for c in edges:
@@ -227,7 +231,7 @@ def resolve_apply(project_path: str, *, sample: int = _DEFAULT_SAMPLE,
                               errors="replace") as f:
                         src_cache[rel] = f.read()
                 source = src_cache[rel]
-                lines = source.splitlines()
+                lines = split_lines(source)
                 script = jedi.Script(source, path=abs_p, project=project)
             except Exception as e:
                 for c in edges:

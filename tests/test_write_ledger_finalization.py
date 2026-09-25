@@ -418,6 +418,194 @@ class WriteLedgerFinalizationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200, response.text)
         self.assertEqual(len(calls), 1)
 
+    async def test_an_output_field_meets_the_deny_list_on_a_read_tool(self):
+        """#35, measured 2026-09-25: desktop_screenshot / screenshot_page are read tools, so
+        the gate never looked at their ``save_path`` and the PNG landed in ``.ssh`` with no
+        verdict; backup_project's ``backup_dir`` was read by no gate at all. An OUTPUT field
+        is a write target on every tool. A read tool's own ``file_path`` stays a file it
+        READS -- that, and an allowed output, are the controls that must still pass.
+        """
+        orchestrator_server._MUTATING_TOOLS.discard(TOOL_NAME)
+        home = Path(self.temp_dir.name) / "home"
+        (home / ".ssh").mkdir(parents=True)
+        calls = []
+
+        async def probe(project_path: str = "", file_path: str = "", save_path: str = "",
+                        backup_dir: str = "") -> str:
+            calls.append((file_path, save_path, backup_dir))
+            return json.dumps({"ok": True})
+
+        code_tools.TOOL_MAP[TOOL_NAME] = probe
+        text = {"type": "string"}
+        secret = str(home / ".ssh" / "x.png")
+        with unittest.mock.patch.dict(os.environ, {"USERPROFILE": str(home)}), self._probe_schema(
+                project_path=text, file_path=text, save_path=text, backup_dir=text):
+            for field in ("save_path", "backup_dir"):
+                response = await self._dispatch({"project_path": str(home), field: secret})
+                self.assertEqual(response.status, 403, (field, response.text))
+                payload = json.loads(response.text)
+                self.assertEqual((payload["error_name"], payload["group"]),
+                                 ("XROOT_DENIED", "user_dotfiles"), field)
+            self.assertEqual(calls, [])
+            response = await self._dispatch({"project_path": str(home), "file_path": secret})
+            self.assertEqual(response.status, 200, response.text)
+            response = await self._dispatch({"project_path": str(home), "save_path": str(home / "shot.png")})
+            self.assertEqual(response.status, 200, response.text)
+        self.assertEqual(calls, [(secret, "", ""), ("", str(home / "shot.png"), "")])
+
+    async def test_an_output_field_never_picks_the_cross_root_route(self):
+        """#35: ``cross_root`` lets a mutation skip the session gate because the audit route
+        stands in for it, and that is a judgement on the files the tool MUTATES. A call
+        that mutates nothing cross-root but puts its output there still meets the session
+        gate; the same probe mutating a cross-root file is the control that skips it.
+        """
+        orchestrator_server._NO_SESSION_REQUIRED.discard(TOOL_NAME)
+        project = Path(self.temp_dir.name) / "repo"
+        project.mkdir()
+        elsewhere = Path(self.temp_dir.name) / "elsewhere"
+        calls = []
+
+        async def probe(project_path: str = "", file_path: str = "", save_path: str = "") -> str:
+            calls.append((file_path, save_path))
+            return json.dumps({"ok": True, "write_performed": True})
+
+        code_tools.TOOL_MAP[TOOL_NAME] = probe
+        text = {"type": "string"}
+        with self._probe_schema(project_path=text, file_path=text, save_path=text), \
+                unittest.mock.patch.object(orchestrator_server, "AUTO_WRITE_MODE", False):
+            response = await self._dispatch({"project_path": str(project), "save_path": str(elsewhere / "x.png")})
+            self.assertEqual(response.status, 409, response.text)
+            self.assertEqual(json.loads(response.text)["error_name"], "ACTIVE_SESSION_REQUIRED")
+            self.assertEqual(calls, [])
+            response = await self._dispatch({"project_path": str(project), "file_path": str(elsewhere / "y.py")})
+        self.assertEqual(response.status, 200, response.text)
+        self.assertEqual(calls, [(str(elsewhere / "y.py"), "")])
+
+    # ── #36: an identical send while its twin is still running ─────────────────
+    #
+    # The operation id is f(tool, payload, session), so two identical sends are ONE
+    # operation. The probe's default scope is 'none' (a rerun recomputes), which is why
+    # test_concurrent_same_operation_never_regresses_committed_state still sees both
+    # run; the tests below make it a source writer, the case that applied an edit twice.
+
+    def _probe_scope(self, scope: str):
+        old = code_tools._MUTATION_SCOPE_MAP.get(TOOL_NAME)
+        code_tools._MUTATION_SCOPE_MAP[TOOL_NAME] = scope
+
+        def restore():
+            if old is None:
+                code_tools._MUTATION_SCOPE_MAP.pop(TOOL_NAME, None)
+            else:
+                code_tools._MUTATION_SCOPE_MAP[TOOL_NAME] = old
+        self.addCleanup(restore)
+
+    def _held_write(self):
+        """A probe that runs until released; `runs` counts how often it STARTED."""
+        state = SimpleNamespace(runs=0, started=asyncio.Event(), release=asyncio.Event())
+
+        async def held_write() -> str:
+            state.runs += 1
+            state.started.set()
+            await state.release.wait()
+            return json.dumps({"ok": True, "write_performed": True})
+
+        code_tools.TOOL_MAP[TOOL_NAME] = held_write
+        return state
+
+    def _seed_row(self, status: str) -> str:
+        op = self._operation_id()
+        orchestrator_server._WRITE_LEDGER[op] = {
+            "operation_id": op, "tool": TOOL_NAME, "status": status, "attempts": 1,
+            "previous_status": None, "started_at": 0.0, "updated_at": 0.0,
+            "origin_generation": orchestrator_server.SERVER_GENERATION}
+        return op
+
+    async def test_an_identical_send_while_its_twin_runs_is_refused_before_it_runs(self):
+        """#36: the twin gets 409 OPERATION_IN_FLIGHT naming the running operation, the
+        tool runs ONCE, and the row keeps describing the first send -- attempts 1, then
+        committed -- instead of being taken over by a send that ran as well."""
+        self._probe_scope("file_artifact")
+        state = self._held_write()
+        op = self._operation_id()
+        first = asyncio.create_task(self._dispatch())
+        await asyncio.wait_for(state.started.wait(), timeout=2)
+        twin = await asyncio.wait_for(self._dispatch(), timeout=2)
+        payload = json.loads(twin.text)
+        self.assertEqual(
+            (twin.status, payload["error_name"], payload["operation_id"], payload["retryable"]),
+            (409, "OPERATION_IN_FLIGHT", op, False), twin.text)
+        self.assertEqual(payload["write_status_url"], f"/api/write_status?operation_id={op}")
+        live = orchestrator_server._WRITE_LEDGER[op]
+        self.assertEqual((live["status"], live["attempts"]), ("in_flight", 1))
+        state.release.set()
+        self.assertEqual((await asyncio.wait_for(first, timeout=2)).status, 200)
+        self.assertEqual(state.runs, 1)
+        self._assert_ledger_status("committed")
+        self.assertEqual(orchestrator_server._WRITE_LEDGER[op]["attempts"], 1)
+
+    async def test_an_identical_send_of_a_non_source_writer_still_runs(self):
+        """#36 control: a derived_index rerun recomputes, so its twin is not refused."""
+        self._probe_scope("derived_index")
+        state = self._held_write()
+        first = asyncio.create_task(self._dispatch())
+        await asyncio.wait_for(state.started.wait(), timeout=2)
+        twin = asyncio.create_task(self._dispatch())
+        for _ in range(200):
+            if state.runs == 2 or twin.done():
+                break
+            await asyncio.sleep(0.01)
+        state.release.set()
+        responses = await asyncio.wait_for(asyncio.gather(first, twin), timeout=2)
+        self.assertEqual([r.status for r in responses], [200, 200])
+        self.assertEqual(state.runs, 2)
+
+    async def test_a_row_left_in_flight_with_nothing_running_does_not_refuse(self):
+        """#36 control: in_flight in the ledger is not "running". An older generation's
+        crash, or a finish that failed, leaves such a row with no dispatcher behind it;
+        only the cancel event the dispatcher holds for the run means running."""
+        self._probe_scope("file_artifact")
+        state = self._held_write()
+        state.release.set()
+        op = self._seed_row("in_flight")
+        response = await self._dispatch()
+        self.assertEqual(response.status, 200, response.text)
+        self.assertEqual(state.runs, 1)
+        self.assertEqual(orchestrator_server._WRITE_LEDGER[op]["attempts"], 2)
+
+    async def test_a_twin_whose_row_already_committed_does_not_refuse(self):
+        """#36 control: after the twin's commit its dispatcher still holds the cancel
+        event for a moment, but the edit has landed. A send then is a resend after
+        commit -- previous_status says so -- not a concurrent one."""
+        self._probe_scope("file_artifact")
+        state = self._held_write()
+        state.release.set()
+        op = self._seed_row("committed")
+        orchestrator_server._OPERATION_CANCEL_EVENTS[op] = object()
+        self.addCleanup(orchestrator_server._OPERATION_CANCEL_EVENTS.pop, op, None)
+        response = await self._dispatch()
+        self.assertEqual(response.status, 200, response.text)
+        self.assertEqual(state.runs, 1)
+        self.assertEqual(orchestrator_server._WRITE_LEDGER[op]["previous_status"], "committed")
+
+    async def test_begin_alone_marks_the_operation_live_so_a_twin_is_refused(self):
+        """#36 root: refusing a concurrent identical send must not depend on the
+        dispatcher registering the cancel event AFTER begin returned. A twin whose begin
+        ran in that gap saw the in_flight row without the event and ran as well.
+        _write_ledger_begin now registers the liveness marker itself, under the async
+        lock every begin shares, so a second begin for the same operation is refused with
+        no dispatcher code running between the two -- this test drives begin directly,
+        never the dispatcher."""
+        self._probe_scope("file_artifact")
+        op = orchestrator_server._write_ledger_begin(TOOL_NAME, {}, "")
+        self.addCleanup(orchestrator_server._OPERATION_CANCEL_EVENTS.pop, op, None)
+        self.assertTrue(op)
+        # begin itself marked the operation live -- not a later dispatcher step.
+        self.assertIn(op, orchestrator_server._OPERATION_CANCEL_EVENTS)
+        self.assertEqual(orchestrator_server._WRITE_LEDGER[op]["status"], "in_flight")
+        with self.assertRaises(orchestrator_server.WriteLedgerSendInFlight):
+            orchestrator_server._write_ledger_begin(TOOL_NAME, {}, "")
+        # the refused twin opened no second run: attempts stays 1.
+        self.assertEqual(orchestrator_server._WRITE_LEDGER[op]["attempts"], 1)
 
 if __name__ == "__main__":
     unittest.main()

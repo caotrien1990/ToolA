@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import contextlib
 import math
-import multiprocessing
 import os
 import pickle
 import re
+import subprocess
+import sys
 import tempfile
 import time
 from typing import Any, Iterable
+
+from orchestrator.text_lines import split_lines
 
 MAX_PATTERN_CHARS = 4096
 MAX_INPUT_BYTES = 32 * 1024 * 1024
@@ -94,6 +97,10 @@ def validate_next_record_budget(record_count: int, total_bytes: int, payload_siz
 
 
 def validate_line_budget(payload: bytes) -> None:
+    # The unit is the line the worker searches. split_lines() breaks on CRLF, CR
+    # and LF, and bytes.splitlines() breaks on exactly those three, line ends
+    # excluded. F5 2026-09-25: a split on LF alone read a CR-separated file as one
+    # line and refused it, though the worker searches it as short lines.
     if any(len(line) > MAX_LINE_BYTES for line in payload.splitlines()):
         raise RegexSearchBudgetExceeded(
             f"regex line exceeds {MAX_LINE_BYTES} bytes",
@@ -201,7 +208,7 @@ def _worker() -> None:
                 flushed_count = 0
                 last_flush = time.monotonic()
                 for _relative_path, label, payload in records:
-                    lines = payload.decode("utf-8", errors="ignore").splitlines()
+                    lines = split_lines(payload.decode("utf-8", errors="ignore"))
                     for index, line in enumerate(lines, 1):
                         if compiled.search(line):
                             before = ""
@@ -255,7 +262,99 @@ def _worker() -> None:
     _dump_atomic(_WORKER_OUTPUT_PATH, payload_out)
 
 
-def _stop_and_reap(process: multiprocessing.Process) -> None:
+# #33 2026-09-25: the regex child used to be a multiprocessing "spawn" Process,
+# and spawn rebuilds the PARENT's __main__ inside every child before it runs
+# the target. Measured: the daemon (started as a script) re-imported
+# orchestrator_server.py in each child -- 2617 ms for a one-file search, and
+# that import rewrote the live daemon's .orchestrator_cache/mutation_token.txt;
+# a test runner calling pytest.main() at top level re-ran its whole test file
+# inside each child until the 8 s and 15 s deadlines fired as
+# REGEX_SEARCH_TIMEOUT. `python -m pytest` is exempt from that re-run, which is
+# why the suite stayed green. The child now starts from an explicit entry that
+# imports this module and nothing else, so whatever the parent's __main__ is
+# can no longer change what a search does or costs (~55 ms per child).
+#
+# -I ignores every PYTHON* variable -- a leaked PYTHONHOME kills an interpreter
+# in init, before it can report anything -- and keeps the parent's cwd and
+# script directory off sys.path; the repo root is passed in explicitly instead.
+# The child sees no venv packages, which _worker does not need: keep this
+# module (and orchestrator.text_lines) stdlib-only.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_CHILD_ENTRY = (
+    "import sys; sys.path.insert(0, sys.argv[1]); "
+    "from orchestrator.search_regex_worker import _bootstrap; "
+    "_bootstrap(sys.argv[2], sys.argv[3])"
+)
+
+
+def _child_executable() -> str:
+    """The base interpreter rather than a venv's Scripts/python.exe.
+
+    On Windows that file is a redirector that starts the base interpreter as
+    ITS child, so each search would cost two processes and ~15 ms more (measured
+    ~70 vs ~55 ms), and the pid we report would be the redirector's. That is
+    cost, not correctness: terminating the redirector takes its child down with
+    it (measured -- no descendant survived), so returning sys.executable passes
+    every test and is a known equivalent mutant. multiprocessing's spawn used
+    _base_executable as well; under -I the venv adds nothing to a stdlib-only
+    child.
+    """
+    base = getattr(sys, "_base_executable", "")
+    return base if base and os.path.isfile(base) else sys.executable
+
+
+class _Helper:
+    """The slice of multiprocessing.Process that _run_isolated and
+    _stop_and_reap drive, over a plain subprocess started from _CHILD_ENTRY."""
+
+    def __init__(self, name: str, input_path: str, output_path: str) -> None:
+        self.name = name
+        self._paths = (input_path, output_path)
+        self._popen: subprocess.Popen | None = None
+
+    @property
+    def pid(self) -> int | None:
+        return None if self._popen is None else self._popen.pid
+
+    @property
+    def exitcode(self) -> int | None:
+        return None if self._popen is None else self._popen.poll()
+
+    def start(self) -> None:
+        # stdout stays closed: in the MCP stdio host stdout IS the protocol
+        # channel. stderr is inherited so a child that crashes leaves a trace.
+        self._popen = subprocess.Popen(
+            [_child_executable(), "-I", "-c", _CHILD_ENTRY, _REPO_ROOT, *self._paths],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+
+    def is_alive(self) -> bool:
+        return self._popen is not None and self._popen.poll() is None
+
+    def join(self, timeout: float | None = None) -> None:
+        if self._popen is not None:
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                self._popen.wait(timeout)
+
+    def terminate(self) -> None:
+        if self._popen is not None:
+            with contextlib.suppress(OSError):
+                self._popen.terminate()
+
+    def kill(self) -> None:
+        if self._popen is not None:
+            with contextlib.suppress(OSError):
+                self._popen.kill()
+
+    def close(self) -> None:
+        if self.is_alive():
+            raise ValueError(f"regex helper is still running: pid={self.pid}")
+        self._popen = None
+
+
+def _stop_and_reap(process: _Helper) -> None:
     if process.is_alive():
         process.terminate()
         process.join(_REAP_GRACE_SECONDS)
@@ -324,7 +423,7 @@ def _run_isolated(payload: tuple, timeout_seconds: float) -> Any:
     output_fd = -1
     input_path = ""
     output_path = ""
-    process: multiprocessing.Process | None = None
+    process: _Helper | None = None
     started = False
     primary_error: BaseException | None = None
     try:
@@ -336,12 +435,8 @@ def _run_isolated(payload: tuple, timeout_seconds: float) -> Any:
         os.close(output_fd)
         output_fd = -1
 
-        ctx = multiprocessing.get_context("spawn")
-        process = ctx.Process(
-            target=_bootstrap,
-            name=f"search-regex-{time.monotonic_ns()}",
-            args=(input_path, output_path),
-            daemon=False,
+        process = _Helper(
+            f"search-regex-{time.monotonic_ns()}", input_path, output_path,
         )
         try:
             process.start()

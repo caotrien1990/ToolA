@@ -36,13 +36,16 @@ tests below pin BOTH directions -- stale is removed, fresh is left alone.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
 import tempfile
 import time
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -248,6 +251,52 @@ class TheKillPathIsWhatThisPinsTest(unittest.TestCase):
         self.assertTrue(L._log_to_file(self.log, {"n": 2}, max_entries=10))
         self.assertFalse(orphans[0].exists(),
                          "the NEXT writer is the only code that can clean this up")
+
+
+class ARecordEndsAtItsNewlineOnlyTest(unittest.TestCase):
+    """The writer ends a record at "\\n" and nothing else, and ensure_ascii=False
+    keeps U+2028 / U+0085 raw INSIDE it. str.splitlines() also breaks at both, so
+    the next `_log_to_file` re-emitted one record as fragments no json.loads can
+    read -- for good -- and the two readers below, which parse every row or give
+    up, then trimmed nothing and reported no incomplete session."""
+
+    TEXT = "a" + chr(0x2028) + "b" + chr(0x85) + "c"
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="b030_nl_"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.log = self.root / "USAGE_LOG.jsonl"
+
+    def _seed(self, entries):
+        self.log.write_bytes("".join(
+            json.dumps(e, ensure_ascii=False) + "\n" for e in entries).encode("utf-8"))
+
+    def _records(self):
+        rows = self.log.read_bytes().decode("utf-8").split("\n")
+        self.assertEqual(rows[-1], "", "every record ends in a newline")
+        return [json.loads(row) for row in rows[:-1]]
+
+    def test_the_next_write_keeps_the_record_whole(self):
+        self.assertTrue(L._log_to_file(self.log, {"error": self.TEXT}, max_entries=10))
+        self.assertTrue(L._log_to_file(self.log, {"n": 2}, max_entries=10))
+        self.assertEqual(self._records(), [{"error": self.TEXT}, {"n": 2}])
+
+    def test_the_trim_still_trims(self):
+        end = {"type": "session_end", "native": []}
+        self._seed([{"tool": "a"}, end, {"tool": "b"}, end,
+                    {"tool": "c", "error": self.TEXT}, end])
+        L._auto_trim_log(self.log, keep_sessions=1)
+        self.assertEqual(self._records(), [{"tool": "c", "error": self.TEXT}, end])
+
+    def test_the_session_scan_still_reads_the_log(self):
+        start = datetime.now() - timedelta(hours=3)
+        first = start.isoformat(timespec="seconds")
+        second = (start + timedelta(minutes=1)).isoformat(timespec="seconds")
+        self._seed([{"ts": first, "tool": "x", "error": self.TEXT},
+                    {"ts": second, "tool": "y"}])
+        with mock.patch.object(L, "_project_cache_dir", lambda _root: self.root):
+            self.assertEqual(L._check_incomplete_sessions(),
+                             [{"ts": first, "calls": 2}])
 
 
 if __name__ == "__main__":

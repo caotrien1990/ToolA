@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -297,3 +298,69 @@ def test_write_targets_reads_every_field_that_names_a_target(tmp_path):
     ]
     # A relative target with no project_path is the tool's to resolve, not the daemon cwd's.
     assert xroot.write_targets({"file_path": "a.py", "dst": str(other / "c.py")}) == [other / "c.py"]
+
+
+def test_output_targets_reads_every_output_field_as_the_tool_opens_it(tmp_path, monkeypatch):
+    """#35: an output field is a write target on every tool, and the tool opens it as
+    spelled -- a relative one under the daemon's cwd, never under project_path."""
+    monkeypatch.chdir(tmp_path)
+    body = {
+        "project_path": str(tmp_path / "p"),
+        "save_path": str(tmp_path / "shot.png"),
+        "output_path": "rel/flow.json",
+        "backup_dir": str(tmp_path / "bk"),
+        "out_root": "packs",
+        "file_path": "read_by_the_tool.py",
+        "paths": ["x.py"],
+    }
+
+    assert xroot.output_targets(body) == [
+        (tmp_path / "shot.png").resolve(), (tmp_path / "rel" / "flow.json").resolve(), (tmp_path / "bk").resolve(),
+        (tmp_path / "packs").resolve(),
+    ]
+    assert xroot.output_targets({"save_path": "  ", "output_path": 3}) == []
+
+
+# Path-like schema parameters that never name where THIS call writes: the file a tool
+# reads, a root it works under, a format. Sorted by hand on purpose -- an unsorted
+# name is how save_path and backup_dir reached a credential directory with no
+# verdict (#35). A new path-like parameter fails the test below until it is sorted.
+_READ_OR_ROOT_FIELDS = frozenset({
+    "bat_path", "body_file", "db_path", "direction", "expected_path", "folder", "folder_path",
+    "input_path", "launcher_path", "log_path", "manifest_path", "output_folder", "output_format",
+    "path_a", "path_b", "paths_file", "preferred_root", "probe_path", "profile", "project_path",
+    "res_path", "room_path", "script_path", "subfolder", "target_folder", "target_paths",
+    "test_script_path",
+})
+# Stored by register / update and written by a LATER sync call: gated where they are
+# written (code_tools._ma_deny_refusal), not from this call's body.
+_REGISTRY_PATH_FIELDS = frozenset({"rule_file", "mcp_file", "skill_dir"})
+_PATH_LIKE = re.compile(r"(path|dir|dst|dest|folder|output|save|file$|root$)", re.I)
+
+
+def _path_like_schema_fields() -> set[str]:
+    # The daemon's surface, not this module's: importing the server merges the
+    # registry_data schemas (mcp_pack_generate's out_root arrives that way), so a
+    # scan without it passes or fails with the import order of the run.
+    import orchestrator_server  # noqa: F401
+
+    names = set()
+    for schema in code_tools.TOOL_SCHEMAS:
+        fn = schema.get("function", schema)
+        for key, spec in ((fn.get("parameters") or {}).get("properties") or {}).items():
+            kind = spec.get("type")
+            kinds = set(kind) if isinstance(kind, list) else {kind}
+            if _PATH_LIKE.search(key) and kinds & {"string", "array", None}:
+                names.add(key)
+    return names
+
+
+def test_every_path_like_schema_field_is_sorted_into_one_gate():
+    live = _path_like_schema_fields()
+    assert {"save_path", "backup_dir", "file_path", "out_root"} <= live  # positive control: the scan sees them
+    sorted_names = (set(xroot.WRITE_TARGET_FIELDS) | {"paths"} | set(xroot.OUTPUT_TARGET_FIELDS)
+                    | _READ_OR_ROOT_FIELDS | _REGISTRY_PATH_FIELDS)
+    assert live - sorted_names == set(), "sort each new path-like parameter into one gate"
+    # Two-way: a hand-sorted name that no schema carries any more is a stale entry.
+    stale = (_READ_OR_ROOT_FIELDS | _REGISTRY_PATH_FIELDS | set(xroot.OUTPUT_TARGET_FIELDS)) - live
+    assert stale == set()

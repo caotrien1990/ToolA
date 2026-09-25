@@ -58,3 +58,23 @@ def test_run_failure_keeps_the_reason_behind_long_hook_noise():
   except g.GitToolError as e: text=str(e); name=e.error_name
  assert name=='GIT_COMMAND_FAILED' and len(text)<=1000 and text.startswith('hook: ')
  assert 'REAL-REASON: subject rejected' in text and 'nothing added to commit' in text
+
+def test_a_paths_file_entry_ends_at_its_newline_only():
+ # U+2028 is legal in a file name (NTFS and POSIX). str.splitlines() cut the entry in two
+ # and staged BOTH halves -- two other files -- and never the one listed.
+ d,r=repo(); odd='x'+chr(0x2028)+'b.txt'
+ for name in ('x','b.txt',odd): (r/name).write_text('n',encoding='utf-8')
+ path_file=r/'batch.paths'; path_file.write_bytes((odd+'\n').encode('utf-8'))
+ assert g.stage(str(r),paths_file=str(path_file))['paths']==[odd]
+ staged=[x['path'] for x in g.status(str(r))['records'] if x.get('xy','.')[0] not in ('.',' ','?','!')]
+ assert staged==[odd], staged; d.cleanup()
+
+def test_log_keeps_a_subject_holding_a_unicode_line_break():
+ # git ends a --pretty=format: row at "\n" only; splitlines() also broke at FF, U+2028 and
+ # U+0085, so the subject came back cut at the first one.
+ d,r=repo(); subject='a'+chr(0x0c)+'b'+chr(0x2028)+'c'+chr(0x85)+'d'
+ msg=r.parent/(r.name+'.msg'); msg.write_bytes(subject.encode('utf-8'))
+ try: run(r,'commit','-q','--allow-empty','--cleanup=verbatim','-F',str(msg))
+ finally: msg.unlink(missing_ok=True)
+ commits=g.log(str(r))['commits']
+ assert [c['subject'] for c in commits]==[subject,'init'], commits; d.cleanup()

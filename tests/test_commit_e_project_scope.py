@@ -215,6 +215,25 @@ class CommitEProjectScopeTests(unittest.TestCase):
                          msg=f"prefix-collision leak: {session_ids}")
         self.assertNotIn("sess-B-1", session_ids)
 
+    # ── 7) a log row holding a Unicode line break is read whole ─────────────
+    def test_get_usage_stats_reads_a_log_row_holding_a_line_break(self):
+        # APP_SESSION_LOG.jsonl is written one json.dumps(ensure_ascii=False) row
+        # per "\n", so an error holding U+2028 / U+0085 is written raw.
+        # str.splitlines() also broke there, and json.loads of a fragment failed
+        # the WHOLE tool with "Failed to read session log".
+        text = "a" + chr(0x2028) + "b" + chr(0x85) + "c"
+        log = code_tools._project_cache_dir(str(self.project_a)) / "APP_SESSION_LOG.jsonl"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_bytes("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in (
+            {"tool": "write_fix", "ok": False, "error": text},
+            {"tool": "read_file_range", "ok": True},
+        )).encode("utf-8"))
+        result = json.loads(asyncio.run(code_tools.get_usage_stats(
+            str(self.project_a), include_http_log=False)))
+        self.assertTrue(result.get("ok"), msg=result)
+        self.assertEqual(result.get("entries_analyzed"), 2, msg=result)
+        self.assertEqual([e["error"] for e in result["recent_errors"]], [text])
+
 
 class CommitEDispatcherGuardTests(unittest.TestCase):
     """Pin the dispatcher-layer invariant: the two tools are NOT in

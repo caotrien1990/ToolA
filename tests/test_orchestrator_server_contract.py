@@ -3247,6 +3247,98 @@ class TestTokenStateMachine(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data['token'], orchestrator_server.EXPECTED_TOKEN)
         self.assertGreater(data['expires_at_epoch'], time.time())
 
+    # ───────────── #33 follow-up: one writer for the token file ─────────────
+    def test_token_file_is_published_only_by_the_lock_holder(self):
+        # WHY: live_answer_doctor reads the daemon's token from this file. Every
+        # process that rotated or imported used to overwrite it with a token the
+        # daemon never issued -- this very test class did, on every run.
+        # _TOKEN_FILE points into tmp too, so a regression to the fixed path fails
+        # here instead of writing the live daemon's file (the F4 mutant did).
+        from orchestrator.mission import instance_lock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            token_file = Path(tmp) / "mutation_token.txt"
+            fixed = Path(tmp) / "fixed" / "mutation_token.txt"
+            with mock.patch.object(orchestrator_server, "_TOKEN_FILE", fixed):
+                with mock.patch.object(instance_lock, "held_lock_path", return_value=None):
+                    orchestrator_server._rotate_token()
+                self.assertFalse(token_file.exists())
+                with mock.patch.object(instance_lock, "held_lock_path",
+                                       return_value=Path(tmp) / "orchestrator.lock"):
+                    token = orchestrator_server._rotate_token()
+            self.assertEqual(token_file.read_text(encoding="utf-8"), token)
+
+    def test_token_file_follows_the_lock_the_process_holds(self):
+        # WHY (F4): is_lock_holder() is true for ANY lock. A server started on a
+        # temporary ORCHESTRATOR_INSTANCE_LOCK (test_task_epoch_cross_process) held
+        # one and wrote the fixed _TOKEN_FILE -- the live daemon's token.
+        from orchestrator.mission import instance_lock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            live = Path(tmp) / "live" / "mutation_token.txt"
+            live.parent.mkdir()
+            live.write_text("daemon-token", encoding="utf-8")
+            other = Path(tmp) / "other"
+            other.mkdir()
+            try:
+                self.assertTrue(instance_lock.acquire_instance_lock(
+                    other / "orchestrator.lock", 1)["ok"])
+                self.assertEqual(instance_lock.held_lock_path(), other / "orchestrator.lock")
+                with mock.patch.object(orchestrator_server, "_TOKEN_FILE", live):
+                    token = orchestrator_server._rotate_token()
+            finally:
+                instance_lock.release_instance_lock()
+            self.assertIsNone(instance_lock.held_lock_path())
+            self.assertEqual(live.read_text(encoding="utf-8"), "daemon-token")
+            self.assertEqual((other / "mutation_token.txt").read_text(encoding="utf-8"), token)
+
+    def test_import_does_not_write_the_token_file(self):
+        # WHY: an `orchestrator_server.py --mcp` host, a test run and (before
+        # #33) every regex worker child imported this module; the import-time
+        # write replaced the live daemon's token file each time.
+        probe = (
+            "import pathlib, sys\n"
+            "sys.path.insert(0, sys.argv[1])\n"
+            "writes = []\n"
+            "real = pathlib.Path.write_text\n"
+            "def spy(self, *args, **kwargs):\n"
+            "    if self.name == 'mutation_token.txt':\n"
+            "        writes.append(str(self))\n"
+            "        return 0\n"
+            "    return real(self, *args, **kwargs)\n"
+            "pathlib.Path.write_text = spy\n"
+            "import orchestrator_server\n"
+            "print('WRITES', len(writes))\n"
+        )
+        repo = str(Path(orchestrator_server.__file__).resolve().parent)
+        env = {key: value for key, value in os.environ.items()
+               if key not in ("PYTHONHOME", "PYTHONPATH", "PYTHONSTARTUP")}
+        proc = subprocess.run(
+            [sys.executable, "-c", probe, repo], cwd=repo, env=env,
+            capture_output=True, encoding="utf-8", errors="replace", timeout=180,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
+        self.assertEqual(proc.stdout.strip().splitlines()[-1], "WRITES 0")
+
+    async def test_run_server_publishes_the_token_file_only_after_winning_the_lock(self):
+        # WHY: the daemon is the file's only writer now, so it must publish at
+        # start -- and a second launch that loses the lock must not.
+        from orchestrator.mission import instance_lock
+
+        with mock.patch.object(orchestrator_server, "_publish_token_file") as publish:
+            with mock.patch.object(instance_lock, "acquire_instance_lock",
+                                   return_value={"ok": False, "holder_pid": 1, "holder_port": 1}):
+                with self.assertRaises(SystemExit):
+                    await orchestrator_server._run_server()
+            publish.assert_not_called()
+            with mock.patch.object(instance_lock, "acquire_instance_lock",
+                                   return_value={"ok": True}), \
+                    mock.patch.object(orchestrator_server, "_publish_server_generation",
+                                      side_effect=RuntimeError("stop after the lock")):
+                with self.assertRaises(RuntimeError):
+                    await orchestrator_server._run_server()
+            publish.assert_called_once_with()
+
     # ───────────── CAN-002: AUTO_TOKEN_INJECT dev-gate + harden ─────────────
     def test_can002_auto_token_inject_env_gate_parses_correctly(self):
         # WHY: AUTO_TOKEN_INJECT must exactly mirror the env gate at import time
@@ -4694,6 +4786,111 @@ class TestErrorEnvelopeSingleText(unittest.IsolatedAsyncioTestCase):
         body = await self._dispatch(failing)
         self.assertIn('fields', body['error'])
         self.assertNotIn('reason', body)
+
+
+class TestCouncilLedgerRecordEndsAtItsNewlineOnly(unittest.IsolatedAsyncioTestCase):
+    """Each ledger below is written one json.dumps(ensure_ascii=False) record per
+    "\\n", which keeps U+2028 / U+0085 raw INSIDE a record. str.splitlines() also
+    breaks at both, so every reader cut that record into fragments no json.loads
+    can read and dropped it -- and the UI log then re-wrote itself from the
+    fragments, so the record was lost for good."""
+
+    TEXT = 'a' + chr(0x2028) + 'b' + chr(0x85) + 'c'
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix='os_nl_'))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.council = self.root / '.council'
+        self.council.mkdir()
+        old_here = orchestrator_server._HERE
+        orchestrator_server._HERE = self.root
+        self.addCleanup(setattr, orchestrator_server, '_HERE', old_here)
+
+    @staticmethod
+    def _seed(path, rows):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(''.join(
+            json.dumps(row, ensure_ascii=False) + '\n' for row in rows).encode('utf-8'))
+
+    def _open_gate(self):
+        for name in ('_is_local', '_origin_ok'):
+            patcher = mock.patch.object(orchestrator_server, name, return_value=True)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_observed_p50_counts_a_sample_holding_a_line_break(self):
+        self._seed(self.council / 'usage_log.jsonl', [
+            {'runtime_key': 'k', 'duration_sec': 2.0, 'reply': self.TEXT},
+            {'runtime_key': 'k', 'duration_sec': 4.0}])
+        self.assertEqual(orchestrator_server._council_observed_p50_sec('k'), 3.0)
+
+    def test_log_reply_keeps_a_jsonl_text_part_whole(self):
+        raw = json.dumps({'type': 'text', 'part': {'text': self.TEXT}}, ensure_ascii=False) + '\n'
+        self.assertEqual(orchestrator_server._council_extract_log_response(raw), self.TEXT)
+
+    def test_broker_export_keeps_a_reply_holding_a_line_break(self):
+        self._seed(self.council / orchestrator_server._COUNCIL_EVENT_LOG, [
+            {'id': 'e1', 'type': 'reply', 'from': 'ope', 'to': 'Anh', 'text': self.TEXT},
+            {'id': 'e2', 'type': 'message', 'from': 'Anh', 'to': 'ope', 'text': 'next'}])
+        orchestrator_server._council_export_public_broker(self.council)
+        rows = (self.council / 'broker_filtered.jsonl').read_bytes().decode('utf-8').split('\n')
+        self.assertEqual(rows[-1], '')
+        self.assertEqual([json.loads(row)['text'] for row in rows[:-1]], [self.TEXT, 'next'])
+
+    def test_recent_transcript_keeps_a_reply_holding_a_line_break(self):
+        self._seed(self.council / 'broker_filtered.jsonl', [
+            {'type': 'reply', 'from': 'ope', 'to': 'Anh', 'text': self.TEXT}])
+        self.assertEqual(orchestrator_server._council_recent_transcript(),
+                         '[REPLY] ope->Anh: a b c')
+
+    async def test_matrix_log_history_keeps_an_entry_holding_a_line_break(self):
+        self._open_gate()
+        orch = self.root / 'orch'
+        self._seed(orch / '.orchestrator_cache' / 'matrix_log.jsonl',
+                   [{'drift': self.TEXT}, {'drift': 'none'}])
+        with mock.patch.object(orchestrator_server.ct.path_runtime, 'ORCHESTRATOR_DIR', orch), \
+                mock.patch.object(orchestrator_server.ct, '_audit_tool_matrix_sync', return_value=None):
+            response = await orchestrator_server.handle_matrix_log(
+                make_mocked_request('GET', '/api/matrix_log?limit=20'))
+        self.assertEqual(json.loads(response.text)['history'],
+                         [{'drift': self.TEXT}, {'drift': 'none'}])
+
+    async def test_ui_log_trim_keeps_every_record_whole(self):
+        self._open_gate()
+        log = self.root / 'ui_log.jsonl'
+        rows = [{'n': n, 'msg': self.TEXT} for n in range(3)]
+        self._seed(log, rows)
+        with mock.patch.object(orchestrator_server, 'UI_LOG_FILE', log), \
+                mock.patch.object(orchestrator_server, '_UI_LOG_MAX', 2):
+            response = await orchestrator_server.handle_ui_log_get(
+                make_mocked_request('GET', '/api/ui_log'))
+        self.assertEqual(json.loads(response.text)['entries'], rows)
+        kept = log.read_bytes().decode('utf-8').split('\n')
+        self.assertEqual(kept[-1], '')
+        self.assertEqual([json.loads(row) for row in kept[:-1]], rows[-2:])
+
+    def _usage(self, fn, rel, row):
+        # F6: a Claude transcript / Codex rollout keeps a raw U+2028 / U+0085 inside a
+        # record, and str.splitlines() cut that record out of the usage count.
+        self._seed(self.root / rel, [row])
+        orchestrator_server._COUNCIL_METRICS_CACHE.clear()
+        self.addCleanup(orchestrator_server._COUNCIL_METRICS_CACHE.clear)
+        with mock.patch.object(Path, 'home', lambda: self.root):
+            return fn()
+
+    def test_clau_usage_counts_a_transcript_record_holding_a_line_break(self):
+        result = self._usage(orchestrator_server._council_local_clau_usage,
+                             '.claude/projects/p/a.jsonl',
+                             {'type': 'assistant', 'message': {'content': self.TEXT,
+                                                               'usage': {'input_tokens': 7}}})
+        self.assertEqual(result['input_tokens'], 7, msg=result)
+
+    def test_codo_usage_reads_a_rollout_record_holding_a_line_break(self):
+        result = self._usage(orchestrator_server._council_local_codo_usage,
+                             '.codex/sessions/rollout-1.jsonl',
+                             {'type': 'event_msg', 'note': self.TEXT, 'payload': {
+                                 'type': 'token_count', 'info': {'total_token_usage': {'total_tokens': 42}}}})
+        self.assertEqual(result['tokens_session'], 42, msg=result)
 
 
 if __name__ == '__main__':

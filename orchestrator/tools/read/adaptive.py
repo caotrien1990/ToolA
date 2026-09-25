@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from orchestrator.fileops import common as fo
+from orchestrator.text_lines import split_lines
 
 CACHE_MAX_ENTRIES = 64
 CACHE_MAX_BYTES = 32 * 1024 * 1024
@@ -112,7 +113,7 @@ def get_document(fp: Path, project_path: str | None = None, *,
         after = fp.stat()
         stable = _stat_sig(after) == signature
         digest = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
-        doc = Document(fp, root, text, text.splitlines(), digest, _stat_sig(after),
+        doc = Document(fp, root, text, split_lines(text), digest, _stat_sig(after),
                        encoding, len(text.encode("utf-8", errors="replace")), stable)
         with _CACHE_COND:
             if stable:

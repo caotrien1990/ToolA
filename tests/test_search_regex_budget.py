@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import multiprocessing
 import tempfile
 import threading
 import time
@@ -30,7 +29,18 @@ def tearDownModule() -> None:
 
 class TestSearchRegexBudget(unittest.IsolatedAsyncioTestCase):
     def _helper_pids(self) -> set[int]:
-        return {child.pid for child in multiprocessing.active_children() if child.pid is not None and child.name.startswith("search-regex-")}
+        # #33: the helper is a plain subprocess now, which multiprocessing's
+        # active_children() never lists; find it by the entry it runs instead.
+        import psutil
+
+        pids = set()
+        for child in psutil.Process().children(recursive=True):
+            try:
+                if "search_regex_worker" in " ".join(child.cmdline()):
+                    pids.add(child.pid)
+            except psutil.Error:
+                continue
+        return pids
 
     async def _wait_helpers_reaped(self, baseline: set[int], timeout: float = 3.0) -> None:
         deadline = time.monotonic() + timeout
@@ -126,7 +136,7 @@ class TestSearchRegexBudget(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(seen, [0, 1, 2])
 
         with mock.patch.object(search_regex_worker, "MAX_LINE_BYTES", 16, create=True):
-            with mock.patch.object(search_regex_worker.multiprocessing, "get_context", side_effect=AssertionError("worker spawned")):
+            with mock.patch.object(search_regex_worker, "_run_isolated", side_effect=AssertionError("worker spawned")):
                 with self.assertRaises(search_regex_worker.RegexSearchBudgetExceeded) as line_error:
                     search_regex_worker.search_records("x", 0, [("long.txt", "long.txt", b"x" * 17)], max_results=1, context_lines=0)
         self.assertEqual(line_error.exception.error_name, "REGEX_LINE_BUDGET_EXCEEDED")
@@ -592,13 +602,6 @@ class TestSearchRegexBudget(unittest.IsolatedAsyncioTestCase):
             def close(self):
                 self.closed = True
 
-        class FakeContext:
-            def __init__(self, process):
-                self.process = process
-
-            def Process(self, *args, **kwargs):
-                return self.process
-
         fake_process = FakeProcess()
         created = []
         real_mkstemp = tempfile.mkstemp
@@ -610,7 +613,7 @@ class TestSearchRegexBudget(unittest.IsolatedAsyncioTestCase):
                 return fd, path
 
             with mock.patch.object(search_regex_worker.tempfile, "mkstemp", side_effect=tracked_mkstemp):
-                with mock.patch.object(search_regex_worker.multiprocessing, "get_context", return_value=FakeContext(fake_process)):
+                with mock.patch.object(search_regex_worker, "_Helper", return_value=fake_process):
                     with self.assertRaises(OSError):
                         search_regex_worker.search_records("x", 0, [], max_results=1, context_lines=0)
             self.assertTrue(fake_process.closed)
@@ -630,11 +633,7 @@ class TestSearchRegexBudget(unittest.IsolatedAsyncioTestCase):
             def is_alive(self):
                 return False
 
-        class FakeContext:
-            def Process(self, *args, **kwargs):
-                return FakeProcess()
-
-        with mock.patch.object(search_regex_worker.multiprocessing, "get_context", return_value=FakeContext()), \
+        with mock.patch.object(search_regex_worker, "_Helper", return_value=FakeProcess()), \
              mock.patch.object(search_regex_worker, "_stop_and_reap", side_effect=search_regex_worker.RegexSearchError("reap failed")):
             with self.assertRaisesRegex(search_regex_worker.RegexSearchError, "exit_code=7") as caught:
                 search_regex_worker.preflight_pattern("safe", 0)
@@ -674,5 +673,69 @@ class TestSearchRegexBudget(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(process.closed)
         self.assertTrue(process.join_timeouts)
         self.assertTrue(all(timeout is not None and timeout > 0 for timeout in process.join_timeouts))
+
+    def test_child_never_reruns_the_parent_main(self) -> None:
+        """#33: the spawn start method rebuilt the PARENT's __main__ inside every
+        regex child. A script parent that searches at top level with no __main__
+        guard -- the daemon's import-time side effects, a runner calling
+        pytest.main() -- re-ran inside the child (the daemon: 2617 ms per one-file
+        search; a runner: the whole test file per child, until both deadlines
+        fired). Its top level must run exactly once and it must get its answer."""
+        import os
+        import subprocess
+        import sys
+
+        repo = Path(search_regex_worker.__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp) / "marker.txt"
+            script = Path(tmp) / "parent.py"
+            script.write_text(
+                "import json, sys\n"
+                f"sys.path.insert(0, {str(repo)!r})\n"
+                f"with open({str(marker)!r}, 'a') as fh:\n"
+                "    fh.write('x')\n"
+                "from orchestrator import search_regex_worker\n"
+                "records = [('a.txt', 'a.txt', b'x' + bytes([10]) + b'needle' + bytes([10]))]\n"
+                "hits = search_regex_worker.search_records('needle', 0, records, max_results=5, context_lines=0)\n"
+                "print(json.dumps([hit['line'] for hit in hits]))\n",
+                encoding="utf-8",
+            )
+            env = {key: value for key, value in os.environ.items() if key not in ("PYTHONHOME", "PYTHONPATH", "PYTHONSTARTUP")}
+            done = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=120, env=env)
+            ran = marker.read_text(encoding="utf-8")
+        self.assertEqual(done.returncode, 0, done.stderr[-2000:])
+        self.assertEqual(done.stdout.strip(), "[2]")
+        self.assertEqual(ran, "x", "the parent's top level ran again inside the regex child")
+
+    def test_child_ignores_a_leaked_python_environment(self) -> None:
+        """#33: the child runs with -I. [A] has leaked PYTHONHOME into child
+        processes before (os.environ.copy() in the script runner); a child that
+        honours it dies in interpreter init, before it can report anything, and
+        every regex search fails as 'exited with exit_code=1'."""
+        import os
+
+        with tempfile.TemporaryDirectory() as bogus, mock.patch.dict(os.environ, {"PYTHONHOME": bogus, "PYTHONPATH": bogus}):
+            hits = search_regex_worker.search_records("needle", 0, [("a.txt", "a.txt", b"x" + bytes([10]) + b"needle" + bytes([10]))], max_results=5, context_lines=0)
+        self.assertEqual([hit["line"] for hit in hits], [2])
+
+    def test_line_budget_measures_the_lines_the_worker_searches(self) -> None:
+        """The unit is the line the worker searches: split_lines breaks on CRLF,
+        CR and LF (#32/F1). F5: a budget split on LF alone refused a CR-separated
+        file of short lines as one long line. A line end is never counted."""
+        cr, lf = bytes([13]), bytes([10])
+        short = b"x" * 16
+        with mock.patch.object(search_regex_worker, "MAX_LINE_BYTES", 16), \
+             mock.patch.object(search_regex_worker, "_run_isolated", return_value=[]) as run:
+            for name, payload in (("cr.txt", short + cr + short), ("crlf.txt", short + cr + lf + short),
+                                  ("lf.txt", short + lf + short)):
+                search_regex_worker.search_records("x", 0, [(name, name, payload)], max_results=1, context_lines=0)
+            self.assertEqual(run.call_count, 3)
+            for name, payload in (("cr_long.txt", b"x" * 17 + cr), ("lf_long.txt", b"x" * 17 + lf)):
+                with self.assertRaises(search_regex_worker.RegexSearchBudgetExceeded) as caught:
+                    search_regex_worker.search_records("x", 0, [(name, name, payload)], max_results=1, context_lines=0)
+                self.assertEqual(caught.exception.error_name, "REGEX_LINE_BUDGET_EXCEEDED")
+            self.assertEqual(run.call_count, 3)
+
+
 if __name__ == "__main__":
     unittest.main()

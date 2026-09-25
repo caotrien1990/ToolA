@@ -260,6 +260,34 @@ class RestartGuardTests(unittest.TestCase):
             active = build_guard(root, "gen-a")()
             self.assertIn("COUNCIL_SLOT_ACTIVE", active.reasons)
 
+    def test_filesystem_guard_splits_the_broker_mirror_on_newlines_only(self):
+        # The mirror is written with ensure_ascii=False, so a message holding U+2028
+        # or U+0085 lands raw inside ONE record. str.splitlines() cut that record in
+        # two, both halves failed json.loads, and every re-read answered
+        # BROKER_PARSE_FAILED -- the restart stayed wedged until the message left
+        # the transcript.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council = root / ".council"
+            cache = root / ".orchestrator_cache"
+            council.mkdir()
+            cache.mkdir()
+            (cache / "restart_busy_snapshot.json").write_text(json.dumps({
+                "captured_at": time.time(), "busy": False, "generation": "gen-a",
+            }), encoding="utf-8")
+            (council / "runtime_state.json").write_text("{}", encoding="utf-8")
+            events = [
+                {"type": "message", "id": "d-1", "ts": time.time(),
+                 "text": "a" + chr(0x2028) + "b" + chr(0x85) + "c"},
+                {"type": "reply", "in_reply_to": "d-1"},
+            ]
+            (council / "broker_filtered.jsonl").write_text(
+                "".join(json.dumps(event, ensure_ascii=False) + "\n" for event in events),
+                encoding="utf-8", newline="\n")
+            decision = build_guard(root, "gen-a")()
+            self.assertNotIn("BROKER_PARSE_FAILED", decision.reasons)
+            self.assertNotIn("BROKER_DISPATCH_UNMATCHED", decision.reasons)
+
 
 class FakeScheduler:
     def __init__(self, end=True, run=True, force_kill=True):

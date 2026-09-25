@@ -277,6 +277,25 @@ class RestartInfrastructureFixTests(unittest.TestCase):
             self.assertEqual(runtime_path.read_bytes(), runtime_before)
             self.assertEqual(broker_path.read_bytes(), broker_before)
 
+    def test_force_drain_reads_a_record_holding_a_u2028_as_one_record(self):
+        # F2, review of #32: the broker writer keeps a raw U+2028 / U+0085 inside a
+        # record (ensure_ascii=False). str.splitlines() cut that record in two, so a
+        # stale dispatch that had one in its text raised FORCE_DRAIN_BROKER_PARSE_FAILED
+        # and could never be drained. One record per "\n" (text_lines.split_lines).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_council_files(
+                root,
+                runtime={},
+                broker_lines=(
+                    json.dumps({"type": "message", "id": "stale-1", "ts": time.time() - 3600,
+                                "text": "a" + chr(0x2028) + "b" + chr(0x85) + "c"},
+                               ensure_ascii=False),
+                ),
+            )
+            result = tools_v15._force_drain_restart_state(root, "operator approved stale cleanup")
+            self.assertEqual(result["closed_dispatches"], ["stale-1"])
+
     def test_controller_unavailable_fallback_emits_blocking_guards(self):
         # The legacy fallback path must include `blocking_guards` in its
         # RESTART_GUARD_BLOCKED response, matching the controller-path shape

@@ -100,3 +100,15 @@ def test_legacy_like_rows_do_not_crash_scorecard():
     card = build_scorecard(rows)
     assert card["measurement_count"] == 40
     assert card["buckets"][0]["confidence"] == "insufficient"
+
+
+def test_a_row_holding_a_line_break_is_not_dropped(tmp_path):
+    # append_jsonl ends a row at "\n" with ensure_ascii=False, so a reply holding
+    # U+2028 / U+0085 is written raw; str.splitlines() broke the row there and the
+    # measurement was dropped as a JSONDecodeError -- a scorecard one sample short.
+    from orchestrator.council.route_metrics import append_measurement, load_measurements
+    path = tmp_path / "measurements.jsonl"
+    text = "a" + chr(0x2028) + "b" + chr(0x85) + "c"
+    append_measurement(path, {"reply": text})
+    append_measurement(path, {"n": 2})
+    assert load_measurements(path) == [{"reply": text}, {"n": 2}]

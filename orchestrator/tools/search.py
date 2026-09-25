@@ -15,6 +15,7 @@ from orchestrator import search_snapshots
 from orchestrator.fileops import common as fo
 from orchestrator.server.executor_lanes import get_executor_lane
 from orchestrator.server.fair_admission import FAIR_ADMISSION
+from orchestrator.text_lines import split_lines
 
 MAX_SEARCH_CONTEXT_LINES = fo.MAX_SEARCH_CONTEXT_LINES
 MAX_SEARCH_RESULTS = fo.MAX_SEARCH_RESULTS
@@ -459,7 +460,7 @@ async def _find_symbol_unbounded(name: str = "", path: str = "", project_path: s
                 if not fo.should_scan_for_text(fp, base):
                     continue
                 try:
-                    lines = fp.read_text(encoding="utf-8", errors="ignore").splitlines()
+                    lines = split_lines(fp.read_text(encoding="utf-8", errors="ignore"))
                 except Exception:
                     continue
                 # TT-A-01 scope refinement: track Python triple-quoted string
@@ -645,7 +646,7 @@ async def _find_symbol_unbounded(name: str = "", path: str = "", project_path: s
                     if not fo.should_scan_for_text(fp2, base):
                         continue
                     try:
-                        lines2 = fp2.read_text(encoding="utf-8", errors="ignore").splitlines()
+                        lines2 = split_lines(fp2.read_text(encoding="utf-8", errors="ignore"))
                     except Exception:
                         continue
                     rel2 = str(fp2.relative_to(base))
@@ -1594,7 +1595,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                         skipped_large.append({"file": label, "size_bytes": size})
                     return
                 payload = pin.read_bytes(relative_path)
-                lines = payload.decode("utf-8", errors="ignore").splitlines()
+                lines = split_lines(payload.decode("utf-8", errors="ignore"))
                 for i, line in enumerate(lines, 1):
                     if pat.search(line):
                         before = ""

@@ -27,6 +27,7 @@ from .restart_protocol import (
     validate_restart_request,
 )
 from .console_warp import child_creationflags, child_startupinfo, ensure_hidden_console
+from ..text_lines import split_lines
 
 
 class Scheduler(Protocol):
@@ -555,7 +556,9 @@ def build_guard(root: Path, expected_generation: str, expected_request_id: str =
         except Exception:
             slots = [None]
         try:
-            broker_lines = broker_path.read_text(encoding="utf-8").splitlines() if broker_path.exists() else []
+            # One record per "\n" -- the writer's contract (ensure_ascii=False keeps a raw
+            # U+2028 inside a record, which str.splitlines() would cut in two).
+            broker_lines = split_lines(broker_path.read_text(encoding="utf-8")) if broker_path.exists() else []
         except Exception:
             broker_lines = ["<unreadable>"]
         return evaluate_restart_guard(

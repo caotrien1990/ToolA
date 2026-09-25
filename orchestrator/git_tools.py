@@ -3,6 +3,7 @@ from __future__ import annotations
 import fnmatch, hashlib, json, os, re, subprocess, tempfile, time
 from pathlib import Path
 from orchestrator.core.text_cap import cap_head_tail
+from orchestrator.text_lines import split_lines
 
 class GitToolError(RuntimeError):
     def __init__(self, name, message, **extra):
@@ -58,7 +59,7 @@ def _pathspecs_from_file(root, paths_file):
     if chr(0) in text:
         raise GitToolError('INVALID_GIT_PATHS_FILE',f'{paths_file}: NUL is not allowed')
     specs=[]
-    for index, raw in enumerate(text.splitlines(),1):
+    for index, raw in enumerate(split_lines(text),1):  # U+2028/U+0085 are legal in a file name
         try:
             specs.extend(_pathspecs(root,[raw]))
         except GitToolError as e:
@@ -413,7 +414,7 @@ def commit(project_path, message, expected_staged_hash, allow_empty=False, no_ve
 
 def log(project_path, limit=20, ref='HEAD'):
     root=resolve_root(project_path); n=max(1,min(int(limit),200)); raw=_run(root,['log',f'-{n}','--date=iso-strict','--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%s',str(ref)])['stdout']; rows=[]
-    for line in raw.splitlines():
+    for line in split_lines(raw):  # text=True already folded CR into "\n"; FF/U+2028/U+0085 may sit in %s
         bits=line.split('\x1f')
         if len(bits)==6: rows.append(dict(zip(['hash','short_hash','author','email','date','subject'],bits,strict=True)))
     return {'ok':True,'commits':rows,'ref':ref}

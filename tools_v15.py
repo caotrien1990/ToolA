@@ -65,6 +65,7 @@ from pathlib import Path
 # because orchestrator/__init__.py and orchestrator/core/__init__.py are inert,
 # so this does NOT re-create the ct->tv->os import cycle the docstring forbids.
 from orchestrator.core.params import csv_param
+from orchestrator.text_lines import split_lines
 
 # V15 R18: schema version stamped on every response so CA can detect drift
 # and invalidate cached schema assumptions across [A] updates.
@@ -721,7 +722,9 @@ async def _r43_replace_between_anchors(
         text = fp.read_text(encoding="utf-8", errors="replace")
     except Exception as exc:
         return _err(f"read failed: {exc}", error_name="READ_FAILED")
-    lines = text.splitlines()
+    # The line numbers write_fix counts (text_lines.split_lines): str.splitlines()
+    # also broke at a form feed or U+2028, so the anchor landed below its real line.
+    lines = split_lines(text)
     start_line = 0
     end_line = 0
     for i, ln in enumerate(lines, start=1):
@@ -7648,7 +7651,9 @@ def _force_drain_restart_state(root, reason: str, *, now: float | None = None,
     broker_lines = []
     if broker_path.exists():
         try:
-            broker_lines = broker_path.read_text(encoding="utf-8").splitlines()
+            # One record per "\n" -- the writer's contract (ensure_ascii=False keeps a raw
+            # U+2028 inside a record, which str.splitlines() would cut in two).
+            broker_lines = split_lines(broker_path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError) as exc:
             raise RuntimeError("FORCE_DRAIN_BROKER_UNREADABLE") from exc
     dispatches, replies = {}, set()

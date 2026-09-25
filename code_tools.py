@@ -52,6 +52,7 @@ from orchestrator.skip_rules import (
     is_write_backup,
     name_matches_ignore,
 )
+from orchestrator.text_lines import split_lf, split_lines
 from rule_core import get_rule_core, get_rule_core_metadata
 
 # ─── Shared constants ─────────────────────────────────────────────────────────
@@ -1278,8 +1279,8 @@ def _encoding_check_from_file(path: Path, encoding_used: str = "utf-8") -> dict:
 
 def _unified_diff_preview(before: str, after: str, fromfile: str, tofile: str, limit: int = 120) -> dict:
     diff_lines = list(difflib.unified_diff(
-        before.splitlines(keepends=True),
-        after.splitlines(keepends=True),
+        split_lines(before, keepends=True),
+        split_lines(after, keepends=True),
         fromfile=fromfile,
         tofile=tofile,
         n=3,
@@ -1287,8 +1288,8 @@ def _unified_diff_preview(before: str, after: str, fromfile: str, tofile: str, l
     added = sum(1 for line in diff_lines if line.startswith("+") and not line.startswith("+++"))
     removed = sum(1 for line in diff_lines if line.startswith("-") and not line.startswith("---"))
     truncated = len(diff_lines) > limit
-    before_lines = before.splitlines()
-    after_lines = after.splitlines()
+    before_lines = split_lines(before)
+    after_lines = split_lines(after)
     return {
         "changed_lines": added + removed,
         "added": added,
@@ -3534,7 +3535,7 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
                 for m in _re.finditer(pat, txt):
                     line_no = txt[:m.start()].count("\n") + 1
                     # Skip negative-test contexts where this is intentional
-                    line_text = txt.splitlines()[line_no - 1] if line_no <= len(txt.splitlines()) else ""
+                    line_text = (split_lines(txt)[line_no - 1:line_no] or [""])[0]
                     if "REMOVED" in line_text or "negative" in line_text.lower() or "MUST FAIL" in line_text:
                         continue
                     drift.append({
@@ -3595,7 +3596,7 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
                 content = p.read_text(encoding="utf-8", errors="replace")
             except Exception:
                 return findings
-            lines = content.splitlines()
+            lines = split_lines(content)
             sev = _severity_for(p)
             # R21: precompute which line ranges are in alias-migration sections (to skip)
             # R25: also skip code-block fenced regions (```...```) — most field-name
@@ -7678,7 +7679,9 @@ async def get_usage_stats(project_path: str = "", last_n: int = 200,
     source = ""
     if log_path.exists():
         try:
-            raw_lines = log_path.read_text(encoding="utf-8").splitlines()
+            # One row per "\n": ensure_ascii=False keeps a raw U+2028/U+0085 INSIDE a
+            # row, and a str.splitlines() fragment failed json.loads -- and the tool.
+            raw_lines = split_lines(log_path.read_text(encoding="utf-8"))
             entries = [json.loads(line) for line in raw_lines[-last_n:] if line.strip()]
             source = "APP_SESSION_LOG.jsonl"
         except Exception as e:
@@ -8547,7 +8550,7 @@ def _writes_string_to_executable(script: str) -> bool:
     Judged per line, so one data write does not excuse a script write elsewhere in
     the same body.
     """
-    for line in script.splitlines():
+    for line in split_lf(script):
         match = _STRING_WRITE_CMDLET_RE.search(line)
         if not match:
             continue
@@ -8578,7 +8581,7 @@ def _ps_here_string_line_span(script: str) -> set:
       * an unterminated here-string yields an EMPTY span, leaving every line
         executable. Fail safe.
     """
-    lines = script.splitlines()
+    lines = split_lf(script)
     inside = set()
     index = 0
     while index < len(lines):
@@ -8815,7 +8818,168 @@ def _py_destructive_lines(body: str) -> dict | None:
     return {"counted": counted, "in_memory": in_memory, "runs_strings": runs_strings}
 
 
-def _scan_destructive_script(script_content: str, runtime: str) -> dict:
+# #37 (2026-09-25): decode the carriers that hide a shell command from a per-line
+# scan, so the ONE matcher can judge what they actually run.
+#
+#   * a PowerShell -EncodedCommand / -enc / -ec / -e payload is base64 of UTF-16LE
+#     text -- decoded and rescanned;
+#   * a node child_process call (exec/execSync/spawn/.../fork) carries its command
+#     as string literals, one per argv word -- rejoined and rescanned, the JS twin
+#     of the python AST's shell_literal_kinds (node has no parser here);
+#   * an ssh line runs its trailing argument on the far host -- options and the host
+#     stripped, the remainder rescanned.
+#
+# What CANNOT be read -- a payload held in a variable, spawn(cmd), an ssh command
+# built at run time, a shell string nested one level further down inside an
+# interpreter's argument (python -c "os.system('del x')" -- the outer -c holds
+# python, whose os.system in turn holds the shell), or an -ArgumentList wrapper
+# (Start-Process cmd -ArgumentList "/c del x") -- decodes to nothing here and is
+# left uncounted, the same lower bound the preview already declares. Runtime-built
+# exec/eval is that case by construction and is NOT patched here: a static scan
+# cannot judge a string it never sees. Each decoded carrier is rescanned with
+# _scan_carriers=False, so the recursion is one level deep.
+_ENCODED_CMD_RE = re.compile(
+    r"(?i)\b(?:powershell|pwsh)(?:\.exe)?\b[^\r\n]*?\s-(?:encodedcommand|enc|ec|e)\s+"
+    r"([A-Za-z0-9+/]{8,}={0,2})\b")
+_NODE_SHELL_CALL_RE = re.compile(
+    r"(?i)\b(?:child_process\.)?(?:exec|execSync|spawn|spawnSync|execFile|"
+    r"execFileSync|fork)\s*\(")
+_STRING_LITERAL_RE = re.compile(
+    r'"((?:[^"\\]|\\.)*)"' r"|'((?:[^'\\]|\\.)*)'" r"|`([^`]*)`")
+_SSH_LINE_RE = re.compile(r"(?im)\bssh(?:\.exe)?[ \t]+([^\r\n]+)$")
+_SSH_TOKEN_RE = re.compile(r'"[^"]*"|\'[^\']*\'|\S+')
+_SSH_VALUE_OPTS = frozenset("bcDEeFIiJLlmOopQRSWw")
+
+
+def _line_of_offset(text: str, offset: int) -> int:
+    return text.count("\n", 0, offset) + 1
+
+
+def _balanced_paren(text: str, open_idx: int) -> str:
+    """The text between ``(`` at open_idx and its matching ``)``, quotes respected.
+
+    An unbalanced open takes the rest of the body: a truncated call still gets its
+    literals scanned rather than silently skipped.
+    """
+    depth = 0
+    quote = None
+    i = open_idx
+    while i < len(text):
+        ch = text[i]
+        if quote is not None:
+            if ch == quote and text[i - 1] != "\\":
+                quote = None
+        elif ch in "\"'`":
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return text[open_idx + 1:i]
+        i += 1
+    return text[open_idx + 1:]
+
+
+def _decode_encoded_command(b64: str) -> str:
+    """A -EncodedCommand payload decoded to its command text, or "" if unreadable.
+
+    UTF-16LE per PowerShell's contract; a payload that is not clean base64 or does
+    not decode to mostly printable text is treated as unreadable, so a variable or
+    a random-looking token is a lower bound, not a false positive.
+    """
+    import base64
+    try:
+        raw = base64.b64decode(b64 + "=" * (-len(b64) % 4), validate=True)
+    except Exception:
+        return ""
+    try:
+        text = raw.decode("utf-16-le")
+    except Exception:
+        return ""
+    if not text:
+        return ""
+    printable = sum(ch.isprintable() or ch.isspace() for ch in text)
+    return text if printable >= 0.8 * len(text) else ""
+
+
+def _ssh_remote_command(rest: str) -> str:
+    """The remote command an ssh line runs: options and the one host token stripped.
+
+    ssh's own value-taking short options consume their value so the host is found
+    correctly; the first bare token is the host; everything after it is the command
+    (a surrounding quote unwrapped). No command -> "" and nothing is flagged.
+    """
+    tokens = _SSH_TOKEN_RE.findall(rest)
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if not token.startswith("-"):
+            break  # the first non-option token is the host
+        if len(token) == 2 and token[1] in _SSH_VALUE_OPTS:
+            i += 2  # a short option that takes a value
+        else:
+            i += 1
+    command = " ".join(tokens[i + 1:]).strip()
+    if len(command) >= 2 and command[0] in "\"'" and command[-1] == command[0]:
+        command = command[1:-1]
+    return command
+
+
+def _shell_command_carriers(body: str, runtime: str):
+    """Yield (source_line, decoded_command_text) for each carrier in the body."""
+    for match in _ENCODED_CMD_RE.finditer(body):
+        decoded = _decode_encoded_command(match.group(1))
+        if decoded:
+            yield _line_of_offset(body, match.start()), decoded
+    if runtime in ("node", "any"):
+        for match in _NODE_SHELL_CALL_RE.finditer(body):
+            region = _balanced_paren(body, match.end() - 1)
+            words = [group for found in _STRING_LITERAL_RE.findall(region)
+                     for group in found if group]
+            if words:
+                yield _line_of_offset(body, match.start()), " ".join(words)
+    if runtime != "python":
+        for match in _SSH_LINE_RE.finditer(body):
+            command = _ssh_remote_command(match.group(1))
+            if command:
+                yield _line_of_offset(body, match.start()), command
+
+
+# Fix E (2026-09-25): scan the lines the INTERPRETER runs. python and PowerShell
+# also end a line at a lone CR, so a body split on LF only hid what they run
+# (measured: each deleted a scratch dir at count=0 -- python
+# `import shutil<CR>shutil.rmtree(d)`, PowerShell `Write-Output a<CR>ri -r -fo d`,
+# and a here-string closed by `x<CR>'@`). bash reads a CR as part of a word and
+# node's rows are not line-anchored, so both keep the body as written.
+_CR_ENDS_A_LINE = ("python", "powershell", "any")
+
+
+def _interpreter_newlines(script: str, runtime: str) -> str:
+    """The body with every line end its interpreter honours spelled as LF."""
+    if runtime not in _CR_ENDS_A_LINE:
+        return script
+    return script.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _cmd_cr_joined_lines(raw: str) -> list:
+    """(line in the LF view, text cmd runs) for each line holding a lone CR.
+
+    cmd DELETES a CR, so `rd<CR>/s /q d` runs as `rd/s /q d` (measured), the
+    opposite of the split the LF view makes; run_project_command reaches both
+    interpreters, so "any" reads each such line both ways.
+    """
+    joined = []
+    line_no = 1
+    for line in split_lf(raw):
+        parts = line.split("\r")
+        if len(parts) > 1:
+            joined.append((line_no, "".join(parts)))
+        line_no += len(parts)
+    return joined
+
+
+def _scan_destructive_script(script_content: str, runtime: str, _scan_carriers: bool = True) -> dict:
     """Classify a script body: destructive matches, silent-ignore footguns, warnings.
 
     Deliberately matches over the RAW body without stripping comments or string
@@ -8830,7 +8994,8 @@ def _scan_destructive_script(script_content: str, runtime: str) -> dict:
     stricter than the text in BOTH directions. A body that does not parse keeps
     the text scan.
     """
-    body = script_content or ""
+    raw = script_content or ""
+    body = _interpreter_newlines(raw, runtime)
     # runtime="any" scans the union of every runtime's patterns. It exists for
     # run_project_command, which is not one interpreter: the SAME tool runs
     # `rd /s /q`, `node -e "fs.rmSync(...)"` and `python -c "shutil.rmtree(...)"`,
@@ -8875,7 +9040,7 @@ def _scan_destructive_script(script_content: str, runtime: str) -> dict:
     prose_lines = _ps_prose_line_span(body, runtime)
     findings: list[dict] = []
     prose_matches: list[dict] = []
-    for line_no, line in enumerate(body.splitlines(), 1):
+    for line_no, line in enumerate(split_lf(body), 1):
         kinds = [kind for pattern, kind in patterns if re.search(pattern, line)]
         text_kinds: list[str] = []
         why_not = ""
@@ -8918,6 +9083,45 @@ def _scan_destructive_script(script_content: str, runtime: str) -> dict:
             continue
         findings.append(record)
 
+    # #37 (2026-09-25): a destructive command can ride INSIDE a carrier the primary
+    # per-line scan reads as opaque -- a base64 -EncodedCommand payload, the string
+    # arguments of a node child_process call, the remote command of an ssh line. Each
+    # is decoded back to the shell text it becomes and judged by the SAME matcher via
+    # a bounded re-scan (_scan_carriers=False stops it recursing). A carrier built at
+    # run time (a variable payload, spawn(cmd)) decodes to nothing and stays a lower
+    # bound, exactly like a runtime-built argv. Skipped for a parsed python body: its
+    # AST (shell_literal_kinds) already rejoins process-call literals and would
+    # double-count. Findings merge by line so one command is still one count.
+    if _scan_carriers and (runtime != "python" or py is None):
+        by_line = {record["line"]: record for record in findings}
+        body_lines = split_lf(body)
+        carriers = list(_shell_command_carriers(body, runtime))
+        if runtime == "any":
+            carriers += _cmd_cr_joined_lines(raw)
+        for src_line, decoded in carriers:
+            if src_line in prose_lines:
+                continue
+            sub = _scan_destructive_script(decoded, "any", _scan_carriers=False)
+            sub_kinds: list[str] = []
+            for finding in sub["findings"]:
+                for kind in finding["kinds"]:
+                    if kind not in sub_kinds:
+                        sub_kinds.append(kind)
+            if not sub_kinds:
+                continue
+            existing = by_line.get(src_line)
+            if existing is not None:
+                for kind in sub_kinds:
+                    if kind not in existing["kinds"]:
+                        existing["kinds"].append(kind)
+                continue
+            text = (body_lines[src_line - 1].strip()[:200]
+                    if 0 < src_line <= len(body_lines) else "")
+            record = {"line": src_line, "kind": sub_kinds[0], "kinds": sub_kinds, "text": text}
+            findings.append(record)
+            by_line[src_line] = record
+        findings.sort(key=lambda record: record["line"])
+
     footguns: list[dict] = []
     warnings: list[str] = []
     # "any" keeps the PowerShell footgun analysis: the -Include/-LiteralPath
@@ -8928,7 +9132,7 @@ def _scan_destructive_script(script_content: str, runtime: str) -> dict:
         # backtick continuations to fold), but recompute the span against the FOLDED
         # text so the line numbers line up with the loop below.
         folded_prose = _ps_prose_line_span(folded, runtime)
-        for line_no, line in enumerate(folded.splitlines(), 1):
+        for line_no, line in enumerate(split_lf(folded), 1):
             # A footgun is refused with retryable=False and NO confirm path, so a
             # sentence merely DESCRIBING the CASE-2008 shape would make a script
             # permanently unrunnable. Prose cannot delete anything.
@@ -9105,6 +9309,41 @@ async def _destructive_backup_or_refusal(root: Path, scan: dict, *, dry_run: boo
             retryable=False,
         )
     return info, None
+
+
+# #31 -- how a python script child is started. The child used to be
+# `python <script>` with PYTHONPATH=<root> exported through the environment, so
+# the export reached EVERY descendant, not just the interpreter it was meant for.
+# PYTHONHOME is not set by [A] (the daemon env carries no PYTHON* var): measured
+# 2026-09-25, the ToolQ uv venv launcher (python.exe 0.11.8) sets it for its base
+# interpreter, and a grandchild of a DIFFERENT version inheriting it loads the
+# wrong stdlib and dies `AssertionError: SRE module mismatch` -- an exit a
+# mutant runner reads as a kill. This bootstrap runs after the child's own
+# startup has consumed PYTHONHOME, drops it for descendants, puts <root> on
+# sys.path instead of in the env, and keeps what `python <script>` gives the
+# script: __name__ == "__main__", __file__, sys.argv, sys.path[0] = its dir
+# (safe_path honoured), and __future__ imports (compile() reads them from the
+# source). An inherited PYTHONPATH is left untouched: it is the caller's.
+# F3 (review of #32, 2026-09-25): the script is read as the utf-8 text [A] wrote
+# and scanned, never compiled from its bytes. compile(bytes) honours a PEP 263
+# cookie, so `# -*- coding: utf-7 -*-` made the child run `+AHM-hutil.+AHI-mtree(p)`
+# as shutil.rmtree(p) while the destructive scan read that line as noise and
+# counted 0. compile(str) ignores the cookie: what runs is what was scanned.
+# utf-8-sig drops a leading BOM, which compile(bytes) accepted as well.
+_PY_CHILD_BOOT = (
+    "import os, sys\n"
+    "os.environ.pop('PYTHONHOME', None)\n"
+    "__file__ = sys.argv[2]\n"
+    "if getattr(sys.flags, 'safe_path', False):\n"
+    "    sys.path.insert(0, sys.argv[1])\n"
+    "else:\n"
+    "    sys.path[0:1] = [os.path.dirname(__file__), sys.argv[1]]\n"
+    "sys.argv = sys.argv[2:]\n"
+    "with open(__file__, encoding='utf-8-sig') as _a_src:\n"
+    "    _a_code = compile(_a_src.read(), __file__, 'exec')\n"
+    "del os, sys, _a_src\n"
+    "exec(_a_code)\n"
+)
 
 
 async def run_project_test_script(
@@ -9301,7 +9540,7 @@ async def run_project_test_script(
     if runtime_clean == "node":
         cmd = ["node", str(script_path)]
     elif runtime_clean == "python":
-        cmd = [selected_python["executable"], str(script_path)]
+        cmd = [selected_python["executable"], "-c", _PY_CHILD_BOOT, str(root), str(script_path)]
     elif runtime_clean == "powershell":
         cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script_path)]
     else:  # sh
@@ -9309,8 +9548,6 @@ async def run_project_test_script(
     child_env = os.environ.copy()
     child_encoding_note: dict = {}
     if runtime_clean == "python":
-        inherited_pythonpath = child_env.get("PYTHONPATH", "")
-        child_env["PYTHONPATH"] = str(root) + (os.pathsep + inherited_pythonpath if inherited_pythonpath else "")
         # A35 -- close the encoding asymmetry with the powershell branch above.
         # The parent decodes this child as UTF-8 (Popen encoding="utf-8" below),
         # but a python child on Windows defaults stdout to the ANSI code page.
@@ -14430,7 +14667,7 @@ async def validate_symbols(file_path: str, project_path: str = "") -> str:
         content = fp.read_text(encoding="utf-8")
         if content.startswith('﻿'):
             content = content.lstrip('﻿')
-        lines = content.splitlines()
+        lines = split_lines(content)
 
         # Step 2: extract symbols from file — only top-level + class methods
         # (matches index granularity, excludes nested helpers like _run/_write
@@ -16622,6 +16859,21 @@ def _ma_mcp_block(reg: dict) -> tuple:
     return cmd, [server, "--mcp"]
 
 
+def _ma_deny_refusal(aid, key: str, p: Path) -> dict | None:
+    """#35: a path the registry names is a write target too. sync_rule / sync_mcp /
+    sync_skill write it, and the dispatcher's gate only sees the call's own body --
+    register / update store any path -- so the deny list reads it HERE, where it is
+    written. None = allowed; a dry run is refused the same way, so it previews true.
+    """
+    from orchestrator.fileops.xroot import xroot_check
+
+    verdict = xroot_check(p, "manage_agent")
+    if verdict.get("allowed"):
+        return None
+    return {"ok": False, "agent": aid, "status": "error", key: str(p), "error_name": "XROOT_DENIED",
+            "group": verdict.get("group", ""), "error": verdict.get("reason", "")}
+
+
 def _ma_write_rule(ag: dict, reg: dict, dry_run: bool) -> dict:
     rule_file = (ag.get("rule_file") or "").strip()
     if not rule_file:
@@ -16629,6 +16881,9 @@ def _ma_write_rule(ag: dict, reg: dict, dry_run: bool) -> dict:
     p = Path(rule_file)
     if p == Path(".") or p.is_dir():
         return {"ok": False, "agent": ag.get("id"), "rule_file": str(p), "error": "rule_file must be a file path"}
+    refused = _ma_deny_refusal(ag.get("id"), "rule_file", p)
+    if refused:
+        return refused
     fmt = ag.get("rule_format", "markdown")
     template = ag.get("rule_template", "slim")
     # Per-CA transport mode: "A" = [A]-first rule body (the default for every
@@ -16768,6 +17023,9 @@ def _ma_write_mcp(ag: dict, reg: dict, dry_run: bool) -> dict:
     p = Path(mcp_file)
     if p == Path(".") or p.is_dir():
         return {"ok": False, "agent": ag.get("id"), "mcp_file": str(p), "error": "mcp_file must be a file path"}
+    refused = _ma_deny_refusal(ag.get("id"), "mcp_file", p)
+    if refused:
+        return refused
     fmt = ag.get("mcp_format", "json")
     key = ag.get("mcp_key", "project-orchestrator")
     cmd, args = _ma_mcp_block(reg)
@@ -16872,6 +17130,9 @@ def _ma_write_skill_adapter(aid: str, rule_file: str, skill_name: str, src: str,
     if not rule_file:
         return {"ok": True, "agent": aid, "status": "adapter_needed", "skill_format": skill_format,
                 "reason": "skill_format requires rule_file but none configured; set rule_file or a verified skill_dir"}
+    refused = _ma_deny_refusal(aid, "target", Path(rule_file))
+    if refused:
+        return refused
     if dry_run or not explicit_target:
         return {"ok": True, "agent": aid, "status": "adapter_needed", "skill_format": skill_format,
                 "target": rule_file, "sha256": sha,
@@ -16926,6 +17187,9 @@ def _ma_write_skill(ag: dict, reg: dict, skill_name: str, dry_run: bool,
     # 1) Native SKILL.md folder copy (verified mechanism: clau/codo/pic/hermes).
     if skill_dir and skill_format == "folder":
         target = Path(skill_dir) / skill_name
+        refused = _ma_deny_refusal(aid, "target", target)
+        if refused:
+            return refused
         if dry_run:
             return {"ok": True, "agent": aid, "status": "dry_run", "source": str(src), "target": str(target),
                     "sha256": src_sum["sha256"], "files": src_sum["files"], "reason": "would copy (native folder)"}

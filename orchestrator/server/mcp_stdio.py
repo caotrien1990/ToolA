@@ -1696,10 +1696,18 @@ def run_mcp_stdio() -> None:
             return _mcp_proxy_call("cache_delta", {"project_path": project_path})
 
         @_mcp.tool
-        def run_project_command(project_path: str, command, timeout: int = 120) -> str:
-            """Run a bounded command in the project working directory."""
+        def run_project_command(project_path: str, command, timeout: int = 120,
+                                dry_run: bool = False,
+                                confirm_destructive: int = -1) -> str:
+            """Run a bounded command in the project working directory. dry_run=True
+            previews without executing; a destructive command is refused until
+            confirm_destructive is set to the destructive_count the preview reports.
+            The old wrapper dropped both, so CASE-2008's preview-then-acknowledge
+            gate was unreachable on this surface -- a destructive command could not
+            be confirmed and a caller could not preview one."""
             return _mcp_proxy_call("run_project_command", {
                 "project_path": project_path, "command": command, "timeout": timeout,
+                "dry_run": dry_run, "confirm_destructive": confirm_destructive,
             }, timeout_override=timeout)
 
         @_mcp.tool

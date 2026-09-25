@@ -381,5 +381,38 @@ class TestBootWriteSweepLedgerA02(unittest.TestCase):
         )
 
 
+class LedgerRowEndsAtItsNewlineOnlyTest(unittest.TestCase):
+    """Both boot-sweep ledgers are written one json.dumps(ensure_ascii=False) row
+    per "\\n", so a path holding U+2028 / U+0085 -- legal in a file name on NTFS
+    and POSIX -- is written raw. str.splitlines() also breaks at both: the row
+    read as corrupt fragments, the .bak it points at was never offered for
+    restore, and the cross-root write was never re-validated."""
+
+    NAME = "x" + chr(0x2028) + "y" + chr(0x85) + "z.py"
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="a02_nl_"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.target = self.root / self.NAME
+
+    def test_a_backup_row_for_an_odd_name_is_a_candidate(self):
+        with _LedgerSandbox(self.root):
+            write_core._record_write_backup(self.target, Path(str(self.target) + ".bak"))
+            candidates, errors = write_core._boot_sweep_ledger_candidates()
+        self.assertEqual(errors, [])
+        self.assertEqual(list(candidates.values()),
+                         [write_core._boot_sweep_abs_path(self.target)])
+
+    def test_a_cross_root_row_for_an_odd_name_is_revalidated(self):
+        from orchestrator.fileops import xroot
+        fake_core = self.root / "orchestrator" / "tools" / "write" / "core.py"
+        with mock.patch.object(xroot, "PROJECT_ROOT", self.root), \
+                mock.patch.object(write_core, "__file__", str(fake_core)):
+            xroot.ledger_append(phase="result", path=self.target,
+                                caller_tool="write_fix", ok=True)
+            files = write_core._boot_sweep_xroot_files()
+        self.assertEqual(files, [write_core._boot_sweep_abs_path(self.target)])
+
+
 if __name__ == "__main__":
     unittest.main()

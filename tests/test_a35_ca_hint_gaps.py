@@ -31,6 +31,7 @@ import asyncio
 import json
 import os
 import subprocess
+import sys
 
 import pytest
 
@@ -329,3 +330,135 @@ def test_a35_nothing_staged_explains_the_already_committed_case(tmp_path):
     assert "head_subject" in x["ca_next_action"]
     # state_hash is offered because it is the field that DOES discriminate.
     assert x["state_hash"]
+
+
+# ── #31: a python child's environment must not leak into its descendants ─────
+#
+# The child used to be `python <script>` with PYTHONPATH=<root> EXPORTED, so the
+# export reached every grandchild, and a PYTHONHOME the child's own launcher set
+# (the ToolQ uv launcher does) killed a grandchild of another version with
+# `SRE module mismatch`. code_tools._PY_CHILD_BOOT now starts the script instead.
+# Tests below read what the SCRIPT sees, never the env dict [A] builds.
+
+_BOOT_PROBE = (
+    "from __future__ import annotations\n"
+    "import json, os, sys\n"
+    "import code_tools\n"
+    "def _f(x: NotDefinedAnywhere) -> None: ...\n"
+    "print('A31=' + json.dumps({'name': __name__, 'file': __file__, 'argv': sys.argv,\n"
+    "    'path': sys.path[:2], 'pp': os.environ.get('PYTHONPATH'),\n"
+    "    'ann': _f.__annotations__}))\n"
+)
+
+
+def _a31_payload(stdout):
+    line = next(ln for ln in stdout.splitlines() if ln.startswith("A31="))
+    return json.loads(line[len("A31="):])
+
+
+def _norm(p):
+    return os.path.normcase(os.path.abspath(p))
+
+
+def test_a31_script_sees_what_python_script_gives_it():
+    """The bootstrap must be invisible to the script: __main__, __file__, argv,
+    sys.path[0] = its own dir, <root> importable, and a __future__ import still
+    honoured (a bare exec of the text would have NameError'd on the annotation).
+    `import code_tools` is the <root> check: no env var carries <root> any more.
+    """
+    out = json.loads(asyncio.run(code_tools.run_project_test_script(
+        _ROOT, _BOOT_PROBE, runtime="python", script_label="a31_fidelity", timeout=60)))
+    assert out["ok"] is True and out["exit_code"] == 0, out.get("stderr")
+    got = _a31_payload(out["stdout"])
+    script = _norm(out["script_path"])
+    assert got["name"] == "__main__", got
+    assert _norm(got["file"]) == script, got
+    assert [_norm(a) for a in got["argv"]] == [script], got
+    assert _norm(got["path"][0]) == _norm(os.path.dirname(script)), got
+    assert _norm(got["path"][1]) == _norm(_ROOT), got
+    assert got["ann"] == {"x": "NotDefinedAnywhere", "return": "None"}, got
+
+
+def test_a31_root_is_no_longer_exported_through_the_environment(tmp_path):
+    """The caller's PYTHONPATH reaches the script unchanged -- [A] prepends
+    nothing to it, so nothing of [A]'s reaches a grandchild through it."""
+    prior = os.environ.get("PYTHONPATH")
+    os.environ["PYTHONPATH"] = str(tmp_path)
+    try:
+        out = json.loads(asyncio.run(code_tools.run_project_test_script(
+            _ROOT, _BOOT_PROBE, runtime="python", script_label="a31_pythonpath", timeout=60)))
+    finally:
+        _restore_env("PYTHONPATH", prior)
+    assert out["ok"] is True and out["exit_code"] == 0, out.get("stderr")
+    assert _a31_payload(out["stdout"])["pp"] == str(tmp_path)
+
+
+_HOME_PROBE = (
+    "import json, os, subprocess, sys\n"
+    "g = subprocess.run([sys.executable, '-c',\n"
+    "    'import os; print(os.environ.get(\"PYTHONHOME\"))'],\n"
+    "    capture_output=True, text=True, timeout=60)\n"
+    "print('A31=' + json.dumps({'home': os.environ.get('PYTHONHOME'),\n"
+    "    'g_rc': g.returncode, 'g_home': g.stdout.strip(), 'path': sys.path[:1],\n"
+    "    'safe': bool(getattr(sys.flags, 'safe_path', False))}))\n"
+)
+
+
+def _run_home_probe(tmp_path, *, boot, **env):
+    script = tmp_path / "a31_home_probe.py"
+    script.write_text(_HOME_PROBE, encoding="utf-8")
+    argv = ([sys.executable, "-c", code_tools._PY_CHILD_BOOT, _ROOT, str(script)]
+            if boot else [sys.executable, str(script)])
+    p = subprocess.run(argv, capture_output=True, text=True, timeout=120,
+                       env={**os.environ, **env})
+    assert p.returncode == 0, p.stderr
+    return _a31_payload(p.stdout), script
+
+
+def test_a31_bootstrap_drops_pythonhome_for_the_script_and_its_children(tmp_path):
+    """Run the bootstrap directly with PYTHONHOME in the child's startup env --
+    the state a uv launcher leaves behind. Same-version sys.base_prefix so the
+    child itself can start; what matters is that nothing BELOW it inherits it.
+
+    Positive control first: without the bootstrap the same env DOES reach the
+    script, so a green result below is not an env that never arrived.
+    """
+    home = sys.base_prefix
+    ctrl, _ = _run_home_probe(tmp_path, boot=False, PYTHONHOME=home)
+    assert _norm(ctrl["home"]) == _norm(home), ctrl
+    got, _ = _run_home_probe(tmp_path, boot=True, PYTHONHOME=home)
+    assert got["home"] is None, got
+    assert got["g_rc"] == 0 and got["g_home"] == "None", got
+
+
+def test_a31_bootstrap_honours_safe_path(tmp_path):
+    """-P / PYTHONSAFEPATH: `python <script>` would NOT put the script's dir on
+    sys.path, so the bootstrap must not either -- and must not overwrite the
+    first real entry, which is what an unconditional sys.path[0:1] would do."""
+    got, _ = _run_home_probe(tmp_path, boot=True, PYTHONSAFEPATH="1")
+    assert got["safe"] is True, got
+    assert _norm(got["path"][0]) == _norm(_ROOT), got
+
+
+def test_f3_bootstrap_runs_the_text_that_was_scanned_not_a_coding_cookie(tmp_path):
+    """F3, review of #32: the bootstrap compiled the script's BYTES, which honours a
+    PEP 263 cookie. Under `# -*- coding: utf-7 -*-` the line `+AHM-hutil.+AHI-mtree(p)`
+    runs as shutil.rmtree(p), while _scan_destructive_script reads the utf-8 text [A]
+    wrote and counts 0. The child must run that same text, so the cookie is inert.
+
+    Positive control first: plain `python <script>` DOES decode the cookie, so a
+    green result below is not a body that could never have run."""
+    script = tmp_path / "f3_utf7.py"
+    script.write_text("# -*- coding: utf-7 -*-\nimport +AHM-ys\nprint('F3-UTF7-RAN')\n",
+                      encoding="utf-8")
+    assert code_tools._scan_destructive_script(script.read_text(encoding="utf-8"),
+                                               "python")["count"] == 0
+    env = {**os.environ}
+    env.pop("PYTHONHOME", None)
+    ctrl = subprocess.run([sys.executable, str(script)], capture_output=True, text=True,
+                          timeout=120, env=env)
+    assert "F3-UTF7-RAN" in ctrl.stdout, ctrl.stderr
+    got = subprocess.run([sys.executable, "-c", code_tools._PY_CHILD_BOOT, _ROOT, str(script)],
+                         capture_output=True, text=True, timeout=120, env=env)
+    assert "F3-UTF7-RAN" not in got.stdout and got.returncode != 0, (got.stdout, got.stderr)
+    assert "SyntaxError" in got.stderr, got.stderr

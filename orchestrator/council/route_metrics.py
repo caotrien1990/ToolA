@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from ..storage.jsonl_store import append_jsonl as _append_jsonl
+from ..text_lines import split_lines
 
 UNKNOWN = "unknown"
 DEFAULT_MIN_SAMPLES = 5
@@ -150,7 +151,9 @@ def load_measurements(path: str | Path, limit: int = 0) -> list[dict[str, Any]]:
     if not target.is_file():
         return []
     rows = []
-    for line in target.read_text(encoding="utf-8", errors="replace").splitlines():
+    # One row per "\n" (append_jsonl): ensure_ascii=False keeps a raw U+2028/U+0085
+    # INSIDE a row, and str.splitlines() dropped it as two undecodable halves.
+    for line in split_lines(target.read_text(encoding="utf-8", errors="replace")):
         try:
             row = json.loads(line)
             if isinstance(row, dict):

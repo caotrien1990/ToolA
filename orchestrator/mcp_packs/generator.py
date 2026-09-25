@@ -760,6 +760,8 @@ def action_install_targets(
 def _remove_mcp_server_key(text: str, key: str) -> tuple[str, bool, str]:
     """Remove a top-level mcp_servers.<key> block (sibling keys at indent=2)."""
     key = str(key)
+    # YAML text, not NDJSON: YAML 1.1 itself breaks lines at U+0085/U+2028/U+2029,
+    # so splitlines() matches the parser here -- deliberately NOT text_lines.split_lines.
     lines = text.splitlines(keepends=True)
     start = None
     for i, ln in enumerate(lines):

@@ -7,6 +7,7 @@ import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from ..text_lines import split_lines
 from .store import _SESSIONS_DB, _log_session_event, _project_cache_dir
 
 _ORCHESTRATOR_ROOT = Path(__file__).parents[2]
@@ -88,7 +89,10 @@ def _log_to_file(log_path: Path, entry: dict, max_entries: int = 500) -> bool:
             # B030: reclaim what a killed writer left behind. This is the only
             # place that CAN -- the process that made the orphan was terminated.
             _sweep_orphan_tmp(log_path)
-            lines = log_path.read_text(encoding="utf-8").splitlines() if log_path.exists() else []
+            # One record per "\n", the only separator json.dumps below writes:
+            # ensure_ascii=False keeps a raw U+2028/U+0085 INSIDE a record, and
+            # str.splitlines() re-emitted it as two unparseable halves.
+            lines = split_lines(log_path.read_text(encoding="utf-8")) if log_path.exists() else []
             lines.append(json.dumps(entry, ensure_ascii=False))
             if len(lines) > max_entries:
                 lines = lines[-max_entries:]
@@ -184,7 +188,7 @@ def _auto_trim_log(log_path: Path, keep_sessions: int = 2):
     try:
         if not log_path.exists():
             return
-        lines = log_path.read_text(encoding="utf-8").splitlines()
+        lines = split_lines(log_path.read_text(encoding="utf-8"))
         entries = [json.loads(l) for l in lines if l.strip()]
     except Exception:
         return
@@ -206,7 +210,7 @@ def _check_incomplete_sessions() -> list[dict]:
     if not log_path.exists():
         return []
     try:
-        entries = [json.loads(l) for l in log_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+        entries = [json.loads(l) for l in split_lines(log_path.read_text(encoding="utf-8")) if l.strip()]
     except Exception:
         return []
     if not entries:
