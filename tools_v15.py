@@ -4401,7 +4401,7 @@ async def read_skill(name: str = "", max_lines: int = 400,
         return _err(f"SKILL.md missing in {match.name}",
                     error_name="SKILL_BODY_MISSING")
     try:
-        raw = sm.read_text(encoding="utf-8", errors="replace").splitlines()
+        raw = split_lines(sm.read_text(encoding="utf-8", errors="replace"))
     except Exception as exc:
         return _err(f"read failed: {exc}", error_name="SKILL_READ_FAILED")
     total = len(raw)

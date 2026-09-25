@@ -4,7 +4,9 @@ bloat / redundancy analyzer.
 Guards STRUCTURE + invariants (family-aware redundancy, curated-core protection,
 honest usage caveat), not specific counts — those drift as the surface evolves.
 """
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -81,6 +83,20 @@ class TestSoftDataReconcile(unittest.TestCase):
         for name, r in self.report["records"].items():
             if r["deprecated"]:
                 self.assertNotIn(name, slim)
+
+
+class TestUsageLogRecordEndsAtItsNewlineOnly(unittest.TestCase):
+    # USAGE_LOG.jsonl is written with ensure_ascii=False (session/logs.py), so a raw
+    # U+2028 / U+0085 can sit INSIDE a record; str.splitlines() cut it there and the
+    # call went uncounted.
+    def test_usage_counts_a_record_holding_a_line_break(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / ".orchestrator_cache" / "USAGE_LOG.jsonl"
+            log.parent.mkdir()
+            row = {"tool": "t", "ok": True, "ts": "2026-09-25", "note": "a b\x85c"}
+            log.write_text(json.dumps(row, ensure_ascii=False) + "\n", encoding="utf-8", newline="")
+            stats = sdr._usage(Path(tmp))
+        self.assertEqual(dict(stats["t"]), {"count": 1, "ok": 1, "last": "2026-09-25"})
 
 
 if __name__ == "__main__":

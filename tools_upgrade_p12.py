@@ -18,6 +18,7 @@ import shutil
 from pathlib import Path
 
 from orchestrator.skip_rules import write_backup_path
+from orchestrator.text_lines import split_lines
 
 
 def _err(msg: str, **extra) -> str:
@@ -51,7 +52,7 @@ def _def_name(tok: str) -> str:
 
 
 def _read_lines(fp: Path) -> list[str]:
-    return fp.read_text(encoding="utf-8", errors="replace").splitlines()
+    return split_lines(fp.read_text(encoding="utf-8", errors="replace"))
 
 
 def _detect_eol(fp: Path) -> str:
@@ -142,7 +143,7 @@ async def insert_text(file_path: str, content: str, at_line: int = 0,
             insert_idx = after_line  # after_line is 1-based -> index == after_line
         elif at_line:
             insert_idx = at_line - 1  # at_line is 1-based, insert BEFORE it
-        new_lines = text.splitlines()
+        new_lines = split_lines(text)
         built = lines[:insert_idx] + new_lines + lines[insert_idx:]
         if dry_run:
             return json.dumps({
@@ -202,7 +203,7 @@ async def replace_symbol(file_path: str, symbol: str, new_content: str,
         end = start + 1
         while end < total and (lines[end][:1].isspace() or not lines[end].strip()):
             end += 1
-        new_lines = text.splitlines()
+        new_lines = split_lines(text)
         built = lines[:start] + new_lines + lines[end:]
         if dry_run:
             return json.dumps({

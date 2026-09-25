@@ -4892,6 +4892,55 @@ class TestCouncilLedgerRecordEndsAtItsNewlineOnly(unittest.IsolatedAsyncioTestCa
                                  'type': 'token_count', 'info': {'total_token_usage': {'total_tokens': 42}}}})
         self.assertEqual(result['tokens_session'], 42, msg=result)
 
+    # Council harness stdout is NDJSON: one record ends at its newline only.
+    # json.dumps(ensure_ascii=False) and the Node/Rust/Bun CLIs keep U+2028 /
+    # U+0085 raw inside a string, so str.splitlines() cut every record below.
+    def _record(self, obj):
+        return json.dumps(obj, ensure_ascii=False) + '\n'
+
+    def test_model_attestation_reads_a_result_record_holding_a_line_break(self):
+        raw = self._record({'type': 'result', 'session_id': 's1', 'provider': 'p',
+                            'model': 'm', 'result': self.TEXT})
+        self.assertEqual(orchestrator_server._council_attest_model(raw, session_id='s1'),
+                         ('p', 'm', ''))
+
+    def test_harness_start_is_proven_by_an_envelope_holding_a_line_break(self):
+        raw = self._record({'type': 'system', 'note': self.TEXT})
+        self.assertTrue(orchestrator_server._council_harness_started(raw))
+
+    def test_argv_refusal_is_not_read_out_of_a_json_record(self):
+        # The phrase sits INSIDE a record: cut at U+2028, the tail piece is a
+        # non-JSON line quoting it, and a started harness read as refused.
+        raw = self._record({'note': 'a' + chr(0x2028) + 'command line is too long'})
+        self.assertFalse(orchestrator_server._council_launcher_argv_too_long(raw, returncode=1))
+
+    def test_argv_refusal_counts_a_record_as_one_line(self):
+        # 2 real lines; cut at U+2028 they count 5, over the 3-line refusal cap.
+        raw = 'The command line is too long.\n' + self._record({'note': chr(0x2028).join('abcd')})
+        self.assertTrue(orchestrator_server._council_launcher_argv_too_long(raw, returncode=1))
+
+    def test_codex_jsonl_is_recognised_by_an_event_holding_a_line_break(self):
+        raw = self._record({'type': 'item.completed', 'text': self.TEXT})
+        self.assertTrue(orchestrator_server._council_looks_like_codex_jsonl(raw))
+
+    def test_claude_reply_is_the_result_record_holding_a_line_break(self):
+        raw = self._record({'type': 'result', 'result': self.TEXT})
+        self.assertEqual(orchestrator_server._council_extract_claude_streamjson(raw)[0], self.TEXT)
+
+    def test_response_tokens_are_read_from_a_record_holding_a_line_break(self):
+        raw = self._record({'type': 'result', 'result': self.TEXT,
+                            'usage': {'input_tokens': 7, 'output_tokens': 3}})
+        result = orchestrator_server._council_extract_response_tokens('clau', raw)
+        self.assertEqual(result.get('input'), 7, msg=result)
+
+    def test_codex_thread_id_is_read_from_a_record_holding_a_line_break(self):
+        raw = self._record({'type': 'thread.started', 'thread_id': 't1', 'note': self.TEXT})
+        self.assertEqual(orchestrator_server._council_extract_codex_thread_id(raw), 't1')
+
+    def test_opencode_session_id_is_read_from_a_record_holding_a_line_break(self):
+        raw = self._record({'type': 'text', 'sessionID': 's1', 'part': {'text': self.TEXT}})
+        self.assertEqual(orchestrator_server._council_extract_opencode_session_id(raw), 's1')
+
 
 if __name__ == '__main__':
     unittest.main()

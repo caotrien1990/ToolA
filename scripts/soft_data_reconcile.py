@@ -113,8 +113,10 @@ def _usage(project_root: Path) -> dict:
     p = project_root / ".orchestrator_cache" / "USAGE_LOG.jsonl"
     if not p.exists():
         return stats
-    for line in p.read_text(encoding="utf-8", errors="ignore").splitlines():
-        line = line.strip()
+    # One record per CR / LF only: bytes.splitlines() never breaks at the U+2028 /
+    # U+0085 that ensure_ascii=False keeps raw inside a record (str.splitlines did).
+    for raw in p.read_bytes().splitlines():
+        line = raw.decode("utf-8", errors="ignore").strip()
         if not line:
             continue
         try:

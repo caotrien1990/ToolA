@@ -879,6 +879,38 @@ def _mcp_tool_fields_decorator(raw_tool):
     return _tool
 
 
+def _mcp_plain_text_server(name: str):
+    """The zeromcp server this bridge runs: each tool answers with its text block only.
+
+    zeromcp turns a ``-> str`` tool into ``outputSchema {result: string}`` and then sends
+    ``structuredContent: {"result": <str>}`` next to the text. Every wrapper here returns
+    the daemon's compact JSON as a str, so that structured copy is the same JSON escaped
+    inside a JSON string -- and Claude Code shows that copy. Measured 2026-09-25: a median
+    of 110-172 backslashes per MCP answer against 0 for the same tool over HTTP, a token
+    tax on every call for bytes the text block already carries.
+
+    The schema and the copy go TOGETHER, which keeps the answer spec-legal: a tool that
+    publishes no outputSchema owes no structuredContent. Returning a dict from the
+    wrappers instead would be worse, because zeromcp then renders the text block itself
+    as ``json.dumps(indent=2)`` with ASCII escapes. Module-level, like
+    _mcp_tool_fields_decorator, so it is testable without starting the stdio loop.
+    """
+    from zeromcp import McpServer
+
+    class _PlainTextMcpServer(McpServer):
+        def _generate_tool_schema(self, func_name, func):
+            schema = super()._generate_tool_schema(func_name, func)
+            schema.pop("outputSchema", None)
+            return schema
+
+        def _mcp_tools_call(self, name, arguments=None, _meta=None):
+            response = super()._mcp_tools_call(name, arguments, _meta)
+            response.pop("structuredContent", None)
+            return response
+
+    return _PlainTextMcpServer(name)
+
+
 def _mcp_live_discovery(endpoint: str, query: dict | None = None) -> str:
     """Discovery must share the daemon registry used by proxied calls."""
     import sys
@@ -1289,9 +1321,8 @@ def run_mcp_stdio() -> None:
 
     # ── MCP stdio mode ─────────────────────────────────────────────────
     try:
-        from zeromcp import McpServer
-
-        _mcp = McpServer("project-orchestrator")
+        # One text block per answer, no structuredContent copy: see _mcp_plain_text_server.
+        _mcp = _mcp_plain_text_server("project-orchestrator")
 
         # A37 #1b ROOT FIX -- every named MCP tool gains `fields=` from ONE place.
         # The surgery itself lives MODULE-LEVEL in _mcp_tool_fields_decorator so it can be
@@ -2002,24 +2033,23 @@ def run_mcp_stdio() -> None:
             })
 
         # Surface prune profiles (FULL=1 bypasses all pruning — Herm live default).
-        # - default (FULL off): core-9 only; rest via call_tool
-        # - ORCHESTRATOR_MCP_PROFILE=council: core-9 U first-class council/mission pack
+        # - default (FULL off): the bootstrap calls only; every other tool rides
+        #   call_tool, and discovery is HTTP (/api/tools/names, /api/tools/<t>/schema).
+        #   Each listed tool costs host context on every turn; the measurement is in
+        #   McpDefaultSurfaceIsTheBootstrapCallsTests.
+        # - ORCHESTRATOR_MCP_PROFILE=council: bootstrap U first-class council/mission pack
         _full = os.environ.get("ORCHESTRATOR_MCP_FULL_SURFACE", "0") == "1"
         if not _full:
             _core_mcp_tools = {
                 "get_rule_core_text",
                 "open_session",
-                "tool_names",
-                "tool_schema",
                 "call_tool",
-                "log_native_event",
-                "list_sessions",
-                "council_message_async",
-                "council_worker_model",
             }
             _profile = (os.environ.get("ORCHESTRATOR_MCP_PROFILE", "") or "").strip().lower()
             if _profile == "council":
                 _core_mcp_tools |= {
+                    "council_message_async",
+                    "council_worker_model",
                     "council_message",
                     "convene_council",
                     "council_tracker",

@@ -2943,5 +2943,150 @@ class TestCodeToolsCache(unittest.TestCase):
         self.assertTrue(result.get("unclosed_tags"), msg=result)
         self.assertEqual(result.get("ruff_fix_applicable"), False, msg=result)
 
+    def test_log_section_reads_a_record_holding_a_line_break(self):
+        # The log section is NDJSON; json.dumps(ensure_ascii=False) keeps U+2028 /
+        # U+0085 raw inside a record, and str.splitlines() cut it into raw_line junk.
+        text = 'a' + chr(0x2028) + 'b' + chr(0x85) + 'c'
+        record = json.dumps({'level': 'error', 'message': text}, ensure_ascii=False) + '\n'
+        section = mock.AsyncMock(return_value=json.dumps({'content': record}, ensure_ascii=False))
+        with mock.patch('tools_v15.extract_log_section', section):
+            out = json.loads(asyncio.run(code_tools.parse_log_section('page', 'Logs')))
+        self.assertEqual(out['entry_count'], 1, msg=out)
+        self.assertEqual(out['entries'][0].get('message'), text, msg=out)
+
+    def test_read_skill_numbers_lines_like_read_file_range(self):
+        # read_skill hands back `N: line` numbers a CA carries into write_fix, so a
+        # form feed must not start a new line (#32): its numbering is split_lines.
+        import path_runtime
+        import tools_v15
+        skill = self.project_path / '.ToolA_Skill' / 'skills' / 'zz_probe_lines'
+        skill.mkdir(parents=True)
+        (skill / 'SKILL.md').write_bytes(b'a\x0cb\nc\n')
+        with mock.patch.object(path_runtime, 'ORCHESTRATOR_DIR', Path(self.project_path)):
+            out = json.loads(asyncio.run(tools_v15.read_skill('zz_probe_lines')))
+        self.assertEqual((out.get('total_lines'), out.get('result')), (2, '1: a\x0cb\n2: c'), msg=out)
+
+    # Every `.splitlines` in the shipped source. A line / record ends at CRLF, CR or
+    # LF only (orchestrator.text_lines.split_lines); str.splitlines() ALSO breaks at
+    # FF, VT, \x1c-\x1e, U+0085, U+2028, U+2029 -- the #32 class: a line number that
+    # disagrees with git / editors / ast, or an NDJSON record that
+    # json.dumps(ensure_ascii=False) wrote with a raw U+2028 cut in two. A site stays
+    # on splitlines only with the reason it cannot meet that class.
+    # key "relpath::innermost def/class" -> (count, reason).
+    _SL_BYTES = 'bytes.splitlines() breaks at CR / LF only: already the split_lines rule'
+    _SL_PROC = 'subprocess text output: not a JSON record, no line number handed back'
+    _SL_TEXT = 'plain text scanned for display / a marker / a regex: no line number handed back, no JSON record'
+    _SL_CONF = 'config / markup (.bat, YAML, ignore file, model list) read line by line: no line number handed back'
+    SPLITLINES_ALLOWED = {
+        'code_tools.py::_audit_tool_matrix_sync': (1, _SL_TEXT),
+        'code_tools.py::_dedup_session_vs_core': (2, _SL_TEXT),
+        'code_tools.py::_lint_only_introduced': (1, _SL_PROC),
+        'code_tools.py::_ma_rule_diff_summary': (2, _SL_TEXT),
+        'code_tools.py::council_tracker': (1, _SL_TEXT),
+        'code_tools.py::fetch_sheet_csv_summary': (1, _SL_TEXT),
+        'code_tools.py::verify_get_footage_copy_completion': (1, _SL_TEXT),
+        'code_tools.py::webfetch': (1, _SL_TEXT),
+        'orchestrator/council/snapshots.py::read_jsonl_tail': (1, _SL_BYTES),
+        'orchestrator/git_tools.py::diff': (1, _SL_PROC),
+        'orchestrator/graph/extractors/vulture_ruff.py::_parse_ruff_output': (1, _SL_PROC),
+        'orchestrator/graph/extractors/vulture_ruff.py::_parse_vulture_output': (1, _SL_PROC),
+        'orchestrator/graph/tools.py::_project_policy_rules': (1, _SL_PROC),
+        'orchestrator/lifecycle/as_bat_helpers.py::_listen_pid_netstat': (1, _SL_PROC),
+        'orchestrator/lifecycle/as_bat_helpers.py::_task_state': (1, _SL_PROC),
+        'orchestrator/mcp_packs/generator.py::_remove_mcp_server_key': (1, _SL_CONF),
+        'orchestrator/mcp_packs/generator.py::action_test_pack': (1, _SL_PROC),
+        'orchestrator/mission/engine.py::artifact_complete': (1, _SL_TEXT),
+        'orchestrator/search_regex_worker.py::validate_line_budget': (1, _SL_BYTES),
+        'orchestrator/skip_rules.py::_parse_project_ignore': (1, _SL_CONF),
+        'orchestrator/storage/jsonl_store.py::read_tail': (1, _SL_BYTES),
+        'orchestrator/tools/write/core.py::_markdown_pin_warnings': (1, _SL_TEXT),
+        'orchestrator/tools/write/core.py::_pre_write_syntax_check._compact': (1, _SL_TEXT),
+        'orchestrator_server.py::_artifact_last_line_complete': (1, _SL_TEXT),
+        'orchestrator_server.py::_council_cap_stall_alerts': (1, _SL_BYTES),
+        'orchestrator_server.py::_council_clean_direct_log_text': (2, _SL_TEXT),
+        'orchestrator_server.py::_council_direct_log_events': (1, _SL_TEXT),
+        'orchestrator_server.py::_council_direct_log_info': (2, _SL_TEXT),
+        'orchestrator_server.py::_council_extract_codex_exec': (1, _SL_PROC),
+        'orchestrator_server.py::_council_extract_log_response': (2, _SL_TEXT),
+        'orchestrator_server.py::_council_latest_prompt_source': (1, _SL_TEXT),
+        'orchestrator_server.py::_council_local_retired_vscode_usage.fetch': (1, _SL_TEXT),
+        'orchestrator_server.py::_council_subtract_echo': (2, _SL_TEXT),
+        'orchestrator_server.py::_council_valid_models': (1, _SL_CONF),
+        'orchestrator_server.py::_read_recent_log_lines': (1, _SL_TEXT),
+        'restart_orchestrator.py::_port_owner_pids_ps_fallback': (1, _SL_PROC),
+        'scripts/soft_data_reconcile.py::_usage': (1, _SL_BYTES),
+        'tools_v15.py::compare_dom_snapshot': (2, _SL_TEXT),
+        'tools_v15.py::ensure_single_electron_instance': (1, _SL_PROC),
+        'tools_v15.py::git_blame_symbol._git_log': (1, _SL_PROC),
+        'tools_v15.py::import_graph._scan': (1, _SL_TEXT),
+        'tools_v15.py::inspect_project_runtime': (2, _SL_CONF),
+        'tools_v15.py::inspect_project_runtime._r67_launcher_command_body': (1, _SL_CONF),
+        'tools_v15.py::launch_electron_with_cdp': (3, _SL_CONF),
+    }
+
+    @staticmethod
+    def _splitlines_sites(root):
+        """"relpath::innermost def/class" -> count of `.splitlines` attributes (a call
+        or a bare `str.splitlines` reference) in the shipped .py source under root."""
+        import ast
+        import os
+        from collections import Counter
+        from orchestrator.skip_rules import should_skip_dir
+        found = Counter()
+        for base, dirs, names in os.walk(root):
+            dirs[:] = [d for d in dirs if d not in ('tests', '.council') and not should_skip_dir(d, root)]
+            for name in names:
+                path = Path(base) / name
+                if not name.endswith('.py') or (path.parent == root and name.startswith('test_')):
+                    continue
+                tree = ast.parse(path.read_text(encoding='utf-8-sig'))
+                owner = {}
+
+                def visit(node, prefix):
+                    for child in ast.iter_child_nodes(node):
+                        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                            qual = f'{prefix}.{child.name}' if prefix else child.name
+                            for sub in ast.walk(child):
+                                owner[id(sub)] = qual
+                            visit(child, qual)
+                        else:
+                            visit(child, prefix)
+                visit(tree, '')
+                rel = path.relative_to(root).as_posix()
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Attribute) and node.attr == 'splitlines':
+                        found[f"{rel}::{owner.get(id(node), '<module>')}"] += 1
+        return found
+
+    @staticmethod
+    def _splitlines_drift(found, allowed):
+        unlisted = {k: n for k, n in found.items() if k not in allowed}
+        stale = {k: (want, found.get(k, 0)) for k, (want, _why) in allowed.items() if found.get(k, 0) != want}
+        return unlisted, stale
+
+    def test_every_splitlines_is_routed_or_allowlisted(self):
+        root = Path(code_tools.__file__).resolve().parent
+        unlisted, stale = self._splitlines_drift(self._splitlines_sites(root), self.SPLITLINES_ALLOWED)
+        self.assertEqual(unlisted, {}, msg='route these through orchestrator.text_lines.split_lines, or list '
+                         'them in SPLITLINES_ALLOWED with the reason they cannot meet the #32 class')
+        self.assertEqual(stale, {}, msg='SPLITLINES_ALLOWED key -> (listed, found): drop or recount it')
+
+    def test_splitlines_gate_sees_a_planted_site_and_a_stale_entry(self):
+        # Positive control for the gate above: a scanner that finds nothing, or a
+        # drift check that only looks one way, would keep that gate green forever.
+        root = self.project_path.resolve()
+        for rel, src in (('pkg/mod.py', 'class C:\n    def f(self, t):\n        return t.splitlines()\n'),
+                         ('top.py', 'X = map(str.splitlines, [])\n'),
+                         ('tests/test_x.py', 'X = "".splitlines()\n'),
+                         ('test_root.py', 'X = "".splitlines()\n'),
+                         ('venv/lib.py', 'X = "".splitlines()\n')):
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(src, encoding='utf-8')
+        found = self._splitlines_sites(root)
+        self.assertEqual(dict(found), {'pkg/mod.py::C.f': 1, 'top.py::<module>': 1})
+        unlisted, stale = self._splitlines_drift(found, {'top.py::<module>': (2, ''), 'gone.py::g': (1, '')})
+        self.assertEqual(unlisted, {'pkg/mod.py::C.f': 1})
+        self.assertEqual(stale, {'top.py::<module>': (2, 1), 'gone.py::g': (1, 0)})
+
 if __name__ == '__main__':
     unittest.main()

@@ -12255,7 +12255,7 @@ async def parse_log_section(page_id: str, section_title: str,
     top_categories = {}
 
     # Try to parse log_text as line-delimited JSON
-    for ln in (log_text or "").splitlines():
+    for ln in split_lines(log_text or ""):
         ln = ln.strip()
         if not ln:
             continue

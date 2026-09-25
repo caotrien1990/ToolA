@@ -5678,7 +5678,7 @@ def _council_attest_model(raw: str, request_id: str = "", session_id: str = "") 
     # Only provider-native final-result envelopes bound to this dispatch may attest identity.
     identities: set[tuple[str, str]] = set()
     expected_request, expected_session = str(request_id or ""), str(session_id or "")
-    for line in str(raw or "").splitlines():
+    for line in split_lines(str(raw or "")):
         try:
             value = json.loads(line)
         except (TypeError, ValueError, json.JSONDecodeError):
@@ -5719,7 +5719,7 @@ def _council_harness_started(raw: str) -> bool:
     those harnesses keep the false positive this guard exists to remove.
     """
     envelope_keys = ("type", "session_id", "sessionID", "thread_id", "threadId", "messageID")
-    for line in str(raw or "").splitlines():
+    for line in split_lines(str(raw or "")):
         stripped = line.strip()
         if not stripped.startswith("{"):
             continue
@@ -5772,9 +5772,9 @@ def _council_launcher_argv_too_long(raw: str, returncode: int | None = None) -> 
         return False
     if _council_harness_started(raw):
         return False
-    if len([ln for ln in str(raw).splitlines() if ln.strip()]) > _COUNCIL_ARGV_REFUSAL_MAX_LINES:
+    if len([ln for ln in split_lines(str(raw)) if ln.strip()]) > _COUNCIL_ARGV_REFUSAL_MAX_LINES:
         return False
-    for line in str(raw).splitlines():
+    for line in split_lines(str(raw)):
         stripped = line.strip()
         if stripped.startswith("{") or stripped.startswith("["):
             try:
@@ -7595,7 +7595,7 @@ def _council_looks_like_codex_jsonl(text: str) -> bool:
     (a parseable single-line object whose "type" is a known codex event)."""
     if not text:
         return False
-    for ln in str(text).splitlines():
+    for ln in split_lines(str(text)):
         s = ln.strip()
         if len(s) > 1_000_000 or not (s.startswith("{") and s.endswith("}")):
             continue
@@ -8086,7 +8086,7 @@ def _council_extract_claude_streamjson(stdout: str):
     reply = ""
     thinking_parts: list[str] = []
     usage_str = ""
-    for ln in stdout.splitlines():
+    for ln in split_lines(stdout):
         s = ln.strip()
         if not (s.startswith("{") and s.endswith("}")):
             continue
@@ -8140,7 +8140,7 @@ def _council_extract_response_tokens(agent: str, raw_text: str) -> dict:
             for child in value:
                 visit(child)
 
-    for line in raw_text.splitlines():
+    for line in split_lines(raw_text):
         line = line.strip()
         if not (line.startswith("{") and line.endswith("}")):
             continue
@@ -8311,7 +8311,7 @@ def _council_context_status(agent: str, project_path: str = "") -> dict:
 
 def _council_extract_codex_thread_id(stdout: str) -> str:
     """Capture thread.started.thread_id from `codex exec --json` JSONL stdout."""
-    for ln in stdout.splitlines():
+    for ln in split_lines(stdout):
         s = ln.strip()
         if not (s.startswith("{") and s.endswith("}")):
             continue
@@ -8334,7 +8334,7 @@ def _council_extract_codex_thread_id(stdout: str) -> str:
 
 def _council_extract_opencode_session_id(stdout: str) -> str:
     """Capture sessionID from `opencode run --format json` output."""
-    for ln in stdout.splitlines():
+    for ln in split_lines(stdout):
         s = ln.strip()
         if not (s.startswith("{") and s.endswith("}")):
             continue
