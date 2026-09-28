@@ -14290,7 +14290,17 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
         elif ext in (".js", ".mjs", ".cjs"):
             lang = "js"
         elif ext in (".ts", ".tsx"):
-            lang = "esbuild" if ext == ".tsx" else "ts"
+            # Both go to esbuild, which is a SYNTAX check -- the same contract the
+            # python/js/tsx branches already honour. The old lang="ts" path was
+            # wrong twice on Windows: (1) it ran subprocess.run(["npx", ...]) from
+            # the bare name, and CreateProcess cannot launch npx.cmd that way, so
+            # every .ts write failed with "npx/tsc not found in PATH" even with
+            # Node on PATH; (2) `tsc --noEmit <one file>` IGNORES tsconfig.json and
+            # pulls in every @types package, so it reported false errors
+            # (TS2717/TS2374 out of @types/dom-webcodecs) for files that compile
+            # fine in the project. A write validator must not type-check a project
+            # that is still half-written.
+            lang = "esbuild"
         elif ext == ".jsx":
             lang = "esbuild"
         elif ext == ".vue":
