@@ -23,6 +23,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
+from orchestrator.storage.spool import (
+    append_spool,
+    drain_spool,
+    spool_depth as _spool_depth,
+)
+
 
 SESSION_EVENT_KIND = "session_event"
 WRITE_LEDGER_KIND = "write_ledger"
@@ -41,6 +47,75 @@ def _durable_audit_synchronous() -> str:
     """
     mode = str(os.environ.get("ORCH_DURABLE_AUDIT_SYNCHRONOUS", "NORMAL")).strip().upper()
     return mode if mode in {"OFF", "NORMAL", "FULL", "EXTRA"} else "NORMAL"
+
+
+# Busy budget. Hardcoded in the constructor until 2026-09-27, when storage_busy_failures
+# showed the outbox dropping rows: 200 ms x 4 attempts gave a ~0.95 s worst case, and
+# this database lives on a spinning disk where _claim_pending_batch (BEGIN IMMEDIATE plus
+# up to batch_size UPDATEs) and prune_applied_older_than (2000-row DELETE batches) both
+# hold the write lock longer than that. Read live from the environment, never snapshotted
+# at import -- same contract as _durable_audit_retention_days below.
+_DURABLE_AUDIT_BUSY_TIMEOUT_MS_ENV = "ORCHESTRATOR_DURABLE_AUDIT_BUSY_TIMEOUT_MS"
+_DURABLE_AUDIT_RETRY_ATTEMPTS_ENV = "ORCHESTRATOR_DURABLE_AUDIT_RETRY_ATTEMPTS"
+_DURABLE_AUDIT_RETRY_BACKOFF_S_ENV = "ORCHESTRATOR_DURABLE_AUDIT_RETRY_BACKOFF_S"
+_DURABLE_AUDIT_CAPACITY_WAIT_S_ENV = "ORCHESTRATOR_DURABLE_AUDIT_CAPACITY_WAIT_S"
+
+
+def _env_number(name: str, default: float, minimum: float) -> float:
+    """Read one live numeric knob. Blank or unparseable keeps the default.
+
+    Clamped at minimum rather than rejected, because these are all timeouts: a
+    misconfigured 0 would turn "wait for the lock" back into "drop the row", which
+    is the exact failure these knobs exist to stop.
+    """
+    raw = str(os.environ.get(name, "")).strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return default
+    return value if value >= minimum else minimum
+
+
+def _durable_audit_busy_timeout_ms() -> int:
+    """SQLite busy_timeout per connection: 1000 ms, up from the original 200 ms.
+
+    One second is the order of magnitude a 2000-row retention DELETE plus its WAL
+    commit holds the write lock on this HDD. 200 ms gave up inside that window, which
+    is how a retention pass could make a concurrent stage() fail.
+    """
+    return int(_env_number(_DURABLE_AUDIT_BUSY_TIMEOUT_MS_ENV, 1000.0, 1.0))
+
+
+def _durable_audit_retry_attempts() -> int:
+    """Attempts around that timeout. Deliberately still 4, not more.
+
+    Worst case is attempts x busy_timeout plus backoff = 4 x 1.0 s + 0.3 s = 4.3 s,
+    and stage() blocks an HTTP tool response for that whole time. Widening the timeout
+    already bought 4.5x over the old 0.95 s; more attempts would buy latency, not
+    reliability.
+    """
+    return int(_env_number(_DURABLE_AUDIT_RETRY_ATTEMPTS_ENV, 4.0, 1.0))
+
+
+def _durable_audit_retry_backoff_s() -> float:
+    """Linear backoff step between attempts, 0.05 s x attempt (was 0.025 s).
+
+    With busy_timeout at a full second the pause is no longer what decides whether we
+    outlast the other writer, so it only has to keep two retries off the same instant.
+    """
+    return _env_number(_DURABLE_AUDIT_RETRY_BACKOFF_S_ENV, 0.05, 0.0)
+
+
+def _durable_audit_capacity_wait_s() -> float:
+    """How long stage() waits for a full queue before rejecting: 1.0 s, was 0.25 s.
+
+    Capacity-full is a drain-rate problem, not a lock problem -- the batch thread
+    clears batch_size rows per pass -- so waiting is almost always cheaper for the
+    caller than the rejection it would otherwise have to handle.
+    """
+    return _env_number(_DURABLE_AUDIT_CAPACITY_WAIT_S_ENV, 1.0, 0.0)
 
 
 _DURABLE_AUDIT_RETENTION_DAYS_ENV = "ORCHESTRATOR_DURABLE_AUDIT_RETENTION_DAYS"
@@ -197,16 +272,27 @@ class DurableAuditWriter:
         *,
         capacity: int = 4096,
         batch_size: int = 64,
-        busy_timeout_ms: int = 200,
-        db_retry_attempts: int = 4,
-        retry_backoff_s: float = 0.025,
-        capacity_wait_timeout_s: float = 0.25,
+        busy_timeout_ms: int | None = None,
+        db_retry_attempts: int | None = None,
+        retry_backoff_s: float | None = None,
+        capacity_wait_timeout_s: float | None = None,
         poll_interval_s: float = 0.05,
         lease_duration_s: float = 1.0,
         sink_retry_base_s: float = 0.05,
         sink_retry_max_s: float = 5.0,
         auto_start: bool = True,
     ) -> None:
+        # None means "read the live environment default". Resolved here, above the
+        # validation below, so a misconfigured env value is rejected by exactly the
+        # same checks as an explicit keyword argument.
+        if busy_timeout_ms is None:
+            busy_timeout_ms = _durable_audit_busy_timeout_ms()
+        if db_retry_attempts is None:
+            db_retry_attempts = _durable_audit_retry_attempts()
+        if retry_backoff_s is None:
+            retry_backoff_s = _durable_audit_retry_backoff_s()
+        if capacity_wait_timeout_s is None:
+            capacity_wait_timeout_s = _durable_audit_capacity_wait_s()
         if not callable(sink):
             raise TypeError("sink must be callable")
         if capacity < 1:
@@ -265,6 +351,12 @@ class DurableAuditWriter:
             # directly and would raise KeyError on an undeclared key.
             "retention_runs_total": 0,
             "retention_deleted_total": 0,
+            # Spool, same reason.
+            "spool_parked_total": 0,
+            "spool_park_failures": 0,
+            "spool_replayed_total": 0,
+            "spool_replay_conflicts": 0,
+            "spool_replay_unusable": 0,
         }
         self._last_error: str | None = None
         self._last_error_kind: str | None = None
@@ -643,6 +735,81 @@ class DurableAuditWriter:
     ) -> AuditAck:
         return self.stage(audit_id, kind, payload, timeout=timeout)
 
+    @property
+    def spool_path(self) -> Path:
+        """Where a row parks when SQLite stayed busy past the whole retry budget.
+
+        Beside the outbox database, so whoever can find one can find the other.
+        """
+        return self.db_path.with_name(self.db_path.stem + "_spool.jsonl")
+
+    def spool_failed_row(
+        self,
+        audit_id: str,
+        kind: str,
+        payload: Any,
+        reason: str,
+    ) -> bool:
+        """Park a row stage() could not commit. Never raises: every caller is an
+        except block, and a spool that throws would turn a recoverable drop into a
+        crashed request.
+
+        Until this existed the caller logged the failure and returned, so the payload
+        was simply gone -- 21 rows were lost that way. A False return means even the
+        spool write failed, which is the caller's signal to fall back to logging.
+        """
+        # "Never raises" has to be enforced HERE, not inherited from append_spool.
+        # append_spool promises a False return, but this method is the contract the
+        # except blocks depend on, and a defect below it must not escape upward.
+        try:
+            parked = append_spool(
+                self.spool_path,
+                {
+                    "audit_id": str(audit_id),
+                    "kind": str(kind),
+                    "payload": payload,
+                    "reason": str(reason)[:2000],
+                    "parked_at": time.time(),
+                },
+            )
+        except Exception:
+            parked = False
+        try:
+            self._bump("spool_parked_total" if parked else "spool_park_failures")
+        except Exception:
+            pass
+        return parked
+
+    def spool_depth(self) -> int:
+        """Rows still waiting on replay, for /health. 0 means nothing is parked."""
+        return _spool_depth(self.spool_path)
+
+    def replay_spool(self) -> dict[str, int]:
+        """Re-stage every parked row. Safe to call on every start: at-least-once."""
+        return drain_spool(self.spool_path, self._replay_parked_row)
+
+    def _replay_parked_row(self, record: dict[str, Any]) -> bool:
+        """Return True when the row reached the outbox, so drain_spool can drop it."""
+        audit_id = str(record.get("audit_id") or "")
+        kind = str(record.get("kind") or "")
+        if not audit_id or not kind:
+            # Unusable record: no retry can ever make it stageable, and keeping it
+            # would block the spool from ever emptying.
+            self._bump("spool_replay_unusable")
+            return True
+        try:
+            self.stage(audit_id, kind, record.get("payload"))
+        except AuditIdConflict:
+            # The row is already in the outbox. Delivery is at-least-once by design,
+            # so "already present" is the success case, not a failure to retry.
+            self._bump("spool_replay_conflicts")
+            return True
+        except Exception:
+            # Storage still unhealthy, or admission closed. Keep it for the next start.
+            return False
+        self._bump("spool_replayed_total")
+        return True
+
     def _read_row_state(self, audit_id: str) -> tuple[str, str | None] | None:
         conn = self._connect()
         try:
@@ -853,7 +1020,15 @@ class DurableAuditWriter:
         return released
 
     def _lease_heartbeat(self, audit_id: str, done: threading.Event) -> None:
-        interval = max(0.01, min(self.lease_duration_s / 3.0, 0.25))
+        # _renew_lease goes through _retry_db, so a tick that lands while
+        # _claim_pending_batch holds BEGIN IMMEDIATE (up to batch_size UPDATEs) or
+        # prune_applied_older_than is mid-DELETE burns the busy budget and then comes
+        # straight back at the same interval. Back off after a failure instead. The
+        # ceiling stays under lease_duration_s so a backed-off tick cannot let the
+        # lease expire, which would hand this row to another claimant.
+        base = max(0.01, min(self.lease_duration_s / 3.0, 0.25))
+        ceiling = max(base, self.lease_duration_s * 0.6)
+        interval = base
         while not done.wait(interval):
             try:
                 if not self._renew_lease(audit_id):
@@ -863,6 +1038,9 @@ class DurableAuditWriter:
                 # Keep retrying while the sink is live. Expiry still provides
                 # crash recovery, and the sink must remain idempotent by audit_id.
                 self._set_last_error(exc)
+                interval = min(ceiling, interval * 2)
+                continue
+            interval = base
 
     def _record_sink_failure(self, record: AuditRecord, exc: BaseException) -> bool:
         message = f"{type(exc).__name__}: {exc}"[:2000]
@@ -1165,6 +1343,10 @@ class DurableAuditWriter:
             )
             self._thread.start()
             self._wake.set()
+        # Outside the condition on purpose: the replay calls stage(), which takes the
+        # same lock. Rows parked by spool_failed_row are recoverable only here, so a
+        # writer that started without draining would leave them on disk forever.
+        self.replay_spool()
 
     def close_admission(self) -> None:
         with self._condition:
@@ -1236,13 +1418,28 @@ class DurableAuditWriter:
             finally:
                 conn.close()
 
+        # Snapshot the error state BEFORE the metrics read, not after. state_counts goes
+        # through _retry_db, and _retry_db clears a "storage" last_error on every success
+        # -- so reading _last_error_kind below that call erased exactly the storage drop
+        # the caller came to ask about, and durable_audit_ok could never go false for it.
+        # The clearing is right (a success does prove recovery); the read order was not.
+        with self._metrics_lock:
+            error_snapshot = (
+                self._last_error,
+                self._last_error_kind,
+                self._last_error_context,
+                self._last_error_at,
+            )
         counts = self._retry_db("read audit metrics", state_counts)
+        parked = _spool_depth(self.spool_path)
         with self._metrics_lock:
             result: dict[str, Any] = dict(self._counters)
-            result["last_error"] = self._last_error
-            result["last_error_kind"] = self._last_error_kind
-            result["last_error_context"] = self._last_error_context
-            result["last_error_at"] = self._last_error_at
+            (
+                result["last_error"],
+                result["last_error_kind"],
+                result["last_error_context"],
+                result["last_error_at"],
+            ) = error_snapshot
         with self._condition:
             result.update(
                 {
@@ -1258,6 +1455,11 @@ class DurableAuditWriter:
                     ),
                     "lease_duration_s": self.lease_duration_s,
                     "owner_token_suffix": self._owner_token[-8:],
+                    # Parked rows and the live busy budget: without these a reader of
+                    # /health cannot tell a healthy writer from one that is dropping.
+                    "spool_depth": parked,
+                    "busy_timeout_ms": self.busy_timeout_ms,
+                    "db_retry_attempts": self.db_retry_attempts,
                 },
             )
         return result

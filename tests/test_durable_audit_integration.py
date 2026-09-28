@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import inspect
 import json
 import sqlite3
@@ -15,7 +16,14 @@ from unittest import mock
 import code_tools
 import orchestrator_server as srv
 from orchestrator.server.accounting import PostCallAccountingQueue
-from orchestrator.server.audit_writer import AuditIdConflict, DurableAuditWriter
+from orchestrator.server.audit_writer import (
+    SESSION_EVENT_KIND,
+    AuditCapacityError,
+    AuditIdConflict,
+    AuditStorageBusy,
+    DurableAuditWriter,
+)
+from orchestrator.storage.spool import read_spool, spool_depth
 
 
 class DurableAuditIntegrationTests(unittest.TestCase):
@@ -508,6 +516,272 @@ class DurableAuditIntegrationTests(unittest.TestCase):
         self.assertLess(runner_cleanup, durable_shutdown)
         self.assertLess(durable_shutdown, liveness_shutdown)
         self.assertLess(liveness_shutdown, liveness_close)
+
+class DurableAuditDropPathTests(unittest.TestCase):
+    """The paths that lost 21 + 6 + 3 audit rows in the 48h to 2026-09-27.
+
+    Every test here is anchored to a row that actually disappeared, not to a
+    hypothetical: a busy DB (21), a dict file_path (6), a stopped writer (3).
+    """
+
+    _METRICS_GLOBALS = (
+        "_DURABLE_METRICS_CACHE",
+        "_DURABLE_METRICS_CACHE_AT",
+        "_DURABLE_METRICS_CACHE_WRITER",
+        "_DURABLE_METRICS_FUTURE",
+    )
+
+    def setUp(self) -> None:
+        for name in self._METRICS_GLOBALS:
+            self.addCleanup(setattr, srv, name, getattr(srv, name))
+        future = srv._DURABLE_METRICS_FUTURE
+        if future is not None:
+            try:
+                future.result(timeout=1.0)
+            except Exception:
+                pass
+        srv._DURABLE_METRICS_FUTURE = None
+        srv._DURABLE_METRICS_CACHE_WRITER = None
+        self._temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp_dir.cleanup)
+        self.root = Path(self._temp_dir.name)
+        self.project = self.root / "project"
+        self.project.mkdir()
+
+    def _writer(self, name: str) -> DurableAuditWriter:
+        writer = DurableAuditWriter(
+            self.root / name,
+            srv._persist_durable_session_event,
+            auto_start=False,
+            poll_interval_s=0.01,
+        )
+        old_writer = srv._DURABLE_AUDIT
+        srv._DURABLE_AUDIT = writer
+        self.addCleanup(setattr, srv, "_DURABLE_AUDIT", old_writer)
+        self.addCleanup(lambda: writer.shutdown(timeout=2.0, drain=False))
+        return writer
+
+    def _stage(self, audit_id: str, body: dict | None = None):
+        # session_id comes from the RESULT here, which is what keeps the call past the
+        # "no capturable session" return at _stage_durable_session_event.
+        return srv._stage_durable_session_event(
+            audit_id,
+            "__durable_drop_probe__",
+            {"project_path": str(self.project)} if body is None else body,
+            {"ok": True, "session_id": "session-drop"},
+            11,
+            "ok",
+            "",
+            {"agent_id": "agent-drop"},
+        )
+
+    # ---- F1: a busy DB must park the row, not log it away -------------------
+
+    def test_busy_submit_parks_the_row_instead_of_dropping_it(self) -> None:
+        writer = self._writer("drop-busy.db")
+        with mock.patch.object(
+            writer, "submit", side_effect=AuditStorageBusy("database is locked")
+        ):
+            self.assertIsNone(self._stage("drop-busy-1"))
+
+        self.assertEqual(spool_depth(writer.spool_path), 1)
+        records, corrupt = read_spool(writer.spool_path)
+        self.assertEqual(corrupt, 0)
+        self.assertEqual(records[0]["kind"], SESSION_EVENT_KIND)
+        self.assertIn("AuditStorageBusy", records[0]["reason"])
+        self.assertEqual(records[0]["payload"]["session_id"], "session-drop")
+        self.assertEqual(records[0]["payload"]["tool_name"], "__durable_drop_probe__")
+
+    def test_a_failed_park_is_reported_loud_rather_than_swallowed(self) -> None:
+        # The spool is the fallback, so a broken spool is the end of the line: it has
+        # to reach the caller's logger.critical, not vanish into a second except.
+        writer = self._writer("drop-spool-fail.db")
+        with mock.patch.object(
+            writer, "submit", side_effect=AuditStorageBusy("database is locked")
+        ), mock.patch.object(writer, "spool_failed_row", return_value=False):
+            with self.assertRaises(AuditStorageBusy):
+                self._stage("drop-spool-fail-1")
+
+    # ---- F5: a stopped writer must not raise out of the accessor ------------
+
+    def test_a_stopped_writer_parks_the_row_instead_of_raising_out_of_the_accessor(
+        self,
+    ) -> None:
+        writer = self._writer("drop-closed.db")
+        writer.start()
+        writer.shutdown(timeout=2.0, drain=True)
+
+        # Before this fix _get_durable_audit_writer(start=True) called start() on a
+        # stopped writer, which raises AuditClosedError BY DESIGN. That escaped the
+        # accessor, so the row never reached the spool fallback below it at all.
+        self.assertIsNone(self._stage("drop-closed-1"))
+
+        self.assertEqual(spool_depth(writer.spool_path), 1)
+        records, _corrupt = read_spool(writer.spool_path)
+        self.assertIn("AuditClosedError", records[0]["reason"])
+
+    def test_the_accessor_absorbs_only_a_stopped_writer_not_any_start_failure(
+        self,
+    ) -> None:
+        # Absorbing every start() failure would hide a real defect in the writer.
+        writer = self._writer("drop-start-defect.db")
+        with mock.patch.object(writer, "start", side_effect=ValueError("boom")):
+            with self.assertRaisesRegex(ValueError, "boom"):
+                srv._get_durable_audit_writer(start=True)
+
+    # ---- F4: a dict file_path must not cost the row ------------------------
+
+    def test_a_dict_file_path_does_not_lose_the_row(self) -> None:
+        writer = self._writer("drop-dict-path.db")
+        writer.start()
+
+        # No project_path on purpose: that is what forces the find_project_root
+        # branch, which is exactly where a dict file_path raised on 2026-09-24.
+        ack = self._stage("drop-dict-1", {"file_path": {"unexpected": "dict"}})
+
+        self.assertIsNotNone(ack)
+        self.assertFalse(ack.duplicate)
+        self.assertEqual(spool_depth(writer.spool_path), 0)
+        self.assertEqual(writer.metrics()["staged_total"], 1)
+
+    # ---- F2: the counters that would have named the cause ------------------
+
+    def test_health_publishes_the_previously_unpublished_drop_counters(self) -> None:
+        class MetricsProbe:
+            @staticmethod
+            def metrics() -> dict:
+                return {
+                    "pending": 0,
+                    "applied": 0,
+                    "capacity": 64,
+                    "storage_busy_failures": 21,
+                    "busy_retries": 7,
+                    "id_conflicts_total": 2,
+                    "spool_depth": 3,
+                    "busy_timeout_ms": 1000,
+                    "db_retry_attempts": 4,
+                    "last_error": None,
+                }
+
+        with mock.patch.object(srv, "_DURABLE_AUDIT", MetricsProbe()):
+            response = asyncio.run(srv.handle_health(SimpleNamespace(headers={})))
+        payload = json.loads(response.text)
+
+        self.assertEqual(payload["durable_audit_storage_busy_failures"], 21)
+        self.assertEqual(payload["durable_audit_busy_retries"], 7)
+        self.assertEqual(payload["durable_audit_id_conflicts_total"], 2)
+        self.assertEqual(payload["durable_audit_spool_depth"], 3)
+        # The busy budget is env-tunable now, so it is a per-process fact /health
+        # has to state or "is the timeout too tight" is unanswerable from outside.
+        self.assertEqual(payload["durable_audit_busy_timeout_ms"], 1000)
+        self.assertEqual(payload["durable_audit_db_retry_attempts"], 4)
+
+    # ---- F23: stale has to say HOW stale -----------------------------------
+
+    def test_a_stale_metrics_answer_carries_a_real_age(self) -> None:
+        pending = concurrent.futures.Future()
+        self.addCleanup(pending.cancel)
+        srv._DURABLE_METRICS_CACHE = {"pending": 5}
+        srv._DURABLE_METRICS_CACHE_AT = time.monotonic() - 3.0
+        srv._DURABLE_METRICS_CACHE_WRITER = object()
+        srv._DURABLE_METRICS_FUTURE = pending
+
+        with mock.patch.object(srv, "_DURABLE_AUDIT", object()):
+            metrics, error = asyncio.run(srv._durable_metrics_for_health())
+
+        self.assertTrue(metrics["metrics_stale"])
+        self.assertIsNotNone(metrics["metrics_age_ms"])
+        self.assertGreaterEqual(metrics["metrics_age_ms"], 2900)
+        self.assertIn("already in flight", error)
+
+    def test_a_never_collected_answer_still_reports_a_null_age(self) -> None:
+        # The other meaning of a null age, which must stay distinguishable: there is
+        # no cached dict at all, so there is no age to state.
+        pending = concurrent.futures.Future()
+        self.addCleanup(pending.cancel)
+        srv._DURABLE_METRICS_CACHE = {}
+        srv._DURABLE_METRICS_CACHE_AT = 0.0
+        srv._DURABLE_METRICS_CACHE_WRITER = object()
+        srv._DURABLE_METRICS_FUTURE = pending
+
+        with mock.patch.object(srv, "_DURABLE_AUDIT", object()):
+            metrics, _error = asyncio.run(srv._durable_metrics_for_health())
+
+        self.assertTrue(metrics["metrics_stale"])
+        self.assertIsNone(metrics["metrics_age_ms"])
+
+    # ---- F20 / F6: what the logs are allowed to claim ----------------------
+
+    def test_mcp_shutdown_skip_is_debug_while_http_shutdown_stays_a_warning(
+        self,
+    ) -> None:
+        source = Path(srv.__file__).read_text(encoding="utf-8")
+
+        self.assertIn(
+            'logger.debug("durable_audit_disabled_in_mcp; skipping MCP shutdown")',
+            source,
+        )
+        self.assertNotIn(
+            'logger.warning("Durable audit not initialized; skipping MCP shutdown")',
+            source,
+        )
+        # The HTTP daemon's copy is a REAL anomaly -- it must stay loud.
+        self.assertIn(
+            'logger.warning("Durable audit not initialized; skipping shutdown")',
+            source,
+        )
+
+    def test_the_stage_call_site_no_longer_claims_a_drop_cannot_happen(self) -> None:
+        # The old comment said "never silently drop the row" above a body that did
+        # nothing but log. A comment that contradicts its code is a defect.
+        source = Path(srv.__file__).read_text(encoding="utf-8")
+
+        self.assertIn("Durable session-event stage AND spool failed", source)
+        self.assertNotIn("never silently drop the row", source)
+
+    # ---- the boundary of the spool: what must NOT be parked ----------------
+
+    def test_an_id_conflict_stays_loud_and_parks_nothing(self) -> None:
+        # The spool is a RETRY queue, so only a transient failure belongs in it. An
+        # id conflict means one operation_id carried two different payloads, which
+        # can never succeed on replay -- parking it would grow the spool forever
+        # while hiding the caller's bug. A bare `except Exception` on the spool
+        # fallback did exactly that, and the older duplicate-or-conflict test is
+        # what caught it; this pins the other half, that nothing gets parked.
+        writer = self._writer("drop-conflict.db")
+        writer.start()
+
+        body = {"project_path": str(self.project), "query": "first"}
+        first = srv._stage_durable_session_event(
+            "same-id-two-payloads", "__durable_drop_probe__", body,
+            {"ok": True, "session_id": "session-drop"}, 11, "ok", "",
+            {"agent_id": "agent-drop"},
+        )
+        self.assertTrue(first.durable)
+
+        with self.assertRaises(AuditIdConflict):
+            srv._stage_durable_session_event(
+                "same-id-two-payloads", "__durable_drop_probe__",
+                {"project_path": str(self.project), "query": "second"},
+                {"ok": True, "session_id": "session-drop"}, 22, "ok", "",
+                {"agent_id": "agent-drop"},
+            )
+
+        self.assertEqual(spool_depth(writer.spool_path), 0)
+
+    def test_a_full_queue_is_parked_like_a_busy_db(self) -> None:
+        # AuditCapacityError is the third replayable case: the row is perfectly
+        # valid, there is simply no room right now, so it must survive.
+        writer = self._writer("drop-capacity.db")
+        with mock.patch.object(
+            writer, "submit", side_effect=AuditCapacityError("queue is full")
+        ):
+            self.assertIsNone(self._stage("drop-capacity-1"))
+
+        self.assertEqual(spool_depth(writer.spool_path), 1)
+        records, _corrupt = read_spool(writer.spool_path)
+        self.assertIn("AuditCapacityError", records[0]["reason"])
+
 
 if __name__ == "__main__":
     unittest.main()

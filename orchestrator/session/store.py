@@ -258,10 +258,27 @@ class SessionWriter:
                 )
                 self._watchdog.start()
 
-    def _mark_failed(self, reason: str, *, wedge: bool = False) -> None:
+    def _verdict_is_stale(self, batch_since: float | None) -> bool:
+        """True when the batch a watchdog verdict judged has already finished.
+
+        Call with _metrics_lock held. The watchdog reads _active_batch_since
+        without that lock, so the batch can commit -- and _clear_stalled run --
+        between the read and the latch. A verdict latched then is permanent, not
+        transient: a stalled or wedged writer admits no new durable submit and no
+        production caller submits fire-and-forget, so no later batch would ever
+        run to clear it. The drain loop zeroes _active_batch_since BEFORE
+        _clear_stalled takes this lock, so a verdict that still sees its own
+        batch here is always cleared afterwards.
+        """
+        return batch_since is not None and self._active_batch_since != batch_since
+
+    def _mark_failed(self, reason: str, *, wedge: bool = False,
+                     batch_since: float | None = None) -> None:
         reason = str(reason or "unknown writer failure")[:500]
         should_log = False
         with self._metrics_lock:
+            if self._verdict_is_stale(batch_since):
+                return
             if not self._failed_reason:
                 self._failed_reason = reason
                 self._failed_is_wedge = bool(wedge)
@@ -269,10 +286,12 @@ class SessionWriter:
         if should_log:
             logger.error("SessionWriter FAILED: %s", reason)
 
-    def _mark_stalled(self, reason: str) -> None:
+    def _mark_stalled(self, reason: str, *, batch_since: float | None = None) -> None:
         reason = str(reason or "unknown writer stall")[:500]
         should_log = False
         with self._metrics_lock:
+            if self._verdict_is_stale(batch_since):
+                return
             if not self._stalled_reason:
                 self._stalled_reason = reason
                 should_log = True
@@ -330,6 +349,7 @@ class SessionWriter:
                     f"{stuck_for:.2f}s (> {self.wedge_seconds:.2f}s); "
                     "treating the writer as wedged",
                     wedge=True,
+                    batch_since=active_since,
                 )
             elif stuck_for > self.stall_seconds:
                 # Still plausibly just slow: reject NEW durable submits but let
@@ -338,6 +358,7 @@ class SessionWriter:
                 self._mark_stalled(
                     f"writer batch made no observable progress for more than "
                     f"{self.stall_seconds:.2f}s",
+                    batch_since=active_since,
                 )
 
     def submit(
@@ -385,6 +406,11 @@ class SessionWriter:
                 raise SessionStoreContentionError(
                     f"SessionWriter is temporarily stalled: {self._stalled_reason}",
                 )
+            # Not spooled, on purpose (2026-09-28). No production caller submits
+            # fire-and-forget -- all of them leave durable at its True default,
+            # pinned by tests/test_session_writer_stall_contract.py -- and a
+            # write_fn is a closure, so a spool would hold nothing it could replay.
+            # 48h of logs showed 24 STALLED episodes and 0 drops from this branch.
             with self._metrics_lock:
                 self._dropped_count += 1
             logger.warning(
@@ -1916,7 +1942,13 @@ def _norm_project_key(project_key: str) -> str:
 
 def _read_token_upsert(project_key: str, rel_path: str, read_hash: str,
                        read_mtime: float, read_size_bytes: int) -> bool:
-    """CAN-052: record a read token through the single writer."""
+    """CAN-052: record a read token through the single writer.
+
+    Contention raises instead of answering False (F8, 2026-09-28). The swallow
+    turned a STALLED/WEDGED write queue -- transient: a retry commits -- into
+    "the token store refused the write", and read_file_range then told the CA a
+    retry would fail the same way. Every other failure still answers False.
+    """
     try:
         def _upsert(conn):
             conn.execute(
@@ -1932,6 +1964,8 @@ def _read_token_upsert(project_key: str, rel_path: str, read_hash: str,
             return True
 
         return bool(_run_session_write("read token upsert", _upsert))
+    except SessionStoreContentionError:
+        raise
     except Exception:
         return False
 

@@ -4465,7 +4465,9 @@ class TestBuildIndex(unittest.IsolatedAsyncioTestCase):
         import surgical_mapper as sm
         cache = root / sm.CACHE_DIR_NAME
         cache.mkdir(parents=True, exist_ok=True)
-        (cache / 'a.json').write_text(json.dumps(
+        # The name _cache_path gives a.py's sidecar: build_index reads only
+        # sidecar-shaped names, the same matcher the reindex prune uses (F19).
+        (cache / 'a.py.json').write_text(json.dumps(
             {'file': 'a.py', 'hash': 'h', 'mtime': 1, 'loc': 10, 'group': 'source', 'symbols': []}),
             encoding='utf-8')
         return cache

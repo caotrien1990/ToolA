@@ -957,6 +957,11 @@ _R49_PHASE_MAP = {
     "INVALID_RANGE_STATUS": "schema",
     "STEP_MISMATCH": "schema",
     "SCHEMA_VIOLATION": "schema",
+    # F13 2026-09-27: a corrupt request body is the CALLER's payload to repair, so it
+    # routes with the other schema violations. Unregistered it fell to the "runtime"
+    # default in _phase_for_error_name, which tells a CA the daemon misbehaved and
+    # sends it looking for a server-side cause that does not exist.
+    "INVALID_JSON_BODY": "schema",
     # session
     "ACTIVE_SESSION_REQUIRED": "session",
     "SESSION_NOT_FOUND": "session",

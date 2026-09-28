@@ -85,7 +85,10 @@ from orchestrator.lifecycle.restart_protocol import (
 from orchestrator.server.accounting import PostCallAccountingQueue
 from orchestrator.server.audit_writer import (
     SESSION_EVENT_KIND,
+    AuditCapacityError,
+    AuditClosedError,
     AuditRecord,
+    AuditStorageBusy,
     DurableAuditWriter,
 )
 from orchestrator.server.executor_lanes import (
@@ -988,7 +991,25 @@ def _get_durable_audit_writer(*, start: bool = False) -> DurableAuditWriter | No
     if start and writer is not None:
         start_method = getattr(writer, "start", None)
         if callable(start_method):
-            start_method()
+            try:
+                start_method()
+            except AuditClosedError:
+                # F5 2026-09-27: start() refuses a STOPPED writer BY DESIGN ("a
+                # stopped durable audit writer cannot restart"), and this call was
+                # unguarded -- so the raise escaped the accessor and every caller lost
+                # its row BEFORE reaching any handler it had. Three rows died exactly
+                # here on 2026-09-24 20:28, and _stage_durable_session_event's own
+                # spool fallback could not help because it never got the writer.
+                #
+                # A stopped writer is still a usable OBJECT: stage() answers
+                # AuditClosedError loudly so the caller parks the row in the spool,
+                # and wait_until_idle()/metrics() stay truthful about a dead worker.
+                # So hand it back unstarted. Absorbing ONLY AuditClosedError keeps
+                # every other start failure loud, because that one is a real defect.
+                logger.debug(
+                    "durable_audit_writer_stopped; returning it unstarted so the "
+                    "caller can park the row in the spool"
+                )
     return writer
 _DURABLE_METRICS_CACHE_WRITER = None
 _DURABLE_METRICS_CACHE: dict = {}
@@ -1091,7 +1112,23 @@ async def _durable_metrics_for_health() -> tuple[dict, str | None]:
             and _DURABLE_METRICS_FUTURE is not None
             and not _DURABLE_METRICS_FUTURE.done()):
         stale = dict(_DURABLE_METRICS_CACHE)
-        stale.update({"metrics_stale": True, "metrics_age_ms": None})
+        # F23 2026-09-27: this branch answered metrics_stale=True with
+        # metrics_age_ms=None even when _DURABLE_METRICS_CACHE_AT held a real
+        # timestamp, so /health said "stale" and then refused to say how stale --
+        # indistinguishable from the OTHER meaning of a null age above, "never
+        # collected". The dict served here belongs to the previous writer, which is
+        # exactly what the error text names; the age is still a true statement about
+        # the dict being served, and it is the only field a watchdog can threshold.
+        # The 50ms acquisition budget is deliberately NOT widened: the measurement at
+        # _DURABLE_METRICS_TTL_SECONDS above shows 400ms moved freshness 1/8 -> 5/10
+        # while pushing p50 from 125ms to 406ms, so the budget was never the problem.
+        stale.update({
+            "metrics_stale": True,
+            "metrics_age_ms": (
+                max(0, int((time.monotonic() - _DURABLE_METRICS_CACHE_AT) * 1000))
+                if _DURABLE_METRICS_CACHE_AT else None
+            ),
+        })
         return stale, "TimeoutError: metrics collection already in flight"
     if _DURABLE_METRICS_CACHE_WRITER is not writer:
         _DURABLE_METRICS_CACHE_WRITER = writer
@@ -1408,9 +1445,14 @@ def _stage_durable_session_event(
     session_id = str(
         admitted_session_id or result_dict.get("session_id") or ""
     ).strip()
+    # F4 2026-09-27: file_path is caller-supplied and arrived as a DICT on 2026-09-24,
+    # which made find_project_root raise out of this expression and cost six audit
+    # rows. Guard the TYPE here rather than wrapping the call: a try/except around the
+    # resolver would swallow a genuine resolver bug just as silently.
+    path_hint = body.get("file_path", body.get("path", ""))
     project = (
         body.get("project_path")
-        or ct.find_project_root(body.get("file_path", body.get("path", "")))
+        or ct.find_project_root(path_hint if isinstance(path_hint, str) else "")
         or _resolve_project_from_page_id(body.get("page_id", ""))
         or _resolve_project_from_session_id(body.get("session_id", ""))
         or ""
@@ -1448,11 +1490,38 @@ def _stage_durable_session_event(
     writer = _get_durable_audit_writer(start=True)
     if writer is None:
         raise RuntimeError("durable audit writer unavailable outside HTTP daemon")
-    return writer.submit(
-        _durable_audit_id(audit_id),
-        SESSION_EVENT_KIND,
-        payload,
-    )
+    staged_id = _durable_audit_id(audit_id)
+    try:
+        return writer.submit(staged_id, SESSION_EVENT_KIND, payload)
+    except (AuditStorageBusy, AuditCapacityError, AuditClosedError) as exc:
+        # F1/F5 2026-09-27: submit() is literally "return self.stage(...)" with no
+        # fallback, so every AuditStorageBusy (21 rows in 48h) and every
+        # AuditClosedError from a stage arriving after shutdown (3 rows, 2026-09-24
+        # 20:28) reached the caller, which only logged. Park the row instead.
+        #
+        # These three and ONLY these three, because the spool is a RETRY queue and a
+        # parked row is replayed through stage() on the next start(). The three named
+        # here are transient -- a busy DB (:457), a full queue (:714), a closed
+        # admission (:692) -- so the same row succeeds on replay. AuditIdConflict
+        # (:637) and AuditSchemaMismatch are the opposite: the first means the caller
+        # reused one operation_id for two different payloads, the second means the DB
+        # contract is broken, and NEITHER can ever succeed on replay. Spooling those
+        # would grow the spool forever while hiding a real defect, so they stay loud
+        # -- and the pre-existing test_operation_id_reuse_is_duplicate_or_loud_conflict
+        # is what proves the conflict still escapes. A bare `except Exception` here
+        # silently converted that contract violation into a parked row.
+        #
+        # Spooling -- NOT restarting the writer -- is the deliberate answer for the
+        # closed case: start() refuses a stopped writer by design, and re-opening
+        # SQLite while the process tears down trades one lost row for a corrupt DB.
+        # The spool is a plain JSONL append, so it still works with the DB closed,
+        # and the writer drains it on the next start().
+        #
+        # This is the PRODUCER, not the call site: the payload and the writer already
+        # exist here, whereas the caller would have to rebuild both.
+        if writer.spool_failed_row(staged_id, SESSION_EVENT_KIND, payload, repr(exc)):
+            return None
+        raise
 
 
 _POST_CALL_ACCOUNTING = PostCallAccountingQueue(
@@ -1495,9 +1564,6 @@ async def _flush_post_call_accounting(timeout: float = 10.0) -> dict:
         report["durable_audit"] = {
             "metrics_error": f"{type(exc).__name__}: {str(exc)[:240]}"
         }
-        report["durable_audit"] = {
-            "metrics_error": f"{type(exc).__name__}: {str(exc)[:240]}"
-        }
     return report
 
 
@@ -1505,8 +1571,6 @@ async def _post_call_accounting_startup(_app) -> None:
     writer = _get_durable_audit_writer(start=True)
     if writer is None:
         logger.critical("Durable audit writer unavailable in HTTP startup")
-    if not _POST_CALL_ACCOUNTING.start():
-        logger.critical("Post-call accounting lane failed to start")
     if not _POST_CALL_ACCOUNTING.start():
         logger.critical("Post-call accounting lane failed to start")
 
@@ -4019,6 +4083,7 @@ def _ca_next_action(error_name: str, tool_name: str) -> str:
         "FILE_CHANGED_OUTSIDE_ORCHESTRATOR": "read_file_range",
         "FILE_ACCESS_DENIED": "check_file_permissions_or_run_with_access_to_project",
         "OCR_TIMEOUT": "raise_timeout_or_narrow_scope_then_retry",
+        "INVALID_JSON_BODY": "fix_json_escaping_then_resend_body",
     }.get(error_name, "read_error")
 
 
@@ -4035,6 +4100,10 @@ def _error_contract_meta(error_name: str, status: int) -> dict:
         "UNSUPPORTED_DRY_RUN": ("SCHEMA_VIOLATION", "ERROR", True, "REMOVE_FIELD"),
         "UNSUPPORTED_FIELD": ("SCHEMA_VIOLATION", "ERROR", True, "READ_LIVE_SCHEMA"),
         "WRONG_ARGUMENTS": ("SCHEMA_VIOLATION", "ERROR", True, "READ_LIVE_SCHEMA"),
+        # A corrupt request body is the caller's payload to fix, so it is a schema
+        # violation and it IS retryable -- the 400 fall-through used to compute
+        # retryable=False from the status and told the caller to give up.
+        "INVALID_JSON_BODY": ("SCHEMA_VIOLATION", "ERROR", True, "REBUILD_PAYLOAD"),
         "BINARY_FILE_UNSUPPORTED": ("UNSUPPORTED_MEDIA_TYPE", "CRITICAL", False, "STOP_AND_REPORT"),
         "PROJECT_PATH_REQUIRED": ("INVALID_REQUEST", "ERROR", True, "SET_PROJECT_PATH"),
         "SESSION_NOT_FOUND": ("SESSION_REQUIRED", "ERROR", True, "LIST_SESSIONS"),
@@ -10484,7 +10553,14 @@ def _council_metrics_table(agent: str, metrics: dict) -> str:
         except Exception:
             effort = "—"
 
-    _set_model = _council_worker_model(agent, "", "")[1] or ""
+    # F16 2026-09-27: this passed ("", "") as the defaults, and _council_worker_model
+    # only reassigns prov/model when the override VALIDATES (see its else arm), so a
+    # worker_models.json entry the validator rejects fell back to the empty string:
+    # the dashboard showed a blank model and the warning it logged on every poll read
+    # provider='' model='', naming nothing a reader could act on. 17 rows since
+    # 2026-09-19. _council_requested_model already resolves the per-agent defaults, so
+    # call it rather than re-deriving _COUNCIL_DEFAULT_MODELS at a second site.
+    _set_model = _council_requested_model(agent)[1] or ""
     return (
         f'<div class="usage-card" data-agent="{esc(agent)}">'
         f'{status_row}'
@@ -10680,7 +10756,8 @@ def _council_build_agent_payloads(fields: set[str]) -> list[dict]:
         if "live_raw" in fields:
             item["live_raw"] = _council_live_raw_tail(agent)
         if "model" in fields:
-            item["model"] = _council_worker_model(agent, "", "")[1]
+            # F16 2026-09-27: same empty-defaults bug as _council_metrics_table below.
+            item["model"] = _council_requested_model(agent)[1]
         agents.append(item)
     return agents
 
@@ -14139,6 +14216,18 @@ async def handle_health(request):
         "durable_audit_metrics_age_ms": durable_audit.get("metrics_age_ms"),
         "durable_audit_metrics_stale": bool(durable_audit.get("metrics_stale")),
         "durable_audit_last_error": durable_metrics_error or durable_audit.get("last_error"),
+        # F2 2026-09-27: these four were COMPUTED by the writer and published nowhere,
+        # so 48h of logs showed 21 dropped rows with no counter a watchdog could read.
+        # storage_busy_failures alone would have named the cause.
+        "durable_audit_storage_busy_failures": durable_audit.get("storage_busy_failures"),
+        "durable_audit_busy_retries": durable_audit.get("busy_retries"),
+        "durable_audit_id_conflicts_total": durable_audit.get("id_conflicts_total"),
+        "durable_audit_spool_depth": durable_audit.get("spool_depth"),
+        # The busy budget became env-tunable in F17, so it is a per-PROCESS fact now:
+        # unpublished, there is no way to tell which budget a running daemon has, and
+        # "is the timeout too tight" stops being an answerable question.
+        "durable_audit_busy_timeout_ms": durable_audit.get("busy_timeout_ms"),
+        "durable_audit_db_retry_attempts": durable_audit.get("db_retry_attempts"),
         # R81: surface auth posture in health so CA knows up-front whether
         # protected (mutating) tools will demand X-Orchestrator-Token.
         "auto_token_inject": bool(AUTO_TOKEN_INJECT),
@@ -14265,12 +14354,21 @@ async def handle_tools_names(request):
 
 # ─── CBM graph bridge endpoints for [Q] (Phase 1.5 B2) ──────────────────────
 
+# F12 2026-09-27: ONE sentence for "your backslashes broke the JSON", read by both
+# _graph_clean_path below and the invalid-JSON-body 400 handler. It lived as a literal
+# inside _graph_clean_path, so the 400 handler had no way to reuse it and would have
+# needed a copy -- and a copied wording is what let the error-name marker list drift
+# from "body" to "payload" for months without anyone noticing.
+_PATH_FORWARD_SLASH_HINT = (
+    "(mangled backslash escape) â€” use forward slashes, e.g. D:/path/to/project"
+)
+
 def _graph_clean_path(project_path: str) -> tuple:
     """Boundary guard (mirrors orchestrator.graph.tools._clean_project_path):
     reject NUL-mangled backslash paths, normalize to forward slashes (RISK-3)."""
     if "\x00" in project_path:
         return "", ("project_path contains an embedded NUL character "
-                    "(mangled backslash escape) — use forward slashes, e.g. D:/path/to/project")
+                    + _PATH_FORWARD_SLASH_HINT)
     return project_path.replace("\\", "/"), None
 
 
@@ -14565,13 +14663,39 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
             logger.error(
                 "Invalid JSON body (%s; raw length %d): %r",
                 e, len(raw_bytes), raw_bytes[:200])
+            # F10/F11/F12 2026-09-27: three defects in one answer.
+            #
+            # F10 -- this handler wrote the prose "Invalid JSON body" and left
+            # _infer_error_name to re-derive a name from it 10k lines away, where the
+            # marker list reads "invalid json payload". That near-miss meant every
+            # corrupt body answered error_name=TOOL_ERROR by fall-through: a 400 that
+            # reads as a server fault, with retryable inferred from the status alone.
+            # Naming the error HERE deletes the string round-trip instead of adding a
+            # fifth marker to guess at -- the producer is the only place that KNOWS
+            # which error this is, and _error_response has taken an explicit
+            # error_name all along.
+            #
+            # F11 -- the parser diagnostic was logged and then dropped from the
+            # response, so the caller got "Invalid JSON body" with no column and no
+            # reason. It is the single fact that repairs the payload, so it belongs in
+            # `error`, the field every consumer already reads.
+            diagnostic = _exception_text(e)
             return _error_response(
                 tool_name,
-                "Invalid JSON body",
+                f"Invalid JSON body: {diagnostic}",
                 400,
                 cors,
                 {},
-                hint="Use PowerShell $body | ConvertTo-Json -Depth 20; base64-encode multiline content.",
+                error_name="INVALID_JSON_BODY",
+                # F12 -- a mangled backslash is the dominant cause on Windows, and this
+                # module already has exactly one sentence for it. Reuse that constant
+                # instead of writing a third wording: two texts for one cause is how
+                # the "payload" / "body" mismatch above came to exist at all.
+                hint=(
+                    "Use PowerShell $body | ConvertTo-Json -Depth 20; base64-encode "
+                    "multiline content."
+                    + (f" {_PATH_FORWARD_SLASH_HINT}" if "escape" in diagnostic.lower() else "")
+                ),
             )
     else:
         body = {}
@@ -16395,10 +16519,13 @@ accepted_fields=sorted(accepted_fields),
                 _admitted_session_id,
             )
         except Exception as exc:
-            # The tool has already completed. Preserve its response but fail loud
-            # through logs and durable health metrics; never silently drop the row.
+            # The tool has already completed, so its response is preserved either way.
+            # The row itself is parked by _stage_durable_session_event now; that helper
+            # only re-raises when the SPOOL also failed. So reaching here means the row
+            # really is lost -- which is what the old comment claimed could never
+            # happen while the body did nothing but log.
             logger.critical(
-                "Durable session-event stage failed for tool=%s id=%s: %s",
+                "Durable session-event stage AND spool failed for tool=%s id=%s: %s",
                 tool_name,
                 _request_op_id,
                 exc,
@@ -18912,7 +19039,12 @@ if __name__ == "__main__":
         finally:
             try:
                 if _DURABLE_AUDIT is None:
-                    logger.warning("Durable audit not initialized; skipping MCP shutdown")
+                    # F20 2026-09-27: in --mcp mode the writer is None BY DESIGN --
+                    # _get_durable_audit_writer returns None for "--mcp" in sys.argv --
+                    # so 12 of these WARNINGs in 48h were pure false alarm. DEBUG, and
+                    # the same wording the two live sites already use, so a log grep
+                    # for durable_audit_disabled_in_mcp finds all three.
+                    logger.debug("durable_audit_disabled_in_mcp; skipping MCP shutdown")
                     _mcp_durable_report = None
                 else:
                     _mcp_durable_report = _DURABLE_AUDIT.shutdown(10.0, drain=True)

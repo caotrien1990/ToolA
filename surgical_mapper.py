@@ -150,6 +150,19 @@ def _iter_cache_json_files(cache_root: Path):
                 yield Path(walk_root) / filename
 
 
+def _is_sidecar_rel(rel: str) -> bool:
+    """True when a cache-relative path is shaped like a per-file sidecar.
+
+    Sidecars are named "<source-rel-with-extension>.json" and every scanned
+    source has an extension (SUPPORTED_EXTENSIONS has no empty entry), so a
+    stripped name with no extension left (INDEX.json, flag_*.json) is cache
+    infrastructure. The reindex prune and build_index both ask this; F19 was
+    the two answering it apart.
+    """
+    stem = rel[: -len(".json")] if rel.endswith(".json") else rel
+    return "." in stem.rsplit("/", 1)[-1]
+
+
 def _write_index_atomic(project_root: Path, index: dict) -> None:
     index_path = project_root / CACHE_DIR_NAME / INDEX_FILENAME
     payload = (json.dumps(index, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
@@ -810,7 +823,10 @@ def write_file_cache(file_path: str, project_root: str) -> dict:
             "error": True,
             "error_message": str(_exc),
         }
-    cache_file.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+    # F18: temp + fsync + replace, so a crash mid-write keeps the previous sidecar
+    # instead of leaving a torn one for build_index to report.
+    payload = json.dumps(metadata, ensure_ascii=False, indent=2).encode("utf-8")
+    search_snapshots._atomic_write(cache_file, payload)
     return metadata
 
 
@@ -930,6 +946,11 @@ def build_index(project_root: str, timeout_s: float | None = None, watchdog=None
         if watchdog:
             watchdog.progress("build_index", completed=position, total=len(cache_files),
                               detail=str(json_file.relative_to(cache_root)))
+        # F19: the reindex prune keeps non-sidecar JSON (flag_*.json, ...) as
+        # infrastructure, so parsing it here reported the same file as a corrupt
+        # sidecar on every build.
+        if not _is_sidecar_rel(json_file.relative_to(cache_root).as_posix()):
+            continue
         try:
             data = json.loads(json_file.read_text(encoding="utf-8"))
         except Exception as _exc:
@@ -1233,11 +1254,8 @@ def _reindex_from_disk(project_root: Path, watchdog=None) -> dict:
                     continue
                 if path.is_file():
                     # Cache infrastructure (INDEX.json and friends) has no source
-                    # counterpart and is rewritten by build_index below; per-file
-                    # sidecars are named "<source-rel-with-extension>.json", so a
-                    # stripped name with no extension left is not a sidecar.
-                    stem = rel[: -len(".json")] if rel.endswith(".json") else rel
-                    if "." not in stem.rsplit("/", 1)[-1]:
+                    # counterpart; build_index below asks the same matcher.
+                    if not _is_sidecar_rel(rel):
                         continue
                     try:
                         path.unlink()

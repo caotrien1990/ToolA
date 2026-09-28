@@ -149,6 +149,7 @@ async def read_file_range(
         # rebuilt one layer up, except here the caller believes the diagnosis.
         if force_reseed and not reseeded:
             reason = reseed_detail.get("reason") or "no_project_root"
+            error_name, retryable = "RESEED_FAILED", reason != "upsert_failed"
             if reason == "no_project_root":
                 error = ("force_reseed could not seed the write-freshness token: "
                          "no project_path was supplied and no project root could "
@@ -166,6 +167,20 @@ async def read_file_range(
                         "The token is keyed by (project_root, rel_path), so a file "
                         "outside the root has no key.")
                 next_action = "retry_read_file_range_with_correct_project_path"
+            elif reason == "contention":
+                # F9 (2026-09-28): the one TRANSIENT failure, answered with the A40
+                # contract verbatim so the dispatcher attaches the same "back off,
+                # then resend the identical payload" retry_sequence it gives every
+                # other session-store tool. It used to land in the branch below,
+                # whose hint says a retry fails the same way -- false for a queue
+                # that drains in seconds.
+                contention = reseed_detail["contention"]
+                error_name, retryable = contention["error_name"], contention["retryable"]
+                error = ("force_reseed could not seed the write-freshness token: the "
+                         "session write queue is busy "
+                         f"({reseed_detail.get('error') or 'unknown'}).")
+                hint = contention["hint"]
+                next_action = contention["ca_next_action"]
             else:
                 error = ("force_reseed resolved the project root but the read-token "
                          "store refused the write: "
@@ -178,7 +193,7 @@ async def read_file_range(
             return {
                 "ok": False,
                 "error": error,
-                "error_name": "RESEED_FAILED",
+                "error_name": error_name,
                 "reseed_failure_reason": reason,
                 "reseed_error": reseed_detail.get("error", ""),
                 "file": str(fp),
@@ -188,7 +203,7 @@ async def read_file_range(
                 "total_lines": total,
                 "hint": hint,
                 "ca_next_action": next_action,
-                "retryable": reason != "upsert_failed",
+                "retryable": retryable,
                 "derived_state_touched": False,
             }
 
@@ -279,6 +294,21 @@ async def read_file_range(
                     "range_id": f"{fp.name}:empty", "range_ref": None,
                     "selection": {**selection, "start_line": None, "end_line": None},
                 })
+        # F8 (2026-09-28): a read the token store refused is still a good read,
+        # but read_token_seeded:false alone reads exactly like a read that never
+        # tried to seed (unstable document, no project root). Say which -- only on
+        # this path, so a clean read pays nothing.
+        seed_reason = reseed_detail.get("reason")
+        if seed_reason == "contention":
+            contention = reseed_detail["contention"]
+            response["read_token_seed_failure"] = {
+                "reason": seed_reason, "error_name": contention["error_name"],
+                "retryable": contention["retryable"],
+                "ca_next_action": contention["ca_next_action"]}
+        elif seed_reason == "upsert_failed":
+            response["read_token_seed_failure"] = {
+                "reason": seed_reason, "error": reseed_detail.get("error", ""),
+                "retryable": False, "ca_next_action": "inspect_session_store"}
         if cache_meta["content_hash_mismatch"]:
             response["content_hash_mismatch"] = True
             response["warn"] = "supplied_content_hash_stale"

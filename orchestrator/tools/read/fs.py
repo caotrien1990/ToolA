@@ -141,7 +141,7 @@ def _seed_read_token_detailed(fp: Path, project_path: str | None, text: str,
     caller (read_file_range) turns a failed force_reseed into a loud RESEED_FAILED
     rather than returning ok:true without a token.
 
-    P11b: a reseed can fail three distinct ways, and P11's first cut printed the
+    P11b: a reseed can fail four distinct ways, and P11's first cut printed the
     no-root message for all of them. Measured with a VALID project_path and a
     raising _read_token_upsert: "no project_path was supplied", plus a hint
     telling the caller to pass the project_path it had already passed. That is
@@ -151,10 +151,11 @@ def _seed_read_token_detailed(fp: Path, project_path: str | None, text: str,
       no_project_root -- no project_path and none inferable (the P11 case)
       outside_root    -- the file does not live under the root that was resolved
       upsert_failed   -- root fine, the token store itself refused
+      contention      -- root fine, the session write queue is busy; transient
     """
-    try:
-        import code_tools as ct
+    import code_tools as ct
 
+    try:
         root_str = project_path or ct.find_project_root(str(fp))
         if not root_str:
             return False, {"reason": "no_project_root", "error": ""}
@@ -174,6 +175,14 @@ def _seed_read_token_detailed(fp: Path, project_path: str | None, text: str,
         return False, {"reason": "upsert_failed", "error": "_read_token_upsert returned falsy",
                        "root": str(root)}
     except Exception as exc:
+        # F8 (2026-09-28): contention is transient -- a retry once the write queue
+        # drains commits -- so it must not share upsert_failed, whose contract is
+        # "retrying the same call fails the same way". Asked of the A40 classifier,
+        # never a second isinstance, so the two answers cannot drift apart.
+        contention = ct._session_contention_fields(exc)
+        if contention is not None:
+            return False, {"reason": "contention", "error": f"{type(exc).__name__}: {exc}",
+                           "contention": contention}
         logging.getLogger(__name__).warning(
             "read_file_range reseed failed for %s: %s", fp, exc)
         return False, {"reason": "upsert_failed", "error": f"{type(exc).__name__}: {exc}"}
