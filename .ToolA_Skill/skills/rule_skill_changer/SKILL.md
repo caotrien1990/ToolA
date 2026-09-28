@@ -26,7 +26,7 @@ Do not sync first. Follow this numbered order exactly:
 4. **Decide whether Python must change**: if the change affects schema, route model, fallback rule text, dispatch, sync, worker runtime, tool fields, dashboard, or adapter behavior, inspect and update `code_tools.py` / `orchestrator_server.py` as needed. If not, record `Python checked; no backend/schema change required`.
 5. **Edit canonical sources only**: update `.ToolA_Skill/...`, `.council/...`, and Python source if needed. Do not hand-edit generated CA rule files or copied skill folders.
 6. **Run pre-sync diff gate**: inspect changed canonical files and search stale route/model/worker/tool-field references before any sync.
-7. **Compile/test Python if changed**: run `py_compile`; restart [A] via `[A:S]` only if Python source changed and no worker dispatch is in flight; wait for `/health`.
+7. **Compile/test Python if changed**: run `py_compile`; restart [A] with `restart_orchestrator_via_bat` (`delay_seconds=2` only) only if Python source changed and no worker dispatch is in flight; poll `/health` through the refusal until a NEW `pid` and a CHANGED `generation`.
 8. **Verify live schema/tool behavior**: read relevant live schemas such as `council_message`, `council_worker_model`, `manage_agent`, or the changed tool; run a small behavior test when runtime/tool behavior changed.
 9. **Dry-run sync**: run `manage_agent sync_rule dry_run=true` and/or `manage_agent sync_skill dry_run=true` only after source/diff/schema are clean.
 10. **Apply sync**: run the required `sync_rule` / `sync_skill` only if dry-run is correct.

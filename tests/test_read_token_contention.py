@@ -38,6 +38,7 @@ import pytest
 
 import code_tools
 import orchestrator_server
+import surgical_mapper
 from orchestrator.tools.read import fs as read_fs
 
 _store = code_tools._session_store_module
@@ -203,3 +204,79 @@ def test_dispatcher_maps_read_contention_to_resend_identical():
         "read_file_range", "SESSION_STORE_CONTENTION", body)
     resend = [step for step in seq if step.get("tool") == "read_file_range"]
     assert resend and resend[0]["payload"] == body, seq
+
+
+# -- F10 (2026-09-28): the write side names an unsealed token ----------------
+# _seal_read_token hid every failure behind `except Exception: return False` and
+# all call sites ignored the bool, so under store contention write_fix /
+# write_new_file committed the bytes but never sealed the token: the CA's next
+# write_fix was refused FILE_CHANGED_OUTSIDE_ORCHESTRATOR, blaming "outside" for
+# [A]'s own write with no trace of the real cause. Contention is injected at the
+# same single writer operation as the read-side tests above; the seed read, the
+# INDEX and every other session write stay real.
+
+def _writable_project(root: Path, target: Path) -> None:
+    """Minimal INDEX + a real seeded read, so write_fix passes its gates."""
+    surgical_mapper.ensure_minimal_index(str(root))
+    assert _read(target, root)["read_token_seeded"] is True
+
+
+def test_write_fix_seal_contention_names_the_miss(project, monkeypatch):
+    """A committed write_fix whose seal hit contention must say so: ok:true, the
+    new bytes on disk, read_token_sealed:false, SESSION_STORE_CONTENTION, and the
+    force_reseed recovery in ca_next_action."""
+    root, target = project
+    _writable_project(root, target)
+    monkeypatch.setattr(_store, "_run_session_write", _contend_on_token_write)
+    out = json.loads(asyncio.run(code_tools.write_fix(
+        "mod.py", 1, 1, "x = 2", project_path=str(root))))
+    assert out["ok"] is True, out
+    assert target.read_text(encoding="utf-8") == "x = 2\n"
+    assert out["read_token_sealed"] is False
+    assert out["read_token_seal_error"] == "SESSION_STORE_CONTENTION"
+    assert "force_reseed" in out["ca_next_action"]
+
+
+def test_write_new_file_seal_contention_names_the_miss(project, monkeypatch):
+    """Same contract on write_new_file: the file exists, the seal did not land."""
+    root, _ = project
+    surgical_mapper.ensure_minimal_index(str(root))
+    monkeypatch.setattr(_store, "_run_session_write", _contend_on_token_write)
+    out = json.loads(asyncio.run(code_tools.write_new_file(
+        "fresh.py", new_content="y = 1\n", project_path=str(root))))
+    assert out["ok"] is True, out
+    assert (root / "fresh.py").read_text(encoding="utf-8") == "y = 1\n"
+    assert out["read_token_sealed"] is False
+    assert out["read_token_seal_error"] == "SESSION_STORE_CONTENTION"
+    assert "force_reseed" in out["ca_next_action"]
+
+
+def test_clean_write_carries_no_seal_keys(project):
+    """Zero-cost path: a write whose seal landed grows no key at all."""
+    root, target = project
+    _writable_project(root, target)
+    out = json.loads(asyncio.run(code_tools.write_fix(
+        "mod.py", 1, 1, "x = 2", project_path=str(root))))
+    assert out["ok"] is True, out
+    assert "read_token_sealed" not in out
+    assert "read_token_seal_error" not in out
+
+
+class _SchemaMismatch(RuntimeError):
+    """Stand-in for a genuine defect inside the token store."""
+
+
+def test_write_fix_seal_defect_names_the_exception_class(project, monkeypatch):
+    """A non-contention raise must be reported by its class name -- not as
+    contention -- and must still not fail the already-committed write."""
+    root, target = project
+    _writable_project(root, target)
+    monkeypatch.setattr(code_tools, "_read_token_upsert",
+                        mock.Mock(side_effect=_SchemaMismatch("schema mismatch")))
+    out = json.loads(asyncio.run(code_tools.write_fix(
+        "mod.py", 1, 1, "x = 2", project_path=str(root))))
+    assert out["ok"] is True, out
+    assert target.read_text(encoding="utf-8") == "x = 2\n"
+    assert out["read_token_sealed"] is False
+    assert out["read_token_seal_error"] == "_SchemaMismatch"
+    assert "force_reseed" in out["ca_next_action"]

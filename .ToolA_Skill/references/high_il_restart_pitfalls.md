@@ -14,16 +14,17 @@ check them in this order, cheapest check first:
 
 | # | Cause | How to tell | Fix owner |
 |---|-------|-------------|-----------|
-| 1 | High-IL `&&` short-circuit | task action still contains `restart_orchestrator.py && start ...` | admin rebind (Anh) |
-| 2 | Import crash | `orchestrator.log` tail ends in a traceback, no listen line | CA fixes source, then relaunch |
-| 3 | Lock race | `.orchestrator_cache/orchestrator.lock*` present while nothing owns the port | CA clears the stale lock only |
+| 1 | High-IL `&&` short-circuit | task action still contains `restart_orchestrator.py && start ...` | admin rebind (recipe below: [A] when a High-IL [A] is up, else Anh) |
+| 2 | Import crash | `orchestrator.log` tail ends in a traceback, no listen line | Anh: with [A] down the source fix is a native write into [A]'s tree (break-glass); CA reports the traceback |
+| 3 | Lock race | `.orchestrator_cache/orchestrator.lock*` present while nothing owns the port | Anh: clearing it is a native delete in [A]'s tree while [A] is down (break-glass + its own destructive gate); CA reports steps 1 and 5 |
 
 Anything outside those three: STOP and report. Do not widen the loop.
 
 ## Verify checklist (in order, stop at the first red)
 
-1. **Listen** - is anything on 8083? `port_owner_inspect` names the owning PID,
-   or says the port is free. Free port plus LastResult=1 is cause #1 or #2.
+1. **Listen** - is anything on 8083? `port_owner_inspect` names the owning PID
+   while [A] answers; with [A] down use native `netstat -ano | findstr :8083`
+   (read-only). Free port plus LastResult=1 is cause #1 or #2.
 2. **Task action** - `Get-ScheduledTask -TaskName ToolA_Orchestrator` Actions.
    `ArgsHasAndAnd=true` is fragile; `ArgsHasWrapper=true` is the healthy shape.
 3. **Task result** - `Get-ScheduledTaskInfo` LastTaskResult. 0 together with a
@@ -31,9 +32,10 @@ Anything outside those three: STOP and report. Do not widen the loop.
 4. **Log tail** - `orchestrator.log`. An import-time `NameError` (the classic:
    JSON-style `true`/`false` written into a Python literal) means the process
    never reached its listen call, so no number of restarts will help.
-5. **Lock** - `.orchestrator_cache/orchestrator.lock*`. Clear it ONLY when step 1
-   proved nothing owns the port. A lock file is not proof of a live owner, and a
-   live owner is not proof of a lock file.
+5. **Lock** - `.orchestrator_cache/orchestrator.lock*`. Report whether it exists;
+   do not clear it (row 3 above: Anh's break-glass, and only when step 1 proved
+   nothing owns the port). A lock file is not proof of a live owner, and a live
+   owner is not proof of a lock file.
 6. **New PID and new generation** - the only acceptance evidence. `/health`
    answering `ok` is not enough, because the old process answers `ok` too. The
    generation string must differ from the one recorded before the restart.
@@ -41,10 +43,18 @@ Anything outside those three: STOP and report. Do not widen the loop.
 Never claim a restart succeeded on `/health ok` alone. Never claim it failed
 because the port was briefly refused - poll, do not conclude.
 
-## Admin rebind recipe (Anh runs this, once)
+## Admin rebind recipe (once)
 
-CA cannot do this step: a non-admin `Set-ScheduledTask` answers **Access denied**,
-and looping it produces nothing but denials.
+Who runs it is decided by [A], never by the CA shell. The CA shell is always
+Medium IL, so a `Set-ScheduledTask` there answers **Access denied** - do not loop it.
+
+- **[A] up at High IL** (`whoami /groups` through [A] says High): run it through
+  [A] `run_ps1_script` after Anh's go-ahead - elevation is capability, not
+  authority. `Export-ScheduledTask -TaskName ToolA_Orchestrator` to a backup XML
+  first: the installer re-registers the very task [A] runs under (not yet measured
+  end-to-end from inside [A]). Diff the WHOLE exported XML after, not only the
+  action, then `restart_orchestrator_via_bat` and prove a new pid + generation.
+- **[A] down, or Medium through [A]:** Anh runs it:
 
 1. Open an **elevated** PowerShell. Do not send Anh to right-click the `.ps1`:
    Win11 often offers no admin entry there.
@@ -58,18 +68,19 @@ The soft-clear fix (`restart_orchestrator.py` exiting 0 when there is nothing to
 kill) can make the old `&&` chain work *temporarily*. That is a reprieve, not a
 repair - the rebind is what makes it survive a reboot.
 
-## Medium-IL bootstrap (temporary, when Anh is not available)
+## [A] down after a restart: STOP, never self-bootstrap
 
-When the High-IL task ended the old instance and then failed to relaunch it, CA
-may bootstrap at medium IL to keep working:
+When the High-IL task ended the old instance and then failed to relaunch it,
+run the checklist above read-only and STOP with the facts for Anh. Do not start
+`orchestrator_server.py` or `start_orchestrator.bat` yourself:
 
-1. Confirm no listener on 8083 and no orchestrator python process; clear a stale
-   lock only under that condition.
-2. Start detached: `venv312/Scripts/python.exe -u orchestrator_server.py` from
-   the project root.
-3. Poll `/health` until ok, and record the new generation.
-4. Report to Anh anyway - medium-IL lasts until logoff; the admin rebind is what
-   lasts across a reboot.
+- a hand launch from a CA shell is Medium IL (the .bat does not self-elevate),
+  so it would hide the broken task instead of repairing it;
+- with [A] down, every fix (source, lock, relaunch) is a native act on [A]'s own
+  tree, and only Anh's break-glass authorizes that (skill `12_native_audit`).
+
+Anh relaunches with `schtasks /Run /TN ToolA_Orchestrator` (admin rebind first
+when row 1 is red); the CA then proves it with step 6.
 
 ## What this file deliberately does not contain
 

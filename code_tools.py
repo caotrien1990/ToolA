@@ -3505,18 +3505,13 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
                            "frontmatter. Body prose does not count: the router only reads "
                            "frontmatter."),
             })
-    _shared_refs = skill_root / "references"
-    _seen_refs = set()
     for folder in sorted(skill_bodies):
-        for m in _re.finditer(r"references/([A-Za-z0-9_.\-]+\.md)", skill_bodies[folder]):
-            ref = m.group(1)
-            if (folder, ref) in _seen_refs:
-                continue
-            _seen_refs.add((folder, ref))
-            # A link resolves if the file sits beside the skill OR in the shared dir.
-            if (skills_dir / folder / "references" / ref).exists():
-                continue
-            if (_shared_refs / ref).exists():
+        # FIX2: the gate and sync_skill ask ONE question (where does a
+        # references/<name>.md link resolve?) so they share ONE matcher,
+        # _skill_reference_links; a link this gate accepts but sync_skill drops
+        # would dangle in every agent copy.
+        for ref, ref_path, _ref_scope in _skill_reference_links(skill_root, folder, skill_bodies[folder]):
+            if ref_path is not None:
                 continue
             drift.append({
                 "type": "skill_reference_missing",
@@ -17111,16 +17106,62 @@ def _ma_skip_write_backups(_dirpath, names) -> list:
     return [n for n in names if is_write_backup(n)]
 
 
-def _ma_skill_dir_summary(root: Path) -> dict:
+_SKILL_REFERENCE_RE = re.compile(r"references/([A-Za-z0-9_.\-]+\.md)")
+
+
+def _skill_reference_links(skill_root: Path, folder: str, text: str) -> list:
+    """The one matcher for "where does this references/<name>.md link resolve?".
+
+    Both the skill_reference_missing gate (audit_tool_matrix) and manage_agent
+    sync_skill (_ma_write_skill) ask this exact question, so they share this one
+    function instead of growing two private regexes: a link a gate accepts but a
+    sync drops is a dangling reference in every agent copy. Returns one
+    (name, path, scope) per distinct name in text order; resolution order is
+    beside the skill first (scope "skill"), then the shared dir (scope "shared",
+    resolved-path confined to it), else (name, None, None).
+    """
+    out = []
+    seen = set()
+    shared_dir = (skill_root / "references").resolve()
+    for m in _SKILL_REFERENCE_RE.finditer(text):
+        name = m.group(1)
+        if name in seen:
+            continue
+        seen.add(name)
+        beside = skill_root / "skills" / folder / "references" / name
+        if beside.is_file():
+            out.append((name, beside, "skill"))
+            continue
+        cand = (skill_root / "references" / name).resolve()
+        if cand.is_file() and cand.parent == shared_dir:
+            out.append((name, cand, "shared"))
+            continue
+        out.append((name, None, None))
+    return out
+
+
+def _ma_skill_dir_summary(root: Path, extra=None) -> dict:
+    """Content summary of a skill folder: {files, sha256} over (rel, bytes-hash).
+
+    extra maps rel-posix paths to files OUTSIDE root (the shared references a
+    skill links) that a sync bundles into the deployed copy; setdefault, so a
+    file already inside root wins its own content. With extra=None the sha is
+    byte-identical to the pre-FIX2 implementation (sorting rel under one root
+    orders the same as sorting absolute posix), so deployed hashes do not move.
+    """
     h = hashlib.sha256()
-    n = 0
-    for p in sorted(root.rglob("*"), key=lambda x: x.as_posix()):
+    entries = {}
+    for p in root.rglob("*"):
         if p.is_file() and not is_write_backup(p.name):
-            rel = p.relative_to(root).as_posix()
-            h.update(rel.encode("utf-8"))
-            h.update(hashlib.sha256(p.read_bytes()).hexdigest().encode("utf-8"))
-            n += 1
-    return {"files": n, "sha256": h.hexdigest()}
+            entries[p.relative_to(root).as_posix()] = p
+    if extra:
+        for rel, p in extra.items():
+            entries.setdefault(rel, p)
+    for rel in sorted(entries):
+        p = entries[rel]
+        h.update(rel.encode("utf-8"))
+        h.update(hashlib.sha256(p.read_bytes()).hexdigest().encode("utf-8"))
+    return {"files": len(entries), "sha256": h.hexdigest()}
 
 
 _SKILL_ADAPTER_FORMATS = ("agents_md_ref", "rule_file_append")
@@ -17188,7 +17229,16 @@ def _ma_write_skill(ag: dict, reg: dict, skill_name: str, dry_run: bool,
     skill_md = src / "SKILL.md"
     if not skill_md.is_file():
         return {"ok": False, "agent": aid, "status": "error", "source": str(src), "reason": "SKILL.md missing in source"}
-    src_sum = _ma_skill_dir_summary(src)
+    skill_md_text = skill_md.read_text(encoding="utf-8", errors="ignore")
+    # FIX2 (2026-09-28): a SKILL.md link resolves beside the skill OR in the shared
+    # .ToolA_Skill/references/ dir (the skill_reference_missing gate accepts both),
+    # but the copytree below shipped only the skill folder, so every shared-dir link
+    # dangled in every agent copy. Bundle the shared files this skill links, asking
+    # the SAME matcher the gate asks (_skill_reference_links).
+    bundled = {("references/" + name): path
+               for name, path, scope in _skill_reference_links(src_root.parent, skill_name, skill_md_text)
+               if scope == "shared"}
+    src_sum = _ma_skill_dir_summary(src, bundled)
     # 1) Native SKILL.md folder copy (verified mechanism: clau/codo/pic/hermes).
     if skill_dir and skill_format == "folder":
         target = Path(skill_dir) / skill_name
@@ -17196,8 +17246,11 @@ def _ma_write_skill(ag: dict, reg: dict, skill_name: str, dry_run: bool,
         if refused:
             return refused
         if dry_run:
-            return {"ok": True, "agent": aid, "status": "dry_run", "source": str(src), "target": str(target),
-                    "sha256": src_sum["sha256"], "files": src_sum["files"], "reason": "would copy (native folder)"}
+            row = {"ok": True, "agent": aid, "status": "dry_run", "source": str(src), "target": str(target),
+                   "sha256": src_sum["sha256"], "files": src_sum["files"], "reason": "would copy (native folder)"}
+            if bundled:
+                row["shared_references"] = sorted(bundled)
+            return row
         backup = ""
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -17207,14 +17260,21 @@ def _ma_write_skill(ag: dict, reg: dict, skill_name: str, dry_run: bool,
                 shutil.move(str(target), str(bak))
                 backup = str(bak)
             shutil.copytree(src, target, ignore=_ma_skip_write_backups)
+            for rel, shared_path in bundled.items():
+                dest = target / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(shared_path, dest)
         except Exception as e:
             _ma_restore_tree(target, backup)
             return {"ok": False, "agent": aid, "status": "error", "source": str(src), "target": str(target),
                     "backup": backup, "reason": f"copy failed: {e}"}
         tgt_sum = _ma_skill_dir_summary(target)
-        return {"ok": True, "agent": aid, "status": "ok", "source": str(src), "target": str(target),
-                "sha256": tgt_sum["sha256"], "files": tgt_sum["files"],
-                "match": tgt_sum["sha256"] == src_sum["sha256"], "backup": backup, "reason": "copied (native folder)"}
+        row = {"ok": True, "agent": aid, "status": "ok", "source": str(src), "target": str(target),
+               "sha256": tgt_sum["sha256"], "files": tgt_sum["files"],
+               "match": tgt_sum["sha256"] == src_sum["sha256"], "backup": backup, "reason": "copied (native folder)"}
+        if bundled:
+            row["shared_references"] = sorted(bundled)
+        return row
     # 2) Adapter mechanism (AGENTS.md / rule-file agents, e.g. opencode/clin).
     if skill_format in _SKILL_ADAPTER_FORMATS:
         body = skill_md.read_text(encoding="utf-8")

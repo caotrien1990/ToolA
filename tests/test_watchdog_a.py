@@ -1,7 +1,6 @@
 import json
 import subprocess
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -10,16 +9,28 @@ import watchdog_a
 
 
 def _health(*, ok=True, service="project-orchestrator", generation="v1",
-            lanes=None, accepting=True, active_total=None, queued_total=None):
-    payload = {"ok": ok, "service": service, "generation": generation,
-               "executor_accepting": accepting}
-    if lanes is not None:
-        payload["executor_lanes"] = lanes
-    if active_total is not None:
-        payload["executor_active_total"] = active_total
-    if queued_total is not None:
-        payload["executor_queued_total"] = queued_total
-    return payload
+            lanes=None, accepting=True, active_total=None, queued_total=None,
+            processed_total=0, failed_total=0, rejected_total=0):
+    """LIVE /health shape: lane rows carry only {name, active, queued,
+    accepting}; the monotonic work counters are top-level accounting_* totals.
+    Probe-contract tests that need lane keys live /health does NOT publish
+    (capacity, oldest_wait_ms) pass an explicit `lanes` list; the top-level
+    totals then default to the lane sums, like _lane_totals' own fallback."""
+    if lanes is None:
+        lanes = [{"name": "test", "active": active_total or 0,
+                  "queued": queued_total or 0, "accepting": accepting}]
+    if active_total is None:
+        active_total = sum(int(x.get("active", 0)) for x in lanes)
+    if queued_total is None:
+        queued_total = sum(int(x.get("queued", 0)) for x in lanes)
+    return {"ok": ok, "service": service, "generation": generation,
+            "executor_accepting": accepting,
+            "executor_active_total": active_total,
+            "executor_queued_total": queued_total,
+            "executor_lanes": lanes,
+            "accounting_processed_total": processed_total,
+            "accounting_failed_total": failed_total,
+            "accounting_rejected_total": rejected_total}
 
 
 class TestWatchdogProbeContract(unittest.TestCase):
@@ -99,159 +110,132 @@ class TestWatchdogProbeContract(unittest.TestCase):
 
 
 class TestWatchdogDecisionLoop(unittest.TestCase):
+    """Real-sequence tests: the REAL probe() runs against patched _read_json,
+    the REAL log()/state write to tmp paths; nothing fabricates a probe tuple."""
+
     def _paths(self, tempdir: str):
         return (str(Path(tempdir) / "watchdog_state.json"),
                 str(Path(tempdir) / "does_not_exist.log"))
 
-    def _busy_health(self):
-        return _health(lanes=[{"active": 1, "queued": 0, "capacity": 4}], active_total=1)
+    def _livez(self, generation="g1"):
+        return {"ok": True, "service": "project-orchestrator",
+                "livez_protocol": watchdog_a.LIVEZ_PROTOCOL, "generation": generation}
 
-    def test_liveness_lost_and_stalled_restarts_exactly_once(self):
-        """down + not livez_ok, held busy with no progress past the inactivity
-        window across FAILURE_THRESHOLD samples, must trigger exactly one restart."""
-        busy = self._busy_health()
-        samples = [("down", "v1", "livez_down;health_down", busy, False)] * watchdog_a.FAILURE_THRESHOLD
+    def test_dead_daemon_restarts_exactly_once(self):
+        """Pins D1 (unreachable restart): a failed health probe returns
+        health={}, so busy=False and inactive_samples reset to 0 on EVERY down
+        probe -- the old inactive_samples gate never fired schtasks for a dead
+        daemon. With both endpoints refusing, ONE main() from EMPTY state must
+        issue exactly one schtasks /run, then persist down_samples=0 and
+        last_restart_at so the same firing cannot restart twice."""
         completed = subprocess.CompletedProcess([], 0, "ok", "")
         with tempfile.TemporaryDirectory() as tempdir:
             state_path, log_path = self._paths(tempdir)
             with mock.patch.object(watchdog_a, "STATE", state_path), \
-                 mock.patch.object(watchdog_a, "LOG", log_path):
-                # Seed state so the inactivity accounting counts these samples as stalled:
-                # same generation (no reset), matching fingerprint (no progress),
-                # and a last_progress_at far in the past.
-                seed_fp = watchdog_a._progress_fingerprint(busy)
-                Path(state_path).write_text(json.dumps({
-                    "generation": "v1",
-                    "last_fp": seed_fp,
-                    "last_progress_at": time.time() - 10_000,
-                    "inactive_samples": 0,
-                }), encoding="utf-8")
-                with mock.patch.object(watchdog_a, "probe", side_effect=samples), \
-                     mock.patch.object(watchdog_a.time, "sleep"), \
-                     mock.patch.object(watchdog_a, "log"), \
-                     mock.patch.object(watchdog_a.subprocess, "run", return_value=completed) as run:
-                    rc = watchdog_a.main()
+                 mock.patch.object(watchdog_a, "LOG", log_path), \
+                 mock.patch.object(watchdog_a, "_read_json",
+                                   side_effect=ConnectionRefusedError("dead")), \
+                 mock.patch.object(watchdog_a.time, "sleep"), \
+                 mock.patch.object(watchdog_a.subprocess, "run", return_value=completed) as run:
+                rc = watchdog_a.main()
+            saved = json.loads(Path(state_path).read_text(encoding="utf-8"))
         self.assertEqual(rc, 1)
-        run.assert_called_once()
+        run.assert_called_once_with(["schtasks", "/run", "/tn", watchdog_a.RESTART_TASK],
+                                    capture_output=True, text=True, timeout=30)
+        self.assertEqual(saved["down_samples"], 0)
+        self.assertTrue(saved["last_restart_at"] > 0)
+        self.assertEqual(saved["last_classification"], "down")
 
-    def test_liveness_lost_but_not_stalled_does_not_restart(self):
-        """down + not livez_ok but executor idle (not busy) => inactivity never
-        accrues => the restart gate stays shut."""
-        idle = _health(lanes=[{"active": 0, "queued": 0, "capacity": 4}])
-        samples = [("down", "v1", "livez_down;health_down", idle, False)] * watchdog_a.FAILURE_THRESHOLD
+    def test_second_dead_firing_restarts_again(self):
+        """Pins the no-latch half of D1: a daemon that stays dead must be
+        retried once per later firing. The post-restart zeroing must not latch
+        the counter shut -- firing 2 issues exactly one MORE restart (2 total)."""
+        completed = subprocess.CompletedProcess([], 0, "ok", "")
         with tempfile.TemporaryDirectory() as tempdir:
             state_path, log_path = self._paths(tempdir)
             with mock.patch.object(watchdog_a, "STATE", state_path), \
                  mock.patch.object(watchdog_a, "LOG", log_path), \
-                 mock.patch.object(watchdog_a, "probe", side_effect=samples), \
+                 mock.patch.object(watchdog_a, "_read_json",
+                                   side_effect=ConnectionRefusedError("dead")), \
                  mock.patch.object(watchdog_a.time, "sleep"), \
-                 mock.patch.object(watchdog_a, "log"), \
+                 mock.patch.object(watchdog_a.subprocess, "run", return_value=completed) as run:
+                rc1 = watchdog_a.main()
+                rc2 = watchdog_a.main()
+            saved = json.loads(Path(state_path).read_text(encoding="utf-8"))
+        self.assertEqual((rc1, rc2), (1, 1))
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(saved["down_samples"], 0)
+
+    def test_recovery_inside_firing_does_not_restart(self):
+        """Pins the gate's reset side: two down samples then a healthy reply
+        INSIDE one firing must give 0 restarts, and the healthy sample resets
+        down_samples to 0 -- recovery is not punished by the earlier failures."""
+        livez = self._livez()
+        health = _health(generation="g1", active_total=0, queued_total=0)
+        replies = [ConnectionRefusedError("dead")] * 4 + [livez, health]
+        with tempfile.TemporaryDirectory() as tempdir:
+            state_path, log_path = self._paths(tempdir)
+            with mock.patch.object(watchdog_a, "STATE", state_path), \
+                 mock.patch.object(watchdog_a, "LOG", log_path), \
+                 mock.patch.object(watchdog_a, "_read_json", side_effect=replies), \
+                 mock.patch.object(watchdog_a.time, "sleep"), \
                  mock.patch.object(watchdog_a.subprocess, "run") as run:
                 rc = watchdog_a.main()
+            saved = json.loads(Path(state_path).read_text(encoding="utf-8"))
         self.assertEqual(rc, 0)
         run.assert_not_called()
+        self.assertEqual(saved["down_samples"], 0)
+        self.assertEqual(saved["last_classification"], "healthy")
 
-    def test_livez_ok_short_circuits_restart_even_when_down(self):
-        """Classification 'down' but livez_ok True must never reach the restart
-        channel: liveness is proven, so main exits 0 on the FIRST sample and
-        stops probing/sleeping. The early return at line ~149 is what makes it
-        stop early; the final gate would also decline the restart, so only the
-        probe/sleep call counts prove the short-circuit actually fired."""
-        busy = self._busy_health()
-        samples = [("down", "v1", "livez_alive;health_down", busy, True)] * watchdog_a.FAILURE_THRESHOLD
+    def test_livez_alive_health_failing_never_restarts(self):
+        """Pins the docstring invariant: inactivity/degradation only WARNS; a
+        restart requires PROVEN liveness loss (/livez AND /health both fail).
+        A hung loop reads health as failing (the endpoint refuses, so probe()
+        returns classification "down" early), but livez is alive, so livez_ok
+        is True: main() short-circuits on the FIRST sample (one probe pair, no
+        sleep, no restart) and down_samples never accrues because a "down"
+        classification alone is not liveness loss while livez still answers."""
+        livez = self._livez("g9")
+        replies = [livez, OSError("health hung")]
         with tempfile.TemporaryDirectory() as tempdir:
             state_path, log_path = self._paths(tempdir)
             with mock.patch.object(watchdog_a, "STATE", state_path), \
                  mock.patch.object(watchdog_a, "LOG", log_path), \
-                 mock.patch.object(watchdog_a, "probe", mock.Mock(side_effect=samples)) as probe_mock, \
+                 mock.patch.object(watchdog_a, "_read_json", side_effect=replies) as read_mock, \
                  mock.patch.object(watchdog_a.time, "sleep") as sleep_mock, \
-                 mock.patch.object(watchdog_a, "log"), \
                  mock.patch.object(watchdog_a.subprocess, "run") as run:
                 rc = watchdog_a.main()
+            saved = json.loads(Path(state_path).read_text(encoding="utf-8"))
         self.assertEqual(rc, 0)
         run.assert_not_called()
-        # Short-circuit: the loop must exit on the first sample, not grind
-        # through all FAILURE_THRESHOLD attempts (which would probe 3x + sleep 2x).
-        self.assertEqual(probe_mock.call_count, 1)
         sleep_mock.assert_not_called()
+        self.assertEqual(read_mock.call_count, 2)
+        self.assertEqual(saved["down_samples"], 0)
+        self.assertEqual(saved["last_classification"], "down")
 
-    def test_generation_change_resets_inactivity(self):
-        """When [A] restarts mid-loop the generation flips to a new value. The
-        reset branch (line ~123) must wipe accrued inactivity so the watchdog
-        does NOT restart the freshly-restarted daemon on the old instance's
-        stalled samples. Health dict (and thus fingerprint) is held constant so
-        that ONLY the generation-reset branch can wipe the accrual."""
-        busy = self._busy_health()
-        # Seed as stalled at generation "v1"; tuple generation then flips to "v2"
-        # on the 2nd/3rd samples while the health dict stays identical.
-        samples = [
-            ("down", "v1", "livez_down;health_down", busy, False),
-            ("down", "v2", "livez_down;health_down", busy, False),
-            ("down", "v2", "livez_down;health_down", busy, False),
-        ]
-        self.assertEqual(len(samples), watchdog_a.FAILURE_THRESHOLD)
-        with tempfile.TemporaryDirectory() as tempdir:
-            state_path, log_path = self._paths(tempdir)
-            with mock.patch.object(watchdog_a, "STATE", state_path), \
-                 mock.patch.object(watchdog_a, "LOG", log_path):
-                seed_fp = watchdog_a._progress_fingerprint(busy)
-                Path(state_path).write_text(json.dumps({
-                    "generation": "v1",
-                    "last_fp": seed_fp,
-                    "last_progress_at": time.time() - 10_000,
-                    "inactive_samples": 0,
-                }), encoding="utf-8")
-                with mock.patch.object(watchdog_a, "probe", side_effect=samples), \
-                     mock.patch.object(watchdog_a.time, "sleep"), \
-                     mock.patch.object(watchdog_a, "log"), \
-                     mock.patch.object(watchdog_a.subprocess, "run") as run:
-                    rc = watchdog_a.main()
-        self.assertEqual(rc, 0)
-        run.assert_not_called()
-
-    def test_idle_executor_with_stale_progress_does_not_restart(self):
-        """An idle executor (active=0, queued=0) that has not 'progressed' for a
-        long time must NOT be treated as stalled: there is simply no work. The
-        `busy` guard (line ~128) is what prevents the false restart. Seed a
-        matching fingerprint + ancient last_progress_at so `progressed` is False;
-        only the busy conjunct keeps `inactive` from accruing."""
-        idle = _health(lanes=[{"active": 0, "queued": 0, "capacity": 4}])
-        samples = [("down", "v1", "livez_down;health_down", idle, False)] * watchdog_a.FAILURE_THRESHOLD
-        with tempfile.TemporaryDirectory() as tempdir:
-            state_path, log_path = self._paths(tempdir)
-            with mock.patch.object(watchdog_a, "STATE", state_path), \
-                 mock.patch.object(watchdog_a, "LOG", log_path):
-                seed_fp = watchdog_a._progress_fingerprint(idle)
-                Path(state_path).write_text(json.dumps({
-                    "generation": "v1",
-                    "last_fp": seed_fp,
-                    "last_progress_at": time.time() - 10_000,
-                    "inactive_samples": 0,
-                }), encoding="utf-8")
-                with mock.patch.object(watchdog_a, "probe", side_effect=samples), \
-                     mock.patch.object(watchdog_a.time, "sleep"), \
-                     mock.patch.object(watchdog_a, "log"), \
-                     mock.patch.object(watchdog_a.subprocess, "run") as run:
-                    rc = watchdog_a.main()
-        self.assertEqual(rc, 0)
-        run.assert_not_called()
-
-    def test_failure_then_recovery_does_not_restart(self):
-        samples = [
-            ("down", "", "both_down", {}, False),
-            ("healthy", "v2", "livez_v1;health_ready", self._busy_health(), True),
-        ]
+    def test_daemon_restarted_mid_firing_keeps_state_apart(self):
+        """Pins the generation-reset branch under the REAL probe: when [A]
+        restarts mid-loop the generation flips, wiping accrued sample state so
+        the watchdog never acts on the OLD instance's samples. A dead first
+        sample followed by a NEW-generation healthy reply gives 0 restarts and
+        down_samples 0."""
+        livez = self._livez("g2")
+        health = _health(generation="g2", active_total=0, queued_total=0)
+        replies = [ConnectionRefusedError("dead"), ConnectionRefusedError("dead"),
+                   livez, health]
         with tempfile.TemporaryDirectory() as tempdir:
             state_path, log_path = self._paths(tempdir)
             with mock.patch.object(watchdog_a, "STATE", state_path), \
                  mock.patch.object(watchdog_a, "LOG", log_path), \
-                 mock.patch.object(watchdog_a, "probe", side_effect=samples), \
+                 mock.patch.object(watchdog_a, "_read_json", side_effect=replies), \
                  mock.patch.object(watchdog_a.time, "sleep"), \
-                 mock.patch.object(watchdog_a, "log"), \
                  mock.patch.object(watchdog_a.subprocess, "run") as run:
                 rc = watchdog_a.main()
+            saved = json.loads(Path(state_path).read_text(encoding="utf-8"))
         self.assertEqual(rc, 0)
         run.assert_not_called()
+        self.assertEqual(saved["generation"], "g2")
+        self.assertEqual(saved["down_samples"], 0)
 
 
 if __name__ == "__main__":

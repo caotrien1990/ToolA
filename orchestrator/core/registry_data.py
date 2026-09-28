@@ -757,7 +757,7 @@ EXTRA_TOOL_SCHEMAS = [
 
                 "interactive": {"type": "boolean", "default": False, "description": "Windows keep_alive launches with a visible console/user-session process instead of DETACHED_PROCESS"},
 
-                "elevated": {"type": "boolean", "default": False, "description": "Windows only: request ShellExecuteW runas launch; no stdout/stderr capture or PID guarantee"},
+                "elevated": {"type": "boolean", "default": False, "description": "Windows only: request ShellExecuteW runas launch; no stdout/stderr capture or PID guarantee. Not needed for admin work: a normal child already inherits the High IL of [A]"},
 
                 "include_command": {"type": "boolean", "default": True, "description": "R43 P0 #4: when False, suppresses command_received/command/command_executed echo in response; replaced by command_hash_sha256 + command_preview (50 chars). Saves ~500-2000 bytes/call for long node -e / base64 scripts."},
 
@@ -2721,7 +2721,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["target_folder"]),
 
-    ('run_ps1_script', 'V15 R50 T2 narrow wrapper for PowerShell script-file execution. Hides runtime=powershell selection. Writes UTF-8 BOM .ps1 + OutputEncoding prelude + UTF-8 subprocess decode → Vietnamese diacritics survive end-to-end. Use INSTEAD of inline `powershell -Command` (blocked by R46 guard POWERSHELL_INLINE_FORBIDDEN). CASE-2008 destructive guard: Remove-Item (and aliases rm/del/ri/rd/rmdir/erase), Clear-Content, Move-Item, Copy-Item -Force and .NET deletes require confirm_destructive to match the scanned count, trigger a pre-run backup, and disable output truncation; -Include with -LiteralPath is refused (PowerShell ignores the filter and deletes everything).', {
+    ('run_ps1_script', 'V15 R50 T2 narrow wrapper for PowerShell script-file execution. Hides runtime=powershell selection. Writes UTF-8 BOM .ps1 + OutputEncoding prelude + UTF-8 subprocess decode → Vietnamese diacritics survive end-to-end. Use INSTEAD of inline `powershell -Command` (blocked by R46 guard POWERSHELL_INLINE_FORBIDDEN). CASE-2008 destructive guard: Remove-Item (and aliases rm/del/ri/rd/rmdir/erase), Clear-Content, Move-Item, Copy-Item -Force and .NET deletes require confirm_destructive to match the scanned count, trigger a pre-run backup, and disable output truncation; -Include with -LiteralPath is refused (PowerShell ignores the filter and deletes everything). Runs as a child of the elevated [A] daemon (High IL; a CA shell is Medium), so admin steps (schtasks /change, HKLM, services, firewall) run here instead of being handed to Anh; elevation is capability, not authority, so the MUTATE/DESTRUCTIVE gates still bind.', {
 
             "project_path": {"type": "string"},
 

@@ -38,7 +38,7 @@ risk_level: medium
 | `GET /api/token_panel` | UI-only metadata (masked token + TTL countdown) | UI chip, never for CA mutation |
 
 **Reuse rule (current):** trong cùng 1 CA process, token VALUE thường ổn định cho đến khi:
-- [A] restart (taskkill + relaunch)
+- [A] restart (a new process: new `pid` + `generation`)
 - TTL hết hạn (25 phút mặc định hoặc `ORCHESTRATOR_TOKEN_TTL_MINUTES`)
 - `/api/token` được gọi sau khi TTL hết hạn và server tự xoay token
 

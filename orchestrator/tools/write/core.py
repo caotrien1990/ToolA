@@ -639,7 +639,7 @@ def _token_text_hash(fp: Path) -> str:
     return ct.hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
 
 
-def _seal_read_token(fp: Path, project_path: str = "") -> bool:
+def _seal_read_token(fp: Path, project_path: str = "") -> tuple[bool, str]:
     """[A] vouches for the bytes its own write just left, so the CA's next write_fix is
     not refused FILE_CHANGED_OUTSIDE_ORCHESTRATOR for a change [A] made.
 
@@ -649,19 +649,50 @@ def _seal_read_token(fp: Path, project_path: str = "") -> bool:
     reads it back. Measured 2026-09-24: the inline copies it replaces used two digests
     and two keys, and write_new_file had none, so [A] stranded its own write on a BOM
     or CRLF file, under a nested marker, and after every overwrite. Call it under the
-    path gate right after the write, or it vouches for bytes someone else wrote."""
+    path gate right after the write, or it vouches for bytes someone else wrote.
+    F10 (2026-09-28): answers (sealed, error_kind) so a miss says WHY; still never raises."""
     import code_tools as ct
     root = project_path or ct.find_project_root(str(fp))
     if not root:
-        return False
+        return False, "no_project_root"
+    rel = str(fp)
     try:
         resolved = ct.Path(root).resolve()
         rel = str(fp.relative_to(resolved)).replace("\\", "/")
         stat = fp.stat()
-        return bool(ct._read_token_upsert(str(resolved), rel, _token_text_hash(fp),
-                                          stat.st_mtime, stat.st_size))
+        sealed = bool(ct._read_token_upsert(str(resolved), rel, _token_text_hash(fp),
+                                            stat.st_mtime, stat.st_size))
+        if sealed:
+            return True, ""
+        _logger.warning("read-token seal declined for %s", rel)
+        return False, "upsert_failed"
+    except Exception as exc:
+        # Never re-raise: the bytes are already committed, and a write that landed
+        # must not be reported as one that did not. Contention (F8/F9: the store
+        # re-raises SessionStoreContentionError) is transient -- warn; anything else
+        # is a genuine defect and gets the traceback.
+        if ct._session_contention_fields(exc) is not None:
+            _logger.warning("read-token seal contention for %s: %s", rel, exc)
+            return False, "SESSION_STORE_CONTENTION"
+        _logger.exception("read-token seal failed for %s", rel)
+        return False, type(exc).__name__
+
+
+def _report_seal_miss(result: dict, fp: Path, project_path: str, seal_error: str) -> None:
+    """F10: name an unlanded seal on a COMMITTED write. The bytes are on disk but the
+    token is not, so the next write_fix answers FILE_CHANGED_OUTSIDE_ORCHESTRATOR --
+    blaming "outside" for [A]'s own write, with no trace of why. ca_next_action is a
+    setdefault: advice already on the response (cache_delta, an auto-revert route)
+    outranks the reseed. Nothing is added when the seal lands -- the clean path pays
+    zero tokens."""
+    try:
+        rel = str(fp.relative_to(Path(project_path).resolve())).replace("\\", "/")
     except Exception:
-        return False
+        rel = str(fp)
+    result["read_token_sealed"] = False
+    result["read_token_seal_error"] = seal_error or "upsert_failed"
+    result.setdefault("ca_next_action",
+                      f"read_file_range(file_path={rel}, force_reseed=true) before the next write_fix")
 
 
 def _restore_backup_and_reseed(fp: Path, backup_path: Path, project_path: str = "", already_gated: bool = False) -> bool:
@@ -1825,7 +1856,9 @@ skip_symbol_check :bool =False )->str :
             # Seal the read token for the bytes this write left, so the next write_fix
             # does not answer FILE_CHANGED_OUTSIDE_ORCHESTRATOR without a re-read.
             if result.get("ok"):
-                await ct.asyncio.to_thread(_seal_read_token, fp, project_path)
+                _sealed ,_seal_err = await ct.asyncio.to_thread(_seal_read_token, fp, project_path)
+                if not _sealed :
+                    _report_seal_miss (result ,fp ,project_path ,_seal_err )
             if _xroot_managed:
                 log_result(fp, "write_fix", session_id, ok=bool(result.get("ok")))
         except Exception:
@@ -2260,7 +2293,9 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
         if result .get ("ok"):
             write_generation =_next_write_generation (fp )
             written_signature =_disk_signature (fp ,written_hash )
-            await ct.asyncio.to_thread(_seal_read_token, fp, project_path)
+            _sealed ,_seal_err = await ct.asyncio.to_thread(_seal_read_token, fp, project_path)
+            if not _sealed :
+                _report_seal_miss (result ,fp ,project_path ,_seal_err )
     synced =False
     if isinstance (result ,dict )and result .get ("ok"):
         # A-AUTO-UPGRADE (2026-07-12): write_new_file used to skip ALL
@@ -2292,7 +2327,9 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
                     elif target_exists and original_bytes is not None :
                         await ct.asyncio .to_thread (ct._atomic_write_bytes ,fp ,original_bytes )
                         synced = await ct.asyncio.to_thread(ct._update_cache_after_write, str(fp), project_path)
-                        await ct.asyncio.to_thread(_seal_read_token, fp, project_path)
+                        _sealed ,_seal_err = await ct.asyncio.to_thread(_seal_read_token, fp, project_path)
+                        if not _sealed :
+                            _report_seal_miss (result ,fp ,project_path ,_seal_err )
                     else :
                         try :
                             fp .unlink ()

@@ -77,10 +77,10 @@ OK output: `{"ok":true, "port":8083, ...}` (also note `generation` when present)
 | Connection refused, port 8083 free | [A] not started | Ask User run `[A:S]` |
 | Connection refused, port 8083 BUSY | Stale process owning port | Skill 16_server_lifecycle → port_owner_inspect |
 | Health 200 but `/api/tools` 404 | Old build, missing routes | Verify orchestrator.log timestamp matches today's restart |
-| Health 200 but prompt missing V15 markers | [A] restarted before V15 deploy | Notify User to re-run `[A:S]` after files committed |
+| Health 200 but prompt missing V15 markers | [A] restarted before V15 deploy | After files are committed and Anh's go-ahead: `restart_orchestrator_via_bat` (`delay_seconds=2` only); verify **new pid + generation** |
 | schtasks LastResult=1, NO_8083 | Task action `restart && start` short-circuit | Skill 16 High-IL pitfall; admin rebind wrapper |
-| Restart helper ran, still no listen | Import crash (e.g. registry_data JSON `true`/`false` in Python) | Tail orchestrator.log; fix source; [A:S] again |
-| Health ok but governance tools missing | Process never reloaded new registry | Restart via [A:S]; verify tool names + **new generation** |
+| Restart helper ran, still no listen | Import crash (e.g. registry_data JSON `true`/`false` in Python) | Tail orchestrator.log (read-only); STOP + report the traceback: the source fix needs Anh's break-glass while [A] is down, and Anh relaunches |
+| Health ok but governance tools missing | Process never reloaded new registry | `restart_orchestrator_via_bat` after Anh's go-ahead; verify tool names + **new pid + generation** |
 
 ## After health OK
 

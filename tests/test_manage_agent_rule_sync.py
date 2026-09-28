@@ -203,5 +203,78 @@ class TestManageAgentRegistryPathsMeetTheDenyList(unittest.TestCase):
         self.assertTrue(control["ok"], control)
 
 
+class TestManageAgentSkillSyncBundlesSharedReferences(unittest.TestCase):
+    """FIX2 (2026-09-28): a SKILL.md link "references/<name>.md" resolves beside the
+    skill OR in the shared .ToolA_Skill/references/ dir -- the skill_reference_missing
+    gate in code_tools.py accepts both -- but sync_skill (_ma_write_skill) copied only
+    the skill folder, so every shared-dir link dangled in every CA copy. sync_skill now
+    bundles the shared files a skill links, and the gate + sync ask ONE matcher
+    (_skill_reference_links), so they cannot drift apart again."""
+
+    def setUp(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tempdir.cleanup)
+        root = Path(self.tempdir.name)
+        self.repo = root / "repo"
+        self.src = self.repo / ".ToolA_Skill" / "skills" / "demo"
+        (self.src / "references").mkdir(parents=True)
+        # shared.md only in the shared dir; local.md exists in BOTH (skill-local must
+        # win); missing.md exists nowhere; the duplicate link proves per-name dedupe.
+        (self.src / "SKILL.md").write_text(
+            "# demo\n\nsee references/shared.md and references/local.md and "
+            "references/missing.md; shared again references/shared.md\n",
+            encoding="utf-8")
+        (self.src / "references" / "local.md").write_text("local\n", encoding="utf-8")
+        self.shared_dir = self.repo / ".ToolA_Skill" / "references"
+        self.shared_dir.mkdir(parents=True)
+        (self.shared_dir / "shared.md").write_text("shared\n", encoding="utf-8")
+        (self.shared_dir / "local.md").write_text("shared copy must not win\n", encoding="utf-8")
+        self.skill_dir = root / "agent_skills"
+        self.agent = {"id": "test-agent", "skill_dir": str(self.skill_dir), "skill_format": "folder"}
+        # _ma_write_skill resolves its source from code_tools.__file__.
+        patcher = mock.patch.object(code_tools, "__file__", str(self.repo / "code_tools.py"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_real_sync_bundles_shared_and_lets_skill_local_win(self):
+        result = code_tools._ma_write_skill(self.agent, {}, "demo", dry_run=False)
+
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(result["match"], result)
+        target = self.skill_dir / "demo"
+        self.assertEqual((target / "references" / "shared.md").read_bytes(),
+                         (self.shared_dir / "shared.md").read_bytes())
+        self.assertEqual((target / "references" / "local.md").read_bytes(),
+                         (self.src / "references" / "local.md").read_bytes())
+        self.assertFalse((target / "references" / "missing.md").exists())
+        self.assertEqual(result["files"], 3)
+        self.assertEqual(result["shared_references"], ["references/shared.md"])
+
+    def test_dry_run_previews_the_bundled_files_without_writing(self):
+        result = code_tools._ma_write_skill(self.agent, {}, "demo", dry_run=True)
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["status"], "dry_run")
+        self.assertEqual(result["files"], 3)
+        self.assertEqual(result["shared_references"], ["references/shared.md"])
+        self.assertFalse((self.skill_dir / "demo").exists())
+
+    def test_a_skill_with_no_reference_links_is_unchanged(self):
+        plain = self.repo / ".ToolA_Skill" / "skills" / "plain"
+        plain.mkdir(parents=True)
+        (plain / "SKILL.md").write_text("# plain\n\nno reference links here\n", encoding="utf-8")
+        agent = {"id": "test-agent", "skill_dir": str(self.skill_dir), "skill_format": "folder"}
+
+        result = code_tools._ma_write_skill(agent, {}, "plain", dry_run=False)
+
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(result["match"], result)
+        self.assertNotIn("shared_references", result)
+        self.assertEqual(code_tools._ma_skill_dir_summary(plain),
+                         code_tools._ma_skill_dir_summary(plain, {}))
+        self.assertEqual(result["files"], 1)
+        self.assertEqual(result["sha256"], code_tools._ma_skill_dir_summary(plain)["sha256"])
+
+
 if __name__ == "__main__":
     unittest.main()

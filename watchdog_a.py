@@ -90,14 +90,12 @@ def probe() -> tuple[str, str, str, dict, bool]:
 
 
 def _progress_fingerprint(health: dict) -> str:
-    lanes = health.get("executor_lanes") or []
-    counters = [sum(int(row.get(key, 0)) for row in lanes) for key in ("completed", "failed", "rejected")]
-    try:
-        stat = os.stat(LOG)
-        log_shape = [stat.st_size, stat.st_mtime_ns]
-    except OSError:
-        log_shape = [0, 0]
-    return json.dumps([str(health.get("generation") or ""), *counters, *log_shape], separators=(",", ":"))
+    # Live /health lanes publish only {name, active, queued, accepting}; the
+    # monotonic work counters are top-level accounting_* totals. The watchdog's
+    # own log line must not count as progress, so no LOG stat here.
+    counters = [int(health.get(key, 0)) for key in
+                ("accounting_processed_total", "accounting_failed_total", "accounting_rejected_total")]
+    return json.dumps([str(health.get("generation") or ""), *counters], separators=(",", ":"))
 
 
 def _load_state() -> dict:
@@ -128,8 +126,14 @@ def _sample_state(prev: dict, classification: str, generation: str, health: dict
     busy = totals["active"] + totals["queued"] > 0
     inactive = busy and now - last_progress_at >= INACTIVITY_WINDOW_SEC
     inactive_samples = int(prev.get("inactive_samples", 0)) + 1 if inactive else 0
+    # A restart needs PROVEN liveness loss, which the inactivity warning can
+    # never prove: only "down" samples (livez AND health both failed) accrue
+    # here, and any other sample resets the counter.
+    down = classification == "down" and not livez_ok
+    down_samples = int(prev.get("down_samples", 0)) + 1 if down else 0
     state = {"generation": generation, "last_fp": fp, "last_progress_at": last_progress_at,
-             "inactive_samples": inactive_samples, "last_classification": classification, "ts": now}
+             "inactive_samples": inactive_samples, "down_samples": down_samples,
+             "last_classification": classification, "ts": now}
     if inactive:
         log("WATCHDOG_INACTIVITY " + json.dumps({"lane":"all", **totals,
             "seconds_since_progress": round(now-last_progress_at, 3),
@@ -139,10 +143,8 @@ def _sample_state(prev: dict, classification: str, generation: str, health: dict
 
 def main() -> int:
     prev = _load_state()
-    last = None
     for attempt in range(FAILURE_THRESHOLD):
-        last = probe()
-        classification, generation, detail, health, livez_ok = last
+        classification, generation, detail, health, livez_ok = probe()
         state = _sample_state(prev, classification, generation, health, livez_ok)
         _save_state(state)
         prev = state
@@ -150,14 +152,19 @@ def main() -> int:
             return 0
         if attempt < FAILURE_THRESHOLD - 1:
             time.sleep(FAILURE_INTERVAL_SEC)
-    classification, generation, detail, health, livez_ok = last
-    if classification == "down" and not livez_ok and int(prev.get("inactive_samples", 0)) >= FAILURE_THRESHOLD:
-        log("liveness down with three inactive samples -> schtasks /run " + RESTART_TASK)
+    down_n = int(prev.get("down_samples", 0))
+    if down_n >= FAILURE_THRESHOLD:
+        log(str(down_n) + " consecutive liveness failures -> schtasks /run " + RESTART_TASK)
         try:
             result = subprocess.run(["schtasks", "/run", "/tn", RESTART_TASK], capture_output=True, text=True, timeout=30)
             log("schtasks rc=" + str(result.returncode))
         except Exception as exc:
             log("schtasks run failed: " + str(exc))
+        # One firing issues at most ONE restart: zero the accrual so a daemon
+        # that stays dead is retried once per later firing (no storm, no latch).
+        prev["down_samples"] = 0
+        prev["last_restart_at"] = time.time()
+        _save_state(prev)
         return 1
     return 0
 

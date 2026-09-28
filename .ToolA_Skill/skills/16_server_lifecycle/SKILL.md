@@ -52,7 +52,7 @@ Anti-pattern: ❌ Treat stale as always-blocker. Read-only T1 (search_code/find_
 |---------|-----------|
 | Port 8083 already in use | `server_lifecycle_status(8083)` → if same [A] running, OK; else kill old |
 | New code, UI same | `bundle_version_check(http://localhost:3099)` then `static_asset_cache_check` |
-| Stop-Process Access Denied | `server_lifecycle_status` → `can_kill=false` → recommend User Task Manager + .bat |
+| Stop-Process Access Denied | That measured the CA shell (Medium IL), not [A] (High IL). [A] itself → `restart_orchestrator_via_bat`; another PID → [A] `kill_process` only on Anh's ask. `server_lifecycle_status.can_kill` is a username estimate, not a permission probe |
 | "Restart but health still old PID" | `detect_stale_server(8083, expected_bundle_version=<from log>)` |
 | Browser shows old text after re-deploy | `static_asset_cache_check(<asset url>)` → Cache-Control + hash compare |
 | schtasks LastResult=1 / NO_8083 | Diagnose High-IL `&&` short-circuit (below); do not thrash more restarts first |
@@ -63,7 +63,7 @@ Anti-pattern: ❌ Treat stale as always-blocker. Read-only T1 (search_code/find_
 [A] needs to run at **High IL (Administrator)** so it can drive admin-context windows via WM_LBUTTONDOWN/UP (UIPI blocks Medium → High IL message routing). But "Right-click → Run as Administrator" prompts UAC every restart and breaks cross-elevation kills.
 
 ### Solution — Windows Task Scheduler `RunLevel=Highest`
-1. **One-time setup (User, elevated PowerShell — NOT right-click the .ps1):**
+1. **One-time setup (no High-IL [A] up yet → User, elevated PowerShell — NOT right-click the .ps1; a High-IL [A] that is up runs it via `run_ps1_script`, see Admin boundary):**
    - Win11 often **hides** “Run as administrator” on `.ps1` files. Open **PowerShell/Terminal as Administrator first**, then run the installer:
    ```powershell
    cd "D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator"
@@ -124,22 +124,21 @@ LastResult=0 + high_il_start.log OK → healthy High-IL path
 PowerShell: read `Get-ScheduledTask -TaskName ToolA_Orchestrator` Actions + `Get-ScheduledTaskInfo` LastTaskResult.
 
 ### Admin boundary (do not loop)
-- Non-admin `Set-ScheduledTask` → **Access denied**. CA **cannot** rebind High-IL task silently.
-- Report Anh once: **elevated PowerShell first**, then `.\install_orchestrator_admin_task.ps1` + `schtasks /Run /TN ToolA_Orchestrator` (do **not** tell Anh to right-click the `.ps1` — Win11 often has no admin entry there).
+- `Access denied` from the CA shell measures THAT shell (always Medium IL), not [A]. A High-IL [A] that is up runs the rebind itself via `run_ps1_script`, after Anh's go-ahead (capability ≠ authority); backup + diff steps in the Reference file.
+- Only when [A] is down, or `whoami /groups` through [A] answers Medium: report Anh once: **elevated PowerShell first**, then `.\install_orchestrator_admin_task.ps1` + `schtasks /Run /TN ToolA_Orchestrator` (do **not** tell Anh to right-click the `.ps1` — Win11 often has no admin entry there).
 - Soft-clear alone may make old `&&` chain work **temporarily** (LastResult=0) — still rebind to wrapper for durability.
 
-### Restart queued → [A] stays DOWN (recovery)
-Symptom after `restart_orchestrator_via_bat` / schtasks end+run:
-- Helper log says task started / health wait, but **NO_8083**, lock stale or cleared, no python orchestrator process.
-Cause: High-IL task **ended** old instance but failed to relaunch (fragile `&&` action, LastResult≠0, or import crash).
-Recovery (medium-IL, continue work; High-IL still needs Anh admin rebind later):
-1. Confirm no listen on 8083 + no orchestrator python; clear stale `.orchestrator_cache/orchestrator.lock*` only if nothing owns the port.
-2. Start detached medium-IL: `venv312/Scripts/python.exe -u orchestrator_server.py` from project root (background).
-3. Poll `/health` until ok + new generation; resume acceptance/governance verify.
-4. Still report Anh: durable High-IL = admin installer rebind — medium-IL is temporary bootstrap only.
+### Restart queued → [A] stays DOWN (STOP + report)
+Symptom after `restart_orchestrator_via_bat`: the helper log says task started / health wait, but `/health` never answers inside the poll window (**NO_8083**), and no orchestrator python owns the port.
+Cause: the relaunch half failed (fragile `&&` task action, LastResult≠0, import crash, or a stale lock).
+CA action = read-only diagnosis, then STOP:
+1. Poll `/health` THROUGH the refusal first: a refused port in the middle of a restart you asked for is expected. Conclude "down" only when it never comes back.
+2. Collect the facts read-only (native inspection mutates nothing): who owns 8083 (`netstat -ano`), the task action + LastTaskResult (`schtasks /query /tn ToolA_Orchestrator /v`), the `orchestrator.log` tail, and whether `.orchestrator_cache/orchestrator.lock*` exists. Checklist: the Reference file below.
+3. STOP and report those facts to Anh. With [A] down never launch `orchestrator_server.py` or `start_orchestrator.bat` yourself, never clear the lock, never edit [A] source: each is a native act on [A]'s own tree, which only Anh's break-glass authorizes (skill `12_native_audit`). A hand launch from a CA shell is also Medium IL: the .bat does not self-elevate.
+4. Anh relaunches (`schtasks /Run /TN ToolA_Orchestrator`, after the admin rebind if the task action is the broken `&&` chain). Then probe `/health` once and prove it: NEW `pid` + CHANGED `generation`.
 
 ### Import crash blocks start (related)
-If [A] dies immediately after restart: tail `orchestrator.log`. Classic: `registry_data.py` JSON-style `true`/`false` in Python → **NameError** at import → process never listens. Fix data, then [A:S] / medium-IL bootstrap again.
+If [A] dies immediately after restart: tail `orchestrator.log`. Classic: `registry_data.py` JSON-style `true`/`false` in Python → **NameError** at import → process never listens. Report the traceback to Anh and STOP: with [A] down the source fix is a native write into [A]'s tree, so it happens only under Anh's break-glass, and Anh relaunches.
 
 ### Reference
 See `references/high_il_restart_pitfalls.md` for verify checklist + admin rebind recipe.
@@ -183,25 +182,25 @@ When code edits did not change runtime after 2 attempts:
 
 Given [A]'s own `start_orchestrator.bat`, `restart_command` is `call restart_orchestrator_via_bat(delay_seconds=2)`.
 
-CA shows this to User; does NOT execute the kill itself (User in charge of admin/permission boundary).
+CA shows this to User; does NOT execute the kill itself. That boundary is AUTHORITY, not privilege: [A] runs at High IL and could, but a kill is Anh's call — on Anh's explicit ask, [A] `kill_process`.
 
 ## Anti-patterns
 
 - ❌ Suggesting "Run as administrator" (V15 R7 obsolete)
-- ❌ Restarting [A] by launching start_orchestrator.bat natively or via estart_orchestrator_via_task — the CA path is estart_orchestrator_via_bat only
+- ❌ Restarting [A] by launching start_orchestrator.bat natively or via `restart_orchestrator_via_task` — the CA path is `restart_orchestrator_via_bat` only
 - ❌ Opening a visible cmd/powershell when restarting [A] (`DETACHED_PROCESS`, `CREATE_NEW_CONSOLE`, powershell without `-WindowStyle Hidden`)
 - ❌ Passing `expected_generation` from a CA call (internal only)
 - ❌ Combining `DETACHED_PROCESS | CREATE_NO_WINDOW` (Win32 combo is invalid / undefined)
-- ❌ Calling Stop-Process from CA (permission boundary; User does it)
+- ❌ Calling Stop-Process from the CA shell (Medium IL: denied on a High-IL target; and a kill is Anh's call → on Anh's ask, [A] `kill_process`)
 - ❌ Polling `/health` rapidly during restart (1 probe per 2s; not 10/s)
 - ❌ Inferring "server fixed" from health OK alone — also check bundle_version_check (app) **or generation change** ([A])
-- ❌ Looping non-admin `Set-ScheduledTask` after Access denied
+- ❌ Looping `Set-ScheduledTask` from the CA shell after Access denied (the CA shell is Medium IL) — a High-IL [A] runs it once via `run_ps1_script`
 - ❌ Claiming High-IL durable while task still has `&&` chain (`ArgsHasAndAnd=true`)
 
 ## Guardrails
 
 - T4c tools are READ-ONLY by default — never execute kills
-- Any kill/restart suggestion → User-actionable hint, not automation
+- Any kill suggestion → User-actionable hint, not automation; restarting [A] itself is `restart_orchestrator_via_bat` after the go-ahead below
 - Port 0-1024 always treated as admin-protected (warn User)
 - Restart [A] needs user "tiến hành" / go-ahead; notify council; in-flight gate first
 
