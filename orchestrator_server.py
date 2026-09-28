@@ -2440,12 +2440,36 @@ def _write_ledger_target_remember(pp: str, fp: str, op_id: str) -> None:
 
 
 def _write_ledger_target_ids(pp: str, fp: str) -> list:
-    ids = _WRITE_LEDGER_BY_TARGET.get((pp, fp))
-    if isinstance(ids, list):
-        return list(ids)
-    if isinstance(ids, str) and ids:
-        return [ids]
-    return []
+    """Op ids whose recorded target resolves to the SAME file, oldest first.
+
+    Same question as _write_ledger_db_target_rows, answered over the in-memory
+    index: a row recorded under (parent, "pkg\\f.py") or ("", "<abs>") must be
+    found by a query spelled (root, "pkg\\f.py"). _WRITE_LEDGER_BY_TARGET is
+    bounded (per-key candidate cap, ~300 live records), so the scan is cheap.
+    The exact pair always matches (it covers file_path="" root-scoped keys,
+    whose canonical abs is "" and which must NOT cross-match other roots);
+    other keys match only when both sides resolve to one non-empty
+    _write_ledger_target_abs -- ONE matcher, same as the SQLite side.
+    """
+    want = _write_ledger_target_abs(pp, fp)
+    ids: list = []
+    for key, stored in _WRITE_LEDGER_BY_TARGET.items():
+        kpp, kfp = key if isinstance(key, tuple) and len(key) == 2 else ("", "")
+        if want:
+            hit = _write_ledger_target_abs(kpp, kfp) == want
+        else:
+            hit = (kpp, kfp) == (pp, fp)
+        if not hit:
+            continue
+        if isinstance(stored, str):
+            # Tolerate a legacy single-string value from an older generation.
+            stored = [stored] if stored else []
+        if not isinstance(stored, list):
+            continue
+        for op_id in stored:
+            if op_id not in ids:
+                ids.append(op_id)
+    return ids
 
 
 def _write_ledger_candidate_summary(rec: dict) -> dict:
@@ -2491,8 +2515,59 @@ def _write_ledger_pick_candidate(records: list, tool_filter: str = "") -> tuple:
     return None, candidates, True
 
 
+def _write_ledger_target_abs(pp: str, fp: str) -> str:
+    """ONE canonical identity for a ledger target: the absolute file it names.
+
+    Both the recording side (via _write_ledger_target) and every lookup side
+    (memory scan + SQLite canonical filter) resolve through THIS function, so
+    a row is found under any spelling that names the same file. abs =
+    normcase(normpath(join(pp, fp))); an absolute fp stays itself (join drops
+    pp), so the 15 measured spellings inside one repo -- (root, "f.py"),
+    (parent, "pkg\\f.py") and ("", "<abs>\\pkg\\f.py") -- all land on one key.
+    "" means "no file identity", and only an ABSOLUTE joined path is an
+    identity: a root-scoped operation (file_path=""), a pair that joins to a
+    relative path (no project_path to anchor it), or an unresolvable pair
+    never equals a file. Two relative-only rows therefore can never
+    cross-match through the canonical path; the exact-pair fallback still
+    covers a repeated identical spelling.
+    """
+    pp = str(pp or "")
+    fp = str(fp or "")
+    if not fp:
+        return ""
+    try:
+        joined = fp if os.path.isabs(fp) else os.path.join(pp, fp)
+        if not os.path.isabs(joined):
+            return ""
+        return os.path.normcase(os.path.normpath(joined))
+    except (ValueError, OSError):
+        return ""
+
+
+def _write_ledger_like_escape(base: str) -> str:
+    """Escape LIKE wildcards so a basename prefilter never over-matches.
+
+    '_' and '%' are single-char/any-string wildcards in LIKE; a file literally
+    named "a_b.py" would otherwise also answer for "axb.py". '!' is the ESCAPE
+    char and must be escaped too (LIKE 'a!_b' ESCAPE '!' treats !x as literal x).
+    """
+    out = []
+    for ch in str(base or ""):
+        if ch in ("!", "%", "_"):
+            out.append("!")
+        out.append(ch)
+    return "".join(out)
+
+
 def _write_ledger_target(body: dict) -> tuple[str, str]:
-    """Normalised (project_path, file_path) key so lookup survives slash/case variance."""
+    """Normalised STORAGE key (project_path, file_path) for one ledger row.
+
+    The key survives slash/case variance, but it is NOT the row's identity:
+    _write_ledger_target_abs is. Rows keep the pair exactly as recorded (no
+    migration -- store.py has no row-migration mechanism for write_operations),
+    and every lookup resolves both the query and each candidate through the
+    canonical matcher, so a row stored under a different spelling is found.
+    """
     pp = str((body or {}).get("project_path") or "")
     fp = str((body or {}).get("file_path") or (body or {}).get("path")
              or (body or {}).get("dst") or "")
@@ -2566,45 +2641,121 @@ def _write_ledger_db_upsert(rec: dict) -> bool:
         return False
 
 
+_WRITE_LEDGER_ROW_COLUMNS = (
+    "operation_id, tool, status, project_path, file_path, session_id, "
+    "started_at, finished_at, duration_ms, attempts, previous_status, "
+    "result_json, origin_generation, updated_at"
+)
+_WRITE_LEDGER_ROW_KEYS = (
+    "operation_id", "tool", "status", "project_path", "file_path",
+    "session_id", "started_at", "finished_at", "duration_ms", "attempts",
+    "previous_status", "result_json", "origin_generation", "updated_at",
+)
+
+
+def _write_ledger_row_to_rec(row) -> dict:
+    """One write_operations row -> ledger record (result_json parsed)."""
+    rec = dict(zip(_WRITE_LEDGER_ROW_KEYS, row))
+    raw_result = rec.pop("result_json", None)
+    try:
+        rec["result"] = json.loads(raw_result) if raw_result else None
+    except (TypeError, json.JSONDecodeError):
+        rec["result"] = None
+    return rec
+
+
+def _write_ledger_db_target_rows(conn, target: tuple[str, str], limit: int) -> list:
+    """Every stored row whose (project_path, file_path) resolves to target's file.
+
+    The pair is the STORAGE key, never the identity. One file written under
+    (root, "f.py"), (parent, "pkg\\f.py") or ("", "<abs>\\pkg\\f.py") produced
+    three keys, and the exact-pair WHERE answered "no ledger row" for the two
+    spellings it did not repeat (measured 2026-09-28: 15 invisible rows inside
+    one repo, incl. op 74b21aeedd7e5199 stored as parent-dir +
+    "project-orchestrator\\code_tools.py"). SQL keeps two branches -- the
+    historical exact pair (rides ix_write_operations_target_updated, LIMITed:
+    every row it returns is canonical by construction) and a basename
+    prefilter (LIKE ... ESCAPE '!', wildcards escaped, case-insensitive like
+    SQLite's LIKE) that reaches the other spellings. The prefilter carries NO
+    LIMIT: a LIMIT n BEFORE the Python filter starved the true row whenever
+    >= n NEWER same-basename rows sat in other directories (leader audit,
+    reproduced with 25 core.py rows -- exactly the silent "no ledger row" this
+    function exists to remove). Its cursor streams newest-first instead, the
+    ONE canonical matcher (_write_ledger_target_abs) decides per row, and the
+    scan stops once n canonical matches are collected -- every later cursor row
+    is older than n matches and can never enter the top n. No worse than the
+    previous no-match worst case: a leading-% LIKE scans anyway. Merged,
+    deduped by operation_id, newest-first exactly like the exact-pair ORDER BY
+    this replaces.
+    """
+    pp, fp = target
+    n = max(1, int(limit))
+    rows = conn.execute(
+        f"""SELECT {_WRITE_LEDGER_ROW_COLUMNS} FROM write_operations
+            WHERE project_path=? AND file_path=?
+            ORDER BY updated_at DESC LIMIT ?""",
+        (pp, fp, n),
+    ).fetchall()
+    want = _write_ledger_target_abs(pp, fp)
+    out: list = []
+    seen: set = set()
+    for row in rows:
+        rec = _write_ledger_row_to_rec(row)
+        seen.add(rec.get("operation_id"))
+        out.append(rec)
+    base = os.path.basename(want) if want else ""
+    if base:
+        escaped = _write_ledger_like_escape(base)
+        cursor = conn.execute(
+            f"""SELECT {_WRITE_LEDGER_ROW_COLUMNS} FROM write_operations
+                WHERE (file_path LIKE ? ESCAPE '!' OR file_path LIKE ? ESCAPE '!')
+                ORDER BY updated_at DESC""",
+            (f"%\\{escaped}", escaped),
+        )
+        try:
+            matched = 0
+            for row in cursor:
+                rec = _write_ledger_row_to_rec(row)
+                if _write_ledger_target_abs(rec.get("project_path") or "",
+                                            rec.get("file_path") or "") != want:
+                    continue
+                # Counted even when the exact-pair branch already added it:
+                # the stop rule needs n canonical CURSOR rows seen, and a
+                # duplicate is one of them.
+                matched += 1
+                op_id = rec.get("operation_id")
+                if op_id not in seen:
+                    seen.add(op_id)
+                    out.append(rec)
+                if matched >= n:
+                    break
+        finally:
+            cursor.close()
+    out.sort(key=lambda r: float(r.get("updated_at") or 0.0), reverse=True)
+    return out[:n]
+
+
 def _write_ledger_db_get(operation_id: str = "", target: tuple[str, str] | None = None):
     try:
-        columns = (
-            "operation_id, tool, status, project_path, file_path, session_id, "
-            "started_at, finished_at, duration_ms, attempts, previous_status, "
-            "result_json, origin_generation, updated_at"
-        )
         conn = sqlite3.connect(str(ct._SESSIONS_DB), timeout=0.1)
         try:
             conn.execute("PRAGMA busy_timeout=100")
             if operation_id:
                 row = conn.execute(
-                    f"SELECT {columns} FROM write_operations WHERE operation_id=?",
+                    f"""SELECT {_WRITE_LEDGER_ROW_COLUMNS} FROM write_operations
+                        WHERE operation_id=?""",
                     (operation_id,),
                 ).fetchone()
+                rec = _write_ledger_row_to_rec(row) if row else None
             elif target is not None:
-                row = conn.execute(
-                    f"""SELECT {columns} FROM write_operations
-                        WHERE project_path=? AND file_path=?
-                        ORDER BY updated_at DESC LIMIT 1""",
-                    target,
-                ).fetchone()
+                # Same canonical matcher as _write_ledger_db_list: whether a row
+                # is found must not depend on which spelling recorded it.
+                rows = _write_ledger_db_target_rows(conn, target, 1)
+                rec = rows[0] if rows else None
             else:
-                row = None
+                rec = None
         finally:
             conn.close()
-        if not row:
-            return None
-        keys = [
-            "operation_id", "tool", "status", "project_path", "file_path",
-            "session_id", "started_at", "finished_at", "duration_ms", "attempts",
-            "previous_status", "result_json", "origin_generation", "updated_at",
-        ]
-        rec = dict(zip(keys, row))
-        raw_result = rec.pop("result_json", None)
-        try:
-            rec["result"] = json.loads(raw_result) if raw_result else None
-        except (TypeError, json.JSONDecodeError):
-            rec["result"] = None
         return rec
     except Exception as exc:
         logger.warning("write ledger lookup failed: %s", exc)
@@ -2614,43 +2765,20 @@ def _write_ledger_db_get(operation_id: str = "", target: tuple[str, str] | None 
 def _write_ledger_db_list(target: tuple[str, str], limit: int = 20) -> list:
     """ISS-01: all ledger rows for one target, newest first.
 
-    `_write_ledger_db_get(target=...)` answers with ORDER BY updated_at DESC
-    LIMIT 1, which is exactly the silent swap the memory map had: the newest
+    `_write_ledger_db_get(target=...)` answers with the newest matching row,
+    which is exactly the silent swap the memory map had: the newest
     mutating tool on the root wins regardless of which tool the caller asked
-    about. Callers that need to disambiguate need the whole set.
+    about. Callers that need to disambiguate need the whole set -- and the
+    whole set means every SPELLING of the target
+    (_write_ledger_db_target_rows), not just the pair the caller repeated.
     """
     try:
-        columns = (
-            "operation_id, tool, status, project_path, file_path, session_id, "
-            "started_at, finished_at, duration_ms, attempts, previous_status, "
-            "result_json, origin_generation, updated_at"
-        )
         conn = sqlite3.connect(str(ct._SESSIONS_DB), timeout=0.1)
         try:
             conn.execute("PRAGMA busy_timeout=100")
-            rows = conn.execute(
-                f"""SELECT {columns} FROM write_operations
-                    WHERE project_path=? AND file_path=?
-                    ORDER BY updated_at DESC LIMIT ?""",
-                (target[0], target[1], max(1, int(limit))),
-            ).fetchall()
+            return _write_ledger_db_target_rows(conn, target, limit)
         finally:
             conn.close()
-        keys = [
-            "operation_id", "tool", "status", "project_path", "file_path",
-            "session_id", "started_at", "finished_at", "duration_ms", "attempts",
-            "previous_status", "result_json", "origin_generation", "updated_at",
-        ]
-        out = []
-        for row in rows or []:
-            rec = dict(zip(keys, row))
-            raw_result = rec.pop("result_json", None)
-            try:
-                rec["result"] = json.loads(raw_result) if raw_result else None
-            except (TypeError, json.JSONDecodeError):
-                rec["result"] = None
-            out.append(rec)
-        return out
     except Exception as exc:
         logger.warning("write ledger list failed: %s", exc)
         return []
@@ -11867,8 +11995,8 @@ async def git_stage(project_path=None, paths=None, paths_file="", allow_all=Fals
         out = await _attach_ocr_review(out, project_path)
     return json.dumps(out, ensure_ascii=False)
 async def git_unstage(project_path=None, paths=None, paths_file="", allow_all=False, expected_staged_hash=""): return json.dumps(await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.unstage, project_path, paths, paths_file, allow_all, expected_staged_hash), ensure_ascii=False)
-async def git_commit(project_path=None, message=None, expected_staged_hash="", allow_empty=False, no_verify=False, ocr=True):
-    out = await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.commit, project_path, message, expected_staged_hash, allow_empty, no_verify)
+async def git_commit(project_path=None, message=None, expected_staged_hash="", allow_empty=False, no_verify=False, allow_eol_churn=False, ocr=True):
+    out = await run_in_executor_lane("git", _git_tools.safe_call, _git_tools.commit, project_path, message, expected_staged_hash, allow_empty, no_verify, allow_eol_churn)
     if ocr:
         # The commit already exists by the time we get here, so the review is attached
         # to a range that really came into being -- and cannot un-commit it.
@@ -11886,7 +12014,7 @@ _GIT_TOOL_SPECS = [
 ("git_log",git_log,"T1",False,False,"none",{}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"limit":{"type":"integer","description":"Maximum commits","default":20},"ref":{"type":"string","description":"Revision reference","default":"HEAD"}},["project_path"]),
 ("git_stage",git_stage,"T2",True,True,"file_artifact",{"files":"paths"}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"paths":{"type":"array","items":{"type":"string"},"description":"Relative paths to stage"},"paths_file":{"type":"string","description":"UTF-8 newline-delimited relative paths; alternative to paths"},"allow_all":{"type":"boolean","description":"Explicitly stage all changes","default":False},"expected_state_hash":{"type":"string","description":"Optional pre-stage git_status state_hash"}},["project_path"]),
 ("git_unstage",git_unstage,"T2",True,True,"file_artifact",{"files":"paths"}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"paths":{"type":"array","items":{"type":"string"},"description":"Relative paths to unstage"},"paths_file":{"type":"string","description":"UTF-8 newline-delimited relative paths; alternative to paths"},"allow_all":{"type":"boolean","description":"Explicitly unstage all","default":False},"expected_staged_hash":{"type":"string","description":"Optional prior staged_hash"}},["project_path"]),
-("git_commit",git_commit,"T2",True,True,"repository_history",{"msg":"message"}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"message":{"type":"string","description":"Commit message"},"expected_staged_hash":{"type":"string","description":"git_status staged_hash, or \"auto\" to accept whatever is staged right now. Enforced by the git layer, not the schema: omitting it answers EXPECTED_STAGED_HASH_REQUIRED and carries current_staged_hash, so the corrected retry needs no second call."},"allow_empty":{"type":"boolean","description":"Allow empty commit","default":False},"no_verify":{"type":"boolean","description":"Bypass hooks only when explicitly authorized","default":False}},["project_path","message"]),
+("git_commit",git_commit,"T2",True,True,"repository_history",{"msg":"message"}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"message":{"type":"string","description":"Commit message"},"expected_staged_hash":{"type":"string","description":"git_status staged_hash, or \"auto\" to accept whatever is staged right now. Enforced by the git layer, not the schema: omitting it answers EXPECTED_STAGED_HASH_REQUIRED and carries current_staged_hash, so the corrected retry needs no second call."},"allow_empty":{"type":"boolean","description":"Allow empty commit","default":False},"no_verify":{"type":"boolean","description":"Bypass hooks only when explicitly authorized","default":False},"allow_eol_churn":{"type":"boolean","description":"Skip the EOL_CHURN_STAGED gate: commit even when a staged path's line endings differ from its HEAD blob (raw `git diff --cached --numstat` != `--ignore-cr-at-eol` numstat). Default false, which refuses BEFORE committing and lists every churn path with both added/deleted counts. Pass true ONLY for an intentional EOL-renormalization commit.","default":False}},["project_path","message"]),
 ]
 # A31-1: `git_stage`/`git_commit` now really RUN the zero-LLM delegate review and
 # attach it as `ocr_review`; the A30-B `ca_hint_review` string stays as the fallback

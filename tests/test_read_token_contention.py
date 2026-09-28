@@ -280,3 +280,140 @@ def test_write_fix_seal_defect_names_the_exception_class(project, monkeypatch):
     assert out["read_token_sealed"] is False
     assert out["read_token_seal_error"] == "_SchemaMismatch"
     assert "force_reseed" in out["ca_next_action"]
+
+
+# -- R2 residuals (2026-09-28): the restore path reports through the ONE matcher,
+# and the reseed advice wins the advice key when the cache refresh also failed.
+# (b) MEASURED NO: read_file_range(force_reseed=true) does NOT refresh the INDEX
+# entry -- the reseed path writes only the session-store read token
+# (orchestrator/tools/read/fs.py:170-171 _read_token_upsert via context.py:138);
+# the INDEX entry belongs to _update_cache_after_write -> surgical_mapper.
+# update_file_cache (code_tools.py:712). Neither step covers the other, so the
+# combined advice names BOTH, reseed first (the unsealed token is the hard
+# blocker: it refuses the next write_fix; a stale INDEX only misleads reads).
+# The seal is monkeypatched at the single seal function (write/core.
+# _seal_read_token) and the cache refresh at the single cache call
+# (code_tools._update_cache_after_write) -- never at the answer dict.
+
+from orchestrator.tools.write import core as write_core  # noqa: E402
+
+
+def _counting_seal(results):
+    """Patch for write_core._seal_read_token: return pre-set (sealed, kind) per
+    call index, repeating the last one. Call order on the write_fix revert path:
+    1 = the original write's seal (core.py:1894), 2 = the restore's re-seal
+    (core.py:738)."""
+    calls = []
+
+    def _seal(fp, project_path=""):
+        calls.append(str(fp))
+        return results[min(len(calls) - 1, len(results) - 1)]
+    return _seal
+
+
+_KEEP = "def f():\n    return 1\n\n\nvalue = f()\n"
+
+
+def _keep_file(root: Path) -> Path:
+    """A second file whose lines 1-2 replacement removes a still-referenced def:
+    the patch passes every PRE-write gate and dies in the POST-write symbol
+    check, so the write auto-reverts through _restore_backup_and_reseed -- the
+    restore path under test, with no patch on the validation itself."""
+    keep = root / "keep.py"
+    keep.write_text(_KEEP, encoding="utf-8")
+    assert _read(keep, root)["read_token_seeded"] is True
+    return keep
+
+
+def test_restore_seal_miss_is_reported_through_the_one_matcher(project, monkeypatch):
+    """Restore path + forced seal failure: the answer must carry
+    read_token_sealed:false, the seal error, and the reseed advice -- and the
+    advice must SURVIVE whatever the revert branch assigns to ca_next_action
+    afterwards (write_fix / the draft _view() update).
+
+    Pins core.py:738-741 (_restore_backup_and_reseed captures the seal into the
+    caller-owned seal_out box), 1971-1973 (the symbol-revert passes the box),
+    1995-1996 or 2008-2009 (late report, AFTER the branch's own ca_next_action
+    assignment and the draft update, with the _seal_out.get("sealed", _sealed)
+    fallback) and 710-718 (the ONE _report_seal_miss matcher sets the keys and
+    ASSIGNS the advice). Mutant killed: a restore that ignores its seal result
+    (pre-fix `_seal_read_token(fp, project_path)` with the tuple dropped) adds
+    no key -- read_token_sealed would be missing here. The seal is patched at
+    the single seal function only; the store, the INDEX refresh and the answer
+    dict stay real."""
+    root, target = project
+    _writable_project(root, target)
+    keep = _keep_file(root)
+    monkeypatch.setattr(write_core, "_seal_read_token",
+                        _counting_seal([(True, ""), (False, "probe_refused")]))
+    out = json.loads(asyncio.run(code_tools.write_fix(
+        "keep.py", 1, 2, "x = 1", project_path=str(root))))
+    assert out["ok"] is False
+    assert out["auto_reverted"] is True, out
+    assert keep.read_text(encoding="utf-8") == _KEEP  # the restore landed
+    assert out["read_token_sealed"] is False
+    assert out["read_token_seal_error"] == "probe_refused"
+    assert out["ca_next_action"].startswith("read_file_range(file_path=keep.py")
+    assert "force_reseed=true" in out["ca_next_action"]
+    # cache refresh succeeded on this path -> no cache_delta step in the advice
+    assert "cache_delta" not in out["ca_next_action"]
+
+
+def test_restore_seal_success_adds_no_seal_keys(project):
+    """Restore path + seal success: none of the seal keys may appear -- the
+    clean path still pays zero tokens (same contract as F10's
+    test_clean_write_carries_no_seal_keys, on the revert route).
+
+    Pins the same lines from the negative side: the report guard at
+    core.py:1995/2008 `if not _seal_out.get("sealed", _sealed):` must stay
+    False when the restore's re-seal landed, and the branch's normal revert
+    advice must survive untouched. No patch at all -- real seal, real store."""
+    root, target = project
+    _writable_project(root, target)
+    keep = _keep_file(root)
+    out = json.loads(asyncio.run(code_tools.write_fix(
+        "keep.py", 1, 2, "x = 1", project_path=str(root))))
+    assert out["ok"] is False
+    assert out["auto_reverted"] is True, out
+    assert keep.read_text(encoding="utf-8") == _KEEP
+    assert "read_token_sealed" not in out
+    assert "read_token_seal_error" not in out
+    assert "force_reseed" not in out["ca_next_action"]
+
+
+def test_cache_sync_failure_plus_seal_miss_reseed_advice_wins(project, monkeypatch):
+    """cache_delta refresh fails AND the seal misses: the advice key must be the
+    reseed-first COMBINED advice (measured NO on (b) -- force_reseed does not
+    repair the INDEX, so it cannot simply replace the cache_delta advice),
+    while cache_delta's OWN error fields stay intact.
+
+    Pins core.py:2111-2112 (the deferred report runs AFTER the cache_sync
+    branch, so it sees cache_synced=False), 713-717 (the combined-advice branch
+    keyed on cache_synced is False) and 718 (ASSIGNMENT, not the pre-fix
+    setdefault that let the cache branch's advice win). Also pins 2036-2043:
+    action_required/fallback_sequence/cache_sync_warning are untouched, and the
+    cache branch's own ca_next_action is a setdefault the report overwrites.
+    Mutant killed: pre-fix setdefault in _report_seal_miss left
+    ca_next_action == "cache_delta" here."""
+    root, target = project
+    _writable_project(root, target)
+    monkeypatch.setattr(code_tools, "_update_cache_after_write", lambda *a, **k: False)
+    monkeypatch.setattr(write_core, "_seal_read_token",
+                        _counting_seal([(False, "probe_refused")]))
+    out = json.loads(asyncio.run(code_tools.write_fix(
+        "mod.py", 1, 1, "x = 2", project_path=str(root))))
+    assert out["ok"] is True, out
+    assert target.read_text(encoding="utf-8") == "x = 2\n"
+    assert out["cache_synced"] is False
+    assert out["read_token_sealed"] is False
+    assert out["read_token_seal_error"] == "probe_refused"
+    # reseed-first combined advice wins the advice key ...
+    advice = out["ca_next_action"]
+    assert advice.startswith("read_file_range(file_path=mod.py")
+    assert "force_reseed=true" in advice
+    assert "cache_delta" in advice
+    assert advice.index("force_reseed") < advice.index("cache_delta")
+    # ... while cache_delta's own error fields stay intact
+    assert out["action_required"] == "cache_delta"
+    assert out["fallback_sequence"] == ["cache_delta", "read_file_range"]
+    assert "cache_sync_warning" in out

@@ -26,7 +26,7 @@ validate(file_path, project_path="", checks=["file"], lang="auto", expected_enco
 ```
 
 `checks` accepts list of:
-- `file` — syntax (py_compile for .py, node --check for .js/.ts, UTF-8 validity for .html)
+- `file` — syntax (py_compile + ruff for .py, node --check for .js, esbuild SYNTAX check for .ts/.jsx/.tsx/.vue — never a type check, UTF-8 + node --check on `<script>` blocks for .html, strict parse for .json/.css/.toml)
 - `symbols` — AST drift; compares against INDEX, flags accidentally deleted functions/classes
 - `encoding` — UTF-8 integrity + BOM detection + mojibake + Vietnamese diacritic check
 

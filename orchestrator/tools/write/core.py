@@ -614,18 +614,26 @@ backup_paths: dict[str, str]) -> dict:
     if verify.get("ok"):
         return {"ok":True, "validation":verify}
     root = ct.Path(project_path).resolve()
-    for rel in changed_files:
-        bak = backup_paths.get(rel)
-        fp = ct._resolve_project_file(str(root), rel)
-        if bak and ct.Path(bak).exists():
-            _restore_backup_and_reseed(fp, ct.Path(bak), project_path)
-    return {
+    answer = {
     "ok":False,
     "error_name":"BATCH_VERIFY_FAILED_AUTO_REVERT",
     "error":"Batch verification failed; reverted changed files from backups.",
     "auto_reverted":True,
     "validation":verify,
     }
+    for rel in changed_files:
+        bak = backup_paths.get(rel)
+        fp = ct._resolve_project_file(str(root), rel)
+        if bak and ct.Path(bak).exists():
+            # R2 residual (a): route the restore's seal result through the SAME
+            # _report_seal_miss matcher. The keys land on `answer`, which
+            # apply_after_dry_run merges into the caller's result, so a seal miss
+            # on the batch-revert path survives to the response.
+            _seal_out = {}
+            _restore_backup_and_reseed(fp, ct.Path(bak), project_path, False, _seal_out)
+            if not _seal_out.get("sealed", True):
+                _report_seal_miss(answer, fp, project_path, _seal_out.get("error", ""))
+    return answer
 
 
 def _token_text_hash(fp: Path) -> str:
@@ -681,32 +689,56 @@ def _seal_read_token(fp: Path, project_path: str = "") -> tuple[bool, str]:
 def _report_seal_miss(result: dict, fp: Path, project_path: str, seal_error: str) -> None:
     """F10: name an unlanded seal on a COMMITTED write. The bytes are on disk but the
     token is not, so the next write_fix answers FILE_CHANGED_OUTSIDE_ORCHESTRATOR --
-    blaming "outside" for [A]'s own write, with no trace of why. ca_next_action is a
-    setdefault: advice already on the response (cache_delta, an auto-revert route)
-    outranks the reseed. Nothing is added when the seal lands -- the clean path pays
-    zero tokens."""
+    blaming "outside" for [A]'s own write, with no trace of why. Nothing is added when
+    the seal lands -- the clean path pays zero tokens.
+
+    R2 residual (b), measured 2026-09-28: ca_next_action used to be a setdefault, so
+    the cache_delta branch's advice won when the post-write refresh ALSO failed. But
+    read_file_range(force_reseed=true) does NOT repair that staleness -- it writes
+    only the session-store read token (read/fs.py:170 _read_token_upsert), never the
+    INDEX entry that _update_cache_after_write -> surgical_mapper.update_file_cache
+    owns (code_tools.py:712). Neither step covers the other, and the unsealed token
+    is the HARD blocker (it refuses the next write_fix) while a stale INDEX only
+    misleads reads -- so this report now ASSIGNS the advice, reseed first, and names
+    cache_delta as the second step when cache_synced is False. The cache_delta
+    branch's own error fields (cache_sync_warning, action_required,
+    fallback_sequence) are left untouched."""
     try:
         rel = str(fp.relative_to(Path(project_path).resolve())).replace("\\", "/")
     except Exception:
         rel = str(fp)
     result["read_token_sealed"] = False
     result["read_token_seal_error"] = seal_error or "upsert_failed"
-    result.setdefault("ca_next_action",
-                      f"read_file_range(file_path={rel}, force_reseed=true) before the next write_fix")
+    advice = f"read_file_range(file_path={rel}, force_reseed=true) before the next write_fix"
+    if result.get("cache_synced") is False:
+        advice += (". Then cache_delta(project_path): the post-write INDEX refresh also "
+                   "failed and force_reseed does NOT repair the INDEX entry -- reseed "
+                   "only re-seals the read token. Reseed first: the unsealed token "
+                   "refuses the next write_fix; a stale INDEX only misleads reads.")
+    result["ca_next_action"] = advice
 
 
-def _restore_backup_and_reseed(fp: Path, backup_path: Path, project_path: str = "", already_gated: bool = False) -> bool:
+def _restore_backup_and_reseed(fp: Path, backup_path: Path, project_path: str = "", already_gated: bool = False,
+                               seal_out: dict | None = None) -> bool:
     """Put the .bak's bytes back and leave the CA a file it can write again.
 
     Returns whether the INDEX sync landed; callers report it as cache_synced.
     Measured 2026-09-24: this restored through read_text()+_atomic_write_text, which
     folded CRLF to LF (and would turn undecodable bytes into U+FFFD) under
-    auto_reverted:true, and it returned True whatever the sync did."""
+    auto_reverted:true, and it returned True whatever the sync did.
+    R2 residual (a), measured 2026-09-28: the seal result was ignored here, so a
+    seal miss on the restore path was never reported. The bool return is pinned by
+    test_write_hash_domain_contract, so the (sealed, error) pair rides out through
+    the caller-owned `seal_out` box and the CALLER routes it through the ONE
+    matcher, _report_seal_miss -- no second copy of the keys."""
     import code_tools as ct
     def _do() -> bool:
         ct._atomic_write_bytes(fp, backup_path.read_bytes())
         synced = bool(ct._update_cache_after_write(str(fp), project_path or None))
-        _seal_read_token(fp, project_path)
+        sealed, seal_error = _seal_read_token(fp, project_path)
+        if seal_out is not None:
+            seal_out["sealed"] = sealed
+            seal_out["error"] = seal_error
         return synced
     if already_gated:
         return _do()
@@ -1088,12 +1120,35 @@ _WRITE_BACKUP_LEDGER_NAME = "write_backups.jsonl"
 _WRITE_BACKUP_SEED_MARKER = ".write_backups.seeded"
 
 
+# 2026-09-28: ONE env override redirects the WAL DIRECTORY. Without it, every
+# pytest run performing a real write_fix appends tmp_path .bak rows into the
+# REAL repo ledger (the one the D4 retention sweep reads). Read at CALL time,
+# not import time, so a pytest_configure default and monkeypatch.setenv both
+# land. Unset or empty = repo-root default, byte-for-byte the old behaviour.
+_WRITE_BACKUP_LEDGER_DIR_ENV = "ORCHESTRATOR_WRITE_BACKUP_LEDGER_DIR"
+
+
+def _write_backup_ledger_dir() -> Path:
+    """Directory holding BOTH the WAL ledger and its seed marker.
+
+    One helper for the directory, used by both path functions below: the
+    ledger and the marker must never be split apart (A02/A30 shared fate,
+    see the comment block above). ORCHESTRATOR_WRITE_BACKUP_LEDGER_DIR set
+    (non-empty) -> that directory; unset or empty -> the repo-root
+    .orchestrator_cache, byte-for-byte the pre-override default.
+    """
+    override = os.environ.get(_WRITE_BACKUP_LEDGER_DIR_ENV, "")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parents[3] / ".orchestrator_cache"
+
+
 def _write_backup_ledger_path() -> Path:
-    return Path(__file__).resolve().parents[3] / ".orchestrator_cache" / _WRITE_BACKUP_LEDGER_NAME
+    return _write_backup_ledger_dir() / _WRITE_BACKUP_LEDGER_NAME
 
 
 def _write_backup_seed_marker_path() -> Path:
-    return Path(__file__).resolve().parents[3] / ".orchestrator_cache" / _WRITE_BACKUP_SEED_MARKER
+    return _write_backup_ledger_dir() / _WRITE_BACKUP_SEED_MARKER
 
 
 def _record_write_backup(target: Path, bak: Path) -> None:
@@ -1851,14 +1906,15 @@ skip_symbol_check :bool =False )->str :
         _mark_phase("write")
         if _xroot_managed:
             log_intent(fp, "write_fix", session_id)
+        _sealed ,_seal_err = True ,""
         try:
             result = await ct.asyncio.to_thread(_write)
             # Seal the read token for the bytes this write left, so the next write_fix
             # does not answer FILE_CHANGED_OUTSIDE_ORCHESTRATOR without a re-read.
+            # R2 residual (b): capture only -- the report runs after cache_sync (just
+            # before the final return), so a failed refresh is named in the SAME advice.
             if result.get("ok"):
                 _sealed ,_seal_err = await ct.asyncio.to_thread(_seal_read_token, fp, project_path)
-                if not _sealed :
-                    _report_seal_miss (result ,fp ,project_path ,_seal_err )
             if _xroot_managed:
                 log_result(fp, "write_fix", session_id, ok=bool(result.get("ok")))
         except Exception:
@@ -1882,8 +1938,9 @@ skip_symbol_check :bool =False )->str :
                 _mark_phase("auto_revert")
                 bak =write_backup_path (fp )
                 reverted_synced =False
+                _seal_out = {}
                 if bak .exists ():
-                    reverted_synced = await ct.asyncio.to_thread(_restore_backup_and_reseed, fp, bak, project_path, True)
+                    reverted_synced = await ct.asyncio.to_thread(_restore_backup_and_reseed, fp, bak, project_path, True, _seal_out)
                 result ["ok"]=False
                 result ["syntax_ok"]=False
                 # V15 R41: explicit error_name so CA không nhầm thành token/auth issue.
@@ -1913,6 +1970,10 @@ skip_symbol_check :bool =False )->str :
                     val .get ("error","")or "",{"skip_symbol_check":skip_symbol_check }))
                 except Exception as _draft_exc :
                     result ["draft_error"]=str (_draft_exc )[:200 ]
+                # R2 residual (a): report LAST -- the draft _view() update above
+                # rewrites ca_next_action, so an earlier report would not survive.
+                if not _seal_out.get("sealed", _sealed):
+                    _report_seal_miss(result, fp, project_path, _seal_out.get("error", _seal_err))
                 return ct.json .dumps (result ,ensure_ascii =False )
             if fp .suffix .lower ()==".py" and val .get ("lint_warning"):
                 # #7: a write answers for what IT introduced, not for the file's
@@ -1930,8 +1991,9 @@ skip_symbol_check :bool =False )->str :
                 if not sym .get ("ok"):
                     _mark_phase("auto_revert")
                     reverted_synced =False
+                    _seal_out = {}
                     if bak .exists ():
-                        reverted_synced = await ct.asyncio.to_thread(_restore_backup_and_reseed, fp, bak, project_path, True)
+                        reverted_synced = await ct.asyncio.to_thread(_restore_backup_and_reseed, fp, bak, project_path, True, _seal_out)
                     result ["ok"]=False
                     result ["error_name"]=sym .get ("error_name","SYMBOL_DRIFT_AUTO_REVERT")
                     result ["error"]=sym .get ("error","Symbol check failed")
@@ -1953,6 +2015,8 @@ skip_symbol_check :bool =False )->str :
                         # restore the symbol, or declare the removal intended --
                         # are a fresh write_fix.
                         result ["ca_next_action"]="write_fix"
+                        if not _seal_out.get("sealed", _sealed):
+                            _report_seal_miss(result, fp, project_path, _seal_out.get("error", _seal_err))
                         return ct.json .dumps (result ,ensure_ascii =False )
                     result ["ca_next_action"]="write_draft_patch"
                     try :
@@ -1962,6 +2026,10 @@ skip_symbol_check :bool =False )->str :
                         sym .get ("error","")or "import check failed",{"skip_symbol_check":skip_symbol_check }))
                     except Exception as _draft_exc :
                         result ["draft_error"]=str (_draft_exc )[:200 ]
+                    # R2 residual (a): report LAST -- the draft _view() update above
+                    # rewrites ca_next_action, so an earlier report would not survive.
+                    if not _seal_out.get("sealed", _sealed):
+                        _report_seal_miss(result, fp, project_path, _seal_out.get("error", _seal_err))
                     return ct.json .dumps (result ,ensure_ascii =False )
                 result ["symbol_check"]=sym
                 result ["symbols_changed"]=list (sym .get ("symbols_added")or sym .get ("symbols_changed")or [])
@@ -1989,7 +2057,12 @@ skip_symbol_check :bool =False )->str :
                 "KHONG goi refresh_project_map tren mot root lon nhu [A:P]."
                 )
                 result ["action_required"]="cache_delta"
-                result ["ca_next_action"]="cache_delta"
+                # R2 residual (b): setdefault, never assign -- the deferred
+                # _report_seal_miss below runs AFTER this branch and owns
+                # ca_next_action when the seal did not land. cache_delta's own
+                # error fields (cache_sync_warning, action_required,
+                # fallback_sequence) stay intact either way.
+                result .setdefault ("ca_next_action","cache_delta")
                 result ["fallback_sequence"]=["cache_delta","read_file_range"]
                 # R43 P0 #3-A: surface new_hash + new_mtime for sequential write chains.
                 # CA can pass new_hash as expected_hash in next write_fix on the same file to
@@ -2054,6 +2127,12 @@ skip_symbol_check :bool =False )->str :
                                      "files against the live registry: %s" % _drift)
                 result.setdefault("ca_next_action", "rule_drift_check")
 
+    # R2 residual (b): deferred seal-miss report. Runs AFTER the cache_sync
+    # branch above, so _report_seal_miss sees cache_synced=False and names both
+    # recovery steps (reseed first); its assignment wins the advice key while
+    # cache_delta's own error fields stay intact.
+    if not _sealed :
+        _report_seal_miss (result ,fp ,project_path ,_seal_err )
     return ct.json .dumps (result )
 
 
@@ -2290,12 +2369,13 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
     async with _gate_for_paths ([fp]):
         _mark_phase("write")
         result =await ct.asyncio .to_thread (_write )
+        _sealed ,_seal_err = True ,""
         if result .get ("ok"):
             write_generation =_next_write_generation (fp )
             written_signature =_disk_signature (fp ,written_hash )
+            # R2 residual (b): capture only -- the report runs after cache_sync
+            # (below), so the combined advice can name a stale INDEX too.
             _sealed ,_seal_err = await ct.asyncio.to_thread(_seal_read_token, fp, project_path)
-            if not _sealed :
-                _report_seal_miss (result ,fp ,project_path ,_seal_err )
     synced =False
     if isinstance (result ,dict )and result .get ("ok"):
         # A-AUTO-UPGRADE (2026-07-12): write_new_file used to skip ALL
@@ -2315,6 +2395,14 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
             if not val .get ("ok"):
                 _mark_phase("auto_revert")
                 superseded =False
+                # R2 residual (a)+(b): capture the restore's own seal result and
+                # report it AFTER cache_synced is on the answer, so the combined
+                # advice can name a stale INDEX too (one matcher, _report_seal_miss).
+                # Seeded from the ORIGINAL write's capture, not (True, ""): the
+                # superseded/unlink branches run no restore, and the original miss
+                # must stay reported there -- the restore's own result overwrites
+                # it only when a restore actually re-sealed the current bytes.
+                _rsealed ,_rerr =_sealed ,_seal_err
                 async with _gate_for_paths ([fp]):
                     current_hash =ct._sha256_file (fp )if fp .exists ()else ""
                     owns_write =(
@@ -2327,9 +2415,7 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
                     elif target_exists and original_bytes is not None :
                         await ct.asyncio .to_thread (ct._atomic_write_bytes ,fp ,original_bytes )
                         synced = await ct.asyncio.to_thread(ct._update_cache_after_write, str(fp), project_path)
-                        _sealed ,_seal_err = await ct.asyncio.to_thread(_seal_read_token, fp, project_path)
-                        if not _sealed :
-                            _report_seal_miss (result ,fp ,project_path ,_seal_err )
+                        _rsealed ,_rerr = await ct.asyncio.to_thread(_seal_read_token, fp, project_path)
                     else :
                         try :
                             fp .unlink ()
@@ -2357,6 +2443,12 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
                     val .get ("error","")or "",{"overwrite":overwrite }))
                 except Exception as _draft_exc :
                     result ["draft_error"]=str (_draft_exc )[:200 ]
+                # R2 residual (a): report LAST -- the assignments and the draft
+                # _view() update above rewrite ca_next_action, so an earlier
+                # report would not survive. cache_synced is already on the
+                # answer, so the combined advice names a stale INDEX too.
+                if not _rsealed :
+                    _report_seal_miss (result ,fp ,project_path ,_rerr )
                 return ct.json .dumps (result ,ensure_ascii =False )
             result ["validation"]=val
         # TOOLA-AHEALTHHUNG-R1: write_fix already offloads this; write_new_file
@@ -2384,8 +2476,17 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
             "KHONG goi refresh_project_map tren mot root lon nhu [A:P]."
             )
             result ["action_required"]="cache_delta"
-            result ["ca_next_action"]="cache_delta"
+            # R2 residual (b), measured 2026-09-28: force_reseed does NOT refresh the
+            # INDEX entry, so this branch must not clobber a seal-miss report --
+            # setdefault, never assign; the report below (which runs AFTER this
+            # branch) owns ca_next_action when the seal did not land.
+            result .setdefault ("ca_next_action","cache_delta")
             result ["fallback_sequence"]=["cache_delta","read_file_range"]
+        # R2 residual (b): report a seal miss only AFTER cache_sync has run, so
+        # _report_seal_miss sees cache_synced=False and names BOTH steps (reseed
+        # first). The revert path above exits earlier and reports its own seal.
+        if not _sealed :
+            _report_seal_miss (result ,fp ,project_path ,_seal_err )
         if _cache_warning :
             result ["warning"]=_cache_warning
         # A30-P1 auto-chain rule 1, mirrored from the identical block in

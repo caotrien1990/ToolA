@@ -21,6 +21,7 @@ These tests pin BEHAVIOUR, not shape:
 """
 import asyncio
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -303,11 +304,19 @@ class TestBootWriteSweepLedgerA02(unittest.TestCase):
 
         Deliberately asserted as a relationship between the two helpers and the
         repo's own cache-dir name -- not as a hardcoded absolute path.
+
+        The env var is removed explicitly: conftest's pytest_configure fills
+        ORCHESTRATOR_WRITE_BACKUP_LEDGER_DIR with a tmp dir (the B031-style
+        fence that keeps test .bak rows out of the real repo ledger), so with
+        the default live the helpers resolve THERE. This test pins the UNSET
+        default, so it must delenv -- never inherit.
         """
         import surgical_mapper as sm
 
-        led = write_core._write_backup_ledger_path()
-        mk = write_core._write_backup_seed_marker_path()
+        with mock.patch.dict(os.environ):
+            os.environ.pop(write_core._WRITE_BACKUP_LEDGER_DIR_ENV, None)
+            led = write_core._write_backup_ledger_path()
+            mk = write_core._write_backup_seed_marker_path()
 
         self.assertEqual(
             led.parent,

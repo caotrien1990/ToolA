@@ -112,6 +112,7 @@ _COLOUR_FORCING_VARS = ("FORCE_COLOR", "CLICOLOR_FORCE", "PY_COLORS")
 
 _SESSIONS_DB_ENV = "ORCHESTRATOR_SESSIONS_DB"
 _GENERATION_FILE_ENV = "ORCHESTRATOR_GENERATION_FILE"
+_WRITE_BACKUP_LEDGER_DIR_ENV = "ORCHESTRATOR_WRITE_BACKUP_LEDGER_DIR"
 
 # B031: only the directories THIS conftest created with `mkdtemp` below. A value
 # supplied by the caller is never recorded and so never removed -- the A53 rule
@@ -146,6 +147,18 @@ def pytest_configure(config):  # noqa: ARG001 - pytest hook signature
         gen_dir = Path(tempfile.mkdtemp(prefix="orch_pytest_generation_"))
         _B031_OWNED_TEMP_DIRS.append(gen_dir)
         os.environ[_GENERATION_FILE_ENV] = str(gen_dir / "server_generation.json")
+
+    # Same rule as A53, third file: keep the test run OUT of the production
+    # write-backup WAL. orchestrator/tools/write/core.py resolves
+    # write_backups.jsonl (+ its seed marker) from this DIRECTORY env var at
+    # call time; unset, it falls back to the real repo .orchestrator_cache --
+    # so every test performing a real write_fix appended its tmp_path .bak row
+    # into the ledger the D4 retention sweep reads (measured: 212 rows).
+    # Unlike the two blocks above this one is a DIR, not a file path.
+    if not os.environ.get(_WRITE_BACKUP_LEDGER_DIR_ENV):
+        bak_dir = Path(tempfile.mkdtemp(prefix="orch_pytest_bak_ledger_"))
+        _B031_OWNED_TEMP_DIRS.append(bak_dir)
+        os.environ[_WRITE_BACKUP_LEDGER_DIR_ENV] = str(bak_dir)
 
 
 # --- STT-27 (B032): release the process-global SessionWriter after every test ---

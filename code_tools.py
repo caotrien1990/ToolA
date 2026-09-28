@@ -1469,7 +1469,7 @@ _ENGLISH_TOOL_DESCRIPTIONS = {
     "query_index": "Filter indexed files by group, complexity, LOC, fnmatch pattern, and optional text query.",
     "get_usage_stats": "Read APP_SESSION_LOG.jsonl, SQLite session events, and optional HTTP log stats.",
     "get_folder_size": "Count files and bytes under folder_path without blocking the API loop. Safe defaults exclude generated/cache trees; pass include_skipped=true for a full scan.",
-    "validate_file": "Check syntax/validity after a write. Python uses py_compile; JS/TS use node --check.",
+    "validate_file": "Check syntax/validity after a write. Python: py_compile (+ruff). JS: node --check. TS/JSX/TSX/Vue: esbuild syntax check (never a type check). HTML: node --check on <script> blocks. JSON/CSS/TOML: strict parse.",
     "validate_symbols": "Post-write integration check: syntax plus function/class drift against INDEX.",
     "validate_encoding": "Validate UTF-8, BOM, mojibake risk, and Vietnamese diacritic integrity after writes.",
     "post_write_batch_verify": "Run the standard non-mutating post-write verification bundle for changed files.",
@@ -14231,8 +14231,9 @@ _VALIDATE_LANG_ALIASES = {
 
 
 async def validate_file(file_path: str, lang: str = "auto", project_path: str = "") -> str:
-    """Check syntax/validity sau write. Python: py_compile. JS/TS: node --check.
-    HTML: UTF-8 + extract <script> blocks → node --check.
+    """Check syntax/validity sau write. Python: py_compile (+ruff). JS: node --check.
+    TS/JSX/TSX/Vue: esbuild SYNTAX check (never a type check). HTML: UTF-8 + extract
+    <script> blocks → node --check. JSON/CSS/TOML: strict stdlib parse.
     project_path: optional, được dùng để resolve relative file_path."""
     if project_path and not Path(file_path).is_absolute():
         file_path = str(Path(project_path) / file_path)
@@ -14283,6 +14284,11 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
             file=str(fp),
             supported_langs=sorted(_VALIDATE_LANGS),
         )
+    # Residual-1 (2026-09-28): explicit lang="ts" folds to the SAME esbuild route the
+    # auto-branch below sends .ts/.tsx down, and "ts" stays an accepted input value.
+    # The old npx/tsc branch is deleted -- why it was broken: see the .ts/.tsx comment.
+    if lang == "ts":
+        lang = "esbuild"
     if lang == "auto":
         ext = fp.suffix.lower()
         if ext == ".py":
@@ -14391,20 +14397,6 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                 return {"ok": False, "lang": "js", "file": str(fp), "error": "node not found in PATH"}
             except Exception as exc:
                 return {"ok": False, "lang": "js", "file": str(fp), "error": str(exc)}
-        elif lang == "ts":
-            try:
-                r = subprocess.run(
-                    ["npx", "tsc", "--noEmit", "--pretty", "false", str(fp)],
-                    capture_output=True, text=True, timeout=30
-                )
-                if r.returncode == 0:
-                    return {"ok": True, "lang": "ts", "file": str(fp)}
-                err = (r.stderr or "").strip() or (r.stdout or "").strip() or "TypeScript compile failed"
-                return {"ok": False, "lang": "ts", "file": str(fp), "error": err}
-            except FileNotFoundError:
-                return {"ok": False, "lang": "ts", "file": str(fp), "error": "npx/tsc not found in PATH"}
-            except Exception as exc:
-                return {"ok": False, "lang": "ts", "file": str(fp), "error": str(exc)}
         elif lang == "esbuild":
             try:
                 out_fd, out_path = tempfile.mkstemp(suffix=".js")

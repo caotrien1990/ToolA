@@ -263,6 +263,73 @@ def diff(project_path, scope='worktree', paths=None, context_lines=3, max_chars=
     cap=max(1000,min(int(max_chars),500000))
     return {'ok':not whitespace,'scope':scope,'diff':text[:cap],'truncated':len(text)>cap,'total_chars':len(text),'paths':specs,'whitespace_errors':whitespace,'exit_code':0 if not whitespace else 2}
 
+# TRAP-A (measured 2026-09-28, commit 9928cbd): .ToolA_Skill/skills/16_server_lifecycle/SKILL.md
+# had a uniformly-CRLF HEAD blob (221 CRLF / 0 lone LF). git_stage ran a plain `git add`, which
+# under core.autocrlf=true (SYSTEM scope on this machine) replaced it with an LF index blob, so
+# `git diff --cached` showed 443 changed lines for a 37-line content change. A stage must not
+# flip the EOL convention of the blob already in HEAD.
+def _run_bytes(root,args,timeout=60,input=None):
+    env=os.environ.copy(); env.update({'GIT_TERMINAL_PROMPT':'0','GCM_INTERACTIVE':'Never','LC_ALL':'C','LANG':'C'})
+    # input is raw bytes piped to stdin (hash-object --stdin). subprocess.run REFUSES
+    # stdin+input together, so pass stdin only in the no-input case: DEVNULL keeps an
+    # interactive git prompt from hanging the executor lane, and input implies PIPE.
+    kw={"stdin":subprocess.DEVNULL} if input is None else {}
+    return subprocess.run(['git','-C',str(root),*args],input=input,**kw,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=max(1,min(int(timeout),300)),env=env,shell=False)
+
+def _head_blob_is_uniform_crlf(root,spec):
+    """True when HEAD holds this path as a text blob whose every \\n is preceded by \\r.
+
+    The spec for the TRAP-A fix: at least one \\n, no NUL byte (binary), no lone \\n.
+    A missing HEAD blob (new file), a non-0 exit (submodule gitlink, path error) or a
+    mixed/LF blob all answer False -- those keep the plain `git add` path unchanged.
+    """
+    p=_run_bytes(root,['cat-file','blob','HEAD:'+spec])
+    if p.returncode: return False
+    data=p.stdout
+    if b'\x00' in data: return False
+    n=data.count(b'\n')
+    return n>0 and data.count(b'\r\n')==n
+
+def _index_entry(root,spec):
+    """(mode,sha) of the path's current index entry, else None. `git add` ran before us,
+    so this is normally the just-staged entry whose blob we are about to replace."""
+    p=_run_bytes(root,['ls-files','--stage','--',spec])
+    parts=p.stdout.split()
+    if p.returncode or len(parts)<2: return None
+    return parts[0].decode(),parts[1].decode()
+
+def _head_entry_mode(root,spec):
+    out=_run(root,['ls-tree','HEAD','--',spec],check=False)['stdout'].strip()
+    return out.split()[0] if out else None
+
+def _stage_crlf_preserving(root,spec):
+    """TRAP-A producer fix: re-stage one path so the index blob keeps the HEAD blob's CRLF.
+
+    FAILS CLOSED on a worktree lone \\r (a \\r not followed by \\n): converting it would
+    make the index differ from the worktree in CONTENT, not only EOL -- return False and
+    let the plain `git add` stand. Normalization is LF -> CRLF only; bytes go through
+    STDIN: `hash-object -w --no-filters --stdin` (CRLF verbatim, autocrlf bypassed) plus
+    the THREE-arg `update-index --cacheinfo <mode> <sha> <path>` form (the one-arg comma
+    form splits a comma-containing path on its first two commas); mode comes from the
+    index entry, HEAD mode as fallback. Any surprise returns False -- plain add stands.
+    """
+    entry=_index_entry(root,spec)
+    if entry is None: return False
+    mode=entry[0]
+    if mode not in ('100644','100755'):
+        m2=_head_entry_mode(root,spec)
+        mode=m2 if m2 in ('100644','100755') else mode
+    wt=root/spec
+    try: data=wt.read_bytes()
+    except OSError: return False
+    if b'\r' in data.replace(b'\r\n',b''): return False  # lone CR: fail closed
+    norm=data.replace(b'\r\n',b'\n').replace(b'\n',b'\r\n')
+    p=_run_bytes(root,['hash-object','-w','--no-filters','--stdin'],input=norm)
+    sha=p.stdout.decode().strip()
+    if p.returncode or not sha: return False
+    p=_run_bytes(root,['update-index','--cacheinfo',mode,sha,spec])
+    return p.returncode==0
+
 def stage(project_path, paths=None, paths_file='', allow_all=False, expected_state_hash=''):
     root=resolve_root(project_path); before=status(str(root))
     if expected_state_hash and expected_state_hash!=before['state_hash']: raise GitToolError('GIT_STATE_STALE','working tree changed',current_state_hash=before['state_hash'])
@@ -273,6 +340,15 @@ def stage(project_path, paths=None, paths_file='', allow_all=False, expected_sta
     if allow_all: raise GitToolError('GIT_ALLOW_ALL_REFUSED','allow_all is disabled; pass explicit safe paths')
     if paths_file: _run_pathspec_file(root,['--literal-pathspecs','add'],specs)
     else: _run(root,['--literal-pathspecs','add','--',*specs])
+    # TRAP-A: `git add` under core.autocrlf=true stages the worktree bytes as an LF
+    # blob even when the HEAD blob is uniformly CRLF, so a 1-line content change read
+    # as a whole-file EOL churn (measured 2026-09-28: 443 diff lines for 37 real).
+    # For every staged path whose HEAD blob is uniform CRLF, re-stage the worktree
+    # bytes as CRLF (hash-object --no-filters + update-index). Every other case --
+    # new file, LF HEAD blob, mixed HEAD blob, binary, directory spec, submodule --
+    # keeps the `git add` result byte-for-byte (both helpers answer False on them).
+    for spec in specs:
+        if _head_blob_is_uniform_crlf(root,spec): _stage_crlf_preserving(root,spec)
     # 'before' used to be a FULL second status, which doubled the response (measured
     # 9341 vs 4626 chars on this repo) and carried nothing new -- the caller had just
     # read that status to obtain expected_state_hash. Only the hashes and counts are
@@ -307,11 +383,42 @@ def unstage(project_path, paths=None, paths_file='', allow_all=False, expected_s
     else: _run(root,['--literal-pathspecs','restore','--staged','--',*specs])
     return {'ok':True,'paths':specs,'paths_file':str(paths_file or ''),'after':_state(status(str(root)))}
 
+def _numstat_pairs(root,ignore_cr):
+    """{path: (added,deleted)} from `git diff --cached --numstat`. Binary paths report
+    '-' counts; they are kept as ('-','-') and can never differ between the two runs
+    because --ignore-cr-at-eol does not touch binary detection."""
+    args=['--literal-pathspecs','diff','--cached','--no-renames','--numstat']
+    if ignore_cr: args.append('--ignore-cr-at-eol')
+    out={}
+    for line in split_lines(_run(root,args)['stdout']):  # numstat paths may hold U+2028/U+0085
+        parts=line.split('\t')
+        if len(parts)<3: continue
+        added,deleted,path=parts[0],parts[1],'\t'.join(parts[2:])
+        out[path]=(added,deleted)
+    return out
+
+def _eol_churn_paths(root):
+    """TRAP-B gate input: staged paths whose raw numstat differs from the same numstat
+    run with --ignore-cr-at-eol. A difference exists exactly when the staged blob and
+    the HEAD blob disagree on trailing \\r bytes -- i.e. the staged diff carries
+    EOL-only churn. Answers [{path, added, deleted, added_ignore_cr, deleted_ignore_cr}]
+    (the counts the refusal must list), [] when the two runs agree."""
+    raw=_numstat_pairs(root,False)
+    if not raw: return []
+    ign=_numstat_pairs(root,True)
+    churn=[]
+    for path in sorted(raw):
+        r=raw[path]; i=ign.get(path,r)
+        if r!=i:
+            churn.append({'path':path,'added':r[0],'deleted':r[1],
+                          'added_ignore_cr':i[0],'deleted_ignore_cr':i[1]})
+    return churn
+
 # git_commit publishes this as the `message` maxLength (orchestrator_server), so the
 # schema and the refusal in commit() cannot name two different limits.
 COMMIT_MESSAGE_MAX_CHARS = 4000
 
-def commit(project_path, message, expected_staged_hash, allow_empty=False, no_verify=False):
+def commit(project_path, message, expected_staged_hash, allow_empty=False, no_verify=False, allow_eol_churn=False):
     root=resolve_root(project_path); s=status(str(root)); msg=str(message or '').strip()
     if not msg or len(msg)>COMMIT_MESSAGE_MAX_CHARS: raise GitToolError('INVALID_COMMIT_MESSAGE',f'message required and max {COMMIT_MESSAGE_MAX_CHARS} chars')
     if s['counts']['conflicts']: raise GitToolError('GIT_CONFLICTS_PRESENT','resolve conflicts before commit')
@@ -362,6 +469,24 @@ def commit(project_path, message, expected_staged_hash, allow_empty=False, no_ve
                            ca_next_action=('compare head_subject with the message you sent: same subject '
                                            '= already committed, stop retrying. Otherwise stage with '
                                            'git_add, or pass allow_empty=True for an empty commit.'))
+    # TRAP-B (measured 2026-09-28, commit 9928cbd): git_stage renormalized a uniformly-CRLF
+    # HEAD blob to LF and the commit landed with 443 diff lines for a 37-line change -- the
+    # EOL churn was invisible until the leader diffed by hand. git_commit now refuses BEFORE
+    # committing when `git diff --cached --numstat` and the same command with
+    # `--ignore-cr-at-eol` disagree for a staged path: that disagreement IS EOL-only churn by
+    # definition. allow_eol_churn=true skips the gate for an intentional renormalization
+    # commit. The compliant path answers NO new field; the refusal lists every churn path
+    # with BOTH added/deleted counts. Sits AFTER the expected_staged_hash checks above, so a
+    # stale lock still answers GIT_STATE_STALE first.
+    if not allow_eol_churn:
+        churn=_eol_churn_paths(root)
+        if churn:
+            raise GitToolError('EOL_CHURN_STAGED',
+                               'staged diff carries EOL-only churn: at least one path is staged with '
+                               'a different line-ending convention than its HEAD blob (raw numstat != '
+                               '--ignore-cr-at-eol numstat)',
+                               eol_churn_paths=churn,
+                               ca_next_action='re-stage each listed path preserving its HEAD blob EOL convention (git_stage now does this itself for uniform-CRLF HEAD blobs), or pass allow_eol_churn=true for an intentional renormalization commit')
     for key in ('user.name','user.email'):
         if not _run(root,['config','--get',key],check=False)['stdout'].strip(): raise GitToolError('GIT_IDENTITY_MISSING',f'{key} is not configured')
     args=['commit','-m',msg]
