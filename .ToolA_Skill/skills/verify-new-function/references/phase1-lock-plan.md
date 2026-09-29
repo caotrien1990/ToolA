@@ -14,17 +14,17 @@ This reference preserves the canonical five-phase pattern derived from the ToolQ
 
 Phase 1:
 
-- ComC1 writes an independent audit.
-- One OpeC slot writes an independent audit; prefer OpeC1/OpeC3/OpeC4 for split scan/POV and reserve OpeC2 for consolidation when possible.
-- HermC1 writes an independent audit.
+- One mid-dev scanner shard writes an independent audit (`AUDIT_SHARD_1.md`).
+- A second mid-dev scanner shard writes an independent audit (`AUDIT_SHARD_2.md`) for split scan/POV; reserve the high-dev worker for consolidation when possible.
+- The scan-only worker writes an independent extraction report (`SCAN_ONLY_AUDIT.md`, literals only, no verdict).
 - Codo checks all three reports are complete.
 - Audit must cover code lines, function signatures, logic/control flow, data contracts, callers/callees, input validation, error handling, side effects, encoding, security/destructive risk, tests, runtime activation, and regression risk.
 
 Phase 2:
 
-- OpeC2 consolidates the three audits when available; otherwise use another OpeC slot and record the fallback.
-- ComC1 verifies missing/extra/bad merges.
-- OpeC2 or the routed OpeC fallback revises until ComC1 emits final-console pass markers.
+- The high-dev worker consolidates the three audits when available; otherwise use a mid-dev scanner shard and record the fallback.
+- Two mid-dev scanner shards (consensus) verify missing/extra/bad merges.
+- The high-dev worker or the routed mid-dev scanner revises until the consensus shards emit final-console pass markers.
 
 Phase 3:
 
@@ -37,14 +37,14 @@ Phase 4:
 - Codo fixes or routes one narrow bug to ClauC.
 - ClauC only handles judgement or a specific existing-code bug with a narrow evidence pack.
 - Codo runs smoke/unit.
-- ComC1 and HermC1 verify the fix independently; if HermC1 is unavailable, use a small OpeC slot and record the fallback.
-- HermC1 writes lock artifacts; if HermC1 is unavailable, use a small OpeC slot and record the fallback.
+- One mid-dev scanner shard and the scan-only worker verify the fix independently (`FIX_VERIFY_MID_DEV.md`, `FIX_VERIFY_SCAN_ONLY.md`); if the scan-only worker is unavailable, use another mid-dev scanner shard and record the fallback.
+- The scan-only worker writes lock artifacts; if the scan-only worker is unavailable, use another mid-dev scanner shard and record the fallback.
 
-ComC1 verifies fixes and may handle dev code/low-risk fix when explicitly routed.
+A mid-dev scanner verifies fixes and may handle dev code/low-risk fix when explicitly routed.
 
 Phase 5:
 
-- OpeC1 runs live real-use sanity/benchmark.
+- One mid-dev scanner shard runs live real-use sanity/benchmark.
 - Codo runs context-session benchmark for Q/retrieval functions.
 - Guardrail gaps update the separate librarian guardrail artifact only.
 

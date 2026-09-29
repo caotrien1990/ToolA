@@ -48,7 +48,7 @@ TASK_ID, OBJECTIVE_CLASS, RISK_LEVEL, DEV_LEVEL, and EXPECTED_END_MARKER.
 | Python logic / syntax | CodoC | High-end code audit |
 | Server/config/ops | OpeC | Ops specialist |
 | Council/transport | ClauC | Exceptional-only |
-| UI/DOM/runtime | PiC | Desktop/T4 specialist |
+| UI/DOM/runtime | Enabled worker routed by `leader-council-skill` (or [A] T4 tools) | Desktop/T4 specialist |
 
 ## Rules
 

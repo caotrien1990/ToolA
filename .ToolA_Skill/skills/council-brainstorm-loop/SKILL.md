@@ -1,6 +1,6 @@
 ---
 name: council-brainstorm-loop
-description: Run artifact-based multi-worker brainstorm loops through the [A] council/broker. Use when Anh asks the current CA to coordinate council workers across rounds, dispatch file-based prompts, collect broker responses, use HermC/OpeC as helpers, score peer plans, or synthesize a final rule/system plan.
+description: Run artifact-based multi-worker brainstorm loops through the [A] council/broker. Use when Anh asks the current CA to coordinate council workers across rounds, dispatch file-based prompts, collect broker responses, use support helpers, score peer plans, or synthesize a final rule/system plan.
 ---
 
 # Council Brainstorm Loop
@@ -23,7 +23,7 @@ Do not recreate extra checklist/scoring files unless Anh asks. Keep room-local d
 
 ## Broker Dispatch Hard Gate
 
-This gate applies to EVERY broker dispatch: CodoC, PiC, OpeC, HermC, KiloC, exceptional ClauC, support scans, investigations, repairs, reviews, and normal round workers.
+This gate applies to EVERY broker dispatch: every enabled council worker (see the `enabled` rows of `.council/council_config.json`), exceptional ClauC, support scans, investigations, repairs, reviews, and normal round workers.
 
 Before sending `council_message`, the current leader CA must verify the message is self-contained and includes:
 
@@ -48,10 +48,10 @@ Never dispatch broker prompts containing shorthand or conversational references 
 8. Helpers are selected only when Anh names them or a live pin already exists. Helpers are not scored brainstorm peers unless Anh explicitly promotes them.
 9. Parallelize only different logical agents with independent shards and disjoint output ownership. Model selection is per logical agent, so serialize model switches for the same agent. Different models provide cross-verification viewpoints, not duplicate workload clones.
 10. After each dispatch, inspect broker response and artifact status before moving on. Record enough state to know what happened; do not perform special session recovery unless Anh asks.
-11. If a worker is slow, continue independent safe work: artifact checks, HermC request consolidation, prompt prep, or state snapshots.
+11. If a worker is slow, continue independent safe work: artifact checks, support request consolidation, prompt prep, or state snapshots.
 12. Repair only concrete defects: missing artifact, zero-byte artifact, placeholder leak, wrong model, disallowed read window, wrong output path, `AGENT_ERROR`, timeout, overload, or usage limit.
 13. Usage limit means pause that worker and report. Do not bypass by starting/churning fresh sessions unless Anh explicitly tells the current leader CA to resume or recover.
-14. Score only peer-received scores from Round 2 onward; exclude the current leader, HermC, OpeC, temp files, and explicitly excluded artifacts, except the two-brainstormer anti-bias rule below.
+14. Score only peer-received scores from Round 2 onward; exclude the current leader, helper/support workers, temp files, and explicitly excluded artifacts, except the two-brainstormer anti-bias rule below.
 15. If a brainstorm loop has exactly two scored brainstormers, the current leader CA must add an independent leader score for each brainstormer from Round 2 onward. Each brainstormer then has two score streams: peer-received score and leader score. The scoreboard winner is the average of both streams, and final synthesis must record both numbers. Leader scoring is mandatory only for the two-brainstormer case because pairwise scoring can easily bias toward symmetric ties or style preference.
 16. Final synthesis uses the winner as base but imports strong peer ideas, evidence, rejected ideas, phases, acceptance criteria, residual risks, and unknowns.
 

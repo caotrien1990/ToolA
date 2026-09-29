@@ -2,7 +2,7 @@
 
 Prefer file-based canonical prompts. Store one prompt file per round/type, then dispatch a short message that references the prompt file and lists every required full Windows path. Do not paste the full prompt repeatedly unless the worker cannot read the prompt file.
 
-Before dispatch, check that all path values are concrete full Windows paths or explicit `none`. This applies to EVERY broker dispatch: CodoC, PiC, OpeC, HermC, KiloC, exceptional ClauC, repairs, investigations, reviews, and normal rounds. Do not send unresolved variables like `$own` or `__OWN__`, relative paths, path fragments, or conversational references like `current loop`, `failed dispatch`, `existing artifact`, `same as before`, or `above`. Broker workers have no context, so a wrapper must explicitly list all files the prompt expects in the same message.
+Before dispatch, check that all path values are concrete full Windows paths or explicit `none`. This applies to EVERY broker dispatch: every enabled council worker (see the `enabled` rows of `.council/council_config.json`), exceptional ClauC, repairs, investigations, reviews, and normal rounds. Do not send unresolved variables like `$own` or `__OWN__`, relative paths, path fragments, or conversational references like `current loop`, `failed dispatch`, `existing artifact`, `same as before`, or `above`. Broker workers have no context, so a wrapper must explicitly list all files the prompt expects in the same message.
 
 After dispatch, do not move on from the response screen. Record the broker reply in `D:\BR\final\BROKER_DISPATCH_LEDGER.md` or the room's equivalent ledger: event id, `ok`, `returncode`, exposed `session_id`, response class, artifact status, and next action.
 
@@ -20,7 +20,7 @@ Required full paths:
 - peer_plan_1: `PEER_PREVIOUS_PLAN_1_OR_none`
 - peer_plan_2: `PEER_PREVIOUS_PLAN_2_OR_none`
 - peer_plan_3: `PEER_PREVIOUS_PLAN_3_OR_none`
-- support_artifact: `HERMC_SUPPORT_OR_none`
+- support_artifact: `SUPPORT_ARTIFACT_OR_none`
 - output_path: `OUTPUT_PATH`
 - objective_or_note: `OBJECTIVE_OR_NOTE`
 
@@ -104,7 +104,7 @@ Write output to exactly:
 
 Output contract:
 - Markdown only.
-- Sections: `Identity`, `Files Read`, `Round1 Plan`, `Risks`, `HermC request for next round`, `Fallback used`, `Self-check`.
+- Sections: `Identity`, `Files Read`, `Round1 Plan`, `Risks`, `Support request for next round`, `Fallback used`, `Self-check`.
 - In `Self-check`, confirm no peer plans were read.
 - Verify the output file exists and has non-zero length before replying.
 ```
@@ -130,7 +130,7 @@ Must-load immediately previous round plans only:
   3. `PEER_PREVIOUS_PLAN_3`
 
 Optional support artifact:
-- `HERMC_SUPPORT_OR_none`
+- `SUPPORT_ARTIFACT_OR_none`
 
 Task:
 1. Score each peer plan `/10` in a compact table. Score only those 3 peer plans.
@@ -138,7 +138,7 @@ Task:
 3. Reject weak/unsafe parts explicitly.
 4. Build a better Round N plan for OBJECTIVE.
 5. Include `Fallback used: yes/no`; if yes, list reason and files read/written.
-6. If you want HermC research for the next round, add at most 3 precise questions under `HermC request for next round`; otherwise write `none`.
+6. If you want support research for the next round, add at most 3 precise questions under `Support request for next round`; otherwise write `none`.
 7. Do not include provider/model route names in worker-visible prose unless the task is a model audit or benchmark.
 
 Write output to exactly:
@@ -146,7 +146,7 @@ Write output to exactly:
 
 Output contract:
 - Markdown only.
-- Sections: `Identity`, `Files Read`, `Peer Scores`, `Borrowed Strengths`, `Rejected Weaknesses`, `RoundN Plan`, `HermC request for next round`, `Fallback used`, `Self-check`.
+- Sections: `Identity`, `Files Read`, `Peer Scores`, `Borrowed Strengths`, `Rejected Weaknesses`, `RoundN Plan`, `Support request for next round`, `Fallback used`, `Self-check`.
 - In `Self-check`, confirm only DATA + immediately previous round files + listed support artifact were read.
 - Verify the output file exists and has non-zero length before replying.
 ```
@@ -162,15 +162,15 @@ Two-brainstormer anti-bias rule:
 - SCOREBOARD.md must include: brainstormer, peer_received_average, leader_average, combined_average.
 - Winner = highest combined_average.
 - Final synthesis must explain why the leader score agreed or disagreed with peer scoring. The leader is not a scored peer.
-- Helpers such as HermC/OpeC remain unscored unless Anh explicitly promotes them to brainstormers.
+- Helpers such as support workers remain unscored unless Anh explicitly promotes them to brainstormers.
 ```
 
-## HermC Support Prompt
+## Support Prompt
 
-Save this as a prompt file such as `D:\BR\DATA\BROKER_PROMPT_HERMC_SUPPORT.md`.
+Save this as a prompt file such as `D:\BR\DATA\BROKER_PROMPT_SUPPORT.md`.
 
 ```text
-You are HermC for brainstorm support research Round N.
+You are `IDENTITY`, the support worker for brainstorm support research Round N.
 
 Role: internet/file research provider only, NOT a brainstormer. Do not write a rule plan.
 
@@ -189,7 +189,7 @@ Research questions consolidated from workers:
 
 Internet guidance:
 - live_fetch_required: yes. If you cannot fetch live web/file sources, write `BLOCKED_NO_LIVE_FETCH` to the output and stop; do not substitute knowledge-based research.
-- Prefer HermC native internet/file fetch tools for internet research; use [A] fetch only for project-local context or when explicitly needed.
+- Prefer your native internet/file fetch tools for internet research; use [A] fetch only for project-local context or when explicitly needed.
 - Prefer official docs/specs/primary sources.
 - Use community sources only for practical failure modes.
 - If blocked by anti-bot, dynamic JS, rendered DOM, or community pages requiring browser state, mark query with `[antibot]`, use browser only for that evidence, and clean up before final response.
@@ -232,7 +232,7 @@ If you cannot write it, reply `WRITE_FAILED` with exact reason.
 
 ## Helper Investigation Wrapper
 
-Use for OpeC/HermC local investigation, broker errors, artifact failures, or support scans. Helper workers are broker one-shot too.
+Use for helper local investigation, broker errors, artifact failures, or support scans. Helper workers are broker one-shot too.
 
 ```text
 You are `HELPER_IDENTITY` for helper investigation.

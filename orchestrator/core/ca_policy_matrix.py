@@ -27,6 +27,9 @@ _ROOT = Path(__file__).resolve().parents[2]  # project-orchestrator/
 _MATRIX_PATH = _ROOT / ".council" / "CA_TOOL_POLICY_MATRIX.json"
 _AGENT_REGISTRY_PATH = _ROOT / "agents_registry.json"
 
+# AUDIT-KEEP(roster), Anh 2026-09-29: the retired worker ids in the two sets below
+# (hermes/hermc/herm_c, kilo/kiloc/kilo_c, comc/comc_c/com_c) are inert -- the suffix
+# rules already decide those agents. Kept, no action.
 # CLI / worker agents that MUST stay HTTP-only (C-suffix workers).
 # NOTE: desktop ids like "comc"/"kilo"/"zcode" must NOT be listed here — they collide
 # with lowercased worker names (ComC→comc). Prefer legacy_worker_name.endswith("c")
@@ -597,6 +600,12 @@ def classify_action(
     }
 
 
+# AUDIT-KEEP(hermes), Anh 2026-09-29: the name is historical. This is the host gate for
+# EVERY CA (classify_action and open_session_policy_payload call it). The agent id only
+# feeds the echo keys agent_id / is_hermes; no decision reads it and nothing consumes
+# is_hermes. The Hermes host is retired and not installed; its agents_registry.json row
+# is kept, and every hermes label here, in tools_v15.hermes_host_gate_check, in
+# registry_data (schema default) and in mcp_packs/generator.py is harmless -- no action.
 def hermes_host_gate(
     *,
     agent_id: str = "",
@@ -1110,6 +1119,7 @@ def open_session_policy_payload(agent_id: str = "", project_path: str = "") -> d
         },
         "a_first": True,
         "host_gate": hermes_host_gate(
+            # AUDIT-KEEP(hermes): inert echo label -- see hermes_host_gate.
             agent_id=agent_id or "hermes",
             project_path=project_path,
             task_class="read_project_file",

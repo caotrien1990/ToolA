@@ -170,9 +170,10 @@ self-consistent, not that disk matches it. Run it AFTER the restart or it grades
 - `orchestrator/core/ca_policy_matrix.py` -- worker-id and desktop-id tuples, per-agent host gates.
 - `orchestrator_server.py` -- council roster / label / default-provider-model tables, plus
   per-agent CLI branches and output parsers. The dashboard order tuple was the B3 hardcode here and
-  is now DERIVED from `_COUNCIL_AGENTS` (2026-09-20), so that one can no longer drift; the LABEL
-  table still can, because `canonical_labels` is applied via `labels.update(...)` AFTER the config
-  labels and therefore OVERRIDES the SOT.
+  is now DERIVED from `_COUNCIL_AGENTS` (2026-09-20), so that one can no longer drift; since
+  2026-09-29 the config labels overwrite the fallback labels (the `canonical_labels` override is
+  gone) and `tests/test_council_fallback_mirrors_sot.py` pins every fallback table (agents, labels,
+  caps, default models, the convene_council and COUNCIL_TRACKER rosters) to the SOT.
 - `code_tools.py` -- agent names embedded in `reason`/`note` strings returned to a CA.
 - `examples/SLIM_RULE.txt` -- also a PRODUCER: `sync_rule` renders every CA rule file from it, so
   one stale sentence here becomes 10 stale rule files at the next sync.

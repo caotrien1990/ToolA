@@ -18,7 +18,6 @@ function Invoke-A {
 
 function Set-CouncilWorkerModel {
   param(
-    [ValidateSet("codo","pic","ope","hermes","kilo","clau")]
     [string]$Agent,
     [string]$Model
   )
@@ -118,10 +117,10 @@ function Test-Artifact {
   return [pscustomobject]@{ ok=$true; reason="ok"; path=$Path; length=$item.Length }
 }
 
-function Get-HermCRequests {
+function Get-SupportRequests {
   param([string]$RoundPath)
   Get-ChildItem -LiteralPath $RoundPath -Filter "*.md" | ForEach-Object {
-    $matches = Select-String -LiteralPath $_.FullName -Pattern "HermC request|Optional HermC" -Context 0,8
+    $matches = Select-String -LiteralPath $_.FullName -Pattern "Support request|Optional support|HermC request|Optional HermC" -Context 0,8
     if ($matches) {
       [pscustomobject]@{ file=$_.FullName; excerpt=($matches | ForEach-Object { $_.ToString() }) -join "`n" }
     }
@@ -152,5 +151,5 @@ Write-Output "- Set-CouncilWorkerModel"
 Write-Output "- Send-CouncilMessage"
 Write-Output "- Add-BrokerDispatchLedgerEntry"
 Write-Output "- Test-Artifact"
-Write-Output "- Get-HermCRequests"
+Write-Output "- Get-SupportRequests"
 Write-Output "- Get-CouncilRuntimeState"

@@ -9588,6 +9588,9 @@ async def ca_policy_metrics(
         return _err(str(e), error_name="INTERNAL_ERROR")
 
 
+# AUDIT-KEEP(hermes), Anh 2026-09-29: the tool name and the "hermes" default are historical
+# labels; the gate serves every CA and no decision reads agent_id (see
+# ca_policy_matrix.hermes_host_gate). Harmless -- no action.
 async def hermes_host_gate_check(
     agent_id: str = "hermes",
     project_path: str = "",

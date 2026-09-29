@@ -120,6 +120,57 @@ def open_output_file(path):
     return
 
 
+def enabled_agents_from_config():
+    """Enabled council agent ids in roster_order, read straight from
+    .council/council_config.json (SOT). This script is standalone, so it reads the
+    JSON directly from COUNCIL_DIR instead of importing code_tools. Falls back to
+    the enabled roster as of 2026-09-29 when the config is unreadable."""
+    try:
+        with open(os.path.join(COUNCIL_DIR, "council_config.json"), encoding="utf-8-sig") as f:
+            cfg = json.load(f)
+        agents = cfg.get("agents")
+        if not isinstance(agents, dict):
+            raise ValueError("agents is not a dict")
+        order = list(cfg.get("roster_order") or []) + list(agents.keys())
+        out = []
+        seen = set()
+        for aid in order:
+            m = agents.get(aid)
+            if m and aid not in seen and m.get("enabled", True):
+                out.append(aid); seen.add(aid)
+        if out:
+            return tuple(out)
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
+    return ("clau", "ope", "codo", "gro")
+
+
+def newest_live_raw_picks():
+    """{agent: path} -> newest (mtime) NON-EMPTY live_raw log per enabled agent.
+
+    Candidates are live_raw_<agent>.log and live_raw_<agent>_*.log with an exact
+    prefix, so live_raw_codo-smoke.log must NOT match codo. The unsuffixed files
+    have measured 0 bytes since 2026-08-14 (real logs are per-model), hence the
+    non-empty filter. Agents with no non-empty candidate are omitted."""
+    picks = {}
+    for agent in enabled_agents_from_config():
+        cands = [os.path.join(COUNCIL_DIR, "live_raw_%s.log" % agent)]
+        cands += glob.glob(os.path.join(COUNCIL_DIR, "live_raw_%s_*.log" % agent))
+        best = None
+        for p in cands:
+            try:
+                if os.path.getsize(p) == 0:
+                    continue
+                mt = os.path.getmtime(p)
+            except OSError:
+                continue
+            if best is None or mt > best[0]:
+                best = (mt, p)
+        if best:
+            picks[agent] = best[1]
+    return picks
+
+
 def main():
     try:
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[reportAttributeAccessIssue]
@@ -241,21 +292,21 @@ def main():
         os.path.join(COUNCIL_DIR, "stall_alerts.jsonl"),
         FULL_EVENT_TAIL,
     )
+    picks = newest_live_raw_picks()
+    latest = max(picks.values(), key=os.path.getmtime) if picks else os.path.join(COUNCIL_DIR, "live_raw_.log")
     append_full_raw_section(
         lines,
-        "LIVE RAW COMC FULL",
-        os.path.join(COUNCIL_DIR, "live_raw_pic.log"),
+        "LIVE RAW LATEST FULL",
+        latest,
         FULL_RAW_TAIL_CHARS,
     )
 
-    # Live raw logs summary (latest 2 lines per agent)
-    for agent in ("codo", "clau", "pic", "hermes", "ope"):
-        fname = "live_raw_%s.log" % agent
-        fpath = os.path.join(COUNCIL_DIR, fname)
+    # Live raw logs summary (latest 2 lines per agent, newest non-empty file)
+    for agent, fpath in picks.items():
         tail = read_tail(fpath, 2)
         if tail:
             lines.append("")
-            lines.append("-- LIVE RAW %s (last 2) --" % agent.upper())
+            lines.append("-- LIVE RAW %s (last 2) [%s] --" % (agent.upper(), os.path.basename(fpath)))
             for line in tail:
                 line = line.strip()
                 if line:

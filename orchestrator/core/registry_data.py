@@ -885,7 +885,7 @@ V15_R8_SCHEMAS = [
 
      }, "required": ["project_path"]}}},
 
-    {"type": "function", "function": {"name": "council_tracker", "description": "READ/COLLECT council live logs. Runs the council tracker collector and returns the path to the council_live.txt snapshot (broker dispatches + full prompts, raw ComC ARGV/output, council_events, latest replies). Call this FIRST when investigating council/broker/worker-dispatch/prompt/reply issues instead of hand-scraping .council. Auto-open is disabled (open_file is a no-op); archive behavior is kept (old snapshot zipped to archives/, fresh one written). save_output=false skips collection and just reads the current snapshot.",
+    {"type": "function", "function": {"name": "council_tracker", "description": "READ/COLLECT council live logs. Runs the council tracker collector and returns the path to the council_live.txt snapshot (broker dispatches + full prompts, raw worker ARGV/output, council_events, latest replies). Call this FIRST when investigating council/broker/worker-dispatch/prompt/reply issues instead of hand-scraping .council. Auto-open is disabled (open_file is a no-op); archive behavior is kept (old snapshot zipped to archives/, fresh one written). save_output=false skips collection and just reads the current snapshot.",
 
      "parameters": {"type": "object", "properties": {
 
@@ -985,6 +985,7 @@ V15_R8_SCHEMAS = [
 
 {"type": "function", "function": {"name": "ca_policy_metrics", "description": "T3 READ: aggregate Matrix bypass counters from sessions.db (forbidden_native/allowed_native/via_a/unclassified/bypass_rate).", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "session_id": {"type": "string"}, "agent_id": {"type": "string"}, "time_window_hours": {"type": "number", "default": 24.0}}}}},
 
+# AUDIT-KEEP(hermes): historical tool name and "hermes" default -- see ca_policy_matrix.hermes_host_gate.
 {"type": "function", "function": {"name": "hermes_host_gate_check", "description": "T1 READ: Hermes/peer host gate for project vs outside-project native ops (CSLt axis 3).", "parameters": {"type": "object", "properties": {"agent_id": {"type": "string", "default": "hermes"}, "project_path": {"type": "string"}, "target": {"type": "string"}, "scope": {"type": "string"}, "tool_name": {"type": "string"}, "action_type": {"type": "string"}, "transport": {"type": "string", "enum": ["native", "via_a"], "default": "native"}}}}},
 
 {"type": "function", "function": {"name": "normalize_ca_registration", "description": "T3 WRITE: normalize agents_registry.json — mode=A default + transport_policy (http_only for CLI C-suffix, a_first_mcp_t4_ok for desktop). dry_run default true.", "parameters": {"type": "object", "properties": {"dry_run": {"type": "boolean", "default": True}}}}},

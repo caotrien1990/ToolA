@@ -56,7 +56,7 @@ Use git_status/git_stale_check/git_diff/git_log for local evidence. git_stage/gi
 - **NEVER** run `curl`/`curl.exe`/shell, **NEVER** hand-build JSON, **NEVER** run helper scripts to message agents. Just call the `council_message` tool with structured args; passing shell commands desyncs the system.
 - Each message is an INDEPENDENT one-shot — never assume the other agent remembers a previous message.
 - Read cross-agent replies from `.council/broker_filtered.jsonl` (filtered transcript: type/from/to/text/id; no raw/reasoning). Filter by route/task; missing match = report unknown, never fabricate.
-- **Investigating council/broker/dispatch/prompt/reply issues → call the [A] tool `council_tracker` FIRST** (HTTP `POST /api/call/council_tracker`). It returns `output_path` to a full `council_live.txt` snapshot (BROKER FILTERED FULL / COUNCIL EVENTS FULL / LIVE RAW COMC FULL) and archives the previous one; read that path. Do NOT manually scrape `.council` raw logs unless `council_tracker` is unavailable or you need a deeper raw file after the snapshot.
+- **Investigating council/broker/dispatch/prompt/reply issues → call the [A] tool `council_tracker` FIRST** (HTTP `POST /api/call/council_tracker`). It returns `output_path` to a full `council_live.txt` snapshot (BROKER FILTERED FULL / COUNCIL EVENTS FULL / LIVE RAW LATEST FULL) and archives the previous one; read that path. Do NOT manually scrape `.council` raw logs unless `council_tracker` is unavailable or you need a deeper raw file after the snapshot.
 - Greet the target agent directly: `Chào OpeC,` / `Chào CodoC,` / `Chào GroC,` / `Chào ClauC,`. Use `Chào Anh,` only for the human user.
 
 Council routing order: no fixed chain; ROUTE RULE SOT = Anh chỉ đạo. ClauC is excluded from normal routing order.

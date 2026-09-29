@@ -23,6 +23,8 @@ DEFAULT_PYTHON = Path(
     r"D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/"
     r"project-orchestrator/venv312/Scripts/python.exe",
 )
+# AUDIT-KEEP(hermes), Anh 2026-09-29: installer target of the retired Hermes host (not
+# installed); kept as its re-enable path, like the per-agent CLI adapters. No action.
 DEFAULT_HERMES_CONFIG = Path.home() / "AppData" / "Local" / "hermes" / "config.yaml"
 
 BUILTIN_PACKS: dict[str, dict[str, Any]] = {

@@ -132,7 +132,7 @@ Live Anh-directed harness facts until Anh changes them:
 - OpeC live pin `openai-compatible/grok-4.6-build`.
 - GroC live pin `grok-4.6-build`; not default leader and not T4/MCP.
 - GPT Sol/Terra/Luna discontinued. ox-alpha deferred.
-- KiloC / PiC / HermC have no Anh-directed default cell. Do not apply the suspended 2026-07-25 defaults.
+- Retired workers (`enabled:false` rows in `.council/council_config.json`) have no Anh-directed default cell. Do not apply the suspended 2026-07-25 defaults.
 
 ## Benchmark-Calibrated Routing v3 — SUSPENDED
 
@@ -226,14 +226,14 @@ If context is insufficient, ask ClauC only what exact data/files/evidence are ne
 - Drop stale, low-relevance, duplicate, noisy, truncated, or context-free results.
 - On `no`, error, or timeout, continue normal leader rules with no retry loop.
 - Hard gate: after Q `no`, error, or timeout, the leader must not self-query session files, logs, history folders, or large local data. Report Q status and route any needed data gathering to a worker with bounded scope.
-For tasks like "find latest responses/session data", if Q has no usable context, dispatch a bounded evidence shard only to a worker Anh named or a live pin after SET+GET; do not leader-side filesystem-scan and do not default to the suspended PiC+DeepSeek cell.
+For tasks like "find latest responses/session data", if Q has no usable context, dispatch a bounded evidence shard only to a worker Anh named or a live pin after SET+GET; do not leader-side filesystem-scan and do not default to a suspended cell.
 - For exact payload examples, read `references/q-protocol.md`.
 
 ## Council Dispatch
 
 - Dispatch only self-contained one-shot prompts.
 - Include full absolute Windows paths for every prompt/context/research/peer/output artifact.
-Stage worker-readable files under `[A]\.council\tmp_<task>\DATA`; do not require broker workers (PiC/Ope/Herm/Kilo) to read `D:\BR` directly.
+Stage worker-readable files under `[A]\.council\tmp_<task>\DATA`; do not require broker workers (every enabled worker) to read `D:\BR` directly.
 - Ban shorthand: `current loop`, `existing artifact`, `failed dispatch`, `same as before`, relative paths, and env-only paths.
 - Include the round number, worker identity, access boundary, and end marker such as `END_<WORKER>_R2_ARTIFACT`.
 - Use the dispatch template in `references/dispatch-template.md`.
@@ -255,6 +255,6 @@ Same-identity dispatch must not call `council_message` with the current agent as
 - Verify Q is called before any old-context operation and that `pre_search` hint responses are consumed directly when `auto_queried: true`.
 - Verify Round 1 has no scores and Round 2+ has peer scores.
 - Verify broker dispatches have full paths and no shorthand.
-Verify broker workers (PiC/Ope/Herm/Kilo) stay workers when a broker prompt contains the trigger text.
+Verify broker workers (every enabled worker) stay workers when a broker prompt contains the trigger text.
 - Verify same-agent model switches remain sequential and different-agent parallel shards have disjoint output ownership.
 - Use `references/test-matrix.md` for the full test set.

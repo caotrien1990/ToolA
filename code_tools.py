@@ -4845,8 +4845,9 @@ async def rule_drift_check(project_path: str = "", checks: str = "") -> str:
             for a in sorted(rule_agents - cfg_agents):
                 _add("agent_list", "high", f"rule mentions agent '{a}' but council_config has no such agent",
                      code_value=sorted(cfg_agents))
-            for a in sorted(cfg_agents - rule_agents):
-                _add("agent_list", "info", f"council_config has agent '{a}' not referenced in rule files")
+            # One-way on purpose: rule files must not enumerate roster ids (the id list lives
+            # only in .council/council_config.json), so a config agent no rule names is the
+            # designed state, not drift. Only a rule naming an agent the config lacks is.
 
     if "behavior_sets" in sel:
         for name, sc in _MUTATION_SCOPE_MAP.items():
@@ -17600,25 +17601,24 @@ def _council_build_from_config(cfg: dict):
 
 
 # Fallback hardcoded council spec, used only when council_config.json is missing/invalid.
+# Mirrors the ENABLED rows of .council/council_config.json — tests/test_council_fallback_mirrors_sot.py pins it.
 _COUNCIL_FALLBACK_ROSTER = [
     {"agent": "clauC", "bridge_agent": "clau", "role": "Judgement: final verification, limited patching, T4/MCP only when explicitly delegated", "cli_channel": 'claudeltnai --print --model claude-opus-5 -p "<prompt>"  [diagnostic only; dispatch via council_message; log .council\\log_clau.txt]'},
     {"agent": "opeC", "bridge_agent": "ope", "role": "OpenCode worker; live pin grok-4.6-build; no suspended Qwen default", "cli_channel": 'opencode run "<prompt>" --model openai-compatible/grok-4.6-build --dangerously-skip-permissions  [diagnostic only; dispatch via council_message; log .council\\log_ope.txt]'},
     {"agent": "codoC", "bridge_agent": "codo", "role": "High-end grok-4.6-build worker via CodexLTNAI for judgement, independent audit, high-difficulty development; never the default leader", "cli_channel": 'codexltnai exec "<prompt>" --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check  [diagnostic only; dispatch via council_message; log .council\\log_codo.txt]'},
-    {"agent": "kiloC", "bridge_agent": "kilo", "role": "Kilo harness; no Anh-directed default route cell; do not apply suspended MiniMax default", "cli_channel": 'kilo run "<prompt>" --model ltnai/glm-5.2 --format json --dangerously-skip-permissions  [diagnostic only; dispatch via council_message; log .council\\log_kilo.txt; cwd set by subprocess not --dir]'},
-    {"agent": "PiC", "bridge_agent": "com", "role": "Pi harness; no Anh-directed default route cell; do not apply suspended Qwen/DeepSeek defaults", "cli_channel": 'pi -p "<prompt>" --yolo --skip-onboarding  [diagnostic only; dispatch via council_message; log .council\\log_pic.txt]'},
-    {"agent": "HermC", "bridge_agent": "hermes", "role": "general worker (Hermes); BROKER-ONLY one-shot; web/file by default, browser only when explicitly required", "cli_channel": 'hermes chat -q "<prompt>" --yolo -t web,file [-m <model>] [--provider <prov>]  [diagnostic only; dispatch via council_message; log .council\\log_hermes.txt]'},
+    {"agent": "groC", "bridge_agent": "gro", "role": "Grok CLI worker on live LTNAI grok-4.6-build; dispatch via council_message", "cli_channel": 'C:\\Users\\ADMIN\\.grok\\bin\\grok.exe -p "<prompt>" -m grok-4.6-build --yolo  [diagnostic only; dispatch via council_message; log .council\\log_gro.txt]'},
 ]
 _COUNCIL_FALLBACK_CAPABILITIES = {
     "selection_rule": "ROUTE RULE SOT = Anh chỉ đạo. Do not use a cost chain. Benchmark 2026-07-25 table SUSPENDED. ClauC is outside normal routing order.",
     "clauC": "Judgement/final verification; ONLY worker allowed MCP for T4; HTTP /api/call otherwise",
     "codoC": "HTTP /api/call ONLY; never MCP. Optional high-context worker when explicitly routed",
-    "clinC": "DISABLED fallback entry; do not route unless explicitly re-enabled in council_config.json",
-    "PiC": "HTTP /api/call ONLY; never MCP. Single sequential worker; model routed via HTTP council_worker_model before dispatch",
     "opeC": "HTTP /api/call ONLY; never MCP. FREE worker — prefer for token-heavy scan/test/search",
-    "HermC": "HTTP /api/call ONLY; never MCP. FREE worker — prefer for token-heavy scan/test/search",
+    "groC": "HTTP /api/call ONLY; never MCP — route any T4 to clauC",
 }
 _COUNCIL_FALLBACK_COORDINATION = "The user-triggered desktop CA is temporary leader. ROUTE RULE SOT = Anh chỉ đạo. Never a cost chain. Benchmark 2026-07-25 table SUSPENDED. CodoC is a high-end worker, not default leader. ClauC is outside normal routing order and explicit exceptional T4/scoped work only. Always set+get; no silent substitution."
 _COUNCIL_FALLBACK_PARALLELISM = "Leader MAY dispatch independent worker tasks in PARALLEL (workers run over HTTP /api/call — parallel-safe). Serialize ONLY tasks that WRITE the SAME project concurrently. Writes to [A] itself restricted to clauC or codoC ONLY."
+# Mirrors messaging_to_enum in council_config.json; used only when the config is unreadable.
+_COUNCIL_FALLBACK_MESSAGING_TO_ENUM = ["ope", "codo", "clau", "gro", "user"]
 
 
 async def convene_council(project_path: str = "") -> str:
@@ -17641,7 +17641,7 @@ async def convene_council(project_path: str = "") -> str:
         coordination_rule = _COUNCIL_FALLBACK_COORDINATION
         parallelism_rule = _COUNCIL_FALLBACK_PARALLELISM
         mission = ""
-        messaging_to_enum = ["ope", "codo", "pic", "hermes", "clau", "kilo", "user"]
+        messaging_to_enum = list(_COUNCIL_FALLBACK_MESSAGING_TO_ENUM)
         guardrail_harness_rule = ""
         task_routing = {}
         config_source = "(fallback: council_config.json missing/invalid)"
@@ -17655,14 +17655,14 @@ async def convene_council(project_path: str = "") -> str:
             "reply": "<<RES id=N from=X status=DONE>>...<<END N>>",
             "files": ["PROTOCOL.md", "inbox_<bridge_agent>.md", "outbox_<bridge_agent>.md", "STATE.md", "metrics_<bridge_agent>.json"],
         },
-        "cli_identity_rule": "Desktop/current CA identities use names without C (Clau, Codo, Ope...); CLI council workers use leading-cap C-suffixed names (ClauC, CodoC, OpeC, PiC, HermC, KiloC). Desktop CAs must refer to themselves without C. Bridge file stems stay legacy lowercase without C.",
+        "cli_identity_rule": "Desktop/current CA identities use names without C (Clau, Codo, Ope...); CLI council workers use leading-cap C-suffixed names: the `label` of each enabled council_config.json row (see `roster`). Desktop CAs must refer to themselves without C. Bridge file stems stay legacy lowercase without C.",
         "addressing_rule": "Route messages by worker id. Do not require salutations; identity comes from the worker label and persona, not from a greeting.",
         "verify_outbox_rule": "VERIFY ONLY / no-edits prohibits source/runtime changes, but appending the required RES block to the worker's own outbox is mandatory and is not considered a forbidden edit.",
         "prompt_style_rule": "Worker prompts should be short Vietnamese with correct diacritics; avoid ambiguous 'Chao Anh' headers in agent-to-agent prompts.",
         "leadership_rule": "The desktop/current CA that receives Anh's exact user-only trigger `bat hoi dong tr` / `bật hội đồng tr` is the temporary council LEADER unless Anh explicitly delegates leadership. Continuation gate: before coordinating or dispatching any council work (`convene_council`, `council_message`, `council_worker_model`, worker routing, brainstorm rounds, multi-worker artifacts), load `leader-council-skill` first even without the exact trigger; never apply this inside broker/worker prompts.",
         "leader_frugality_rule": "Temporary leader = reason + direct ONLY: scope, plan, route workers only from Anh chỉ đạo or live pin after SET+GET, then delegate anything more expensive than directing. ClauC is Judgement, not the default coordinator.",
         "worker_prompt_route_rule": "BROKER-ONLY: every worker runs one-shot with NO context/session retention. Send each task as a SELF-CONTAINED Council Message; embed any required prior context directly in the prompt — workers do not remember previous turns.",
-        "broker_only_rule": "Context mode has been REMOVED from [A]. All workers (ClauC/OpeC/CodoC/PiC/HermC/KiloC) run BROKER one-shot only: fresh process each dispatch, no --resume/--id/session continuity. Provider+model is set through HTTP council_worker_model (writes .council/worker_models.json, applied on next dispatch, no restart); runtime supports clau|codo|pic|ope|hermes|kilo though schema text may lag. Verify HermC slots with action=get before relying on a switch. For PiC, route exactly one model per task and dispatch sequentially.",
+        "broker_only_rule": "Context mode has been REMOVED from [A]. All workers run BROKER one-shot only: fresh process each dispatch, no --resume/--id/session continuity. Provider+model is set through HTTP council_worker_model (writes .council/worker_models.json, applied on next dispatch, no restart); the switchable set is the enabled roster (.council/council_config.json). Verify with action=get after a set.",
         "messaging_rule": "CA/worker messaging uses the [A] tool council_message via POST /api/call/council_message with {sender,to,text,timeout_sec?}. The dashboard may use /api/council/message internally. Each message is an independent one-shot task. Route by target worker id and read cross-agent replies from .council\\broker_filtered.jsonl.",
         "broker_read_rule": "Workers read cross-agent responses from .council\\broker_filtered.jsonl. It mirrors the broker UI transcript, excludes raw/reasoning fields, and exposes only filtered log filenames rather than absolute paths.",
         "parallelism_rule": parallelism_rule,
@@ -17829,7 +17829,7 @@ async def council_tracker(open_file: bool = False, tail_lines: int = 80,
     return the path to the snapshot so the CA/worker can read full council data.
 
     What it collects into one file (council_live.txt): broker dispatches + full
-    prompts, full raw PiC ARGV/output, council_events, line deltas, inbox/outbox
+    prompts, full raw worker ARGV/output, council_events, line deltas, inbox/outbox
     tails, runtime_state and the latest cross-agent replies. Use this FIRST when
     investigating council / broker / worker-dispatch / prompt / reply issues instead
     of hand-scraping `.council` logs.

@@ -69,7 +69,7 @@ Usage limit: pause that worker and report. Resume only when Anh asks.
 
 Helper/investigation dispatch hard rule:
 
-- Broker workers have no memory even for support/debug tasks. OpeC/HermC investigation prompts must be file-based or wrapper-based with concrete full Windows paths for every input, expected log/artifact path, and output report path.
+- Broker workers have no memory even for support/debug tasks. Helper investigation prompts must be file-based or wrapper-based with concrete full Windows paths for every input, expected log/artifact path, and output report path.
 - Never rely on conversational phrases such as "this loop", "the failed dispatch", "the current project", or prior chat context unless the same message also lists the concrete full path(s) that define them.
 - For helper investigations, create or reference a prompt/context artifact when the task has more than a few facts, then dispatch only a short wrapper with `prompt_file`, `issue_context`, `evidence_paths`, and `output_path`.
 
@@ -98,16 +98,16 @@ Round 2+:
 Final:
 
 - Score by peer-received average from Round 2 onward.
-- Exclude self-scores, the current leader, HermC, OpeC, temp/excluded artifacts.
+- Exclude self-scores, the current leader, helper/support workers, temp/excluded artifacts.
 - If there are exactly two scored brainstormers, the current leader CA must add an independent leader score for each brainstormer from Round 2 onward. The winner is the average of peer-received score and leader score. Record both numbers in `SCOREBOARD.md` and explain any disagreement between peer and leader scoring before selecting the winner.
 - Winner is highest average; tie-break by evidence use, self-repair, acceptance criteria, and lower scope drift.
-- Final plan is synthesis, not a copy: winner base plus best peer ideas and HermC/OpeC evidence.
+- Final plan is synthesis, not a copy: winner base plus best peer ideas and helper/support-worker evidence.
 
 ## Helpers
 
 Helpers:
 
-- The 2026-07-25 helper table is SUSPENDED. Do not default to PiC+DeepSeek, PiC+Qwen, KiloC+MiniMax, OpeC+Qwen, HermC+MiniMax, or CodoC+GPT-5.6 Sol.
+- The 2026-07-25 helper table is SUSPENDED. Do not default to any suspended worker+model cell; the live helper set is the `enabled` rows of `.council/council_config.json` routed via `leader-council-skill` (`council_worker_model` SET+GET).
 - Dispatch a helper only when Anh names the worker/model or a live pin already exists after SET+GET.
 - ClauC: exceptional stateful T4/MCP or narrow scoped work only.
 - Model selection is per logical agent. Serialize switches for the same agent; parallelize only different agents with independent shards and disjoint artifacts.

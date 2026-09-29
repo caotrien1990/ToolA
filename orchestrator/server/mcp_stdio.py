@@ -2036,7 +2036,7 @@ def run_mcp_stdio() -> None:
                 "top_tools": top_tools, "verbosity": verbosity,
             })
 
-        # Surface prune profiles (FULL=1 bypasses all pruning — Herm live default).
+        # Surface prune profiles (FULL=1 bypasses all pruning; the retired Hermes host ran with it -- AUDIT-KEEP(hermes)).
         # - default (FULL off): the bootstrap calls only; every other tool rides
         #   call_tool, and discovery is HTTP (/api/tools/names, /api/tools/<t>/schema).
         #   Each listed tool costs host context on every turn; the measurement is in

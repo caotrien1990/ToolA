@@ -166,15 +166,15 @@ Before any council dispatch, choose the cheapest tier that can safely complete t
 | Task class | Default route | Do not use |
 |---|---|---|
 | Local scan, grep, path verify, backup/remove/move, D:/BR cleanup | OpeC / FREE | ClauC/CodoC unless Anh explicitly requests |
-| Internet research, docs/community fetch, broad source gathering | HermC / FREE | ClauC/CodoC |
-| Synthesis, implementation proposal, rule shrink, gatekeeper design, 2-round brainstorm | ComC / MEDIUM routed model | Free workers as final authority |
+| Internet research, docs/community fetch, broad source gathering | Cheapest FREE-tier enabled worker routed via `leader-council-skill` | ClauC/CodoC |
+| Synthesis, implementation proposal, rule shrink, gatekeeper design, 2-round brainstorm | A MEDIUM-cost routed model worker (`council_worker_model` SET+GET) | Free workers as final authority |
 | T4/stateful MCP/browser runtime, high-stakes final judgement, user-requested expensive review | ClauC or CodoC / EXPENSIVE | Routine cleanup/scan |
 
 Hard gates:
 - ClauC is not a cleanup worker.
 - CodoC is not a default helper.
-- ComC2/HermC2 removed-route notes are obsolete. Default research/scan/report split is `HermC1=OpeC4`; OpeC2 is scan+reason with short response only; OpeC1 is legacy scan fallback; OpeC3 is narrow factual scan only.
-- Expensive dispatch prompts must state why OpeC/HermC/ComC/[A] write tools are insufficient.
+- Removed-route notes about retired workers are obsolete. The live research/scan/report split comes from the `enabled` rows of `.council/council_config.json` and `leader-council-skill`; do not keep a slot table in this file.
+- Expensive dispatch prompts must state why the routed free/medium workers and [A] write tools are insufficient.
 - For memory/context-pool writes, prefer `[A] write` to a bounded artifact, then let librarian ingest/distill if needed.
 
 Lookup artifact: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\17. Council_Tr\context_pool_specs\MODEL_COST_ROUTING_SPEC_v1_1.md`.

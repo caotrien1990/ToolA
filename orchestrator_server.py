@@ -5660,21 +5660,9 @@ def _council_active_from_config():
     (code_tools._load_council_config) with hardcoded fallback. ONLY roster
     membership/order + labels are config-driven here; provider caps + default models
     stay wired in code below (provider-sensitive — must not be conflated)."""
-    fallback_agents = ("clau", "codo", "ope", "pic", "hermes", "kilo", "gro")
-    labels = {a: (a[:1].upper() + a[1:] + "C") for a in fallback_agents}
-    labels["pic"] = "PiC"     # avoid double-c label "ComcC"
-    labels["hermes"] = "HermC"
-    labels["gro"] = "GroC"
-    canonical_labels = {
-        "clau": "ClauC",
-        "codo": "CodoC",
-        "ope": "OpeC",
-        "pic": "PiC",
-        "hermes": "HermC",
-        "kilo": "KiloC",
-        "gro": "GroC",
-    }
-    labels.update(canonical_labels)
+    # Mirrors the ENABLED rows of .council/council_config.json in roster_order; used only when the config is unreadable — tests/test_council_fallback_mirrors_sot.py pins it.
+    fallback_agents = ("clau", "ope", "codo", "gro")
+    labels = {"clau": "ClauC", "codo": "CodoC", "ope": "OpeC", "gro": "GroC"}
     try:
         cfg = ct._load_council_config(force=True)
         if cfg and isinstance(cfg.get("agents"), dict):
@@ -5691,7 +5679,6 @@ def _council_active_from_config():
             for aid, m in acfg.items():
                 if m.get("label"):
                     labels[aid] = m["label"]
-            labels.update(canonical_labels)
             if active:
                 return tuple(active), labels
     except Exception as exc:
@@ -5750,9 +5737,9 @@ _COUNCIL_AGENT_CAPS_FALLBACK = {
     "clau": {"provider": "claude",   "broker": True,  "context": False, "enabled": True},
     "ope":  {"provider": "opencode-zen", "broker": True,  "context": False, "enabled": True},
     "codo": {"provider": "ltnai",    "broker": True,  "context": False, "enabled": True},
-    "kilo": {"provider": "ltnai", "broker": True,  "context": False, "enabled": True},
-    "pic": {"provider": "ltnai", "broker": True,  "context": False, "enabled": True},
-    "hermes": {"provider": "opencode-zen", "broker": True,  "context": False, "enabled": True},
+    "kilo": {"provider": "ltnai", "broker": True,  "context": False, "enabled": False},
+    "pic": {"provider": "ltnai", "broker": True,  "context": False, "enabled": False},
+    "hermes": {"provider": "opencode-zen", "broker": True,  "context": False, "enabled": False},
     "gro": {"provider": "ltnai", "broker": True,  "context": False, "enabled": True},
 }
 
@@ -5813,7 +5800,7 @@ _COUNCIL_DEFAULT_MODELS_FALLBACK = {
     "codo": {"provider": "codex",        "model": "grok-4.6-build"},
     "kilo": {"provider": "ltnai", "model": "ltnai/glm-5.2"},
     "pic": {"provider": "ltnai", "model": "deepseek-v4-pro"},
-    "hermes": {"provider": "opencode-zen", "model": "deepseek-v4-flash-free"},
+    "hermes": {"provider": "ltnai", "model": "deepseek-v4-pro"},
     "gro": {"provider": "ltnai", "model": "grok-4.6-build"},
 }
 
@@ -7594,7 +7581,7 @@ _COUNCIL_EVENT_LOG = "council_events.jsonl"
 _COUNCIL_SESSION_META = "session_meta.json"
 _COUNCIL_BROKER_SYSTEM = (
     "Council broker mode. You are a worker agent receiving one direct task. "
-    "Your council identity is the broker-injected worker label (for example KiloC, OpeC, codoC), "
+    "Your council identity is the broker-injected worker label (for example ClauC, OpeC, CodoC), "
     "not any desktop CA identity that may appear in a shared project rules file. "
     "Always use that worker label, never another agent's name. Do not ask what the task is. "
     "Answer the TASK directly, briefly, in Vietnamese with diacritics. "
@@ -13023,10 +13010,12 @@ async def council_worker_model(agent=None, model=None, provider=None, action=Non
     """[A] TOOL — get / set / list a council worker's model WITHOUT Playwright DOM.
     action: 'get' (current, default), 'set' (validate vs ID_MODELS then write), 'list'
     (curated valid ids). Writes .council/worker_models.json, applied at the NEXT
-    dispatch (no restart).     Switchable workers: clau|codo|pic|ope|hermes|kilo.
+    dispatch (no restart).     Switchable set = the enabled council
+    roster (_COUNCIL_AGENTS, rendered from .council/council_config.json at
+    import); an agent outside it answers INVALID_AGENT with `allowed`.
     Council routing hint: ROUTE RULE SOT = Anh chỉ đạo. Benchmark 2026-07-25
     table is SUSPENDED. Always action='get' after action='set'.
-    If PiC cannot read/write a path, stage files under .council/tmp_*; do not
+    If a worker cannot read/write a path, stage files under .council/tmp_*; do not
     change model/provider as a path workaround. For full routing rules, load
     leader-council-skill.
 
@@ -13101,7 +13090,7 @@ _register_tool(
                        ".council/ID_MODELS/<PROVIDER>.txt; applies at the next dispatch. "
                        "ROUTE RULE SOT = the user's live directive (Anh). Benchmark 2026-07-25 table SUSPENDED. "
                        "Set, then verify with action='get' before council_message. "
-                       "Do not change provider/model to work around path/read/write failures; stage PiC files under "
+                       "Do not change provider/model to work around path/read/write failures; stage worker files under "
                        "[A]\\.council\\tmp_* instead. Load leader-council-skill for full council routing rules.",
         "parameters": {
             "type": "object",
