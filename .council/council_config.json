@@ -93,7 +93,7 @@
     "hermes": {
       "label": "HermC",
       "bridge": "hermes",
-      "enabled": true,
+      "enabled": false,
       "can_write_A": false,
       "role": "Hermes harness. No Anh-directed default route cell. Do not apply the suspended 2026-07-25 MiniMax/Qwen/DeepSeek defaults. Use only when Anh names HermC or a live pin already exists after SET+GET.",
       "provider": "ltnai",
@@ -141,7 +141,6 @@
   "messaging_to_enum": [
     "ope",
     "codo",
-    "hermes",
     "clau",
     "gro",
     "user"
@@ -161,7 +160,7 @@
     "CodoC live pin is grok-4.6-build on CodexLTNAI. ox-alpha deferred. GPT Sol/Terra/Luna discontinued.",
     "ClauC live pin is claude-opus-5 via claudeltnai. Catalog also claude-opus-4-8 and claude-sonnet-5.",
     "OpeC and GroC live pin is grok-4.6-build until Anh changes it.",
-    "HermC has no Anh-directed default cell.",
+    "HermC is RETIRED: Anh 2026-09-29 \"hermes không dùng nữa\". Its agents row is kept with enabled:false so it can be switched back on; its agents_registry.json row is kept (unregister is destructive and was not approved). Do not route to it; re-enable here first if Anh reopens it.",
     "KiloC and PiC are RETIRED: Anh 2026-09-20 \"chot bo kiloc, pic\". Their agents rows are kept with enabled:false so they can be switched back on, and they were unregistered from agents_registry.json. Do not route to them; re-enable here first if Anh reopens them.",
     "Same-model workers are not interchangeable.",
     "Cost-chain routing is obsolete.",

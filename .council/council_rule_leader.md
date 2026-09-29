@@ -46,7 +46,6 @@ ROUTE RULE SOT = Anh chỉ đạo. Do not use a cost chain. The 2026-07-25 bench
 |---|---|---|---|
 | **CodoC** | `grok-4.6-build` via CodexLTNAI | High-end worker when Anh names CodoC: judgement, independent audit, high-difficulty development | Broad evidence scan; default coordination; not the default leader |
 | **OpeC** | `openai-compatible/grok-4.6-build` | When Anh names OpeC or this live pin is used after SET+GET | Suspended default `qwen3.7-max` |
-| **HermC** | no Anh-directed default cell | Only when Anh names HermC or a live pin already exists | Suspended MiniMax/Qwen/DeepSeek default cells |
 | **GroC** | `grok-4.6-build` (LTNAI) | Grok CLI worker; design/bugs-scan/code skills | Do not treat as default leader or T4/MCP route |
 | **ClauC** | `claude-opus-5` via `claudeltnai` (catalog also `claude-opus-4-8`, `claude-sonnet-5`) | Explicit stateful T4, judgement/scoped fix with narrow evidence | Broad scan/new code by habit |
 
@@ -64,7 +63,7 @@ Suspended routing defaults (do not apply): OpeC+Qwen, CodoC+ox-alpha, CodoC+GPT-
 
 ## Prompt Addressing + RES Append
 
-- When assigning a task to a worker, greet that worker by identity if useful: `Chào ClauC,`, `Chào OpeC,`, `Chào CodoC,`, `Chào HermC,`, `Chào GroC,`.
+- When assigning a task to a worker, greet that worker by identity if useful: `Chào ClauC,`, `Chào OpeC,`, `Chào CodoC,`, `Chào GroC,`.
 - Use `Chào Anh,` only when replying directly to the human user.
 - In verification prompts, write: `VERIFY ONLY: no source/runtime edits; appending the required RES block to your own outbox is mandatory and allowed.`
 - Require short Vietnamese output with correct diacritics unless the task explicitly asks for English.
@@ -90,7 +89,7 @@ Evidence and verdict discipline:
 - Do not claim PASS unless every stated acceptance criterion/test is actually verified. If a test is skipped, the verdict must be PARTIAL/FAIL with the reason.
 - For code/tool fixes, require schema/API verification when behavior or tool contract changes.
 
-OpeC/HermC internet prompts: default to web/file behavior in the prompt ("use web/file only; do not use browser tools") unless the task explicitly needs antibot/rendered DOM/screenshot/dynamic JS. If browser tools are used, instruct the worker to clean up browser sessions/slash_worker before final response and to retry browser at most once before falling back to web/curl.
+OpeC internet prompts: default to web/file behavior in the prompt ("use web/file only; do not use browser tools") unless the task explicitly needs antibot/rendered DOM/screenshot/dynamic JS. If browser tools are used, instruct the worker to clean up browser sessions/slash_worker before final response and to retry browser at most once before falling back to web/curl.
 
 Bad prompt patterns to avoid: vague verbs, multiple unrelated tasks in one prompt, "scan everything" without caps, no output format, no exact file path, no pass/fail criteria, unrestricted filesystem, unbounded retries, and adding chain-of-thought instructions to reasoning models. If context is large, split into smaller worker tasks by file cluster or question.
 ---
