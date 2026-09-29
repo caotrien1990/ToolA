@@ -61,7 +61,6 @@ def test_xroot_live_files_refused_by_write_tool(tmp_path, monkeypatch):
         project / "graph.db-wal",
         project / "missions.db-shm",
         project / "librarian.db.bak",
-        project / ".council" / "council_config.json",
         project / ".council" / "inbox_codoc.md",
         project / ".council" / "outbox_codoc.md",
     ]
@@ -151,13 +150,30 @@ def test_xroot_write_fix_live_files_denied(tmp_path, monkeypatch):
     monkeypatch.setattr(xroot, "PROJECT_ROOT", project)
 
     result = json.loads(asyncio.run(code_tools.write_fix(
-        ".council/council_config.json", 1, 1, "blocked\n",
+        ".council/inbox_codoc.md", 1, 1, "blocked\n",
         project_path=str(project),
     )))
 
     assert result.get("ok") is False, result
     assert result.get("error_name") == "XROOT_DENIED"
     assert result.get("group") == "live_files"
+
+
+def test_council_config_is_not_a_live_file(tmp_path, monkeypatch):
+    """The hand-edited SOT is edited with write_fix (2026-09-29): no tool owns it, so
+    the deny list must not refuse it."""
+    project = tmp_path / "project"
+    (project / ".council").mkdir(parents=True)
+    monkeypatch.setattr(xroot, "PROJECT_ROOT", project)
+    target = project / ".council" / "council_config.json"
+
+    assert xroot.xroot_check(target, "write_fix")["allowed"] is True
+    assert xroot.classify_write_target(target, project)["managed"] is False
+    result = json.loads(asyncio.run(code_tools.write_fix(
+        ".council/council_config.json", 1, 1, "{}\n",
+        project_path=str(project),
+    )))
+    assert result.get("error_name") != "XROOT_DENIED", result
 
 
 def test_xroot_write_transaction_outside_write_fix(tmp_path, monkeypatch):
@@ -302,7 +318,8 @@ def test_write_targets_reads_every_field_that_names_a_target(tmp_path):
 
 def test_index_only_tools_name_no_write_target(tmp_path):
     """git_stage/git_unstage pathspecs are index entries: gated as write targets (#35)
-    they met the live_files deny and could not STAGE .council/council_config.json."""
+    they met the deny list and could not STAGE .council/council_config.json while it
+    was a live_files entry."""
     assert xroot.INDEX_ONLY_TOOLS == frozenset({"git_stage", "git_unstage"})
     root = tmp_path / "p"
     body = {"project_path": str(root), "paths": [".council/council_config.json"], "file_path": "x.py"}

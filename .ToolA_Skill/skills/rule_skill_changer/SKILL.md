@@ -187,9 +187,10 @@ self-consistent, not that disk matches it. Run it AFTER the restart or it grades
   `route_capabilities` and the 5 council tool schema descriptions while the row itself survives for a
   later re-enable -- and every test that uses that id as a live example keeps passing. ONE field
   escapes the filter: `_council_build_from_config` returns `messaging_to_enum` RAW, so a retired id
-  stays in the rule's `to` enum until dropped by hand. This file is also XROOT-GATED -- `write_fix`
-  answers `XROOT_DENIED`. It is the hand-edited SOT: edit it natively (it is inside [A]'s own tree,
-  so `log_native_event` is the authorized path).
+  stays in the rule's `to` enum until dropped by hand. It is the hand-edited SOT and NOT a live
+  file: edit it with `read_file_range` -> `write_fix` like any other file (JSON auto-validates).
+  Its old XROOT live_files deny, and the "edit it natively + `log_native_event`" advice that came
+  with it, dated from before [A] edited its own tree through the cache; removed 2026-09-29.
 - `.council/council_rule_leader.md` and `.council/global_rule_worker.md` -- **hand-maintained SOT,
   NOT generated.** `code_tools.py:16621` names the leader doc the leader-rule source of truth, and
   `council_config_sync` only marker-DIFFS these two -- it never regenerates them from the config, so

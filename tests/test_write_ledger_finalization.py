@@ -418,12 +418,12 @@ class WriteLedgerFinalizationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200, response.text)
         self.assertEqual(len(calls), 1)
 
-    async def test_an_index_only_tool_stages_the_hand_edited_sot(self):
+    async def test_an_index_only_tool_stages_a_live_file(self):
         """Measured 2026-09-29: git_stage's ``paths`` were read as write targets (#35), so
-        staging .council/council_config.json -- the hand-edited SOT -- met the live_files
-        deny and the edit to it could not be committed through [A]. The dispatcher hands
-        the tool name to write_targets: an INDEX_ONLY_TOOLS call names no write target,
-        and the same body on any other mutating tool is still refused.
+        staging .council/council_config.json -- then a live_files entry -- was refused and
+        the edit to it could not be committed through [A]. The dispatcher hands the tool
+        name to write_targets: an INDEX_ONLY_TOOLS call names no write target, and the
+        same body on any other mutating tool is still refused (an inbox is still live).
         """
         project = Path(self.temp_dir.name) / "repo"
         project.mkdir()
@@ -434,7 +434,7 @@ class WriteLedgerFinalizationTests(unittest.IsolatedAsyncioTestCase):
             return json.dumps({"ok": True, "write_performed": True})
 
         code_tools.TOOL_MAP[TOOL_NAME] = probe
-        body = {"project_path": str(project), "paths": [".council/council_config.json"]}
+        body = {"project_path": str(project), "paths": [".council/inbox_codoc.md"]}
         text = {"type": "string"}
         with self._probe_schema(project_path=text, paths={"type": "array", "items": text}):
             response = await self._dispatch(body)
@@ -445,7 +445,7 @@ class WriteLedgerFinalizationTests(unittest.IsolatedAsyncioTestCase):
             with unittest.mock.patch.object(xroot, "INDEX_ONLY_TOOLS", frozenset({TOOL_NAME})):
                 response = await self._dispatch(body)
         self.assertEqual(response.status, 200, response.text)
-        self.assertEqual(calls, [[".council/council_config.json"]])
+        self.assertEqual(calls, [[".council/inbox_codoc.md"]])
 
     async def test_an_output_field_meets_the_deny_list_on_a_read_tool(self):
         """#35, measured 2026-09-25: desktop_screenshot / screenshot_page are read tools, so

@@ -19,7 +19,6 @@ LIVE_FILE_TOOLS = {
     "graph.db": "graph tools",
     "missions.db": "mission tools",
     "librarian.db": "librarian tools",
-    ".council/council_config.json": "council_config_sync",
     ".council/inbox_*.md": "council_message",
     ".council/outbox_*.md": "council_message",
 }
@@ -102,9 +101,11 @@ def _live_file_match(path: Path) -> tuple[str, str] | None:
             return "live_files", f"{db_name}* must be modified through {tool}"
 
     parts = [part.lower() for part in resolved.parts]
-    joined = "/".join(parts)
-    if joined.endswith("/.council/council_config.json"):
-        return "live_files", (".council/council_config.json is the hand-edited SOT: edit it in place, then run council_config_sync to propagate it to the derived rule docs. council_config_sync reads this file and writes those docs; it cannot edit this file, so it is not a way to make the change you just attempted.")
+    # .council/council_config.json is NOT a live file: it is a hand-edited SOT no tool
+    # writes (council_config_sync only READS it), edited with write_fix like the SOT
+    # rule files above. Its entry here dated from when [A]'s own tree was edited
+    # natively; measured 2026-09-29 it refused write_fix and git_stage while its own
+    # reason told a CA to "edit it in place".
     if ".council" in parts and (name.startswith("inbox_") or name.startswith("outbox_")) and name.endswith(".md"):
         return "live_files", ".council/inbox_*.md and outbox_*.md must be modified through council_message"
     return None
@@ -233,9 +234,8 @@ WRITE_TARGET_FIELDS = ("path", "file_path", "dst", "target_file", "destination")
 # git_stage / git_unstage run `git add` / `git restore --staged`, which leave the
 # working tree byte-identical, and git_tools._pathspecs already refuses an absolute,
 # ``.git``, secret-pattern or out-of-root spec. Measured 2026-09-29: read as write
-# targets (#35), their ``paths`` met the live_files deny and refused to STAGE
-# .council/council_config.json -- the hand-edited SOT this module tells a CA to edit
-# in place -- so an edit to it could no longer be committed through [A].
+# targets (#35), their ``paths`` met the deny list: git_stage refused to STAGE
+# .council/council_config.json while that file was still a live_files entry.
 INDEX_ONLY_TOOLS = frozenset({"git_stage", "git_unstage"})
 # The body fields that name where a tool puts its OUTPUT -- a screenshot, a backup
 # zip, an MCP pack tree (``out_dir`` is ``out_root``'s alias) -- on EVERY tool that
