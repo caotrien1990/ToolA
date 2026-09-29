@@ -418,6 +418,35 @@ class WriteLedgerFinalizationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200, response.text)
         self.assertEqual(len(calls), 1)
 
+    async def test_an_index_only_tool_stages_the_hand_edited_sot(self):
+        """Measured 2026-09-29: git_stage's ``paths`` were read as write targets (#35), so
+        staging .council/council_config.json -- the hand-edited SOT -- met the live_files
+        deny and the edit to it could not be committed through [A]. The dispatcher hands
+        the tool name to write_targets: an INDEX_ONLY_TOOLS call names no write target,
+        and the same body on any other mutating tool is still refused.
+        """
+        project = Path(self.temp_dir.name) / "repo"
+        project.mkdir()
+        calls = []
+
+        async def probe(project_path: str = "", paths: list | None = None) -> str:
+            calls.append(paths)
+            return json.dumps({"ok": True, "write_performed": True})
+
+        code_tools.TOOL_MAP[TOOL_NAME] = probe
+        body = {"project_path": str(project), "paths": [".council/council_config.json"]}
+        text = {"type": "string"}
+        with self._probe_schema(project_path=text, paths={"type": "array", "items": text}):
+            response = await self._dispatch(body)
+            self.assertEqual(response.status, 403, response.text)
+            payload = json.loads(response.text)
+            self.assertEqual((payload["error_name"], payload["group"]), ("XROOT_DENIED", "live_files"))
+            self.assertEqual(calls, [])
+            with unittest.mock.patch.object(xroot, "INDEX_ONLY_TOOLS", frozenset({TOOL_NAME})):
+                response = await self._dispatch(body)
+        self.assertEqual(response.status, 200, response.text)
+        self.assertEqual(calls, [[".council/council_config.json"]])
+
     async def test_an_output_field_meets_the_deny_list_on_a_read_tool(self):
         """#35, measured 2026-09-25: desktop_screenshot / screenshot_page are read tools, so
         the gate never looked at their ``save_path`` and the PNG landed in ``.ssh`` with no

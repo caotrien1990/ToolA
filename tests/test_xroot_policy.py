@@ -300,6 +300,21 @@ def test_write_targets_reads_every_field_that_names_a_target(tmp_path):
     assert xroot.write_targets({"file_path": "a.py", "dst": str(other / "c.py")}) == [other / "c.py"]
 
 
+def test_index_only_tools_name_no_write_target(tmp_path):
+    """git_stage/git_unstage pathspecs are index entries: gated as write targets (#35)
+    they met the live_files deny and could not STAGE .council/council_config.json."""
+    assert xroot.INDEX_ONLY_TOOLS == frozenset({"git_stage", "git_unstage"})
+    root = tmp_path / "p"
+    body = {"project_path": str(root), "paths": [".council/council_config.json"], "file_path": "x.py"}
+
+    for tool in ("git_stage", "git_unstage"):
+        assert xroot.write_targets(body, tool) == [], tool
+    # Every other mutating tool that takes ``paths`` still writes them (create_folders).
+    expected = [root / "x.py", root / ".council" / "council_config.json"]
+    assert xroot.write_targets(body, "create_folders") == expected
+    assert xroot.write_targets(body) == expected
+
+
 def test_output_targets_reads_every_output_field_as_the_tool_opens_it(tmp_path, monkeypatch):
     """#35: an output field is a write target on every tool, and the tool opens it as
     spelled -- a relative one under the daemon's cwd, never under project_path."""

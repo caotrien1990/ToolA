@@ -229,20 +229,31 @@ def xroot_check(target_path: str | Path, _caller_tool: str, _session_id: str = "
 # ``src`` is not one: copy_file only reads it. A read tool takes these same names
 # for the file it READS, so they are write targets only on a tool that mutates.
 WRITE_TARGET_FIELDS = ("path", "file_path", "dst", "target_file", "destination")
+# Mutating tools whose path fields name INDEX entries, never a file they write:
+# git_stage / git_unstage run `git add` / `git restore --staged`, which leave the
+# working tree byte-identical, and git_tools._pathspecs already refuses an absolute,
+# ``.git``, secret-pattern or out-of-root spec. Measured 2026-09-29: read as write
+# targets (#35), their ``paths`` met the live_files deny and refused to STAGE
+# .council/council_config.json -- the hand-edited SOT this module tells a CA to edit
+# in place -- so an edit to it could no longer be committed through [A].
+INDEX_ONLY_TOOLS = frozenset({"git_stage", "git_unstage"})
 # The body fields that name where a tool puts its OUTPUT -- a screenshot, a backup
 # zip, an MCP pack tree (``out_dir`` is ``out_root``'s alias) -- on EVERY tool that
 # takes them, mutating or not. The tool opens them as spelled, so a relative one
 # lands under the daemon's cwd, not under project_path.
 OUTPUT_TARGET_FIELDS = ("save_path", "output_path", "backup_dir", "out_root", "out_dir")
 
-def write_targets(body: dict[str, Any]) -> list[Path]:
+def write_targets(body: dict[str, Any], tool_name: str = "") -> list[Path]:
     """Every write target one call names, joined to its project_path the way the tool joins it.
 
     #35: the dispatcher read only the FIRST of these fields, so move_file's
     ``destination`` never met the deny list. A relative target with no project_path
     is left out: resolving it here would measure it against the daemon's cwd, not
     the root the tool resolves it under -- the tool's own check reads that one.
+    An INDEX_ONLY_TOOLS call names no file it writes, so it has none.
     """
+    if tool_name in INDEX_ONLY_TOOLS:
+        return []
     base = str(body.get("project_path") or "")
     pairs: list[tuple[Any, str]] = [(body.get(field), base) for field in WRITE_TARGET_FIELDS]
     paths = body.get("paths")

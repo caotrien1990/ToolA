@@ -15571,7 +15571,7 @@ accepted_fields=sorted(accepted_fields),
     _xroot_gate_allowed = False
     if not _is_readonly_rpc:
         _xroot_mutating = tool_name in _MUTATING_TOOLS or tool_name in _backup_gated_tools
-        _xroot_writes = write_targets(body) if _xroot_mutating else []
+        _xroot_writes = write_targets(body, tool_name) if _xroot_mutating else []
         _xroot_verdicts = [
             classify_write_target(_target, body.get("project_path") or None, tool_name, body.get("session_id", ""))
             for _target in _xroot_writes + output_targets(body)
