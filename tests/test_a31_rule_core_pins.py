@@ -27,6 +27,16 @@ SOT_FILES = ("CORE_RULE.txt", "SLIM_RULE.txt", "SLIM_RULE_INLINE.txt")
 # path that certainly exists is a cwd bug, not an absence.
 CWD_RULE = "is a cwd bug, NOT an absence"
 
+# READ ROUTING second cause, added 2026-09-29: a 0-hit repo-wide rg is also
+# ripgrep's documented default (dot-dirs and gitignored paths are skipped), and
+# search_code indexes code only -- the rule must name the sweeps that see them.
+HIDDEN_DIR_RULE = (
+    "skips dot-dirs",
+    "git grep -n -I",
+    "rg -uu",
+    "positive-control every 0-hit",
+)
+
 # The MCP-dispatcher sentence must name the MECHANISM and carry no tool count.
 # A37 measured that [A] exposes TWO MCP surfaces with DIFFERENT shapes: the
 # window/desktop host is a thin dispatcher, while orchestrator/server/mcp_stdio.py
@@ -57,6 +67,13 @@ class RuleCoreSotFilesCarryTheCwdRule(unittest.TestCase):
         for name in SOT_FILES:
             with self.subTest(name):
                 self.assertIn(CWD_RULE, _read(name))
+
+    def test_hidden_dir_rule_names_the_sweeps_in_every_sot_file(self):
+        for name in SOT_FILES:
+            text = _read(name)
+            for fragment in HIDDEN_DIR_RULE:
+                with self.subTest(f"{name}:{fragment}"):
+                    self.assertIn(fragment, text)
 
     def test_mcp_dispatcher_sentence_names_the_mechanism(self):
         for name in SOT_FILES:
@@ -100,6 +117,13 @@ class RuleCoreRuntimeReadsTheCommittedFile(unittest.TestCase):
         for template in ("slim", "full", "core"):
             with self.subTest(template):
                 self.assertIn(CWD_RULE, code_tools._ma_rule_body(template))
+
+    def test_every_propagated_template_carries_the_hidden_dir_rule(self):
+        for template in ("slim", "full", "core"):
+            body = code_tools._ma_rule_body(template)
+            for fragment in HIDDEN_DIR_RULE:
+                with self.subTest(f"{template}:{fragment}"):
+                    self.assertIn(fragment, body)
 
 
 class RuleTemplateHasNoInCodeFallback(unittest.TestCase):
