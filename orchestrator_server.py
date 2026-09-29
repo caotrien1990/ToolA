@@ -3667,6 +3667,32 @@ _PATH_KEYS = {
     "path_a", "path_b", "input_path", "output_path",
 }
 
+# 2026-09-29: keys the dispatcher hands to Path()/find_project_root/
+# _session_project_key before any tool runs. Every published schema declares
+# them `string` (pinned by tests/test_dispatch_identity_field_type_gate.py).
+# Unchecked, a dict project_path crashed _lookup_caller_session into a bare 500
+# for git_commit and reached git_status as a raw TypeError. Derived from
+# _PATH_KEYS so a new path key is gated too.
+_STRING_IDENTITY_KEYS = frozenset(_PATH_KEYS | {"page_id", "session_id"})
+_JSON_TYPE_NAMES = {dict: "object", list: "array", bool: "boolean", int: "number",
+                    float: "number", str: "string", type(None): "null"}
+
+
+def _json_type_name(value) -> str:
+    return _JSON_TYPE_NAMES.get(type(value), type(value).__name__)
+
+
+def _identity_type_violation(body: dict) -> tuple[str, str] | None:
+    """(field, received JSON type) of the first non-string identity key, else None.
+
+    null stays allowed: several tools read a missing identity as "use the session".
+    """
+    for key in sorted(_STRING_IDENTITY_KEYS.intersection(body)):
+        value = body[key]
+        if value is not None and not isinstance(value, str):
+            return key, _json_type_name(value)
+    return None
+
 # C0 controls at path edges remain compatibility-trimmed.
 # Any C0 left after that trim is rejected before normalization or OS access.
 _CONTROL_CHAR_EDGE_RE = re.compile(r"^[\x00-\x1f]+|[\x00-\x1f]+$")
@@ -15143,9 +15169,16 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
                     applied=False,
                 )
 
-    # ── Fix: JSON body must be an object ──
+    # ── Fix: JSON body must be an object (the ONE non-dict check; the old
+    # duplicate after _normalize_body was unreachable and is gone) ──
     if not isinstance(body, dict):
-        return _error_response(tool_name, "JSON body must be an object", 400, cors, {})
+        return _error_response(
+            tool_name, f"JSON body must be an object, got {_json_type_name(body)}",
+            400, cors, {},
+            error_name="INVALID_JSON_BODY",
+            hint="Wrap the tool arguments in ONE JSON object, e.g. {\"project_path\": \"...\"}.",
+            ca_next_action="send_a_json_object_body",
+        )
 
     # ── Fix 6: normalize aliased args + reject embedded path controls ──
     try:
@@ -15188,8 +15221,29 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
             retryable=False,
             removal_version=_SEARCH_COMPAT_REMOVAL_VERSION,
         )
-    if not isinstance(body, dict):
-        return _error_response(tool_name, "JSON body must be an object", 400, cors, {})
+    # 2026-09-29: identity fields must be JSON strings BEFORE any dispatcher code
+    # hands them to Path(). A PowerShell caller whose $R was clobbered by
+    # `$r = Call ...` (variables are case-insensitive) sent project_path as an
+    # object: git_commit crashed in _lookup_caller_session into a bare 500 and
+    # git_status answered a raw TypeError. The published schemas already say
+    # `string`; this enforces it once, for every tool.
+    _type_violation = _identity_type_violation(body)
+    if _type_violation:
+        _field, _received = _type_violation
+        return _error_response(
+            tool_name, f"Field '{_field}' must be a JSON string, got {_received}",
+            400, cors, {},
+            error_name="WRONG_ARGUMENTS",
+            field=_field,
+            expected_type="string",
+            received_type=_received,
+            hint=("Send the value as a JSON string. PowerShell variables are "
+                  "case-insensitive: `$r = Call ...` overwrites `$R`, so a path "
+                  "variable can silently become a response object."),
+            ca_next_action="resend_field_as_json_string",
+            write_performed=False,
+            applied=False,
+        )
     if _aliases_applied:
         logger.info(f"Tool {tool_name}: arg aliases applied: {_aliases_applied}")
 
@@ -17365,7 +17419,26 @@ async def dispatch_tool_call(tool_name: str, body: dict | None = None,
 
 async def handle_call(request):
     """Universal tool invocation: POST /api/call/{tool_name}"""
-    return await _dispatch_tool_call_request(request, transport="api")
+    try:
+        return await _dispatch_tool_call_request(request, transport="api")
+    except web.HTTPException:
+        raise
+    except Exception as exc:
+        # 2026-09-29: an exception escaping the dispatcher reached aiohttp, which
+        # answered a bare text/plain 500; bin/a.ps1 parsed that to $null and the CA
+        # read an empty git_status staged_hash. Every answer on this route is JSON.
+        tool_name = request.match_info.get("tool_name", "")
+        logger.exception("dispatcher crashed for %s", tool_name)
+        mutating = tool_name in _MUTATING_TOOLS
+        return _error_response(
+            tool_name, f"Internal dispatcher error: {_exception_text(exc)}", 500,
+            _cors(request.headers.get("Origin")), {},
+            error_name="INTERNAL_ERROR",
+            commit_state="unknown" if mutating else "not_applicable",
+            retryable=not mutating,
+            safe_to_retry=not mutating,
+            ca_next_action=("check_write_status_before_retry" if mutating
+                            else "retry_same_call"))
 
 
 async def handle_list_sessions(request):

@@ -981,6 +981,17 @@ def _boot_sweep_abs_path(value: str | os.PathLike) -> Path:
     return Path(os.path.abspath(os.fspath(value)))
 
 
+def _boot_sweep_ledger_key(target: str | os.PathLike) -> str:
+    """THE one key for a boot-sweep candidate target.
+
+    Every ``candidates`` dict in the sweep (ledger reader, index seed, legacy
+    root walk, xroot rows) and the seed loop's "already journaled?" skip key a
+    target with it, so one target is one key -- a second hand-rolled normcase
+    is drift.
+    """
+    return os.path.normcase(str(_boot_sweep_abs_path(target)))
+
+
 def _boot_sweep_max_session_roots() -> int:
     try:
         return max(1, int(os.environ.get("ORCHESTRATOR_BOOT_SWEEP_MAX_SESSION_ROOTS", "16")))
@@ -1122,9 +1133,10 @@ _WRITE_BACKUP_SEED_MARKER = ".write_backups.seeded"
 
 # 2026-09-28: ONE env override redirects the WAL DIRECTORY. Without it, every
 # pytest run performing a real write_fix appends tmp_path .bak rows into the
-# REAL repo ledger (the one the D4 retention sweep reads). Read at CALL time,
-# not import time, so a pytest_configure default and monkeypatch.setenv both
-# land. Unset or empty = repo-root default, byte-for-byte the old behaviour.
+# REAL repo ledger (the one boot recovery `_boot_sweep_ledger_candidates`
+# reads). Read at CALL time, not import time, so a pytest_configure default
+# and monkeypatch.setenv both land. Unset or empty = repo-root default,
+# byte-for-byte the old behaviour.
 _WRITE_BACKUP_LEDGER_DIR_ENV = "ORCHESTRATOR_WRITE_BACKUP_LEDGER_DIR"
 
 
@@ -1225,7 +1237,7 @@ def _boot_sweep_ledger_candidates() -> tuple[dict[str, Path], list[dict]]:
             if not target:
                 continue
             fp = _boot_sweep_abs_path(target)
-            candidates[os.path.normcase(str(fp))] = fp
+            candidates[_boot_sweep_ledger_key(fp)] = fp
         except Exception:
             corrupt += 1
     if corrupt:
@@ -1272,7 +1284,7 @@ def _boot_sweep_seed_from_index(
             if _boot_sweep_abort_reason(stop_event, deadline_monotonic):
                 aborted = True
                 break
-            candidates[os.path.normcase(str(fp))] = fp
+            candidates[_boot_sweep_ledger_key(fp)] = fp
         if aborted:
             break
     return {
@@ -1377,7 +1389,7 @@ def _boot_sweep_scan(
                 abort_reason = _boot_sweep_abort_reason(stop_event, deadline_monotonic)
                 if abort_reason:
                     break
-                candidates[os.path.normcase(str(fp))] = fp
+                candidates[_boot_sweep_ledger_key(fp)] = fp
             if abort_reason:
                 break
     roots_done = time.perf_counter()
@@ -1386,7 +1398,7 @@ def _boot_sweep_scan(
             abort_reason = _boot_sweep_abort_reason(stop_event, deadline_monotonic)
             if abort_reason:
                 break
-            candidates[os.path.normcase(str(fp))] = fp
+            candidates[_boot_sweep_ledger_key(fp)] = fp
     indexes_done = time.perf_counter()
 
     pending: list[tuple[Path, Path]] = []
@@ -1420,7 +1432,14 @@ def _boot_sweep_scan(
             # ones pending right now): the legacy scan re-evaluated mtime every
             # boot, so a .bak that is currently stale could still become the
             # newest copy after a later edit. The WAL must carry the same set.
+            # Skip a target that is ALREADY journaled: the reader
+            # (_boot_sweep_ledger_candidates) collapses rows by
+            # _boot_sweep_ledger_key, so a second row for the same target is
+            # pure growth (measured: after a ledger wipe the seed re-appended
+            # every existing .bak, 224 -> 760 rows) and restores nothing new.
             for fp, bak in existing_baks:
+                if _boot_sweep_ledger_key(fp) in ledger_candidates:
+                    continue
                 _record_write_backup(fp, bak)
         finally:
             try:

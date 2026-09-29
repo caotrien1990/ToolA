@@ -153,7 +153,8 @@ def pytest_configure(config):  # noqa: ARG001 - pytest hook signature
     # write_backups.jsonl (+ its seed marker) from this DIRECTORY env var at
     # call time; unset, it falls back to the real repo .orchestrator_cache --
     # so every test performing a real write_fix appended its tmp_path .bak row
-    # into the ledger the D4 retention sweep reads (measured: 212 rows).
+    # into the ledger boot recovery (_boot_sweep_ledger_candidates) reads
+    # (measured: 212 rows).
     # Unlike the two blocks above this one is a DIR, not a file path.
     if not os.environ.get(_WRITE_BACKUP_LEDGER_DIR_ENV):
         bak_dir = Path(tempfile.mkdtemp(prefix="orch_pytest_bak_ledger_"))

@@ -17,6 +17,11 @@
 #   * An HTTP 4xx/5xx from [A] still carries its structured answer (error_name,
 #     corrected_payload, ...), so that answer is returned, not a PowerShell exception.
 #     Connection refused has no answer and throws: that is the STOP signal.
+#   * An answer that is not JSON comes back as ok=$false, error_name=NON_JSON_RESPONSE.
+#     It used to parse to $null, and a $null answer read as an EMPTY git_status
+#     staged_hash (2026-09-29).
+# Variable names are case-insensitive: `$r = Call ...` overwrites `$R`. Keep the repo
+# path in $AProject, never in a one-letter name a result can clobber.
 # This file stays pure ASCII: PowerShell 5.1 reads a BOM-less script as the ANSI code
 # page, so any other byte would change meaning on load.
 
@@ -47,6 +52,7 @@ function Send-ARequest {
         if ($null -eq $err -or $null -eq $err.Response) { throw }
         $response = $err.Response
     }
+    $status = [int]$response.StatusCode
     try {
         $reader = New-Object IO.StreamReader($response.GetResponseStream(), (New-Object Text.UTF8Encoding $false))
         $text = $reader.ReadToEnd()
@@ -54,7 +60,15 @@ function Send-ARequest {
         $response.Close()
     }
     if ($Raw) { return $text }
-    ConvertFrom-Json $text
+    # 5.1 turns an EMPTY body into $null without an error, and a non-JSON one into a
+    # parse error: both become the one named answer below, never $null.
+    if (-not [string]::IsNullOrWhiteSpace($text)) {
+        try { return (ConvertFrom-Json $text -ErrorAction Stop) } catch { }
+    }
+    $head = if ($text) { $text.Substring(0, [Math]::Min(300, $text.Length)) } else { '<empty body>' }
+    [pscustomobject]@{ ok = $false; error_name = 'NON_JSON_RESPONSE'; http_status = $status
+        error = 'HTTP ' + $status + ' answered non-JSON: ' + $head
+        ca_next_action = 'report_this_answer_do_not_read_missing_fields_as_empty' }
 }
 
 function Invoke-A {

@@ -49,6 +49,18 @@ class _Stub(BaseHTTPRequestHandler):
                            "body": json.loads(raw.decode("utf-8"))})
         if url.path == "/api/call/bad_tool":
             self._answer(400, {"ok": False, "error_name": "SCHEMA_VIOLATION", "error": ANSWER})
+        elif url.path == "/api/call/crash_tool":
+            # aiohttp's own body for an exception that escapes a handler.
+            body = b"500 Internal Server Error\n\nServer got itself in trouble"
+            self.send_response(500)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif url.path == "/api/call/empty_tool":
+            self.send_response(502)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
         else:
             # No charset on purpose: the client must not fall back to a code page.
             self._answer(200, {"ok": True, "result": ANSWER})
@@ -70,8 +82,13 @@ $bad = Call 'bad_tool' @{{}} 'ok,error_name'
 $search = Call 'search_code' @{{ query = $text }} 'ok'
 $null = & {{ $AProject = 'C:\scoped'; RFR 'a.py' 1 1 }}
 $schema = Schema 'write_fix'
+$crash = Call 'crash_tool' @{{}} 'ok'
+$empty = Call 'empty_tool' @{{}} 'ok'
 $out = @{{ fix = $fix.result; new_ok = $new.ok; bad = $bad.error_name; bad_error = $bad.error
-          schema = $schema.tool.function.name }}
+          schema = $schema.tool.function.name
+          crash_ok = $crash.ok; crash_name = $crash.error_name; crash_status = $crash.http_status
+          crash_error = $crash.error; empty_name = $empty.error_name
+          empty_status = $empty.http_status; empty_error = $empty.error }}
 [IO.File]::WriteAllText('{out_file}', (ConvertTo-Json -InputObject $out -Compress), $utf8)
 """
 
@@ -146,6 +163,18 @@ class ThinClientOnTheWireTests(unittest.TestCase):
     def test_schema_is_a_get_on_the_tool_path(self):
         self.assertEqual(self.out["schema"], "write_fix")
         self.assertIn({"path": "/api/tools/write_fix/schema"}, _Stub.seen)
+
+    def test_a_non_json_answer_is_named_not_null(self):
+        """2026-09-29: aiohttp answered a dispatcher crash with a bare text/plain 500.
+        ConvertFrom-Json turned it into $null, and a $null git_status answer read as an
+        EMPTY staged_hash. Under $ErrorActionPreference='Stop' (this driver) the old
+        client threw instead and the whole script died."""
+        self.assertEqual((self.out["crash_ok"], self.out["crash_name"], self.out["crash_status"]),
+                         (False, "NON_JSON_RESPONSE", 500))
+        self.assertIn("Server got itself in trouble", self.out["crash_error"])
+        self.assertEqual((self.out["empty_name"], self.out["empty_status"]),
+                         ("NON_JSON_RESPONSE", 502))
+        self.assertIn("<empty body>", self.out["empty_error"])
 
 
 class ThinClientFileTests(unittest.TestCase):

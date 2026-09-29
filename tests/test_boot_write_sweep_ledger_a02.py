@@ -423,5 +423,91 @@ class LedgerRowEndsAtItsNewlineOnlyTest(unittest.TestCase):
         self.assertEqual(files, [write_core._boot_sweep_abs_path(self.target)])
 
 
+class TestBootSeedLedgerDedupeA02(unittest.TestCase):
+    """WHY: the one-time seed used to re-append EVERY existing .bak into the
+    WAL even when its target was already journaled. The ledger reader
+    (_boot_sweep_ledger_candidates) collapses rows by _boot_sweep_ledger_key,
+    so a second row for the same target restores nothing -- it is pure growth
+    (measured: after a ledger wipe one boot seed took the ledger from 224 to
+    760 rows, 163 duplicate pairs). These tests pin the dedupe: after the seed
+    the ledger holds exactly ONE row per normcase target."""
+
+    def setUp(self):
+        self.tempdir = Path(tempfile.mkdtemp(prefix="a02_dedupe_"))
+        self.cache = self.tempdir / "cache"
+        self.cache.mkdir()
+
+    def tearDown(self):
+        shutil.rmtree(self.tempdir, ignore_errors=True)
+
+    @staticmethod
+    def _row_key_counts(led: Path) -> dict:
+        """Rows per _boot_sweep_ledger_key, read back from the ledger file."""
+        counts: dict = {}
+        for line in led.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            key = write_core._boot_sweep_ledger_key(row.get("target") or "")
+            counts[key] = counts.get(key, 0) + 1
+        return counts
+
+    def test_seed_does_not_reappend_targets_already_in_ledger(self):
+        root = self.tempdir / "proj"
+        root.mkdir()
+        t_target, t_bak = _make_restorable_bak(root, name="t.py")
+        u_target, u_bak = _make_restorable_bak(root, name="u.py")
+
+        with _LedgerSandbox(self.cache) as sb:
+            # T is ALREADY journaled (as write_fix would have done at write
+            # time); U is a legacy .bak on disk with NO ledger row.
+            write_core._record_write_backup(t_target, t_bak)
+            self.assertFalse(sb.mk.exists())  # first boot: the seed must run
+            with mock.patch.object(
+                write_core, "_boot_sweep_project_roots", return_value=[root],
+            ):
+                result = asyncio.run(_boot_write_sweep(project_roots=None))
+
+            self.assertTrue(result.get("seeded"), msg=result)
+            self.assertTrue(sb.mk.exists(), msg="seed marker not written")
+            counts = self._row_key_counts(sb.led)
+
+        t_key = write_core._boot_sweep_ledger_key(t_target)
+        u_key = write_core._boot_sweep_ledger_key(u_target)
+        self.assertEqual(
+            1, counts.get(t_key),
+            msg=f"already-journaled target re-appended by the seed: {counts}",
+        )
+        self.assertEqual(
+            1, counts.get(u_key),
+            msg=f"legacy target not journaled exactly once: {counts}",
+        )
+        self.assertEqual(2, sum(counts.values()), msg=f"rows={counts}")
+
+    @unittest.skipUnless(os.name == "nt", "normcase folds case and '/' only on Windows")
+    def test_ledger_key_is_case_and_separator_insensitive(self):
+        """WHY: the dedupe above is only sound if reader and seed derive the
+        SAME key from different spellings of one path. On Windows a ledger row
+        may store the target with different case or forward slashes than the
+        index walk yields; _boot_sweep_ledger_key (normcase + abspath) must
+        collapse all spellings, else the skip never fires and the ledger grows
+        again. Windows semantics -- the production dedupe relies on the same
+        normcase behaviour."""
+        root = self.tempdir / "keys"
+        root.mkdir()
+        p = root / "MixedCase.py"
+        p.write_text("x = 1\n", encoding="utf-8")
+        variants = [
+            str(p),
+            str(p).upper(),
+            str(p).lower(),
+            str(p).replace("\\", "/"),
+            str(p).upper().replace("\\", "/"),
+        ]
+        keys = {write_core._boot_sweep_ledger_key(v) for v in variants}
+        self.assertEqual(1, len(keys), msg=f"keys diverged: {keys}")
+        self.assertEqual(write_core._boot_sweep_ledger_key(p), keys.pop())
+
+
 if __name__ == "__main__":
     unittest.main()

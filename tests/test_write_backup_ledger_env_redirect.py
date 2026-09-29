@@ -4,8 +4,8 @@ Defect (measured): `_write_backup_ledger_path` / `_write_backup_seed_marker_path
 (orchestrator/tools/write/core.py:1146-1151) were hardwired to
 `parents[3] / ".orchestrator_cache"`, so EVERY pytest run performing a real
 write_fix appended its tmp_path .bak row into the REAL repo ledger -- the one
-the D4 retention sweep reads (measured before the fence: 212 rows, 54928
-bytes). No env override existed.
+boot recovery (`_boot_sweep_ledger_candidates`) reads (measured before the
+fence: 212 rows, 54928 bytes). No env override existed.
 
 Fix: ONE directory helper `_write_backup_ledger_dir` (core.py:1131-1143) reads
 `ORCHESTRATOR_WRITE_BACKUP_LEDGER_DIR` at CALL time (line 1140, so both a
@@ -125,7 +125,8 @@ def test_real_write_fix_journals_into_redirect_and_leaves_repo_ledger_alone(
     `_record_write_backup` call inside write_fix: with the env pointed at a tmp
     dir, the .bak row lands THERE and the real repo ledger's (size, mtime_ns)
     are unchanged. Before the fix this test's write_fix would have appended a
-    tmp_path row to the ledger the D4 retention sweep reads."""
+    tmp_path row to the ledger boot recovery (_boot_sweep_ledger_candidates)
+    reads."""
     root, target = project
     wal = tmp_path / "wal_live"
     wal.mkdir()
