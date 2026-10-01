@@ -748,6 +748,7 @@ _SKIP_SESSION_LOG = frozenset({
 _ACCOUNTING_BODY_KEYS = (
     "project_path", "file_path", "path", "command", "command_encoding",
     "query", "name", "start_line", "end_line",
+    "pattern",  # 2026-10-01 Anh-approved: the search regex arrives as this body key (query/regex/q are aliases normalized INSIDE the tool layer), so without it the durable audit stored no search text at all (172-error regex post-mortem).
 )
 
 
@@ -12311,11 +12312,28 @@ async def handle_council_live_raw_clear(request):
 
 async def council_message(sender=None, to=None, text=None, body_file=None, timeout_sec=6000, queue=True, no_queue=False, queue_wait_timeout_sec=6000,
                           provider="", model="", fallback_policy="none", allowed_fallbacks=None,
-                          q_context=False, q_zones="", async_dispatch=False):
+                          q_context=False, q_zones="", async_dispatch=False,
+                          task_id="", objective_class="", risk_level="", dev_level=""):
     """Send one inline or allowlisted file-backed message through the shared dispatch core."""
     resolved_text, source_error = _council_message_source(text, body_file)
     if source_error:
         return json.dumps(source_error, ensure_ascii=False)
+    # 2026-10-01 (Fbuf, Anh approved "them logging objective_class/task_id cho council"):
+    # route-measurement metadata as explicit call fields. Prepend the exact `KEY: value`
+    # lines council/route_metrics.parse_dispatch_metadata already scans, so usage_log
+    # rows stop defaulting objective_class/task_id to "unknown" and model routing sees
+    # the declared risk/dev. Lines the caller already wrote in the text are not duplicated.
+    _meta_lines = []
+    for _k, _v in (("TASK_ID", task_id), ("OBJECTIVE_CLASS", objective_class),
+                   ("RISK_LEVEL", risk_level), ("DEV_LEVEL", dev_level)):
+        _v = str(_v or "").strip()
+        if _v:
+            _meta_lines.append("%s: %s" % (_k, _v))
+    if _meta_lines:
+        _meta_lines = [l for l in _meta_lines
+                       if not re.search(r"(?im)^\s*%s\s*:" % re.escape(l.split(":", 1)[0]), resolved_text)]
+        if _meta_lines:
+            resolved_text = "\n".join(_meta_lines) + "\n" + resolved_text
     result = await _council_dispatch_message(
         sender or "worker", to or "", resolved_text, timeout_sec,
         queue=_council_queue_enabled({"queue": queue, "no_queue": no_queue}),
@@ -12367,6 +12385,10 @@ _register_tool(
                 "async_dispatch": {"type": "boolean", "default": False, "description": "P2: true = non-blocking fire-and-forget (acks immediately with request_id; reply lands in broker_filtered.jsonl). Use for leader parallel fan-out to avoid HTTP headers timeout. Aliases: async, non_blocking. Default false keeps the classic sync reply."},
                 "q_context": {"type": "boolean", "default": False, "description": "Combo-1 opt-in: [A] pre-fetches 3 compact [Q] memory hits and appends them to the worker prompt (fail-open if [Q] is down)"},
                 "q_zones": {"type": "string", "default": "", "description": "Optional csv zone filter for q_context lookup, e.g. 'Z2' (rules/skills/tool-catalog) for how-to tasks; empty = all zones"},
+                "task_id": {"type": "string", "description": "Optional route-measurement metadata: TASK_ID this dispatch belongs to (stamped into parsed metadata; usage_log stops recording 'unknown')"},
+                "objective_class": {"type": "string", "description": "Optional route-measurement metadata: objective kind, e.g. bug-fix|feature|audit (stamped as OBJECTIVE_CLASS)"},
+                "risk_level": {"type": "string", "description": "Optional route-measurement metadata: low|mid|high (stamped as RISK_LEVEL; also feeds model routing)"},
+                "dev_level": {"type": "string", "description": "Optional route-measurement metadata: low|mid|high (stamped as DEV_LEVEL; also feeds model routing)"},
             },
             "required": ["to"],
         },
@@ -12376,12 +12398,26 @@ _register_tool(
 
 async def council_message_async(sender="user", to=None, text=None, body_file=None, timeout_sec=3600,
                                  provider="", model="", fallback_policy="none", allowed_fallbacks=None,
-                                 queue_wait_timeout_sec=0, request_id=""):
+                                 queue_wait_timeout_sec=0, request_id="",
+                                 task_id="", objective_class="", risk_level="", dev_level=""):
     """Non-blocking HTTP council dispatch with shared safe message resolution."""
     target = str(to or "").strip().lower()
     text_val, source_error = _council_message_source(text, body_file)
     if source_error:
         return json.dumps(source_error, ensure_ascii=False)
+    # 2026-10-01 (Fbuf, Anh approved): same metadata stamping as council_message — BEFORE
+    # the pre-ack model resolution so routing sees the declared risk/dev immediately.
+    _meta_lines = []
+    for _k, _v in (("TASK_ID", task_id), ("OBJECTIVE_CLASS", objective_class),
+                   ("RISK_LEVEL", risk_level), ("DEV_LEVEL", dev_level)):
+        _v = str(_v or "").strip()
+        if _v:
+            _meta_lines.append("%s: %s" % (_k, _v))
+    if _meta_lines:
+        _meta_lines = [l for l in _meta_lines
+                       if not re.search(r"(?im)^\s*%s\s*:" % re.escape(l.split(":", 1)[0]), text_val)]
+        if _meta_lines:
+            text_val = "\n".join(_meta_lines) + "\n" + text_val
     sender_val = (str(sender or "").strip() or "user")[:40]
     if target not in _COUNCIL_AGENTS or sender_val.lower() == target:
         return json.dumps({"ok": False, "error_name": "INVALID_ASYNC_SEND",
@@ -12468,6 +12504,10 @@ _register_tool(
                 "allowed_fallbacks": {"type": "array", "items": {"type": "string"}, "default": [], "description": "Ordered candidate models the caller pre-approves as substitutes. Only consulted when fallback_policy is 'explicit'; the first valid candidate wins and the ack carries an EXPLICIT_MODEL_FALLBACK warning."},
                 "queue_wait_timeout_sec": {"type": "integer", "default": 0, "description": "Max queue wait; 0 = follow timeout_sec"},
                 "request_id": {"type": "string", "description": "Optional caller correlation id (echoed in the ack + stamped on the broker message event); auto-generated when empty"},
+                "task_id": {"type": "string", "description": "Optional route-measurement metadata: TASK_ID this dispatch belongs to (stamped into parsed metadata; usage_log stops recording 'unknown')"},
+                "objective_class": {"type": "string", "description": "Optional route-measurement metadata: objective kind, e.g. bug-fix|feature|audit (stamped as OBJECTIVE_CLASS)"},
+                "risk_level": {"type": "string", "description": "Optional route-measurement metadata: low|mid|high (stamped as RISK_LEVEL; also feeds model routing)"},
+                "dev_level": {"type": "string", "description": "Optional route-measurement metadata: low|mid|high (stamped as DEV_LEVEL; also feeds model routing)"},
             },
             "required": ["to"],
         },
