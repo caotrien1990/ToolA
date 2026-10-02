@@ -13,6 +13,7 @@ time, so the binding is real and cheap to pin.
 """
 import asyncio
 import json
+import re
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -155,6 +156,72 @@ class RuleTemplateHasNoInCodeFallback(unittest.TestCase):
             ok = json.loads(asyncio.run(code_tools.manage_agent(
                 action="sync_rule", target="all", dry_run=True)))
         self.assertNotIn("rule template missing", json.dumps(ok))
+
+
+# P1 (2026-10-02): the first-fetch projection must carry the bootstrap payload.
+# Measured root cause: SLIM/INLINE mandated fields=ok,already_fetched,text,sha256,
+# which drops tool_purposes + bootstrap_epoch -- with the curated MCP surface that
+# purpose map is the only discovery channel for the cbm/ocr index tools (measured:
+# 3 cbm calls in 1659 tool calls). Pins are by PHRASE, never sha.
+FIRST_FETCH_FIELDS = "ok,already_fetched,text,sha256,tool_purposes,bootstrap_epoch"
+FIRST_FETCH_RE = re.compile(r"get_rule_core_text\?fields=([^`\s]+)")
+BARE_OLD_PROJ_RE = re.compile(
+    re.escape("ok,already_fetched,text,sha256") + r"(?!,tool_purposes)")
+DISCOVERY_SENTENCE_PHRASES = (
+    "is not DISCOVERY",
+    "no route to the cbm/ocr tools",
+)
+
+
+class FirstFetchProjectionCarriesTheBootstrapPayload(unittest.TestCase):
+    """Bind the documented first-fetch fields= list to the runtime projection."""
+
+    def test_slim_and_inline_carry_the_new_first_fetch_literal(self):
+        for name in ("SLIM_RULE.txt", "SLIM_RULE_INLINE.txt"):
+            with self.subTest(name):
+                self.assertIn(FIRST_FETCH_FIELDS, _read(name))
+
+    def test_no_bare_old_projection_survives(self):
+        """The old 4-key literal may remain ONLY as a prefix of the new one."""
+        for name in ("SLIM_RULE.txt", "SLIM_RULE_INLINE.txt"):
+            text = _read(name)
+            with self.subTest(name):
+                self.assertEqual(
+                    BARE_OLD_PROJ_RE.findall(text), [],
+                    f"{name} still projects a first fetch without tool_purposes",
+                )
+
+    def test_documented_projection_survives_the_runtime_filter(self):
+        """Doc -> daemon: extract the SLIM fields= list, run a real full fetch,
+        project it with the daemon's own _r101_filter, and prove the bootstrap
+        payload keys the rule promises actually survive."""
+        import orchestrator_server as srv
+
+        m = FIRST_FETCH_RE.search(_read("SLIM_RULE.txt"))
+        self.assertIsNotNone(
+            m, "SLIM_RULE no longer documents a first-fetch fields= list")
+        self.assertEqual(m.group(1), FIRST_FETCH_FIELDS)
+        fields = srv._r101_parse_fields(m.group(1))
+        agent = "pytest-p1-fields-binding"
+        code_tools._RULE_CORE_FETCH_CACHE.pop(
+            code_tools._rule_core_agent_key(agent), None)
+        payload = json.loads(asyncio.run(
+            code_tools.get_rule_core_text(agent_id=agent, force=True)))
+        self.assertIs(payload["already_fetched"], False)
+        projected = srv._r101_filter(payload, fields)
+        self.assertTrue(projected.get("text"), "the projection dropped text")
+        purposes = projected.get("tool_purposes")
+        self.assertIsInstance(purposes, dict)
+        self.assertTrue(purposes, "the projection dropped tool_purposes")
+        self.assertIn("bootstrap_epoch", projected)
+
+    def test_discovery_sentence_in_core_and_slim(self):
+        for name in ("CORE_RULE.txt", "SLIM_RULE.txt"):
+            text = _read(name)
+            for phrase in DISCOVERY_SENTENCE_PHRASES:
+                with self.subTest(f"{name}:{phrase}"):
+                    self.assertIn(phrase, text)
+
 
 if __name__ == "__main__":
     unittest.main()
