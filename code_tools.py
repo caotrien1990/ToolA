@@ -9677,6 +9677,14 @@ async def run_project_test_script(
     if _unc_auth_ctx:
         result["unc_auth_context"] = _unc_auth_ctx
         result["ca_next_action"] = _unc_auth_ctx["ca_next_action"]
+    # RETRY_POLICY (2026-10-02, Anh-approved): a test that ate its whole timeout
+    # is the system being busy (GPU/render/WDDM), not a code bug -- 56 measured
+    # retry-laps hung 10-25 min repeating the same signature. Say so in-band.
+    if timed_out and float(result.get("duration_seconds") or 0.0) >= 60.0:
+        result["retry_policy"] = "no_blind_retry_timeout_over_60s"
+        result["ca_hint"] = ("timeout >=60s: do NOT blind-retry. Read the output first "
+                             "(the system may be busy -- GPU/render); max 2 retries, and "
+                             "only after inspecting what the run produced.")
     # P7-S2 H2: opt-in cached enrich. Flag-OFF = no hooks/graph import.
     if os.environ.get("CBM_ENRICH_TEST", "0").strip().lower() in ("1", "true", "yes", "on"):
         # GAP-01/H2: the caller-DECLARED test list is the only honest source --

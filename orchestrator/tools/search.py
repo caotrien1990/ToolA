@@ -1136,6 +1136,41 @@ def _regex_budget_payload(query: str, path: str, project_path: str,
     return out
 
 
+# REGEX_GUARD state (2026-10-02, Anh-approved REGEX_ROOT_CAUSE items 2+3+4):
+# per-(project_path, path, query) memory of regex deadline errors. In-memory BY
+# DESIGN: a daemon restart clears it, which is the correct reset.
+_REGEX_DEADLINE_ERROR_STATE: dict = {}
+_REGEX_DEADLINE_STATE_LOCK = threading.Lock()
+
+
+def _regex_deadline_state_key(project_path: str, path: str, query: str) -> tuple:
+    return ((project_path or "").casefold(), (path or "").casefold(), (query or ""))
+
+
+def _note_regex_deadline_error(query: str, project_path: str, path: str,
+                               deadline, raw_deadline, resp: dict) -> None:
+    key = _regex_deadline_state_key(project_path, path, query)
+    with _REGEX_DEADLINE_STATE_LOCK:
+        st = _REGEX_DEADLINE_ERROR_STATE.setdefault(key, {"count": 0})
+        st["count"] = int(st.get("count", 0)) + 1
+        st["deadline"] = float(deadline) if deadline is not None else None
+        st["raw"] = repr(raw_deadline)
+        count = st["count"]
+    if count >= 2:
+        resp["strategy_hint"] = (
+            f"{count} deadline errors in a row on this scope+query: raising the "
+            "deadline is not landing either. Switch strategy -- narrow 'path' to a "
+            "subdirectory or one file, use search_code mode='text'/'smart', or query "
+            "the index (find_symbol/query_index) instead of scanning.")
+        resp["ca_next_action"] = "switch_search_strategy_or_tool"
+
+
+def _clear_regex_deadline_state(project_path: str, path: str, query: str) -> None:
+    with _REGEX_DEADLINE_STATE_LOCK:
+        _REGEX_DEADLINE_ERROR_STATE.pop(
+            _regex_deadline_state_key(project_path, path, query), None)
+
+
 async def search_code(query: str = "", path: str = "", project_path: str = "",
                       file_pattern: str = "*", literal_search: bool = True,
                       mode: str = "text", query_encoding: str = "plain",
@@ -1232,6 +1267,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
     _regex_initial_deadline = None
     _regex_attempts_used = 1
     _narrow_warn = ""
+    _regex_deadline_floor_applied = False  # REGEX_GUARD A4: set when the 2.0s floor applies
     # ISS-12: the RegexSearchTimeout instance that carries the salvaged partial
     # matches. It has to be held here because the R39 adaptive-retry loop below
     # re-raises a BRAND NEW asyncio.TimeoutError when both attempts run out of
@@ -1246,6 +1282,57 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
             if regex_deadline_seconds is not None
             else regex_worker.DEFAULT_DEADLINE_SECONDS,
         )
+        # REGEX_GUARD (2026-10-02, Anh-approved REGEX_ROOT_CAUSE items 2+3+4):
+        # measured 01/10 on 172 regex deadline errors: 159 were whole-project
+        # scans (no 'path' narrowing), 127 of them at 0.05-0.08s, and 105 blind
+        # same-params retries never changed the outcome (bench acc 0.508).
+        # A2/A4: an unscoped scan below 0.5s is refused outright; 0.5-2.0s is
+        # raised to a 2.0s floor. A3/retry policy: an unchanged retry of a
+        # scope+query+deadline that just timed out is refused until a
+        # changed-params call succeeds and clears the memory.
+        _regex_state_key = _regex_deadline_state_key(project_path, path, query)
+        with _REGEX_DEADLINE_STATE_LOCK:
+            _regex_prev_fail = dict(_REGEX_DEADLINE_ERROR_STATE.get(_regex_state_key) or {})
+        if (_regex_prev_fail.get("count", 0) >= 1
+                and _regex_prev_fail.get("raw") == repr(regex_deadline_seconds)):
+            _same_fix = {"query": query, "mode": "regex",
+                         "regex_deadline_seconds": round(min(
+                             effective_regex_deadline * 2.0,
+                             regex_worker.MAX_DEADLINE_SECONDS), 3)}
+            if project_path:
+                _same_fix["project_path"] = project_path
+            return json.dumps({
+                "ok": False,
+                "error": (f"regex scan on this exact scope+query already timed out "
+                          f"{_regex_prev_fail['count']}x at the same "
+                          f"{effective_regex_deadline:.3f}s deadline; retrying unchanged "
+                          f"has no signal (measured acc 0.508 = chance). Change "
+                          f"regex_deadline_seconds, narrow 'path', or switch tool."),
+                "error_name": "REGEX_RETRY_SAME_PARAMS_BLOCKED",
+                "retryable": True,
+                "bounded": True,
+                "corrected_payload": _same_fix,
+                "ca_next_action": "change_regex_deadline_or_narrow_path_or_use_search_code_text",
+            }, ensure_ascii=False)
+        if not path and effective_regex_deadline < 0.5:
+            _scope_fix = {"query": query, "mode": "regex", "regex_deadline_seconds": 2.0}
+            if project_path:
+                _scope_fix["project_path"] = project_path
+            return json.dumps({
+                "ok": False,
+                "error": (f"regex deadline {effective_regex_deadline:.3f}s is hopeless for a "
+                          f"whole-project scan (no 'path' narrowing): measured 159/172 "
+                          f"deadline errors were exactly this shape. Raise "
+                          f"regex_deadline_seconds to >=2.0 or pass a narrower 'path'."),
+                "error_name": "REGEX_DEADLINE_SCOPE_REJECTED",
+                "retryable": True,
+                "bounded": True,
+                "corrected_payload": _scope_fix,
+                "ca_next_action": "raise_regex_deadline_or_narrow_path_or_use_search_code_text",
+            }, ensure_ascii=False)
+        if not path and effective_regex_deadline < 2.0:
+            effective_regex_deadline = 2.0
+            _regex_deadline_floor_applied = True
         _regex_initial_deadline = effective_regex_deadline
         regex_deadline_at = search_started_at + effective_regex_deadline
         # Task 3 auto-chain fix: proactive narrow hint for regex on root.
@@ -1879,6 +1966,8 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                                                partial_source=_regex_input_phase_source(_last_regex_timeout),
                                                attempts=_regex_attempts_used,
                                                initial_deadline=_regex_initial_deadline)
+        _note_regex_deadline_error(query, project_path, path, effective_regex_deadline,
+                                   regex_deadline_seconds, _timeout_resp)
         if _narrow_warn:
             _timeout_resp["ca_chain_hint"] = _narrow_warn
             _timeout_resp["ca_chain_next"] = "search_code with file_pattern or path"
@@ -1905,7 +1994,9 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
             _rt_resp = _regex_timeout_payload(query, effective_regex_deadline, path, project_path, file_pattern,
                                               partial_source=_regex_input_phase_source(exc),
                                               attempts=_regex_attempts_used,
-                                              initial_deadline=_regex_initial_deadline)
+                                               initial_deadline=_regex_initial_deadline)
+            _note_regex_deadline_error(query, project_path, path, effective_regex_deadline,
+                                       regex_deadline_seconds, _rt_resp)
             if _narrow_warn:
                 _rt_resp["ca_chain_hint"] = _narrow_warn
                 _rt_resp["ca_chain_next"] = "search_code with file_pattern or path"
@@ -1940,6 +2031,8 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
             }, ensure_ascii=False)
         raise
     results = producer_payload["results"]
+    if mode == "regex":
+        _clear_regex_deadline_state(project_path, path, query)
     response = {
         # B018: `ok` on the SUCCESS path too. Every failure branch above answers
         # ok:False, and this branch answered nothing at all -- so the ordinary
@@ -1962,6 +2055,8 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
     if mode == "regex" and _narrow_warn:
         response["ca_chain_hint"] = _narrow_warn
         response["ca_chain_next"] = "search_code with file_pattern or path"
+    if mode == "regex" and _regex_deadline_floor_applied:
+        response["regex_deadline_floor_applied"] = 2.0
     # B026: carry the cap report OUT. This matters most on count==0: the A03 rule below
     # says a 0-hit must never silently read as "not there", and a hit that lived inside a
     # capped file is exactly that shape. The caller sees what was left out and how to
