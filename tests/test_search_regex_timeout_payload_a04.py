@@ -136,9 +136,18 @@ class RegexTimeoutPayloadTests(unittest.TestCase):
 
     def test_both_emit_paths_agree_on_the_contract(self):
         """asyncio.TimeoutError path and RegexSearchTimeout path must not diverge."""
+        # REGEX_GUARD (836fd2c) remembers a timeout per (project, path, pattern,
+        # query) and refuses an UNCHANGED retry with REGEX_RETRY_SAME_PARAMS_BLOCKED.
+        # This is a CONTRACT check -- two emit paths must answer identically -- not a
+        # "retry the same scan" scenario, so the guard's memory must not see call `b`
+        # as a blind retry of call `a`. Clear the module-global state between them
+        # (and before, so no earlier test leaks in); the contract under test is the
+        # payload SHAPE, which is identical either way.
+        search_module._REGEX_DEADLINE_ERROR_STATE.clear()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             a = _run_timeout("value_[0-9]+", _blow_up, root=root, deadline=0.20)
+            search_module._REGEX_DEADLINE_ERROR_STATE.clear()
             b = _run_timeout("value_[0-9]+", _raise_worker_timeout, root=root, deadline=0.20)
         for field in ("error_name", "retryable", "ca_next_action", "query"):
             self.assertEqual(a.get(field), b.get(field),
@@ -186,6 +195,38 @@ class RegexTimeoutPayloadTests(unittest.TestCase):
         # L-x guard: the tool's own default deadline must stay put. This test
         # goes RED if someone "fixes" the timeout by bumping DEFAULT_DEADLINE.
         self.assertEqual(search_regex_worker.DEFAULT_DEADLINE_SECONDS, 8.0)
+
+    def test_timeout_payload_carries_the_initial_deadline(self):
+        """B031(#4): search_code records _regex_initial_deadline BEFORE the R39
+        adaptive retry doubles effective_regex_deadline in place, so the timeout
+        payload can state the budget the call actually STARTED from. Drive the
+        2-attempt R39 path (no explicit regex_deadline_seconds -> first attempt at
+        DEFAULT 8.0s, retry doubled to MAX 15.0s): with the assignment the payload
+        says "first under a 8.000s deadline" and wall_clock_budget_seconds is
+        (8.0 + 15.0) * 2 = 46.0; without it (initial_deadline=None) the builder
+        falls back to the DOUBLED value as the "first" deadline -- "first under a
+        15.000s deadline", budget 60.0 -- the exact under-statement B031 fixed."""
+        search_module._REGEX_DEADLINE_ERROR_STATE.clear()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "sample.txt").write_text("needle\n", encoding="utf-8")
+            search_module.search_snapshots.publish_snapshot(
+                root, include_file=lambda path: True,
+                skip_dir=lambda name: name.startswith("."), index=None)
+
+            async def _always_timeout(key, producer, **kwargs):
+                raise asyncio.TimeoutError
+
+            with mock.patch.object(search_module, "_run_search_singleflight",
+                                   side_effect=_always_timeout):
+                payload = json.loads(asyncio.run(search_module.search_code(
+                    query="value_[0-9]+", path=str(root), mode="regex",
+                    file_pattern="*")))  # no explicit deadline -> R39 2-attempt path
+        self.assertEqual(payload["error_name"], "REGEX_SEARCH_TIMEOUT")
+        # initial deadline (8.0 DEFAULT) must survive the in-place doubling to 15.0.
+        self.assertIn("first under a 8.000s deadline", payload["error"],
+                      "initial deadline lost: payload names the DOUBLED deadline as the first")
+        self.assertAlmostEqual(payload["wall_clock_budget_seconds"], 46.0, places=3)
 
 
 if __name__ == "__main__":

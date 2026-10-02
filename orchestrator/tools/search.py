@@ -1143,13 +1143,31 @@ _REGEX_DEADLINE_ERROR_STATE: dict = {}
 _REGEX_DEADLINE_STATE_LOCK = threading.Lock()
 
 
-def _regex_deadline_state_key(project_path: str, path: str, query: str) -> tuple:
-    return ((project_path or "").casefold(), (path or "").casefold(), (query or ""))
+def _regex_scope_is_narrowed(path: str, file_pattern: str) -> bool:
+    """REGEX_GUARD D3: one predicate for 'is this scan narrow enough to skip the
+    deadline guards'. Narrow == the caller gave a subdirectory `path` OR a
+    `file_pattern` naming ONE file. The narrow-hint rule (~_narrow_warn) defines
+    the real narrowings as exactly those two and says a language-wide glob such
+    as '*.py' is NOT a narrowing -- so a glob metachar (* ? [) disqualifies the
+    pattern, while one literal filename counts as narrowed."""
+    if path:
+        return True
+    fp = (file_pattern or "").strip()
+    if not fp or fp == "*":
+        return False
+    return not any(ch in fp for ch in "*?[")
+
+
+def _regex_deadline_state_key(project_path: str, path: str, file_pattern: str, query: str) -> tuple:
+    # D1: the key must see file_pattern -- a retry narrowed ONLY by file_pattern
+    # is a CHANGED call, not the same-params retry the guard exists to block.
+    return ((project_path or "").casefold(), (path or "").casefold(),
+            (file_pattern or "*").casefold(), (query or ""))
 
 
 def _note_regex_deadline_error(query: str, project_path: str, path: str,
-                               deadline, raw_deadline, resp: dict) -> None:
-    key = _regex_deadline_state_key(project_path, path, query)
+                               file_pattern: str, deadline, raw_deadline, resp: dict) -> None:
+    key = _regex_deadline_state_key(project_path, path, file_pattern, query)
     with _REGEX_DEADLINE_STATE_LOCK:
         st = _REGEX_DEADLINE_ERROR_STATE.setdefault(key, {"count": 0})
         st["count"] = int(st.get("count", 0)) + 1
@@ -1165,11 +1183,19 @@ def _note_regex_deadline_error(query: str, project_path: str, path: str,
         resp["ca_next_action"] = "switch_search_strategy_or_tool"
 
 
-def _clear_regex_deadline_state(project_path: str, path: str, query: str) -> None:
+def _clear_regex_deadline_state(project_path: str, path: str, file_pattern: str, query: str) -> None:
+    # A SUCCESS proves the scope is searchable again, so it must clear the timeout
+    # memory for that (project, path, query) across EVERY file_pattern: the note may
+    # have been written at file_pattern='*' (the un-narrowed call that timed out)
+    # while the success comes back narrowed -- the two keys differ only in the
+    # pattern, and clearing only the exact one would leave the memory stuck.
+    pp = (project_path or "").casefold()
+    pa = (path or "").casefold()
+    qq = query or ""
     with _REGEX_DEADLINE_STATE_LOCK:
-        _REGEX_DEADLINE_ERROR_STATE.pop(
-            _regex_deadline_state_key(project_path, path, query), None)
-
+        for key in [k for k in _REGEX_DEADLINE_ERROR_STATE
+                    if k[0] == pp and k[1] == pa and k[3] == qq]:
+            _REGEX_DEADLINE_ERROR_STATE.pop(key, None)
 
 async def search_code(query: str = "", path: str = "", project_path: str = "",
                       file_pattern: str = "*", literal_search: bool = True,
@@ -1290,17 +1316,26 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         # raised to a 2.0s floor. A3/retry policy: an unchanged retry of a
         # scope+query+deadline that just timed out is refused until a
         # changed-params call succeeds and clears the memory.
-        _regex_state_key = _regex_deadline_state_key(project_path, path, query)
+        _regex_state_key = _regex_deadline_state_key(project_path, path, file_pattern, query)
         with _REGEX_DEADLINE_STATE_LOCK:
             _regex_prev_fail = dict(_REGEX_DEADLINE_ERROR_STATE.get(_regex_state_key) or {})
         if (_regex_prev_fail.get("count", 0) >= 1
                 and _regex_prev_fail.get("raw") == repr(regex_deadline_seconds)):
+            # D2: keep the caller's scope fields, and propose a deadline the OTHER
+            # guard accepts -- an unscoped suggestion below the 2.0s floor would be
+            # refused by REGEX_DEADLINE_SCOPE_REJECTED, making corrected_payload a
+            # contract that contradicts itself.
+            _same_floor = 2.0 if not _regex_scope_is_narrowed(path, file_pattern) else 0.0
             _same_fix = {"query": query, "mode": "regex",
-                         "regex_deadline_seconds": round(min(
+                         "regex_deadline_seconds": round(max(_same_floor, min(
                              effective_regex_deadline * 2.0,
-                             regex_worker.MAX_DEADLINE_SECONDS), 3)}
+                             regex_worker.MAX_DEADLINE_SECONDS)), 3)}
             if project_path:
                 _same_fix["project_path"] = project_path
+            if path:
+                _same_fix["path"] = path
+            if file_pattern and file_pattern != "*":
+                _same_fix["file_pattern"] = file_pattern
             return json.dumps({
                 "ok": False,
                 "error": (f"regex scan on this exact scope+query already timed out "
@@ -1314,10 +1349,18 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                 "corrected_payload": _same_fix,
                 "ca_next_action": "change_regex_deadline_or_narrow_path_or_use_search_code_text",
             }, ensure_ascii=False)
-        if not path and effective_regex_deadline < 0.5:
+        # D3: "unscoped" means the caller gave NEITHER a subdirectory `path` NOR a
+        # one-file `file_pattern`. The narrow-hint rule above (~_narrow_warn) names
+        # those exact two as the real narrowings and says a language-wide glob like
+        # '*.py' is NOT one, so a one-file pattern must count as narrowed here.
+        if not _regex_scope_is_narrowed(path, file_pattern) and effective_regex_deadline < 0.5:
             _scope_fix = {"query": query, "mode": "regex", "regex_deadline_seconds": 2.0}
             if project_path:
                 _scope_fix["project_path"] = project_path
+            if path:
+                _scope_fix["path"] = path
+            if file_pattern and file_pattern != "*":
+                _scope_fix["file_pattern"] = file_pattern
             return json.dumps({
                 "ok": False,
                 "error": (f"regex deadline {effective_regex_deadline:.3f}s is hopeless for a "
@@ -1330,7 +1373,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                 "corrected_payload": _scope_fix,
                 "ca_next_action": "raise_regex_deadline_or_narrow_path_or_use_search_code_text",
             }, ensure_ascii=False)
-        if not path and effective_regex_deadline < 2.0:
+        if not _regex_scope_is_narrowed(path, file_pattern) and effective_regex_deadline < 2.0:
             effective_regex_deadline = 2.0
             _regex_deadline_floor_applied = True
         _regex_initial_deadline = effective_regex_deadline
@@ -1966,7 +2009,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                                                partial_source=_regex_input_phase_source(_last_regex_timeout),
                                                attempts=_regex_attempts_used,
                                                initial_deadline=_regex_initial_deadline)
-        _note_regex_deadline_error(query, project_path, path, effective_regex_deadline,
+        _note_regex_deadline_error(query, project_path, path, file_pattern, effective_regex_deadline,
                                    regex_deadline_seconds, _timeout_resp)
         if _narrow_warn:
             _timeout_resp["ca_chain_hint"] = _narrow_warn
@@ -1995,7 +2038,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                                               partial_source=_regex_input_phase_source(exc),
                                               attempts=_regex_attempts_used,
                                                initial_deadline=_regex_initial_deadline)
-            _note_regex_deadline_error(query, project_path, path, effective_regex_deadline,
+            _note_regex_deadline_error(query, project_path, path, file_pattern, effective_regex_deadline,
                                        regex_deadline_seconds, _rt_resp)
             if _narrow_warn:
                 _rt_resp["ca_chain_hint"] = _narrow_warn
@@ -2032,7 +2075,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         raise
     results = producer_payload["results"]
     if mode == "regex":
-        _clear_regex_deadline_state(project_path, path, query)
+        _clear_regex_deadline_state(project_path, path, file_pattern, query)
     response = {
         # B018: `ok` on the SUCCESS path too. Every failure branch above answers
         # ok:False, and this branch answered nothing at all -- so the ordinary

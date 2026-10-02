@@ -737,5 +737,196 @@ class TestSearchRegexBudget(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(run.call_count, 3)
 
 
+
+
+class TestRegexDeadlineGuard(unittest.IsolatedAsyncioTestCase):
+    """Pins the REGEX_GUARD deadline refusals (D1/D2/D3/D4): the scope predicate,
+    the state key, and that each refusal's corrected_payload passes BOTH guards.
+    _REGEX_DEADLINE_ERROR_STATE is a MODULE GLOBAL -- clear it in setUp AND
+    tearDown so these tests neither leak into nor read state from the others.
+
+    The forced-timeout tests scope `path` to a SUBDIRECTORY (not the project
+    root): `path == project_path` collapses into the unscoped key and would
+    mis-key the note, so each fixture builds a real subdir holding the files."""
+
+    EVIL = r"^(a+)+$"
+
+    def setUp(self) -> None:
+        search_module._REGEX_DEADLINE_ERROR_STATE.clear()
+
+    def tearDown(self) -> None:
+        search_module._REGEX_DEADLINE_ERROR_STATE.clear()
+
+    @staticmethod
+    def _write(root: Path, name: str = "search.py") -> None:
+        (root / name).write_text("needle one\nneedle two\n", encoding="utf-8")
+
+    def _subdir(self, root: Path) -> Path:
+        sub = root / "orchestrator"
+        sub.mkdir(exist_ok=True)
+        return sub
+
+    def _force_timeout(self, root: Path, sub: Path, **kw):
+        """One regex call that reliably times out: a catastrophic pattern over a
+        published snapshot of `sub`, so the match phase exceeds the deadline and
+        the REGEX_DEADLINE_ERROR_STATE note is written. Returns the coroutine."""
+        (sub / "evil.txt").write_text("a" * 100_000 + "!\n", encoding="utf-8")
+        search_module.search_snapshots.publish_snapshot(
+            root,
+            include_file=lambda path: True,
+            skip_dir=lambda name: name.startswith("."),
+            index=None,
+        )
+        return search_module.search_code(
+            query=self.EVIL, project_path=str(root), path=str(sub), mode="regex", **kw)
+
+    async def test_unscoped_tiny_deadline_is_scope_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(root)
+            payload = json.loads(await search_module.search_code(
+                query="needle", project_path=str(root), mode="regex",
+                regex_deadline_seconds=0.3))
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error_name"], "REGEX_DEADLINE_SCOPE_REJECTED")
+
+    async def test_one_file_pattern_is_narrowed_not_rejected_not_floored(self) -> None:
+        # D3: a one-file file_pattern IS a narrowing (the narrow-hint rule names it
+        # as one of the two real narrowings), so the scope guard and the floor skip it.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(root)
+            payload = json.loads(await search_module.search_code(
+                query="needle", project_path=str(root), mode="regex",
+                file_pattern="search.py", regex_deadline_seconds=0.3))
+        self.assertTrue(payload["ok"], payload)
+        self.assertEqual(payload["count"], 2)
+        self.assertNotIn("regex_deadline_floor_applied", payload)
+
+    async def test_language_glob_still_counts_as_unnarrowed(self) -> None:
+        # D3: '*.py' is NOT a narrowing (a language-wide glob ~ '*'), so the scope
+        # guard still refuses a tiny deadline on it.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(root)
+            payload = json.loads(await search_module.search_code(
+                query="needle", project_path=str(root), mode="regex",
+                file_pattern="*.py", regex_deadline_seconds=0.3))
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error_name"], "REGEX_DEADLINE_SCOPE_REJECTED")
+
+    async def test_unscoped_midrange_deadline_gets_floor_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(root)
+            payload = json.loads(await search_module.search_code(
+                query="needle", project_path=str(root), mode="regex",
+                regex_deadline_seconds=1.0))
+        self.assertTrue(payload["ok"], payload)
+        self.assertEqual(payload.get("regex_deadline_floor_applied"), 2.0)
+
+    async def test_scope_rejected_corrected_payload_round_trips(self) -> None:
+        # D2 round-trip: feed REGEX_DEADLINE_SCOPE_REJECTED's corrected_payload back
+        # and both guards must accept it (its 2.0s deadline passes the scope guard).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(root)
+            refusal = json.loads(await search_module.search_code(
+                query="needle", project_path=str(root), mode="regex",
+                regex_deadline_seconds=0.3))
+            self.assertEqual(refusal["error_name"], "REGEX_DEADLINE_SCOPE_REJECTED")
+            corrected = dict(refusal["corrected_payload"])
+            corrected.pop("project_path", None)
+            resent = json.loads(await search_module.search_code(
+                project_path=str(root), **corrected))
+        self.assertTrue(resent["ok"], resent)
+        self.assertEqual(resent["count"], 2)
+
+    async def test_same_params_retry_is_blocked(self) -> None:
+        # Scoped to a subdir so the 0.05s call reaches a REAL REGEX_SEARCH_TIMEOUT
+        # at both HEAD and post-fix; the unchanged retry must then be blocked.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sub = self._subdir(root)
+            first = json.loads(await self._force_timeout(root, sub, regex_deadline_seconds=0.05))
+            self.assertEqual(first["error_name"], "REGEX_SEARCH_TIMEOUT")
+            retry = json.loads(await search_module.search_code(
+                query=self.EVIL, project_path=str(root), path=str(sub), mode="regex",
+                regex_deadline_seconds=0.05))
+        self.assertFalse(retry["ok"])
+        self.assertEqual(retry["error_name"], "REGEX_RETRY_SAME_PARAMS_BLOCKED")
+
+    async def test_retry_narrowed_by_file_pattern_is_not_blocked(self) -> None:
+        # D1: a retry narrowed ONLY by file_pattern is a CHANGED call, not the
+        # same-params retry -- the state key must see file_pattern. Same subdir
+        # scope, only file_pattern added; the benign file lets the catastrophic
+        # pattern return fast instead of timing out again.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sub = self._subdir(root)
+            self._write(sub)
+            first = json.loads(await self._force_timeout(root, sub, regex_deadline_seconds=0.05))
+            self.assertEqual(first["error_name"], "REGEX_SEARCH_TIMEOUT")
+            retry = json.loads(await search_module.search_code(
+                query=self.EVIL, project_path=str(root), path=str(sub), mode="regex",
+                file_pattern="search.py", regex_deadline_seconds=5.0))
+        self.assertTrue(retry["ok"], retry)
+        self.assertEqual(retry["count"], 0)
+
+    async def test_same_params_blocked_corrected_payload_round_trips(self) -> None:
+        # D2 round-trip: REGEX_RETRY_SAME_PARAMS_BLOCKED's corrected_payload must
+        # keep the scope fields AND propose a deadline that clears the scope guard.
+        # The retry targets only the benign file so the catastrophic pattern
+        # returns fast instead of timing out again.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sub = self._subdir(root)
+            self._write(sub)
+            first = json.loads(await self._force_timeout(root, sub, regex_deadline_seconds=0.05))
+            self.assertEqual(first["error_name"], "REGEX_SEARCH_TIMEOUT")
+            refusal = json.loads(await search_module.search_code(
+                query=self.EVIL, project_path=str(root), path=str(sub), mode="regex",
+                regex_deadline_seconds=0.05))
+            self.assertEqual(refusal["error_name"], "REGEX_RETRY_SAME_PARAMS_BLOCKED")
+            corrected = dict(refusal["corrected_payload"])
+            self.assertEqual(corrected.get("path"), str(sub))
+            # Scoped by path, so a raised deadline clears the scope guard.
+            self.assertGreater(corrected["regex_deadline_seconds"], 0.05)
+            self.assertLessEqual(
+                corrected["regex_deadline_seconds"],
+                search_regex_worker.MAX_DEADLINE_SECONDS)
+            corrected.pop("project_path", None)
+            corrected["file_pattern"] = "search.py"
+            # The corrected deadline (2x the timed-out one, here 0.1s) already PASSES
+            # both guards -- that is the D2 contract. 0.1s is still too small to read
+            # a file in practice, so give the resend a realistic budget to prove the
+            # guards accept it and the corrected scope fields (path kept) work.
+            corrected["regex_deadline_seconds"] = 5.0
+            resent = json.loads(await search_module.search_code(
+                project_path=str(root), **corrected))
+        self.assertTrue(resent["ok"], resent)
+        self.assertEqual(resent["count"], 0)
+
+    async def test_success_clears_the_deadline_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sub = self._subdir(root)
+            self._write(sub)
+            first = json.loads(await self._force_timeout(root, sub, regex_deadline_seconds=0.05))
+            self.assertEqual(first["error_name"], "REGEX_SEARCH_TIMEOUT")
+            self.assertTrue(search_module._REGEX_DEADLINE_ERROR_STATE)
+            # A SUCCESS on the SAME query+scope clears the state: same catastrophic
+            # query, but file_pattern narrows to the benign file (no pathological
+            # input) so it returns fast instead of timing out -- a real success that
+            # must clear the deadline memory.
+            ok_call = json.loads(await search_module.search_code(
+                query=self.EVIL, project_path=str(root), path=str(sub), mode="regex",
+                file_pattern="search.py", regex_deadline_seconds=5.0))
+            self.assertTrue(ok_call["ok"], ok_call)
+            self.assertEqual(ok_call["count"], 0)
+            self.assertEqual(search_module._REGEX_DEADLINE_ERROR_STATE, {})
+            self.assertEqual(search_module._REGEX_DEADLINE_ERROR_STATE, {})
+
+
 if __name__ == "__main__":
     unittest.main()
