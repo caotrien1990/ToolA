@@ -113,6 +113,16 @@ _COLOUR_FORCING_VARS = ("FORCE_COLOR", "CLICOLOR_FORCE", "PY_COLORS")
 _SESSIONS_DB_ENV = "ORCHESTRATOR_SESSIONS_DB"
 _GENERATION_FILE_ENV = "ORCHESTRATOR_GENERATION_FILE"
 _WRITE_BACKUP_LEDGER_DIR_ENV = "ORCHESTRATOR_WRITE_BACKUP_LEDGER_DIR"
+# P3 2026-10-02: the log/ledger files below. Measured before the override:
+# 176/724 USAGE_LOG rows were in-process pytest probes (46/48 'fails'), 22/29
+# ERROR/CRITICAL lines in orchestrator.log were test daemons, and 1135/1252 rows
+# in .council/usage_log.jsonl (the ledger LAYA mines) were `opencode/test-model`
+# -- a model that exists only in tests. Filled ONLY when unset (A53), so a run
+# pointed at a real file keeps it.
+_LOG_FILE_ENV = "ORCHESTRATOR_LOG_FILE"
+_ACCESS_LOG_FILE_ENV = "ORCHESTRATOR_ACCESS_LOG_FILE"
+_USAGE_LOG_FILE_ENV = "ORCHESTRATOR_USAGE_LOG_FILE"
+_COUNCIL_USAGE_LOG_FILE_ENV = "ORCHESTRATOR_COUNCIL_USAGE_LOG_FILE"
 
 # B031: only the directories THIS conftest created with `mkdtemp` below. A value
 # supplied by the caller is never recorded and so never removed -- the A53 rule
@@ -161,6 +171,28 @@ def pytest_configure(config):  # noqa: ARG001 - pytest hook signature
         _B031_OWNED_TEMP_DIRS.append(bak_dir)
         os.environ[_WRITE_BACKUP_LEDGER_DIR_ENV] = str(bak_dir)
 
+    # P3: same A53 shape, one shared mkdtemp dir for the four log/ledger files.
+    # orchestrator_server reads LOG_FILE/_ACCESS_LOG_FILE at IMPORT (so a
+    # test-spawned server must inherit these through os.environ), while
+    # logs._usage_log_path and _council_usage_log_path resolve per call.
+    if not os.environ.get(_LOG_FILE_ENV):
+        log_dir = Path(tempfile.mkdtemp(prefix="orch_pytest_logs_"))
+        _B031_OWNED_TEMP_DIRS.append(log_dir)
+        os.environ[_LOG_FILE_ENV] = str(log_dir / "orchestrator.log")
+    if not os.environ.get(_ACCESS_LOG_FILE_ENV):
+        access_dir = Path(tempfile.mkdtemp(prefix="orch_pytest_logs_"))
+        _B031_OWNED_TEMP_DIRS.append(access_dir)
+        os.environ[_ACCESS_LOG_FILE_ENV] = str(access_dir / "orchestrator_access.log")
+    if not os.environ.get(_USAGE_LOG_FILE_ENV):
+        usage_dir = Path(tempfile.mkdtemp(prefix="orch_pytest_logs_"))
+        _B031_OWNED_TEMP_DIRS.append(usage_dir)
+        os.environ[_USAGE_LOG_FILE_ENV] = str(usage_dir / "USAGE_LOG.jsonl")
+    if not os.environ.get(_COUNCIL_USAGE_LOG_FILE_ENV):
+        council_dir = Path(tempfile.mkdtemp(prefix="orch_pytest_logs_"))
+        _B031_OWNED_TEMP_DIRS.append(council_dir)
+        os.environ[_COUNCIL_USAGE_LOG_FILE_ENV] = str(
+            council_dir / "council_usage_log.jsonl")
+
 
 # --- STT-27 (B032): release the process-global SessionWriter after every test ---
 #
@@ -206,6 +238,27 @@ def pytest_unconfigure(config):  # noqa: ARG001 - pytest hook signature
             from orchestrator.session import store
 
             store.close_writer()
+        except Exception:  # pragma: no cover - teardown must never fail a run
+            pass
+        # P3: a test that spawns orchestrator_server IN-PROCESS opens
+        # _SafeRotatingFileHandler on the mkdtemp log path and Windows refuses to
+        # unlink an open file, leaving the registered dir behind. Close those
+        # handlers before the rmtree loop. Best-effort; a daemon that never
+        # imported has nothing to close.
+        try:
+            import logging
+
+            import orchestrator_server as _srv
+
+            for _h in (
+                logging.getLogger("orchestrator.access").handlers
+                + [getattr(_srv, "_file_handler", None)]
+            ):
+                if _h is not None and hasattr(_h, "close"):
+                    try:
+                        _h.close()
+                    except Exception:
+                        pass
         except Exception:  # pragma: no cover - teardown must never fail a run
             pass
     # #34 (2026-09-25): delete ONLY the directories registered above -- a

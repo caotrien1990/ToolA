@@ -4688,9 +4688,13 @@ class TestAT139CouncilContracts(unittest.IsolatedAsyncioTestCase):
         usage = orchestrator_server._HERE / '.council' / 'usage_log.jsonl'
         usage.write_text('\n'.join(json.dumps({'runtime_key': 'ope::m', 'duration_sec': n})
                                    for n in (10, 20, 40)), encoding='utf-8')
-        with mock.patch('orchestrator_server._council_runtime_status',
-                        return_value={'state': 'running', 'request_id': 'r1'}):
-            payload = orchestrator_server._council_queue_timeout_payload('ope::m')
+        # P3: conftest sets ORCHESTRATOR_COUNCIL_USAGE_LOG_FILE, which the helper
+        # honours ahead of `_HERE` -- clear it so the seeded file above is read.
+        with mock.patch.dict(os.environ):
+            os.environ.pop('ORCHESTRATOR_COUNCIL_USAGE_LOG_FILE', None)
+            with mock.patch('orchestrator_server._council_runtime_status',
+                            return_value={'state': 'running', 'request_id': 'r1'}):
+                payload = orchestrator_server._council_queue_timeout_payload('ope::m')
         self.assertEqual(payload['observed_p50_sec'], 20.0)
         self.assertEqual(payload['worker_state']['state'], 'running')
         self.assertEqual(payload['timeout_semantics'], 'caller_wait_only')
@@ -4807,6 +4811,14 @@ class TestCouncilLedgerRecordEndsAtItsNewlineOnly(unittest.IsolatedAsyncioTestCa
         old_here = orchestrator_server._HERE
         orchestrator_server._HERE = self.root
         self.addCleanup(setattr, orchestrator_server, '_HERE', old_here)
+        # P3: this class relies on `_HERE` steering the council ledger, but
+        # `_council_usage_log_path()` honours ORCHESTRATOR_COUNCIL_USAGE_LOG_FILE
+        # (conftest-set) first. Route the helper at the tmp root for this process.
+        ledger = self.council / 'usage_log.jsonl'
+        patcher = mock.patch.object(
+            orchestrator_server, '_council_usage_log_path', lambda: ledger)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     @staticmethod
     def _seed(path, rows):

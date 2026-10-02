@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -12,6 +13,21 @@ from .store import _SESSIONS_DB, _log_session_event, _project_cache_dir
 
 _ORCHESTRATOR_ROOT = Path(__file__).parents[2]
 _LOG_FILE_LOCK = threading.RLock()
+
+
+def _usage_log_path() -> Path:
+    """Resolve USAGE_LOG.jsonl at CALL time: ORCHESTRATOR_USAGE_LOG_FILE when set
+    (pytest sets it so an in-process probe never lands in the live ledger --
+    measured 2026-09-30: 176/724 rows were test probes carrying 46/48 `fails`),
+    else the default `.orchestrator_cache/USAGE_LOG.jsonl` under the orchestrator
+    root. Resolved per call, not at import, so a test that sets the env after
+    import still redirects; the existing `logs._project_cache_dir` monkeypatch in
+    tests/test_post_call_accounting.py keeps working because the env is only a
+    default -- that test clears it explicitly."""
+    override = os.environ.get("ORCHESTRATOR_USAGE_LOG_FILE")
+    if override:
+        return Path(override)
+    return _project_cache_dir(str(_ORCHESTRATOR_ROOT)) / "USAGE_LOG.jsonl"
 
 # B030 2026-08-23. How old a `.<name>.<rand>.tmp` must be before the NEXT writer
 # reclaims it. Measured cause: 132 orphans / 10,360,372 bytes accumulated in
@@ -137,7 +153,6 @@ def _log_usage(tool: str, params: dict, ok: bool, ms: int, error: str = "", *,
     row it belonged to. The params loop is kept for the `session_id` case and for
     any caller that does carry a plain `agent_id`; the explicit argument wins.
     """
-    cache_dir = _project_cache_dir(str(_ORCHESTRATOR_ROOT))
     project_hint = params.get("project_path", params.get("file_path", ""))
     entry = {
         "ts": datetime.now().isoformat(timespec="seconds"),
@@ -166,7 +181,7 @@ def _log_usage(tool: str, params: dict, ok: bool, ms: int, error: str = "", *,
         entry["error_name"] = str(error_name)[:80]
     if error:
         entry["error"] = error[:120]
-    return _log_to_file(cache_dir / "USAGE_LOG.jsonl", entry, max_entries=1000)
+    return _log_to_file(_usage_log_path(), entry, max_entries=1000)
 
 
 def _log_app_session(project_path: str, tool: str, extra: dict, ok: bool, ms: int = 0, error: str = ""):
@@ -206,7 +221,7 @@ def _auto_trim_log(log_path: Path, keep_sessions: int = 2):
 
 def _check_incomplete_sessions() -> list[dict]:
     """Scan USAGE_LOG tìm sessions chưa có log_native (session_end)."""
-    log_path = _project_cache_dir(str(_ORCHESTRATOR_ROOT)) / "USAGE_LOG.jsonl"
+    log_path = _usage_log_path()
     if not log_path.exists():
         return []
     try:
@@ -261,9 +276,9 @@ async def log_native(native: list = None) -> str:
         "type": "session_end",
         "native": cleaned,
     }
-    cache_dir = _project_cache_dir(str(_ORCHESTRATOR_ROOT))
-    _log_to_file(cache_dir / "USAGE_LOG.jsonl", entry, max_entries=1000)
-    _auto_trim_log(cache_dir / "USAGE_LOG.jsonl")
+    usage_path = _usage_log_path()
+    _log_to_file(usage_path, entry, max_entries=1000)
+    _auto_trim_log(usage_path)
     try:
         import sqlite3
         conn = sqlite3.connect(str(_SESSIONS_DB))

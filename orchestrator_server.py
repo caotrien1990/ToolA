@@ -111,7 +111,14 @@ _HERE = Path(__file__).parent
 HTML_FILE = path_runtime.resolve_ui_html(_HERE)
 # MCP stdio workers share the tree with the HTTP server; they must not hold
 # orchestrator.log or RotatingFileHandler rollover hits WinError 32.
-LOG_FILE = _HERE / ("orchestrator.mcp.log" if "--mcp" in sys.argv else "orchestrator.log")
+# P3 2026-10-02: ORCHESTRATOR_LOG_FILE / ORCHESTRATOR_ACCESS_LOG_FILE redirect the
+# main + access logs (pytest sets both so a test-spawned server never writes the
+# live logs -- measured: 22/29 ERROR lines in orchestrator.log were test daemons).
+# Default = current behaviour, --mcp branch included.
+LOG_FILE = Path(
+    os.environ.get("ORCHESTRATOR_LOG_FILE")
+    or _HERE / ("orchestrator.mcp.log" if "--mcp" in sys.argv else "orchestrator.log")
+)
 LOG_TAIL_BYTES = int(os.environ.get("ORCHESTRATOR_LOG_TAIL_BYTES", str(1024 * 1024)))
 CORE_RULE_FILE = _HERE / "examples" / "CORE_RULE.txt"
 SERVER_PATH = str(Path(__file__).resolve())
@@ -245,7 +252,9 @@ _file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(messag
 # F7: separate access log for high-volume dashboard poll routes
 # (/api/council/activity, /api/council/state, /api/council/events).
 # These account for ~90% of request volume and would swamp the main log.
-_ACCESS_LOG_FILE = _HERE / "orchestrator_access.log"
+_ACCESS_LOG_FILE = Path(
+    os.environ.get("ORCHESTRATOR_ACCESS_LOG_FILE") or (_HERE / "orchestrator_access.log")
+)
 _access_file_handler = _SafeRotatingFileHandler(
     _ACCESS_LOG_FILE, maxBytes=50 * 1024 * 1024, backupCount=5, encoding='utf-8', delay=True,
 )
@@ -749,6 +758,11 @@ _ACCOUNTING_BODY_KEYS = (
     "project_path", "file_path", "path", "command", "command_encoding",
     "query", "name", "start_line", "end_line",
     "pattern",  # 2026-10-01 Anh-approved: the search regex arrives as this body key (query/regex/q are aliases normalized INSIDE the tool layer), so without it the durable audit stored no search text at all (172-error regex post-mortem).
+    # 2026-10-02 (P9): 554/567 search rows kept only project_path+query, so the
+    # inputs that decide a search's cost/shape were never audited. mode picks the
+    # index path (symbol/regex/smart), regex_deadline_seconds is the 5s budget a
+    # regex post-mortem needs, file_pattern scopes the walk.
+    "mode", "regex_deadline_seconds", "file_pattern",
 )
 
 
@@ -7145,6 +7159,21 @@ def _council_build_dispatch_reply(target: str, sender: str, request_event: dict,
         "full_output_path": full_output_path,
     }
 
+def _council_usage_log_path() -> Path:
+    """Resolve the council per-worker usage ledger at CALL time. Default is the
+    live `<repo>/.council/usage_log.jsonl`; ORCHESTRATOR_COUNCIL_USAGE_LOG_FILE
+    redirects it (pytest sets this so a dispatch inside a test never lands in the
+    ledger LAYA mines -- measured 2026-10-02: test_council_status_b4 restored the
+    live `_HERE` while a 2s-stub drain was still in flight and appended 4
+    `opencode/test-model` rows, a model that exists only in tests).
+    Defence in depth: the ROOT fix is the fixture draining the queue before
+    restoring `_HERE`; this helper alone cannot stop that race (the drain reads
+    `_HERE` at append time, after the restore)."""
+    override = os.environ.get("ORCHESTRATOR_COUNCIL_USAGE_LOG_FILE")
+    if override:
+        return Path(override)
+    return _HERE / ".council" / "usage_log.jsonl"
+
 
 def _council_usage_append(item: dict, result: dict) -> None:
     """A-5 (2026-07-12): per-worker usage ledger — one JSONL line per finished
@@ -7177,7 +7206,7 @@ def _council_usage_append(item: dict, result: dict) -> None:
         # brace, with zero exceptions and exit code 0. _jsonl_append_locked takes a
         # sidecar lock (so a concurrent read_tail is not denied) and fsyncs outside
         # the critical section.
-        _jsonl_append_locked(_HERE / ".council" / "usage_log.jsonl", rec)
+        _jsonl_append_locked(_council_usage_log_path(), rec)
     except Exception as exc:
         # Still fail-open: a ledger write must never break a dispatch. But it is
         # LOGGED now. The old bare `pass` made a lost usage line indistinguishable
@@ -7189,7 +7218,7 @@ def _council_usage_append(item: dict, result: dict) -> None:
 def _council_observed_p50_sec(runtime_key: str):
     """Median completed duration for this worker slot, or None without samples."""
     samples = []
-    path = _HERE / ".council" / "usage_log.jsonl"
+    path = _council_usage_log_path()
     try:
         # One row per "\n": a raw U+2028/U+0085 INSIDE a row broke json.loads and, with
         # it, every sample (the try spans the loop).

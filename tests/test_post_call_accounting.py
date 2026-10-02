@@ -1,9 +1,11 @@
 import asyncio
 import json
+import os
 import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import code_tools
 import orchestrator_server
@@ -184,16 +186,20 @@ class TestSessionLogWrapperForwarding(unittest.TestCase):
     def test_row_written_through_the_wrapper_carries_the_a41_fields(self):
         logs = code_tools._session_logs_module
         with tempfile.TemporaryDirectory() as tmp:
-            old_cache_dir = logs._project_cache_dir
-            logs._project_cache_dir = lambda _root: Path(tmp)
-            try:
-                written = code_tools._log_usage(
-                    "probe_tool", {"project_path": "p"}, True, 34, "",
-                    delivered=False, client_gone=True,
-                    error_name="SERVER_BUDGET_EXCEEDED", agent_id="claultnai",
-                )
-            finally:
-                logs._project_cache_dir = old_cache_dir
+            # P3: clear the conftest-set ORCHESTRATOR_USAGE_LOG_FILE so the
+            # _project_cache_dir monkeypatch below is what redirects the write.
+            with mock.patch.dict(os.environ):
+                os.environ.pop("ORCHESTRATOR_USAGE_LOG_FILE", None)
+                old_cache_dir = logs._project_cache_dir
+                logs._project_cache_dir = lambda _root: Path(tmp)
+                try:
+                    written = code_tools._log_usage(
+                        "probe_tool", {"project_path": "p"}, True, 34, "",
+                        delivered=False, client_gone=True,
+                        error_name="SERVER_BUDGET_EXCEEDED", agent_id="claultnai",
+                    )
+                finally:
+                    logs._project_cache_dir = old_cache_dir
             self.assertTrue(written)
             raw = (Path(tmp) / "USAGE_LOG.jsonl").read_text(encoding="utf-8")
         rows = [json.loads(line) for line in raw.splitlines() if line.strip()]
@@ -243,16 +249,22 @@ class TestSessionLogWrapperForwarding(unittest.TestCase):
             "error_name": "",
         }
         with tempfile.TemporaryDirectory() as tmp:
-            old_cache_dir = logs._project_cache_dir
-            logs._project_cache_dir = lambda _root: Path(tmp)
-            try:
-                orchestrator_server._persist_post_call_accounting(
-                    dict(base, accounting_id="rec-top-level", agent_id="claultnai"))
-                orchestrator_server._persist_post_call_accounting(
-                    dict(base, accounting_id="rec-nested-only"))
-                raw = (Path(tmp) / "USAGE_LOG.jsonl").read_text(encoding="utf-8")
-            finally:
-                logs._project_cache_dir = old_cache_dir
+            # P3: conftest now sets ORCHESTRATOR_USAGE_LOG_FILE for every run, and
+            # _usage_log_path() honours it ahead of the _project_cache_dir
+            # monkeypatch below -- so clear the env for the duration of this test
+            # or the assertion would read the conftest temp file instead of `tmp`.
+            with mock.patch.dict(os.environ):
+                os.environ.pop("ORCHESTRATOR_USAGE_LOG_FILE", None)
+                old_cache_dir = logs._project_cache_dir
+                logs._project_cache_dir = lambda _root: Path(tmp)
+                try:
+                    orchestrator_server._persist_post_call_accounting(
+                        dict(base, accounting_id="rec-top-level", agent_id="claultnai"))
+                    orchestrator_server._persist_post_call_accounting(
+                        dict(base, accounting_id="rec-nested-only"))
+                    raw = (Path(tmp) / "USAGE_LOG.jsonl").read_text(encoding="utf-8")
+                finally:
+                    logs._project_cache_dir = old_cache_dir
         rows = [json.loads(line) for line in raw.splitlines() if line.strip()]
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["agent_id"], "claultnai")
@@ -262,6 +274,30 @@ class TestSessionLogWrapperForwarding(unittest.TestCase):
             "the nested compact exists for durable-audit meta, and reading it there is "
             "what left 1000 USAGE_LOG rows with no agent_id at all",
         )
+
+    def test_search_code_decisive_inputs_survive_body_compaction(self):
+        # P9 (2026-10-02): 554/567 durable-audit search rows kept only
+        # project_path+query; mode / regex_deadline_seconds / file_pattern -- the
+        # inputs that decide a search's cost -- were never stored. Pin that they
+        # now survive compaction, and that a float budget stays a float (compact).
+        body = {
+            "project_path": "D:/proj",
+            "query": "council_message",
+            "pattern": "council_.*async",
+            "mode": "regex",
+            "regex_deadline_seconds": 2.5,
+            "file_pattern": "*.py",
+            "not_a_stored_key": "dropped",
+        }
+        out = orchestrator_server._compact_accounting_body(body)
+        self.assertEqual(out["mode"], "regex")
+        self.assertEqual(out["regex_deadline_seconds"], 2.5)
+        self.assertIsInstance(out["regex_deadline_seconds"], float)
+        self.assertEqual(out["file_pattern"], "*.py")
+        self.assertEqual(out["pattern"], "council_.*async")
+        self.assertNotIn("not_a_stored_key", out)
+
+
 class TestPostCallAccountingQueue(unittest.TestCase):
     def test_sink_failure_isolated_and_fifo_continues(self):
         seen = []

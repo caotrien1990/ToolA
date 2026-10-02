@@ -294,9 +294,13 @@ class ARecordEndsAtItsNewlineOnlyTest(unittest.TestCase):
         second = (start + timedelta(minutes=1)).isoformat(timespec="seconds")
         self._seed([{"ts": first, "tool": "x", "error": self.TEXT},
                     {"ts": second, "tool": "y"}])
-        with mock.patch.object(L, "_project_cache_dir", lambda _root: self.root):
-            self.assertEqual(L._check_incomplete_sessions(),
-                             [{"ts": first, "calls": 2}])
+        with mock.patch.dict(os.environ):
+            # P3: clear the conftest-set ORCHESTRATOR_USAGE_LOG_FILE so the
+            # _project_cache_dir patch below (not the env) redirects the scan.
+            os.environ.pop("ORCHESTRATOR_USAGE_LOG_FILE", None)
+            with mock.patch.object(L, "_project_cache_dir", lambda _root: self.root):
+                self.assertEqual(L._check_incomplete_sessions(),
+                                 [{"ts": first, "calls": 2}])
 
 
 if __name__ == "__main__":

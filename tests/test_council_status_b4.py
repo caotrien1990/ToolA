@@ -73,6 +73,22 @@ class _StatusTmpBase(unittest.IsolatedAsyncioTestCase):
         orchestrator_server._COUNCIL_AGENT_RUNTIME.clear()
 
     async def asyncTearDown(self):
+        # P3 ROOT FIX (2026-10-02): a queued `_council_queue_drain` keeps running
+        # after the ack-path tests return, and `_council_usage_append` resolves the
+        # ledger through `_HERE` at append time -- so restoring the live `_HERE`
+        # while the 2s-stub drain is in flight appended `opencode/test-model` rows
+        # into the LIVE ledger (measured: 4 rows from this file, incl.
+        # run-duplicate-active-b4). Wait for the drain to finish while `_HERE`
+        # still points at the tmp root, THEN restore. Waits, never mutates state;
+        # ~2s worst case (one stub sleep), only when a drain is actually running.
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            with orchestrator_server._COUNCIL_AGENT_QUEUE_LOCK:
+                draining = any(orchestrator_server._COUNCIL_AGENT_QUEUE_DRAINING.values())
+                queued = any(orchestrator_server._COUNCIL_AGENT_QUEUES.values())
+            if not draining and not queued:
+                break
+            await asyncio.sleep(0.05)
         orchestrator_server._HERE = self.old_here
         orchestrator_server._council_run_agent = self.old_run
         orchestrator_server._council_capture_to_q = self.old_capture

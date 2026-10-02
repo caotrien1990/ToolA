@@ -94,6 +94,12 @@ def _run_isolated(module_names: tuple[str, ...], sandbox: Path) -> tuple[int, li
     # Clearing them is also what a developer running one module by hand does.
     env.pop("ORCHESTRATOR_SESSIONS_DB", None)
     env.pop("ORCHESTRATOR_GENERATION_FILE", None)
+    # P3: the four P3 log/ledger vars behave the same -- a child that inherits
+    # them skips conftest's mkdtemp branch and the guard goes blind to its leak.
+    env.pop("ORCHESTRATOR_LOG_FILE", None)
+    env.pop("ORCHESTRATOR_ACCESS_LOG_FILE", None)
+    env.pop("ORCHESTRATOR_USAGE_LOG_FILE", None)
+    env.pop("ORCHESTRATOR_COUNCIL_USAGE_LOG_FILE", None)
 
     proc = subprocess.run(
         [sys.executable, "-m", "pytest", "-p", "no:randomly", "-q",
