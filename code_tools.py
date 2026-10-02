@@ -4566,40 +4566,58 @@ async def _backup_project_locked(
         raise
 
 
-def _cache_delta_sync(project_path: str, index_override: dict | None = None) -> str:
+def _cache_delta_sync(project_path: str, index_override: dict | None = None, *, scope: str = "") -> str:
     root = Path(project_path).resolve()
     index = index_override if isinstance(index_override, dict) else _load_index(str(root))
     files = index.get("files", {})
+    # P10: an optional POSIX relative subtree narrows BOTH the indexed-file
+    # comparison and the walk to the hit set a scoped search could have served.
+    scope_prefix = (scope or "").replace("\\", "/").strip("/")
     added = []
     modified = []
     deleted = []
     for rel, info in files.items():
+        if scope_prefix and rel != scope_prefix and not rel.startswith(scope_prefix + "/"):
+            continue
         fp = root / rel
         if not fp.exists():
             deleted.append(rel)
             continue
         try:
-            # Always hash: a restore/copy can preserve both mtime and size.
-            current_hash = surgical_mapper.get_file_hash(str(fp))
+            # P10: stat-gated, memoized hash (surgical_mapper.get_file_hash_stat_gated).
+            # The old "Always hash: a restore/copy can preserve both mtime and size"
+            # re-read every indexed file on EVERY probe; the signature
+            # (st_size, st_mtime_ns, st_ino) keeps that guarantee -- a copy/replace
+            # gets a new inode on NTFS -- while an unchanged file is never re-read.
+            current_hash = surgical_mapper.get_file_hash_stat_gated(str(fp))
             if current_hash != info.get("hash"):
                 modified.append(rel)
         except Exception:
             modified.append(rel)
     indexed = set(files)
-    for walk_root, dirs, walk_files in os.walk(root):
-        dirs[:] = [d for d in dirs if not surgical_mapper.should_skip_dir(d, root)]
-        for fn in walk_files:
-            path = Path(walk_root) / fn
-            # B022: pass `root`. `_skip_reason` needs it for `_depth_below_root`,
-            # and the indexer already passes it (surgical_mapper.py:1134). Without
-            # it the depth is None and R82's conservative default KEEPS the file --
-            # correct for the indexer, inverted here, where keeping it means "new
-            # file". Every deep data-JSON the indexer refuses was reported `added`
-            # forever, so no refresh could ever clear it.
-            if path.is_file() and surgical_mapper._should_scan_file(path, root):
-                rel = str(path.relative_to(root)).replace("\\", "/")
-                if rel not in indexed:
-                    added.append(rel)
+    walk_target = (root / scope_prefix) if scope_prefix else root
+    if scope_prefix and walk_target.is_file():
+        # Scope named a single file: no walk; the only possible `added` is the
+        # file itself when the index never took it.
+        if surgical_mapper._should_scan_file(walk_target, root):
+            rel = str(walk_target.relative_to(root)).replace("\\", "/")
+            if rel not in indexed:
+                added.append(rel)
+    elif walk_target.is_dir():
+        for walk_root, dirs, walk_files in os.walk(walk_target):
+            dirs[:] = [d for d in dirs if not surgical_mapper.should_skip_dir(d, root)]
+            for fn in walk_files:
+                path = Path(walk_root) / fn
+                # B022: pass `root`. `_skip_reason` needs it for `_depth_below_root`,
+                # and the indexer already passes it (surgical_mapper.py:1134). Without
+                # it the depth is None and R82's conservative default KEEPS the file --
+                # correct for the indexer, inverted here, where keeping it means "new
+                # file". Every deep data-JSON the indexer refuses was reported `added`
+                # forever, so no refresh could ever clear it.
+                if path.is_file() and surgical_mapper._should_scan_file(path, root):
+                    rel = str(path.relative_to(root)).replace("\\", "/")
+                    if rel not in indexed:
+                        added.append(rel)
     return json.dumps({
         "ok": True,
         "added": added,
@@ -4616,15 +4634,28 @@ def _forget_cache_delta_future(project_key: object, future: Future[str]) -> None
             _CACHE_DELTA_FUTURES.pop(project_key, None)
 
 
-async def cache_delta(project_path: str) -> str:
-    """Compute live-INDEX drift off-loop and coalesce callers per project."""
+async def cache_delta(project_path: str, scope: str = "") -> str:
+    """Compute live-INDEX drift off-loop and coalesce callers per project.
+
+    scope (P10): optional project-relative POSIX subtree. When given, the
+    probe measures only the indexed files under it plus the walk beneath it --
+    the hit set a scoped search_code(path=...) could have served -- instead of
+    hashing the whole repo to answer a question about one directory.
+    """
     project_key = str(Path(project_path).resolve())
+    scope_key = (scope or "").replace("\\", "/").strip("/")
+    # Unscoped keeps the historical plain-string futures key (tests and the
+    # forget-callback both read it); a scoped probe gets its own tuple key so
+    # it never coalesces with a whole-project scan.
+    future_key: object = project_key if not scope_key else (project_key, scope_key)
     with _CACHE_DELTA_FUTURES_LOCK:
-        future = _CACHE_DELTA_FUTURES.get(project_key)
+        future = _CACHE_DELTA_FUTURES.get(future_key)
         created = future is None
         if created:
-            future = _INDEX_IO_EXECUTOR.submit(_cache_delta_sync, project_key)
-            _CACHE_DELTA_FUTURES[project_key] = future
+            future = _INDEX_IO_EXECUTOR.submit(
+                _cache_delta_sync, project_key, None, scope=scope_key
+            )
+            _CACHE_DELTA_FUTURES[future_key] = future
     # Recorded 2026-09-17: registering the done-callback while still holding the lock wedges
     # the calling thread forever. concurrent.futures invokes add_done_callback INLINE when
     # the future has already finished, and _forget_cache_delta_future acquires this same
@@ -4633,7 +4664,7 @@ async def cache_delta(project_path: str) -> str:
     # lock is released, so the coalescing invariant is unchanged.
     if created:
         future.add_done_callback(
-            lambda done, key=project_key: _forget_cache_delta_future(key, done)
+            lambda done, key=future_key: _forget_cache_delta_future(key, done)
         )
     return await asyncio.shield(asyncio.wrap_future(future))
 

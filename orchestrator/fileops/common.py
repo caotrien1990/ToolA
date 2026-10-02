@@ -262,11 +262,17 @@ def index_delta(project_path: str) -> dict | None:
         # so skipping the hash for unchanged-stat files keeps index_delta O(stat)
         # instead of O(read+hash every file) — the latter is what pinned the event
         # loop for minutes on this large repo (find_symbol/find_callers hang).
+        # P10 2026-10-02: the hash itself now goes through the ONE shared matcher,
+        # surgical_mapper.get_file_hash_stat_gated -- a file cache_delta already
+        # hashed (memo on st_size/st_mtime_ns/st_ino) is never re-read here, and a
+        # copy/replace (new inode on NTFS) is re-hashed even when the INDEX-recorded
+        # size+mtime happen to match. The stat-vs-INDEX short-circuit above still
+        # keeps a cold process O(stat) for untouched files.
         hash_changed = False
         hash_value = entry.get("hash")
         if (size_changed or mtime_changed) and hash_value:
             try:
-                hash_changed = hashlib.md5(fp.read_bytes()).hexdigest() != hash_value
+                hash_changed = surgical_mapper.get_file_hash_stat_gated(str(fp)) != hash_value
             except Exception:
                 hash_changed = False
         if size_changed or mtime_changed or hash_changed:

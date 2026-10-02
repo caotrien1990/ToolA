@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -261,6 +262,66 @@ def get_file_hash(file_path: str) -> str:
             h.update(chunk)
     return h.hexdigest()
 
+
+# P10 (2026-10-02): one drift question, one matcher.
+#
+# cache_delta's "Always hash" ("a restore/copy can preserve both mtime and
+# size") and index_delta's stat-first fast path (Anh 2026-08-10) answered the
+# SAME question -- "has this file changed since it was last hashed?" -- two
+# different ways, and the always-hash half regressed large repos to
+# O(read-everything) PER PROBE: measured 14.6s in-process on 49. CUA (~3900
+# indexed files), re-paid on EVERY 0-hit search_code A03 probe, 168-245s via
+# a loaded daemon. The unified answer: hash a file only when its stat
+# signature (st_size, st_mtime_ns, st_ino) differs from the signature recorded
+# when it was last hashed. A copy/replace gets a NEW file index on NTFS, so
+# the guarantee the always-hash comment made is kept; the one undetectable
+# edit is an in-place rewrite that ALSO restores mtime_ns and size (same
+# inode) -- pinned as the documented boundary in
+# tests/test_cache_delta_isolation.py.
+#
+# Cost contract: a cold process hashes every probed file ONCE (the probe must
+# measure, not guess); afterwards an unchanged file is never re-read.
+_FILE_HASH_SIG_MEMO: dict = {}
+_FILE_HASH_SIG_MEMO_LOCK = threading.Lock()
+_FILE_HASH_SIG_MEMO_MAX = 200_000
+
+
+def file_stat_signature(fp) -> tuple:
+    """The cheap change signal: (st_size, st_mtime_ns, st_ino)."""
+    st = fp.stat()
+    return (st.st_size, st.st_mtime_ns, st.st_ino)
+
+
+def get_file_hash_stat_gated(file_path) -> str:
+    """get_file_hash, but O(stat) for a file whose signature is unchanged.
+
+    One matcher for every drift question (cache_delta, index_delta, the
+    search_code A03 probe). A file whose (st_size, st_mtime_ns, st_ino) equals
+    the signature recorded at its last hash is never re-read; anything else --
+    content edit, mtime bump, copy/replace (new inode on NTFS) -- is re-hashed
+    once and re-memoized. Thread-safe; a check-then-set race costs at most one
+    duplicate hash, never a stale answer (the loser's entry has the loser's
+    signature and simply never matches again).
+    """
+    fp = Path(file_path)
+    key = os.path.normcase(str(fp))
+    sig = file_stat_signature(fp)
+    with _FILE_HASH_SIG_MEMO_LOCK:
+        hit = _FILE_HASH_SIG_MEMO.get(key)
+    if hit is not None and hit[0] == sig:
+        return hit[1]
+    digest = get_file_hash(str(fp))
+    with _FILE_HASH_SIG_MEMO_LOCK:
+        if len(_FILE_HASH_SIG_MEMO) >= _FILE_HASH_SIG_MEMO_MAX:
+            _FILE_HASH_SIG_MEMO.clear()
+        _FILE_HASH_SIG_MEMO[key] = (sig, digest)
+    return digest
+
+
+def clear_file_hash_sig_memo() -> None:
+    """Test seam: drop every memoized (signature -> hash) entry."""
+    with _FILE_HASH_SIG_MEMO_LOCK:
+        _FILE_HASH_SIG_MEMO.clear()
 
 def _is_comment_line(line: str, extension: str) -> bool:
     stripped = line.strip()

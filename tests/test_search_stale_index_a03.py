@@ -173,6 +173,114 @@ class TestSearchStaleIndexA03(unittest.IsolatedAsyncioTestCase):
             "incremental publish must re-stat externally-changed files into snapshot",
         )
 
+    # ---- P10: the drift probe must be scoped to the searched subtree ----------
+    #
+    # Root defect (regression of the 2026-08-10 stat-first fix): the A03 probe
+    # hashed EVERY indexed file in the project on every 0-hit, ignoring `path`.
+    # On a large root (measured on 49. CUA, ~3900 indexed files) one 0-hit cost
+    # 14.6s in-process and was re-paid in full on the very next call. The probe
+    # exists to certify the hit set the search could have served; drift OUTSIDE
+    # `path` cannot change a 0-hit answer produced under `path`.
+
+    async def test_scoped_probe_ignores_drift_outside_path(self) -> None:
+        """An edit outside `path` must not make an in-scope 0-hit inconclusive."""
+        sub = self.root / "sub"
+        sub.mkdir()
+        (sub / "inner.py").write_text("def inner_marker():\n    return 1\n", encoding="utf-8")
+        surgical_mapper.generate_project_map(str(self.root))
+        _clear_drift_caches()
+        # Drift OUTSIDE the searched subtree.
+        self._edit_outside_orchestrator(
+            "target.py", "def brand_new_symbol_xyz():\n    return 'NEW'\n"
+        )
+        raw = await search_module.search_code(
+            query="definitely_absent_token_qqq",
+            path=str(sub),
+            project_path=str(self.root),
+            mode="text",
+            max_results=20,
+        )
+        payload = json.loads(raw)
+
+        self.assertEqual(payload["count"], 0, msg=payload)
+        self.assertIs(
+            payload.get("stale_index"), False,
+            f"drift outside `path` was charged to an in-scope 0-hit: {payload}",
+        )
+        self.assertEqual(
+            payload.get("stale_index_scope"), "sub",
+            f"a scoped measurement must say what it measured: {payload}",
+        )
+
+    async def test_scoped_probe_detects_drift_inside_path(self) -> None:
+        """A03 semantics are unchanged for drift INSIDE the searched subtree."""
+        sub = self.root / "sub"
+        sub.mkdir()
+        (sub / "inner.py").write_text("def inner_marker():\n    return 1\n", encoding="utf-8")
+        surgical_mapper.generate_project_map(str(self.root))
+        _clear_drift_caches()
+        self._edit_outside_orchestrator(
+            "sub/inner.py", "def inner_marker():\n    return 2  # edited\n"
+        )
+        raw = await search_module.search_code(
+            query="definitely_absent_token_qqq",
+            path=str(sub),
+            project_path=str(self.root),
+            mode="text",
+            max_results=20,
+        )
+        payload = json.loads(raw)
+
+        self.assertEqual(payload["count"], 0, msg=payload)
+        self.assertIs(payload.get("stale_index"), True, msg=payload)
+        self.assertTrue(payload.get("inconclusive") is True, msg=payload)
+        self.assertEqual(payload.get("ca_next_action"), "refresh_or_narrow")
+
+    async def test_scoped_probe_second_call_hashes_nothing(self) -> None:
+        """Regression guard: the SECOND 0-hit probe must be O(stat), not O(read).
+
+        HEAD re-hashes every indexed file on every probe; the fix memoizes
+        (stat signature -> content hash) so an unchanged file is never re-read.
+        """
+        sub = self.root / "sub"
+        sub.mkdir()
+        (sub / "inner.py").write_text("def inner_marker():\n    return 1\n", encoding="utf-8")
+        surgical_mapper.generate_project_map(str(self.root))
+        _clear_drift_caches()
+
+        hashes = 0
+
+        def counting_hash(path):
+            nonlocal hashes
+            hashes += 1
+            return real_hash(path)
+
+        real_hash = surgical_mapper.get_file_hash
+
+        async def probe():
+            raw = await search_module.search_code(
+                query="definitely_absent_token_qqq",
+                path=str(sub),
+                project_path=str(self.root),
+                mode="text",
+                max_results=20,
+            )
+            return json.loads(raw)
+
+        with mock.patch.object(surgical_mapper, "get_file_hash", side_effect=counting_hash):
+            first = await probe()
+            self.assertEqual(first["count"], 0, msg=first)
+            first_hashes = hashes
+            self.assertGreaterEqual(first_hashes, 1, "cold probe must measure, not guess")
+            _clear_drift_caches()
+            hashes = 0
+            second = await probe()
+            self.assertEqual(second["count"], 0, msg=second)
+            self.assertEqual(
+                hashes, 0,
+                f"second identical 0-hit probe re-hashed {hashes} file(s); "
+                "an unchanged file must never be re-read",
+            )
 
 if __name__ == "__main__":
     unittest.main()

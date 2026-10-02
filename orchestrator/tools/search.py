@@ -2172,6 +2172,20 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
             )
     elif not results:
         drift_root = project_path or str(snapshot_root)
+        # P10 (2026-10-02): the probe certifies the hit set THIS search could
+        # have served. A scoped search (path=...) therefore probes only the
+        # indexed files + walk under that path -- drift anywhere else cannot
+        # change this 0-hit answer, and on a large root hashing the whole repo
+        # to certify one directory cost 14.6s in-process (168-245s via a loaded
+        # daemon) on EVERY 0-hit. stale_index_scope says what was measured, so
+        # a scoped stale_index:False never reads as a whole-repo clean bill.
+        drift_scope = ""
+        try:
+            if (base_resolved != snapshot_root
+                    and base_resolved.is_relative_to(snapshot_root)):
+                drift_scope = base_resolved.relative_to(snapshot_root).as_posix()
+        except Exception:
+            drift_scope = ""
         stale_reason = ""
         delta = None
         try:
@@ -2179,7 +2193,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
             if not drift_root:
                 stale_reason = "no_project_path"
             else:
-                raw_delta = json.loads(await code_tools.cache_delta(drift_root))
+                raw_delta = json.loads(await code_tools.cache_delta(drift_root, scope=drift_scope))
                 if not isinstance(raw_delta, dict) or not raw_delta.get("ok"):
                     stale_reason = "delta_unavailable"
                     response["stale_index_error"] = str(
@@ -2208,6 +2222,8 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                 response["ca_next_action"] = "refresh_or_narrow"
             else:
                 response["stale_index"] = False
+        if drift_scope:
+            response["stale_index_scope"] = drift_scope
     # D3: never let the query-shape guess overwrite a measured cause. When the glob
     # admitted zero files the query shape is irrelevant, and this tip used to fire
     # anyway and send the caller off to rewrite a perfectly good query.
