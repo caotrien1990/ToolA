@@ -9,7 +9,10 @@
 #   Schema 'write_fix'                        # .tool.function.parameters
 #
 # Why a shared helper: every CA used to hand-roll this client, and each copy re-hit the
-# same traps. It keeps to three rules:
+# same traps. WF and WN send a default fields= projection when the caller passes none
+# (measured 2026-10: only 6% of write_fix calls passed fields=; the median answer was
+# 2156B vs 1144B with fields=). A caller-provided -Fields wins; an explicit '' or '*'
+# still means the FULL response. It keeps to three rules:
 #   * The request body is UTF-8 bytes, and every write sends its text as base64. A plain
 #     JSON string reached disk with Vietnamese text and box-drawing characters turned
 #     into '?' under ok:true.
@@ -124,7 +127,7 @@ function Write-AFix {
           [Parameter(Mandatory = $true, Position = 2)][int]$End,
           [string]$Text, [string]$SourceFile,
           [string]$Project = $AProject, [string]$ExpectedHash = '',
-          [string]$Fields = 'ok,new_hash,validation,error_name,error,ca_next_action',
+          [string]$Fields = 'ok,new_hash,validation,error_name,error,ca_next_action,operation_id',
           [int]$TimeoutSec = 300)
     $body = @{ project_path = $Project; file_path = $File; start_line = $Start; end_line = $End
                new_content = (ConvertTo-ABase64 -Text $Text -SourceFile $SourceFile)
@@ -137,7 +140,7 @@ function New-AFile {
     param([Parameter(Mandatory = $true, Position = 0)][string]$Path,
           [string]$Text, [string]$SourceFile,
           [string]$Project = $AProject,
-          [string]$Fields = 'ok,file,new_hash,lines_written,utf8_valid,error_name,error,ca_next_action',
+          [string]$Fields = 'ok,file,new_hash,lines_written,utf8_valid,error_name,error,ca_next_action,operation_id',
           [int]$TimeoutSec = 300)
     $body = @{ project_path = $Project; path = $Path
                new_content = (ConvertTo-ABase64 -Text $Text -SourceFile $SourceFile)
