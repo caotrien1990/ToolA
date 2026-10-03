@@ -91,11 +91,12 @@ class TestSearchStaleIndexA03(unittest.IsolatedAsyncioTestCase):
         """A committed symbol added OUTSIDE [A] must be FOUND, not just flagged.
 
         P15 root fix: the 0-hit verdict block used to stop at the honest
-        INCONCLUSIVE report (the old Layer-1 shape this test pinned). Small
-        in-scope drift (<= SEARCH_RECONCILE_MAX_FILES) is now reconciled
-        incrementally and the search re-runs ONCE, so the phantom is answered
-        from a fresh snapshot. The ABOVE-bound shape keeps the old report --
-        pinned in test_drift_above_bound_keeps_honest_inconclusive below."""
+        INCONCLUSIVE report (the old Layer-1 shape this test pinned). In-scope
+        drift is now reconciled incrementally (budgeted by time/bytes, never
+        count-gated) and the search re-runs ONCE, so the phantom is answered
+        from a fresh snapshot. The BUDGET-EXHAUSTED shape keeps the old report
+        -- pinned in test_byte_budget_exhaustion_is_partial_progress_not_a_refusal
+        below."""
         self._edit_outside_orchestrator(
             "target.py", "def brand_new_symbol_xyz():\n    return 'NEW'\n"
         )
@@ -321,8 +322,15 @@ class TestSearchStaleIndexA03(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(rec, dict, msg=payload)
         self.assertIs(rec.get("applied"), True, msg=payload)
 
-    async def test_snapshot_behind_index_above_bound_keeps_honest_inconclusive(self) -> None:
-        """Same state, but reconcile bound=0 -> the P13 honest report stands."""
+    async def test_snapshot_behind_index_zero_byte_budget_keeps_honest_inconclusive(self) -> None:
+        """Same state, but a reconcile budget of 0 bytes -> the P13 honest report stands.
+
+        P15 r2 retired the all-or-nothing file-count bound (it measured live as
+        permanently unanswerable on a project whose drift outgrew it); the only
+        bound is the per-call time/bytes budget. A 0-byte budget fits not even
+        one file, so the reconcile makes NO progress and the honest inconclusive
+        report must stand unchanged (the reconcile must not eat the report).
+        """
         new_file = self.root / "p13_late_file.py"
         new_file.write_text("def p13_late_symbol_zz():\n    return 1\n", encoding="utf-8")
         metadata = surgical_mapper.write_file_cache(str(new_file), str(self.root))
@@ -331,7 +339,7 @@ class TestSearchStaleIndexA03(unittest.IsolatedAsyncioTestCase):
         idx = json.loads((self.root / ".orchestrator_cache" / "INDEX.json").read_text(encoding="utf-8"))
         self.assertIn("p13_late_file.py", idx.get("files", {}))
 
-        with mock.patch.object(surgical_mapper, "SEARCH_RECONCILE_MAX_FILES", 0):
+        with mock.patch.object(surgical_mapper, "SEARCH_RECONCILE_CALL_BYTES", 0, create=True):
             payload = await self._search("p13_late_symbol_zz")
         self.assertEqual(payload["count"], 0, "the served snapshot predates the file")
         self.assertNotEqual(
@@ -344,8 +352,7 @@ class TestSearchStaleIndexA03(unittest.IsolatedAsyncioTestCase):
         rec = payload.get("stale_reconcile")
         self.assertIsInstance(rec, dict, msg=payload)
         self.assertIs(rec.get("applied"), False, msg=payload)
-        self.assertEqual(rec.get("reason"), "drift_above_bound", msg=payload)
-
+        self.assertEqual(rec.get("reason"), "budget_exhausted", msg=payload)
     async def test_zero_hit_with_snapshot_matching_index_stays_clean(self) -> None:
         """Guard against a false positive: snapshot==INDEX + clean disk stays clean."""
         payload = await self._search("definitely_absent_token_qqq")
@@ -354,17 +361,17 @@ class TestSearchStaleIndexA03(unittest.IsolatedAsyncioTestCase):
         self.assertIsNot(payload.get("inconclusive"), True, payload)
 
 
-    # ---- P15: bounded stale-drift reconcile + re-search (root fix) ----------
+    # ---- P15: budgeted stale-drift reconcile + re-search (root fix) ---------
     #
     # A03 Layer 1 (above) reports a 0-hit over measured in-scope drift as
     # INCONCLUSIVE -- honest, but the tool still cannot answer the question it
     # was asked, and refresh_project_map on a large root is forbidden by rule.
-    # P15 closes that: when the scoped drift is small enough
-    # (surgical_mapper.SEARCH_RECONCILE_MAX_FILES), the 0-hit verdict block
-    # reconciles exactly those files (existing per-file machinery), republishes
-    # the snapshot incrementally and re-runs the search ONCE against the fresh
-    # snapshot. Above the bound the honest inconclusive answer stands.
-
+    # P15 closes that: the 0-hit verdict block reconciles the measured drift
+    # (existing per-file machinery), BUDGETED by time/bytes per call -- r2
+    # retired the all-or-nothing file-count bound, which measured live as
+    # permanently unanswerable on a project whose drift outgrew it -- then
+    # republishes the snapshot incrementally and re-runs the search ONCE. A
+    # residue keeps the honest inconclusive and the next call continues it.
     async def test_native_add_in_scope_is_found_after_reconcile(self) -> None:
         """A natively-CREATED file in scope must be FOUND by the same search."""
         (self.root / "p15_added.py").write_text(
@@ -419,24 +426,68 @@ class TestSearchStaleIndexA03(unittest.IsolatedAsyncioTestCase):
         self.assertIs(rec.get("applied"), True, msg=payload)
         self.assertEqual(int(rec.get("drift_files") or 0), 1, msg=payload)
 
-    async def test_drift_above_bound_keeps_honest_inconclusive(self) -> None:
-        """Above the reconcile bound the A03 Layer-1 answer stands unchanged."""
-        self._edit_outside_orchestrator(
-            "target.py", "def brand_new_symbol_xyz():\n    return 'NEW'\n")
-        _clear_drift_caches()
-        with mock.patch.object(surgical_mapper, "SEARCH_RECONCILE_MAX_FILES", 0, create=True):
-            payload = await self._search("brand_new_symbol_xyz")
+    async def test_byte_budget_exhaustion_is_partial_progress_not_a_refusal(self) -> None:
+        """Budget exhaustion must make PROGRESS, not refuse: partial reconcile +
+        honest residue on call 1, convergence on call 2 (resumable).
 
-        self.assertEqual(payload["count"], 0, msg=payload)
-        self.assertIs(payload.get("stale_index"), True, msg=payload)
-        self.assertGreaterEqual(int(payload.get("stale_files_count") or 0), 1)
-        self.assertEqual(payload.get("ca_next_action"), "refresh_or_narrow")
-        self.assertIs(payload.get("inconclusive"), True, msg=payload)
+        P15 r2 (leader audit): the all-or-nothing count bound meant a project
+        whose drift outgrew 200 files could NEVER be answered (49. CUA measured
+        223 drifted files -> permanent inconclusive). The bound is now a
+        per-call time/bytes budget: reconcile what fits (smallest first),
+        republish, re-search once, and the NEXT call continues from the residue
+        -- the probe re-measures, so already-reconciled files are never redone.
+        """
+        small = "S = 'zz_p15_small_tok'\n"                      # 24 bytes
+        big = "B = 'zz_p15_big_tok'\n" + ("# pad\n" * 40)       # ~290 bytes
+        self._edit_outside_orchestrator("p15_small.py", small)
+        self._edit_outside_orchestrator("p15_big.py", big)
+        _clear_drift_caches()
+
+        # Budget fits ONLY the smaller file -> exactly one file reconciled.
+        with mock.patch.object(
+            surgical_mapper, "SEARCH_RECONCILE_CALL_BYTES", len(small) + 1, create=True,
+        ):
+            first = await self._search("zz_p15_big_tok")
+
+        rec = first.get("stale_reconcile")
+        self.assertIsInstance(rec, dict, msg=first)
+        self.assertIs(rec.get("applied"), True, msg=first)
+        self.assertEqual(rec.get("stopped_reason"), "bytes_budget", msg=first)
+        self.assertGreaterEqual(int(rec.get("residue_count") or 0), 1, msg=first)
+        # Honest while residue remains: stale_index True + inconclusive, and the
+        # next action is to RETRY (the retry continues the reconcile), never
+        # refresh_project_map on a large root.
+        self.assertIs(first.get("stale_index"), True, msg=first)
+        self.assertIs(first.get("inconclusive"), True, msg=first)
+        self.assertEqual(first.get("ca_next_action"),
+                         "retry_search_continues_reconcile", msg=first)
+
+        # Resumable: the unmocked retry reconciles the residue and answers.
+        second = await self._search("zz_p15_big_tok")
+        self.assertGreaterEqual(second["count"], 1, msg=second)
+        self.assertIs(second.get("stale_index"), False, msg=second)
+        self.assertIsNot(second.get("inconclusive"), True, msg=second)
+
+    async def test_no_count_bound_large_drift_reconciles_in_one_call(self) -> None:
+        """210 drifted files (> the retired 200 count bound) reconcile at once.
+
+        Pins the leader-audit fix: a fixed file-count gate made CUA-class
+        projects (agents write natively all the time) unanswerable forever.
+        The only bounds now are the per-call time/bytes budget.
+        """
+        for i in range(210):
+            (self.root / f"p15_bulk_{i:03d}.py").write_text(
+                f"V{i} = 'zz_p15_bulk_{i}'\n", encoding="utf-8")
+        _clear_drift_caches()
+        payload = await self._search("zz_p15_bulk_205")
+
+        self.assertGreaterEqual(payload["count"], 1, msg=payload)
+        self.assertIs(payload.get("stale_index"), False, msg=payload)
         rec = payload.get("stale_reconcile")
         self.assertIsInstance(rec, dict, msg=payload)
-        self.assertIs(rec.get("applied"), False, msg=payload)
-        self.assertEqual(rec.get("reason"), "drift_above_bound", msg=payload)
-
+        self.assertIs(rec.get("applied"), True, msg=payload)
+        self.assertGreaterEqual(int(rec.get("drift_files") or 0), 210, msg=payload)
+        self.assertEqual(int(rec.get("residue_count") or 0), 0, msg=payload)
     async def test_out_of_scope_drift_triggers_no_reconcile(self) -> None:
         """Drift OUTSIDE `path` must neither flag the 0-hit nor reconcile."""
         sub = self.root / "sub"
@@ -557,6 +608,92 @@ class TestSearchStaleIndexA03(unittest.IsolatedAsyncioTestCase):
                              f"the no_index refusal must not build an INDEX: {report}")
         finally:
             shutil.rmtree(bare, ignore_errors=True)
+
+    # ---- P15 r2: no-INDEX projects -- the search-side snapshot IS the index ----
+    #
+    # A project [A] never indexed still gets a search snapshot (the first search
+    # publishes one from disk via _pin_or_create_snapshot). Measured live
+    # (zz_p15_live scratch case): a native MODIFY on such a project probed
+    # drift via cache_delta (INDEX-vs-disk, blind with no INDEX -> every file
+    # reads as "added"), the reconcile refused with no_index, and the new text
+    # was never served. The fix measures drift MANIFEST-vs-DISK (the served
+    # snapshot is the only honest baseline here) and republishes the snapshot
+    # incrementally for the changed paths -- never building an INDEX.
+
+    def _make_bare_project(self) -> Path:
+        """A project with NO INDEX: files on disk only; the first search publishes
+        the search-side snapshot from disk (as [A] does for unindexed projects)."""
+        bare = Path(tempfile.mkdtemp(prefix="a03_snaponly_")).resolve()
+        self.addCleanup(shutil.rmtree, bare, True)
+        (bare / "mod_one.py").write_text(
+            "def snap_only_symbol():\n    return 'v1'\n", encoding="utf-8")
+        (bare / "mod_two.py").write_text("X = 1\n", encoding="utf-8")
+        return bare
+
+    async def _search_bare(self, root: Path, query: str) -> dict:
+        raw = await search_module.search_code(
+            query=query, path=str(root), project_path=str(root),
+            mode="text", max_results=20)
+        return json.loads(raw)
+
+    async def test_no_index_project_native_modify_is_found_via_snapshot_reconcile(self) -> None:
+        bare = self._make_bare_project()
+        _clear_drift_caches()
+        control = await self._search_bare(bare, "snap_only_symbol")
+        self.assertGreaterEqual(control["count"], 1, msg=f"positive control: {control}")
+        idx_path = bare / ".orchestrator_cache" / "INDEX.json"
+        self.assertFalse(idx_path.exists(), "precondition: still no INDEX")
+
+        (bare / "mod_one.py").write_text(
+            "def snap_only_symbol():\n    return 'zz_snap_v2'\n", encoding="utf-8")
+        _clear_drift_caches()
+        payload = await self._search_bare(bare, "zz_snap_v2")
+
+        self.assertGreaterEqual(payload["count"], 1, msg=payload)
+        self.assertIs(payload.get("stale_index"), False, msg=payload)
+        rec = payload.get("stale_reconcile")
+        self.assertIsInstance(rec, dict, msg=payload)
+        self.assertIs(rec.get("applied"), True, msg=payload)
+        self.assertFalse(idx_path.exists(),
+                         f"snapshot reconcile must never build an INDEX: {payload}")
+
+    async def test_no_index_project_clean_snapshot_is_a_clean_not_found(self) -> None:
+        """cache_delta with no INDEX reports every file as added; when the SERVED
+        SNAPSHOT already matches disk the 0-hit is a REAL not-found (stale_index
+        False), not a phantom drift report -- and nothing is republished."""
+        bare = self._make_bare_project()
+        _clear_drift_caches()
+        control = await self._search_bare(bare, "snap_only_symbol")
+        self.assertGreaterEqual(control["count"], 1, msg=f"positive control: {control}")
+
+        _clear_drift_caches()
+        payload = await self._search_bare(bare, "definitely_absent_token_qqq")
+
+        self.assertEqual(payload["count"], 0, msg=payload)
+        self.assertIs(payload.get("stale_index"), False, msg=payload)
+        self.assertIsNot(payload.get("inconclusive"), True, msg=payload)
+        rec = payload.get("stale_reconcile")
+        self.assertIsInstance(rec, dict, msg=payload)
+        self.assertIs(rec.get("applied"), False, msg=payload)
+        self.assertEqual(rec.get("reason"), "snapshot_clean", msg=payload)
+
+    async def test_no_index_project_native_delete_is_honest_zero(self) -> None:
+        bare = self._make_bare_project()
+        _clear_drift_caches()
+        control = await self._search_bare(bare, "snap_only_symbol")
+        self.assertGreaterEqual(control["count"], 1, msg=f"positive control: {control}")
+
+        (bare / "mod_one.py").unlink()
+        _clear_drift_caches()
+        payload = await self._search_bare(bare, "snap_only_symbol")
+
+        self.assertEqual(payload["count"], 0, msg=payload)
+        self.assertIs(payload.get("stale_index"), False, msg=payload)
+        self.assertIsNot(payload.get("inconclusive"), True, msg=payload)
+        rec = payload.get("stale_reconcile")
+        self.assertIsInstance(rec, dict, msg=payload)
+        self.assertIs(rec.get("applied"), True, msg=payload)
+        self.assertGreaterEqual(int(rec.get("removed_files") or 0), 1, msg=payload)
 
 
 if __name__ == "__main__":

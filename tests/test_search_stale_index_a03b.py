@@ -96,16 +96,19 @@ class SearchStaleIndexUnknownTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(rec, dict, msg=payload)
         self.assertIs(rec.get("applied"), True, msg=payload)
 
-    async def test_stale_edit_above_bound_is_still_reported_inside_the_suppress_window(self):
+    async def test_stale_edit_with_zero_byte_budget_is_still_reported_inside_the_suppress_window(self):
         # Stronger than the test above: not merely "not False" -- when the drift
-        # is real and measurable but ABOVE the P15 reconcile bound, it must still
-        # be reported as real (the reconcile must not eat the report).
+        # is real and measurable but the reconcile can make NO progress (a zero
+        # per-call byte budget fits not even one file), it must still be reported
+        # as real (the reconcile must not eat the report). P15 r2 replaced the
+        # all-or-nothing count bound with a per-call time/bytes budget; a budget
+        # of 0 bytes is the "cannot progress" shape that keeps A03 honest.
         self._edit_outside(
             "target.py", "def brand_new_symbol_xyz():\n    return 'NEW'\n")
         code_tools._mark_index_refreshed(str(self.root))
         _clear_delta_futures()
 
-        with mock.patch.object(surgical_mapper, "SEARCH_RECONCILE_MAX_FILES", 0, create=True):
+        with mock.patch.object(surgical_mapper, "SEARCH_RECONCILE_CALL_BYTES", 0, create=True):
             payload = await self._search("brand_new_symbol_xyz")
 
         self.assertEqual(payload["count"], 0, msg=payload)
@@ -113,7 +116,10 @@ class SearchStaleIndexUnknownTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(
             int(payload.get("stale_files_count") or 0), 1, msg=payload)
         self.assertIs(payload.get("inconclusive"), True, msg=payload)
-
+        rec = payload.get("stale_reconcile")
+        self.assertIsInstance(rec, dict, msg=payload)
+        self.assertIs(rec.get("applied"), False, msg=payload)
+        self.assertEqual(rec.get("reason"), "budget_exhausted", msg=payload)
     async def test_unusable_delta_payload_is_unknown_not_clean(self):
         # cache_delta answering ok:false is "I could not measure", which the old code
         # folded into the same None as "measured, nothing changed".

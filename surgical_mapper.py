@@ -1610,7 +1610,7 @@ def get_cache_status(project_path: str) -> dict:
         }
 
 # ---------------------------------------------------------------------------
-# P15 (2026-10-03): bounded search-side reconcile of scoped drift.
+# P15 (2026-10-03): search-side reconcile of scoped drift, PROGRESS-GUARANTEED.
 #
 # Measured live (daemon gen 6287f8eecec9, project 49. CUA): the served search
 # snapshot predated 74 files changed OUTSIDE [A], so search_code answered
@@ -1618,67 +1618,110 @@ def get_cache_status(project_path: str) -> dict:
 # honest, but the tool could not answer the question it was asked, and
 # refresh_project_map on a large root is forbidden by rule.
 #
-# search_code's 0-hit verdict block already pays for a P10 SCOPED cache_delta
-# probe. When that probe reports drift inside the searched scope and the count
-# is at most SEARCH_RECONCILE_MAX_FILES, this helper reconciles exactly those
-# files and republishes the snapshot, so the search can re-run ONCE against a
-# fresh tree. It deliberately REUSES the write path's own machinery -- this is
-# not a third indexer:
-#   * per-file cache write/remove   -> write_file_cache / remove_file_cache
-#   * INDEX patch                   -> update_index_incremental (the incremental
-#     single-file path update_file_cache uses; it falls back to a full
-#     build_index when the INDEX is missing/corrupt)
-#   * snapshot republish            -> _publish_search_snapshot with
-#     changed_paths (the O(changed) walk-avoidance fast path, NOT a full walk)
-#   * PROJECT_MAP.md / PROJECT_CONTEXT.md rewrites, mirroring the write path
-#     so the reconcile is not a hidden INDEX/snapshot-only mutation
-#   * serialization                 -> _pmap_lock, the same per-project lock the
-#     write path (update_file_cache) holds, and _publish_search_snapshot adds
-#     the snapshot WRITE lease; a concurrent writer is serialized, never raced
-# Cost is O(drifted files) disk -- no os.walk of the repo anywhere
-# (TOOLA-AHEALTHHUNG-R1). Measured basis for the bound: one
-# write_file_cache + update_index_incremental pair on the 49. CUA repo
-# (~3900 indexed files) costs ~0.1s in-process, so 200 files ~= 20s on one
-# executor worker, inside the search lane's 60s budget; a full
-# _reconcile_external_files walk of the same root measured 62.44s, which is
-# exactly what this bound refuses to pay on a 0-hit path. A delta larger than
-# the bound means a mass event (branch checkout, bulk generation) where
-# per-file reconcile is the wrong tool: the caller keeps the honest A03
-# inconclusive answer. Env override: ORCH_SEARCH_RECONCILE_MAX_FILES.
+# P15 r2 (leader audit, 2026-10-03): the r1 shape was ALL-OR-NOTHING under a
+# fixed file-count gate (200). Measured live after the first restart: CUA
+# drifted 223 files (agents write natively there all the time), the gate
+# answered drift_above_bound forever, and the tool stayed unable to answer. A
+# count bound is the wrong shape -- the real constraints are the caller's time
+# budget and the bytes read. Both helpers below are therefore BUDGETED, not
+# count-gated: reconcile what fits (deletions first -- free of byte cost --
+# then in-scope files first, smallest first so a call completes the most
+# files), republish, report the residue, and the NEXT call continues from it
+# (the probe re-measures, so reconciled files are never redone). Converges in
+# a few calls for ANY drift size; never a full repo walk
+# (TOOLA-AHEALTHHUNG-R1); never loops within a call (the caller's re-search
+# skips the gate via _skip_stale_reconcile).
+#
+# Two variants, one per index shape:
+#   * reconcile_stale_scope_drift -- project HAS an INDEX.json: reuse the write
+#     path's per-file machinery (write_file_cache / remove_file_cache /
+#     update_index_incremental / _publish_search_snapshot fast path) under
+#     _pmap_lock. The publish passes a TRIMMED index (exactly the new manifest's
+#     file set) so a PARTIAL reconcile still satisfies the INDEX/manifest
+#     set-equality validator and the new generation stays index-authoritative
+#     (keeps the P13 snapshot_behind_index probe alive for the residue).
+#   * reconcile_search_snapshot_drift -- project has NO INDEX: the search-side
+#     snapshot IS the index. Drift is measured MANIFEST-vs-DISK (cache_delta is
+#     INDEX-vs-disk and blind here -- with no INDEX every file reads as
+#     "added"), then the snapshot is republished incrementally via
+#     publish_snapshot(changed_paths=...) with the same include/skip binding
+#     search_code._pin_or_create_snapshot uses. Never builds an INDEX (that is
+#     generate_project_map's job; the no_index gate below stays).
+#
+# Measured basis for the budget shape: one write_file_cache +
+# update_index_incremental pair on the 49. CUA repo (~3900 indexed files) costs
+# ~0.1s in-process, so a 25-30s window reconciles 200+ files on one executor
+# worker, inside the search lane's 60s budget; a full _reconcile_external_files
+# walk of the same root measured 62.44s, which is exactly what this path must
+# never pay. Env overrides: ORCH_SEARCH_RECONCILE_TIME_SECONDS,
+# ORCH_SEARCH_RECONCILE_CALL_BYTES, ORCH_SEARCH_RECONCILE_MAX_BYTES (per-file).
 
-SEARCH_RECONCILE_MAX_FILES = int(
-    os.environ.get("ORCH_SEARCH_RECONCILE_MAX_FILES", "200"))
+SEARCH_RECONCILE_TIME_SECONDS = float(
+    os.environ.get("ORCH_SEARCH_RECONCILE_TIME_SECONDS", "30"))
+SEARCH_RECONCILE_CALL_BYTES = int(
+    os.environ.get("ORCH_SEARCH_RECONCILE_CALL_BYTES", str(256 * 1024 * 1024)))
 SEARCH_RECONCILE_MAX_BYTES = int(
     os.environ.get("ORCH_SEARCH_RECONCILE_MAX_BYTES", str(50 * 1024 * 1024)))
 
 
-def reconcile_stale_scope_drift(project_root: str, added, modified, deleted) -> dict:
-    """Reconcile a KNOWN drift set (a scoped cache_delta result) and republish.
+def _reconcile_deadline(deadline_at, started: float) -> float:
+    """Caller deadline, or a sane default window measured from `started`."""
+    if deadline_at is not None:
+        return float(deadline_at)
+    return started + SEARCH_RECONCILE_TIME_SECONDS
+
+
+def _reconcile_order(root: Path, rels, priority_scope: str):
+    """(out_of_scope, size, path) sort: searched scope first, smallest first."""
+    prefix = (priority_scope or "").replace("\\", "/").strip("/")
+
+    def _key(rel: str):
+        in_scope = 0
+        if prefix and rel != prefix and not rel.startswith(prefix + "/"):
+            in_scope = 1
+        try:
+            size = (root / Path(rel)).stat().st_size
+        except OSError:
+            size = 0
+        return (in_scope, size, rel)
+
+    return sorted(rels, key=_key)
+
+
+def reconcile_stale_scope_drift(project_root: str, added, modified, deleted,
+                                *, deadline_at=None, max_bytes=None,
+                                priority_scope: str = "") -> dict:
+    """Reconcile a KNOWN drift set (a scoped cache_delta result), budgeted.
 
     Only files the caller's scoped probe already measured are touched; nothing
-    is discovered by walking. Returns a report dict; on a partial apply the
-    caller must keep the honest inconclusive answer (residue_count > 0).
-    Raises on a hard failure (lock/publish/INDEX) -- the caller treats that as
-    "no reconcile happened" and answers inconclusive, never a fake clean.
+    is discovered by walking. Processes deletions first (no byte cost), then
+    modified+added in _reconcile_order, until the time or byte budget runs out,
+    then republishes ONE snapshot generation covering the processed files.
+    ``applied`` is True iff a republish happened (progress was made);
+    ``residue_count`` names the drift files NOT served by the new generation --
+    the caller must then keep the honest inconclusive answer (a retry continues
+    the reconcile). Raises on a hard failure (lock/publish/INDEX) -- the caller
+    treats that as "no reconcile happened" and answers inconclusive, never a
+    fake clean.
     """
     root = Path(project_root).resolve()
     # No-INDEX gate (leader audit 2026-10-03): this helper reconciles DRIFT on a
     # project that already has an INDEX+snapshot pair. On a project with no INDEX
     # at all, update_index_incremental falls back to a full build_index -- an
-    # O(repo) walk the file-count bound does NOT bound (the bound counts drifted
-    # files, not repo size), which is exactly the cost class this helper exists
-    # to avoid (TOOLA-AHEALTHHUNG-R1). Building an index from scratch is
-    # generate_project_map's job; a search-triggered reconcile must not do it as
-    # a side effect of a 0-hit on a project that never opted into indexing.
+    # O(repo) walk the per-call budget does NOT bound by file count (the caller
+    # routes no-INDEX projects to reconcile_search_snapshot_drift instead).
     if not (root / CACHE_DIR_NAME / INDEX_FILENAME).is_file():
         return {"applied": False, "reason": "no_index",
                 "drift_files": 0, "reconciled_files": 0, "removed_files": 0,
                 "residue_count": 0, "duration_ms": 0, "snapshot_id": ""}
+    started = time.monotonic()
+    deadline = _reconcile_deadline(deadline_at, started)
+    byte_budget = SEARCH_RECONCILE_CALL_BYTES if max_bytes is None else int(max_bytes)
     added = [str(p).replace("\\", "/") for p in (added or [])]
     modified = [str(p).replace("\\", "/") for p in (modified or [])]
     deleted = [str(p).replace("\\", "/") for p in (deleted or [])]
     drift_files = len(added) + len(modified) + len(deleted)
-    started = time.monotonic()
+    all_drift = deleted + modified + added  # immutable copy for residue math
 
     def _abs(rel: str) -> str:
         # Drift paths come from cache_delta: project-relative POSIX.
@@ -1688,56 +1731,271 @@ def reconcile_stale_scope_drift(project_root: str, added, modified, deleted) -> 
         changed_paths = {}
         removed_count = 0
         reconciled_files = 0
+        bytes_spent = 0
+        stopped_reason = "complete"
         index = None
+
+        def _budget_left() -> bool:
+            return time.monotonic() < deadline
+
+        # Deletions first: no byte cost, and removing a phantom from the served
+        # snapshot is the cheapest honesty win.
         for rel in deleted:
+            if not _budget_left():
+                stopped_reason = "time_budget"
+                break
             abs_path = _abs(rel)
             remove_file_cache(abs_path, str(root))
             index = update_index_incremental(root, {"file": rel}, removed=True)
             changed_paths[rel] = "removed"
             removed_count += 1
-        for rel in modified + added:
-            abs_path = _abs(rel)
-            fp = Path(abs_path)
-            if not fp.exists() or not _should_scan_file(fp, root):
-                # The probe saw it, but it is gone now or fails the index gate:
-                # treat as a removal so the republish cannot hold its record.
-                remove_file_cache(abs_path, str(root))
-                index = update_index_incremental(root, {"file": rel}, removed=True)
-                changed_paths[rel] = "removed"
-                removed_count += 1
-                continue
-            if fp.stat().st_size > SEARCH_RECONCILE_MAX_BYTES:
-                raise search_snapshots.SnapshotIntegrityError(
-                    f"search reconcile refuses oversized file: {rel}")
-            metadata = write_file_cache(abs_path, str(root))
-            index = update_index_incremental(root, metadata, removed=False)
-            changed_paths[rel] = "modified"
-            reconciled_files += 1
+
+        if stopped_reason == "complete":
+            for rel in _reconcile_order(root, modified + added, priority_scope):
+                if not _budget_left():
+                    stopped_reason = "time_budget"
+                    break
+                abs_path = _abs(rel)
+                fp = Path(abs_path)
+                if not fp.exists() or not _should_scan_file(fp, root):
+                    # The probe saw it, but it is gone now or fails the index
+                    # gate: treat as a removal so the republish cannot hold its
+                    # record. Removals carry no byte cost.
+                    remove_file_cache(abs_path, str(root))
+                    index = update_index_incremental(root, {"file": rel}, removed=True)
+                    changed_paths[rel] = "removed"
+                    removed_count += 1
+                    continue
+                size = fp.stat().st_size
+                if size > SEARCH_RECONCILE_MAX_BYTES:
+                    raise search_snapshots.SnapshotIntegrityError(
+                        f"search reconcile refuses oversized file: {rel}")
+                if bytes_spent + size > byte_budget:
+                    # Smallest-first order means every later file is larger:
+                    # no later file can fit either.
+                    stopped_reason = "bytes_budget"
+                    break
+                metadata = write_file_cache(abs_path, str(root))
+                index = update_index_incremental(root, metadata, removed=False)
+                changed_paths[rel] = "modified"
+                reconciled_files += 1
+                bytes_spent += size
+
+        processed = set(changed_paths)
+        residue = [r for r in all_drift if r not in processed]
         if index is None:
-            return {"applied": False, "reason": "empty_drift", "drift_files": 0,
-                    "reconciled_files": 0, "removed_files": 0, "residue_count": 0,
-                    "duration_ms": 0, "snapshot_id": ""}
+            return {"applied": False,
+                    "reason": "budget_exhausted" if stopped_reason != "complete" else "empty_drift",
+                    "stopped_reason": stopped_reason,
+                    "drift_files": drift_files, "reconciled_files": 0,
+                    "removed_files": 0, "residue_count": len(residue),
+                    "residue_sample": residue[:5],
+                    "duration_ms": int((time.monotonic() - started) * 1000),
+                    "snapshot_id": ""}
+
+        # The publish validator requires INDEX files == manifest files EXACTLY.
+        # A partial reconcile keeps the prior manifest's unprocessed records, so
+        # the full INDEX (which includes residue drift) would fail the set check
+        # -- trim it to exactly the new manifest's file set. The new manifest
+        # set is (prior manifest paths - removed) + modified, which the fast
+        # path derives from changed_paths; compute the same set here.
+        prior_paths = None
+        try:
+            # Context-managed: a bare pin_current_snapshot() never released its
+            # reader lease, so every reconcile leaked a lease on the generation.
+            with search_snapshots.pin_current_snapshot(root) as _pin:
+                prior_paths = {
+                    str(r.get("path") or "").replace("\\", "/")
+                    for r in _pin.manifest.get("files", [])
+                }
+        except Exception:
+            prior_paths = None
+        publish_index = index
+        if prior_paths is not None:
+            manifest_set = (prior_paths | set(changed_paths)) - {
+                r for r, kind in changed_paths.items() if kind == "removed"}
+            index_files = index.get("files") or {}
+            trimmed = {rel: index_files[rel] for rel in manifest_set
+                       if rel in index_files}
+            if len(trimmed) == len(manifest_set):
+                publish_index = dict(index)
+                publish_index["files"] = trimmed
+            else:
+                # A manifest file with no INDEX entry (mixed authoritative
+                # state): publish non-authoritative rather than fail the set
+                # check; the residue is still reported by the next probe.
+                publish_index = None
         _write_project_map_markdown(root, index)
         _write_project_context_markdown(root, index)
         snapshot_id = _publish_search_snapshot(
-            root, index, changed_paths, allow_full_walk=False)
-        residue = []
+            root, publish_index, changed_paths, allow_full_walk=False)
         if snapshot_id:
             try:
-                # Context-managed: a bare pin_current_snapshot() never released its
-                # reader lease, so every reconcile leaked a lease on the generation.
                 with search_snapshots.pin_current_snapshot(root) as _pin:
                     served = {
                         str(r.get("path") or "").replace("\\", "/")
                         for r in _pin.manifest.get("files", [])
                     }
-                residue = [r for r in (modified + added) if r not in served]
+                # Processed-but-not-served is residue too (partial publish), and
+                # a processed removal still served did not take effect either.
+                residue = [r for r in all_drift if r not in processed]
+                for r, kind in changed_paths.items():
+                    if kind == "removed" and r in served:
+                        residue.append(r)
+                    elif kind == "modified" and r not in served:
+                        residue.append(r)
             except Exception:
-                residue = list(modified + added)
-        return {"applied": True, "drift_files": drift_files,
+                # The pin itself failed: keep the probe-based residue (already
+                # computed above) rather than fail the reconcile report.
+                pass
+        return {"applied": True, "stopped_reason": stopped_reason,
+                "drift_files": drift_files,
                 "reconciled_files": reconciled_files,
                 "removed_files": removed_count,
                 "residue_count": len(residue),
                 "residue_sample": residue[:5],
                 "duration_ms": int((time.monotonic() - started) * 1000),
                 "snapshot_id": snapshot_id}
+
+
+def reconcile_search_snapshot_drift(project_root: str, *, scope: str = "",
+                                    deadline_at=None, max_bytes=None) -> dict:
+    """No-INDEX variant: republish the SEARCH-SIDE snapshot for changed paths.
+
+    On a project [A] never indexed, the snapshot published from disk by
+    search_code._pin_or_create_snapshot IS the only index. Drift is measured
+    against that served manifest (stat-gated on (mtime_ns, size) -- the same
+    equality publish_snapshot's reuse path trusts), NOT via cache_delta (which
+    compares INDEX against disk and, with no INDEX, reports every file as
+    "added" forever). The republish uses publish_snapshot's changed_paths fast
+    path with the same include/skip binding _pin_or_create_snapshot uses, so
+    the manifest filter cannot drift between the full and incremental paths.
+    Never builds an INDEX. Same budget/resume contract as
+    reconcile_stale_scope_drift. reason "snapshot_clean" means the served
+    snapshot already matches disk -- the caller's 0-hit is a REAL not-found.
+    """
+    root = Path(project_root).resolve()
+    started = time.monotonic()
+    deadline = _reconcile_deadline(deadline_at, started)
+    byte_budget = SEARCH_RECONCILE_CALL_BYTES if max_bytes is None else int(max_bytes)
+    scope_prefix = (scope or "").replace("\\", "/").strip("/")
+
+    if not search_snapshots.current_snapshot_id(root):
+        return {"applied": False, "reason": "no_snapshot",
+                "drift_files": 0, "reconciled_files": 0, "removed_files": 0,
+                "residue_count": 0, "duration_ms": 0, "snapshot_id": ""}
+
+    with search_snapshots.pin_current_snapshot(root) as pin:
+        manifest_records = pin.manifest.get("files", [])
+    manifest_paths = {}
+    for rec in manifest_records:
+        rel = str(rec.get("path") or "").replace("\\", "/")
+        if not rel:
+            continue
+        if scope_prefix and rel != scope_prefix and not rel.startswith(scope_prefix + "/"):
+            continue
+        manifest_paths[rel] = rec
+
+    def _in_manifest(rel: str) -> bool:
+        return rel in manifest_paths
+
+    added = []
+    modified = []
+    deleted = []
+    for rel, rec in manifest_paths.items():
+        fp = root / Path(rel)
+        try:
+            if not fp.exists() or not _should_scan_file(fp, root):
+                deleted.append(rel)
+                continue
+            st = fp.stat()
+            if (int(rec.get("mtime_ns") or -1) != st.st_mtime_ns
+                    or int(rec.get("size") or -1) != st.st_size):
+                modified.append(rel)
+        except OSError:
+            modified.append(rel)
+    walk_target = (root / scope_prefix) if scope_prefix else root
+    if scope_prefix and walk_target.is_file():
+        if _should_scan_file(walk_target, root) and not _in_manifest(scope_prefix):
+            added.append(scope_prefix)
+    elif walk_target.is_dir():
+        for walk_root, dirs, walk_files in os.walk(walk_target):
+            if time.monotonic() >= deadline:
+                break
+            dirs[:] = [d for d in dirs if not should_skip_dir(d, root)]
+            for fn in walk_files:
+                path = Path(walk_root) / fn
+                if not path.is_file() or not _should_scan_file(path, root):
+                    continue
+                rel = str(path.relative_to(root)).replace("\\", "/")
+                if not _in_manifest(rel):
+                    added.append(rel)
+
+    drift_files = len(added) + len(modified) + len(deleted)
+    if not drift_files:
+        return {"applied": False, "reason": "snapshot_clean",
+                "stopped_reason": "complete",
+                "drift_files": 0, "reconciled_files": 0, "removed_files": 0,
+                "residue_count": 0,
+                "duration_ms": int((time.monotonic() - started) * 1000),
+                "snapshot_id": ""}
+
+    changed_paths = {}
+    removed_count = 0
+    reconciled_files = 0
+    bytes_spent = 0
+    stopped_reason = "complete"
+    for rel in deleted:
+        if time.monotonic() >= deadline:
+            stopped_reason = "time_budget"
+            break
+        changed_paths[rel] = "removed"
+        removed_count += 1
+    if stopped_reason == "complete":
+        for rel in _reconcile_order(root, modified + added, scope_prefix):
+            if time.monotonic() >= deadline:
+                stopped_reason = "time_budget"
+                break
+            fp = root / Path(rel)
+            if not fp.exists() or not _should_scan_file(fp, root):
+                changed_paths[rel] = "removed"
+                removed_count += 1
+                continue
+            size = fp.stat().st_size
+            if size > SEARCH_RECONCILE_MAX_BYTES:
+                raise search_snapshots.SnapshotIntegrityError(
+                    f"search reconcile refuses oversized file: {rel}")
+            if bytes_spent + size > byte_budget:
+                stopped_reason = "bytes_budget"
+                break
+            changed_paths[rel] = "modified"
+            reconciled_files += 1
+            bytes_spent += size
+
+    processed = set(changed_paths)
+    residue = [r for r in (deleted + modified + added) if r not in processed]
+    if not changed_paths:
+        return {"applied": False, "reason": "budget_exhausted",
+                "stopped_reason": stopped_reason,
+                "drift_files": drift_files, "reconciled_files": 0,
+                "removed_files": 0, "residue_count": len(residue),
+                "residue_sample": residue[:5],
+                "duration_ms": int((time.monotonic() - started) * 1000),
+                "snapshot_id": ""}
+
+    snapshot_id = search_snapshots.publish_snapshot(
+        root,
+        include_file=functools.partial(_should_scan_file, project_root=root),
+        skip_dir=functools.partial(should_skip_dir, project_root=root),
+        index=None,
+        changed_paths=changed_paths,
+        deadline_at=deadline,
+    )
+    return {"applied": True, "stopped_reason": stopped_reason,
+            "drift_files": drift_files,
+            "reconciled_files": reconciled_files,
+            "removed_files": removed_count,
+            "residue_count": len(residue),
+            "residue_sample": residue[:5],
+            "duration_ms": int((time.monotonic() - started) * 1000),
+            "snapshot_id": snapshot_id}

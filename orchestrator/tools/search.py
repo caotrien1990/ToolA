@@ -1240,20 +1240,27 @@ async def _search_once_after_reconcile(env: dict) -> str:
     ))
     rec_report = env["rec_report"]
     response["stale_reconcile"] = rec_report
-    if response.get("count"):
-        # Found on the fresh snapshot: the earlier 0-hit was the staleness.
+    residue = int(rec_report.get("residue_count") or 0)
+    if response.get("count") and not residue:
+        # Found on the fresh snapshot and the reconcile left nothing behind:
+        # the earlier 0-hit was the staleness.
         response.pop("inconclusive", None)
         response.pop("ca_next_action", None)
         response.pop("tip", None)
         response["stale_index"] = False
         return json.dumps(response, ensure_ascii=False)
-    residue = int(rec_report.get("residue_count") or 0)
     if residue:
-        # The reconcile could not apply every drifted file, so this empty
-        # answer still cannot be certified clean -- keep A03 honest.
+        # P15 r2: the reconcile made progress but could not apply EVERY drifted
+        # file in this call's budget, so this answer -- empty or not -- still
+        # cannot be certified clean (the residue may hold the hit). Keep A03
+        # honest. The next action is a plain RETRY: the probe re-measures, the
+        # reconcile resumes from the residue (never redoes processed files) and
+        # converges. "refresh_or_narrow" would be wrong advice here --
+        # refresh_project_map is forbidden on a large root, and the retry IS
+        # the fix.
         response["stale_index"] = True
         response["inconclusive"] = True
-        response["ca_next_action"] = "refresh_or_narrow"
+        response["ca_next_action"] = "retry_search_continues_reconcile"
     else:
         # Clean re-search: a real absence (or a native delete the reconcile
         # applied). Not inconclusive.
@@ -2443,67 +2450,112 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                     response["stale_index"] = False
         if drift_scope:
             response["stale_index_scope"] = drift_scope
-        # P15 (2026-10-03): a 0-hit whose scoped probe MEASURED drift inside the
-        # searched scope no longer stops at the honest INCONCLUSIVE report --
-        # the report cannot answer the question the caller asked, and
-        # refresh_project_map on a large root is forbidden by rule. When the
-        # scoped drift is small (<= surgical_mapper.SEARCH_RECONCILE_MAX_FILES),
-        # reconcile exactly those files through the existing per-file machinery
-        # (write_file_cache / update_index_incremental / the publish fast path,
-        # under _pmap_lock + the snapshot WRITE lease), republish, then re-run
-        # the search ONCE against the fresh snapshot. The work runs on the
-        # search lane executor (never the event loop), never walks the repo
-        # (TOOLA-AHEALTHHUNG-R1), and above the bound the honest inconclusive
-        # answer stands unchanged.
+        # P15 (2026-10-03, r2): a 0-hit whose scoped probe MEASURED drift no
+        # longer stops at the honest INCONCLUSIVE report -- the report cannot
+        # answer the question the caller asked, and refresh_project_map on a
+        # large root is forbidden by rule. Reconcile the measured drift through
+        # the existing per-file machinery, BUDGETED by time/bytes per call --
+        # r1's fixed file-count gate measured live as permanently unanswerable
+        # on a project where agents write natively all the time (49. CUA:
+        # drift 223 > bound 200 -> drift_above_bound forever). Now: reconcile
+        # what fits (deletions first, then searched-scope first, smallest
+        # first), republish, re-search ONCE; a residue keeps the honest
+        # inconclusive and the NEXT call continues from it (the probe
+        # re-measures, so processed files are never redone). Two routes by
+        # index shape: an INDEX exists -> reconcile_stale_scope_drift (INDEX is
+        # authoritative); no INDEX -> reconcile_search_snapshot_drift (the
+        # search-side snapshot IS the only index: re-measure MANIFEST-vs-DISK --
+        # cache_delta is blind with no INDEX and reports every file as "added"
+        # forever -- and republish the snapshot incrementally; never build an
+        # INDEX inside a search call). The work runs on the search lane
+        # executor (never the event loop) and never walks the repo for the
+        # INDEX route (TOOLA-AHEALTHHUNG-R1).
         rec_report = None
         if not _skip_stale_reconcile and not results and response.get("stale_index") is True:
+            import surgical_mapper as _sm
             _stale_reason = response.get("stale_index_reason")
-            if _stale_reason == "drift_detected" and delta is not None and stale_count:
-                _scope_added = delta.get("added") or []
-                _scope_modified = delta.get("modified") or []
-                _scope_deleted = delta.get("deleted") or []
-            elif _stale_reason == "snapshot_behind_index":
-                # P15: cache_delta compares INDEX against DISK only, so it is
-                # blind here -- INDEX == disk while the SERVED snapshot predates
-                # a write (the fresh-project publish failure). The drift set is
-                # INDEX files the served manifest lacks (the producer already
-                # counted them); treat each as "modified" so the reconcile
-                # re-caches it and republishes. `delta` is UNBOUND on this
-                # branch, so the drift set must be sourced here, never from it.
-                _scope_added = []
-                _scope_deleted = []
-                _scope_modified = []
+            _has_index = (Path(snapshot_root) / search_snapshots.CACHE_DIR_NAME
+                          / search_snapshots.INDEX_FILENAME).is_file()
+            if not _has_index:
+                # No-INDEX route: the helper re-measures drift against the
+                # served manifest itself, so no delta sourcing happens here.
+                _recon_budget = max(
+                    1.0,
+                    search_started_at + SEARCH_TEXT_DEADLINE_SECONDS
+                    - time.monotonic())
+                _permit = None
                 try:
-                    _pin = search_snapshots.pin_current_snapshot(str(snapshot_root))
-                    try:
-                        _manifest_paths = {
-                            str(r.get("path") or "").replace("\\", "/").casefold()
-                            for r in _pin.manifest.get("files", [])
-                        }
-                    finally:
-                        _pin.release()
-                    _live_index = json.loads(
-                        (Path(snapshot_root) / search_snapshots.CACHE_DIR_NAME
-                         / search_snapshots.INDEX_FILENAME).read_text(encoding="utf-8"))
-                    _scope_modified = sorted(
-                        str(rel).replace("\\", "/")
-                        for rel in (_live_index.get("files") or {})
-                        if str(rel).replace("\\", "/").casefold() not in _manifest_paths
-                    )
-                except Exception as _behind_exc:
+                    _permit = await FAIR_ADMISSION.acquire(
+                        "search",
+                        deadline=time.monotonic() + _recon_budget)
+                    rec_report = await get_executor_lane("search").run(
+                        _sm.reconcile_search_snapshot_drift,
+                        str(snapshot_root),
+                        scope=drift_scope or "",
+                        deadline_at=time.monotonic() + _recon_budget,
+                        queue_wait_deadline=time.monotonic() + _recon_budget)
+                except Exception as _recon_exc:
                     rec_report = {"applied": False,
-                                  "reason": f"behind_index_probe_failed: {type(_behind_exc).__name__}: {_behind_exc}"}
-                    _scope_modified = []
+                                  "reason": f"{type(_recon_exc).__name__}: {_recon_exc}"}
+                finally:
+                    if _permit is not None:
+                        _permit.release()
+                if (isinstance(rec_report, dict)
+                        and rec_report.get("reason") == "snapshot_clean"):
+                    # The served snapshot ALREADY matches disk: the drift report
+                    # was a phantom of the INDEX-less probe (every file reads as
+                    # "added"), so this 0-hit is a REAL not-found. Flip to clean
+                    # and do NOT re-search (nothing was republished).
+                    response["stale_index"] = False
+                    response.pop("stale_index_reason", None)
+                    response.pop("stale_files_count", None)
+                    response.pop("inconclusive", None)
+                    response.pop("ca_next_action", None)
             else:
-                _scope_added = []
-                _scope_modified = []
-                _scope_deleted = []
-            if rec_report is None:
-                _scope_drift = (len(_scope_added) + len(_scope_modified)
-                                + len(_scope_deleted))
-                if _scope_drift:
-                    import surgical_mapper as _sm
-                    if _scope_drift <= _sm.SEARCH_RECONCILE_MAX_FILES:
+                if _stale_reason == "drift_detected" and delta is not None and stale_count:
+                    _scope_added = delta.get("added") or []
+                    _scope_modified = delta.get("modified") or []
+                    _scope_deleted = delta.get("deleted") or []
+                elif _stale_reason == "snapshot_behind_index":
+                    # P15: cache_delta compares INDEX against DISK only, so it is
+                    # blind here -- INDEX == disk while the SERVED snapshot predates
+                    # a write (the fresh-project publish failure). The drift set is
+                    # INDEX files the served manifest lacks (the producer already
+                    # counted them); treat each as "modified" so the reconcile
+                    # re-caches it and republishes. `delta` is UNBOUND on this
+                    # branch, so the drift set must be sourced here, never from it.
+                    _scope_added = []
+                    _scope_deleted = []
+                    _scope_modified = []
+                    try:
+                        _pin = search_snapshots.pin_current_snapshot(str(snapshot_root))
+                        try:
+                            _manifest_paths = {
+                                str(r.get("path") or "").replace("\\", "/").casefold()
+                                for r in _pin.manifest.get("files", [])
+                            }
+                        finally:
+                            _pin.release()
+                        _live_index = json.loads(
+                            (Path(snapshot_root) / search_snapshots.CACHE_DIR_NAME
+                             / search_snapshots.INDEX_FILENAME).read_text(encoding="utf-8"))
+                        _scope_modified = sorted(
+                            str(rel).replace("\\", "/")
+                            for rel in (_live_index.get("files") or {})
+                            if str(rel).replace("\\", "/").casefold() not in _manifest_paths
+                        )
+                    except Exception as _behind_exc:
+                        rec_report = {"applied": False,
+                                      "reason": f"behind_index_probe_failed: {type(_behind_exc).__name__}: {_behind_exc}"}
+                        _scope_modified = []
+                else:
+                    _scope_added = []
+                    _scope_modified = []
+                    _scope_deleted = []
+                if rec_report is None:
+                    _scope_drift = (len(_scope_added) + len(_scope_modified)
+                                    + len(_scope_deleted))
+                    if _scope_drift:
                         _recon_budget = max(
                             1.0,
                             search_started_at + SEARCH_TEXT_DEADLINE_SECONDS
@@ -2517,6 +2569,8 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                                 _sm.reconcile_stale_scope_drift,
                                 str(snapshot_root),
                                 _scope_added, _scope_modified, _scope_deleted,
+                                deadline_at=time.monotonic() + _recon_budget,
+                                priority_scope=drift_scope or "",
                                 queue_wait_deadline=time.monotonic() + _recon_budget)
                         except Exception as _recon_exc:
                             rec_report = {"applied": False,
@@ -2524,10 +2578,6 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                         finally:
                             if _permit is not None:
                                 _permit.release()
-                    else:
-                        rec_report = {"applied": False, "reason": "drift_above_bound",
-                                      "drift_files": _scope_drift,
-                                      "bound": _sm.SEARCH_RECONCILE_MAX_FILES}
         if rec_report is not None:
             response["stale_reconcile"] = rec_report
             if rec_report.get("applied"):
