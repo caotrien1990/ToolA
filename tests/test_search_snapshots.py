@@ -132,6 +132,31 @@ class TestSearchSnapshotStore(unittest.TestCase):
         finally:
             pin.release()
 
+    def test_repeated_reads_verify_shared_blob_once_per_pin(self) -> None:
+        # P14 D1: a.py and b.py hold identical bytes, so both records point at
+        # ONE blob. Reading them repeatedly must hash that blob once per pin,
+        # not once per read: a whole-repo text scan re-verified every shared
+        # blob on every read (480 redundant blob re-reads measured on CUA).
+        self._publish()
+        hash_calls = 0
+        real_hash = snapshots._sha256_bytes
+
+        def counted_hash(payload):
+            nonlocal hash_calls
+            hash_calls += 1
+            return real_hash(payload)
+
+        pin = snapshots.pin_current_snapshot(self.root)
+        try:
+            with mock.patch.object(snapshots, "_sha256_bytes", counted_hash):
+                pin.read_bytes("a.py")
+                pin.read_bytes("b.py")
+                pin.read_bytes("a.py")
+                pin.read_bytes("b.py")
+            self.assertEqual(hash_calls, 1)
+        finally:
+            pin.release()
+
     def test_old_generation_stays_readable_until_last_pin_releases(self) -> None:
         expected_a = (self.root / "a.py").read_bytes()
         expected_b = (self.root / "b.py").read_bytes()

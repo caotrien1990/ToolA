@@ -1224,6 +1224,7 @@ class SnapshotPin:
     generation_path: Path
     _released: bool = False
     _records_by_key: dict[str, dict[str, Any]] = field(default_factory=dict)
+    _verified_blobs: set[str] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         self._records_by_key = {
@@ -1249,11 +1250,23 @@ class SnapshotPin:
         record = self._records_by_key.get(_path_lookup_key(relative_path))
         if record is None:
             raise FileNotFoundError(relative_path)
-        payload = _blob_path(self.store, record["blob_sha256"]).read_bytes()
-        if len(payload) != int(record["size"]) or _sha256_bytes(payload) != record["sha256"]:
+        blob_sha = record["blob_sha256"]
+        payload = _blob_path(self.store, blob_sha).read_bytes()
+        # P14 D1: verify a blob once per pin, not once per read. Snapshot blobs
+        # are content-addressed and immutable for the lease of the pin, so a
+        # digest verified once stays verified; a whole-repo scan re-hashed every
+        # shared blob per record (480 redundant re-reads measured on CUA). The
+        # cheap size check still runs per read, so a truncated blob is caught.
+        if len(payload) != int(record["size"]):
             raise SnapshotIntegrityError(
-                f"snapshot blob verification failed: {self.snapshot_id}:{record['path']}",
+                "snapshot blob verification failed: %s:%s" % (self.snapshot_id, record["path"]),
             )
+        if blob_sha not in self._verified_blobs:
+            if _sha256_bytes(payload) != record["sha256"]:
+                raise SnapshotIntegrityError(
+                    "snapshot blob verification failed: %s:%s" % (self.snapshot_id, record["path"]),
+                )
+            self._verified_blobs.add(blob_sha)
         return payload
 
     def read_index(self) -> dict[str, Any]:

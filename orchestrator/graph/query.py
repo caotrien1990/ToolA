@@ -633,7 +633,14 @@ def nodes_query(project_path: str, *, kind: str = "", name_prefix: str = "",
             if kind:
                 where.append("kind=?"); args.append(kind)
             if name_prefix:
-                where.append("name LIKE ?"); args.append(name_prefix + "%")
+                # P14 D2: a prefix LIKE cannot seek the case-insensitive name
+                # index, and a plain name-LIKE + ORDER BY file_path made SQLite
+                # scan idx_nodes_file_line over fat rows (0.6 s cold on ToolA).
+                # The rowid subquery (N1 precedent in _node_ids_matching)
+                # materializes matches through covering idx_nodes_name, then
+                # PK-lookups the rest: measured 0.016 s warm, same rows.
+                where.append("rowid IN (SELECT rowid FROM nodes WHERE name LIKE ?)")
+                args.append(name_prefix + "%")
             if file_contains:
                 where.append("file_path LIKE ?"); args.append("%" + file_contains + "%")
             w = (" WHERE " + " AND ".join(where)) if where else ""

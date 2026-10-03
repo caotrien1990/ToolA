@@ -646,8 +646,10 @@ def build_analysis_view(
         # structural corruption the corrupt-gate must reject (verified on a
         # page-scrambled copy: identical non-ok output); integrity_check only
         # adds index-content cross-checks, which init/migrate already cover.
-        ic = conn.execute("PRAGMA quick_check;").fetchone()
-        if ic and ic[0] != "ok":
+        # P14 D2: memoized on the db stat - an unchanged graph.db pays the scan
+        # once per change, not once per view build.
+        ic = _store.quick_check_cached(conn, root)
+        if ic != "ok":
             payload = _unavailable("corrupt", root=root, extra={"freshness": "corrupt"})
             payload["elapsed_ms"] = round((time.monotonic() - t0) * 1000, 1)
             return payload

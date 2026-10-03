@@ -83,6 +83,42 @@ def integrity_check(project_path: str) -> str:
         conn.close()
 
 
+# P14 D2: quick_check verdict memo. graph_status and every build_analysis_view
+# used to run PRAGMA quick_check per call, so one what-if burst paid the
+# multi-MB integrity scan repeatedly. The verdict cannot change while the db
+# file and its WAL keep the same (mtime_ns, size), so the memo is keyed on
+# exactly that stat; a stat failure falls through to a live check.
+_QUICK_CHECK_MEMO: dict = {}
+_QUICK_CHECK_MEMO_MAX = 64
+
+
+def _db_stat_key(project_path: str):
+    db = graph_db_path(project_path)
+    main = os.stat(db)
+    try:
+        wal = os.stat(db + "-wal")
+        wal_key = (wal.st_mtime_ns, wal.st_size)
+    except OSError:
+        wal_key = None
+    return (db, main.st_mtime_ns, main.st_size, wal_key)
+
+
+def quick_check_cached(conn: sqlite3.Connection, project_path: str) -> str:
+    """PRAGMA quick_check with a stat-keyed memo for an UNCHANGED graph.db."""
+    try:
+        key = _db_stat_key(project_path)
+    except OSError:
+        row = conn.execute("PRAGMA quick_check;").fetchone()
+        return row[0] if row else "unknown"
+    hit = _QUICK_CHECK_MEMO.get(key)
+    if hit is not None:
+        return hit
+    row = conn.execute("PRAGMA quick_check;").fetchone()
+    verdict = row[0] if row else "unknown"
+    if len(_QUICK_CHECK_MEMO) >= _QUICK_CHECK_MEMO_MAX:
+        _QUICK_CHECK_MEMO.clear()
+    _QUICK_CHECK_MEMO[key] = verdict
+    return verdict
 def reset_db(project_path: str) -> None:
     """Drop all graph tables and recreate schema (for re-index / rollback)."""
     conn = get_db(project_path)

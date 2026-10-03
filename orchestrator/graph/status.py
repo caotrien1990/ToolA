@@ -211,8 +211,10 @@ def graph_status(project_path: str) -> dict:
                 conn.set_progress_handler(
                     lambda: 1 if time.monotonic() > _ic_deadline else 0,
                     CBM_STATUS_INTEGRITY_OPCODE_INTERVAL)
-                _ic_row = conn.execute("PRAGMA quick_check;").fetchone()
-                ic = (_ic_row[0] if _ic_row else "unknown")
+                # P14 D2: the verdict is memoized on the db file stat, so an
+                # UNCHANGED graph.db pays quick_check once; the progress handler
+                # still bounds the live probe on a memo miss (a hit runs no SQL).
+                ic = _store.quick_check_cached(conn, project_path)
             except sqlite3.Error as _ic_exc:
                 # Aborted by OUR handler is not corruption. Reporting "corrupt"
                 # for a slow disk would be worse than the starvation it replaces,

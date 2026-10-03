@@ -281,6 +281,46 @@ class TestSearchStaleIndexA03(unittest.IsolatedAsyncioTestCase):
                 f"second identical 0-hit probe re-hashed {hashes} file(s); "
                 "an unchanged file must never be re-read",
             )
+    # ---- P13: snapshot-vs-INDEX divergence must void a clean 0-hit ------------
+    #
+    # Root defect: the A03 probe (cache_delta) compares INDEX against DISK. When the
+    # write path advanced INDEX but the served snapshot was never republished (the
+    # fresh-project publish failure, or any publish that failed after the INDEX
+    # write), INDEX == disk and the probe certifies "clean" -- while the snapshot
+    # search actually served PREDATES the file. The verdict must therefore also
+    # compare the SERVED SNAPSHOT against INDEX: a 0-hit over a snapshot that lacks
+    # an indexed file is inconclusive, never stale_index False.
+
+    async def test_zero_hit_when_served_snapshot_predates_index_is_inconclusive(self) -> None:
+        """INDEX lists a file the served snapshot does not -> 0-hit must not read clean."""
+        # Advance INDEX past the snapshot WITHOUT republishing (the state the P13
+        # publish failure leaves behind): cache the new file and patch INDEX only.
+        new_file = self.root / "p13_late_file.py"
+        new_file.write_text("def p13_late_symbol_zz():\n    return 1\n", encoding="utf-8")
+        metadata = surgical_mapper.write_file_cache(str(new_file), str(self.root))
+        surgical_mapper.update_index_incremental(self.root, metadata, removed=False)
+        _clear_drift_caches()
+
+        # Positive control: INDEX really does list the file now.
+        idx = json.loads((self.root / ".orchestrator_cache" / "INDEX.json").read_text(encoding="utf-8"))
+        self.assertIn("p13_late_file.py", idx.get("files", {}))
+
+        payload = await self._search("p13_late_symbol_zz")
+        self.assertEqual(payload["count"], 0, "the served snapshot predates the file")
+        self.assertNotEqual(
+            payload.get("stale_index"), False,
+            f"snapshot lacks an INDEX-listed file; a clean verdict is the P13 lie: {payload}",
+        )
+        self.assertTrue(payload.get("inconclusive") is True, payload)
+        self.assertEqual(payload.get("stale_index_reason"), "snapshot_behind_index", payload)
+        self.assertGreaterEqual(int(payload.get("snapshot_missing_indexed_files") or 0), 1, payload)
+
+    async def test_zero_hit_with_snapshot_matching_index_stays_clean(self) -> None:
+        """Guard against a false positive: snapshot==INDEX + clean disk stays clean."""
+        payload = await self._search("definitely_absent_token_qqq")
+        self.assertEqual(payload["count"], 0)
+        self.assertIs(payload.get("stale_index"), False, payload)
+        self.assertIsNot(payload.get("inconclusive"), True, payload)
 
 if __name__ == "__main__":
     unittest.main()

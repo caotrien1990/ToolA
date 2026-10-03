@@ -319,3 +319,41 @@ class TestAnalysisViewReadonlyHash:
         assert before == after
         assert payload["status"] != "unavailable"
         assert payload.get("created_missing_db") is False
+
+
+class TestAnalysisViewQuickCheckMemo:
+    def test_unchanged_db_runs_quick_check_once(self, tmp_path, monkeypatch):
+        # P14 D2: build_analysis_view used to run PRAGMA quick_check on EVERY
+        # view build (and graph_status ran its own probe), so a what-if burst
+        # paid the multi-MB integrity scan repeatedly. The verdict is memoized
+        # on the graph.db file stat; an UNCHANGED db must be checked once only.
+        root = _seed(
+            tmp_path, monkeypatch, "qcmemo",
+            {"a.py": "import b" + chr(10), "b.py": "x=1" + chr(10)},
+            [("a.py", "b.py", 1.0)],
+        )
+        import orchestrator.graph.analysis_view as av
+        real_get_db = av._store.get_db
+        qc_calls = []
+
+        class _CountingConn:
+            def __init__(self, inner):
+                self._inner = inner
+
+            def execute(self, sql, *args, **kwargs):
+                if isinstance(sql, str) and "quick_check" in sql.lower():
+                    qc_calls.append(sql)
+                return self._inner.execute(sql, *args, **kwargs)
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+        def counting_get_db(project_path, **kwargs):
+            return _CountingConn(real_get_db(project_path, **kwargs))
+
+        monkeypatch.setattr(av._store, "get_db", counting_get_db)
+        first = _view(root, ["a.py"])
+        second = _view(root, ["a.py"])
+        assert first["status"] != "unavailable"
+        assert second["status"] != "unavailable"
+        assert len(qc_calls) == 1

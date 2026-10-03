@@ -192,6 +192,24 @@ def _publish_snapshot_deadline_seconds() -> float:
         return 180.0
 
 
+def _clear_current_snapshot_best_effort(project_root: Path) -> None:
+    """Best-effort CURRENT-pointer clear for the no-full-walk write path.
+
+    Called only when _publish_search_snapshot's fast path failed AND
+    allow_full_walk=False (TOOLA-AHEALTHHUNG-R1: never an O(repo) walk on the
+    first write that seeded INDEX). The prior CURRENT snapshot then predates
+    this write; serving it is the one outcome that must never happen, so drop
+    the pointer and let the next search_code republish from disk. A failure
+    here (e.g. a read lease holding the pointer) must not fail the write:
+    the file is on disk and in INDEX either way.
+    """
+    try:
+        pointer = search_snapshots.snapshot_store_path(project_root) / search_snapshots.CURRENT_FILENAME
+        pointer.unlink(missing_ok=True)
+    except OSError as exc:
+        logging.warning("_clear_current_snapshot_best_effort: %s", exc)
+
+
 def _publish_search_snapshot(project_root: Path, index: dict, changed_paths: dict | None = None,
                              allow_full_walk: bool = True, watchdog=None) -> str:
     # Each attempt gets its OWN fresh budget window (a wall-clock deadline
@@ -241,6 +259,14 @@ def _publish_search_snapshot(project_root: Path, index: dict, changed_paths: dic
         if changed_paths is None:
             raise
         if not allow_full_walk:
+            # P13: the publish failed (usually SnapshotIntegrityError from a prior
+            # search-side snapshot whose record set predates this write) and the
+            # full-walk self-heal is disabled here (TOOLA-AHEALTHHUNG-R1). Leaving
+            # CURRENT pointing at the pre-write snapshot would make the next
+            # search_code silently serve the stale tree -- a file that exists on
+            # disk and in INDEX then reads as a clean 0-hit. Clearing CURRENT is
+            # O(1) (no repo walk): the next search republishes from disk itself.
+            _clear_current_snapshot_best_effort(project_root)
             snapshot_id = ""
         else:
             snapshot_id = _publish(None)
@@ -457,6 +483,14 @@ def _is_data_json(file_path: Path, depth: int | None = None) -> bool:
 def _depth_below_root(file_path: Path, project_root: str | Path | None) -> int | None:
     if not project_root:
         return None
+    try:
+        # P14 D1: try the cheap lexical relative_to FIRST. Hot callers already
+        # pass a resolved root joined onto the file path, so this hits without
+        # touching the filesystem; the old code resolved BOTH paths per call
+        # (30064 _getfinalpathname syscalls, 0.83 s, per one CUA text scan).
+        return len(Path(file_path).relative_to(Path(project_root)).parts) - 1
+    except ValueError:
+        pass
     try:
         return len(Path(file_path).resolve().relative_to(Path(project_root).resolve()).parts) - 1
     except Exception:

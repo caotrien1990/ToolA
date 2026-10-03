@@ -1808,6 +1808,39 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                     records_pre_validated=True,
                 )
             payload_out = {"results": results, "snapshot_id": pin.snapshot_id}
+            if not results:
+                # P13: a 0-hit must never certify a clean index while the SNAPSHOT
+                # this search served predates INDEX. The A03 probe compares INDEX
+                # against DISK only, so a post-write publish failure (the
+                # fresh-project first-write path leaves CURRENT at the pre-write
+                # snapshot) read as clean while the new file was missing from the
+                # served tree. Compare the served manifest's record set against
+                # the LIVE INDEX.json HERE, where the pin is still held, gated on
+                # empty results so the hot path pays nothing. Non-authoritative
+                # manifests (search-side publish, index=None) skip the probe:
+                # their record set legitimately differs from INDEX by filter.
+                try:
+                    manifest = pin.manifest
+                    if manifest.get("index_authoritative"):
+                        live_index_path = (Path(snapshot_root)
+                                           / search_snapshots.CACHE_DIR_NAME
+                                           / search_snapshots.INDEX_FILENAME)
+                        live_index = json.loads(live_index_path.read_text(encoding="utf-8"))
+                        manifest_paths = {
+                            str(record.get("path") or "").replace("\\", "/").casefold()
+                            for record in manifest.get("files", [])
+                        }
+                        missing = sorted(
+                            str(rel).replace("\\", "/")
+                            for rel in (live_index.get("files") or {})
+                            if str(rel).replace("\\", "/").casefold() not in manifest_paths
+                        )
+                        if missing:
+                            payload_out["snapshot_missing_indexed_files"] = len(missing)
+                            payload_out["snapshot_missing_indexed_sample"] = missing[:5]
+                except Exception:
+                    # A probe failure must never fail a search that already ran.
+                    pass
             # D3: the two counters the 0-hit branch needs to tell "your glob matched
             # nothing" apart from "the text really is absent". They are only
             # MEANINGFUL when results is empty: the scan loop breaks at
@@ -2186,42 +2219,60 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                 drift_scope = base_resolved.relative_to(snapshot_root).as_posix()
         except Exception:
             drift_scope = ""
-        stale_reason = ""
-        delta = None
-        try:
-            import code_tools
-            if not drift_root:
-                stale_reason = "no_project_path"
-            else:
-                raw_delta = json.loads(await code_tools.cache_delta(drift_root, scope=drift_scope))
-                if not isinstance(raw_delta, dict) or not raw_delta.get("ok"):
-                    stale_reason = "delta_unavailable"
-                    response["stale_index_error"] = str(
-                        (raw_delta or {}).get("error")
-                        or "cache_delta returned ok:false")
-                else:
-                    delta = raw_delta
-        except Exception as exc:
-            # Fail loud: a broken staleness probe must NOT be reported as a clean index.
-            stale_reason = "probe_failed"
-            response["stale_index_error"] = str(exc)
-        if delta is None:
-            response["stale_index"] = None
-            response["stale_index_reason"] = stale_reason or "probe_failed"
+        # P13: cache_delta compares INDEX against DISK only. When the write path
+        # advanced INDEX but the SERVED snapshot was never republished (the
+        # fresh-project publish failure), INDEX == disk and that probe certifies
+        # "clean" while this search actually served a PRE-WRITE tree. The
+        # producer already compared the served manifest against INDEX (only on
+        # this empty-results path): a 0-hit over a snapshot that lacks an
+        # indexed file is inconclusive, never stale_index False.
+        _snap_missing = producer_payload.get("snapshot_missing_indexed_files")
+        if _snap_missing:
+            response["stale_index"] = True
+            response["stale_index_reason"] = "snapshot_behind_index"
+            response["snapshot_missing_indexed_files"] = _snap_missing
+            _snap_sample = producer_payload.get("snapshot_missing_indexed_sample")
+            if _snap_sample:
+                response["snapshot_missing_indexed_sample"] = _snap_sample
             response["inconclusive"] = True
             response["ca_next_action"] = "refresh_or_narrow"
         else:
-            stale_count = (len(delta.get("added") or [])
-                           + len(delta.get("modified") or [])
-                           + len(delta.get("deleted") or []))
-            if stale_count:
-                response["stale_index"] = True
-                response["stale_files_count"] = stale_count
-                response["stale_index_reason"] = "drift_detected"
+            stale_reason = ""
+            delta = None
+            try:
+                import code_tools
+                if not drift_root:
+                    stale_reason = "no_project_path"
+                else:
+                    raw_delta = json.loads(await code_tools.cache_delta(drift_root, scope=drift_scope))
+                    if not isinstance(raw_delta, dict) or not raw_delta.get("ok"):
+                        stale_reason = "delta_unavailable"
+                        response["stale_index_error"] = str(
+                            (raw_delta or {}).get("error")
+                            or "cache_delta returned ok:false")
+                    else:
+                        delta = raw_delta
+            except Exception as exc:
+                # Fail loud: a broken staleness probe must NOT be reported as a clean index.
+                stale_reason = "probe_failed"
+                response["stale_index_error"] = str(exc)
+            if delta is None:
+                response["stale_index"] = None
+                response["stale_index_reason"] = stale_reason or "probe_failed"
                 response["inconclusive"] = True
                 response["ca_next_action"] = "refresh_or_narrow"
             else:
-                response["stale_index"] = False
+                stale_count = (len(delta.get("added") or [])
+                               + len(delta.get("modified") or [])
+                               + len(delta.get("deleted") or []))
+                if stale_count:
+                    response["stale_index"] = True
+                    response["stale_files_count"] = stale_count
+                    response["stale_index_reason"] = "drift_detected"
+                    response["inconclusive"] = True
+                    response["ca_next_action"] = "refresh_or_narrow"
+                else:
+                    response["stale_index"] = False
         if drift_scope:
             response["stale_index_scope"] = drift_scope
     # D3: never let the query-shape guess overwrite a measured cause. When the glob

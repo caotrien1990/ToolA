@@ -712,6 +712,13 @@ def _update_cache_after_write(file_path: str, project_root: str | None = None) -
         surgical_mapper.update_file_cache(file_path, root)
         # Verify: re-read INDEX and confirm mtime matches disk within threshold
         fp = Path(file_path).resolve()
+        if not fp.exists():
+            # P13 delete path: update_file_cache already removed the cache/INDEX
+            # entry; a deleted file having no mtime on disk is SUCCESS, not a sync
+            # failure. stat()ing it used to raise FileNotFoundError and land in the
+            # blanket except below, reporting synced=False for the file's intended
+            # absence on every delete/rollback-unlink.
+            return True
         disk_mtime = fp.stat().st_mtime
         idx_path = _project_cache_dir(root) / "INDEX.json"
         if idx_path.exists():
