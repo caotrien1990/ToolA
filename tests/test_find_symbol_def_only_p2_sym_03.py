@@ -254,5 +254,77 @@ class TestFindSymbolDefOnlyP2Sym03(unittest.TestCase):
                              f"body not capped: {len(body)} chars")
 
 
+class TestFindSymbolGraphPathNoTextScanP19(unittest.TestCase):
+    """P19 (2026-10-03): when the graph DB is fresh, the find_symbol
+    function must answer from the graph and NEVER reach the text-lane
+    producer (snapshot pin / whole-repo scan).
+
+    The text lane's 0-hit path pays the A03 whole-repo cache_delta probe and
+    the P15 reconcile; a symbol lookup must not. The pin_current_snapshot
+    seam is fail-fast patched: any reach into the text lane raises.
+    """
+
+    def setUp(self) -> None:
+        import tempfile
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.project = self.root / "proj"
+        self.project.mkdir()
+        self.graph_dir = self.root / "graphdb"
+        self.graph_dir.mkdir()
+        (self.project / "mod.py").write_text(
+            "def target_fn(x):\n"
+            "    return x + 1\n",
+            encoding="utf-8",
+        )
+        (self.project / "user_mod.py").write_text(
+            "from mod import target_fn\n"
+            "\n"
+            "def caller():\n"
+            "    return target_fn(41)\n",
+            encoding="utf-8",
+        )
+        self._old_db_dir = os.environ.get("GRAPH_DB_DIR")
+        os.environ["GRAPH_DB_DIR"] = str(self.graph_dir)
+        from orchestrator.graph.indexer import index_project
+        result = index_project(str(self.project).replace("\\", "/"), scope="full")
+        assert result["status"] == "completed", result
+
+    def tearDown(self) -> None:
+        if self._old_db_dir is None:
+            os.environ.pop("GRAPH_DB_DIR", None)
+        else:
+            os.environ["GRAPH_DB_DIR"] = self._old_db_dir
+        self._tmp.cleanup()
+
+    def test_graph_fresh_answers_without_text_producer(self) -> None:
+        import asyncio
+        import orchestrator.tools.search as search_mod
+
+        def _pin_forbidden(*a, **k):
+            raise AssertionError(
+                "text-lane snapshot producer reached from find_symbol (P19)")
+
+        orig = search_mod.search_snapshots.pin_current_snapshot
+        search_mod.search_snapshots.pin_current_snapshot = _pin_forbidden
+        try:
+            raw = asyncio.run(search_mod.find_symbol(
+                name="target_fn",
+                project_path=str(self.project).replace("\\", "/"),
+            ))
+        finally:
+            search_mod.search_snapshots.pin_current_snapshot = orig
+        data = json.loads(raw)
+        self.assertEqual(data.get("source"), "graph",
+                         f"expected source='graph', got {data.get('source')!r}: {data}")
+        results = data.get("results", [])
+        self.assertEqual(len(results), 1, f"expected 1 def, got {results}")
+        self.assertTrue(results[0]["file"].endswith("mod.py"), results[0])
+        self.assertEqual(results[0]["line"], 1)
+        # Call site must not leak into a definitions answer.
+        for r in results:
+            self.assertNotIn("target_fn(41)", r.get("match", ""),
+                             f"call site leaked: {r}")
+
 if __name__ == "__main__":
     unittest.main()

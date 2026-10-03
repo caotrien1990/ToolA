@@ -76,6 +76,23 @@ class TestSearchToolAliasCompat(unittest.IsolatedAsyncioTestCase):
                 "ok" in parsed_find or "results" in parsed_find,
                 msg=f"find_symbol returned unexpected shape: {sorted(parsed_find.keys())}",
             )
+            # P19: the find_symbol tool must answer from the SYMBOL lane
+            # (definitions only), never the text lane. On the pre-P19 head
+            # this alias ran search_code mode='text', so the response
+            # carried mode='text' and the call-site-shaped lines next to
+            # the definition.
+            self.assertNotEqual(
+                parsed_find.get("mode"), "text",
+                msg=f"find_symbol answered from the text lane (P19): {sorted(parsed_find.keys())}",
+            )
+            find_results = parsed_find.get("results", [])
+            self.assertEqual(
+                len(find_results), 1,
+                msg=f"find_symbol must return exactly the one definition, got {find_results}",
+            )
+            self.assertEqual(find_results[0].get("file"), "sample_alias_mod.py")
+            self.assertEqual(find_results[0].get("line"), 1)
+            self.assertIn("def some_fn", find_results[0].get("match", ""))
 
 
 if __name__ == "__main__":

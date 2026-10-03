@@ -3480,6 +3480,15 @@ def _apply_alias_mode_default_post_s4(
         "query_dom_candidates": "dom_candidates",
         "find_callers": "callers",
         "find_definition_and_usage": "definition_usage",
+        # P19 (2026-10-03): find_symbol is an-alias for search_code
+        # whose PUBLIC schema deliberately omits `mode`. Without
+        # this entry the body arrived with no mode and search_code
+        # defaulted to mode='text', — a symbol lookup dispatched to
+        # the whole-repo text-scnal snapshot lane (mode:'text' in
+        # the response, definition + call-site hits, and the stale-index
+        # reconcile machinery on a 0-hit). The alias must default to
+        # mode='symbol' exactly like find_callers gains mode='callers'.
+        "find_symbol": "symbol",
     }
     default = _MODE_DEFAULTS.get(tool_name)
     if default is None:

@@ -373,5 +373,192 @@ class TestFindSymbolTTA01v3(unittest.TestCase):
         self.assertIn("def target_fn", results[0]["match"])
 
 
+
+class TestFindSymbolIndexSourceP19(unittest.TestCase):
+    """P19 (2026-10-03): find_symbol must answer from a SYMBOL index, never
+    from a whole-repo text scan.
+
+    Root defect fixed here: the find_symbol TOOL was registered as
+    ('find_symbol', 'search_code') with no dispatcher mode default, so every
+    call ran search_code mode='text' -- a whole-repo snapshot text scan that
+    returned call sites next to the definition, and whose 0-hit path paid the
+    A03 whole-repo cache_delta probe plus the P15 reconcile (measured 250s on
+    49. CUA, 4128 indexed files, 223 natively-drifted files).
+
+    Contract locked by these tests:
+      1) A real INDEX.json symbol map answers definitions directly
+         (source='index'); the text-lane producer (snapshot pin) is never
+         touched.
+      2) A 0-hit over a CLEAN index is honest (stale_index False) and reads
+         NO file content (no hash, no source read) -- the index already
+         certifies the symbol set.
+      3) A 0-hit over a STALE index scans ONLY the drifted files (the symbol
+         answer's whole need), finds a natively-added definition, and reports
+         stale_index True -- no whole-repo reconcile.
+      4) Python methods are findable from the symbol index (they were only
+         reachable through the O(repo) regex walk before P19).
+      5) Latency guard: a 0-hit on a 3000-file project with a fresh symbol
+         index performs ZERO full-file content reads.
+    """
+
+    def setUp(self) -> None:
+        import os as _os
+        self._os = _os
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        # The graph adapter must not intercept these tests: they pin the
+        # INDEX.json source chain. GRAPH_ENABLED is process-global and the
+        # graph test suites set it, so force it off and restore after.
+        self._old_graph = _os.environ.get("GRAPH_ENABLED")
+        _os.environ["GRAPH_ENABLED"] = "0"
+
+    def tearDown(self) -> None:
+        if self._old_graph is None:
+            self._os.environ.pop("GRAPH_ENABLED", None)
+        else:
+            self._os.environ["GRAPH_ENABLED"] = self._old_graph
+        self._tmp.cleanup()
+
+    def _write_project(self) -> None:
+        (self.root / "mod.py").write_text(
+            "def target_fn(x):\n"
+            "    return x + 1\n"
+            "\n"
+            "class Widget:\n"
+            "    def hello(self):\n"
+            "        return 'hi'\n",
+            encoding="utf-8",
+        )
+        (self.root / "user_mod.py").write_text(
+            "from mod import target_fn\n"
+            "\n"
+            "def caller():\n"
+            "    return target_fn(41)\n",
+            encoding="utf-8",
+        )
+
+    def _build_index(self) -> None:
+        import surgical_mapper
+        surgical_mapper.generate_project_map(str(self.root))
+
+    def _find(self, name: str) -> dict:
+        raw = asyncio.run(find_symbol(name=name, project_path=str(self.root)))
+        return json.loads(raw)
+
+    def test_index_source_definitions_only_no_text_scan(self) -> None:
+        """INDEX-backed answer: defs only, source='index', and the text-lane
+        producer (snapshot pin) is never invoked."""
+        self._write_project()
+        self._build_index()
+
+
+        def _pin_forbidden(*a, **k):
+            raise AssertionError(
+                "text-lane snapshot producer reached from find_symbol (P19)")
+
+        import orchestrator.tools.search as search_mod
+        orig = search_mod.search_snapshots.pin_current_snapshot
+        search_mod.search_snapshots.pin_current_snapshot = _pin_forbidden
+        try:
+            data = self._find("target_fn")
+        finally:
+            search_mod.search_snapshots.pin_current_snapshot = orig
+        results = data.get("results", [])
+        self.assertEqual(len(results), 1, f"expected 1 def, got {results}")
+        self.assertEqual(results[0]["file"], "mod.py")
+        self.assertEqual(results[0]["line"], 1)
+        self.assertIn("def target_fn", results[0]["match"])
+        self.assertEqual(data.get("source"), "index",
+                         f"expected source='index', got {data.get('source')!r}")
+        self.assertNotEqual(data.get("mode"), "text",
+                            "find_symbol must never answer from the text lane")
+        # The call-site line in user_mod.py must not appear.
+        for r in results:
+            self.assertNotIn("target_fn(41)", r.get("match", ""),
+                             f"call site leaked: {r}")
+
+    def test_zero_hit_clean_index_is_honest_and_reads_nothing(self) -> None:
+        """0-hit over a clean INDEX: stale_index False, count 0, and not a
+        single file-content read (the stat-gated hash must never fire)."""
+        self._write_project()
+        self._build_index()
+        import surgical_mapper
+
+        def _hash_forbidden(*a, **k):
+            raise AssertionError(
+                "full-file hash read on a clean-index 0-hit (P19)")
+
+        orig = surgical_mapper.get_file_hash
+        surgical_mapper.get_file_hash = _hash_forbidden
+        try:
+            data = self._find("zz_no_such_symbol")
+        finally:
+            surgical_mapper.get_file_hash = orig
+        self.assertEqual(data.get("count"), 0, f"phantom hit: {data}")
+        self.assertEqual(data.get("results"), [], f"phantom hit: {data}")
+        self.assertIs(data.get("stale_index"), False,
+                      f"clean-index 0-hit must report stale_index False: {data}")
+
+    def test_zero_hit_stale_index_scans_only_drifted_files(self) -> None:
+        """Native drift: a file added AFTER the index holds the definition.
+        find_symbol must find it by scanning ONLY the drifted set, and must
+        report stale_index True -- honest, without a whole-repo reconcile."""
+        self._write_project()
+        self._build_index()
+        # Native write (no cache update): the drift the probe must see.
+        (self.root / "native_new.py").write_text(
+            "def native_added_fn():\n"
+            "    return 7\n",
+            encoding="utf-8",
+        )
+        data = self._find("native_added_fn")
+        results = data.get("results", [])
+        self.assertEqual(len(results), 1,
+                         f"drifted-file def not found: {data}")
+        self.assertEqual(results[0]["file"], "native_new.py")
+        self.assertEqual(results[0]["line"], 1)
+        self.assertIs(data.get("stale_index"), True,
+                      f"drifted 0-hit-turned-hit must report stale_index True: {data}")
+
+    def test_method_found_from_symbol_index(self) -> None:
+        """Python methods must resolve from the symbol index too. Before P19
+        the INDEX functions/classes maps never registered methods, so a bare
+        method name forced the O(repo) regex walk (or missed entirely)."""
+        self._write_project()
+        self._build_index()
+        data = self._find("hello")
+        results = data.get("results", [])
+        self.assertEqual(len(results), 1, f"method def not found: {data}")
+        self.assertEqual(results[0]["file"], "mod.py")
+        self.assertEqual(results[0]["line"], 5)
+        self.assertIn("def hello", results[0]["match"])
+
+    def test_latency_guard_zero_hit_3000_files_no_full_read(self) -> None:
+        """Latency guard: 0-hit on a 3000-file project with a fresh symbol
+        index performs ZERO full-file content reads (hash or source)."""
+        for i in range(3000):
+            (self.root / f"f{i:04d}.py").write_text(
+                f"def fn_{i:04d}():\n    return {i}\n", encoding="utf-8"
+            )
+        self._build_index()
+        import surgical_mapper
+        calls = {"hash": 0}
+        orig_hash = surgical_mapper.get_file_hash
+
+        def _counting_hash(*a, **k):
+            calls["hash"] += 1
+            return orig_hash(*a, **k)
+
+        surgical_mapper.get_file_hash = _counting_hash
+        try:
+            data = self._find("zz_no_such_symbol")
+        finally:
+            surgical_mapper.get_file_hash = orig_hash
+        self.assertEqual(data.get("count"), 0, f"phantom hit: {data}")
+        self.assertIs(data.get("stale_index"), False, f"not clean: {data}")
+        self.assertEqual(
+            calls["hash"], 0,
+            f"0-hit on a fresh index read file content {calls['hash']} times (P19)",
+        )
 if __name__ == "__main__":
     unittest.main()

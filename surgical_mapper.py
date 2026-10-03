@@ -981,9 +981,34 @@ def _index_file_entry(data: dict) -> dict:
         "imports": data.get("imports", [])[:20],
     }
 
-
 def _index_register_symbols(index: dict, rel: str, data: dict) -> None:
-    """Append this file's function/class refs + entrypoint flag into the index (shared)."""
+    """Append this file's function/class refs + entrypoint flag into the index (shared).
+
+    P19 (2026-10-03, revised 2026-10-03): the first P19 revision also
+    registered methods (qualified ``Class.name`` + a bare-name key) and
+    global_constants (into ``classes``). Both were REVERTED at the root:
+
+    * ``global_constant`` in the shared ``classes`` map broke two INDEX
+      contracts at once: query_index answers a content token via
+      ``matched_via ['symbol']`` instead of the blob scan (the
+      test_query_index_commit_b contract), and validate_symbols diffs the
+      file's AST FunctionDef/ClassDef names against INDEX functions+classes
+      -- a constant is indexed but never AST-found, so a NEW file whose only
+      symbol is a constant reported ``symbols_removed: ['TOK']`` and
+      write_transaction auto-reverted a good write
+      (test_incremental_index_and_snapshot BATCH_VERIFY_FAILED_AUTO_REVERT).
+    * methods under qualified ``Class.name`` keys hit the same comparator
+      asymmetry: validate_symbols extracts bare method names, so any method
+      rename would report the stale qualified key as "removed".
+
+    find_symbol still answers methods/constants: its INDEX source falls
+    through to a bounded, drift-scoped regex scan whose def patterns already
+    match indented ``def`` (methods) and ``NAME = ...`` (constants), and a
+    same-file unqualified fallback resolves bare method names against
+    qualified ``Class.name`` index keys without writing anything into the
+    shared maps. The shared maps keep HEAD granularity: top-level functions
+    and classes only.
+    """
     for symbol in data.get("symbols", []):
         name = symbol.get("name")
         typ = symbol.get("type")
@@ -1000,8 +1025,6 @@ def _index_register_symbols(index: dict, rel: str, data: dict) -> None:
             index["classes"].setdefault(name, []).append(ref)
     if data.get("group") == "entrypoint":
         index["entrypoints"].append(rel)
-
-
 def _index_finalize_aggregates(index: dict) -> None:
     """(Re)compute groups + hotspots from index['files'] in memory (no disk I/O). Shared by
     the full build and the incremental patch so aggregates never drift between the two."""

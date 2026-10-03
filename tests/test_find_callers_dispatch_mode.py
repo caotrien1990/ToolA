@@ -124,6 +124,42 @@ class TestFindCallersAliasModeContract(unittest.TestCase):
         self.assertNotIn("mode", body)
         self.assertEqual(applied, [])
 
+    # ── P19: find_symbol must route to the SYMBOL lane, not text ─────────
+    def test_helper_injects_mode_symbol_for_find_symbol(self) -> None:
+        """P19 root fix: the find_symbol TOOL is registered as
+        ('find_symbol', 'search_code') in BASE_TOOL_MAP_SPECS, so without a
+        dispatcher-side mode default it ran search_code with mode='text' --
+        a whole-repo text scan that returned call sites alongside the
+        definition and, on a 0-hit over native drift, paid the whole-repo
+        cache_delta probe + P15 reconcile (measured 250s on 49. CUA).
+        The alias must gain mode='symbol' exactly like find_callers gains
+        mode='callers'."""
+        body = {"name": "my_func", "project_path": r"D:\x"}
+        applied = self._server._apply_alias_mode_default_post_s4(
+            "find_symbol", body, []
+        )
+        self.assertEqual(
+            body.get("mode"),
+            "symbol",
+            f"find_symbol must default to mode='symbol' (P19); got body={body}",
+        )
+        self.assertTrue(
+            any("symbol" in a for a in applied),
+            f"applied must record the injection; got {applied}",
+        )
+
+    def test_find_symbol_public_schema_does_not_expose_mode(self) -> None:
+        """Same contract as the other aliases: mode stays internal
+        delegation metadata, so S4 keeps rejecting a caller-supplied mode
+        and the post-S4 default is the only door."""
+        schema = self._server._schema_for_tool("find_symbol")
+        props = (schema.get("parameters") or {}).get("properties") or {}
+        self.assertNotIn(
+            "mode",
+            props,
+            f"find_symbol public schema must not declare 'mode'; got props={sorted(props)}",
+        )
+
     # ── Invariant 3: user-supplied mode is still rejected by S4 ───────────
     def test_find_callers_public_schema_does_not_expose_mode(self) -> None:
         """Mirror of the S4 check: the find_callers registry schema must not

@@ -358,8 +358,23 @@ async def _find_symbol_unbounded(name: str = "", path: str = "", project_path: s
             "ca_next_action": "verify_path_or_pass_project_path_with_relative_path",
         }, ensure_ascii=False)
     project_root = str(base) if base.is_dir() else (fo.find_project_root(str(base)) or str(base.parent))
-    stale = await fo.ensure_fresh_index(project_root)
-    stale_info = json.loads(stale) if stale else None
+    inc = (include or "def").lower().strip()
+    # P19 (2026-10-03): the def lane answers from a SYMBOL index (cbm
+    # graph when fresh, else the INDEX.json functions/classes maps),
+    # not from a whole-repo text scan. The classic ensure_fresh_index
+    # probe (a full index_delta walk++ hash of every changed file)
+    # was the cost seen live on 49. CUA (r1: 250.8s, 223 drifted files);
+    # a symbol lookup must never pay it. We still need the probe for
+    # the callers/usage/all lanes, because their collective scan depends
+    # on the indexed-file set being current; for inc=='def' we do the
+    # honesty work below (index hit verified against the def line,
+    # 0-hit over a clean index = honest stale_index False), which is
+    # cheaper and more accurate for a symbol answer.
+    stale = None
+    stale_info = None
+    if inc != "def":
+        stale = await fo.ensure_fresh_index(project_root)
+        stale_info = json.loads(stale) if stale else None
     # B-02 (2026-08-10): gate the definition-only graph adapter on include='def'.
     # The graph adapter (find_symbol_as_search_response) returns ONLY the
     # definition-shaped `results` array; it has no callers/usages payload.
@@ -372,7 +387,10 @@ async def _find_symbol_unbounded(name: str = "", path: str = "", project_path: s
     # callers/usage/all fall through to the live scanner below which has the
     # TT-A-02 isolation logic (pop results, attach callers[], drop non-source
     # artifacts, filter comment lines, exclude should_skip_dir trees).
-    inc = (include or "def").lower().strip()
+    # P19: `inc` now arrives from the gate above (it is now required
+    # for the conditional ensure_fresh_index ). The old duplicate
+    # line is dropped so there is only one point where the alias include
+    # is normalised.
     try:
         from orchestrator.graph.config import use_graph_for
         from orchestrator.graph.query import find_symbol_as_search_response
@@ -396,6 +414,16 @@ async def _find_symbol_unbounded(name: str = "", path: str = "", project_path: s
     except Exception:
         pass
 
+    # P19 (2026-10-03): INDEX-maps source for the def lane. The classic
+    # fallback below walks the whole repo with a regex; on a large repo that is
+    # the 250s cold call measured live on 49. CUA. INDEX.json's
+    # functions/classes maps already know where every definition lives. Answer
+    # from them with a per-hit disk verify (re-read the def line, so a stale
+    # entry cannot hand back a phony line number), and only fall through to
+    # the regex walk when the index cannot answer (missing/invalid INDEX, no
+    # map entry, or a verified-hit failed).
+    # Callers/usage/all lanes keep the regex walk below -- they need a
+    # full-pass scan that only a walk can supply.
     escaped = re.escape(name)
     # TT-A-01 fix (2026-08-10): definition-only patterns. Removed the catch-all
     # `export .* \b{name}\b` branch which matched re-exports and any export
@@ -430,6 +458,204 @@ async def _find_symbol_unbounded(name: str = "", path: str = "", project_path: s
         ".py", ".pyi", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
         ".vue", ".svelte",
     }
+
+    if inc == "def":
+        try:
+            index_doc = fo.load_index(project_root)
+        except Exception:
+            index_doc = {}
+        if isinstance(index_doc, dict) and index_doc:
+            candidates: list[dict] = []
+            for _map_key in ("functions", "classes"):
+                _map = index_doc.get(_map_key)
+                if not isinstance(_map, dict):
+                    continue
+                _hits = _map.get(name)
+                if isinstance(_hits, list):
+                    candidates.extend(_hits)
+            # Bare method / constant fallback: methods and global constants
+            # are deliberately NOT registered in the shared INDEX maps
+            # (validate_symbols diffs AST FunctionDef/ClassDef names against
+            # those maps and query_index reads kind from them -- registering
+            # constants there broke both; see _index_register_symbols). When
+            # the graph lane is unavailable, resolve a bare name from the
+            # graph.db nodes table WITHOUT entering the graph adapter: the
+            # nodes rows carry (name, file_path, start_line) for methods and
+            # constants too. Bounded to 20 rows; each row is disk-verified
+            # below like any INDEX hit.
+            if not candidates:
+                # Per-file cache fallback: the cache sidecars
+                # (.orchestrator_cache/<rel>.json) carry the FULL symbol list
+                # per file, including methods (qualified ``Class.name``) and
+                # global constants -- the granularity the shared INDEX maps
+                # deliberately do not have (validate_symbols/query_index
+                # contracts; see _index_register_symbols). A bare method or
+                # constant name resolves here from the cache without writing
+                # anything into those maps. Bounded: files only, JSON sidecar
+                # reads, every candidate is disk-verified below.
+                try:
+                    _cache_root = Path(project_root) / ".orchestrator_cache"
+                    _files_idx = index_doc.get("files")
+                    if _cache_root.is_dir() and isinstance(_files_idx, dict):
+                        for _rel in sorted(_files_idx)[:5000]:
+                            if not isinstance(_rel, str):
+                                continue
+                            _cf = _cache_root / (_rel.replace("/", "\\") + ".json")
+                            if not _cf.is_file():
+                                _cf = _cache_root / (_rel + ".json")
+                                if not _cf.is_file():
+                                    continue
+                            try:
+                                _fc = json.loads(
+                                    _cf.read_text(encoding="utf-8", errors="ignore"))
+                            except Exception:
+                                continue
+                            for _sym in (_fc.get("symbols") or []):
+                                if not isinstance(_sym, dict):
+                                    continue
+                                _sn = _sym.get("name") or ""
+                                if _sn == name or (
+                                    "." in _sn and _sn.rsplit(".", 1)[1] == name
+                                ):
+                                    _ln = _sym.get("line_start")
+                                    if isinstance(_ln, int):
+                                        candidates.append({
+                                            "file": _rel.replace("\\", "/"),
+                                            "line_start": _ln,
+                                            "line_end": _sym.get("line_end") or _ln,
+                                        })
+                                        break
+                            if len(candidates) >= 20:
+                                break
+                except Exception:
+                    pass
+            # Per-hit disk verify: the INDEX can be stale. Re-read just the
+            # def line -- this is O(hits), not O(repo) -- and keep only
+            # candidates whose line still holds the name.
+            verified: list[dict] = []
+            seen_key: set[tuple[str, int]] = set()
+            for cand in candidates:
+                if not isinstance(cand, dict):
+                    continue
+                rel = str(cand.get("file") or "")
+                line_no = cand.get("line_start")
+                if not rel or not isinstance(line_no, int):
+                    continue
+                key = (rel, line_no)
+                if key in seen_key:
+                    continue
+                seen_key.add(key)
+                fp = Path(project_root) / rel
+                if not fp.is_file():
+                    continue
+                try:
+                    with fp.open("r", encoding="utf-8", errors="ignore") as fh:
+                        for _i, _ln in enumerate(fh, 1):
+                            if _i == line_no:
+                                if name in _ln:
+                                    verified.append({
+                                        "file": rel,
+                                        "line": line_no,
+                                        "match": _ln.strip(),
+                                        "range_id": f"{fp.name}:{line_no}",
+                                    })
+                                break
+                            if _i > line_no:
+                                break
+                except Exception:
+                    continue
+            if verified:
+                response_index: dict = {
+                    "ok": True,
+                    "results": verified[:20],
+                    "count": len(verified[:20]),
+                    "source": "index",
+                }
+                if stale_info:
+                    response_index.update({
+                        "warning": "INDEX stale; returned live filesystem search results",
+                        "category": "stale_index_live_fallback",
+                        "drift": stale_info.get("drift"),
+                    })
+                return json.dumps(response_index, ensure_ascii=False)
+            # INDEX has no entry for this name. That can mean "no definition
+            # anywhere" (INDEX clean) or "a natively-added file carries the def
+            # and the index has not seen it" (native drift). Use index_delta to
+            # distinguish the two without a whole-repo reconcile: only the
+            # added/modified def-source files need a scan for this name. If
+            # none exist (true 0-hit, index clean), the answer is honest and
+            # cheap: stale_index False, count 0, no file-content read.
+            delta = None
+            try:
+                delta = fo.index_delta(project_root)
+            except Exception:
+                delta = None
+            added = list((delta or {}).get("added") or [])
+            modified = list((delta or {}).get("modified") or [])
+            deleted = list((delta or {}).get("deleted") or [])
+            index_clean = delta is not None and not (added or modified or deleted)
+            drift_files: list[str] = []
+            for _rel in added + modified:
+                if not isinstance(_rel, str):
+                    continue
+                _suffix = Path(_rel).suffix.lower()
+                if _suffix not in _DEF_SOURCE_EXTS:
+                    continue
+                drift_files.append(_rel)
+            # Bounded targeted scan of drifted def-source files only.
+            drift_hits: list[dict] = []
+            for _rel in drift_files[:200]:
+                fp = Path(project_root) / _rel
+                if not fp.is_file():
+                    continue
+                try:
+                    lines = split_lines(fp.read_text(encoding="utf-8", errors="ignore"))
+                except Exception:
+                    continue
+                for i, line in enumerate(lines, 1):
+                    if name in line and patterns.search(line) is not None:
+                        drift_hits.append({
+                            "file": _rel,
+                            "line": i,
+                            "match": line.strip(),
+                            "range_id": f"{fp.name}:{i}",
+                        })
+                        if len(drift_hits) >= 20:
+                            break
+                if len(drift_hits) >= 20:
+                    break
+            if drift_hits:
+                response_drift: dict = {
+                    "ok": True,
+                    "results": drift_hits,
+                    "count": len(drift_hits),
+                    "source": "drift_scan",
+                    "stale_index": True,
+                    "warning": "INDEX stale; answered from a targeted scan of drifted def-source files",
+                    "category": "stale_index_live_fallback",
+                    "drift": {
+                        "added": added,
+                        "modified": modified,
+                        "deleted": deleted,
+                    },
+                }
+                return json.dumps(response_drift, ensure_ascii=False)
+            if index_clean:
+                # Clean index, no symbol entry, no drifted def-source files --
+                # an honest 0-hit, no file-content read.
+                response_clean: dict = {
+                    "ok": True,
+                    "results": [],
+                    "count": 0,
+                    "source": "index",
+                    "stale_index": False,
+                }
+                return json.dumps(response_clean, ensure_ascii=False)
+            # INDEX exists but delta is unavailable or indeterminate: fall
+            # through to the regex walk so the caller still gets a real answer
+            # rather than a silent false 0-hit.
+            pass
+
 
     def _is_def_source_file(fp: Path) -> bool:
         if fp.suffix.lower() not in _DEF_SOURCE_EXTS:
@@ -1300,6 +1526,20 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         query = alias_pattern
         literal_search = False
         alias_forced_regex = True
+    # P19 (2026-10-03): find_symbol is a registered alias whose PUBLIC schema
+    # carries `name` (not `query`) and deliberately omits `mode`. When this
+    # callable is reached through that alias the query text arrives in
+    # `aliases['name']`, not in the positional `query` kwarg. A text search
+    # always passes `query` positionally, so "query was empty and the text came
+    # from name/symbol/symbol_name" is an unambiguous find_symbol-dispatch
+    # signal: default the mode to 'symbol' here so DIRECT TOOL_MAP calls
+    # (which bypass orchestrator_server's _apply_alias_mode_default_post_s4)
+    # land on the symbol lane exactly as the HTTP-dispatched alias does. This
+    # is the root fix for the find_symbol-returns-call-sites defect; the
+    # dispatcher entry in _MODE_DEFAULTS covers the HTTP path.
+    _query_from_symbol_alias = not query and bool(
+        aliases.get("name") or aliases.get("symbol") or aliases.get("symbol_name")
+    )
     query = query or aliases.get("q") or aliases.get("name") or aliases.get("symbol") or aliases.get("symbol_name") or ""
     path = path or aliases.get("file_path", "")
     _path = path or project_path
@@ -1310,8 +1550,13 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         return json.dumps(decode_err, ensure_ascii=False)
     if decoded_query is not None:
         query = decoded_query
-
     raw_mode = (mode or ("text" if literal_search else "regex")).lower().strip()
+    # P19: the find_symbol alias reaches this callable with mode untouched
+    # (default 'text') and the query text in aliases['name']. Upgrade the
+    # default to 'symbol' for that dispatch shape. A caller who EXPLICITLY
+    # passed mode='text' keeps it (their mode string is not the default).
+    if _query_from_symbol_alias and (not mode or mode == "text"):
+        raw_mode = "symbol"
     if alias_forced_regex and raw_mode == "text":
         raw_mode = "regex"
     # CSLt 2026-07-16 (upgrade #1): mode='auto' detects intent from the query —
@@ -1337,6 +1582,12 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         if not query:
             return json.dumps({"ok": False, "error": "Missing query", "error_name": "MISSING_REQUIRED_FIELD", "accepted_fields": ["query", "name", "symbol", "symbol_name", "project_path", "path", "mode"]}, ensure_ascii=False)
         include = {"symbol": "def", "callers": "callers", "definition_usage": "all"}[mode]
+        # P19 (2026-10-03): honor an explicit caller include alias. The mode map
+        # supplies the default for the three legacy aliases (find_symbol /
+        # find_callers / find_definition_and_usage), but a direct search_code
+        # caller passing include='usage' with mode='symbol' must get usages,
+        # not a silently narrowed answer.
+        include = str(aliases.get("include") or include)
         return await find_symbol(name=query, path=path, project_path=project_path, context_lines=max_context_lines, include=include, include_impact=include_impact)
 
     if mode == "index":
