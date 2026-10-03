@@ -560,5 +560,169 @@ class TestFindSymbolIndexSourceP19(unittest.TestCase):
             calls["hash"], 0,
             f"0-hit on a fresh index read file content {calls['hash']} times (P19)",
         )
+
+
+class TestDefLaneEnvelopeGateP19b(unittest.TestCase):
+    """P19b (2026-10-03): ONE envelope for every find_symbol def-lane exit.
+
+    The live probe on the P19 build measured three splits by source:
+    graph hits carried NO `ok` key; a 0-hit over a natively-drifted project
+    fell to the regex walk and answered {"ok":true,"results":[]} with NO
+    stale_index and NO source -- a silent "not there" over a stale index
+    (A03 forbids it). These tests pin the finalizer contract: every def-lane
+    0-hit exit carries stale_index (bool|None) + stale_index_reason, and the
+    graph-source response carries ok:true.
+    """
+
+    def setUp(self) -> None:
+        import os as _os
+        self._os = _os
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self._old_graph = _os.environ.get("GRAPH_ENABLED")
+        _os.environ["GRAPH_ENABLED"] = "0"
+
+    def tearDown(self) -> None:
+        if self._old_graph is None:
+            self._os.environ.pop("GRAPH_ENABLED", None)
+        else:
+            self._os.environ["GRAPH_ENABLED"] = self._old_graph
+        self._tmp.cleanup()
+
+    def _find(self, name: str) -> dict:
+        raw = asyncio.run(find_symbol(name=name, project_path=str(self.root)))
+        return json.loads(raw)
+
+    def _assert_honest_zero_hit(self, data: dict, want_stale, want_reason: str) -> None:
+        self.assertTrue(data.get("ok"), f"0-hit not ok: {data}")
+        self.assertEqual(data.get("count"), 0, f"phantom hit: {data}")
+        self.assertIn("source", data, f"0-hit missing source: {data}")
+        self.assertIn("stale_index", data,
+                      f"0-hit missing stale_index -- reads as silent 'not there': {data}")
+        self.assertIs(data.get("stale_index"), want_stale, data)
+        self.assertEqual(data.get("stale_index_reason"), want_reason, data)
+
+    def test_zero_hit_index_clean_exit(self) -> None:
+        # Exit 1: INDEX exists, delta ran, no drift -> False / index_clean.
+        (self.root / "mod.py").write_text("def f():\n    return 1\n",
+                                          encoding="utf-8")
+        import surgical_mapper
+        surgical_mapper.generate_project_map(str(self.root))
+        data = self._find("zz_absent_p19b")
+        self._assert_honest_zero_hit(data, False, "index_clean")
+        self.assertEqual(data.get("source"), "index", data)
+
+    def test_zero_hit_native_drift_exit(self) -> None:
+        # Exit 2: INDEX exists but files drifted natively (walk exit) ->
+        # True / native_drift. RED on the pre-finalizer P19 build: this exit
+        # answered {"ok":true,"results":[],"count":0} with no stale_index,
+        # no source (the live CUA 0-hit shape).
+        (self.root / "mod.py").write_text("def f():\n    return 1\n",
+                                          encoding="utf-8")
+        import surgical_mapper
+        surgical_mapper.generate_project_map(str(self.root))
+        (self.root / "drifted.py").write_text("def g():\n    return 2\n",
+                                              encoding="utf-8")
+        data = self._find("zz_absent_p19b")
+        self._assert_honest_zero_hit(data, True, "native_drift")
+        self.assertEqual(data.get("source"), "walk", data)
+
+    def test_zero_hit_no_index_exit(self) -> None:
+        # Exit 3: no INDEX.json at all -> None / index_unavailable (the regex
+        # walk answered alone; nothing to be stale against).
+        (self.root / "mod.py").write_text("def f():\n    return 1\n",
+                                          encoding="utf-8")
+        data = self._find("zz_absent_p19b")
+        self._assert_honest_zero_hit(data, None, "index_unavailable")
+        self.assertEqual(data.get("source"), "walk", data)
+
+    def test_graph_source_response_carries_ok(self) -> None:
+        # Exit 4: the graph adapter builds {"results","count","source"} only;
+        # the finalizer injects ok. RED pre-fix: body had no `ok` key, and a
+        # caller guard `if not resp.get('ok')` read a SUCCESS as failure.
+        from orchestrator.graph import config as graph_config
+
+        fake = json.dumps({
+            "results": [{"file": "m.py", "line": 1,
+                         "match": "function f -> f", "range_id": "m.py:1"}],
+            "count": 1,
+            "source": "graph",
+        })
+        orig_use = graph_config.use_graph_for
+        graph_config.use_graph_for = lambda _tool: True
+        self._os.environ["GRAPH_ENABLED"] = "1"
+        import orchestrator.graph.query as gq
+        orig_fn = gq.find_symbol_as_search_response
+        gq.find_symbol_as_search_response = lambda *a, **k: fake
+        try:
+            data = self._find("f")
+        finally:
+            gq.find_symbol_as_search_response = orig_fn
+            graph_config.use_graph_for = orig_use
+        self.assertIs(data.get("ok"), True,
+                      f"graph-source success missing ok: {data}")
+        self.assertEqual(data.get("source"), "graph", data)
+        self.assertEqual(data.get("count"), 1, data)
+
+    def test_def_lane_probes_never_run_on_the_loop_thread(self) -> None:
+        """P19c guard: index_delta / load_index must run OFF the event loop.
+
+        The first P19b finalizer called fo.index_delta synchronously inside
+        the async _find_symbol_unbounded -- on CUA that is a full-tree walk +
+        stat + MD5 of drifted files on the loop thread, freezing every other
+        CA call and /health for seconds per 0-hit (the livez_ok_health_hung
+        class ensure_fresh_index was fixed for). RED on that build: the delta
+        and load_index threads equalled the loop thread.
+        """
+        import threading
+        import orchestrator.fileops.common as fo
+        import orchestrator.tools.search as search_mod
+        import surgical_mapper
+
+        (self.root / "mod.py").write_text("def f():\n    return 1\n",
+                                          encoding="utf-8")
+        surgical_mapper.generate_project_map(str(self.root))
+        # Native drift, so the 0-hit walk exit reaches the finalizer's delta.
+        (self.root / "drifted.py").write_text("def g():\n    return 2\n",
+                                              encoding="utf-8")
+
+        calls: list[tuple[str, object]] = []
+        orig_delta = fo._cached_index_delta
+        orig_load = fo.load_index
+
+        def _rec_delta(*a, **k):
+            calls.append(("delta", threading.current_thread()))
+            return orig_delta(*a, **k)
+
+        def _rec_load(*a, **k):
+            calls.append(("load", threading.current_thread()))
+            return orig_load(*a, **k)
+
+        loop_thread: list[object] = []
+
+        async def _drive() -> dict:
+            loop_thread.append(threading.current_thread())
+            fo._cached_index_delta = _rec_delta
+            fo.load_index = _rec_load
+            try:
+                raw = await search_mod.find_symbol(
+                    name="zz_absent_p19c", project_path=str(self.root))
+            finally:
+                fo._cached_index_delta = orig_delta
+                fo.load_index = orig_load
+            return json.loads(raw)
+
+        data = asyncio.run(_drive())
+        self.assertEqual(data.get("count"), 0, f"phantom hit: {data}")
+        kinds = {k for k, _ in calls}
+        self.assertIn("delta", kinds, f"delta probe never ran: {data}")
+        self.assertIn("load", kinds, f"load_index probe never ran: {data}")
+        for kind, thr in calls:
+            self.assertIsNot(
+                thr, loop_thread[0],
+                f"{kind} ran on the event-loop thread -- a 0-hit freezes the "
+                f"loop for every concurrent caller (P19c)")
+
+
 if __name__ == "__main__":
     unittest.main()

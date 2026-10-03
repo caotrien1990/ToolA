@@ -375,6 +375,83 @@ async def _find_symbol_unbounded(name: str = "", path: str = "", project_path: s
     if inc != "def":
         stale = await fo.ensure_fresh_index(project_root)
         stale_info = json.loads(stale) if stale else None
+
+    # P19b (2026-10-03): ONE finalizer for every include='def' success exit.
+    # Live probe on the P19 build measured three envelope splits by source:
+    # graph hits answered with NO `ok` key (the adapter builds only
+    # {"results","count","source"} -- B018's "ok on the success path too"
+    # covered search_code and the live-walk path but not this producer), and
+    # a 0-hit over a natively-drifted project fell through to the regex walk
+    # and answered {"ok":true,"results":[],"count":0} with NO stale_index and
+    # NO source -- a silent "not there" over a stale index (A03 forbids it).
+    # Root fix, not per-branch patches: each def-lane return hands its body
+    # here; the finalizer (a) injects ok=True when the producer omitted it,
+    # (b) injects source='walk' when missing, (c) computes index_delta ONCE
+    # (lazily -- the INDEX-maps branch below no longer calls delta itself;
+    # the measured cold-call double hash of the drifted set came from the
+    # branch delta PLUS this finalizer delta), and (d) stamps every 0-hit
+    # with stale_index + stale_index_reason:
+    #   index_clean       -- delta ran, no added/modified/deleted: honest False.
+    #   native_drift      -- delta found drift the branch could not turn into
+    #                        a hit: honest True (definition may sit in a
+    #                        drifted file the targeted scan missed).
+    #   index_unavailable -- no INDEX.json at all: None (nothing to be stale
+    #                        against; the regex walk answered alone).
+    #   delta_unavailable -- INDEX exists but delta errored: None.
+    _def_lane_state: dict = {"delta": None, "delta_ran": False}
+
+    async def _def_lane_delta() -> dict | None:
+        if not _def_lane_state["delta_ran"]:
+            _def_lane_state["delta_ran"] = True
+            try:
+                # Off the event loop AND through the short-TTL cached variant:
+                # index_delta walks+stats the whole repo (MD5 on changed
+                # files); run synchronously here it froze the loop for seconds
+                # per 0-hit on CUA -- the livez_ok_health_hung class
+                # ensure_fresh_index was fixed for (Anh 2026-08-10).
+                _def_lane_state["delta"] = await asyncio.to_thread(
+                    fo._cached_index_delta, project_root)
+            except Exception:
+                _def_lane_state["delta"] = None
+        return _def_lane_state["delta"]
+
+    async def _finalize_def_lane(body: dict) -> str:
+        if not isinstance(body, dict):
+            return json.dumps(body, ensure_ascii=False)
+        body.setdefault("ok", True)
+        body.setdefault("source", "walk")
+        if not body.get("results"):
+            if "stale_index" not in body:
+                try:
+                    _has_index = bool(await asyncio.to_thread(
+                        fo.load_index, project_root))
+                except Exception:
+                    _has_index = False
+                if not _has_index:
+                    body["stale_index"] = None
+                    body["stale_index_reason"] = "index_unavailable"
+                else:
+                    _d = await _def_lane_delta()
+                    if _d is None:
+                        body["stale_index"] = None
+                        body["stale_index_reason"] = "delta_unavailable"
+                    elif not (_d.get("added") or _d.get("modified") or _d.get("deleted")):
+                        body["stale_index"] = False
+                        body["stale_index_reason"] = "index_clean"
+                    else:
+                        body["stale_index"] = True
+                        body["stale_index_reason"] = "native_drift"
+                        body["drift"] = {
+                            "added": list(_d.get("added") or []),
+                            "modified": list(_d.get("modified") or []),
+                            "deleted": list(_d.get("deleted") or []),
+                        }
+            elif body["stale_index"] is True:
+                body.setdefault("stale_index_reason", "native_drift")
+            elif body["stale_index"] is False:
+                body.setdefault("stale_index_reason", "index_clean")
+        return json.dumps(body, ensure_ascii=False)
+        return json.dumps(body, ensure_ascii=False)
     # B-02 (2026-08-10): gate the definition-only graph adapter on include='def'.
     # The graph adapter (find_symbol_as_search_response) returns ONLY the
     # definition-shaped `results` array; it has no callers/usages payload.
@@ -402,15 +479,14 @@ async def _find_symbol_unbounded(name: str = "", path: str = "", project_path: s
                 find_symbol_as_search_response, name, project_root, context_lines=context_lines,
             )
             if graph_resp is not None:
+                graph_data = json.loads(graph_resp)
                 if stale_info:
-                    graph_data = json.loads(graph_resp)
                     graph_data.update({
                         "warning": "INDEX stale; returned live filesystem search results",
                         "category": "stale_index_live_fallback",
                         "drift": stale_info.get("drift"),
                     })
-                    return json.dumps(graph_data, ensure_ascii=False)
-                return graph_resp
+                return await _finalize_def_lane(graph_data)
     except Exception:
         pass
 
@@ -461,7 +537,7 @@ async def _find_symbol_unbounded(name: str = "", path: str = "", project_path: s
 
     if inc == "def":
         try:
-            index_doc = fo.load_index(project_root)
+            index_doc = await asyncio.to_thread(fo.load_index, project_root)
         except Exception:
             index_doc = {}
         if isinstance(index_doc, dict) and index_doc:
@@ -585,11 +661,7 @@ async def _find_symbol_unbounded(name: str = "", path: str = "", project_path: s
             # added/modified def-source files need a scan for this name. If
             # none exist (true 0-hit, index clean), the answer is honest and
             # cheap: stale_index False, count 0, no file-content read.
-            delta = None
-            try:
-                delta = fo.index_delta(project_root)
-            except Exception:
-                delta = None
+            delta = await _def_lane_delta()
             added = list((delta or {}).get("added") or [])
             modified = list((delta or {}).get("modified") or [])
             deleted = list((delta or {}).get("deleted") or [])
@@ -639,7 +711,7 @@ async def _find_symbol_unbounded(name: str = "", path: str = "", project_path: s
                         "deleted": deleted,
                     },
                 }
-                return json.dumps(response_drift, ensure_ascii=False)
+                return await _finalize_def_lane(response_drift)
             if index_clean:
                 # Clean index, no symbol entry, no drifted def-source files --
                 # an honest 0-hit, no file-content read.
@@ -650,7 +722,7 @@ async def _find_symbol_unbounded(name: str = "", path: str = "", project_path: s
                     "source": "index",
                     "stale_index": False,
                 }
-                return json.dumps(response_clean, ensure_ascii=False)
+                return await _finalize_def_lane(response_clean)
             # INDEX exists but delta is unavailable or indeterminate: fall
             # through to the regex walk so the caller still gets a real answer
             # rather than a silent false 0-hit.
@@ -919,6 +991,8 @@ async def _find_symbol_unbounded(name: str = "", path: str = "", project_path: s
             response.pop("count", None)
             response["include"] = "callers"
 
+    if inc == "def":
+        return await _finalize_def_lane(response)
     return json.dumps(response, ensure_ascii=False)
 
 
