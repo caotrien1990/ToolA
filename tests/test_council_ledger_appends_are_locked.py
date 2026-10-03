@@ -232,3 +232,90 @@ def test_a_ledger_failure_still_cannot_break_a_council_dispatch(monkeypatch, tmp
         "the ledger failure was swallowed silently; a lost usage line must be "
         "distinguishable from a dispatch that never happened"
     )
+
+
+def _p12_drain_style_append(srv, model: str) -> None:
+    """One call shaped exactly like the drain's (orchestrator_server.py: `_council_queue_drain`
+    finally block): `_council_usage_append(item, result)` with the item fields the
+    ledger record reads."""
+    import time
+    item = {
+        "runtime_key": "ope::" + model,
+        "target": "ope",
+        "provider": "openai-compatible",
+        "model": model,
+        "created_at": time.time() - 3.0,
+        "request_id": "P12-GUARD",
+        "measurement_metadata": {
+            "task_id": "P12",
+            "objective_class": "ledger-default-path-guard",
+            "risk_level": "low",
+            "dev_level": "low",
+            "prompt_bytes": 16,
+        },
+    }
+    result = {"ok": True, "error": "", "timeout_kind": "", "response_tokens": {"total": 5}}
+    srv._council_usage_append(item, result)
+
+
+def test_default_path_still_receives_real_rows_when_env_unset(monkeypatch, tmp_path) -> None:
+    """Guard against a ledger that silently stops growing.
+
+    P3 (2026-10-02) routed pytest's appends to ORCHESTRATOR_COUNCIL_USAGE_LOG_FILE so
+    tests stopped polluting the live `.council/usage_log.jsonl` LAYA mines. The flip
+    side: if a later change makes the DEFAULT branch of `_council_usage_log_path`
+    unreachable -- or the drain stops calling `_council_usage_append` -- the live
+    ledger goes stale with nothing anywhere saying so, and routing decisions keep
+    being mined from a file frozen in the past. This pins that a completed drain
+    item, with the env override UNSET and `_HERE` pointed at a tmp repo, still lands
+    at `<_HERE>/.council/usage_log.jsonl`, i.e. the production default path.
+
+    `_council_usage_append` is fail-open by design, so a broken write surfaces here
+    as a missing/empty ledger -- which is exactly the signal this guard exists for.
+    """
+    import orchestrator_server as srv
+
+    fake_repo = tmp_path / "repo"
+    (fake_repo / ".council").mkdir(parents=True)
+    monkeypatch.setattr(srv, "_HERE", fake_repo)
+    monkeypatch.delenv("ORCHESTRATOR_COUNCIL_USAGE_LOG_FILE", raising=False)
+
+    _p12_drain_style_append(srv, "gpt-real-default")
+
+    ledger = fake_repo / ".council" / "usage_log.jsonl"
+    assert ledger.exists(), (
+        "a completed drain item wrote NO row at the production default path "
+        "<_HERE>/.council/usage_log.jsonl -- the ledger would silently stop growing"
+    )
+    rows = [json.loads(l) for l in ledger.read_text(encoding="utf-8").splitlines() if l.strip()]
+    assert len(rows) == 1, rows
+    row = rows[0]
+    assert row["model"] == "gpt-real-default", row
+    assert row["runtime_key"] == "ope::gpt-real-default", row
+    assert row["ok"] is True, row
+    assert row["task_id"] == "P12", row
+    assert row["duration_sec"] >= 3.0, row
+
+
+def test_env_override_receives_rows_and_default_path_stays_empty(monkeypatch, tmp_path) -> None:
+    """The other half of the P3 contract: with the env var set, the row goes ONLY
+    to the override path -- the default `<_HERE>/.council/usage_log.jsonl` must not
+    even be created. This is what keeps test pollution out of the live ledger, so
+    both directions of the branch are pinned."""
+    import orchestrator_server as srv
+
+    fake_repo = tmp_path / "repo"
+    (fake_repo / ".council").mkdir(parents=True)
+    override = tmp_path / "elsewhere" / "council_usage_log.jsonl"
+    monkeypatch.setattr(srv, "_HERE", fake_repo)
+    monkeypatch.setenv("ORCHESTRATOR_COUNCIL_USAGE_LOG_FILE", str(override))
+
+    _p12_drain_style_append(srv, "gpt-real-override")
+
+    rows = [json.loads(l) for l in override.read_text(encoding="utf-8").splitlines() if l.strip()]
+    assert len(rows) == 1 and rows[0]["model"] == "gpt-real-override", rows
+    default_ledger = fake_repo / ".council" / "usage_log.jsonl"
+    assert not default_ledger.exists(), (
+        "the env override is set yet a row (or file) appeared at the default path: %r"
+        % (default_ledger.read_text(encoding="utf-8")[:200] if default_ledger.exists() else "")
+    )
