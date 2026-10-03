@@ -91,6 +91,15 @@ def integrity_check(project_path: str) -> str:
 _QUICK_CHECK_MEMO: dict = {}
 _QUICK_CHECK_MEMO_MAX = 64
 
+# P17: a memoized ABORT is not a measured verdict. Storing the plain string
+# "unknown" on the abort path made the next call read it back as a measured
+# "not ok" and report freshness=corrupt (measured live on ToolA/ToolQ: nodes=0,
+# edges=0, files=0, error="quick_check: unknown"). The abort marker is a
+# distinct sentinel so a caller maps it to "integrity unknown, proceed", never
+# to corrupt. Measured verdicts ("ok" / "error: ..." / a row-less "unknown")
+# are still stored verbatim by quick_check_cached.
+QUICK_CHECK_ABORTED = "aborted"
+
 
 def _db_stat_key(project_path: str):
     db = graph_db_path(project_path)
@@ -104,7 +113,13 @@ def _db_stat_key(project_path: str):
 
 
 def quick_check_cached(conn: sqlite3.Connection, project_path: str) -> str:
-    """PRAGMA quick_check with a stat-keyed memo for an UNCHANGED graph.db."""
+    """PRAGMA quick_check with a stat-keyed memo for an UNCHANGED graph.db.
+
+    Returns a MEASURED verdict ("ok" / "error: ..." / a row-less "unknown"),
+    or the QUICK_CHECK_ABORTED sentinel when the only thing on record for this
+    db stat is an aborted (unmeasured) probe. Callers MUST treat
+    QUICK_CHECK_ABORTED as "integrity unknown, proceed", never as corrupt.
+    """
     try:
         key = _db_stat_key(project_path)
     except OSError:
@@ -121,15 +136,22 @@ def quick_check_cached(conn: sqlite3.Connection, project_path: str) -> str:
     return verdict
 
 
-def memo_store_quick_check(project_path: str, verdict: str) -> None:
-    """Store a quick_check verdict under the current db stat key (abort path).
+def memo_store_quick_check(project_path: str) -> None:
+    """Memoize an ABORTED quick_check probe under the current db stat key.
 
     P14 D3: an ABORTED budgeted probe raises before quick_check_cached can
     store anything, so on a big db under disk contention every graph_status
     re-ran the probe and blew its 1 s budget forever (measured ToolQ 48 MB:
-    integrity_ms 1031-2047, verdict unknown, EVERY call). Storing the honest
-    unknown verdict lets an UNCHANGED db skip the doomed re-probe; the next
-    real change to the file re-probes. A corrupt verdict is never stored here.
+    integrity_ms 1031-2047, verdict unknown, EVERY call). Memoizing the abort
+    lets an UNCHANGED db skip the doomed re-probe; the next real change to the
+    file re-probes.
+
+    P17: the marker stored is the QUICK_CHECK_ABORTED sentinel, NOT the string
+    "unknown". A memoized abort is "I did not measure", and storing a plain
+    verdict string made the next call read it back as a measured "not ok" and
+    report freshness=corrupt (nodes/edges/files all 0). Callers map the
+    sentinel to "integrity unknown, proceed", never to corrupt. A measured
+    corrupt verdict is never stored here.
     """
     try:
         key = _db_stat_key(project_path)
@@ -137,7 +159,7 @@ def memo_store_quick_check(project_path: str, verdict: str) -> None:
         return
     if len(_QUICK_CHECK_MEMO) >= _QUICK_CHECK_MEMO_MAX:
         _QUICK_CHECK_MEMO.clear()
-    _QUICK_CHECK_MEMO[key] = verdict
+    _QUICK_CHECK_MEMO[key] = QUICK_CHECK_ABORTED
 
 
 def reset_db(project_path: str) -> None:

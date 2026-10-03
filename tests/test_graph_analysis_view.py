@@ -397,6 +397,106 @@ class TestQuickCheckAbortMemo:
         assert len(qc_executes) == 1
 
 
+class TestQuickCheckAbortNotCorrupt:
+    def test_memoized_abort_second_call_not_corrupt(self, tmp_path, monkeypatch):
+        # P17 REGRESSION: 48255de memoized the abort as the plain string
+        # "unknown". The next call read it back through quick_check_cached, which
+        # returns a memo hit WITHOUT raising, so status.py never entered the
+        # abort branch (_ic_aborted stayed False) and fell into
+        # `elif ic != "ok": freshness="corrupt"` -- an "I did not measure" was
+        # served as a measured "not ok". Measured live on ToolA/ToolQ:
+        # nodes=0, edges=0, files=0, error="quick_check: unknown".
+        # The fix: the memo stores a QUICK_CHECK_ABORTED sentinel and the caller
+        # maps it to the abort branch, so freshness is NOT corrupt and the real
+        # node/file counts are still reported.
+        root = _seed(tmp_path, monkeypatch, "qcabortnc", {"a.py": "x=1" + chr(10)}, [])
+        import orchestrator.graph.status as gstatus_mod
+        import orchestrator.graph.store as gstore_mod
+        monkeypatch.setattr(gstatus_mod, "CBM_STATUS_INTEGRITY_BUDGET_S", -1.0)
+        real_get_db = gstore_mod.get_db
+        qc_executes = []
+
+        class _CountingConn:
+            def __init__(self, inner):
+                self._inner = inner
+
+            def execute(self, sql, *args, **kwargs):
+                if isinstance(sql, str) and "quick_check" in sql.lower():
+                    qc_executes.append(sql)
+                return self._inner.execute(sql, *args, **kwargs)
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+        monkeypatch.setattr(
+            gstatus_mod._store, "get_db",
+            lambda p, **k: _CountingConn(real_get_db(p, **k)),
+        )
+        gstore_mod._QUICK_CHECK_MEMO.clear()
+        first = gstatus_mod.graph_status(root)
+        n_probes_after_first = len(qc_executes)
+        second = gstatus_mod.graph_status(root)
+        # First call: aborted probe -> integrity unknown, NOT corrupt, counts present.
+        assert first["integrity"] == "unknown"
+        assert first["freshness"] != "corrupt"
+        assert first["integrity_probe"] == "quick_check_aborted_budget"
+        # Second call: served from the memoized abort sentinel. It must NOT be
+        # read as a measured "not ok" -> corrupt. integrity stays unknown,
+        # freshness stays non-corrupt, and the db counts are still reported.
+        assert second["integrity"] == "unknown"
+        assert second["freshness"] != "corrupt"
+        assert second.get("error") in (None, "") or "quick_check" not in str(second.get("error"))
+        assert second["integrity_probe"] == "quick_check_aborted_budget"
+        assert second["nodes"] == first["nodes"] == 1
+        assert second["files"] == first["files"] == 1
+        # P14 cost win kept: the memoized abort runs ZERO additional quick_check.
+        assert len(qc_executes) == n_probes_after_first
+
+    def test_analysis_view_memoized_abort_not_corrupt(self, tmp_path, monkeypatch):
+        # P17: analysis_view.py had the same `if ic != "ok"` refusal, so a
+        # memoized abort made every view build answer unavailable:corrupt.
+        root = _seed(
+            tmp_path, monkeypatch, "avabort",
+            {"a.py": "import b" + chr(10), "b.py": "x=1" + chr(10)},
+            [("a.py", "b.py", 1.0)],
+        )
+        import orchestrator.graph.store as gstore_mod
+        # Pre-seed the memo with the abort sentinel, as an aborted graph_status
+        # probe would have left it.
+        gstore_mod._QUICK_CHECK_MEMO.clear()
+        gstore_mod.memo_store_quick_check(root)
+        payload = _view(root, ["a.py", "b.py"])
+        assert payload["status"] != "unavailable"
+        assert payload.get("freshness") != "corrupt"
+
+    def test_real_corrupt_verdict_still_corrupt(self, tmp_path, monkeypatch):
+        # P17 guard: the abort sentinel must not mask a MEASURED corrupt verdict.
+        # Force quick_check_cached to return a measured non-ok error string and
+        # confirm both consumers still refuse as corrupt.
+        import orchestrator.graph.status as gstatus_mod
+        import orchestrator.graph.analysis_view as av
+        import orchestrator.graph.store as gstore_mod
+        root = _seed(
+            tmp_path, monkeypatch, "qccorrupt",
+            {"a.py": "import b" + chr(10), "b.py": "x=1" + chr(10)},
+            [("a.py", "b.py", 1.0)],
+        )
+        gstore_mod._QUICK_CHECK_MEMO.clear()
+        measured = "error: database disk image is malformed"
+        monkeypatch.setattr(
+            gstore_mod, "quick_check_cached", lambda conn, p: measured)
+        monkeypatch.setattr(
+            gstatus_mod._store, "quick_check_cached", lambda conn, p: measured)
+        monkeypatch.setattr(
+            av._store, "quick_check_cached", lambda conn, p: measured)
+        sp = gstatus_mod.graph_status(root)
+        assert sp["freshness"] == "corrupt"
+        assert "quick_check" in str(sp.get("error"))
+        vp = _view(root, ["a.py", "b.py"])
+        assert vp["status"] == "unavailable"
+        assert vp.get("freshness") == "corrupt"
+
+
 class TestProjectIgnoreResolveMemo:
     def test_resolve_called_once_per_root(self, tmp_path, monkeypatch):
         # P14 D1: load_project_ignore resolved the root on EVERY call -- one

@@ -215,6 +215,12 @@ def graph_status(project_path: str) -> dict:
                 # UNCHANGED graph.db pays quick_check once; the progress handler
                 # still bounds the live probe on a memo miss (a hit runs no SQL).
                 ic = _store.quick_check_cached(conn, project_path)
+                if ic == _store.QUICK_CHECK_ABORTED:
+                    # P17: a memoized abort is "I did not measure", not a
+                    # measured "not ok". Map it to the abort branch so freshness
+                    # is NOT corrupt and the scan still proceeds.
+                    _ic_aborted = True
+                    ic = "unknown"
             except sqlite3.Error as _ic_exc:
                 # Aborted by OUR handler is not corruption. Reporting "corrupt"
                 # for a slow disk would be worse than the starvation it replaces,
@@ -222,10 +228,11 @@ def graph_status(project_path: str) -> dict:
                 if time.monotonic() >= _ic_deadline:
                     _ic_aborted = True
                     ic = "unknown"
-                    # P14 D3: memoize the honest abort verdict, or a big db under
-                    # disk contention re-runs this doomed probe on EVERY status
-                    # call (measured ToolQ 48 MB: 1-2 s aborted probe per call).
-                    _store.memo_store_quick_check(project_path, ic)
+                    # P14 D3: memoize the abort, or a big db under disk
+                    # contention re-runs this doomed probe on EVERY status call
+                    # (measured ToolQ 48 MB: 1-2 s aborted probe per call). P17:
+                    # stores the QUICK_CHECK_ABORTED sentinel, not a verdict.
+                    _store.memo_store_quick_check(project_path)
                 else:
                     ic = "error: %s" % type(_ic_exc).__name__
             finally:
