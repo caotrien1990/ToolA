@@ -446,12 +446,20 @@ class DurableAuditWriter:
     def _worker_db(self) -> sqlite3.Connection:
         """Connection owned by the batch worker thread; opened once, reused.
 
-        A sqlite3 connection must be used from one thread at a time, so this is
-        only safe for the worker's own claim/idle-query path. Reopened when
-        missing, when the owning thread differs (a restarted worker), or after
-        a claim failure dropped the previous handle. Producers, heartbeats and
-        ad-hoc reads keep their short-lived per-call connections: those run on
-        other threads and are outside the idle hot loop.
+        Reopened when missing, when the owning thread differs (a restarted
+        worker), or after a claim failure dropped the previous handle. Dropped
+        before every long idle wait, so a parked writer never pins the db file
+        (B032/P16). Producers, heartbeats and ad-hoc reads keep their
+        short-lived per-call connections: those run on other threads and are
+        outside the idle hot loop.
+
+        Built directly rather than via _connect(): the worker variant needs
+        check_same_thread=False so shutdown() -- a different thread -- can
+        close the handle of a worker that is already confirmed dead, and
+        _connect's signature is a published contract that tests subclass and
+        override. check_same_thread=False does NOT mean the connection is used
+        from many threads: only the worker thread ever executes statements on
+        it.
         """
         ident = threading.get_ident()
         conn = self._worker_conn
@@ -462,7 +470,15 @@ class DurableAuditWriter:
                 conn.close()
             except sqlite3.Error:
                 pass
-        conn = self._connect()
+        conn = sqlite3.connect(
+            str(self.db_path),
+            timeout=self.busy_timeout_ms / 1000.0,
+            isolation_level=None,
+            check_same_thread=False,
+        )
+        conn.row_factory = sqlite3.Row
+        conn.execute(f"PRAGMA busy_timeout={self.busy_timeout_ms}")
+        conn.execute(f"PRAGMA synchronous={_durable_audit_synchronous()}")
         self._worker_conn = conn
         self._worker_conn_ident = ident
         return conn
@@ -1391,13 +1407,21 @@ class DurableAuditWriter:
             self._set_last_error(exc, kind="retention",
                                  context="prune_applied_on_start")
 
-    def _wait_for_work(self, timeout_s: float) -> None:
-        self._wake.wait(timeout_s)
+    def _wait_for_work(self, timeout_s: float) -> bool:
+        """Sleep until stage()/shutdown wakes the worker or the timeout runs out.
+
+        Returns True when the event fired (a producer staged a row or shutdown
+        began), False on timeout -- the caller uses that to tell "woken for
+        work" apart from "slept the whole window" for the idle-connection drop.
+        """
+        woke = self._wake.wait(timeout_s)
         self._wake.clear()
+        return woke
 
     def _worker_main(self) -> None:
         try:
             self._prune_applied_on_start()
+            idle_cycles = 0
             while not self._stop.is_set():
                 try:
                     batch = self._retry_db(
@@ -1413,9 +1437,27 @@ class DurableAuditWriter:
                     break
 
                 if not batch:
-                    self._wait_for_work(self._next_idle_wait_s())
+                    idle_wait = self._next_idle_wait_s()
+                    if idle_wait >= self._IDLE_WAIT_CAP_S and idle_cycles > 0:
+                        # Durably idle: the previous wait already ran its full
+                        # cap with no producer wake, and there is still nothing
+                        # pending. Release the db handle for the whole wait
+                        # (B032/P16): on Windows an open SQLite handle makes
+                        # durable_audit.db's directory un-removable for its
+                        # owner's teardown, and a writer parked at its idle cap
+                        # is exactly the state the module-global server writer
+                        # sits in when a test session ends. The connection
+                        # reopens lazily on the next claim. idle_cycles > 0
+                        # keeps the handle through a burst: a submit arriving
+                        # right after an empty claim must not pay a reconnect.
+                        self._drop_worker_db()
+                    if self._wait_for_work(idle_wait):
+                        idle_cycles = 0
+                    else:
+                        idle_cycles += 1
                     continue
 
+                idle_cycles = 0
                 had_failure = False
                 for record in batch:
                     if self._stop.is_set():
@@ -1425,7 +1467,13 @@ class DurableAuditWriter:
                 if had_failure and not self._stop.is_set():
                     # Failed rows got a future next_attempt_at; sleep until the
                     # earliest one is due instead of re-claiming at 20 Hz.
-                    self._wait_for_work(self._next_idle_wait_s())
+                    retry_wait = self._next_idle_wait_s()
+                    if retry_wait >= self._IDLE_WAIT_CAP_S and idle_cycles > 0:
+                        self._drop_worker_db()
+                    if self._wait_for_work(retry_wait):
+                        idle_cycles = 0
+                    else:
+                        idle_cycles += 1
         finally:
             self._drop_worker_db()
             try:
@@ -1609,6 +1657,17 @@ class DurableAuditWriter:
                 except Exception as exc:
                     errors.append(f"worker join failed: {type(exc).__name__}: {exc}")
                     self._set_last_error(exc)
+            # B032/P16: the worker's finally already drops its cached connection
+            # on a normal exit, but a worker that never started (auto_start=False)
+            # or died before its finally ran would leave the handle open, and on
+            # Windows an open durable_audit.db makes its directory un-rmtree-able.
+            # A confirmed-dead worker cannot be using the connection, so closing
+            # it here is safe (the worker connection is check_same_thread=False
+            # exactly so a non-worker thread may close it; only the worker ever
+            # executes statements on it). A still-alive worker keeps its handle:
+            # the writer's working life has not ended.
+            if thread is None or not thread.is_alive():
+                self._drop_worker_db()
 
         stopped = self._thread is None or not self._thread.is_alive()
         try:

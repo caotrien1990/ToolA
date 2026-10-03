@@ -102,6 +102,15 @@ WHITELIST: dict[tuple[str, str], tuple[int, str, str]] = {
          "_TEARDOWN_COMPLETE is set (prevents daemon threads from pinning "
          "sessions.db after close_writer())."),
     ),
+    ("orchestrator/server/audit_writer.py", "_worker_db"): (
+        1, "POOL",
+        ("P16: batch-worker connection pool of one; cached on the writer, "
+         "reused across claims on the worker thread only, closed by "
+         "_drop_worker_db on claim error, before every long idle wait, in the "
+         "worker finally, and in shutdown() — bounded by the writer count, "
+         "and dropped whenever the worker is parked, so it cannot pin "
+         "durable_audit.db's directory (B032)."),
+    ),
 }
 
 
