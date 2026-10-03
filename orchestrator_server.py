@@ -16721,6 +16721,23 @@ accepted_fields=sorted(accepted_fields),
                 _cc.mark_undelivered(_cache_key)
         except Exception:
             pass  # a cache is an optimisation; it must never fail a real answer
+        # P11: retire the disk-state cache entries this mutation just made stale.
+        # A write through [A] (write_fix, cbm_incremental_index, a git worktree
+        # writer, a mutating run_*) changes the very state a cached search_code /
+        # cbm_* answer was computed from; the per-project generation bump is what
+        # lets lookup() refuse those entries. Scoped to _MUTATING_TOOLS and gated
+        # on the call NOT failing, so a read, a failed write, and a no-project UI
+        # call never touch the counter. Out-of-[A] change needs no bump -- the
+        # disk witness catches it.
+        if _status != "error" and tool_name in _MUTATING_TOOLS:
+            try:
+                from orchestrator.core import call_cache as _cc_mut
+                _cc_mut.note_successful_mutation(
+                    tool_name,
+                    str(body.get("project_path", "") or "")
+                    if isinstance(body, dict) else "")
+            except Exception:
+                pass  # freshness is an optimisation; it must never fail a call
         if _sf_key:
             # A41 tier 1c: release joiners HERE -- after `store` above, never in the
             # semaphore `finally` further up. A joiner woken before the answer is

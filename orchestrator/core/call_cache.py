@@ -38,12 +38,19 @@ from pathlib import Path
 
 # Report-producing reads. Every entry answers a question; none hands out authority.
 CACHEABLE_TOOLS = frozenset({
-    "cbm_graph_status", "cbm_get_architecture", "cbm_dsm", "cbm_trace_path",
+    "cbm_get_architecture", "cbm_dsm", "cbm_trace_path",
     "cbm_nodes_query", "cbm_edges_query", "cbm_what_if", "cbm_dead_code",
     "cbm_test_gap",
     "ocr_map", "ocr_scan", "ocr_review",
     "search_code", "find_symbol",
 })
+# cbm_graph_status is DELIBERATELY absent (P11, measured 2026-10-02): it is a
+# freshness PROBE -- its whole purpose is to measure the project's state NOW.
+# Caching it answered stale_files:17 for 54s after cbm_incremental_index had
+# already taken the project to 0, i.e. the probe reported the past as the
+# present. A probe that can be served from cache contradicts itself, so it is
+# never stored. (It also stays in BUDGETED_TOOLS below -- that is a server wall
+# clock, unrelated to cacheability.)
 
 # Short enough that a cached report cannot be mistaken for a fresh one, long
 # enough to cover "CA gave up, thought about it, and called again".
@@ -62,8 +69,149 @@ _SIGNATURE_IGNORED_KEYS = frozenset({
 
 _LOCK = threading.Lock()
 # key -> {tool, project_path, agent_id, result, stored_at, duration_ms,
-#         undelivered, advised}
+#         undelivered, advised, generation, witness}
 _ENTRIES: dict[str, dict] = {}
+
+# ── P11 freshness: an entry is valid only while the STATE it was computed from ──
+# is unchanged. Change reaches the cache two ways, so the check has two halves.
+#
+# HALF 1 -- generation (change THROUGH [A]). The dispatcher calls
+# `note_successful_mutation` after every successful mutating call; each one bumps
+# a per-project counter. `store` records the counter alongside the answer;
+# `lookup` refuses the entry the moment the counter has moved. A mutation in
+# project B bumps only B's counter, so project A's paid-for answers survive.
+#
+# HALF 2 -- disk witness (change OUTSIDE [A]). A native edit, a git checkout, or
+# another process (the ToolQ cron reindexing) never touches the counter, so the
+# entry ALSO records a cheap O(1) stat of the artifact its answer was computed
+# from: the published search-snapshot id / INDEX for search_code+find_symbol, the
+# graph.db file for cbm_*. ocr_* and an unresolvable root record NO witness and
+# fall back to the pre-P11 TTL-only behaviour -- a whitelist must never evict an
+# answer it cannot check.
+#
+# Cost contract: each witness is a stat / one tiny pointer read (<5ms), far under
+# the CALL_CACHE_MIN_MS an entry had to cost to be stored at all.
+_STATE_LOCK = threading.Lock()
+# resolved project root (casefolded) -> monotonically increasing mutation count
+_PROJECT_GENERATION: dict[str, int] = {}
+# tools that do not read project disk state get no witness (TTL-only, pre-P11)
+_WITNESS_NONE_TOOLS = frozenset({"ocr_map", "ocr_scan", "ocr_review"})
+# git worktree writers: their targets may sit outside the resolved root (a
+# git -C call names no file_path), so they bump the broad root too.
+_GIT_WRITER_TOOLS = frozenset({
+    "git_stage", "git_unstage", "git_commit", "git_checkout", "git_revert",
+    "git_reset", "git_stash", "git_stash_pop", "git_branch_create",
+    "git_branch_delete", "git_merge", "git_pull",
+})
+
+
+def _normalize_root(project_path) -> str:
+    """One canonical key for a project root: resolved + casefolded.
+
+    The dispatcher passes the SAME body['project_path'] to store and to
+    note_successful_mutation, and the snapshot/graph paths are derived from it --
+    so case/separator/spelling variants (D:/x vs D:\\x) must land on ONE bucket
+    or a write under one spelling would not retire an entry stored under the
+    other. One helper, used by every read AND write of the generation map.
+    """
+    text = str(project_path or "").strip().strip('"')
+    if not text:
+        return ""
+    try:
+        return os.path.normcase(str(Path(text).resolve()))
+    except Exception:
+        # UNC / undriveable path: resolve() may block or raise; fall back to a
+        # normalised-but-unresolved key rather than fail the call that cached.
+        return os.path.normcase(text.replace("\\", "/"))
+
+
+def note_successful_mutation(tool_name: str, project_path: str = "") -> None:
+    """Bump the per-project generation after a SUCCESSFUL mutating call.
+
+    Called by the dispatcher from its `finally`, only when the call did not fail
+    and carried a resolvable project_path. A no-project mutation (a UI click, a
+    session rename) has no disk-state cache to invalidate and bumps nothing. A
+    git writer bumps BOTH the resolved root and the raw body path, because its
+    target tree may sit outside the resolved root.
+    """
+    roots = set()
+    resolved = _normalize_root(project_path)
+    if resolved:
+        roots.add(resolved)
+    if str(tool_name) in _GIT_WRITER_TOOLS:
+        raw = os.path.normcase(str(project_path or "").strip())
+        if raw:
+            roots.add(raw)
+    if not roots:
+        return
+    with _STATE_LOCK:
+        for root in roots:
+            _PROJECT_GENERATION[root] = _PROJECT_GENERATION.get(root, 0) + 1
+
+
+def _current_generation(project_path: str) -> int:
+    root = _normalize_root(project_path)
+    if not root:
+        return 0
+    with _STATE_LOCK:
+        return _PROJECT_GENERATION.get(root, 0)
+
+
+def _disk_witness(tool: str, project_path: str):
+    """A cheap fingerprint of the artifact `tool`'s answer was computed from.
+
+    Returns a JSON-able value compared by equality at lookup, or None when this
+    tool has no disk witness (then the generation + TTL alone govern). Never
+    raises: an unreadable witness is simply "unknown", and unknown must not
+    evict an answer the generation still vouches for.
+
+    APPEARANCE IS NOT DRIFT. A cached 0-hit answer ("no db", "no index") is
+    CORRECT at the moment it is computed; the artifact coming into existence a
+    moment later does not make that answer a lie about the past, and evicting on
+    appearance would churn the cache on every first index. So an artifact that
+    was ABSENT at store contributes a stable sentinel that matches only the same
+    absence at lookup -- only a change to an artifact that EXISTED at store
+    retires the entry.
+    """
+    tool = str(tool)
+    if tool in _WITNESS_NONE_TOOLS:
+        return None
+    root = str(project_path or "").strip()
+    if not root:
+        return None
+    try:
+        if tool in ("search_code", "find_symbol"):
+            # The published snapshot id IS the tree search_code serves. It moves
+            # on every publish (write pipeline, cron), so it catches an external
+            # re-snapshot without any [A] call. INDEX.json backs it up only once
+            # it EXISTS -- an INDEX appearing under an unchanged snapshot is not
+            # drift in the served tree.
+            from orchestrator import search_snapshots as _ss
+            snap = _ss.current_snapshot_id(root) or ""
+            index = Path(root) / ".orchestrator_cache" / "INDEX.json"
+            try:
+                ist = index.stat()
+                index_sig = (ist.st_mtime_ns, ist.st_size)
+            except OSError:
+                index_sig = "absent"
+            return {"snap": snap, "index": index_sig}
+        if tool.startswith("cbm_"):
+            # Every cbm_* answer is a view over graph.db; a reindex (in- or
+            # out-of-process) rewrites that file, so (mtime_ns, size) is the
+            # witness. A mid-write WAL would make this over-invalidate -- safe
+            # direction: it recomputes, never serves stale. A db that was absent
+            # at store yields "absent", so the FIRST index does not churn a
+            # cached "not indexed" answer; only a rewrite of an existing db does.
+            from orchestrator.graph.config import graph_db_path as _gdp
+            db = Path(_gdp(root))
+            try:
+                st = db.stat()
+            except OSError:
+                return {"db": "absent"}
+            return {"db": (st.st_mtime_ns, st.st_size)}
+    except Exception:
+        return None
+    return None
 
 _COST_LOCK = threading.Lock()
 _COST: dict[str, dict] = {}
@@ -139,6 +287,10 @@ def store(tool: str, body: dict, result, duration_ms: int,
         return ""  # never serve a failure twice; the cause may already be gone
     key = call_signature(tool, body)
     now = time.time()
+    # P11: pin the answer to the state it was computed from -- the per-project
+    # mutation counter (in-[A] change) and the disk witness (out-of-[A] change).
+    generation = _current_generation(project_path)
+    witness = _disk_witness(tool, project_path)
     with _LOCK:
         _ENTRIES[key] = {
             "tool": str(tool),
@@ -149,23 +301,45 @@ def store(tool: str, body: dict, result, duration_ms: int,
             "duration_ms": int(duration_ms or 0),
             "undelivered": False,
             "advised": False,
+            "generation": generation,
+            "witness": witness,
         }
         _prune_locked(now)
     return key
 
 
 def lookup(tool: str, body: dict) -> dict | None:
-    """Return a live entry for this exact question, or None."""
+    """Return a live entry for this exact question, or None.
+
+    P11: "live" now means more than "young". The entry must also still describe
+    the state it was computed from: the project generation must not have moved
+    (an [A] mutation) and the disk witness must still match (an outside change).
+    Either failing retires the entry, so a stale answer is never served.
+    """
     if not is_cacheable(tool):
         return None
     key = call_signature(tool, body)
     now = time.time()
+    project_path = str((body or {}).get("project_path", "") or "")
     with _LOCK:
         entry = _ENTRIES.get(key)
         if entry is None:
             return None
         age = now - entry["stored_at"]
         if age > CALL_CACHE_TTL_S:
+            _ENTRIES.pop(key, None)
+            return None
+        # P11 freshness gate 1: an [A] mutation bumped this project's generation.
+        if entry.get("generation", 0) != _current_generation(project_path):
+            _ENTRIES.pop(key, None)
+            return None
+        # P11 freshness gate 2: the disk artifact the answer was computed from
+        # moved (native edit, git checkout, another process). A None witness on
+        # either side means "cannot check" -- never evict on an unknown.
+        stored_witness = entry.get("witness")
+        current_witness = _disk_witness(tool, project_path)
+        if (stored_witness is not None and current_witness is not None
+                and current_witness != stored_witness):
             _ENTRIES.pop(key, None)
             return None
         # Serving it discharges the advisory: the CA is holding the answer now.
@@ -364,6 +538,12 @@ def reset_for_tests() -> None:
     with _INFLIGHT_LOCK:
         _INFLIGHT.clear()
         _JOINS_WAITED = 0
+    # P11: the freshness halves are process-global too. A leaked generation or a
+    # witness pinned to one test's temp dir would make a LATER test's identical
+    # payload miss for the wrong reason -- the same "leaked state reads as a hang"
+    # class the single-flight clear above already names.
+    with _STATE_LOCK:
+        _PROJECT_GENERATION.clear()
     with _COST_LOCK:
         _COST.clear()
         _COST_LOADED = True
@@ -661,4 +841,5 @@ __all__ = [
     "reset_for_tests", "observe", "measured_cost",
     "CALL_BUDGET_S", "BUDGETED_TOOLS", "budget_for", "budget_exceeded_payload",
     "CALL_SINGLEFLIGHT_WAIT_S", "begin", "is_inflight", "finish",
+    "note_successful_mutation",
 ]
