@@ -422,6 +422,11 @@ class AuditSpoolTests(_EnvIsolatedTestCase):
         self.assertTrue(applied.wait(10.0))
         self.assertEqual(restarted.spool_depth(), 0)
         self.assertIn("a1", self._states(db_path))
+        # Shutdown here, not only in addCleanup: the writer's worker thread now
+        # holds one cached SQLite connection (P16), and addCleanup runs AFTER
+        # tearDown removes the temp directory -- a still-running worker would
+        # keep s9.db open and fail the teardown delete on Windows.
+        restarted.shutdown(2.0)
 
 
 if __name__ == "__main__":

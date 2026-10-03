@@ -622,5 +622,116 @@ class DurableAuditWriterTests(unittest.TestCase):
         self.assertEqual(columns, ["audit_id"])
 
 
+
+class _CountingWriter(DurableAuditWriter):
+    """Counts _connect/_claim calls so idle-scheduling tests can bound them."""
+
+    def __init__(self, *args, **kwargs):
+        self.connect_calls = 0
+        self.claim_calls = 0
+        super().__init__(*args, **kwargs)
+
+    def _connect(self):
+        self.connect_calls += 1
+        return super()._connect()
+
+    def _claim_pending_batch(self):
+        self.claim_calls += 1
+        return super()._claim_pending_batch()
+
+
+class DurableAuditWriterSchedulingTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self._temp_dir.name)
+
+    def tearDown(self) -> None:
+        self._temp_dir.cleanup()
+
+    def test_idle_worker_does_not_poll_the_outbox(self) -> None:
+        db_path = self.root / "idle.db"
+        writer = _CountingWriter(db_path, lambda record: None)
+        try:
+            time.sleep(0.5)
+            baseline_claims = writer.claim_calls
+            baseline_connects = writer.connect_calls
+            time.sleep(3.0)
+            # Idle: no submits, no retries, no leases. The worker must block on
+            # _wake, not re-claim at poll_interval_s (0.05s = ~60 claims in 3s).
+            self.assertLessEqual(writer.claim_calls - baseline_claims, 3)
+            self.assertLessEqual(writer.connect_calls - baseline_connects, 6)
+        finally:
+            writer.shutdown(timeout=2.0, drain=False)
+
+    def test_submit_wakes_idle_worker_promptly(self) -> None:
+        db_path = self.root / "wake.db"
+        writer = _CountingWriter(db_path, lambda record: None)
+        try:
+            time.sleep(2.0)  # let the worker reach its idle sleep
+            started = time.perf_counter()
+            ack = writer.submit_and_wait(
+                "wake-1", SESSION_EVENT_KIND, {"n": 1}, timeout=3.0,
+            )
+            latency = time.perf_counter() - started
+            self.assertTrue(ack.applied)
+            self.assertLess(latency, 0.5)
+        finally:
+            writer.shutdown(timeout=2.0, drain=False)
+
+    def test_peer_lease_expiry_is_claimed_without_producer_wake(self) -> None:
+        db_path = self.root / "peer-expiry.db"
+        seeder = DurableAuditWriter(db_path, lambda record: None, auto_start=False)
+        seeder.stage("foreign-1", SESSION_EVENT_KIND, {"tool": "write_fix"})
+        seeder.shutdown(timeout=2.0, drain=False)
+        with closing(sqlite3.connect(db_path)) as conn:
+            conn.execute(
+                """UPDATE durable_audit_outbox
+                   SET lease_owner='dead-peer', lease_until=?
+                   WHERE audit_id='foreign-1'""",
+                (time.time() + 0.25,),
+            )
+            conn.commit()
+        applied: list = []
+        writer = _CountingWriter(
+            db_path, lambda record: applied.append(record.audit_id),
+        )
+        try:
+            deadline = time.monotonic() + 3.0
+            while not applied and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertEqual(applied, ["foreign-1"])
+        finally:
+            writer.shutdown(timeout=2.0, drain=False)
+
+    def test_retry_due_row_is_applied_at_next_attempt_at(self) -> None:
+        db_path = self.root / "retry-due.db"
+        seeder = DurableAuditWriter(db_path, lambda record: None, auto_start=False)
+        seeder.stage("retry-1", SESSION_EVENT_KIND, {"tool": "write_fix"})
+        seeder.shutdown(timeout=2.0, drain=False)
+        due_at = time.time() + 0.4
+        with closing(sqlite3.connect(db_path)) as conn:
+            conn.execute(
+                """UPDATE durable_audit_outbox
+                   SET next_attempt_at=?, attempt_count=1
+                   WHERE audit_id='retry-1'""",
+                (due_at,),
+            )
+            conn.commit()
+        applied_at: list = []
+
+        def sink(record) -> None:
+            applied_at.append(time.time())
+
+        writer = _CountingWriter(db_path, sink)
+        try:
+            deadline = time.monotonic() + 3.0
+            while not applied_at and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertEqual(len(applied_at), 1)
+            self.assertGreaterEqual(applied_at[0], due_at - 0.05)
+        finally:
+            writer.shutdown(timeout=2.0, drain=False)
+
 if __name__ == "__main__":
+    unittest.main()
     unittest.main()

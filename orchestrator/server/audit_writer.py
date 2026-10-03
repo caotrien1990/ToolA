@@ -330,6 +330,13 @@ class DurableAuditWriter:
         self._stop = threading.Event()
         self._abandon_apply_commit = threading.Event()
         self._thread: threading.Thread | None = None
+        # Worker-thread connection cache (P16): the batch worker used to open a
+        # fresh SQLite connection per claim -- ~16-20 connect()+PRAGMA pairs
+        # per second on an idle outbox, measurable GIL/disk churn that starved
+        # search/cbm. The worker reuses one connection and reconnects only
+        # after an error; other threads keep per-call connections.
+        self._worker_conn: sqlite3.Connection | None = None
+        self._worker_conn_ident: int | None = None
         self._admission_open = True
         self._counters: dict[str, int] = {
             "staged_total": 0,
@@ -435,6 +442,40 @@ class DurableAuditWriter:
         conn.execute(f"PRAGMA busy_timeout={self.busy_timeout_ms}")
         conn.execute(f"PRAGMA synchronous={_durable_audit_synchronous()}")
         return conn
+
+    def _worker_db(self) -> sqlite3.Connection:
+        """Connection owned by the batch worker thread; opened once, reused.
+
+        A sqlite3 connection must be used from one thread at a time, so this is
+        only safe for the worker's own claim/idle-query path. Reopened when
+        missing, when the owning thread differs (a restarted worker), or after
+        a claim failure dropped the previous handle. Producers, heartbeats and
+        ad-hoc reads keep their short-lived per-call connections: those run on
+        other threads and are outside the idle hot loop.
+        """
+        ident = threading.get_ident()
+        conn = self._worker_conn
+        if conn is not None and self._worker_conn_ident == ident:
+            return conn
+        if conn is not None:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+        conn = self._connect()
+        self._worker_conn = conn
+        self._worker_conn_ident = ident
+        return conn
+
+    def _drop_worker_db(self) -> None:
+        conn = self._worker_conn
+        self._worker_conn = None
+        self._worker_conn_ident = None
+        if conn is not None:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
 
     def _retry_db(self, operation: str, fn: Callable[[], Any]) -> Any:
         last: sqlite3.OperationalError | None = None
@@ -876,9 +917,16 @@ class DurableAuditWriter:
                 )
 
     def _claim_pending_batch(self) -> list[AuditRecord]:
-        """Atomically lease a batch so peer writers cannot invoke the same sink."""
+        """Atomically lease a batch so peer writers cannot invoke the same sink.
 
-        conn = self._connect()
+        On the batch-worker thread the connection is the cached worker
+        connection (opened once, not per claim); anywhere else a short-lived
+        connection is used as before. A failed claim drops the cached worker
+        connection so the retry reconnects instead of reusing a bad handle.
+        """
+
+        on_worker = threading.current_thread() is self._thread
+        conn = self._worker_db() if on_worker else self._connect()
         claimed_rows: list[sqlite3.Row] = []
         recovered = 0
         try:
@@ -937,9 +985,12 @@ class DurableAuditWriter:
                     conn.execute("ROLLBACK")
                 except sqlite3.Error:
                     pass
+            if on_worker:
+                self._drop_worker_db()
             raise
         finally:
-            conn.close()
+            if not on_worker:
+                conn.close()
 
         if claimed_rows:
             self._bump("lease_claimed_total", len(claimed_rows))
@@ -964,6 +1015,56 @@ class DurableAuditWriter:
                 ),
             )
         return records
+
+    # Upper bound for one idle sleep. Long enough that an empty outbox costs
+    # ~0.5 claims/s instead of ~16-20; short enough that a crashed peer's lease
+    # (minimum lease_duration_s) is recovered promptly even if the computed
+    # wake-up were somehow missed.
+    _IDLE_WAIT_CAP_S = 2.0
+
+    def _next_idle_wait_s(self) -> float:
+        """Seconds until the next event an idle worker must wake for.
+
+        The claim probe just found no claimable row. The remaining reasons to
+        wake are: (a) a producer staging a row -- covered by self._wake, set in
+        stage(); (b) a retry-due row reaching next_attempt_at; (c) a peer
+        writer's lease expiring. (b) and (c) are readable from the table, so
+        sleep until the earliest of them, capped at _IDLE_WAIT_CAP_S when none
+        exists. Any failure falls back to poll_interval_s -- the old fixed
+        cadence -- so a scheduler defect costs latency, never a lost row.
+        Runs on the worker thread and reuses the cached worker connection.
+        """
+        try:
+            conn = self._worker_db()
+            now = time.time()
+            row = conn.execute(
+                f"""SELECT
+                        MIN(CASE WHEN next_attempt_at>? THEN next_attempt_at END)
+                            AS next_retry,
+                        MIN(CASE WHEN lease_until>? THEN lease_until END)
+                            AS next_lease
+                    FROM {self.TABLE}
+                    WHERE state='pending'""",
+                (now, now),
+            ).fetchone()
+        except Exception as exc:
+            self._set_last_error(exc)
+            self._drop_worker_db()
+            return self.poll_interval_s
+        due = [
+            float(value)
+            for value in (
+                None if row is None else row["next_retry"],
+                None if row is None else row["next_lease"],
+            )
+            if value is not None
+        ]
+        if not due:
+            return self._IDLE_WAIT_CAP_S
+        return max(
+            self.poll_interval_s,
+            min(self._IDLE_WAIT_CAP_S, min(due) - now),
+        )
 
     def _renew_lease(self, audit_id: str) -> bool:
         def update() -> bool:
@@ -1290,6 +1391,10 @@ class DurableAuditWriter:
             self._set_last_error(exc, kind="retention",
                                  context="prune_applied_on_start")
 
+    def _wait_for_work(self, timeout_s: float) -> None:
+        self._wake.wait(timeout_s)
+        self._wake.clear()
+
     def _worker_main(self) -> None:
         try:
             self._prune_applied_on_start()
@@ -1300,8 +1405,7 @@ class DurableAuditWriter:
                     )
                 except AuditWriterError as exc:
                     self._set_last_error(exc)
-                    self._wake.wait(self.poll_interval_s)
-                    self._wake.clear()
+                    self._wait_for_work(self.poll_interval_s)
                     continue
                 except BaseException as exc:
                     self._set_last_error(exc)
@@ -1309,8 +1413,7 @@ class DurableAuditWriter:
                     break
 
                 if not batch:
-                    self._wake.wait(self.poll_interval_s)
-                    self._wake.clear()
+                    self._wait_for_work(self._next_idle_wait_s())
                     continue
 
                 had_failure = False
@@ -1320,9 +1423,11 @@ class DurableAuditWriter:
                     if not self._apply_one(record):
                         had_failure = True
                 if had_failure and not self._stop.is_set():
-                    self._wake.wait(self.poll_interval_s)
-                    self._wake.clear()
+                    # Failed rows got a future next_attempt_at; sleep until the
+                    # earliest one is due instead of re-claiming at 20 Hz.
+                    self._wait_for_work(self._next_idle_wait_s())
         finally:
+            self._drop_worker_db()
             try:
                 self._release_owned_leases()
             except Exception as exc:
