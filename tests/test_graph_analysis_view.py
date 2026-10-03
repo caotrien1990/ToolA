@@ -357,3 +357,65 @@ class TestAnalysisViewQuickCheckMemo:
         assert first["status"] != "unavailable"
         assert second["status"] != "unavailable"
         assert len(qc_calls) == 1
+
+
+class TestQuickCheckAbortMemo:
+    def test_aborted_probe_memoized_for_unchanged_db(self, tmp_path, monkeypatch):
+        # P14 D3: a quick_check probe aborted by its own budget used to leave
+        # NO memo entry, so every graph_status on a big contended db re-ran
+        # the doomed 1-2 s probe forever (measured live on ToolQ 48 MB:
+        # integrity_ms 1031-2047, verdict unknown, every call). The abort
+        # verdict must be memoized like any other.
+        root = _seed(tmp_path, monkeypatch, "qcabort", {"a.py": "x=1" + chr(10)}, [])
+        import orchestrator.graph.status as gstatus_mod
+        import orchestrator.graph.store as gstore_mod
+        monkeypatch.setattr(gstatus_mod, "CBM_STATUS_INTEGRITY_BUDGET_S", -1.0)
+        real_get_db = gstore_mod.get_db
+        qc_executes = []
+
+        class _CountingConn:
+            def __init__(self, inner):
+                self._inner = inner
+
+            def execute(self, sql, *args, **kwargs):
+                if isinstance(sql, str) and "quick_check" in sql.lower():
+                    qc_executes.append(sql)
+                return self._inner.execute(sql, *args, **kwargs)
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+        monkeypatch.setattr(
+            gstatus_mod._store, "get_db",
+            lambda p, **k: _CountingConn(real_get_db(p, **k)),
+        )
+        gstore_mod._QUICK_CHECK_MEMO.clear()
+        first = gstatus_mod.graph_status(root)
+        second = gstatus_mod.graph_status(root)
+        assert first["integrity"] == "unknown"
+        assert second["integrity"] == "unknown"
+        assert len(qc_executes) == 1
+
+
+class TestProjectIgnoreResolveMemo:
+    def test_resolve_called_once_per_root(self, tmp_path, monkeypatch):
+        # P14 D1: load_project_ignore resolved the root on EVERY call -- one
+        # _getfinalpathname syscall per searched record (3900/search on CUA).
+        # The resolved root for a given root string is process-stable, so it
+        # is memoized; 50 calls over one root must resolve once.
+        from pathlib import Path
+        import orchestrator.skip_rules as sr
+        sr._RESOLVED_ROOT_CACHE.clear()
+        calls = 0
+        real_resolve = Path.resolve
+
+        def counted(self, *args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return real_resolve(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "resolve", counted)
+        root = str(tmp_path)
+        for _ in range(50):
+            sr.load_project_ignore(root)
+        assert calls == 1

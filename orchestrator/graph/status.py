@@ -222,6 +222,10 @@ def graph_status(project_path: str) -> dict:
                 if time.monotonic() >= _ic_deadline:
                     _ic_aborted = True
                     ic = "unknown"
+                    # P14 D3: memoize the honest abort verdict, or a big db under
+                    # disk contention re-runs this doomed probe on EVERY status
+                    # call (measured ToolQ 48 MB: 1-2 s aborted probe per call).
+                    _store.memo_store_quick_check(project_path, ic)
                 else:
                     ic = "error: %s" % type(_ic_exc).__name__
             finally:

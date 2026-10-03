@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from bisect import bisect_right
 import concurrent.futures
 import fnmatch
 import functools
@@ -1711,6 +1712,11 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
             skipped_large: list[dict] = []
             skipped_large_total = 0   # dem THAT; skipped_large chi giu 20 vi du dau
 
+            # P14 D1: a re.escape'd text/smart pattern can match across a line
+            # break only when the raw query itself carries one; then the scan
+            # below must keep the old per-line semantics (no cross-line hits).
+            _pattern_may_span_lines = (chr(10) in query) or (chr(13) in query)
+
             def _search_text_record(relative_path: str, label: str, size: int) -> None:
                 virtual_path = snapshot_root.joinpath(*PurePosixPath(relative_path).parts)
                 # B027f: bound for the same reason as _append_record above.
@@ -1725,7 +1731,53 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                         skipped_large.append({"file": label, "size_bytes": size})
                     return
                 payload = pin.read_bytes(relative_path)
-                lines = split_lines(payload.decode("utf-8", errors="ignore"))
+                text = payload.decode("utf-8", errors="ignore")
+                # P14 D1: one C-level finditer per record instead of a Python-
+                # level pat.search per line (944412 calls, 0.35 s in-process, far
+                # worse under daemon GIL contention), and split_lines only for
+                # files WITH a hit. text/smart patterns are re.escape literals:
+                # a match spans a line break only when the query itself contains
+                # one, and that case falls back to the per-line loop so
+                # cross-line semantics stay identical to the pre-P14 code.
+                if not _pattern_may_span_lines:
+                    hit_offsets = None
+                    last_line = 0
+                    for m in pat.finditer(text):
+                        if hit_offsets is None:
+                            lines_kept = split_lines(text, keepends=True)
+                            hit_offsets = []
+                            _pos = 0
+                            for _ln in lines_kept:
+                                hit_offsets.append(_pos)
+                                _pos += len(_ln)
+                            lines = [ln.rstrip("\r\n") for ln in lines_kept]
+                        i = bisect_right(hit_offsets, m.start())
+                        if i == last_line:
+                            continue
+                        last_line = i
+                        line = lines[i - 1]
+                        before = ""
+                        after = ""
+                        if effective_context:
+                            before = "\n".join(
+                                ln.strip()
+                                for ln in lines[max(0, i - 1 - effective_context):i - 1]
+                            )
+                            after = "\n".join(
+                                ln.strip()
+                                for ln in lines[i:min(len(lines), i + effective_context)]
+                            )
+                        results.append({
+                            "file": label,
+                            "line": i,
+                            "match": line.strip(),
+                            "context_before": before,
+                            "context_after": after,
+                        })
+                        if len(results) >= effective_max_results:
+                            return
+                    return
+                lines = split_lines(text)
                 for i, line in enumerate(lines, 1):
                     if pat.search(line):
                         before = ""
@@ -2275,6 +2327,58 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                     response["stale_index"] = False
         if drift_scope:
             response["stale_index_scope"] = drift_scope
+        # P15 (2026-10-03): a 0-hit whose scoped probe MEASURED drift inside the
+        # searched scope no longer stops at the honest INCONCLUSIVE report --
+        # the report cannot answer the question the caller asked, and
+        # refresh_project_map on a large root is forbidden by rule. When the
+        # scoped drift is small (<= surgical_mapper.SEARCH_RECONCILE_MAX_FILES),
+        # reconcile exactly those files through the existing per-file machinery
+        # (write_file_cache / update_index_incremental / the publish fast path,
+        # under _pmap_lock + the snapshot WRITE lease), republish, then re-run
+        # the search ONCE against the fresh snapshot. The work runs on the
+        # search lane executor (never the event loop), never walks the repo
+        # (TOOLA-AHEALTHHUNG-R1), and above the bound the honest inconclusive
+        # answer stands unchanged.
+        rec_report = None
+        if (not _skip_stale_reconcile and not results
+                and response.get("stale_index") is True
+                and response.get("stale_index_reason") == "drift_detected"
+                and delta is not None and stale_count):
+            _scope_added = delta.get("added") or []
+            _scope_modified = delta.get("modified") or []
+            _scope_deleted = delta.get("deleted") or []
+            _scope_drift = len(_scope_added) + len(_scope_modified) + len(_scope_deleted)
+            if _scope_drift:
+                import surgical_mapper as _sm
+                if _scope_drift <= _sm.SEARCH_RECONCILE_MAX_FILES:
+                    _recon_budget = max(
+                        1.0,
+                        search_started_at + SEARCH_TEXT_DEADLINE_SECONDS
+                        - time.monotonic())
+                    _permit = None
+                    try:
+                        _permit = await FAIR_ADMISSION.acquire(
+                            "search",
+                            deadline=time.monotonic() + _recon_budget)
+                        rec_report = await get_executor_lane("search").run(
+                            _sm.reconcile_stale_scope_drift,
+                            str(snapshot_root),
+                            _scope_added, _scope_modified, _scope_deleted,
+                            queue_wait_deadline=time.monotonic() + _recon_budget)
+                    except Exception as _recon_exc:
+                        rec_report = {"applied": False,
+                                      "reason": f"{type(_recon_exc).__name__}: {_recon_exc}"}
+                    finally:
+                        if _permit is not None:
+                            _permit.release()
+                else:
+                    rec_report = {"applied": False, "reason": "drift_above_bound",
+                                  "drift_files": _scope_drift,
+                                  "bound": _sm.SEARCH_RECONCILE_MAX_FILES}
+        if rec_report is not None:
+            response["stale_reconcile"] = rec_report
+            if rec_report.get("applied"):
+                return await _search_once_after_reconcile(locals())
     # D3: never let the query-shape guess overwrite a measured cause. When the glob
     # admitted zero files the query shape is irrelevant, and this tip used to fire
     # anyway and send the caller off to rewrite a perfectly good query.

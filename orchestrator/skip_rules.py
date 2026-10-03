@@ -332,6 +332,25 @@ PROJECT_IGNORE_FILENAME = ".orchestrator_ignore"
 # (skip, unskip) keyed by (resolved_root, mtime_ns, size). Bounded below.
 _IGNORE_CACHE: "dict[tuple[str, int, int], tuple[frozenset[str], frozenset[str]]]" = {}
 _IGNORE_CACHE_MAX = 64
+# P14 D1: resolve() per load_project_ignore call was one _getfinalpathname
+# syscall per SEARCHED RECORD (3900/search on CUA). The root string -> resolved
+# path mapping is process-stable (every other graph/snapshot key already keys
+# on the raw string), so memoize it; a re-targeted junction mid-process is the
+# accepted cost, bounded like _IGNORE_CACHE.
+_RESOLVED_ROOT_CACHE: dict = {}
+
+
+def _resolved_root(project_root):
+    from pathlib import Path as _Path
+    key = str(project_root)
+    hit = _RESOLVED_ROOT_CACHE.get(key)
+    if hit is not None:
+        return hit
+    resolved = _Path(project_root).resolve()
+    if len(_RESOLVED_ROOT_CACHE) >= _IGNORE_CACHE_MAX:
+        _RESOLVED_ROOT_CACHE.clear()
+    _RESOLVED_ROOT_CACHE[key] = resolved
+    return resolved
 
 
 def clear_project_ignore_cache() -> None:
@@ -370,7 +389,7 @@ def load_project_ignore(project_root) -> "tuple[frozenset[str], frozenset[str]]"
         return frozenset(), frozenset()
     from pathlib import Path as _Path
     try:
-        root = _Path(project_root).resolve()
+        root = _resolved_root(project_root)
         target = root / PROJECT_IGNORE_FILENAME
         stat_result = target.stat()
     except Exception:

@@ -119,6 +119,27 @@ def quick_check_cached(conn: sqlite3.Connection, project_path: str) -> str:
         _QUICK_CHECK_MEMO.clear()
     _QUICK_CHECK_MEMO[key] = verdict
     return verdict
+
+
+def memo_store_quick_check(project_path: str, verdict: str) -> None:
+    """Store a quick_check verdict under the current db stat key (abort path).
+
+    P14 D3: an ABORTED budgeted probe raises before quick_check_cached can
+    store anything, so on a big db under disk contention every graph_status
+    re-ran the probe and blew its 1 s budget forever (measured ToolQ 48 MB:
+    integrity_ms 1031-2047, verdict unknown, EVERY call). Storing the honest
+    unknown verdict lets an UNCHANGED db skip the doomed re-probe; the next
+    real change to the file re-probes. A corrupt verdict is never stored here.
+    """
+    try:
+        key = _db_stat_key(project_path)
+    except OSError:
+        return
+    if len(_QUICK_CHECK_MEMO) >= _QUICK_CHECK_MEMO_MAX:
+        _QUICK_CHECK_MEMO.clear()
+    _QUICK_CHECK_MEMO[key] = verdict
+
+
 def reset_db(project_path: str) -> None:
     """Drop all graph tables and recreate schema (for re-index / rollback)."""
     conn = get_db(project_path)
