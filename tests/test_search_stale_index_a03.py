@@ -87,25 +87,29 @@ class TestSearchStaleIndexA03(unittest.IsolatedAsyncioTestCase):
 
     # ---- Layer 1 ----------------------------------------------------------
 
-    async def test_phantom_not_found_is_reported_inconclusive_when_index_stale(self) -> None:
-        """A committed symbol added OUTSIDE [A] must NOT be reported as a clean 0-hit."""
+    async def test_phantom_not_found_is_fixed_by_bounded_reconcile(self) -> None:
+        """A committed symbol added OUTSIDE [A] must be FOUND, not just flagged.
+
+        P15 root fix: the 0-hit verdict block used to stop at the honest
+        INCONCLUSIVE report (the old Layer-1 shape this test pinned). Small
+        in-scope drift (<= SEARCH_RECONCILE_MAX_FILES) is now reconciled
+        incrementally and the search re-runs ONCE, so the phantom is answered
+        from a fresh snapshot. The ABOVE-bound shape keeps the old report --
+        pinned in test_drift_above_bound_keeps_honest_inconclusive below."""
         self._edit_outside_orchestrator(
             "target.py", "def brand_new_symbol_xyz():\n    return 'NEW'\n"
         )
         _clear_drift_caches()
         payload = await self._search("brand_new_symbol_xyz")
 
-        self.assertEqual(payload["count"], 0, "snapshot is stale so the new symbol is not in it")
-        self.assertTrue(
-            payload.get("stale_index") is True,
-            f"expected stale_index True, got {payload.get('stale_index')!r}",
-        )
-        self.assertGreaterEqual(int(payload.get("stale_files_count") or 0), 1)
-        self.assertEqual(payload.get("ca_next_action"), "refresh_or_narrow")
-        self.assertTrue(
-            payload.get("inconclusive") is True,
-            "a 0-hit over a stale index must be inconclusive, not 'not found'",
-        )
+        self.assertGreaterEqual(payload["count"], 1, msg=payload)
+        self.assertIs(payload.get("stale_index"), False, msg=payload)
+        self.assertIsNot(payload.get("inconclusive"), True, msg=payload)
+        self.assertNotIn("ca_next_action", payload, msg=payload)
+        rec = payload.get("stale_reconcile")
+        self.assertIsInstance(rec, dict, msg=payload)
+        self.assertIs(rec.get("applied"), True, msg=payload)
+        self.assertEqual(int(rec.get("drift_files") or 0), 1, msg=payload)
 
     async def test_clean_index_zero_hit_is_a_real_not_found(self) -> None:
         """When the index IS fresh, a genuine 0-hit must stay a plain not-found."""
@@ -213,7 +217,7 @@ class TestSearchStaleIndexA03(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_scoped_probe_detects_drift_inside_path(self) -> None:
-        """A03 semantics are unchanged for drift INSIDE the searched subtree."""
+        """Drift INSIDE the searched subtree is reconciled (P15), then measured clean."""
         sub = self.root / "sub"
         sub.mkdir()
         (sub / "inner.py").write_text("def inner_marker():\n    return 1\n", encoding="utf-8")
@@ -232,9 +236,11 @@ class TestSearchStaleIndexA03(unittest.IsolatedAsyncioTestCase):
         payload = json.loads(raw)
 
         self.assertEqual(payload["count"], 0, msg=payload)
-        self.assertIs(payload.get("stale_index"), True, msg=payload)
-        self.assertTrue(payload.get("inconclusive") is True, msg=payload)
-        self.assertEqual(payload.get("ca_next_action"), "refresh_or_narrow")
+        self.assertIs(payload.get("stale_index"), False, msg=payload)
+        self.assertIsNot(payload.get("inconclusive"), True, msg=payload)
+        rec = payload.get("stale_reconcile")
+        self.assertIsInstance(rec, dict, msg=payload)
+        self.assertIs(rec.get("applied"), True, msg=payload)
 
     async def test_scoped_probe_second_call_hashes_nothing(self) -> None:
         """Regression guard: the SECOND 0-hit probe must be O(stat), not O(read).
@@ -291,8 +297,8 @@ class TestSearchStaleIndexA03(unittest.IsolatedAsyncioTestCase):
     # compare the SERVED SNAPSHOT against INDEX: a 0-hit over a snapshot that lacks
     # an indexed file is inconclusive, never stale_index False.
 
-    async def test_zero_hit_when_served_snapshot_predates_index_is_inconclusive(self) -> None:
-        """INDEX lists a file the served snapshot does not -> 0-hit must not read clean."""
+    async def test_zero_hit_when_served_snapshot_predates_index_is_fixed_by_reconcile(self) -> None:
+        """INDEX lists a file the served snapshot lacks -> P15 reconciles and FINDS it."""
         # Advance INDEX past the snapshot WITHOUT republishing (the state the P13
         # publish failure leaves behind): cache the new file and patch INDEX only.
         new_file = self.root / "p13_late_file.py"
@@ -306,6 +312,27 @@ class TestSearchStaleIndexA03(unittest.IsolatedAsyncioTestCase):
         self.assertIn("p13_late_file.py", idx.get("files", {}))
 
         payload = await self._search("p13_late_symbol_zz")
+        # P15: the snapshot_behind_index branch reconciles INDEX-minus-served
+        # (bounded), republishes, and re-searches ONCE -- the symbol is found.
+        self.assertGreaterEqual(payload["count"], 1, msg=payload)
+        self.assertIs(payload.get("stale_index"), False, msg=payload)
+        self.assertIsNot(payload.get("inconclusive"), True, msg=payload)
+        rec = payload.get("stale_reconcile")
+        self.assertIsInstance(rec, dict, msg=payload)
+        self.assertIs(rec.get("applied"), True, msg=payload)
+
+    async def test_snapshot_behind_index_above_bound_keeps_honest_inconclusive(self) -> None:
+        """Same state, but reconcile bound=0 -> the P13 honest report stands."""
+        new_file = self.root / "p13_late_file.py"
+        new_file.write_text("def p13_late_symbol_zz():\n    return 1\n", encoding="utf-8")
+        metadata = surgical_mapper.write_file_cache(str(new_file), str(self.root))
+        surgical_mapper.update_index_incremental(self.root, metadata, removed=False)
+        _clear_drift_caches()
+        idx = json.loads((self.root / ".orchestrator_cache" / "INDEX.json").read_text(encoding="utf-8"))
+        self.assertIn("p13_late_file.py", idx.get("files", {}))
+
+        with mock.patch.object(surgical_mapper, "SEARCH_RECONCILE_MAX_FILES", 0):
+            payload = await self._search("p13_late_symbol_zz")
         self.assertEqual(payload["count"], 0, "the served snapshot predates the file")
         self.assertNotEqual(
             payload.get("stale_index"), False,
@@ -314,6 +341,10 @@ class TestSearchStaleIndexA03(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(payload.get("inconclusive") is True, payload)
         self.assertEqual(payload.get("stale_index_reason"), "snapshot_behind_index", payload)
         self.assertGreaterEqual(int(payload.get("snapshot_missing_indexed_files") or 0), 1, payload)
+        rec = payload.get("stale_reconcile")
+        self.assertIsInstance(rec, dict, msg=payload)
+        self.assertIs(rec.get("applied"), False, msg=payload)
+        self.assertEqual(rec.get("reason"), "drift_above_bound", msg=payload)
 
     async def test_zero_hit_with_snapshot_matching_index_stays_clean(self) -> None:
         """Guard against a false positive: snapshot==INDEX + clean disk stays clean."""
@@ -321,6 +352,212 @@ class TestSearchStaleIndexA03(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["count"], 0)
         self.assertIs(payload.get("stale_index"), False, payload)
         self.assertIsNot(payload.get("inconclusive"), True, payload)
+
+
+    # ---- P15: bounded stale-drift reconcile + re-search (root fix) ----------
+    #
+    # A03 Layer 1 (above) reports a 0-hit over measured in-scope drift as
+    # INCONCLUSIVE -- honest, but the tool still cannot answer the question it
+    # was asked, and refresh_project_map on a large root is forbidden by rule.
+    # P15 closes that: when the scoped drift is small enough
+    # (surgical_mapper.SEARCH_RECONCILE_MAX_FILES), the 0-hit verdict block
+    # reconciles exactly those files (existing per-file machinery), republishes
+    # the snapshot incrementally and re-runs the search ONCE against the fresh
+    # snapshot. Above the bound the honest inconclusive answer stands.
+
+    async def test_native_add_in_scope_is_found_after_reconcile(self) -> None:
+        """A natively-CREATED file in scope must be FOUND by the same search."""
+        (self.root / "p15_added.py").write_text(
+            "P15_ADDED_TOKEN = 'zz_p15_added'\n", encoding="utf-8")
+        _clear_drift_caches()
+        payload = await self._search("zz_p15_added")
+
+        self.assertGreaterEqual(payload["count"], 1, msg=payload)
+        self.assertEqual(
+            payload["results"][0]["file"], "p15_added.py", msg=payload)
+        self.assertIs(payload.get("stale_index"), False, msg=payload)
+        self.assertIsNot(payload.get("inconclusive"), True, msg=payload)
+        self.assertNotIn("ca_next_action", payload, msg=payload)
+        rec = payload.get("stale_reconcile")
+        self.assertIsInstance(rec, dict, msg=payload)
+        self.assertIs(rec.get("applied"), True, msg=payload)
+        self.assertEqual(int(rec.get("drift_files") or 0), 1, msg=payload)
+        self.assertTrue(rec.get("snapshot_id"), msg=payload)
+
+    async def test_native_modify_in_scope_finds_new_text_after_reconcile(self) -> None:
+        """A natively-MODIFIED file must serve its NEW text, not the old bytes."""
+        self._edit_outside_orchestrator(
+            "target.py", "def old_symbol():\n    return 'zz_p15_modified'\n")
+        _clear_drift_caches()
+        payload = await self._search("zz_p15_modified")
+
+        self.assertGreaterEqual(payload["count"], 1, msg=payload)
+        self.assertEqual(payload["results"][0]["file"], "target.py", msg=payload)
+        self.assertIs(payload.get("stale_index"), False, msg=payload)
+        rec = payload.get("stale_reconcile")
+        self.assertIsInstance(rec, dict, msg=payload)
+        self.assertIs(rec.get("applied"), True, msg=payload)
+
+    async def test_native_delete_is_an_honest_clean_zero_hit(self) -> None:
+        """A natively-DELETED file must read as a real not-found, not inconclusive."""
+        victim = self.root / "p15_victim.py"
+        victim.write_text("P15_VICTIM_TOKEN = 'zz_p15_victim'\n", encoding="utf-8")
+        _clear_drift_caches()
+        found = await self._search("zz_p15_victim")
+        self.assertGreaterEqual(found["count"], 1,
+                                msg=f"positive control failed: {found}")
+
+        victim.unlink()
+        _clear_drift_caches()
+        payload = await self._search("zz_p15_victim")
+
+        self.assertEqual(payload["count"], 0, msg=payload)
+        self.assertIs(payload.get("stale_index"), False, msg=payload)
+        self.assertIsNot(payload.get("inconclusive"), True, msg=payload)
+        rec = payload.get("stale_reconcile")
+        self.assertIsInstance(rec, dict, msg=payload)
+        self.assertIs(rec.get("applied"), True, msg=payload)
+        self.assertEqual(int(rec.get("drift_files") or 0), 1, msg=payload)
+
+    async def test_drift_above_bound_keeps_honest_inconclusive(self) -> None:
+        """Above the reconcile bound the A03 Layer-1 answer stands unchanged."""
+        self._edit_outside_orchestrator(
+            "target.py", "def brand_new_symbol_xyz():\n    return 'NEW'\n")
+        _clear_drift_caches()
+        with mock.patch.object(surgical_mapper, "SEARCH_RECONCILE_MAX_FILES", 0, create=True):
+            payload = await self._search("brand_new_symbol_xyz")
+
+        self.assertEqual(payload["count"], 0, msg=payload)
+        self.assertIs(payload.get("stale_index"), True, msg=payload)
+        self.assertGreaterEqual(int(payload.get("stale_files_count") or 0), 1)
+        self.assertEqual(payload.get("ca_next_action"), "refresh_or_narrow")
+        self.assertIs(payload.get("inconclusive"), True, msg=payload)
+        rec = payload.get("stale_reconcile")
+        self.assertIsInstance(rec, dict, msg=payload)
+        self.assertIs(rec.get("applied"), False, msg=payload)
+        self.assertEqual(rec.get("reason"), "drift_above_bound", msg=payload)
+
+    async def test_out_of_scope_drift_triggers_no_reconcile(self) -> None:
+        """Drift OUTSIDE `path` must neither flag the 0-hit nor reconcile."""
+        sub = self.root / "sub"
+        sub.mkdir()
+        (sub / "inner.py").write_text(
+            "def inner_marker():\n    return 1\n", encoding="utf-8")
+        surgical_mapper.generate_project_map(str(self.root))
+        _clear_drift_caches()
+        # Drift at the ROOT -- outside the searched subtree.
+        self._edit_outside_orchestrator(
+            "target.py", "def brand_new_symbol_xyz():\n    return 'NEW'\n")
+        with mock.patch.object(
+            surgical_mapper, "reconcile_stale_scope_drift",
+            side_effect=AssertionError("reconcile ran for out-of-scope drift"),
+        ):
+            raw = await search_module.search_code(
+                query="definitely_absent_token_qqq",
+                path=str(sub),
+                project_path=str(self.root),
+                mode="text",
+                max_results=20,
+            )
+        payload = json.loads(raw)
+
+        self.assertEqual(payload["count"], 0, msg=payload)
+        self.assertIs(payload.get("stale_index"), False, msg=payload)
+        self.assertEqual(payload.get("stale_index_scope"), "sub", msg=payload)
+        self.assertNotIn("stale_reconcile", payload, msg=payload)
+
+    async def test_second_identical_search_does_no_reconcile_work(self) -> None:
+        """The reconcile is one-shot: a clean re-probe must not redo it."""
+        (self.root / "p15_added.py").write_text(
+            "P15_ADDED_TOKEN = 'zz_p15_added'\n", encoding="utf-8")
+        _clear_drift_caches()
+        real = surgical_mapper.reconcile_stale_scope_drift
+        calls = []
+
+        def counting(*a, **kw):
+            calls.append(1)
+            return real(*a, **kw)
+
+        with mock.patch.object(
+            surgical_mapper, "reconcile_stale_scope_drift",
+            side_effect=counting,
+        ):
+            first = await self._search("zz_p15_added")
+            self.assertGreaterEqual(first["count"], 1, msg=first)
+            self.assertEqual(len(calls), 1, msg=first)
+            second = await self._search("zz_p15_added")
+            self.assertGreaterEqual(second["count"], 1, msg=second)
+            self.assertEqual(
+                len(calls), 1,
+                f"second identical search re-ran the reconcile: {second}")
+
+    async def test_find_symbol_finds_natively_added_definition(self) -> None:
+        """find_symbol must find a natively-added def.
+
+        NOT RED on HEAD: find_symbol's fallback walks the LIVE filesystem
+        (an os.walk over the project, not the published snapshot), so it never
+        served the stale snapshot. The measured live 0-hit (daemon gen
+        6287f8eecec9, 49. CUA) named a token that does not exist as a
+        definition anywhere on disk -- verified by grep. This test is a
+        regression guard, and pins WHY no routing change was made (P15 scope
+        decision)."""
+        (self.root / "p15_sym.py").write_text(
+            "def p15_native_symbol_zz():\n    return 1\n", encoding="utf-8")
+        _clear_drift_caches()
+        raw = await search_module.find_symbol(
+            name="p15_native_symbol_zz", project_path=str(self.root))
+        payload = json.loads(raw)
+
+        self.assertGreaterEqual(payload["count"], 1, msg=payload)
+        self.assertEqual(
+            payload["results"][0]["file"].replace("\\", "/"), "p15_sym.py",
+            msg=payload)
+
+    async def test_reconcile_failure_keeps_honest_inconclusive(self) -> None:
+        """A reconcile that raises must leave the A03 Layer-1 answer in place."""
+        self._edit_outside_orchestrator(
+            "target.py", "def brand_new_symbol_xyz():\n    return 'NEW'\n")
+        _clear_drift_caches()
+        with mock.patch.object(
+            surgical_mapper, "reconcile_stale_scope_drift",
+            side_effect=RuntimeError("reconcile boom"),
+        ):
+            payload = await self._search("brand_new_symbol_xyz")
+
+        self.assertEqual(payload["count"], 0, msg=payload)
+        self.assertIs(payload.get("stale_index"), True, msg=payload)
+        self.assertIs(payload.get("inconclusive"), True, msg=payload)
+        self.assertEqual(payload.get("ca_next_action"), "refresh_or_narrow")
+        rec = payload.get("stale_reconcile")
+        self.assertIsInstance(rec, dict, msg=payload)
+        self.assertIs(rec.get("applied"), False, msg=payload)
+        self.assertIn("reconcile boom", rec.get("reason", ""), msg=payload)
+
+    def test_reconcile_on_project_with_no_index_is_refused(self) -> None:
+        """A search-triggered reconcile must never BUILD an index from scratch.
+
+        Leader audit (2026-10-03): on a project with no INDEX at all,
+        update_index_incremental falls back to a full build_index -- an O(repo)
+        walk the file-count bound does not bound (the bound counts drifted
+        files, not repo size). Building an index is generate_project_map's job;
+        the helper must refuse and the refusal must create NOTHING on disk.
+        """
+        bare = Path(tempfile.mkdtemp(prefix="a03_noindex_")).resolve()
+        try:
+            (bare / "orphan.py").write_text("def orphan():\n    return 1\n", encoding="utf-8")
+            idx_path = bare / ".orchestrator_cache" / "INDEX.json"
+            self.assertFalse(idx_path.exists(), "precondition: no INDEX at all")
+
+            report = surgical_mapper.reconcile_stale_scope_drift(
+                str(bare), ["orphan.py"], [], [])
+
+            self.assertIs(report.get("applied"), False, msg=report)
+            self.assertEqual(report.get("reason"), "no_index", msg=report)
+            self.assertFalse(idx_path.exists(),
+                             f"the no_index refusal must not build an INDEX: {report}")
+        finally:
+            shutil.rmtree(bare, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()

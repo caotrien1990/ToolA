@@ -79,6 +79,8 @@ class SearchStaleIndexUnknownTests(unittest.IsolatedAsyncioTestCase):
     async def test_refresh_suppress_window_does_not_certify_a_clean_index(self):
         # The exact measured hole. _mark_index_refreshed is what generate_project_map /
         # refresh_project_map call, so this is the state after any real refresh.
+        # P15: the drift is not merely REPORTED anymore -- the bounded reconcile
+        # fixes it in place and the re-run search FINDS the edited-in symbol.
         self._edit_outside(
             "target.py", "def brand_new_symbol_xyz():\n    return 'NEW'\n")
         code_tools._mark_index_refreshed(str(self.root))
@@ -88,25 +90,25 @@ class SearchStaleIndexUnknownTests(unittest.IsolatedAsyncioTestCase):
                         "precondition: inside the suppress window")
         payload = await self._search("brand_new_symbol_xyz")
 
-        self.assertEqual(payload["count"], 0, msg=payload)
-        self.assertNotEqual(
-            payload.get("stale_index"), False,
-            msg=f"claims a clean index while cache_delta sees the edit: {payload}")
-        self.assertIsNot(
-            payload.get("inconclusive"), None,
-            msg=("0-hit that was never actually measured must not read as "
-                 f"found-nothing: {payload}"))
+        self.assertGreaterEqual(payload["count"], 1, msg=payload)
+        self.assertIs(payload.get("stale_index"), False, msg=payload)
+        rec = payload.get("stale_reconcile")
+        self.assertIsInstance(rec, dict, msg=payload)
+        self.assertIs(rec.get("applied"), True, msg=payload)
 
-    async def test_stale_edit_is_still_caught_inside_the_suppress_window(self):
-        # Stronger than the test above: not merely "not False" -- the drift is real
-        # and measurable, so it must be reported as real.
+    async def test_stale_edit_above_bound_is_still_reported_inside_the_suppress_window(self):
+        # Stronger than the test above: not merely "not False" -- when the drift
+        # is real and measurable but ABOVE the P15 reconcile bound, it must still
+        # be reported as real (the reconcile must not eat the report).
         self._edit_outside(
             "target.py", "def brand_new_symbol_xyz():\n    return 'NEW'\n")
         code_tools._mark_index_refreshed(str(self.root))
         _clear_delta_futures()
 
-        payload = await self._search("brand_new_symbol_xyz")
+        with mock.patch.object(surgical_mapper, "SEARCH_RECONCILE_MAX_FILES", 0, create=True):
+            payload = await self._search("brand_new_symbol_xyz")
 
+        self.assertEqual(payload["count"], 0, msg=payload)
         self.assertIs(payload.get("stale_index"), True, msg=payload)
         self.assertGreaterEqual(
             int(payload.get("stale_files_count") or 0), 1, msg=payload)

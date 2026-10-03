@@ -209,7 +209,15 @@ class TestSearchRegexBudget(unittest.IsolatedAsyncioTestCase):
             keys.append(key)
             kwargs["owner_transfer"]()
             kwargs["owner_done"]()
-            return {"results": [], "snapshot_id": f"snapshot-{len(keys)}"}
+            # Return ONE real hit on sample.txt, not a 0-hit: this test's intent
+            # is deadline normalization in the singleflight key. A 0-hit on a
+            # tmp project with no INDEX enters the P15 stale-drift path (drift
+            # probe -> reconcile -> republish -> one re-search), which changes
+            # the snapshot token between the two calls and adds producer
+            # invocations -- breaking this assertion for reasons that have
+            # nothing to do with the deadline slot.
+            return {"results": [{"file": "sample.txt", "line": 1, "match": "needle"}],
+                    "snapshot_id": f"snapshot-{len(keys)}"}
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

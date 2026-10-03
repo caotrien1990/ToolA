@@ -73,6 +73,13 @@ _SEARCH_MODE_ALIASES = {
 _SEARCH_CODE_MODES = ["text", "regex", "symbol", "callers", "definition_usage", "index", "dom_candidates", "smart"]
 _SEARCH_SINGLEFLIGHT_LOCK = threading.Lock()
 _SEARCH_SINGLEFLIGHT: dict[tuple, concurrent.futures.Future[dict]] = {}
+# P15: per-root reconcile epoch, stamped when a stale-drift reconcile is
+# applied. The singleflight key mixes this in (see the snapshot_token build):
+# the republish that follows a reconcile flips snapshot_token, but a call
+# that STARTS while the reconcile is mid-publish still reads the pre-publish
+# CURRENT and would otherwise join the pre-reconcile future. Written and read
+# only on the event-loop thread, so a plain dict needs no lock.
+_SEARCH_RECONCILE_EPOCH: dict[str, int] = {}
 _SEARCH_CLEANUP_GRACE_SECONDS = 0.25
 
 
@@ -1198,6 +1205,64 @@ def _clear_regex_deadline_state(project_path: str, path: str, file_pattern: str,
                     if k[0] == pp and k[1] == pa and k[3] == qq]:
             _REGEX_DEADLINE_ERROR_STATE.pop(key, None)
 
+async def _search_once_after_reconcile(env: dict) -> str:
+    """P15: re-run search_code ONCE after a stale-drift reconcile, then merge.
+
+    Extracted so the reconcile + re-search exists exactly once. The recursive
+    call passes ``_skip_stale_reconcile=True`` (popped from ``**aliases`` like
+    ``_snapshot_retry``, so it never enters the public schema): the re-search
+    skips BOTH the reconcile gate and, on a second 0-hit, the O(repo) drift
+    probe -- the probe JUST measured and the reconcile either fixed the drift
+    or reported why not, so re-probing could only loop or re-pay the cost. A
+    second 0-hit is therefore answered from the reconcile outcome: found
+    (count>=1), a clean not-found (delete or query truly absent), or the A03
+    honest inconclusive (reconcile reported a residue it could not fix).
+    ``env`` is the caller's ``locals()`` -- the fresh singleflight key takes
+    the new snapshot id, so the fresh result can never be confused with the
+    stale run's."""
+    response = json.loads(await search_code(
+        query=env["query"],
+        path=env["path"],
+        project_path=env["project_path"],
+        file_pattern=env["file_pattern"],
+        literal_search=env["literal_search"],
+        mode=env["mode"],
+        query_encoding="plain",
+        max_context_lines=env["max_context_lines"],
+        max_results=env["max_results"],
+        flags=env["flags"],
+        force=env["force"],
+        include_impact=env["include_impact"],
+        regex_deadline_seconds=env["regex_deadline_seconds"],
+        _snapshot_retry=env["snapshot_retry"],
+        _skip_stale_reconcile=True,
+        **env["aliases"],
+    ))
+    rec_report = env["rec_report"]
+    response["stale_reconcile"] = rec_report
+    if response.get("count"):
+        # Found on the fresh snapshot: the earlier 0-hit was the staleness.
+        response.pop("inconclusive", None)
+        response.pop("ca_next_action", None)
+        response.pop("tip", None)
+        response["stale_index"] = False
+        return json.dumps(response, ensure_ascii=False)
+    residue = int(rec_report.get("residue_count") or 0)
+    if residue:
+        # The reconcile could not apply every drifted file, so this empty
+        # answer still cannot be certified clean -- keep A03 honest.
+        response["stale_index"] = True
+        response["inconclusive"] = True
+        response["ca_next_action"] = "refresh_or_narrow"
+    else:
+        # Clean re-search: a real absence (or a native delete the reconcile
+        # applied). Not inconclusive.
+        response["stale_index"] = False
+        response.pop("inconclusive", None)
+        response.pop("ca_next_action", None)
+    return json.dumps(response, ensure_ascii=False)
+
+
 async def search_code(query: str = "", path: str = "", project_path: str = "",
                       file_pattern: str = "*", literal_search: bool = True,
                       mode: str = "text", query_encoding: str = "plain",
@@ -1209,6 +1274,9 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
 
     search_started_at = time.monotonic()
     snapshot_retry = int(aliases.pop("_snapshot_retry", 0) or 0)
+    # P15: internal one-shot re-search flag (never in the public schema;
+    # popped from **aliases exactly like _snapshot_retry above).
+    _skip_stale_reconcile = bool(aliases.pop("_skip_stale_reconcile", False))
 
     # TA-7 fix (2026-08-18): file_glob is a natural name callers reach for; it used
     # to fall into **aliases unmapped, so a file_glob="*.py" filter silently did
@@ -1915,6 +1983,17 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
     try:
         for pin_attempt in range(2):
             snapshot_token = _search_snapshot_token(snapshot_root)
+            # P15: the token alone cannot key the singleflight cache -- the
+            # reconcile republishes the snapshot asynchronously (off the event
+            # loop), so a SAME-scope call that starts while the reconcile is
+            # mid-publish reads the PRE-publish CURRENT and would otherwise join
+            # the pre-reconcile future, serving the stale hit it was meant to
+            # correct (measured: native-delete test re-served a deleted file's
+            # hit). The reconcile stamps a per-root epoch at apply time; the
+            # key reads it here (event-loop thread, no lock needed), so the
+            # post-reconcile call can never coalesce with a pre-reconcile one.
+            _recon_epoch = _SEARCH_RECONCILE_EPOCH.get(str(snapshot_root).casefold(), 0)
+            snapshot_token = snapshot_token + ("recon", _recon_epoch)
             expected_snapshot_id = (
                 str(snapshot_token[1]) if snapshot_token[0] == "snapshot" else None
             )
@@ -2071,6 +2150,9 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
             include_impact=include_impact,
             regex_deadline_seconds=regex_deadline_seconds,
             _snapshot_retry=snapshot_retry + 1,
+            # P15: a SnapshotUnavailable retry is a NEW search, not the
+            # reconcile re-run -- let it measure drift and reconcile again.
+            _skip_stale_reconcile=False,
             **aliases,
         )
     except asyncio.TimeoutError:
@@ -2230,6 +2312,34 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
     # probe, so the honest answer is the cheap one -- this is not a new advisory
     # field bolted on to explain a caller mistake, it replaces two advisories that
     # were actively naming the wrong cause.
+    # P15: drop hits whose file no longer exists on disk BEFORE any verdict
+    # logic runs. A native delete never republishes the snapshot, so the
+    # singleflight cache can keep serving a pre-delete payload (its key only
+    # changes on republish); without this filter the deleted file's hit is
+    # re-served forever and the honest-0 reconcile below never fires. This is
+    # O(hits) disk stats, bounded by effective_max_results -- not a walk.
+    # Phantoms are dropped from BOTH `results` and the response so count stays
+    # consistent; an emptied set falls through to the 0-hit probe, where the
+    # reconcile removes the deleted file from INDEX+snapshot and the re-search
+    # answers the honest clean 0.
+    if results:
+        _kept = []
+        for _hit in results:
+            if not isinstance(_hit, dict):
+                _kept.append(_hit)
+                continue
+            _rel = str(_hit.get("file") or "")
+            try:
+                _abs = (base_resolved if base_is_file
+                        else (base_resolved / _rel))
+                if _abs.is_file():
+                    _kept.append(_hit)
+            except Exception:
+                _kept.append(_hit)  # a stat failure must not erase a real hit
+        if len(_kept) != len(results):
+            results = _kept
+            response["results"] = results
+            response["count"] = len(results)
     _fp_scoped = bool(file_pattern) and file_pattern != "*"
     _fp_admitted = producer_payload.get("pattern_admitted_files")
     if not results and _fp_scoped and _fp_admitted == 0:
@@ -2255,7 +2365,13 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
                 "file_pattern is not the only suspect: verify project_path/path "
                 "points at the intended repo, then refresh_project_map."
             )
-    elif not results:
+    elif not results and not _skip_stale_reconcile:
+        # P15: the post-reconcile re-search skips this probe -- the probe JUST
+        # measured this scope and the reconcile either fixed the drift or said
+        # why not, so re-probing could only re-pay the scoped-hash cost (or, on
+        # a reconcile that reported a residue, re-measure a drift the caller
+        # already sees in stale_reconcile). The re-search's 0-hit verdict is
+        # answered from the reconcile outcome in _search_once_after_reconcile.
         drift_root = project_path or str(snapshot_root)
         # P10 (2026-10-02): the probe certifies the hit set THIS search could
         # have served. A scoped search (path=...) therefore probes only the
@@ -2340,44 +2456,87 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
         # (TOOLA-AHEALTHHUNG-R1), and above the bound the honest inconclusive
         # answer stands unchanged.
         rec_report = None
-        if (not _skip_stale_reconcile and not results
-                and response.get("stale_index") is True
-                and response.get("stale_index_reason") == "drift_detected"
-                and delta is not None and stale_count):
-            _scope_added = delta.get("added") or []
-            _scope_modified = delta.get("modified") or []
-            _scope_deleted = delta.get("deleted") or []
-            _scope_drift = len(_scope_added) + len(_scope_modified) + len(_scope_deleted)
-            if _scope_drift:
-                import surgical_mapper as _sm
-                if _scope_drift <= _sm.SEARCH_RECONCILE_MAX_FILES:
-                    _recon_budget = max(
-                        1.0,
-                        search_started_at + SEARCH_TEXT_DEADLINE_SECONDS
-                        - time.monotonic())
-                    _permit = None
+        if not _skip_stale_reconcile and not results and response.get("stale_index") is True:
+            _stale_reason = response.get("stale_index_reason")
+            if _stale_reason == "drift_detected" and delta is not None and stale_count:
+                _scope_added = delta.get("added") or []
+                _scope_modified = delta.get("modified") or []
+                _scope_deleted = delta.get("deleted") or []
+            elif _stale_reason == "snapshot_behind_index":
+                # P15: cache_delta compares INDEX against DISK only, so it is
+                # blind here -- INDEX == disk while the SERVED snapshot predates
+                # a write (the fresh-project publish failure). The drift set is
+                # INDEX files the served manifest lacks (the producer already
+                # counted them); treat each as "modified" so the reconcile
+                # re-caches it and republishes. `delta` is UNBOUND on this
+                # branch, so the drift set must be sourced here, never from it.
+                _scope_added = []
+                _scope_deleted = []
+                _scope_modified = []
+                try:
+                    _pin = search_snapshots.pin_current_snapshot(str(snapshot_root))
                     try:
-                        _permit = await FAIR_ADMISSION.acquire(
-                            "search",
-                            deadline=time.monotonic() + _recon_budget)
-                        rec_report = await get_executor_lane("search").run(
-                            _sm.reconcile_stale_scope_drift,
-                            str(snapshot_root),
-                            _scope_added, _scope_modified, _scope_deleted,
-                            queue_wait_deadline=time.monotonic() + _recon_budget)
-                    except Exception as _recon_exc:
-                        rec_report = {"applied": False,
-                                      "reason": f"{type(_recon_exc).__name__}: {_recon_exc}"}
+                        _manifest_paths = {
+                            str(r.get("path") or "").replace("\\", "/").casefold()
+                            for r in _pin.manifest.get("files", [])
+                        }
                     finally:
-                        if _permit is not None:
-                            _permit.release()
-                else:
-                    rec_report = {"applied": False, "reason": "drift_above_bound",
-                                  "drift_files": _scope_drift,
-                                  "bound": _sm.SEARCH_RECONCILE_MAX_FILES}
+                        _pin.release()
+                    _live_index = json.loads(
+                        (Path(snapshot_root) / search_snapshots.CACHE_DIR_NAME
+                         / search_snapshots.INDEX_FILENAME).read_text(encoding="utf-8"))
+                    _scope_modified = sorted(
+                        str(rel).replace("\\", "/")
+                        for rel in (_live_index.get("files") or {})
+                        if str(rel).replace("\\", "/").casefold() not in _manifest_paths
+                    )
+                except Exception as _behind_exc:
+                    rec_report = {"applied": False,
+                                  "reason": f"behind_index_probe_failed: {type(_behind_exc).__name__}: {_behind_exc}"}
+                    _scope_modified = []
+            else:
+                _scope_added = []
+                _scope_modified = []
+                _scope_deleted = []
+            if rec_report is None:
+                _scope_drift = (len(_scope_added) + len(_scope_modified)
+                                + len(_scope_deleted))
+                if _scope_drift:
+                    import surgical_mapper as _sm
+                    if _scope_drift <= _sm.SEARCH_RECONCILE_MAX_FILES:
+                        _recon_budget = max(
+                            1.0,
+                            search_started_at + SEARCH_TEXT_DEADLINE_SECONDS
+                            - time.monotonic())
+                        _permit = None
+                        try:
+                            _permit = await FAIR_ADMISSION.acquire(
+                                "search",
+                                deadline=time.monotonic() + _recon_budget)
+                            rec_report = await get_executor_lane("search").run(
+                                _sm.reconcile_stale_scope_drift,
+                                str(snapshot_root),
+                                _scope_added, _scope_modified, _scope_deleted,
+                                queue_wait_deadline=time.monotonic() + _recon_budget)
+                        except Exception as _recon_exc:
+                            rec_report = {"applied": False,
+                                          "reason": f"{type(_recon_exc).__name__}: {_recon_exc}"}
+                        finally:
+                            if _permit is not None:
+                                _permit.release()
+                    else:
+                        rec_report = {"applied": False, "reason": "drift_above_bound",
+                                      "drift_files": _scope_drift,
+                                      "bound": _sm.SEARCH_RECONCILE_MAX_FILES}
         if rec_report is not None:
             response["stale_reconcile"] = rec_report
             if rec_report.get("applied"):
+                # Stamp BEFORE the re-search: a concurrent same-scope call that
+                # starts now reads the pre-publish CURRENT, and only this epoch
+                # bump keeps it from joining the pre-reconcile singleflight
+                # future (snapshot_token has not flipped yet -- publish is async).
+                _ekey = str(snapshot_root).casefold()
+                _SEARCH_RECONCILE_EPOCH[_ekey] = _SEARCH_RECONCILE_EPOCH.get(_ekey, 0) + 1
                 return await _search_once_after_reconcile(locals())
     # D3: never let the query-shape guess overwrite a measured cause. When the glob
     # admitted zero files the query shape is irrelevant, and this tip used to fire
