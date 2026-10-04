@@ -1070,7 +1070,7 @@ def _session_contention_fields(exc: BaseException):
 # the two drifted apart in the first place.
 _MANAGE_AGENT_ACTIONS = (
     "register", "unregister", "list", "get",
-    "set_mode", "sync_rule", "sync_mcp", "sync_skill",
+    "set_mode", "sync_rule", "sync_mcp", "sync_skill", "sync_hook",
 )
 
 
@@ -17337,6 +17337,502 @@ def _ma_write_skill(ag: dict, reg: dict, skill_name: str, dry_run: bool,
             "reason": "no skill_dir and no rule_file; native SKILL.md folder support not verified for this agent (HermC: unknown) — do not assume native load"}
 
 
+# The SOT gate files every hook-enabled host receives. Copied verbatim; the
+# per-host binding is hook-agent.json, so ONE gate source serves every host.
+_MA_HOOK_GATE_FILES = ("native-write-gate.js", "read-gate.js")
+# Per-format adapter source (under hooks/adapters/) -> the file name it lands as
+# in the agent's hooks_dir. claude-settings needs none: it registers the gates
+# directly. zcode registers ${ZCODE_PLUGIN_ROOT}/hooks/<gate> so the gates land
+# INSIDE the plugin hooks dir and no adapter file is copied.
+_MA_HOOK_ADAPTER = {
+    "claude-settings": None,
+    "codex-hooks-json": ("codex.js", "codex-adapter.js"),
+    "opencode-plugin": ("opencode-gates.js", "toola-gates.js"),
+    "zcode-plugin": None,
+}
+_MA_HOOK_FORMATS = ("claude-settings", "codex-hooks-json", "zcode-plugin", "opencode-plugin", "none")
+
+
+def _ma_hooks_repo_dir() -> Path:
+    return (Path(__file__).parent / "hooks").resolve()
+
+
+def _ma_hook_binding_text(aid: str) -> str:
+    return json.dumps({"agent_id": aid}, ensure_ascii=False, indent=1) + "\n"
+
+
+def _ma_hook_agent_targets(ag: dict) -> list:
+    """One agent row may enforce several hook targets (P22 defect-1: codo drives
+    both ~/.codex and ~/.codex-ltnai). ``hook_targets`` wins when present and
+    non-empty; otherwise the flat hook_* fields are the single-target shorthand.
+    Each returned dict carries id/hook_file/hook_format/hooks_dir/hook_trust_step
+    so the per-target installer/probe can treat it like an agent row."""
+    aid = ag.get("id") or ""
+    raw = ag.get("hook_targets")
+    out = []
+    if isinstance(raw, list) and raw:
+        for t in raw:
+            if not isinstance(t, dict):
+                continue
+            out.append({
+                "id": aid,
+                "hook_file": t.get("hook_file") or "",
+                "hook_format": (t.get("hook_format") or "").strip(),
+                "hooks_dir": t.get("hooks_dir") or "",
+                "hook_trust_step": t.get("hook_trust_step") or "none",
+            })
+        return out
+    return [{
+        "id": aid,
+        "hook_file": ag.get("hook_file") or "",
+        "hook_format": (ag.get("hook_format") or "").strip(),
+        "hooks_dir": ag.get("hooks_dir") or "",
+        "hook_trust_step": ag.get("hook_trust_step") or "none",
+    }]
+
+
+def _ma_hook_command(agent: dict, gate: str, prompt: bool = False) -> str:
+    """The command string a host hook entry runs. ``agent`` may be an agent row
+    or one hook-target dict from _ma_hook_agent_targets -- both carry
+    hooks_dir/hook_format/id. The gates resolve their agent id from
+    ORCHESTRATOR_AGENT_ID first, so the env var is set inline where the format
+    allows it (claude-settings / codex command strings); zcode process args and
+    opencode rely on the sibling hook-agent.json binding."""
+    hooks_dir = (agent.get("hooks_dir") or "").rstrip("/\\")
+    fmt = agent.get("hook_format") or ""
+    gate_path = (hooks_dir + "/" + gate).replace("\\", "/")
+    if fmt == "codex-hooks-json":
+        adapter = (hooks_dir + "/" + "codex-adapter.js").replace("\\", "/")
+        base = f'node \'{adapter}\''
+        return base  # the adapter dispatches to both gates; no --prompt side
+    cmd = f'node "{gate_path}"'
+    if prompt:
+        cmd += " --prompt"
+    return cmd
+
+
+def _ma_hook_entries(agent: dict) -> dict:
+    """Build the registration block for this agent's format. Returns a dict
+    shaped for the merge; merge fns below keep every unrelated entry intact."""
+    fmt = agent.get("hook_format") or ""
+    if fmt == "claude-settings":
+        return {
+            "PreToolUse": [
+                {"matcher": "Write|Edit|MultiEdit|NotebookEdit",
+                 "hooks": [{"type": "command", "command": _ma_hook_command(agent, "native-write-gate.js"),
+                            "timeout": 6, "statusMessage": "Native write gate..."}]},
+                {"matcher": "Read|Grep|Glob|Bash",
+                 "hooks": [{"type": "command", "command": _ma_hook_command(agent, "read-gate.js")}]},
+            ],
+            "UserPromptSubmit": [
+                {"hooks": [{"type": "command", "command": _ma_hook_command(agent, "native-write-gate.js", prompt=True), "timeout": 3}]},
+                {"hooks": [{"type": "command", "command": _ma_hook_command(agent, "read-gate.js", prompt=True)}]},
+            ],
+        }
+    if fmt == "codex-hooks-json":
+        adapter_cmd = _ma_hook_command(agent, "")  # codex adapter path
+        return {
+            "PreToolUse": [
+                {"matcher": "apply_patch", "hooks": [{"type": "command", "command": adapter_cmd, "timeout": 8, "statusMessage": "Native write gate..."}]},
+                {"matcher": "shell|local_shell|unified_exec|exec", "hooks": [{"type": "command", "command": adapter_cmd, "timeout": 8, "statusMessage": "Read gate..."}]},
+            ],
+        }
+    return {}
+
+
+def _ma_hook_merge_claude(data: dict, entries: dict) -> tuple:
+    """Merge gate entries into a Claude-format settings.json hooks object.
+    Idempotent: an entry whose command string already appears under that event is
+    left untouched; every unrelated hook entry (other events, other commands) is
+    preserved byte-for-byte. Returns (new_hooks, changed)."""
+    hooks = data.setdefault("hooks", {})
+    changed = False
+    for event, groups in entries.items():
+        existing = hooks.setdefault(event, [])
+        for group in groups:
+            for h in group.get("hooks", []):
+                cmd = h.get("command", "")
+                already = any(
+                    any(eh.get("command") == cmd for eh in (eg.get("hooks") or []))
+                    for eg in existing if isinstance(eg, dict)
+                )
+                if already:
+                    continue
+                # find a group with the same matcher, else append a new group
+                matcher = group.get("matcher")
+                placed = False
+                for eg in existing:
+                    if isinstance(eg, dict) and eg.get("matcher") == matcher:
+                        eg.setdefault("hooks", []).append(h)
+                        placed = True
+                        changed = True
+                        break
+                if not placed:
+                    new_group = dict(group)
+                    new_group["hooks"] = [h]
+                    existing.append(new_group)
+                    changed = True
+    return hooks, changed
+
+
+def _ma_hook_merge_codex(data: dict, entries: dict) -> tuple:
+    """Codex hooks.json nests everything under a top-level "hooks" key with the
+    same event->[{matcher,hooks}] shape; reuse the claude merge against it."""
+    hooks = data.setdefault("hooks", {})
+    changed = False
+    for event, groups in entries.items():
+        existing = hooks.setdefault(event, [])
+        for group in groups:
+            for h in group.get("hooks", []):
+                cmd = h.get("command", "")
+                already = any(
+                    any(eh.get("command") == cmd for eh in (eg.get("hooks") or []))
+                    for eg in existing if isinstance(eg, dict)
+                )
+                if already:
+                    continue
+                matcher = group.get("matcher")
+                placed = False
+                for eg in existing:
+                    if isinstance(eg, dict) and eg.get("matcher") == matcher:
+                        eg.setdefault("hooks", []).append(h)
+                        placed = True
+                        changed = True
+                        break
+                if not placed:
+                    new_group = dict(group)
+                    new_group["hooks"] = [h]
+                    existing.append(new_group)
+                    changed = True
+    return data, changed
+
+
+def _ma_hook_merge_opencode(data: dict, plugin_rel: str) -> tuple:
+    """opencode.json carries a top-level "plugin" array of module paths. Add the
+    gates plugin path if absent; preserve every other plugin and key."""
+    plugins = data.setdefault("plugin", [])
+    if not isinstance(plugins, list):
+        plugins = []
+        data["plugin"] = plugins
+    changed = False
+    if plugin_rel not in plugins:
+        plugins.append(plugin_rel)
+        changed = True
+    return data, changed
+
+
+def _ma_hook_merge_zcode(data: dict, plugin_id: str) -> tuple:
+    """zcode cli config.json enables a plugin under plugins.enabledPlugins. Add
+    the gates plugin id; leave installed_plugins.json and suppressedBuiltins
+    untouched."""
+    plugins = data.setdefault("plugins", {})
+    enabled = plugins.setdefault("enabledPlugins", {})
+    changed = False
+    if not enabled.get(plugin_id):
+        enabled[plugin_id] = True
+        changed = True
+    return data, changed
+
+
+def _ma_hook_probe(target: dict, hooks_dir: Path) -> dict:
+    """Live probe through the host's installed gate files for ONE hook target.
+    Spawns node against the INSTALLED copies in hooks_dir (never the repo SOT).
+    Claude-shaped targets feed the gates a Claude PreToolUse payload directly;
+    codex-hooks-json targets feed the installed codex-adapter.js a Codex-shaped
+    payload (apply_patch patch text / shell command) so the probe exercises the
+    same translation layer the host will. Returns 4 booleans; a probe that
+    cannot run reports False with a probe_error note. Probes use the gates'
+    *_DIR test seams so the real gate state is never flipped.
+
+      read_deny     - large code read inside a project -> deny
+      read_allow    - bounded read (limit 50) -> allow
+      write_deny    - write into an [A]-project file -> deny ([A] preflight up,
+                      or fail-closed if it is down -- either way denied)
+      outside_allow - write to a path outside every project -> allow
+    """
+    import subprocess
+    aid = target.get("id") or ""
+    fmt = target.get("hook_format") or ""
+    codex = (fmt == "codex-hooks-json")
+    env = dict(os.environ)
+    env["ORCHESTRATOR_AGENT_ID"] = aid
+    probe_state = hooks_dir / "_probe_state"
+    probe_state.mkdir(parents=True, exist_ok=True)
+    env["NATIVE_WRITE_GATE_DIR"] = str(probe_state)
+    env["NATIVE_READ_GATE_DIR"] = str(probe_state)
+    env["NATIVE_READ_GATE_NO_TEMP_EXEMPT"] = "1"
+
+    # A synthetic >200-line project the read gate can gate: give it a .git.
+    proj = hooks_dir / "_probe_proj"
+    proj.mkdir(parents=True, exist_ok=True)
+    (proj / ".git").mkdir(exist_ok=True)
+    big = proj / "big.py"
+    big.write_text("\n".join(f"# probe line {i} padding padding padding padding" for i in range(400)) + "\n",
+                   encoding="utf-8")
+    # The write_deny probe must target a path [A] scopes as project. The ToolA
+    # repo itself is the one path guaranteed registered, so probe against a
+    # never-created filename inside it (the gate denies BEFORE anything writes).
+    repo_write = _ma_hooks_repo_dir() / "_probe_write_never_created.py"
+    outside = Path(os.environ.get("TEMP", tempfile.gettempdir())) / f"_ma_hook_outside_{aid}.txt"
+
+    def run(script, payload):
+        try:
+            r = subprocess.run(
+                ["node", str(hooks_dir / script)],
+                input=json.dumps(payload), env=env,
+                capture_output=True, text=True, timeout=20)
+            return (r.stdout or "").strip()
+        except Exception:
+            return ""
+
+    def denied(out):
+        return bool(out) and ('"permissionDecision"' in out and '"deny"' in out)
+
+    def read_payload(path, limit=None):
+        ti = {"file_path": str(path)}
+        if limit is not None:
+            ti["limit"] = limit
+        if codex:
+            # Every Codex read/search is a shell command; a bounded read is a
+            # bounded shell shape (head -n), an unbounded one a plain cat.
+            cmd = f'cat "{path}"' if limit is None else f'head -n {limit} "{path}"'
+            return {"tool_name": "shell", "tool_input": {"command": cmd}, "cwd": str(proj)}
+        return {"tool_name": "Read", "tool_input": ti, "cwd": str(proj)}
+
+    def write_payload(path):
+        if codex:
+            patch = (f"*** Begin Patch\n*** Update File: {path}\n"
+                     "@@\n-old\n+new\n*** End Patch\n")
+            return {"tool_name": "apply_patch", "tool_input": {"patch": patch}, "cwd": str(proj)}
+        return {"tool_name": "Write", "tool_input": {"file_path": str(path)}, "cwd": str(proj)}
+
+    read_script = "codex-adapter.js" if codex else "read-gate.js"
+    write_script = "codex-adapter.js" if codex else "native-write-gate.js"
+
+    probe = {"read_deny": False, "read_allow": False, "write_deny": False, "outside_allow": False}
+    try:
+        out = run(read_script, read_payload(big))
+        probe["read_deny"] = denied(out)
+        out = run(read_script, read_payload(big, limit=50))
+        probe["read_allow"] = (not denied(out))
+        out = run(write_script, write_payload(repo_write))
+        probe["write_deny"] = denied(out)
+        out = run(write_script, write_payload(outside))
+        probe["outside_allow"] = (not denied(out))
+    except Exception as exc:
+        probe["probe_error"] = str(exc)
+    finally:
+        shutil.rmtree(probe_state, ignore_errors=True)
+        shutil.rmtree(proj, ignore_errors=True)
+        try:
+            outside.unlink(missing_ok=True)
+        except Exception:
+            pass
+    return probe
+
+
+def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
+    """Install + register the gates for ONE hook target of one agent (P22).
+    Copies the repo SOT gates (+ adapter) into the target's hooks_dir, writes
+    the hook-agent.json binding, merge-registers into the target's hook_file
+    (idempotent, unrelated entries preserved, .bak_sync_hook_<date> backup),
+    then runs the live probe through the host's adapter."""
+    aid = ag.get("id")
+    fmt = (target.get("hook_format") or "none").strip()
+    if fmt not in _MA_HOOK_FORMATS:
+        return {"ok": False, "agent": aid, "hook_format": fmt, "coverage": "none",
+                "hooks_dir": target.get("hooks_dir") or "",
+                "error": f"unknown hook_format {fmt}"}
+    if fmt == "none":
+        return {"ok": True, "agent": aid, "hook_format": "none", "changed": False,
+                "coverage": "none", "registered": False,
+                "hooks_dir": target.get("hooks_dir") or "",
+                "reason": "no hook engine on this host; rule text stays the enforcement layer"}
+
+    hooks_dir_raw = (target.get("hooks_dir") or "").strip()
+    hook_file_raw = (target.get("hook_file") or "").strip()
+    if not hooks_dir_raw:
+        return {"ok": False, "agent": aid, "hook_format": fmt, "error": "hooks_dir missing"}
+    if not hook_file_raw:
+        return {"ok": False, "agent": aid, "hook_format": fmt, "error": "hook_file missing"}
+    hooks_dir = Path(hooks_dir_raw)
+    hook_file = Path(hook_file_raw)
+
+    repo_hooks = _ma_hooks_repo_dir()
+    for gate in _MA_HOOK_GATE_FILES:
+        if not (repo_hooks / gate).is_file():
+            return {"ok": False, "agent": aid, "hook_format": fmt,
+                    "error": f"repo SOT gate missing: hooks/{gate}"}
+    adapter_spec = _MA_HOOK_ADAPTER.get(fmt)
+    adapter_src = None
+    adapter_name = None
+    if adapter_spec:
+        adapter_src = repo_hooks / "adapters" / adapter_spec[0]
+        adapter_name = adapter_spec[1]
+        if not adapter_src.is_file():
+            return {"ok": False, "agent": aid, "hook_format": fmt,
+                    "error": f"repo adapter missing: hooks/adapters/{adapter_spec[0]}"}
+
+    # ---- plan the file copies ----
+    copies = []  # (src Path, dst Path)
+    for gate in _MA_HOOK_GATE_FILES:
+        copies.append((repo_hooks / gate, hooks_dir / gate))
+    if adapter_src:
+        copies.append((adapter_src, hooks_dir / adapter_name))
+    binding_dst = hooks_dir / "hook-agent.json"
+
+    # Registration plan per format. The target dict carries hooks_dir/format/id,
+    # so the entry builders work on it directly.
+    entries = _ma_hook_entries(target) if fmt in ("claude-settings", "codex-hooks-json") else {}
+    refused = _ma_deny_refusal(aid, "hook_file", hook_file)
+    if refused:
+        return refused
+    for _src, dst in copies:
+        refused = _ma_deny_refusal(aid, "hooks_dir", dst)
+        if refused:
+            return refused
+
+    trust_step = target.get("hook_trust_step") or "none"
+    if dry_run:
+        return {"ok": True, "agent": aid, "hook_format": fmt, "dry_run": True,
+                "hooks_dir": str(hooks_dir), "hook_file": str(hook_file),
+                "files_to_write": [str(d) for _s, d in copies] + [str(binding_dst)],
+                "would_register": bool(entries) or fmt in ("opencode-plugin", "zcode-plugin"),
+                "coverage": "pending",
+                "trust_step": trust_step}
+
+    # ---- real install ----
+    files_written = []
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    changed = False
+    for src, dst in copies:
+        new_bytes = src.read_bytes()
+        if dst.exists() and dst.read_bytes() == new_bytes:
+            continue
+        _ma_backup(dst)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write_bytes(dst, new_bytes)
+        files_written.append(str(dst))
+        changed = True
+    binding_text = _ma_hook_binding_text(aid)
+    if not binding_dst.exists() or binding_dst.read_text(encoding="utf-8") != binding_text:
+        _atomic_write_text(binding_dst, binding_text, encoding="utf-8")
+        files_written.append(str(binding_dst))
+        changed = True
+
+    # ---- register into hook_file ----
+    registered = False
+    try:
+        if fmt == "claude-settings":
+            data = json.loads(hook_file.read_text(encoding="utf-8")) if hook_file.exists() else {}
+            _ma_backup(hook_file)
+            _hooks, reg_changed = _ma_hook_merge_claude(data, entries)
+            if reg_changed:
+                _atomic_write_json(hook_file, data, indent=2)
+                okj, errj = _ma_validate_json(hook_file)
+                if not okj:
+                    return {"ok": False, "agent": aid, "hook_format": fmt,
+                            "error": f"post-write JSON invalid: {errj}"}
+            registered = True
+            changed = changed or reg_changed
+        elif fmt == "codex-hooks-json":
+            data = json.loads(hook_file.read_text(encoding="utf-8")) if hook_file.exists() else {}
+            _ma_backup(hook_file)
+            _d, reg_changed = _ma_hook_merge_codex(data, entries)
+            if reg_changed:
+                _atomic_write_json(hook_file, data, indent=2)
+                okj, errj = _ma_validate_json(hook_file)
+                if not okj:
+                    return {"ok": False, "agent": aid, "hook_format": fmt,
+                            "error": f"post-write JSON invalid: {errj}"}
+            registered = True
+            changed = changed or reg_changed
+        elif fmt == "opencode-plugin":
+            data = json.loads(hook_file.read_text(encoding="utf-8")) if hook_file.exists() else {}
+            plugin_rel = "./plugins/" + adapter_name
+            _ma_backup(hook_file)
+            _d, reg_changed = _ma_hook_merge_opencode(data, plugin_rel)
+            if reg_changed:
+                _atomic_write_json(hook_file, data, indent=4)
+                okj, errj = _ma_validate_json(hook_file)
+                if not okj:
+                    return {"ok": False, "agent": aid, "hook_format": fmt,
+                            "error": f"post-write JSON invalid: {errj}"}
+            registered = True
+            changed = changed or reg_changed
+        elif fmt == "zcode-plugin":
+            # The plugin's hooks/hooks.json ships inside the plugin dir; the only
+            # registration is enabling the plugin id in cli config.json.
+            data = json.loads(hook_file.read_text(encoding="utf-8")) if hook_file.exists() else {}
+            plugin_id = "toola-gates@local"
+            _ma_backup(hook_file)
+            _d, reg_changed = _ma_hook_merge_zcode(data, plugin_id)
+            if reg_changed:
+                _atomic_write_json(hook_file, data, indent=2)
+                okj, errj = _ma_validate_json(hook_file)
+                if not okj:
+                    return {"ok": False, "agent": aid, "hook_format": fmt,
+                            "error": f"post-write JSON invalid: {errj}"}
+            registered = True
+            changed = changed or reg_changed
+    except Exception as exc:
+        return {"ok": False, "agent": aid, "hook_format": fmt,
+                "error": f"hook_file registration failed: {exc}"}
+
+    # ---- live probe (through the installed adapter for codex targets) ----
+    probe = _ma_hook_probe(target, hooks_dir)
+    probe_ok = all(probe.get(k) for k in ("read_deny", "read_allow", "write_deny", "outside_allow"))
+    coverage = "full" if probe_ok and trust_step == "none" else (
+        "pending_trust" if trust_step != "none" else ("partial" if registered else "none"))
+    return {"ok": True, "agent": aid, "hook_format": fmt, "changed": changed,
+            "hooks_dir": str(hooks_dir), "hook_file": str(hook_file),
+            "files_written": files_written, "registered": registered,
+            "probe": probe, "trust_step": trust_step, "coverage": coverage}
+
+
+def _ma_write_hook(ag: dict, reg: dict, dry_run: bool) -> dict:
+    """P22: install + register the native read/write enforcement gates for one
+    agent across every hook target it declares. ``hook_targets`` (list) wins
+    when present; otherwise the flat hook_* fields are the single-target
+    shorthand. Agents whose every target has hook_format=none (fbuf: no hook
+    engine; hermes: retired) are skipped with coverage=none. dry_run reports
+    the plan without touching anything. Coverage aggregates per target:
+    all full -> full; any pending_trust/pending -> pending_trust; all none ->
+    none; otherwise partial."""
+    aid = ag.get("id")
+    targets = _ma_hook_agent_targets(ag)
+    results = [_ma_write_hook_target(ag, t, dry_run) for t in targets]
+    ok = all(r.get("ok") for r in results)
+    changed = any(r.get("changed") for r in results)
+    covs = [r.get("coverage") for r in results]
+    if all(c == "none" for c in covs):
+        coverage = "none"
+    elif all(c == "pending" for c in covs):
+        coverage = "pending"
+    elif all(c == "full" for c in covs):
+        coverage = "full"
+    elif any(c in ("pending_trust", "pending") for c in covs):
+        coverage = "pending_trust"
+    else:
+        coverage = "partial"
+    out = {"ok": ok, "agent": aid, "changed": changed, "coverage": coverage,
+           "targets": results}
+    if len(results) == 1:
+        # Single-target agents keep the flat result fields for back-compat.
+        r0 = results[0]
+        for k in ("hook_format", "hooks_dir", "hook_file", "files_written",
+                  "files_to_write", "registered", "probe", "trust_step",
+                  "dry_run", "would_register", "reason", "error"):
+            if k in r0:
+                out[k] = r0[k]
+    if all(c == "none" for c in covs):
+        out["reason"] = results[0].get("reason",
+            "no hook engine on this host; rule text stays the enforcement layer")
+        out.setdefault("hook_format", "none")
+        out.setdefault("registered", False)
+    return out
+
+
 async def manage_agent(action: str, agent_id: str = "", target: str = "all",
                        persona: str = "", rule_file: str = "", rule_format: str = "markdown",
                        rule_template: str = "slim", mcp_file: str = "", mcp_format: str = "json",
@@ -17357,8 +17853,14 @@ async def manage_agent(action: str, agent_id: str = "", target: str = "all",
                    every CA) and mode="native" (Anh-approved opt-out), then
                    regenerate its rule file immediately
       sync_rule  — rewrite global-rule body for target (id or 'all'), persona
-                   preserved; body rendered per the agent's mode
-      sync_mcp   — rewrite project-orchestrator MCP block for target (id or 'all')
+      sync_hook  — install + register the native read/write enforcement gates for
+                   target (id or 'all'): copies the repo SOT gates + adapter into
+                   each hook target's hooks_dir (hook_targets list, else the flat
+                   hook_* fields as single-target shorthand), writes the
+                   hook-agent.json binding, merge-registers entries into hook_file
+                   (idempotent, unrelated hooks preserved, .bak_sync_hook backup),
+                   then runs a live probe per target and aggregates coverage.
+                   Agents with hook_format=none (fbuf, hermes) skip with coverage=none.
     All writes auto-backup under _ma_archive + validate (json/toml) + rollback on failure.
     Use dry_run=True to preview.
     """
@@ -17515,6 +18017,16 @@ async def manage_agent(action: str, agent_id: str = "", target: str = "all",
                 results.append(_ma_write_skill({"id": aid, **agents[aid]}, reg, skill_name, dry_run, explicit_target))
             all_ok = all(r.get("ok") for r in results)
             return json.dumps({"ok": all_ok, "action": act, "target": target, "skill_name": skill_name, "dry_run": dry_run, "results": results, "legacy_bak_ma_migration": migration}, ensure_ascii=False)
+        if act == "sync_hook":
+            ids = list(agents.keys()) if (target or "all") == "all" else [target]
+            results = []
+            for aid in ids:
+                if aid not in agents:
+                    results.append({"ok": False, "agent": aid, "error": "not registered"})
+                    continue
+                results.append(_ma_write_hook({"id": aid, **agents[aid]}, reg, dry_run))
+            all_ok = all(r.get("ok") for r in results)
+            return json.dumps({"ok": all_ok, "action": act, "target": target, "dry_run": dry_run, "results": results, "legacy_bak_ma_migration": migration}, ensure_ascii=False)
         # W7 (F020 sweep, 2026-08-19): this used error_name=UNSUPPORTED_FIELD with
         # accepted_fields=[...enum values...]. Both halves were wrong and they
         # compounded: nothing is wrong with the FIELD (action is declared and

@@ -17,6 +17,10 @@
       "mcp_key": "project-orchestrator",
       "skill_dir": "C:/Users/ADMIN/.claude/skills",
       "skill_format": "folder",
+      "hook_file": "C:/Users/ADMIN/.claude/settings.json",
+      "hook_format": "claude-settings",
+      "hooks_dir": "C:/Users/ADMIN/.claude/hooks",
+      "hook_trust_step": "none",
       "mode": "A",
       "transport_policy": "a_first_mcp_t4_ok",
       "governance": {
@@ -48,6 +52,24 @@
       "mcp_key": "project-orchestrator",
       "skill_dir": "C:/Users/ADMIN/.agents/skills",
       "skill_format": "folder",
+      "hook_file": "C:/Users/ADMIN/.codex/hooks.json",
+      "hook_format": "codex-hooks-json",
+      "hooks_dir": "C:/Users/ADMIN/.codex/hooks",
+      "hook_trust_step": "codex-hooks-command",
+      "hook_targets": [
+        {
+          "hook_file": "C:/Users/ADMIN/.codex/hooks.json",
+          "hook_format": "codex-hooks-json",
+          "hooks_dir": "C:/Users/ADMIN/.codex/hooks",
+          "hook_trust_step": "codex-hooks-command"
+        },
+        {
+          "hook_file": "C:/Users/ADMIN/.codex-ltnai/hooks.json",
+          "hook_format": "codex-hooks-json",
+          "hooks_dir": "C:/Users/ADMIN/.codex-ltnai/hooks",
+          "hook_trust_step": "codex-hooks-command"
+        }
+      ],
       "mode": "A",
       "transport_policy": "a_first_mcp_t4_ok",
       "governance": {
@@ -78,6 +100,10 @@
       "mcp_format": "json",
       "mcp_key": "project-orchestrator",
       "skill_format": "folder",
+      "hook_file": "C:/Users/ADMIN/.config/opencode/opencode.json",
+      "hook_format": "opencode-plugin",
+      "hooks_dir": "C:/Users/ADMIN/.config/opencode/plugins",
+      "hook_trust_step": "none",
       "skill_dir": "C:/Users/ADMIN/.config/opencode/skills",
       "mode": "A",
       "transport_policy": "a_first_mcp_t4_ok",
@@ -110,6 +136,10 @@
       "mcp_key": "project-orchestrator",
       "skill_dir": "C:/Users/ADMIN/AppData/Local/hermes/skills",
       "skill_format": "folder",
+      "hook_file": "",
+      "hook_format": "none",
+      "hooks_dir": "",
+      "hook_trust_step": "none",
       "mode": "A",
       "transport_policy": "a_first_mcp_t4_ok",
       "governance": {
@@ -137,6 +167,10 @@
       "mcp_format": "json",
       "mcp_key": "project-orchestrator",
       "skill_format": "folder",
+      "hook_file": "C:/Users/ADMIN/.zcode/cli/config.json",
+      "hook_format": "zcode-plugin",
+      "hooks_dir": "C:/Users/ADMIN/.zcode/cli/plugins/cache/toola-gates/hooks",
+      "hook_trust_step": "zcode-plugin-enable",
       "persona": "Always refer to yourself as \"Cozo\" and address the user as \"Anh\". Use [A] tools and other tools via HTTP API; do not use MCP.",
       "rule_file": "C:/Users/ADMIN/.zcode/AGENTS.md",
       "mcp_file": "C:/Users/ADMIN/.zcode/cli/config.json",
@@ -173,6 +207,10 @@
       "mcp_key": "project-orchestrator",
       "skill_dir": "C:/Users/ADMIN/.agents/skills",
       "skill_format": "folder",
+      "hook_file": "",
+      "hook_format": "none",
+      "hooks_dir": "",
+      "hook_trust_step": "none",
       "mode": "A",
       "transport_policy": "http_only",
       "governance": {
@@ -204,6 +242,10 @@
       "mcp_key": "project-orchestrator",
       "skill_dir": "C:/Users/ADMIN/.grok/skills",
       "skill_format": "folder",
+      "hook_file": "",
+      "hook_format": "none",
+      "hooks_dir": "",
+      "hook_trust_step": "none",
       "mode": "A",
       "transport_policy": "a_first_mcp_t4_ok",
       "governance": {
@@ -235,6 +277,10 @@
       "mcp_key": "project-orchestrator",
       "skill_dir": "C:/Users/ADMIN/.claude-ltnai/skills",
       "skill_format": "folder",
+      "hook_file": "C:/Users/ADMIN/.claude-ltnai/settings.json",
+      "hook_format": "claude-settings",
+      "hooks_dir": "C:/Users/ADMIN/.claude-ltnai/hooks",
+      "hook_trust_step": "none",
       "mode": "A",
       "transport_policy": "a_first_mcp_t4_ok",
       "governance": {

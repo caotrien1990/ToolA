@@ -1,0 +1,59 @@
+{
+  "description": "ToolA native read/write enforcement gates (manage_agent sync_hook).",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|ApplyPatch|NotebookEdit",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/native-write-gate.js"
+            ],
+            "timeoutMs": 6000,
+            "statusMessage": "native write gate..."
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Grep|Glob|Bash",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/read-gate.js"
+            ],
+            "timeoutMs": 5000,
+            "statusMessage": "read gate..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/native-write-gate.js",
+              "--prompt"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "type": "process",
+            "command": "node",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/read-gate.js",
+              "--prompt"
+            ],
+            "timeoutMs": 3000
+          }
+        ]
+      }
+    ]
+  }
+}
