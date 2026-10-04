@@ -396,10 +396,22 @@ class TestManageAgentSyncHook(unittest.TestCase):
         ag = self._agent("opencode", "opencode-plugin", hd, hf)
         r1 = code_tools._ma_write_hook(ag, {}, dry_run=False)
         self.assertTrue(r1["ok"], r1)
-        self.assertTrue((hd / "toola-gates.js").exists())
+        # plugin ships as .mjs (explicit ESM), gates as .cjs (explicit CJS), and
+        # the dir carries a {"type":"commonjs"} package.json marker so the
+        # ancestor ~/.config/opencode/package.json "type":"module" cannot break
+        # the CJS gates (the live-install bug this test now pins).
+        self.assertTrue((hd / "toola-gates.mjs").exists())
+        self.assertTrue((hd / "native-write-gate.cjs").exists())
+        self.assertTrue((hd / "read-gate.cjs").exists())
+        pkg = json.loads((hd / "package.json").read_text(encoding="utf-8"))
+        self.assertEqual(pkg.get("type"), "commonjs")
+        # the installed plugin must point at the .cjs gates
+        plugin_src = (hd / "toola-gates.mjs").read_text(encoding="utf-8")
+        self.assertIn("native-write-gate.cjs", plugin_src)
+        self.assertIn("read-gate.cjs", plugin_src)
         data = json.loads(hf.read_text(encoding="utf-8"))
         self.assertIn("./plugins/active-task-guard.js", data["plugin"], "existing plugin preserved")
-        self.assertIn("./plugins/toola-gates.js", data["plugin"])
+        self.assertIn("./plugins/toola-gates.mjs", data["plugin"])
         self.assertEqual(data["model"], "x")
         r2 = code_tools._ma_write_hook(ag, {}, dry_run=False)
         self.assertFalse(r2["changed"], r2)
@@ -427,11 +439,63 @@ class TestManageAgentSyncHook(unittest.TestCase):
         # install so the probe has gate files in hooks_dir
         code_tools._ma_write_hook(ag, {}, dry_run=False)
         probe = code_tools._ma_hook_probe(ag, hd)
-        # read gate is local + deterministic: both read probes must hold.
+        # The probe targets the REAL ToolA repo (resolved from code_tools.__file__,
+        # not the patched _ma_hooks_repo_dir): read gate is local + deterministic,
+        # so both read probes must hold; write_deny holds whether [A] is up
+        # (preflight deny) or down (fail-closed).
         self.assertTrue(probe["read_deny"], probe)
         self.assertTrue(probe["read_allow"], probe)
-        # outside_allow must hold (no project marker); write_deny needs [A] up.
+        self.assertTrue(probe["write_deny"], probe)
+        # outside_allow needs [A] up to answer scope=outside_project; a down
+        # daemon fail-closes the write gate, which is the gate's policy, not a
+        # probe defect -- skip only that leg.
+        import urllib.request as _ur
+        try:
+            _ur.urlopen("http://localhost:8083/health", timeout=3)
+        except Exception:
+            self.skipTest("[A] daemon not reachable; outside_allow needs preflight")
         self.assertTrue(probe["outside_allow"], probe)
+
+    def test_probe_fixture_under_a_harness_dir_would_exempt_the_read_gate(self):
+        # Regression pin for the live-probe defect: the OLD probe put _probe_proj
+        # under hooks_dir, which for a real host sits inside a harness profile
+        # dir (.claude*/.codex*) that the read gate exempts by design -- the
+        # probe passed in tests (tmp root) and failed live. The fixed probe
+        # reads the REAL repo file instead; assert it never builds a fixture
+        # under hooks_dir.
+        hd = self.root / "h_probe2"
+        ag = self._agent("probeagent2", "claude-settings", hd, self.root / "s.json")
+        code_tools._ma_write_hook(ag, {}, dry_run=False)
+        code_tools._ma_hook_probe(ag, hd)
+        self.assertFalse((hd / "_probe_proj").exists(),
+                         "probe must not gate a fixture inside the (possibly harness-exempt) hooks_dir")
+
+    def test_opencode_install_survives_a_type_module_ancestor_package_json(self):
+        # Mirror the live layout: ~/.config/opencode/package.json declares
+        # "type":"module", which used to make the installed CJS gates die on
+        # require() so the plugin allowed everything. The install must ship the
+        # gates as .cjs, the plugin as .mjs, and a {"type":"commonjs"} marker,
+        # and the probe must then pass all four booleans through the plugin.
+        stage = self.root / "fake_opencode_config"
+        stage.mkdir()
+        (stage / "package.json").write_text('{"type":"module"}\n', encoding="utf-8")
+        plugins = stage / "plugins"
+        plugins.mkdir()
+        hf = stage / "opencode.json"
+        hf.write_text(json.dumps({"plugin": ["./plugins/active-task-guard.js"]}), encoding="utf-8")
+        (plugins / "active-task-guard.js").write_text("export default async () => ({});\n", encoding="utf-8")
+        ag = {"id": "opencode", "hook_format": "opencode-plugin",
+              "hooks_dir": str(plugins), "hook_file": str(hf), "hook_trust_step": "none"}
+        r = code_tools._ma_write_hook(ag, {}, dry_run=False)
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["coverage"], "full", r)
+        probe = r["probe"]
+        self.assertTrue(probe["read_deny"], probe)
+        self.assertTrue(probe["read_allow"], probe)
+        self.assertTrue(probe["write_deny"], probe)
+        self.assertTrue(probe["outside_allow"], probe)
+
+
 
 
     # ---------- multi-target (leader defect 1: codo drives .codex + .codex-ltnai) ----------

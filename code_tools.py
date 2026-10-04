@@ -17347,7 +17347,7 @@ _MA_HOOK_GATE_FILES = ("native-write-gate.js", "read-gate.js")
 _MA_HOOK_ADAPTER = {
     "claude-settings": None,
     "codex-hooks-json": ("codex.js", "codex-adapter.js"),
-    "opencode-plugin": ("opencode-gates.js", "toola-gates.js"),
+    "opencode-plugin": ("opencode-gates.js", "toola-gates.mjs"),
     "zcode-plugin": None,
 }
 _MA_HOOK_FORMATS = ("claude-settings", "codex-hooks-json", "zcode-plugin", "opencode-plugin", "none")
@@ -17534,26 +17534,79 @@ def _ma_hook_merge_zcode(data: dict, plugin_id: str) -> tuple:
     return data, changed
 
 
+def _ma_probe_opencode_before(mod_path: Path, tool: str, args: dict, env: dict,
+                              timeout: int = 25) -> dict:
+    """Drive the installed opencode ESM plugin's own tool.execute.before once.
+    The plugin blocks by THROWING, so a deny surfaces as a thrown Error whose
+    message carries the gate reason. Returns {deny, out}: deny True on throw or
+    on a JSON permissionDecision=deny line; out is combined stdout+stderr for
+    diagnosis. A module/load failure reports deny False with the error text."""
+    import subprocess
+    probe_mod = mod_path.parent / "_probe_opencode.mjs"
+    probe_mod.write_text(
+        "import plugin from './" + mod_path.name + "';\n"
+        "const pl = await plugin({ directory: process.cwd() });\n"
+        "const fn = pl['tool.execute.before'];\n"
+        "if (typeof fn !== 'function') { console.error('NO_BEFORE_HOOK'); process.exit(2); }\n"
+        "const tool = process.env.PROBE_TOOL;\n"
+        "const args = JSON.parse(process.env.PROBE_ARGS || '{}');\n"
+        "try {\n"
+        "  await fn({ tool, sessionID: 'probe', callID: 'p1' }, { args });\n"
+        "  console.log('ALLOW');\n"
+        "} catch (e) {\n"
+        "  console.log('THROW: ' + ((e && e.message) || String(e)));\n"
+        "}\n",
+        encoding="utf-8")
+    try:
+        e2 = dict(env)
+        e2["PROBE_TOOL"] = tool
+        e2["PROBE_ARGS"] = json.dumps(args)
+        r = subprocess.run(["node", str(probe_mod)], cwd=str(mod_path.parent),
+                           env=e2, capture_output=True, text=True, timeout=timeout)
+        out = ((r.stdout or "") + (r.stderr or "")).strip()
+        deny = ("THROW:" in out) or ('"permissionDecision"' in out and '"deny"' in out)
+        return {"deny": deny, "out": out}
+    except Exception as exc:
+        return {"deny": False, "out": f"probe spawn failed: {exc}"}
+    finally:
+        try:
+            probe_mod.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
 def _ma_hook_probe(target: dict, hooks_dir: Path) -> dict:
     """Live probe through the host's installed gate files for ONE hook target.
     Spawns node against the INSTALLED copies in hooks_dir (never the repo SOT).
     Claude-shaped targets feed the gates a Claude PreToolUse payload directly;
     codex-hooks-json targets feed the installed codex-adapter.js a Codex-shaped
-    payload (apply_patch patch text / shell command) so the probe exercises the
-    same translation layer the host will. Returns 4 booleans; a probe that
-    cannot run reports False with a probe_error note. Probes use the gates'
-    *_DIR test seams so the real gate state is never flipped.
+    payload (apply_patch patch text / shell command); opencode-plugin targets
+    drive the installed ESM plugin's tool.execute.before (deny = throw).
+    Returns 4 booleans; a probe that cannot run reports False.
 
-      read_deny     - large code read inside a project -> deny
-      read_allow    - bounded read (limit 50) -> allow
-      write_deny    - write into an [A]-project file -> deny ([A] preflight up,
-                      or fail-closed if it is down -- either way denied)
-      outside_allow - write to a path outside every project -> allow
+      read_deny     - unbounded read of a REAL >200-line project code file
+                      (the ToolA repo's orchestrator_server.py) -> deny.
+                      The probe target must NOT sit under hooks_dir: hooks_dir
+                      lives inside a harness profile dir (.claude*/.codex*),
+                      which the read gate exempts by design (measured 2026-10-04:
+                      a _probe_proj fixture there read as ALLOW on a live host).
+      read_allow    - the same file with limit 50 -> allow
+      write_deny    - write into an [A]-project path -> deny (preflight up, or
+                      fail-closed if the daemon is down -- either way denied)
+      outside_allow - write to a %TEMP% path (outside every project) -> allow.
+                      cwd is the repo root, NOT the fake fixture: the write gate
+                      treats a missing/empty cwd as project (fail-closed).
+
+    The probe is read-only against the repo: the write_deny target is a
+    never-created filename and the gate denies BEFORE anything writes; the read
+    probes only read. Probe state goes to the gates' *_DIR test seams so the
+    real gate state is never flipped.
     """
     import subprocess
     aid = target.get("id") or ""
     fmt = target.get("hook_format") or ""
     codex = (fmt == "codex-hooks-json")
+    opencode = (fmt == "opencode-plugin")
     env = dict(os.environ)
     env["ORCHESTRATOR_AGENT_ID"] = aid
     probe_state = hooks_dir / "_probe_state"
@@ -17562,17 +17615,14 @@ def _ma_hook_probe(target: dict, hooks_dir: Path) -> dict:
     env["NATIVE_READ_GATE_DIR"] = str(probe_state)
     env["NATIVE_READ_GATE_NO_TEMP_EXEMPT"] = "1"
 
-    # A synthetic >200-line project the read gate can gate: give it a .git.
-    proj = hooks_dir / "_probe_proj"
-    proj.mkdir(parents=True, exist_ok=True)
-    (proj / ".git").mkdir(exist_ok=True)
-    big = proj / "big.py"
-    big.write_text("\n".join(f"# probe line {i} padding padding padding padding" for i in range(400)) + "\n",
-                   encoding="utf-8")
-    # The write_deny probe must target a path [A] scopes as project. The ToolA
-    # repo itself is the one path guaranteed registered, so probe against a
-    # never-created filename inside it (the gate denies BEFORE anything writes).
-    repo_write = _ma_hooks_repo_dir() / "_probe_write_never_created.py"
+    # Resolve the REAL ToolA repo root from this module's own path, never from
+    # _ma_hooks_repo_dir() -- tests patch that seam to a tmp fake, and the probe
+    # targets must stay real >200-line in-project files for the gates to gate.
+    repo_root = Path(__file__).parent  # the ToolA project-orchestrator root
+    repo_read = repo_root / "orchestrator_server.py"  # >200-line code file, in-project
+    if not repo_read.is_file():
+        repo_read = repo_root / "code_tools.py"
+    repo_write = repo_root / "hooks" / "_probe_write_never_created.py"
     outside = Path(os.environ.get("TEMP", tempfile.gettempdir())) / f"_ma_hook_outside_{aid}.txt"
 
     def run(script, payload):
@@ -17580,7 +17630,7 @@ def _ma_hook_probe(target: dict, hooks_dir: Path) -> dict:
             r = subprocess.run(
                 ["node", str(hooks_dir / script)],
                 input=json.dumps(payload), env=env,
-                capture_output=True, text=True, timeout=20)
+                capture_output=True, text=True, timeout=25)
             return (r.stdout or "").strip()
         except Exception:
             return ""
@@ -17596,24 +17646,45 @@ def _ma_hook_probe(target: dict, hooks_dir: Path) -> dict:
             # Every Codex read/search is a shell command; a bounded read is a
             # bounded shell shape (head -n), an unbounded one a plain cat.
             cmd = f'cat "{path}"' if limit is None else f'head -n {limit} "{path}"'
-            return {"tool_name": "shell", "tool_input": {"command": cmd}, "cwd": str(proj)}
-        return {"tool_name": "Read", "tool_input": ti, "cwd": str(proj)}
+            return {"tool_name": "shell", "tool_input": {"command": cmd}, "cwd": str(repo_root)}
+        return {"tool_name": "Read", "tool_input": ti, "cwd": str(repo_root)}
 
     def write_payload(path):
         if codex:
             patch = (f"*** Begin Patch\n*** Update File: {path}\n"
                      "@@\n-old\n+new\n*** End Patch\n")
-            return {"tool_name": "apply_patch", "tool_input": {"patch": patch}, "cwd": str(proj)}
-        return {"tool_name": "Write", "tool_input": {"file_path": str(path)}, "cwd": str(proj)}
+            return {"tool_name": "apply_patch", "tool_input": {"patch": patch}, "cwd": str(repo_root)}
+        return {"tool_name": "Write", "tool_input": {"file_path": str(path)}, "cwd": str(repo_root)}
 
     read_script = "codex-adapter.js" if codex else "read-gate.js"
     write_script = "codex-adapter.js" if codex else "native-write-gate.js"
 
     probe = {"read_deny": False, "read_allow": False, "write_deny": False, "outside_allow": False}
     try:
-        out = run(read_script, read_payload(big))
+        if opencode:
+            # The installed opencode adapter is an ESM plugin (.mjs so the
+            # plugins-dir package.json "type":"commonjs" marker that lets the
+            # CJS gates load cannot break it); enforcement lives in
+            # tool.execute.before, which blocks by throwing. The real host
+            # passes the workspace cwd in args -- mirror that or the write gate
+            # fail-closes on a missing cwd.
+            mod = hooks_dir / "toola-gates.mjs"
+            if not mod.is_file():
+                probe["probe_error"] = "installed plugin missing: " + str(mod)
+                return probe
+            ocw = str(repo_root)
+            probe["read_deny"] = _ma_probe_opencode_before(
+                mod, "read", {"filePath": str(repo_read), "cwd": ocw}, env)["deny"]
+            probe["read_allow"] = not _ma_probe_opencode_before(
+                mod, "read", {"filePath": str(repo_read), "limit": 50, "cwd": ocw}, env)["deny"]
+            probe["write_deny"] = _ma_probe_opencode_before(
+                mod, "write", {"filePath": str(repo_write), "cwd": ocw}, env)["deny"]
+            probe["outside_allow"] = not _ma_probe_opencode_before(
+                mod, "write", {"filePath": str(outside), "cwd": ocw}, env)["deny"]
+            return probe
+        out = run(read_script, read_payload(repo_read))
         probe["read_deny"] = denied(out)
-        out = run(read_script, read_payload(big, limit=50))
+        out = run(read_script, read_payload(repo_read, limit=50))
         probe["read_allow"] = (not denied(out))
         out = run(write_script, write_payload(repo_write))
         probe["write_deny"] = denied(out)
@@ -17623,7 +17694,6 @@ def _ma_hook_probe(target: dict, hooks_dir: Path) -> dict:
         probe["probe_error"] = str(exc)
     finally:
         shutil.rmtree(probe_state, ignore_errors=True)
-        shutil.rmtree(proj, ignore_errors=True)
         try:
             outside.unlink(missing_ok=True)
         except Exception:
@@ -17674,12 +17744,20 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
                     "error": f"repo adapter missing: hooks/adapters/{adapter_spec[0]}"}
 
     # ---- plan the file copies ----
+    # opencode: the plugins dir lives under ~/.config/opencode whose package.json
+    # declares "type":"module", so plain .js loads as ESM and the CJS gates die
+    # on require() (measured 2026-10-04 on the live install: every gate spawn
+    # returned '' and the plugin allowed everything). Install the gates as .cjs
+    # and the plugin as .mjs -- explicit module kinds immune to any "type".
+    oc = (fmt == "opencode-plugin")
     copies = []  # (src Path, dst Path)
     for gate in _MA_HOOK_GATE_FILES:
-        copies.append((repo_hooks / gate, hooks_dir / gate))
+        dst_name = gate[:-3] + ".cjs" if oc and gate.endswith(".js") else gate
+        copies.append((repo_hooks / gate, hooks_dir / dst_name))
     if adapter_src:
         copies.append((adapter_src, hooks_dir / adapter_name))
     binding_dst = hooks_dir / "hook-agent.json"
+    pkg_marker_dst = (hooks_dir / "package.json") if oc else None
 
     # Registration plan per format. The target dict carries hooks_dir/format/id,
     # so the entry builders work on it directly.
@@ -17707,6 +17785,12 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
     changed = False
     for src, dst in copies:
         new_bytes = src.read_bytes()
+        if oc and adapter_src and dst.name == adapter_name:
+            # The installed .mjs plugin must spawn the .cjs gates it ships with.
+            new_bytes = (new_bytes.decode("utf-8")
+                         .replace('"native-write-gate.js"', '"native-write-gate.cjs"')
+                         .replace('"read-gate.js"', '"read-gate.cjs"')
+                         .encode("utf-8"))
         if dst.exists() and dst.read_bytes() == new_bytes:
             continue
         _ma_backup(dst)
@@ -17714,6 +17798,14 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
         _atomic_write_bytes(dst, new_bytes)
         files_written.append(str(dst))
         changed = True
+    if pkg_marker_dst is not None:
+        # Pin the plugins dir to CommonJS so no ancestor package.json "type"
+        # can reinterpret the .cjs gates (and so a stray .js helper stays CJS).
+        marker_text = "{\n  \"type\": \"commonjs\"\n}\n"
+        if not pkg_marker_dst.exists() or pkg_marker_dst.read_text(encoding="utf-8") != marker_text:
+            _atomic_write_text(pkg_marker_dst, marker_text, encoding="utf-8")
+            files_written.append(str(pkg_marker_dst))
+            changed = True
     binding_text = _ma_hook_binding_text(aid)
     if not binding_dst.exists() or binding_dst.read_text(encoding="utf-8") != binding_text:
         _atomic_write_text(binding_dst, binding_text, encoding="utf-8")
@@ -17779,15 +17871,26 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
         return {"ok": False, "agent": aid, "hook_format": fmt,
                 "error": f"hook_file registration failed: {exc}"}
 
-    # ---- live probe (through the installed adapter for codex targets) ----
+    # ---- live probe (through the installed adapter/plugin for codex/opencode) ----
     probe = _ma_hook_probe(target, hooks_dir)
-    probe_ok = all(probe.get(k) for k in ("read_deny", "read_allow", "write_deny", "outside_allow"))
-    coverage = "full" if probe_ok and trust_step == "none" else (
-        "pending_trust" if trust_step != "none" else ("partial" if registered else "none"))
-    return {"ok": True, "agent": aid, "hook_format": fmt, "changed": changed,
-            "hooks_dir": str(hooks_dir), "hook_file": str(hook_file),
-            "files_written": files_written, "registered": registered,
-            "probe": probe, "trust_step": trust_step, "coverage": coverage}
+    _probe_keys = ("read_deny", "read_allow", "write_deny", "outside_allow")
+    probe_failed = [k for k in _probe_keys if not probe.get(k)]
+    probe_ok = not probe_failed
+    # trust steps (codex /hooks, zcode plugin enable) only defer coverage when
+    # the probes actually pass; a failing probe is partial WITH the failed names.
+    if probe_ok and trust_step == "none":
+        coverage = "full"
+    elif probe_ok:
+        coverage = "pending_trust"
+    else:
+        coverage = "partial"
+    out = {"ok": True, "agent": aid, "hook_format": fmt, "changed": changed,
+           "hooks_dir": str(hooks_dir), "hook_file": str(hook_file),
+           "files_written": files_written, "registered": registered,
+           "probe": probe, "trust_step": trust_step, "coverage": coverage}
+    if probe_failed:
+        out["probe_failed"] = probe_failed
+    return out
 
 
 def _ma_write_hook(ag: dict, reg: dict, dry_run: bool) -> dict:
@@ -17817,12 +17920,20 @@ def _ma_write_hook(ag: dict, reg: dict, dry_run: bool) -> dict:
         coverage = "partial"
     out = {"ok": ok, "agent": aid, "changed": changed, "coverage": coverage,
            "targets": results}
+    if coverage == "partial":
+        # Name the failing probes so "partial" never reports without a reason.
+        pf = {}
+        for r in results:
+            if r.get("probe_failed"):
+                pf[r.get("hooks_dir") or "?"] = r["probe_failed"]
+        if pf:
+            out["probe_failed"] = pf
     if len(results) == 1:
         # Single-target agents keep the flat result fields for back-compat.
         r0 = results[0]
         for k in ("hook_format", "hooks_dir", "hook_file", "files_written",
                   "files_to_write", "registered", "probe", "trust_step",
-                  "dry_run", "would_register", "reason", "error"):
+                  "dry_run", "would_register", "reason", "error", "probe_failed"):
             if k in r0:
                 out[k] = r0[k]
     if all(c == "none" for c in covs):
