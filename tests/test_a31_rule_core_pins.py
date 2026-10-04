@@ -51,6 +51,13 @@ MCP_MECHANISM = ("thin dispatcher", "call_tool(name=")
 # row; the fix was to delete the digit, so its return is a regression.
 RETIRED_TOOL_COUNT = "252"
 
+# READ GATE (2026-10-04): a native read of a code file > 200 lines without
+# limit<=200 and a symbol-shaped grep over code are DENIED by the local
+# PreToolUse read-gate hook, and the deny reason must name the [A] replacement
+# so the CA lands on the index order instead of retrying native. Pin the phrase
+# that must survive in every SOT file -- by phrase, never sha.
+READ_GATE_RULE = "the deny reason names the [A] replacement"
+
 
 def _read(name: str) -> str:
     return (EXAMPLES / name).read_text(encoding="utf-8")
@@ -91,6 +98,11 @@ class RuleCoreSotFilesCarryTheCwdRule(unittest.TestCase):
                     _read(name),
                     f"{name} names a tool count again -- name the mechanism, not a number",
                 )
+
+    def test_read_gate_deny_names_the_replacement_in_every_sot_file(self):
+        for name in SOT_FILES:
+            with self.subTest(name):
+                self.assertIn(READ_GATE_RULE, _read(name))
 
 
 class RuleCoreRuntimeReadsTheCommittedFile(unittest.TestCase):
