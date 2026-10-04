@@ -552,6 +552,76 @@ class TestManageAgentSyncHook(unittest.TestCase):
         self.assertEqual(targets[0]["hook_trust_step"], "none")
 
 
+class TestSyncHookStaysOffTheEventLoop(unittest.TestCase):
+    """P22b: manage_agent is async def, but the sync_hook branch spawns ~4 node
+    gate probes per target through BLOCKING subprocess.run. Before the fix that
+    branch never awaited, so a live sync_hook starved the daemon event loop for
+    its whole run -- measured on daemon pid 35244: the write gate's
+    /api/native_preflight calls made during sync_hook were only ACCEPTED after
+    manage_agent returned, the preflight timed out, and outside_allow
+    fail-closed. The fix wraps _ma_write_hook in asyncio.to_thread. This test
+    drives manage_agent through the same shape the dispatcher uses (a coroutine
+    on a running loop) and requires a concurrent loop task to keep getting
+    scheduled well inside the gate's 4s preflight timeout."""
+
+    def setUp(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tempdir.cleanup)
+        root = Path(self.tempdir.name)
+        self.root = root
+        repo_hooks = root / "repo" / "hooks"
+        (repo_hooks / "adapters").mkdir(parents=True)
+        real_hooks = Path(code_tools.__file__).parent / "hooks"
+        for gate in ("native-write-gate.js", "read-gate.js"):
+            shutil.copyfile(real_hooks / gate, repo_hooks / gate)
+        patcher = mock.patch.object(code_tools, "_ma_hooks_repo_dir", return_value=repo_hooks)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        # a fake registry with one claude-settings agent rooted in tmp
+        self.reg = {"agents": {"probeagent": {
+            "hook_format": "claude-settings",
+            "hooks_dir": str(root / "h_probe"),
+            "hook_file": str(root / "settings.json"),
+            "hook_trust_step": "none",
+        }}}
+        reg_patcher = mock.patch.object(code_tools, "_load_agents_registry", return_value=self.reg)
+        reg_patcher.start()
+        self.addCleanup(reg_patcher.stop)
+
+    def test_event_loop_keeps_turning_during_sync_hook(self):
+        import asyncio
+        beats = []
+
+        async def heartbeat():
+            # scheduled every 50ms; records the gap between beats
+            last = asyncio.get_event_loop().time()
+            while True:
+                await asyncio.sleep(0.05)
+                now = asyncio.get_event_loop().time()
+                beats.append(now - last)
+                last = now
+
+        async def main():
+            hb = asyncio.ensure_future(heartbeat())
+            try:
+                await code_tools.manage_agent(action="sync_hook", target="probeagent", dry_run=False)
+            finally:
+                hb.cancel()
+                try:
+                    await hb
+                except asyncio.CancelledError:
+                    pass
+
+        asyncio.run(main())
+        self.assertGreaterEqual(len(beats), 2, "the loop never turned during sync_hook")
+        worst = max(beats)
+        # the write gate's preflight timeout is 4s; a healthy loop must beat far
+        # inside that. 1s is the guard the leader asked for.
+        self.assertLess(worst, 1.0,
+                        f"event loop starved {worst:.2f}s during sync_hook; "
+                        f"the write gate preflight would time out (4s) -> outside_allow fail-closes")
+
+
 class TestCodexAdapterFailPolicy(unittest.TestCase):
     """P22 leader defect 2: the codex adapter must stay fail-CLOSED for writes
     (unparseable apply_patch, gate crash/timeout) and fail-OPEN for shell reads.

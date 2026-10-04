@@ -18135,7 +18135,15 @@ async def manage_agent(action: str, agent_id: str = "", target: str = "all",
                 if aid not in agents:
                     results.append({"ok": False, "agent": aid, "error": "not registered"})
                     continue
-                results.append(_ma_write_hook({"id": aid, **agents[aid]}, reg, dry_run))
+                # OFF-LOOP (P22b): _ma_write_hook spawns ~4 node gate probes per
+                # target via blocking subprocess.run. manage_agent is async def
+                # but this path never awaited, so the whole install ran ON the
+                # event loop and starved it -- measured 2026-10-04: every
+                # /api/native_preflight the write gate fired during a live
+                # sync_hook was accepted only AFTER manage_agent returned, the
+                # gate's preflight timed out, and outside_allow fail-closed.
+                results.append(await asyncio.to_thread(
+                    _ma_write_hook, {"id": aid, **agents[aid]}, reg, dry_run))
             all_ok = all(r.get("ok") for r in results)
             return json.dumps({"ok": all_ok, "action": act, "target": target, "dry_run": dry_run, "results": results, "legacy_bak_ma_migration": migration}, ensure_ascii=False)
         # W7 (F020 sweep, 2026-08-19): this used error_name=UNSUPPORTED_FIELD with
