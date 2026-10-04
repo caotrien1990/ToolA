@@ -22,7 +22,7 @@ import code_tools
 
 EXAMPLES = Path(code_tools.__file__).resolve().parent / "examples"
 
-SOT_FILES = ("CORE_RULE.txt", "SLIM_RULE.txt", "SLIM_RULE_INLINE.txt")
+SOT_FILES = ("CORE_RULE.txt", "SLIM_RULE.txt", "SLIM_RULE_INLINE.txt", "SLIM_RULE_GATED.txt")
 
 # READ ROUTING rule added 2026-09-17: a native grep/glob that finds nothing on a
 # path that certainly exists is a cwd bug, not an absence.
@@ -119,6 +119,17 @@ class RuleCoreRuntimeReadsTheCommittedFile(unittest.TestCase):
             code_tools._ma_rule_inline("slim"), _read("SLIM_RULE_INLINE.txt").strip()
         )
 
+    def test_gated_accessor_returns_the_gated_rule_file(self):
+        self.assertEqual(
+            code_tools._ma_slim_gated_rule_body(), _read("SLIM_RULE_GATED.txt").strip()
+        )
+
+    def test_gated_inline_is_the_gated_body_whitespace_collapsed(self):
+        inline_gated = code_tools._ma_rule_inline("slim_gated")
+        self.assertIn(CWD_RULE, inline_gated)
+        self.assertIn(READ_GATE_RULE, inline_gated)
+        self.assertNotIn(chr(10), inline_gated)
+
     def test_full_inline_is_the_core_rule_whitespace_collapsed(self):
         inline_full = code_tools._ma_rule_inline("full")
         self.assertIn(CWD_RULE, inline_full)
@@ -127,12 +138,12 @@ class RuleCoreRuntimeReadsTheCommittedFile(unittest.TestCase):
         self.assertNotIn("\n", inline_full)
 
     def test_every_propagated_template_carries_the_cwd_rule(self):
-        for template in ("slim", "full", "core"):
+        for template in ("slim", "slim_gated", "full", "core"):
             with self.subTest(template):
                 self.assertIn(CWD_RULE, code_tools._ma_rule_body(template))
 
     def test_every_propagated_template_carries_the_hidden_dir_rule(self):
-        for template in ("slim", "full", "core"):
+        for template in ("slim", "slim_gated", "full", "core"):
             body = code_tools._ma_rule_body(template)
             for fragment in HIDDEN_DIR_RULE:
                 with self.subTest(f"{template}:{fragment}"):
@@ -189,13 +200,13 @@ class FirstFetchProjectionCarriesTheBootstrapPayload(unittest.TestCase):
     """Bind the documented first-fetch fields= list to the runtime projection."""
 
     def test_slim_and_inline_carry_the_new_first_fetch_literal(self):
-        for name in ("SLIM_RULE.txt", "SLIM_RULE_INLINE.txt"):
+        for name in ("SLIM_RULE.txt", "SLIM_RULE_INLINE.txt", "SLIM_RULE_GATED.txt"):
             with self.subTest(name):
                 self.assertIn(FIRST_FETCH_FIELDS, _read(name))
 
     def test_no_bare_old_projection_survives(self):
         """The old 4-key literal may remain ONLY as a prefix of the new one."""
-        for name in ("SLIM_RULE.txt", "SLIM_RULE_INLINE.txt"):
+        for name in ("SLIM_RULE.txt", "SLIM_RULE_INLINE.txt", "SLIM_RULE_GATED.txt"):
             text = _read(name)
             with self.subTest(name):
                 self.assertEqual(
@@ -228,7 +239,7 @@ class FirstFetchProjectionCarriesTheBootstrapPayload(unittest.TestCase):
         self.assertIn("bootstrap_epoch", projected)
 
     def test_discovery_sentence_in_core_and_slim(self):
-        for name in ("CORE_RULE.txt", "SLIM_RULE.txt"):
+        for name in ("CORE_RULE.txt", "SLIM_RULE.txt", "SLIM_RULE_GATED.txt"):
             text = _read(name)
             for phrase in DISCOVERY_SENTENCE_PHRASES:
                 with self.subTest(f"{name}:{phrase}"):

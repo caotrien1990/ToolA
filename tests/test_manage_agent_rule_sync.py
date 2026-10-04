@@ -551,6 +551,92 @@ class TestManageAgentSyncHook(unittest.TestCase):
         self.assertEqual(targets[0]["hook_format"], "claude-settings")
         self.assertEqual(targets[0]["hook_trust_step"], "none")
 
+    # ---------- registration dedup + verification (leader P22d) ----------
+    def test_codex_merge_registers_two_groups_sharing_one_command(self):
+        # RED on HEAD: both codex groups use the SAME adapter command
+        # (apply_patch + shell|...), and the old command-only dedup dropped the
+        # second group -- measured live: .codex hooks.json carried only
+        # apply_patch, Codex read-gating OFF.
+        entries = code_tools._ma_hook_entries(
+            {"id": "codo", "hook_format": "codex-hooks-json",
+             "hooks_dir": "C:/x/.codex/hooks"})
+        data = {}
+        _d, changed = code_tools._ma_hook_merge_codex(data, entries)
+        self.assertTrue(changed)
+        pre = data["hooks"]["PreToolUse"]
+        matchers = [g.get("matcher") for g in pre]
+        self.assertIn("apply_patch", matchers)
+        self.assertIn("shell|local_shell|unified_exec|exec", matchers)
+        # a second merge adds nothing (idempotent)
+        _d2, changed2 = code_tools._ma_hook_merge_codex(data, entries)
+        self.assertFalse(changed2)
+        # and both entries are still there exactly once
+        cmds = [(g.get("matcher"), h["command"]) for g in data["hooks"]["PreToolUse"] for h in g["hooks"]]
+        self.assertEqual(len(cmds), 2)
+
+    def test_claude_merge_dedup_key_is_matcher_and_command(self):
+        # Same defect class: one command under two matchers must register twice.
+        entries = {"PreToolUse": [
+            {"matcher": "Write", "hooks": [{"type": "command", "command": "node gate.js"}]},
+            {"matcher": "Edit", "hooks": [{"type": "command", "command": "node gate.js"}]},
+        ]}
+        data = {}
+        code_tools._ma_hook_merge_claude(data, entries)
+        matchers = sorted(g.get("matcher") for g in data["hooks"]["PreToolUse"])
+        self.assertEqual(matchers, ["Edit", "Write"])
+
+    def test_registration_verifier_flags_a_missing_entry(self):
+        # Build a hook_file that carries only the write group (the live defect),
+        # then verify against the full expected entries: registered_ok False and
+        # the shell group named in missing_registrations.
+        hd = self.root / "h_verify"
+        hf = self.root / "hooks.json"
+        target = {"id": "codo", "hook_format": "codex-hooks-json",
+                  "hooks_dir": str(hd), "hook_file": str(hf)}
+        entries = code_tools._ma_hook_entries(target)
+        broken = {"hooks": {"PreToolUse": [
+            {"matcher": "apply_patch",
+             "hooks": [{"type": "command",
+                        "command": "node 'C:/x/.codex/hooks/codex-adapter.js'"}]},
+        ]}}
+        # make the command match the entries' command so only the matcher group
+        # is missing
+        adapter_cmd = entries["PreToolUse"][0]["hooks"][0]["command"]
+        broken["hooks"]["PreToolUse"][0]["hooks"][0]["command"] = adapter_cmd
+        hf.write_text(json.dumps(broken), encoding="utf-8")
+        check = code_tools._ma_hook_verify_registration(
+            "codex-hooks-json", hf, entries, "codex-adapter.js", hd)
+        self.assertFalse(check["registered_ok"], check)
+        self.assertTrue(any("shell|local_shell" in m for m in check["missing_registrations"]), check)
+        # full registration verifies clean
+        good = {}
+        code_tools._ma_hook_merge_codex(good, entries)
+        hf.write_text(json.dumps(good), encoding="utf-8")
+        check2 = code_tools._ma_hook_verify_registration(
+            "codex-hooks-json", hf, entries, "codex-adapter.js", hd)
+        self.assertTrue(check2["registered_ok"], check2)
+
+    def test_sync_hook_reports_registered_ok_false_on_a_partial_host_config(self):
+        # End to end: a codex target whose hook_file lost the read group must
+        # come back coverage=partial with registered_ok False, never pending_trust.
+        hd = self.root / "h_partial"
+        hf = self.root / "hooks.json"
+        ag = {"id": "codo", "hook_format": "codex-hooks-json",
+              "hooks_dir": str(hd), "hook_file": str(hf),
+              "hook_trust_step": "codex-hooks-command"}
+        r1 = code_tools._ma_write_hook(ag, {}, dry_run=False)
+        self.assertTrue(r1["registered_ok"], r1)
+        # simulate the old-defect host state: strip the shell group, then re-run
+        data = json.loads(hf.read_text(encoding="utf-8"))
+        data["hooks"]["PreToolUse"] = [g for g in data["hooks"]["PreToolUse"]
+                                       if g.get("matcher") == "apply_patch"]
+        hf.write_text(json.dumps(data), encoding="utf-8")
+        r2 = code_tools._ma_write_hook(ag, {}, dry_run=False)
+        # the merge must RE-ADD the dropped group (idempotent repair), so after
+        # this run registration is whole again
+        self.assertTrue(r2["registered_ok"], r2)
+        self.assertEqual(r2["coverage"], "pending_trust", r2)
+
 
 class TestSyncHookStaysOffTheEventLoop(unittest.TestCase):
     """P22b: manage_agent is async def, but the sync_hook branch spawns ~4 node

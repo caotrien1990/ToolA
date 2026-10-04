@@ -11,7 +11,7 @@
       "persona": "Always refer to yourself as \"Clau\" and address the user as \"Anh\".",
       "rule_file": "C:/Users/ADMIN/.claude/CLAUDE.md",
       "rule_format": "markdown",
-      "rule_template": "slim",
+      "rule_template": "slim_gated",
       "mcp_file": "C:/Users/ADMIN/.claude.json",
       "mcp_format": "json",
       "mcp_key": "project-orchestrator",
@@ -46,7 +46,17 @@
       "persona": "Always refer to yourself as \"Codo\" and address the user as \"Anh\".",
       "rule_file": "C:/Users/ADMIN/.codex/AGENTS.md",
       "rule_format": "markdown",
-      "rule_template": "slim",
+      "rule_template": "slim_gated",
+      "rule_targets": [
+        {
+          "rule_file": "C:/Users/ADMIN/.codex/AGENTS.md",
+          "rule_template": "slim_gated"
+        },
+        {
+          "rule_file": "C:/Users/ADMIN/.codex-ltnai/AGENTS.md",
+          "rule_template": "slim_gated"
+        }
+      ],
       "mcp_file": "C:/Users/ADMIN/.codex/config.toml",
       "mcp_format": "toml",
       "mcp_key": "project-orchestrator",
@@ -271,7 +281,7 @@
       "persona": "Always refer to yourself as \"ClauLTN\" and address the user as \"Anh\".",
       "rule_file": "C:/Users/ADMIN/.claude-ltnai/CLAUDE.md",
       "rule_format": "markdown",
-      "rule_template": "slim",
+      "rule_template": "slim_gated",
       "mcp_file": "C:/Users/ADMIN/.claude-ltnai/.claude.json",
       "mcp_format": "json",
       "mcp_key": "project-orchestrator",

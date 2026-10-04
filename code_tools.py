@@ -16775,10 +16775,20 @@ def _ma_slim_rule_body() -> str:
     return _ma_rule_file_text("SLIM_RULE.txt")
 
 
+def _ma_slim_gated_rule_body() -> str:
+    # P23: hook-enforced slim variant for agents whose harness home has the
+    # read/write gates installed (clau, claultnai, codex-ltnai via codo
+    # rule_targets). examples/ is the only SOT; a missing file fails loudly in
+    # _ma_rule_file_text like every other template.
+    return _ma_rule_file_text("SLIM_RULE_GATED.txt")
+
+
 def _ma_rule_body(template: str) -> str:
     t = (template or "slim").strip().lower()
     if t in ("full", "core"):
         return _ma_core_rule_body()
+    if t == "slim_gated":
+        return _ma_slim_gated_rule_body()
     return _ma_slim_rule_body()
 
 
@@ -16790,6 +16800,14 @@ def _ma_rule_source_metadata(template: str) -> dict:
             "rule_source": "CORE_RULE.txt",
             **metadata,
             "rule_source_sha256": metadata["sha256"],
+        }
+    if t == "slim_gated":
+        text = _ma_slim_gated_rule_body()
+        path = Path(__file__).parent / "examples" / "SLIM_RULE_GATED.txt"
+        return {
+            "rule_source": "SLIM_RULE_GATED.txt",
+            "rule_source_path": str(path),
+            "rule_source_sha256": _sha256_text(text),
         }
     text = _ma_slim_rule_body()
     path = Path(__file__).parent / "examples" / "SLIM_RULE.txt"
@@ -16844,6 +16862,10 @@ def _ma_rule_inline(template: str) -> str:
     t = (template or "slim").strip().lower()
     if t in ("full", "core"):
         return re.sub(r"\s+", " ", _ma_core_rule_body()).strip()
+    if t == "slim_gated":
+        # No separate INLINE SOT: the gated inline is the gated body collapsed,
+        # the same way the full inline collapses CORE_RULE.txt.
+        return re.sub(r"\s+", " ", _ma_slim_gated_rule_body()).strip()
     return _ma_rule_file_text("SLIM_RULE_INLINE.txt")
 
 
@@ -16922,6 +16944,36 @@ def _ma_deny_refusal(aid, key: str, p: Path) -> dict | None:
     return {"ok": False, "agent": aid, "status": "error", key: str(p), "error_name": "XROOT_DENIED",
             "group": verdict.get("group", ""), "error": verdict.get("reason", "")}
 
+
+def _ma_rule_agent_targets(ag: dict) -> list:
+    """One agent row may render several rule files (P23: codo drives both
+    ~/.codex/AGENTS.md and ~/.codex-ltnai/AGENTS.md). ``rule_targets`` (list)
+    wins when present and non-empty; otherwise the flat rule_file/rule_template
+    fields stay the single-target shorthand. Each returned dict is an agent-row
+    copy with rule_file/rule_template(/rule_format) overridden per target, so
+    _ma_write_rule treats it like any agent row. Persona is NOT overridden:
+    every target of one agent shares the agent persona (_ma_write_rule falls
+    back to the persona already sitting in the existing file)."""
+    raw = ag.get("rule_targets")
+    if isinstance(raw, list) and raw:
+        out = []
+        for t in raw:
+            if not isinstance(t, dict):
+                continue
+            t_ag = {k: v for k, v in ag.items() if k != "rule_targets"}
+            t_ag["rule_file"] = t.get("rule_file") or ""
+            if (t.get("rule_template") or "").strip():
+                t_ag["rule_template"] = t["rule_template"]
+            if (t.get("rule_format") or "").strip():
+                t_ag["rule_format"] = t["rule_format"]
+            out.append(t_ag)
+        return out
+    return [ag]
+
+
+def _ma_sync_rule_agent(ag: dict, reg: dict, dry_run: bool) -> list:
+    """sync_rule for one agent = one _ma_write_rule per rule target."""
+    return [_ma_write_rule(t_ag, reg, dry_run) for t_ag in _ma_rule_agent_targets(ag)]
 
 def _ma_write_rule(ag: dict, reg: dict, dry_run: bool) -> dict:
     rule_file = (ag.get("rule_file") or "").strip()
@@ -17452,14 +17504,17 @@ def _ma_hook_merge_claude(data: dict, entries: dict) -> tuple:
         for group in groups:
             for h in group.get("hooks", []):
                 cmd = h.get("command", "")
+                matcher = group.get("matcher")
+                # Dedup key is (matcher, command) within this event, NOT command
+                # alone (same defect class as the codex merge: one command may
+                # serve several matcher groups).
                 already = any(
-                    any(eh.get("command") == cmd for eh in (eg.get("hooks") or []))
+                    eg.get("matcher") == matcher
+                    and any(eh.get("command") == cmd for eh in (eg.get("hooks") or []))
                     for eg in existing if isinstance(eg, dict)
                 )
                 if already:
                     continue
-                # find a group with the same matcher, else append a new group
-                matcher = group.get("matcher")
                 placed = False
                 for eg in existing:
                     if isinstance(eg, dict) and eg.get("matcher") == matcher:
@@ -17485,13 +17540,21 @@ def _ma_hook_merge_codex(data: dict, entries: dict) -> tuple:
         for group in groups:
             for h in group.get("hooks", []):
                 cmd = h.get("command", "")
+                matcher = group.get("matcher")
+                # Dedup key is (matcher, command) within this event, NOT command
+                # alone: the codex adapter serves BOTH the write group
+                # (apply_patch) and the read group (shell|...) with ONE command,
+                # so a command-only dedup registered the first and silently
+                # dropped the second -- measured live 2026-10-04: .codex
+                # hooks.json carried only apply_patch and Codex read-gating was
+                # OFF while the probe (which bypasses the host config) said 4/4.
                 already = any(
-                    any(eh.get("command") == cmd for eh in (eg.get("hooks") or []))
+                    eg.get("matcher") == matcher
+                    and any(eh.get("command") == cmd for eh in (eg.get("hooks") or []))
                     for eg in existing if isinstance(eg, dict)
                 )
                 if already:
                     continue
-                matcher = group.get("matcher")
                 placed = False
                 for eg in existing:
                     if isinstance(eg, dict) and eg.get("matcher") == matcher:
@@ -17532,6 +17595,75 @@ def _ma_hook_merge_zcode(data: dict, plugin_id: str) -> tuple:
         enabled[plugin_id] = True
         changed = True
     return data, changed
+
+
+def _ma_hook_expected_registrations(fmt: str, entries: dict, adapter_name) -> list:
+    """The (kind, detail) registrations a format must carry after merge, as a
+    flat checkable list. kind: 'hook' (event+matcher+command present in
+    hook_file), 'plugin' (path in opencode plugin[]), 'plugin_enabled' (zcode
+    enabledPlugins[id] true)."""
+    exp = []
+    if fmt in ("claude-settings", "codex-hooks-json"):
+        for event, groups in (entries or {}).items():
+            for g in groups:
+                for h in g.get("hooks", []):
+                    exp.append(("hook", event, g.get("matcher"), h.get("command", "")))
+    elif fmt == "opencode-plugin":
+        exp.append(("plugin", "./plugins/" + str(adapter_name)))
+    elif fmt == "zcode-plugin":
+        exp.append(("plugin_enabled", "toola-gates@local"))
+    return exp
+
+
+def _ma_hook_verify_registration(fmt: str, hook_file: Path, entries: dict,
+                                 adapter_name, hooks_dir: Path = None) -> dict:
+    """Re-read the installed hook_file and assert every expected registration
+    from _ma_hook_entries/_ma_hook_expected_registrations is actually present.
+    The probe alone cannot see a missing host registration (it calls the gate
+    or adapter directly) -- measured live 2026-10-04: .codex hooks.json carried
+    only apply_patch while the adapter probe said 4/4. Returns
+    {registered_ok, missing_registrations}."""
+    exp = _ma_hook_expected_registrations(fmt, entries, adapter_name)
+    missing = []
+    try:
+        data = json.loads(hook_file.read_text(encoding="utf-8")) if hook_file.exists() else {}
+    except Exception as exc:
+        return {"registered_ok": False, "missing_registrations": [f"hook_file unreadable: {exc}"]}
+    hooks = data.get("hooks", {}) if isinstance(data, dict) else {}
+    for item in exp:
+        kind = item[0]
+        if kind == "hook":
+            _k, event, matcher, cmd = item
+            found = False
+            for eg in (hooks.get(event) or []):
+                if not isinstance(eg, dict) or eg.get("matcher") != matcher:
+                    continue
+                if any(eh.get("command") == cmd for eh in (eg.get("hooks") or [])):
+                    found = True
+                    break
+            if not found:
+                missing.append(f"{event}[matcher={matcher}] command={cmd}")
+        elif kind == "plugin":
+            plugins = data.get("plugin") or []
+            if item[1] not in plugins:
+                missing.append(f"plugin[] missing {item[1]}")
+        elif kind == "plugin_enabled":
+            en = ((data.get("plugins") or {}).get("enabledPlugins") or {})
+            if not en.get(item[1]):
+                missing.append(f"enabledPlugins[{item[1]}] not true")
+    # zcode also ships the plugin's hooks/hooks.json inside hooks_dir; a broken
+    # or absent file there means the enabled plugin enforces nothing.
+    if fmt == "zcode-plugin" and hooks_dir is not None:
+        ph = hooks_dir / "hooks.json"
+        try:
+            pd = json.loads(ph.read_text(encoding="utf-8"))
+            pcmds = [h.get("command", "") for ev in (pd or {}).values()
+                     for g in (ev or []) for h in (g.get("hooks") or [])]
+            if not any("native-write-gate" in c for c in pcmds) or not any("read-gate" in c for c in pcmds):
+                missing.append("plugin hooks.json lacks gate commands")
+        except Exception as exc:
+            missing.append(f"plugin hooks.json unreadable: {exc}")
+    return {"registered_ok": not missing, "missing_registrations": missing}
 
 
 def _ma_probe_opencode_before(mod_path: Path, tool: str, args: dict, env: dict,
@@ -17871,13 +18003,19 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
         return {"ok": False, "agent": aid, "hook_format": fmt,
                 "error": f"hook_file registration failed: {exc}"}
 
+    # ---- registration verification (the probe bypasses the host config, so a
+    # missing matcher group would read as 4/4 while the host enforces nothing) ----
+    regcheck = _ma_hook_verify_registration(fmt, hook_file, entries, adapter_name, hooks_dir)
+    registered_ok = bool(regcheck.get("registered_ok"))
+
     # ---- live probe (through the installed adapter/plugin for codex/opencode) ----
     probe = _ma_hook_probe(target, hooks_dir)
     _probe_keys = ("read_deny", "read_allow", "write_deny", "outside_allow")
     probe_failed = [k for k in _probe_keys if not probe.get(k)]
-    probe_ok = not probe_failed
+    probe_ok = not probe_failed and registered_ok
     # trust steps (codex /hooks, zcode plugin enable) only defer coverage when
-    # the probes actually pass; a failing probe is partial WITH the failed names.
+    # the probes AND the registration check actually pass; a failure is partial
+    # WITH the failed names.
     if probe_ok and trust_step == "none":
         coverage = "full"
     elif probe_ok:
@@ -17887,7 +18025,10 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
     out = {"ok": True, "agent": aid, "hook_format": fmt, "changed": changed,
            "hooks_dir": str(hooks_dir), "hook_file": str(hook_file),
            "files_written": files_written, "registered": registered,
+           "registered_ok": registered_ok,
            "probe": probe, "trust_step": trust_step, "coverage": coverage}
+    if not registered_ok:
+        out["missing_registrations"] = regcheck.get("missing_registrations") or []
     if probe_failed:
         out["probe_failed"] = probe_failed
     return out
@@ -17933,7 +18074,8 @@ def _ma_write_hook(ag: dict, reg: dict, dry_run: bool) -> dict:
         r0 = results[0]
         for k in ("hook_format", "hooks_dir", "hook_file", "files_written",
                   "files_to_write", "registered", "probe", "trust_step",
-                  "dry_run", "would_register", "reason", "error", "probe_failed"):
+                  "dry_run", "would_register", "reason", "error", "probe_failed",
+                  "registered_ok", "missing_registrations"):
             if k in r0:
                 out[k] = r0[k]
     if all(c == "none" for c in covs):
@@ -18110,7 +18252,7 @@ async def manage_agent(action: str, agent_id: str = "", target: str = "all",
                 if act == "sync_rule" and (rule_template or "").strip().lower() in ("full", "core"):
                     ag["rule_template"] = rule_template
                 if act == "sync_rule":
-                    results.append(_ma_write_rule(ag, reg, dry_run))
+                    results.extend(_ma_sync_rule_agent(ag, reg, dry_run))
                 else:
                     results.append(_ma_write_mcp(ag, reg, dry_run))
             all_ok = all(r.get("ok") for r in results)
