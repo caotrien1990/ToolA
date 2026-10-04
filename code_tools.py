@@ -17418,7 +17418,8 @@ def _ma_hook_agent_targets(ag: dict) -> list:
     both ~/.codex and ~/.codex-ltnai). ``hook_targets`` wins when present and
     non-empty; otherwise the flat hook_* fields are the single-target shorthand.
     Each returned dict carries id/hook_file/hook_format/hooks_dir/hook_trust_step
-    so the per-target installer/probe can treat it like an agent row."""
+    so the per-target installer/probe can treat it like an agent row. ``hook_cli``
+    (P24: zcode registers through its own CLI) rides along when present."""
     aid = ag.get("id") or ""
     raw = ag.get("hook_targets")
     out = []
@@ -17432,6 +17433,7 @@ def _ma_hook_agent_targets(ag: dict) -> list:
                 "hook_format": (t.get("hook_format") or "").strip(),
                 "hooks_dir": t.get("hooks_dir") or "",
                 "hook_trust_step": t.get("hook_trust_step") or "none",
+                "hook_cli": t.get("hook_cli") or "",
             })
         return out
     return [{
@@ -17440,6 +17442,7 @@ def _ma_hook_agent_targets(ag: dict) -> list:
         "hook_format": (ag.get("hook_format") or "").strip(),
         "hooks_dir": ag.get("hooks_dir") or "",
         "hook_trust_step": ag.get("hook_trust_step") or "none",
+        "hook_cli": ag.get("hook_cli") or "",
     }]
 
 
@@ -17584,24 +17587,300 @@ def _ma_hook_merge_opencode(data: dict, plugin_rel: str) -> tuple:
     return data, changed
 
 
-def _ma_hook_merge_zcode(data: dict, plugin_id: str) -> tuple:
-    """zcode cli config.json enables a plugin under plugins.enabledPlugins. Add
-    the gates plugin id; leave installed_plugins.json and suppressedBuiltins
-    untouched."""
-    plugins = data.setdefault("plugins", {})
-    enabled = plugins.setdefault("enabledPlugins", {})
-    changed = False
-    if not enabled.get(plugin_id):
-        enabled[plugin_id] = True
-        changed = True
-    return data, changed
+# ---- zcode plugin registration (P24) ----
+# P22 copied the gates into ~/.zcode/cli/plugins/cache/toola-gates/hooks and set
+# enabledPlugins["toola-gates@local"]=true in cli config.json -- and ZCode loaded
+# NOTHING from that: it discovers plugins only through
+# ~/.zcode/cli/plugins/installed_plugins.json records plus a manifest
+# .zcode-plugin/plugin.json, with the plugin's hooks at <root>/hooks/hooks.json
+# (measured live 2026-10-04: ZCode startup log hookCount 0 with the P22 layout,
+# hookCount 4 once installed through the CLI). The working route, prototyped by
+# hand and verified live (plugins list --json -> 4 hookDetails runnable:true):
+# a LOCAL marketplace dir holds the plugin source; the ZCode CLI installs it
+# into its cache. So hooks_dir now points at the SOURCE plugin's hooks dir
+# inside that marketplace (<mkt>/toola-gates/hooks) and registration goes
+# through the CLI, never through a config.json edit.
+_ZCODE_MARKETPLACE_NAME = "toola-local"
+_ZCODE_PLUGIN_NAME = "toola-gates"
+_ZCODE_PLUGIN_ID = _ZCODE_PLUGIN_NAME + "@" + _ZCODE_MARKETPLACE_NAME
 
+
+def _ma_zcode_layout(hooks_dir: Path) -> dict:
+    """Derive the marketplace layout from hooks_dir, which is the SOURCE
+    plugin's hooks dir: <mkt>/toola-gates/hooks. plugin_root = hooks_dir.parent
+    (<mkt>/toola-gates), marketplace_root = hooks_dir.parent.parent (<mkt>)."""
+    plugin_root = hooks_dir.parent
+    mkt_root = plugin_root.parent
+    return {
+        "plugin_root": plugin_root,
+        "mkt_root": mkt_root,
+        "plugin_manifest": plugin_root / ".zcode-plugin" / "plugin.json",
+        "mkt_manifest": mkt_root / ".claude-plugin" / "marketplace.json",
+    }
+
+
+def _ma_hook_run_zcode_cli(cli_path: str, args: list, timeout: int = 120) -> dict:
+    """Run ONE ZCode CLI plugins command: node <zcode.cjs> plugins <args>.
+    This is the ONLY spawn point for the CLI so tests monkeypatch it -- unit
+    tests must never launch the real ZCode. sync_hook already runs off the
+    event loop (asyncio.to_thread at the manage_agent call site), so a blocking
+    subprocess.run here matches the gate probes above. Returns {ok, rc, stdout,
+    stderr}; ok is False on spawn failure or non-zero rc."""
+    import subprocess
+    try:
+        r = subprocess.run(["node", cli_path, "plugins"] + list(args),
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=timeout)
+    except Exception as exc:
+        return {"ok": False, "rc": -1, "stdout": "", "stderr": f"cli spawn failed: {exc}"}
+    return {"ok": r.returncode == 0, "rc": r.returncode,
+            "stdout": (r.stdout or ""), "stderr": (r.stderr or "")}
+
+
+def _ma_hook_zcode_list(cli_path: str) -> tuple:
+    """plugins list --json -> (plugins list | None, error str). Read-only; a
+    parse failure or non-zero rc is an error the caller reports, never a silent
+    empty list."""
+    res = _ma_hook_run_zcode_cli(cli_path, ["list", "--json"])
+    if not res.get("ok"):
+        return None, ("plugins list failed rc=%s: %s" % (
+            res.get("rc"), (res.get("stderr") or res.get("stdout") or "").strip()[:400]))
+    try:
+        data = json.loads(res.get("stdout") or "[]")
+    except Exception as exc:
+        return None, f"plugins list --json unparseable: {exc}"
+    if not isinstance(data, list):
+        return None, "plugins list --json did not return an array"
+    return data, ""
+
+
+def _ma_zcode_marketplace_manifest_text() -> str:
+    return json.dumps({
+        "name": _ZCODE_MARKETPLACE_NAME,
+        "owner": {"name": "ToolA"},
+        "plugins": [{
+            "name": _ZCODE_PLUGIN_NAME,
+            "source": "./" + _ZCODE_PLUGIN_NAME,
+            "description": "ToolA native read/write enforcement gates",
+        }],
+    }, ensure_ascii=False)
+
+
+def _ma_zcode_plugin_manifest_text(version: str) -> str:
+    # The manifest must NOT carry a "hooks" key: ZCode then reports
+    # "Duplicate plugin hooks file ignored" -- hooks/hooks.json is
+    # auto-discovered from the plugin root (measured on the live prototype).
+    return json.dumps({
+        "name": _ZCODE_PLUGIN_NAME,
+        "version": version,
+        "description": "ToolA native read/write enforcement gates (manage_agent sync_hook).",
+    }, ensure_ascii=False)
+
+
+def _ma_zcode_bump_version(old: str) -> str:
+    """1.0.N -> 1.0.N+1; a missing/unparseable version starts at 1.0.0."""
+    m = re.match("^(\\d+)\\.(\\d+)\\.(\\d+)$", (old or "").strip())
+    if not m:
+        return "1.0.0"
+    return f"{m.group(1)}.{m.group(2)}.{int(m.group(3)) + 1}"
+
+
+def _ma_hook_expected_registrations_zcode() -> list:
+    """The registrations the INSTALLED plugin must show in plugins list --json,
+    as flat checkable items: the plugin itself (enabled, no diagnostics) plus
+    each hookDetail. kind 'zcode_hook' matches on (event, matcher, gate file,
+    prompt flag) with runnable:true required."""
+    return [
+        ("zcode_plugin", _ZCODE_PLUGIN_ID),
+        ("zcode_hook", "PreToolUse", "Write|Edit|MultiEdit|ApplyPatch|NotebookEdit", "native-write-gate.js", False),
+        ("zcode_hook", "PreToolUse", "Read|Grep|Glob|Bash", "read-gate.js", False),
+        ("zcode_hook", "UserPromptSubmit", None, "native-write-gate.js", True),
+        ("zcode_hook", "UserPromptSubmit", None, "read-gate.js", True),
+    ]
+
+
+def _ma_hook_verify_zcode(plugins: list) -> dict:
+    """registered_ok for zcode = the plugin id present, enabled true,
+    diagnostics empty, and every expected hookDetail runnable:true. Names each
+    missing item so coverage partial carries the reason."""
+    missing = []
+    entry = None
+    for p in plugins or []:
+        if isinstance(p, dict) and p.get("id") == _ZCODE_PLUGIN_ID:
+            entry = p
+            break
+    if entry is None:
+        return {"registered_ok": False,
+                "missing_registrations": [f"plugins list lacks {_ZCODE_PLUGIN_ID}"]}
+    if not entry.get("enabled"):
+        missing.append(f"{_ZCODE_PLUGIN_ID} enabled is not true")
+    diags = entry.get("diagnostics") or []
+    if diags:
+        missing.append(f"{_ZCODE_PLUGIN_ID} diagnostics not empty: {diags}")
+    hook_details = entry.get("hookDetails") or []
+    for item in _ma_hook_expected_registrations_zcode():
+        if item[0] != "zcode_hook":
+            continue
+        _k, event, matcher, gate, prompt = item
+        found = False
+        for h in hook_details:
+            if not isinstance(h, dict):
+                continue
+            if h.get("event") != event:
+                continue
+            if (h.get("matcher") or None) != matcher:
+                continue
+            args = [str(a) for a in (h.get("args") or [])]
+            joined = " ".join(args)
+            if gate not in joined:
+                continue
+            if ("--prompt" in args) != prompt:
+                continue
+            if not h.get("runnable"):
+                missing.append(
+                    f"hookDetail {event}[matcher={matcher}] {gate}"
+                    + (" --prompt" if prompt else "") + " not runnable")
+                found = True
+                break
+            found = True
+            break
+        if not found:
+            missing.append(
+                f"hookDetail missing: {event}[matcher={matcher}] {gate}"
+                + (" --prompt" if prompt else ""))
+    return {"registered_ok": not missing, "missing_registrations": missing}
+
+
+def _ma_zcode_register_cli(aid: str, target: dict, hooks_dir: Path,
+                           copies_changed: bool) -> dict:
+    """P24 zcode registration through the ZCode CLI. The gates + hooks.json +
+    hook-agent.json binding are already written into hooks_dir (the SOURCE
+    plugin's hooks dir inside the local marketplace) by the common copies loop.
+    Here: write the two manifests (marketplace.json at the marketplace root,
+    plugin.json at the plugin root -- the latter withOUT a "hooks" key, which
+    ZCode rejects as a duplicate of the auto-discovered hooks/hooks.json), bump
+    the patch version when any plugin file changed (ZCode's `plugins update`
+    copies a new cache dir ONLY on a higher version -- "already up to date"
+    otherwise, even if gate bytes changed), then drive the CLI:
+    marketplace add (idempotent) -> install (first time) / update (on a bump).
+    Returns {changed, version, version_bumped, cli_calls, regcheck,
+    installed_hooks_dir, legacy_residue, host_note} or {fatal} when hook_cli is
+    missing/unusable -- a wrong/missing CLI path is a config error, never a
+    silent fallback (the P22 layout it replaced WAS the silent fallback)."""
+    lay = _ma_zcode_layout(hooks_dir)
+    plugin_manifest = lay["plugin_manifest"]
+    mkt_manifest = lay["mkt_manifest"]
+
+    # ---- version: bump the patch iff any plugin file content changed ----
+    old_version = ""
+    try:
+        old = json.loads(plugin_manifest.read_text(encoding="utf-8"))
+        old_version = str(old.get("version") or "")
+    except Exception:
+        old_version = ""  # no manifest yet -> first install starts at 1.0.0
+    mkt_text = _ma_zcode_marketplace_manifest_text()
+    mkt_changed = (not mkt_manifest.exists()
+                   or mkt_manifest.read_text(encoding="utf-8") != mkt_text)
+    content_changed = copies_changed or mkt_changed or not plugin_manifest.exists()
+    version = _ma_zcode_bump_version(old_version) if content_changed else (old_version or "1.0.0")
+    version_bumped = version != old_version
+
+    plugin_text = _ma_zcode_plugin_manifest_text(version)
+    changed = False
+    if not plugin_manifest.exists() or plugin_manifest.read_text(encoding="utf-8") != plugin_text:
+        plugin_manifest.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write_text(plugin_manifest, plugin_text, encoding="utf-8")
+        changed = True
+    if mkt_changed:
+        mkt_manifest.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write_text(mkt_manifest, mkt_text, encoding="utf-8")
+        changed = True
+
+    # ---- the CLI ----
+    cli = (target.get("hook_cli") or "").strip()
+    if not cli:
+        return {"fatal": "hook_cli missing on the zcode registry row -- the only "
+                         "registration route is the ZCode CLI (plugins install); "
+                         "set hook_cli to zcode.cjs (e.g. C:/Program Files/ZCode/resources/glm/zcode.cjs)"}
+    if not Path(cli).is_file():
+        return {"fatal": f"hook_cli not found: {cli} -- the zcode registration "
+                         "route needs the ZCode CLI (zcode.cjs); fix the registry field"}
+    out = {"changed": changed, "version": version, "version_bumped": version_bumped,
+           "cli_calls": []}
+
+    def cli_do(args):
+        res = _ma_hook_run_zcode_cli(cli, args)
+        out["cli_calls"].append({"args": list(args), "rc": res.get("rc"),
+                                 "stdout": (res.get("stdout") or "")[:600],
+                                 "stderr": (res.get("stderr") or "")[:600]})
+        return res
+
+    plugins, err = _ma_hook_zcode_list(cli)
+    if plugins is None:
+        out["regcheck"] = {"registered_ok": False, "missing_registrations": [err]}
+        return out
+    have = any(isinstance(p, dict) and p.get("id") == _ZCODE_PLUGIN_ID for p in plugins)
+
+    res = cli_do(["marketplace", "add", str(lay["mkt_root"])])
+    if not res.get("ok"):
+        out["regcheck"] = {"registered_ok": False, "missing_registrations": [
+            "marketplace add rc=%s: %s" % (res.get("rc"), (res.get("stderr") or res.get("stdout") or "").strip()[:300])]}
+        return out
+    if not have:
+        res = cli_do(["install", _ZCODE_PLUGIN_ID])
+        if not res.get("ok"):
+            out["regcheck"] = {"registered_ok": False, "missing_registrations": [
+                "install rc=%s: %s" % (res.get("rc"), (res.get("stderr") or res.get("stdout") or "").strip()[:300])]}
+            return out
+    elif version_bumped:
+        # update copies a NEW cache dir only on a higher manifest version.
+        res = cli_do(["update", _ZCODE_PLUGIN_ID])
+        if not res.get("ok"):
+            out["regcheck"] = {"registered_ok": False, "missing_registrations": [
+                "update rc=%s: %s" % (res.get("rc"), (res.get("stderr") or res.get("stdout") or "").strip()[:300])]}
+            return out
+
+    # ---- verify from the CLI's own view of the INSTALLED plugin ----
+    plugins2, err2 = _ma_hook_zcode_list(cli)
+    if plugins2 is None:
+        out["regcheck"] = {"registered_ok": False, "missing_registrations": [err2]}
+        return out
+    out["regcheck"] = _ma_hook_verify_zcode(plugins2)
+    for p in plugins2:
+        if isinstance(p, dict) and p.get("id") == _ZCODE_PLUGIN_ID:
+            root = (p.get("rootPath") or "").strip()
+            if root:
+                out["installed_hooks_dir"] = root + "/hooks"
+            break
+    if version_bumped:
+        out["host_note"] = f"restart ZCode to load toola-gates {version}"
+
+    # ---- P22 legacy residue: report, never delete (the leader asks Anh) ----
+    residue = []
+    hook_file = (target.get("hook_file") or "").strip()
+    try:
+        if hook_file and Path(hook_file).is_file():
+            cfg = json.loads(Path(hook_file).read_text(encoding="utf-8"))
+            en = ((cfg.get("plugins") or {}).get("enabledPlugins") or {})
+            if "toola-gates@local" in en:
+                residue.append(f'{hook_file}: plugins.enabledPlugins["toola-gates@local"]')
+    except Exception:
+        pass
+    old_cache = hooks_dir.parent.parent.parent / "cli" / "plugins" / "cache" / "toola-gates"
+    # hooks_dir = <profile>/toola-marketplace/toola-gates/hooks -> the P22 cache
+    # dir sits at <profile>/cli/plugins/cache/toola-gates.
+    if old_cache.is_dir():
+        residue.append(str(old_cache))
+    if residue:
+        out["legacy_residue"] = residue
+    return out
 
 def _ma_hook_expected_registrations(fmt: str, entries: dict, adapter_name) -> list:
     """The (kind, detail) registrations a format must carry after merge, as a
     flat checkable list. kind: 'hook' (event+matcher+command present in
-    hook_file), 'plugin' (path in opencode plugin[]), 'plugin_enabled' (zcode
-    enabledPlugins[id] true)."""
+    hook_file), 'plugin' (path in opencode plugin[]). zcode-plugin is NOT here:
+    its registrations live in the CLI's plugins list --json, checked by
+    _ma_hook_expected_registrations_zcode / _ma_hook_verify_zcode (P24)."""
     exp = []
     if fmt in ("claude-settings", "codex-hooks-json"):
         for event, groups in (entries or {}).items():
@@ -17610,8 +17889,6 @@ def _ma_hook_expected_registrations(fmt: str, entries: dict, adapter_name) -> li
                     exp.append(("hook", event, g.get("matcher"), h.get("command", "")))
     elif fmt == "opencode-plugin":
         exp.append(("plugin", "./plugins/" + str(adapter_name)))
-    elif fmt == "zcode-plugin":
-        exp.append(("plugin_enabled", "toola-gates@local"))
     return exp
 
 
@@ -17621,7 +17898,9 @@ def _ma_hook_verify_registration(fmt: str, hook_file: Path, entries: dict,
     from _ma_hook_entries/_ma_hook_expected_registrations is actually present.
     The probe alone cannot see a missing host registration (it calls the gate
     or adapter directly) -- measured live 2026-10-04: .codex hooks.json carried
-    only apply_patch while the adapter probe said 4/4. Returns
+    only apply_patch while the adapter probe said 4/4. zcode-plugin never comes
+    here: its registration is the CLI's installed_plugins.json, verified from
+    plugins list --json by _ma_hook_verify_zcode (P24). Returns
     {registered_ok, missing_registrations}."""
     exp = _ma_hook_expected_registrations(fmt, entries, adapter_name)
     missing = []
@@ -17647,22 +17926,6 @@ def _ma_hook_verify_registration(fmt: str, hook_file: Path, entries: dict,
             plugins = data.get("plugin") or []
             if item[1] not in plugins:
                 missing.append(f"plugin[] missing {item[1]}")
-        elif kind == "plugin_enabled":
-            en = ((data.get("plugins") or {}).get("enabledPlugins") or {})
-            if not en.get(item[1]):
-                missing.append(f"enabledPlugins[{item[1]}] not true")
-    # zcode also ships the plugin's hooks/hooks.json inside hooks_dir; a broken
-    # or absent file there means the enabled plugin enforces nothing.
-    if fmt == "zcode-plugin" and hooks_dir is not None:
-        ph = hooks_dir / "hooks.json"
-        try:
-            pd = json.loads(ph.read_text(encoding="utf-8"))
-            pcmds = [h.get("command", "") for ev in (pd or {}).values()
-                     for g in (ev or []) for h in (g.get("hooks") or [])]
-            if not any("native-write-gate" in c for c in pcmds) or not any("read-gate" in c for c in pcmds):
-                missing.append("plugin hooks.json lacks gate commands")
-        except Exception as exc:
-            missing.append(f"plugin hooks.json unreadable: {exc}")
     return {"registered_ok": not missing, "missing_registrations": missing}
 
 
@@ -17890,13 +18153,28 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
         copies.append((adapter_src, hooks_dir / adapter_name))
     binding_dst = hooks_dir / "hook-agent.json"
     pkg_marker_dst = (hooks_dir / "package.json") if oc else None
+    # zcode (P24): the plugin's hooks/hooks.json ships INSIDE the source plugin
+    # dir -- ZCode auto-discovers it from the plugin root. The repo SOT lives at
+    # hooks/adapters/zcode-plugin/hooks/hooks.json and lands next to the gates.
+    zc = (fmt == "zcode-plugin")
+    zcode_hooks_json_src = None
+    if zc:
+        zcode_hooks_json_src = repo_hooks / "adapters" / "zcode-plugin" / "hooks" / "hooks.json"
+        if not zcode_hooks_json_src.is_file():
+            return {"ok": False, "agent": aid, "hook_format": fmt,
+                    "error": "repo SOT missing: hooks/adapters/zcode-plugin/hooks/hooks.json"}
+        copies.append((zcode_hooks_json_src, hooks_dir / "hooks.json"))
 
     # Registration plan per format. The target dict carries hooks_dir/format/id,
     # so the entry builders work on it directly.
     entries = _ma_hook_entries(target) if fmt in ("claude-settings", "codex-hooks-json") else {}
-    refused = _ma_deny_refusal(aid, "hook_file", hook_file)
-    if refused:
-        return refused
+    # zcode (P24): hook_file (cli config.json) is no longer written by us --
+    # the ZCode CLI owns enabledPlugins through plugins install/update, so the
+    # hook_file write-refusal does not apply to this format.
+    if not zc:
+        refused = _ma_deny_refusal(aid, "hook_file", hook_file)
+        if refused:
+            return refused
     for _src, dst in copies:
         refused = _ma_deny_refusal(aid, "hooks_dir", dst)
         if refused:
@@ -17904,12 +18182,28 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
 
     trust_step = target.get("hook_trust_step") or "none"
     if dry_run:
-        return {"ok": True, "agent": aid, "hook_format": fmt, "dry_run": True,
-                "hooks_dir": str(hooks_dir), "hook_file": str(hook_file),
-                "files_to_write": [str(d) for _s, d in copies] + [str(binding_dst)],
-                "would_register": bool(entries) or fmt in ("opencode-plugin", "zcode-plugin"),
-                "coverage": "pending",
-                "trust_step": trust_step}
+        out = {"ok": True, "agent": aid, "hook_format": fmt, "dry_run": True,
+               "hooks_dir": str(hooks_dir), "hook_file": str(hook_file),
+               "files_to_write": [str(d) for _s, d in copies] + [str(binding_dst)],
+               "would_register": bool(entries) or fmt in ("opencode-plugin", "zcode-plugin"),
+               "coverage": "pending",
+               "trust_step": trust_step}
+        if zc:
+            # Plan-only: manifests + the CLI commands, nothing executed except
+            # the read-only plugins list --json (decides install vs update).
+            lay = _ma_zcode_layout(hooks_dir)
+            out["files_to_write"] += [str(lay["plugin_manifest"]), str(lay["mkt_manifest"])]
+            planned = ["marketplace add " + str(lay["mkt_root"])]
+            cli = (target.get("hook_cli") or "").strip()
+            if cli:
+                plugins, _err = _ma_hook_zcode_list(cli)
+                have = any(isinstance(p, dict) and p.get("id") == _ZCODE_PLUGIN_ID
+                           for p in (plugins or []))
+                planned.append(("update " if have else "install ") + _ZCODE_PLUGIN_ID)
+            else:
+                planned.append("install|update " + _ZCODE_PLUGIN_ID + " (hook_cli missing)")
+            out["planned_cli"] = planned
+        return out
 
     # ---- real install ----
     files_written = []
@@ -17985,37 +18279,45 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
             registered = True
             changed = changed or reg_changed
         elif fmt == "zcode-plugin":
-            # The plugin's hooks/hooks.json ships inside the plugin dir; the only
-            # registration is enabling the plugin id in cli config.json.
-            data = json.loads(hook_file.read_text(encoding="utf-8")) if hook_file.exists() else {}
-            plugin_id = "toola-gates@local"
-            _ma_backup(hook_file)
-            _d, reg_changed = _ma_hook_merge_zcode(data, plugin_id)
-            if reg_changed:
-                _atomic_write_json(hook_file, data, indent=2)
-                okj, errj = _ma_validate_json(hook_file)
-                if not okj:
-                    return {"ok": False, "agent": aid, "hook_format": fmt,
-                            "error": f"post-write JSON invalid: {errj}"}
+            # P24: registration = the ZCode CLI (marketplace add + install /
+            # update), never a config.json edit. Manifests + version bump live
+            # in _ma_zcode_register_cli; a CLI failure is coverage partial with
+            # the CLI text, not an ok:false -- the gates ARE on disk.
+            zreg = _ma_zcode_register_cli(aid, target, hooks_dir, changed)
+            if zreg.get("fatal"):
+                return {"ok": False, "agent": aid, "hook_format": fmt,
+                        "error": zreg["fatal"]}
             registered = True
-            changed = changed or reg_changed
+            changed = changed or zreg.get("changed", False)
     except Exception as exc:
         return {"ok": False, "agent": aid, "hook_format": fmt,
                 "error": f"hook_file registration failed: {exc}"}
 
     # ---- registration verification (the probe bypasses the host config, so a
     # missing matcher group would read as 4/4 while the host enforces nothing) ----
-    regcheck = _ma_hook_verify_registration(fmt, hook_file, entries, adapter_name, hooks_dir)
+    # zcode (P24): verification parses the CLI's plugins list --json of the
+    # INSTALLED cache copy, and the probe runs against THAT copy's hooks dir
+    # (rootPath/hooks) -- the source dir is never what ZCode executes.
+    zcode_cli = zreg if zc else None
+    if zc:
+        regcheck = (zcode_cli or {}).get("regcheck") or {
+            "registered_ok": False, "missing_registrations": ["zcode CLI registration did not run"]}
+    else:
+        regcheck = _ma_hook_verify_registration(fmt, hook_file, entries, adapter_name, hooks_dir)
     registered_ok = bool(regcheck.get("registered_ok"))
 
-    # ---- live probe (through the installed adapter/plugin for codex/opencode) ----
-    probe = _ma_hook_probe(target, hooks_dir)
+    # ---- live probe (through the installed adapter/plugin for codex/opencode;
+    # through the installed CACHE copy for zcode) ----
+    probe_hooks_dir = hooks_dir
+    if zc:
+        probe_hooks_dir = Path((zcode_cli or {}).get("installed_hooks_dir") or str(hooks_dir))
+    probe = _ma_hook_probe(target, probe_hooks_dir)
     _probe_keys = ("read_deny", "read_allow", "write_deny", "outside_allow")
     probe_failed = [k for k in _probe_keys if not probe.get(k)]
     probe_ok = not probe_failed and registered_ok
-    # trust steps (codex /hooks, zcode plugin enable) only defer coverage when
-    # the probes AND the registration check actually pass; a failure is partial
-    # WITH the failed names.
+    # trust steps (codex /hooks) only defer coverage when the probes AND the
+    # registration check actually pass; a failure is partial WITH the failed
+    # names. zcode needs no trust step (registry row says "none").
     if probe_ok and trust_step == "none":
         coverage = "full"
     elif probe_ok:
@@ -18031,6 +18333,13 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
         out["missing_registrations"] = regcheck.get("missing_registrations") or []
     if probe_failed:
         out["probe_failed"] = probe_failed
+    if zc:
+        # Surface the CLI transcript + version + P22 legacy residue so the
+        # leader sees the whole install story without a second call.
+        for k in ("cli_calls", "version", "version_bumped", "legacy_residue",
+                  "host_note", "installed_hooks_dir"):
+            if zcode_cli and zcode_cli.get(k) not in (None, "", []):
+                out[k] = zcode_cli[k]
     return out
 
 
@@ -18075,7 +18384,9 @@ def _ma_write_hook(ag: dict, reg: dict, dry_run: bool) -> dict:
         for k in ("hook_format", "hooks_dir", "hook_file", "files_written",
                   "files_to_write", "registered", "probe", "trust_step",
                   "dry_run", "would_register", "reason", "error", "probe_failed",
-                  "registered_ok", "missing_registrations"):
+                  "registered_ok", "missing_registrations", "planned_cli",
+                  "cli_calls", "version", "version_bumped", "legacy_residue",
+                  "host_note", "installed_hooks_dir"):
             if k in r0:
                 out[k] = r0[k]
     if all(c == "none" for c in covs):

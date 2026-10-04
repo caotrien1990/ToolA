@@ -416,21 +416,247 @@ class TestManageAgentSyncHook(unittest.TestCase):
         r2 = code_tools._ma_write_hook(ag, {}, dry_run=False)
         self.assertFalse(r2["changed"], r2)
 
-    # ---------- zcode ----------
-    def test_zcode_plugin_enables_plugin_and_idempotent(self):
-        hd = self.root / "h_zcode"
+    # ---------- zcode (P24: CLI-marketplace route) ----------
+    class _ZcodeCliFake:
+        """Faithful in-memory stand-in for `node zcode.cjs plugins ...`:
+        install/update copy the marketplace plugin source into a cache dir
+        keyed by manifest version (as the real CLI does -- update only copies
+        on a HIGHER version), and list --json reports hookDetails parsed from
+        the INSTALLED copy's hooks/hooks.json. Records every call."""
+
+        def __init__(self, mkt_root: Path, cache_root: Path):
+            self.mkt_root = Path(mkt_root)
+            self.cache_root = Path(cache_root)
+            self.calls = []          # [args list]
+            self.installed = False   # toola-gates@toola-local present
+
+        def _plugin_src(self) -> Path:
+            return self.mkt_root / "toola-gates"
+
+        def _installed_root(self) -> Path:
+            try:
+                ver = json.loads((self._plugin_src() / ".zcode-plugin" / "plugin.json")
+                                 .read_text(encoding="utf-8")).get("version", "0.0.0")
+            except Exception:
+                ver = "0.0.0"
+            return self.cache_root / "toola-local" / "toola-gates" / str(ver)
+
+        def _list_payload(self):
+            if not self.installed:
+                return []
+            root = self._installed_root()
+            hooks_file = root / "hooks" / "hooks.json"
+            details = []
+            try:
+                spec = json.loads(hooks_file.read_text(encoding="utf-8"))
+                for event, groups in (spec.get("hooks") or {}).items():
+                    for g in (groups or []):
+                        for h in (g.get("hooks") or []):
+                            details.append({
+                                "event": event,
+                                "matcher": g.get("matcher"),
+                                "runnable": True,
+                                "type": h.get("type", "process"),
+                                "command": h.get("command", "node"),
+                                "args": list(h.get("args") or []),
+                            })
+            except Exception:
+                pass
+            try:
+                ver = json.loads((root / ".zcode-plugin" / "plugin.json")
+                                 .read_text(encoding="utf-8")).get("version", "")
+            except Exception:
+                ver = ""
+            return [{
+                "id": "toola-gates@toola-local",
+                "enabled": True,
+                "rootPath": str(root),
+                "version": ver,
+                "diagnostics": [],
+                "hookDetails": details,
+            }]
+
+        def run(self, cli_path, args, timeout=120):
+            args = list(args)
+            self.calls.append(args)
+            if args[:2] == ["list", "--json"]:
+                return {"ok": True, "rc": 0,
+                        "stdout": json.dumps(self._list_payload()), "stderr": ""}
+            if args[:2] == ["marketplace", "add"]:
+                return {"ok": True, "rc": 0, "stdout": "marketplace added", "stderr": ""}
+            if args and args[0] in ("install", "update"):
+                # Copy the plugin source into the cache (the real CLI's install
+                # and a version-bumped update both do exactly this).
+                dst = self._installed_root()
+                if dst.exists():
+                    shutil.rmtree(dst)
+                shutil.copytree(self._plugin_src(), dst)
+                self.installed = True
+                return {"ok": True, "rc": 0, "stdout": args[0] + " ok", "stderr": ""}
+            return {"ok": False, "rc": 2, "stdout": "", "stderr": "unknown cmd"}
+
+    def _zcode_agent(self, mkt_root, hf, cli="C:/fake/zcode.cjs"):
+        hd = Path(mkt_root) / "toola-gates" / "hooks"
+        return {"id": "zcode", "hook_format": "zcode-plugin", "hooks_dir": str(hd),
+                "hook_file": str(hf), "hook_trust_step": "none", "hook_cli": cli}
+
+    def _zcode_setup(self):
+        mkt = self.root / "toola-marketplace"
+        (mkt / "toola-gates" / "hooks").mkdir(parents=True)
         hf = self.root / "config.json"
-        hf.write_text(json.dumps({"plugins": {"suppressedBuiltins": ["ios@x"], "enabledPlugins": {"example-plugin@zcode-plugins-official": True}}}), encoding="utf-8")
-        ag = self._agent("zcode", "zcode-plugin", hd, hf, trust="zcode-plugin-enable")
+        hf.write_text(json.dumps({"plugins": {"suppressedBuiltins": ["ios@x"]}}), encoding="utf-8")
+        # The CLI path must EXIST (registration refuses a missing hook_cli);
+        # the CLI itself is mocked, so an empty file is enough.
+        cli = self.root / "zcode.cjs"
+        cli.write_text("// fake zcode cli\n", encoding="utf-8")
+        fake = self._ZcodeCliFake(mkt, self.root / "cache")
+        patcher = mock.patch.object(code_tools, "_ma_hook_run_zcode_cli", fake.run)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return mkt, hf, fake, str(cli)
+
+    def test_zcode_first_install_writes_manifests_and_registers(self):
+        mkt, hf, fake, cli = self._zcode_setup()
+        ag = self._zcode_agent(mkt, hf, cli=cli)
         r1 = code_tools._ma_write_hook(ag, {}, dry_run=False)
         self.assertTrue(r1["ok"], r1)
+        # manifest without a "hooks" key, version starts at 1.0.0
+        pm = json.loads((mkt / "toola-gates" / ".zcode-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(pm["version"], "1.0.0")
+        self.assertNotIn("hooks", pm)
+        mm = json.loads((mkt / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
+        self.assertEqual(mm["name"], "toola-local")
+        self.assertEqual(mm["plugins"][0]["source"], "./toola-gates")
+        # hooks/hooks.json shipped next to the gates in the source plugin
+        self.assertTrue((mkt / "toola-gates" / "hooks" / "hooks.json").exists())
+        self.assertTrue((mkt / "toola-gates" / "hooks" / "read-gate.js").exists())
+        self.assertTrue((mkt / "toola-gates" / "hooks" / "native-write-gate.js").exists())
+        binding = json.loads((mkt / "toola-gates" / "hooks" / "hook-agent.json").read_text(encoding="utf-8"))
+        self.assertEqual(binding["agent_id"], "zcode")
+        # CLI drove marketplace add + install; registration verified from list
+        flat = [" ".join(c) for c in fake.calls]
+        self.assertTrue(any(c.startswith("marketplace add") for c in flat), flat)
+        self.assertIn("install toola-gates@toola-local", flat)
+        self.assertTrue(r1["registered_ok"], r1)
+        self.assertEqual(r1.get("version"), "1.0.0")
+        self.assertTrue(r1.get("version_bumped"))
+        self.assertEqual(r1["trust_step"], "none")
+        self.assertIn("restart ZCode", r1.get("host_note", ""))
+        # config.json untouched by us (the CLI owns enabledPlugins now)
+        data = json.loads(hf.read_text(encoding="utf-8"))
+        self.assertNotIn("enabledPlugins", data.get("plugins", {}))
+
+    def test_zcode_second_run_idempotent_no_update(self):
+        mkt, hf, fake, cli = self._zcode_setup()
+        ag = self._zcode_agent(mkt, hf, cli=cli)
+        r1 = code_tools._ma_write_hook(ag, {}, dry_run=False)
+        self.assertTrue(r1["ok"], r1)
+        fake.calls.clear()
+        r2 = code_tools._ma_write_hook(ag, {}, dry_run=False)
+        self.assertTrue(r2["ok"], r2)
+        self.assertFalse(r2["changed"], r2)
+        self.assertFalse(r2.get("version_bumped"), r2)
+        self.assertEqual(r2.get("version"), "1.0.0")
+        flat = [" ".join(c) for c in fake.calls]
+        self.assertNotIn("install toola-gates@toola-local", flat)
+        self.assertNotIn("update toola-gates@toola-local", flat)
+        self.assertNotIn("host_note", r2)
+
+    def test_zcode_gate_change_bumps_patch_and_updates(self):
+        mkt, hf, fake, cli = self._zcode_setup()
+        ag = self._zcode_agent(mkt, hf, cli=cli)
+        r1 = code_tools._ma_write_hook(ag, {}, dry_run=False)
+        self.assertEqual(r1.get("version"), "1.0.0")
+        # change a SOT gate byte -> content change -> bump -> update
+        gate = self.repo_hooks / "read-gate.js"
+        gate.write_text(gate.read_text(encoding="utf-8") + "\n// touched\n", encoding="utf-8")
+        fake.calls.clear()
+        r2 = code_tools._ma_write_hook(ag, {}, dry_run=False)
+        self.assertTrue(r2["ok"], r2)
+        self.assertTrue(r2["changed"], r2)
+        self.assertEqual(r2.get("version"), "1.0.1")
+        self.assertTrue(r2.get("version_bumped"))
+        flat = [" ".join(c) for c in fake.calls]
+        self.assertIn("update toola-gates@toola-local", flat)
+        self.assertIn("restart ZCode to load toola-gates 1.0.1", r2.get("host_note", ""))
+
+    def test_zcode_missing_hook_cli_is_ok_false(self):
+        mkt = self.root / "toola-marketplace"
+        (mkt / "toola-gates" / "hooks").mkdir(parents=True)
+        hf = self.root / "config.json"
+        hf.write_text("{}", encoding="utf-8")
+        ag = self._zcode_agent(mkt, hf, cli="")
+        r = code_tools._ma_write_hook(ag, {}, dry_run=False)
+        self.assertFalse(r["ok"], r)
+        self.assertIn("hook_cli", r.get("error", ""))
+
+    def test_zcode_list_missing_hook_is_partial_and_named(self):
+        mkt, hf, fake, cli = self._zcode_setup()
+        ag = self._zcode_agent(mkt, hf, cli=cli)
+
+        real_run = fake.run
+
+        def run_without_read_gate(cli_path, args, timeout=120):
+            res = real_run(cli_path, args, timeout)
+            if list(args)[:2] == ["list", "--json"]:
+                payload = json.loads(res["stdout"])
+                for p in payload:
+                    p["hookDetails"] = [h for h in p.get("hookDetails", [])
+                                        if "read-gate.js" not in " ".join(h.get("args") or [])]
+                res = dict(res, stdout=json.dumps(payload))
+            return res
+
+        with mock.patch.object(code_tools, "_ma_hook_run_zcode_cli", run_without_read_gate):
+            r = code_tools._ma_write_hook(ag, {}, dry_run=False)
+        self.assertTrue(r["ok"], r)
+        self.assertFalse(r["registered_ok"], r)
+        self.assertEqual(r["coverage"], "partial")
+        named = " ".join(r.get("missing_registrations") or [])
+        self.assertIn("read-gate.js", named)
+        self.assertIn("Read|Grep|Glob|Bash", named)
+
+    def test_zcode_dry_run_plans_without_mutating(self):
+        mkt = self.root / "toola-marketplace"
+        (mkt / "toola-gates" / "hooks").mkdir(parents=True)
+        hf = self.root / "config.json"
+        hf.write_text("{}", encoding="utf-8")
+        fake = self._ZcodeCliFake(mkt, self.root / "cache")
+        with mock.patch.object(code_tools, "_ma_hook_run_zcode_cli", fake.run):
+            ag = self._zcode_agent(mkt, hf)
+            r = code_tools._ma_write_hook(ag, {}, dry_run=True)
+        self.assertTrue(r["ok"], r)
+        self.assertTrue(r["dry_run"])
+        self.assertEqual(r["coverage"], "pending")
+        planned = r.get("planned_cli") or []
+        self.assertTrue(any(c.startswith("marketplace add") for c in planned), planned)
+        self.assertTrue(any("install toola-gates@toola-local" in c for c in planned), planned)
+        # only read-only list --json reached the CLI
+        for c in fake.calls:
+            self.assertEqual(list(c)[:2], ["list", "--json"], fake.calls)
+        # nothing written
+        self.assertFalse((mkt / "toola-gates" / ".zcode-plugin" / "plugin.json").exists())
+        self.assertFalse((mkt / "toola-gates" / "hooks" / "read-gate.js").exists())
+        self.assertFalse(fake.installed)
+
+    def test_zcode_legacy_residue_reported_not_deleted(self):
+        mkt, hf, fake, cli = self._zcode_setup()
+        # P22 residue: enabledPlugins["toola-gates@local"] in config.json + the
+        # old cache dir <profile>/cli/plugins/cache/toola-gates. The fake
+        # profile root here is self.root (hooks_dir = <root>/toola-marketplace/
+        # toola-gates/hooks -> old cache = <root>/cli/plugins/cache/toola-gates).
+        hf.write_text(json.dumps({"plugins": {"enabledPlugins": {"toola-gates@local": True}}}), encoding="utf-8")
+        old_cache = self.root / "cli" / "plugins" / "cache" / "toola-gates"
+        old_cache.mkdir(parents=True)
+        ag = self._zcode_agent(mkt, hf, cli=cli)
+        r = code_tools._ma_write_hook(ag, {}, dry_run=False)
+        self.assertTrue(r["ok"], r)
+        residue = r.get("legacy_residue") or []
+        self.assertTrue(any("toola-gates@local" in x for x in residue), residue)
+        self.assertTrue(any(str(old_cache) in x for x in residue), residue)
+        # reported, NOT deleted
+        self.assertTrue(old_cache.is_dir())
         data = json.loads(hf.read_text(encoding="utf-8"))
         self.assertTrue(data["plugins"]["enabledPlugins"].get("toola-gates@local"))
-        self.assertTrue(data["plugins"]["enabledPlugins"].get("example-plugin@zcode-plugins-official"))
-        self.assertEqual(data["plugins"]["suppressedBuiltins"], ["ios@x"])
-        self.assertEqual(r1["trust_step"], "zcode-plugin-enable")
-        r2 = code_tools._ma_write_hook(ag, {}, dry_run=False)
-        self.assertFalse(r2["changed"], r2)
 
     # ---------- probe with the real gates ----------
     def test_probe_real_gates_deny_and_allow(self):

@@ -115,6 +115,44 @@ function fromMsys(p) {
   return s;
 }
 
+// Expand one shell path token to an absolute Windows path, or null when the
+// base is genuinely UNKNOWN. Handles the leading-~ / ~/ forms and the four
+// env vars a compound `cd` realistically carries ($HOME/${HOME},
+// $USERPROFILE, $TEMP/$TMP); any OTHER unexpanded $VAR / $(...) means we cannot
+// know the target -- null, and the caller fails OPEN (see the header: a
+// wrongly-allowed read costs tokens, a wrongly-denied one bricks the CA).
+// Measured live 2026-10-04: `cd ~/.zcode/cli/plugins/x; grep -rn -i "inline" .`
+// resolved ~ AGAINST THE HOOK CWD (a project) and the read gate false-denied.
+// A relative token with no cwd base is unknown too -- never fall back to the
+// hook's own cwd project root in that case.
+function expandShellPath(tok, cwd) {
+  let s = String(tok || '');
+  if (!s) return null;
+  const home = (process.env.USERPROFILE || '').replace(/[\\/]+$/, '');
+  if (s === '~' || s.startsWith('~/') || s.startsWith('~\\')) {
+    if (!home) return null;
+    s = home + s.slice(1);
+  }
+  const envMap = {
+    HOME: process.env.HOME,
+    USERPROFILE: process.env.USERPROFILE,
+    TEMP: process.env.TEMP,
+    TMP: process.env.TMP,
+  };
+  s = s.replace(/\$\{(HOME|USERPROFILE|TEMP|TMP)\}|\$(HOME|USERPROFILE|TEMP|TMP)\b/g,
+    (m, braced, bare) => {
+      const v = envMap[braced || bare];
+      return v ? String(v).replace(/[\\/]+$/, '') : m; // unset var -> left as-is -> caught below
+    });
+  if (/\$\{|\$\(|\$[A-Za-z_]/.test(s)) return null; // another unexpanded var -> unknown
+  let p = fromMsys(s);
+  if (!path.isAbsolute(p)) {
+    if (!cwd) return null; // relative with an unknown base -> unknown
+    p = path.resolve(String(cwd), p);
+  }
+  return p;
+}
+
 // Normalise for equality/cache-key purposes: MSYS form, slashes, case, and the
 // 8.3 long-form all collapse to one key.
 function canonKey(abs) {
@@ -440,8 +478,8 @@ function checkBash(ti, cwd) {
       if (/^-/.test(tok)) continue;      // `cat -n` pager flags
       if (/^\d+$/.test(tok)) continue;
       if (!isPathLike(tok)) continue;    // $VAR / $(..) / bare words are not paths
-      let p = fromMsys(tok);
-      if (!path.isAbsolute(p) && cwd) p = path.resolve(String(cwd), p);
+      let p = expandShellPath(tok, cwd);
+      if (!p) continue; // unknown base (-only tokens were already filtered)
       let exists = false;
       try { exists = fs.existsSync(p) && fs.statSync(p).isFile(); } catch (e) { /* no */ }
       if (!exists) continue;
@@ -466,9 +504,10 @@ function checkBash(ti, cwd) {
   for (const stmtFull of shellStatements(cmd)) {
     const cdMatch = stmtFull.match(/(?:^|&&|\|\||;)\s*cd\s+("[^"]+"|'[^']+'|\S+)/i);
     if (cdMatch) {
-      let cdT = fromMsys(cdMatch[1].replace(/^["']|["']$/g, '').replace(/\\+$/, ''));
-      if (!path.isAbsolute(cdT) && lineCwd) cdT = path.resolve(String(lineCwd), cdT);
-      lineCwd = cdT;
+      // expandShellPath handles ~ / $HOME / $USERPROFILE / $TEMP / $TMP; any
+      // OTHER unexpanded $VAR makes the cwd UNKNOWN (null) for the rest of the
+      // line -- never fall back to the hook cwd project root (fail OPEN).
+      lineCwd = expandShellPath(cdMatch[1].replace(/^["']|["']$/g, '').replace(/\\+$/, ''), lineCwd);
     }
     const effCwd = lineCwd;
     const effRoot = effCwd ? findProjectRoot(path.resolve(String(effCwd))) : null;
@@ -493,8 +532,10 @@ function checkBash(ti, cwd) {
           const takesPattern = /grep|findstr|Select-String|^rg$/i.test(pm[1]);
           const pTarget = pOps.slice(takesPattern ? 1 : 0).find(tok => isPathLike(tok));
           if (pTarget) {
-            let pt = fromMsys(pTarget);
-            if (!path.isAbsolute(pt) && effCwd) pt = path.resolve(String(effCwd), pt);
+            // Unknown base (null): fail OPEN -- cannot prove the producer read
+            // project code, so the piped filter stage is allowed.
+            let pt = expandShellPath(pTarget, effCwd);
+            if (!pt) continue;
             if (isExemptPath(pt) || isCacheContent(pt) || nonCodeOnly(pt)) continue;
           }
         }
@@ -517,10 +558,11 @@ function checkBash(ti, cwd) {
     if (sawPath && (/^--?/.test(sawPath) || !isPathLike(sawPath))) sawPath = null;
     if (REGEX_META_RE.test(unq)) continue;
     if (!looksSymbolShapedPattern(unq)) continue;
-    let target = sawPath ? fromMsys(sawPath) : null;
-    if (target) {
-      if (!path.isAbsolute(target) && effCwd) target = path.resolve(String(effCwd), target);
-    } else {
+    let target = sawPath ? expandShellPath(sawPath, effCwd) : null;
+    if (!target && !sawPath) {
+      // No path operand: the search target IS the effective cwd. An unknown
+      // cwd (unexpanded $VAR in an earlier cd) must NOT fall back to the
+      // hook's own cwd -- target stays null and this stage is allowed.
       target = effCwd ? path.resolve(String(effCwd)) : null;
     }
     if (!target) continue;
