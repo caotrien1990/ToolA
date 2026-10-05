@@ -17434,6 +17434,7 @@ def _ma_hook_agent_targets(ag: dict) -> list:
                 "hooks_dir": t.get("hooks_dir") or "",
                 "hook_trust_step": t.get("hook_trust_step") or "none",
                 "hook_cli": t.get("hook_cli") or "",
+                "rule_file": t.get("rule_file") or ag.get("rule_file") or "",
             })
         return out
     return [{
@@ -17443,6 +17444,7 @@ def _ma_hook_agent_targets(ag: dict) -> list:
         "hooks_dir": ag.get("hooks_dir") or "",
         "hook_trust_step": ag.get("hook_trust_step") or "none",
         "hook_cli": ag.get("hook_cli") or "",
+        "rule_file": ag.get("rule_file") or "",
     }]
 
 
@@ -17988,9 +17990,14 @@ def _ma_hook_probe(target: dict, hooks_dir: Path) -> dict:
       read_allow    - the same file with limit 50 -> allow
       write_deny    - write into an [A]-project path -> deny (preflight up, or
                       fail-closed if the daemon is down -- either way denied)
-      outside_allow - write to a %TEMP% path (outside every project) -> allow.
-                      cwd is the repo root, NOT the fake fixture: the write gate
-                      treats a missing/empty cwd as project (fail-closed).
+      outside_deny  - write to a %TEMP% path (outside every project) -> deny.
+                      Since 2026-10-05 the gate RELAYS the backend verdict, and
+                      outside any registered project a mutating host op answers
+                      deny_outside_project_mutate; an older relay swallowed it,
+                      so this leg is what proves the relay is not swallowing.
+      memory_allow  - write into THIS agent's own auto-memory tree -> allow, the
+                      one native write the Matrix permits. Without an allow leg a
+                      gate that denied everything would score a perfect probe.
 
     The probe is read-only against the repo: the write_deny target is a
     never-created filename and the gate denies BEFORE anything writes; the read
@@ -18019,6 +18026,17 @@ def _ma_hook_probe(target: dict, hooks_dir: Path) -> dict:
         repo_read = repo_root / "code_tools.py"
     repo_write = repo_root / "hooks" / "_probe_write_never_created.py"
     outside = Path(os.environ.get("TEMP", tempfile.gettempdir())) / f"_ma_hook_outside_{aid}.txt"
+    # The ONE native write the Matrix allows: this agent's own auto-memory tree,
+    # shaped <dirname(rule_file)>/projects/<slug>/memory/... (is_agent_memory_target).
+    # It is the probe's ALLOW case for the write gate since 2026-10-05, when the
+    # gate stopped swallowing deny_outside_project_mutate -- without it a gate that
+    # denied EVERY write, a real defect, would still read as a healthy install.
+    # The file is never created: the gate rules before any write happens.
+    rule_file = (target.get("rule_file") or "").strip()
+    memory = None
+    if rule_file:
+        memory = (Path(rule_file).parent / "projects" / "_ma_hook_probe"
+                  / "memory" / f"_probe_{aid or 'agent'}.md")
 
     def run(script, payload):
         try:
@@ -18054,7 +18072,12 @@ def _ma_hook_probe(target: dict, hooks_dir: Path) -> dict:
     read_script = "codex-adapter.js" if codex else "read-gate.js"
     write_script = "codex-adapter.js" if codex else "native-write-gate.js"
 
-    probe = {"read_deny": False, "read_allow": False, "write_deny": False, "outside_allow": False}
+    probe = {"read_deny": False, "read_allow": False, "write_deny": False,
+             "outside_deny": False, "memory_allow": False}
+    if memory is None:
+        probe["probe_error"] = ("registry row carries no rule_file, so the agent's own "
+                                "auto-memory dir -- the one native write the Matrix allows -- "
+                                "cannot be probed")
     try:
         if opencode:
             # The installed opencode adapter is an ESM plugin (.mjs so the
@@ -18074,8 +18097,11 @@ def _ma_hook_probe(target: dict, hooks_dir: Path) -> dict:
                 mod, "read", {"filePath": str(repo_read), "limit": 50, "cwd": ocw}, env)["deny"]
             probe["write_deny"] = _ma_probe_opencode_before(
                 mod, "write", {"filePath": str(repo_write), "cwd": ocw}, env)["deny"]
-            probe["outside_allow"] = not _ma_probe_opencode_before(
+            probe["outside_deny"] = _ma_probe_opencode_before(
                 mod, "write", {"filePath": str(outside), "cwd": ocw}, env)["deny"]
+            if memory is not None:
+                probe["memory_allow"] = not _ma_probe_opencode_before(
+                    mod, "write", {"filePath": str(memory), "cwd": ocw}, env)["deny"]
             return probe
         out = run(read_script, read_payload(repo_read))
         probe["read_deny"] = denied(out)
@@ -18084,7 +18110,10 @@ def _ma_hook_probe(target: dict, hooks_dir: Path) -> dict:
         out = run(write_script, write_payload(repo_write))
         probe["write_deny"] = denied(out)
         out = run(write_script, write_payload(outside))
-        probe["outside_allow"] = (not denied(out))
+        probe["outside_deny"] = denied(out)
+        if memory is not None:
+            out = run(write_script, write_payload(memory))
+            probe["memory_allow"] = (not denied(out))
     except Exception as exc:
         probe["probe_error"] = str(exc)
     finally:
@@ -18312,7 +18341,7 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
     if zc:
         probe_hooks_dir = Path((zcode_cli or {}).get("installed_hooks_dir") or str(hooks_dir))
     probe = _ma_hook_probe(target, probe_hooks_dir)
-    _probe_keys = ("read_deny", "read_allow", "write_deny", "outside_allow")
+    _probe_keys = ("read_deny", "read_allow", "write_deny", "outside_deny", "memory_allow")
     probe_failed = [k for k in _probe_keys if not probe.get(k)]
     probe_ok = not probe_failed and registered_ok
     # trust steps (codex /hooks) only defer coverage when the probes AND the
@@ -18594,7 +18623,8 @@ async def manage_agent(action: str, agent_id: str = "", target: str = "all",
                 # event loop and starved it -- measured 2026-10-04: every
                 # /api/native_preflight the write gate fired during a live
                 # sync_hook was accepted only AFTER manage_agent returned, the
-                # gate's preflight timed out, and outside_allow fail-closed.
+                # gate's preflight timed out, and the probe's allow leg
+                # fail-closed.
                 results.append(await asyncio.to_thread(
                     _ma_write_hook, {"id": aid, **agents[aid]}, reg, dry_run))
             all_ok = all(r.get("ok") for r in results)

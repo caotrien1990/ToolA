@@ -1,13 +1,13 @@
 // Native write gate for Claude Code. One file, two hook events:
 //
 // PreToolUse (Write/Edit/MultiEdit/NotebookEdit): a text rule is forgotten in a
-// long session; this runs on EVERY native write, before it happens. It does not
-// decide scope itself: it asks [A]'s /api/native_preflight, the same Matrix
-// classifier log_native_event uses, so there is one matcher and no second copy
-// here to drift. Denies only when the target is inside a project
-// (host_gate.scope=project) and the classifier does not allow a native write
-// there. Outside every project (%TEMP%, the agent's own memory, harness config)
-// it steps aside. FAIL CLOSED: if [A] cannot answer, the write is denied -- the
+// long session; this runs on EVERY native write, before it happens. This file
+// holds NO policy copy: it asks [A]'s /api/native_preflight, the same Matrix
+// classifier log_native_event uses, and RELAYS the verdict verbatim. Allow ONLY
+// when the backend answers decision=allow; every other answer is relayed as a
+// deny -- including deny_outside_project_mutate (outside any registered project
+// a mutating host op needs Anh's go-ahead), which an older relay here used to
+// swallow. FAIL CLOSED: if [A] cannot answer, the write is denied -- the
 // bootstrap rule already says a refused [A] means STOP and report.
 //
 // UserPromptSubmit: the break-glass toggle. When [A] itself is broken the gate
@@ -172,6 +172,7 @@ async function onPreToolUse(input) {
       tool_name: tool,
       action_type: 'write',
       target,
+      project_path: String(input.cwd || ''),
       transport: 'native',
       agent_id: AGENT_ID,
     });
@@ -186,15 +187,15 @@ async function onPreToolUse(input) {
   if (answer.status !== 200 || pf.ok !== true || !host.scope) {
     return failClosed(`preflight answered HTTP ${answer.status} ${pf.error_name || 'without a host_gate'}`);
   }
-  if (host.scope !== 'project' || pf.decision === 'allow') process.exit(0);
+  if (pf.decision === 'allow') process.exit(0);
 
   const via = (pf.preferred_via_a || []).slice(0, 3).join(', ') || 'read_file_range -> write_fix / write_new_file';
   emit('deny',
-    `[native-write-gate] ${pf.error_name || 'HOST_GATE_DENY'}: native ${tool} into a project ` +
-    `(task_class=${pf.task_class}, native_policy=${pf.native_policy}). Write through [A]: ` +
-    `read_file_range -> write_fix (existing file) or write_new_file (new file); preferred: ${via}. ` +
-    `A native project write means the core rule left context (RULE-LOSS): reload ` +
-    `get_rule_core_text with force:true before continuing.`);
+    `[native-write-gate] ${pf.error_name || host.decision || 'HOST_GATE_DENY'}: native ${tool} denied ` +
+    `(scope=${host.scope}, task_class=${pf.task_class}, native_policy=${pf.native_policy}). ` +
+    `${host.reason || ''} Write through [A]: read_file_range -> write_fix (existing file) or ` +
+    `write_new_file (new file); preferred: ${via}. If [A] is refused, STOP and report to Anh; ` +
+    `break-glass \`tắt gate\` is Anh-only.`);
 }
 
 // settings.json registers the UserPromptSubmit side with `--prompt`, so the event

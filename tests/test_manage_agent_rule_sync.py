@@ -10,6 +10,34 @@ from unittest import mock
 import code_tools
 
 
+def _registered_rule_file() -> str:
+    """A rule_file taken from the LIVE agents_registry.json the daemon reads.
+
+    The probe's memory_allow leg writes into <dirname(rule_file)>/projects/
+    <slug>/memory/..., and is_agent_memory_target classifies that tree by
+    scanning the REAL registry -- a tmp-rooted fake row would be denied, so a
+    test agent must borrow a registered home. A row whose rule_file sits
+    directly in HOME is skipped: the Matrix refuses to treat HOME\\projects as
+    agent memory.
+    """
+    try:
+        reg = json.loads(Path(code_tools._AGENTS_REGISTRY_PATH).read_text(encoding="utf-8"))
+        home = Path.home().resolve()
+    except Exception:
+        return ""
+    for rec in (reg.get("agents") or {}).values():
+        rf = str((rec or {}).get("rule_file") or "").strip() if isinstance(rec, dict) else ""
+        if not rf:
+            continue
+        try:
+            if home.is_relative_to(Path(rf).resolve().parent):
+                continue
+        except (OSError, ValueError):
+            continue
+        return rf
+    return ""
+
+
 class TestManageAgentMarkdownRuleSync(unittest.TestCase):
     def setUp(self):
         self.tempdir = tempfile.TemporaryDirectory()
@@ -308,7 +336,8 @@ class TestManageAgentSyncHook(unittest.TestCase):
 
     def _agent(self, aid, fmt, hooks_dir, hook_file, trust="none"):
         return {"id": aid, "hook_format": fmt, "hooks_dir": str(hooks_dir),
-                "hook_file": str(hook_file), "hook_trust_step": trust}
+                "hook_file": str(hook_file), "hook_trust_step": trust,
+                "rule_file": _registered_rule_file()}
 
     # ---------- plan / dry_run ----------
     def test_dry_run_reports_plan_without_writing(self):
@@ -672,15 +701,18 @@ class TestManageAgentSyncHook(unittest.TestCase):
         self.assertTrue(probe["read_deny"], probe)
         self.assertTrue(probe["read_allow"], probe)
         self.assertTrue(probe["write_deny"], probe)
-        # outside_allow needs [A] up to answer scope=outside_project; a down
-        # daemon fail-closes the write gate, which is the gate's policy, not a
-        # probe defect -- skip only that leg.
+        # outside_deny holds whether [A] is up (preflight answers
+        # deny_outside_project_mutate) or down (the gate fail-closes).
+        self.assertTrue(probe["outside_deny"], probe)
+        # memory_allow is the ALLOW leg: it needs [A] up to classify the agent's
+        # own auto-memory tree. A down daemon fail-closes the write gate, which
+        # is the gate's policy, not a probe defect -- skip only that leg.
         import urllib.request as _ur
         try:
             _ur.urlopen("http://localhost:8083/health", timeout=3)
         except Exception:
-            self.skipTest("[A] daemon not reachable; outside_allow needs preflight")
-        self.assertTrue(probe["outside_allow"], probe)
+            self.skipTest("[A] daemon not reachable; memory_allow needs preflight")
+        self.assertTrue(probe["memory_allow"], probe)
 
     def test_probe_fixture_under_a_harness_dir_would_exempt_the_read_gate(self):
         # Regression pin for the live-probe defect: the OLD probe put _probe_proj
@@ -711,7 +743,8 @@ class TestManageAgentSyncHook(unittest.TestCase):
         hf.write_text(json.dumps({"plugin": ["./plugins/active-task-guard.js"]}), encoding="utf-8")
         (plugins / "active-task-guard.js").write_text("export default async () => ({});\n", encoding="utf-8")
         ag = {"id": "opencode", "hook_format": "opencode-plugin",
-              "hooks_dir": str(plugins), "hook_file": str(hf), "hook_trust_step": "none"}
+              "hooks_dir": str(plugins), "hook_file": str(hf), "hook_trust_step": "none",
+              "rule_file": _registered_rule_file()}
         r = code_tools._ma_write_hook(ag, {}, dry_run=False)
         self.assertTrue(r["ok"], r)
         self.assertEqual(r["coverage"], "full", r)
@@ -719,7 +752,8 @@ class TestManageAgentSyncHook(unittest.TestCase):
         self.assertTrue(probe["read_deny"], probe)
         self.assertTrue(probe["read_allow"], probe)
         self.assertTrue(probe["write_deny"], probe)
-        self.assertTrue(probe["outside_allow"], probe)
+        self.assertTrue(probe["outside_deny"], probe)
+        self.assertTrue(probe["memory_allow"], probe)
 
 
 
@@ -736,6 +770,7 @@ class TestManageAgentSyncHook(unittest.TestCase):
               # flat shorthand points at target A; hook_targets wins and adds B.
               "hook_format": "codex-hooks-json", "hooks_dir": str(hd1),
               "hook_file": str(hf1), "hook_trust_step": "codex-hooks-command",
+              "rule_file": _registered_rule_file(),
               "hook_targets": [
                   {"hook_file": str(hf1), "hook_format": "codex-hooks-json",
                    "hooks_dir": str(hd1), "hook_trust_step": "codex-hooks-command"},
@@ -849,7 +884,8 @@ class TestManageAgentSyncHook(unittest.TestCase):
         hf = self.root / "hooks.json"
         ag = {"id": "codo", "hook_format": "codex-hooks-json",
               "hooks_dir": str(hd), "hook_file": str(hf),
-              "hook_trust_step": "codex-hooks-command"}
+              "hook_trust_step": "codex-hooks-command",
+              "rule_file": _registered_rule_file()}
         r1 = code_tools._ma_write_hook(ag, {}, dry_run=False)
         self.assertTrue(r1["registered_ok"], r1)
         # simulate the old-defect host state: strip the shell group, then re-run
@@ -870,7 +906,7 @@ class TestSyncHookStaysOffTheEventLoop(unittest.TestCase):
     branch never awaited, so a live sync_hook starved the daemon event loop for
     its whole run -- measured on daemon pid 35244: the write gate's
     /api/native_preflight calls made during sync_hook were only ACCEPTED after
-    manage_agent returned, the preflight timed out, and outside_allow
+    manage_agent returned, the preflight timed out, and the probe's allow leg
     fail-closed. The fix wraps _ma_write_hook in asyncio.to_thread. This test
     drives manage_agent through the same shape the dispatcher uses (a coroutine
     on a running loop) and requires a concurrent loop task to keep getting
@@ -931,7 +967,8 @@ class TestSyncHookStaysOffTheEventLoop(unittest.TestCase):
         # inside that. 1s is the guard the leader asked for.
         self.assertLess(worst, 1.0,
                         f"event loop starved {worst:.2f}s during sync_hook; "
-                        f"the write gate preflight would time out (4s) -> outside_allow fail-closes")
+                        f"the write gate preflight would time out (4s) -> the probe's "
+                        f"memory_allow leg fail-closes")
 
 
 class TestCodexAdapterFailPolicy(unittest.TestCase):
@@ -1024,14 +1061,13 @@ class TestCodexAdapterFailPolicy(unittest.TestCase):
         self.assertTrue(self._denied(out), f"rc={rc} out={out[:300]}")
         self.assertFalse(target.exists())
 
-    def test_outside_project_apply_patch_allows(self):
-        # Needs [A] up (preflight scope=outside_project -> gate allows). Skip when
-        # the daemon is down rather than assert against a fail-closed outage.
-        import urllib.request as _ur
-        try:
-            _ur.urlopen("http://localhost:8083/health", timeout=3)
-        except Exception:
-            self.skipTest("[A] daemon not reachable")
+    def test_outside_project_apply_patch_denies(self):
+        # Policy change 2026-10-05: the write gate RELAYS the backend verdict
+        # instead of stepping aside outside a project, and the Matrix answers
+        # deny_outside_project_mutate there (write through [A]: write_new_file
+        # takes an absolute off-root path). So an apply_patch whose target is
+        # outside every project must be DENIED -- and a down daemon fail-closes
+        # to the same answer, so the assertion needs no daemon.
         real_gate = Path(code_tools.__file__).parent / "hooks" / "native-write-gate.js"
         shutil.copyfile(real_gate, self.adir / "native-write-gate.js")
         self._read_gate("process.exit(0);\n")
@@ -1039,8 +1075,8 @@ class TestCodexAdapterFailPolicy(unittest.TestCase):
         patch = f"*** Begin Patch\n*** Update File: {target}\n@@\n-a\n+b\n*** End Patch\n"
         rc, out = self._run({"tool_name": "apply_patch", "tool_input": {"patch": patch},
                              "cwd": str(self.work)})
-        self.assertFalse(self._denied(out), f"rc={rc} out={out[:300]}")
-        self.assertEqual(rc, 0)
+        self.assertTrue(self._denied(out), f"rc={rc} out={out[:300]}")
+        self.assertFalse(target.exists())
 
 
 if __name__ == "__main__":

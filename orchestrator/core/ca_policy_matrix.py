@@ -642,7 +642,7 @@ def hermes_host_gate(
     )
 
     if outside:
-        reason = "Outside project: readonly OS probe OK; mutating host ops need Anh go-ahead"
+        reason = "Outside project: readonly OS probe OK; mutating host ops: write through ToolA (write_fix / write_new_file); Anh go-ahead only if [A] refused"
         if user_approved:
             decision = "allow_user_approved"
         elif native_policy == "allow_native":

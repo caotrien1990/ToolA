@@ -58,6 +58,13 @@ RETIRED_TOOL_COUNT = "252"
 # that must survive in every SOT file -- by phrase, never sha.
 READ_GATE_RULE = "the deny reason names the [A] replacement"
 
+# WRITE GATE (2026-10-05): the native write gate denies EVERY path, not only a
+# project tree, and a shell write (cat >, heredoc, tee, sed -i, Set-Content) is a
+# bypass of it. Anh measured the cost of leaving that out of the bootstrap rule:
+# CAs spent turns probing a native write first, and one reached for `cat >` to get
+# around the deny. Pin the phrases that must survive the next trim -- the gate
+# fact, the [A] route that replaces it, and two of the shell shapes.
+WRITE_GATE_RULE = ("WRITE GATE", "write_new_file", "sed -i", "Set-Content")
 
 def _read(name: str) -> str:
     return (EXAMPLES / name).read_text(encoding="utf-8")
@@ -103,6 +110,13 @@ class RuleCoreSotFilesCarryTheCwdRule(unittest.TestCase):
         for name in SOT_FILES:
             with self.subTest(name):
                 self.assertIn(READ_GATE_RULE, _read(name))
+
+    def test_write_gate_rule_in_every_sot_file(self):
+        for name in SOT_FILES:
+            with self.subTest(name):
+                text = _read(name)
+                for fragment in WRITE_GATE_RULE:
+                    self.assertIn(fragment, text)
 
 
 class RuleCoreRuntimeReadsTheCommittedFile(unittest.TestCase):
