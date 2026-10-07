@@ -2061,7 +2061,7 @@ skip_symbol_check :bool =False )->str :
             _mark_phase("cache_sync")
             if _index_auto_seeded :
                 result ["index_auto_seeded"]=True 
-            synced = await ct.asyncio.to_thread(ct._update_cache_after_write, str(fp), project_path)
+            synced = await ct.asyncio.to_thread(ct._update_cache_after_write, str(fp), project_path, result)
             result ["cache_synced"]=synced 
             if not synced :
                 # CA reported a double-bind here: this warning told CA to call
@@ -2475,7 +2475,7 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
         # synchronously on the asyncio loop, so /health could not answer and
         # auto-heal killed the process after the file had already been committed.
         _mark_phase("cache_sync")
-        synced =await ct.asyncio .to_thread (ct._update_cache_after_write ,str (fp ),project_path )
+        synced = await ct.asyncio.to_thread(ct._update_cache_after_write, str(fp), project_path, result)
         result ["cache_synced"]=synced
         # Same chain contract as write_fix: the next write_fix pins expected_hash to it.
         result["new_hash"] = written_hash

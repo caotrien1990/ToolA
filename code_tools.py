@@ -704,20 +704,22 @@ def _path_quote_helper_payload(project_path: str = "", subfolder: str = "", comm
     }
 
 
-def _update_cache_after_write(file_path: str, project_root: str | None = None) -> bool:
-    root = str(Path(project_root).resolve()) if project_root else find_project_root(file_path)
-    if not root:
-        return False
+def _update_cache_after_write(file_path: str, project_root: str | None = None,
+                              diagnostics: dict | None = None) -> bool:
+    # Only an explicit, containing project opts into project-wide reconciliation.
+    # An outside-project write owns its immediate parent, never a marker-bearing
+    # ancestor. Scope the entire cache/snapshot pipeline here: narrowing only
+    # external_reconcile would leave periodic refresh and publish fallback broad.
+    fp = Path(file_path).resolve()
+    root_path = Path(project_root).resolve() if project_root else fp.parent
+    if not fp.is_relative_to(root_path):
+        root_path = fp.parent
+    root = str(root_path)
     try:
-        surgical_mapper.update_file_cache(file_path, root)
-        # Verify: re-read INDEX and confirm mtime matches disk within threshold
-        fp = Path(file_path).resolve()
+        metadata = surgical_mapper.update_file_cache(file_path, root)
+        # Verify: re-read INDEX and confirm mtime matches disk within threshold.
         if not fp.exists():
-            # P13 delete path: update_file_cache already removed the cache/INDEX
-            # entry; a deleted file having no mtime on disk is SUCCESS, not a sync
-            # failure. stat()ing it used to raise FileNotFoundError and land in the
-            # blanket except below, reporting synced=False for the file's intended
-            # absence on every delete/rollback-unlink.
+            # A deleted source has no mtime; its removal was already synced.
             return True
         disk_mtime = fp.stat().st_mtime
         idx_path = _project_cache_dir(root) / "INDEX.json"
@@ -729,29 +731,33 @@ def _update_cache_after_write(file_path: str, project_root: str | None = None) -
             if entry:
                 indexed_mtime = float(entry.get("mtime") or 0)
                 if abs(disk_mtime - indexed_mtime) > 0.5:
-                    # F7: Mtime mismatch — retry once, then verify result
-                    surgical_mapper.update_file_cache(file_path, root)
-                    try:
-                        idx2 = json.loads(idx_path.read_text(encoding="utf-8"))
-                        entry2 = (idx2.get("files", {}).get(rel)
-                                  or idx2.get("files", {}).get(rel.replace("/", "\\")))
-                        if entry2:
-                            mtime2 = float(entry2.get("mtime") or 0)
-                            if abs(disk_mtime - mtime2) > 0.5:
-                                import logging as _log_caw
-                                _log_caw.warning(
-                                    f"_update_cache_after_write: mtime still mismatched after retry for {file_path}"
-                                )
-                                return False
-                    except Exception:
-                        pass
+                    # F7: retry once and verify the latest result.
+                    metadata = surgical_mapper.update_file_cache(file_path, root)
+                    idx2 = json.loads(idx_path.read_text(encoding="utf-8"))
+                    entry2 = (idx2.get("files", {}).get(rel)
+                              or idx2.get("files", {}).get(rel.replace("/", "\\")))
+                    if entry2:
+                        mtime2 = float(entry2.get("mtime") or 0)
+                        if abs(disk_mtime - mtime2) > 0.5:
+                            raise RuntimeError(f"cache mtime still mismatched after retry: {file_path}")
+        if diagnostics is not None and isinstance(metadata, dict):
+            omitted = metadata.get("snapshot_omitted_files")
+            if omitted:
+                diagnostics["snapshot_omitted_files"] = dict(omitted)
+                diagnostics["cache_sync_status"] = "partial"
+                diagnostics["cache_sync_warning"] = (
+                    "Snapshot excludes failed file captures listed in snapshot_omitted_files. "
+                    "Healthy files were synchronized; omitted sources remain on disk and "
+                    "are retried on subsequent synchronization.")
         return True
     except search_snapshots.SnapshotDeadlineExceeded:
-        # Fail loud (7-RULE #7): a snapshot deadline means the write path hit an
-        # unhealthy/oversized snapshot store (the exact hang this budget guards).
-        # Never mask it as a mere cache_synced=False — surface it to the caller.
+        # A deadline is a failed operation, not a file-level quarantine.
         raise
-    except Exception:
+    except Exception as exc:
+        import logging as _log_caw
+        _log_caw.exception("_update_cache_after_write failed for %s: %s", file_path, exc)
+        if diagnostics is not None:
+            diagnostics["cache_sync_error"] = {"type": type(exc).__name__, "message": str(exc)}
         return False
 
 

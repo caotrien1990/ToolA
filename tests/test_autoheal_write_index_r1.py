@@ -116,7 +116,7 @@ class TestHealthStaysUpDuringWriteNewFile(unittest.TestCase):
 
             orig = code_tools._update_cache_after_write
 
-            def _wrapped(file_path, project_root=None):
+            def _wrapped(file_path, project_root=None, diagnostics=None):
                 time.sleep(2.5)
                 return True
 

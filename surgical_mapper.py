@@ -225,7 +225,12 @@ def _publish_search_snapshot(project_root: Path, index: dict, changed_paths: dic
         # keep deep data .json files, and reopen the INDEX/manifest set mismatch.
         return search_snapshots.publish_snapshot(
             project_root,
-            include_file=functools.partial(_should_scan_file, project_root=project_root),
+            # Full walks (including fallback/periodic refresh) must honor the
+            # same omissions as incremental publication and its authoritative INDEX.
+            include_file=lambda path: (
+                _should_scan_file(path, project_root)
+                and _rel_path(str(path), str(project_root))
+                not in index.get("snapshot_omitted_files", {})),
             # B027: bind the root for the SAME reason R82 bound it above. The
             # snapshot walk and the index scan must agree on which directories
             # exist, or a project that ignores a tree gets it dropped from one
@@ -741,7 +746,7 @@ def _extract_symbols_with_parser(source: str, extension: str) -> tuple[list[dict
             if typ == "import_statement" or typ == "import_clause" or typ == "import" or typ == "import_declaration":
                 imports.extend([source[child.start_byte:child.end_byte].strip() for child in node.children if child.type == "string" or child.type == "identifier"])
         complexity = source.count("if ") + source.count("else") + source.count("for ") + source.count("while ")
-    except (ValueError, RuntimeError) as exc:
+    except (ValueError, RuntimeError, TypeError) as exc:
         logging.getLogger(__name__).debug("tree-sitter parse failed: %s", exc)
     return symbols, imports, complexity
 
@@ -1079,6 +1084,10 @@ def build_index(project_root: str, timeout_s: float | None = None, watchdog=None
         rel = data.get("file")
         if not rel:
             continue
+        if data.get("error") or not data.get("hash"):
+            index.setdefault("snapshot_omitted_files", {})[rel] = str(
+                data.get("error_message") or "capture returned no hash")
+            continue
         index["files"][rel] = _index_file_entry(data)
         _index_register_symbols(index, rel, data)
 
@@ -1162,11 +1171,19 @@ def update_index_incremental(project_root, cache_data: dict, *, removed: bool = 
     _drop_refs(index["classes"])
     index["entrypoints"] = [e for e in index["entrypoints"] if e not in rel_variants]
 
-    # Re-add (unless the file was removed/skipped). build_index adds any cache JSON that
-    # carries a "file" field regardless of error, so we mirror that: add on !removed.
+    # Failed captures are quarantined consistently with build_index. A later
+    # successful capture or source removal clears the omission.
+    omitted = index.setdefault("snapshot_omitted_files", {})
+    for key in rel_variants:
+        omitted.pop(key, None)
     if not removed:
-        index["files"][rel] = _index_file_entry(cache_data)
-        _index_register_symbols(index, rel, cache_data)
+        if cache_data.get("error") or not cache_data.get("hash"):
+            omitted[rel] = str(cache_data.get("error_message") or "capture returned no hash")
+        else:
+            index["files"][rel] = _index_file_entry(cache_data)
+            _index_register_symbols(index, rel, cache_data)
+    if not omitted:
+        index.pop("snapshot_omitted_files", None)
 
     index["generated_at"] = datetime.now().isoformat(timespec="seconds")
     _index_finalize_aggregates(index)
@@ -1298,6 +1315,8 @@ def summarize_index(index: dict) -> dict:
         "groups": index.get("groups", {}),
         "entrypoints": index.get("entrypoints", []),
         "hotspots": index.get("hotspots", [])[:10],
+        **({"snapshot_omitted_files": dict(index["snapshot_omitted_files"])}
+           if index.get("snapshot_omitted_files") else {}),
     }
 
 
@@ -1436,11 +1455,12 @@ def _snapshot_should_gc(project_root: Path) -> bool:
 
 
 def _reconcile_external_files(project_root: Path, index: dict, changed_paths: dict, watchdog=None) -> dict:
-    """Discover disk drift before incremental publication; hash even equal-stat edits.
+    """Discover drift with P10's stat-gated hash; isolate failed file captures.
 
-    Discovery is O(repo), deliberately: correctness takes precedence over the old
-    O(changed) latency contract. Only changed sources are re-analysed. A failure
-    leaves the previous immutable snapshot available and propagates to the writer.
+    Discovery walks the selected root, but warm unchanged sources are not read.
+    P10's same-inode/size/mtime rewrite boundary applies here too. Failed captures
+    are excluded from INDEX and the snapshot with their reasons retained; storage
+    and publication failures still propagate instead of claiming a valid snapshot.
     """
     known = index.get("files", {})
     seen = set()
@@ -1469,19 +1489,28 @@ def _reconcile_external_files(project_root: Path, index: dict, changed_paths: di
             rel = _rel_path(str(path), str(project_root))
             seen.add(rel)
             prior = known.get(rel, {})
-            stat = path.stat()
             if rel in changed_paths:
                 continue
-            if (prior.get("hash") == get_file_hash(str(path))
+            try:
+                stat = path.stat()
+                unchanged = (
+                    prior.get("hash") == get_file_hash_stat_gated(path)
                     and prior.get("size_bytes") == stat.st_size
-                    and abs(float(prior.get("mtime") or 0) - stat.st_mtime) <= 1e-6):
+                    and abs(float(prior.get("mtime") or 0) - stat.st_mtime) <= 1e-6)
+            except OSError:
+                # Let the capture path record a source-read failure as an error
+                # sidecar. Cache-storage failures from that writer still propagate.
+                unchanged = False
+            if unchanged:
                 continue
             metadata = write_file_cache(str(path), str(project_root))
-            if metadata.get("error") or not metadata.get("hash"):
-                raise search_snapshots.SnapshotIntegrityError(f"external reconcile failed: {rel}")
+            # A failed capture is absent from this snapshot, not stale content
+            # borrowed from the previous generation. Keep the error sidecar so
+            # rebuilds preserve disclosure, and retry the source on later writes.
             index = update_index_incremental(project_root, metadata, removed=False)
-            changed_paths[rel] = "modified"
-    for rel in set(known) - seen:
+            failed = bool(metadata.get("error") or not metadata.get("hash"))
+            changed_paths[rel] = "removed" if failed else "modified"
+    for rel in (set(known) | set(index.get("snapshot_omitted_files", {}))) - seen:
         check_deadline()
         remove_file_cache(str(project_root / rel), str(project_root))
         index = update_index_incremental(project_root, {"file": rel}, removed=True)
@@ -1577,7 +1606,8 @@ def _update_file_cache_locked(file_path: str, project_root: str) -> dict:
         index = _reindex_from_disk(resolved_root, watchdog=_watchdog)
         changed_paths = None
     else:
-        changed_paths = {rel_for_snapshot: "removed" if removed else "modified"} if rel_for_snapshot else None
+        snapshot_removed = removed or bool(metadata.get("error") or not metadata.get("hash"))
+        changed_paths = {rel_for_snapshot: "removed" if snapshot_removed else "modified"} if rel_for_snapshot else None
         if index_existed and changed_paths is not None:
             from orchestrator.progress_watchdog import current_watchdog
             _watchdog = current_watchdog()
@@ -1589,6 +1619,8 @@ def _update_file_cache_locked(file_path: str, project_root: str) -> dict:
     metadata["snapshot_id"] = _publish_search_snapshot(
         resolved_root, index, changed_paths, allow_full_walk=index_existed,
         watchdog=locals().get("_watchdog"))
+    if index.get("snapshot_omitted_files"):
+        metadata["snapshot_omitted_files"] = dict(index["snapshot_omitted_files"])
     return metadata
 
 
