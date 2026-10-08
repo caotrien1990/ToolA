@@ -22,6 +22,9 @@ SKIP_DIRS = {
     "node_modules", "venv", "venv312", ".venv", ".git", ".svn",
     ".orchestrator_cache", "__pycache__", ".pytest_cache", ".mypy_cache",
     ".tox", "dist", "build", ".idea", ".vscode",
+    # 2026-10-08: site-packages outside a standard venv (conda, copied installs).
+    # Pylance does the same. Belt-and-suspenders with the pyvenv.cfg detection.
+    "site-packages",
     # Anh 2026-08-11: backup_project writes a "_orchestrator_backups" tree
     # (root.parent, but live repos also keep in-tree copies). It is not a
     # dotfile, so should_skip_dir did not skip it and search/index scanned the
@@ -45,8 +48,12 @@ SKIP_DIRS = {
     # scan 31608 files of which 31079 were .json runtime records and only 367 were .py
     # source. At 18.7 ms/file that is ~591s of analyze alone — past every proxy cap, so
     # INDEX.json never got written and write_fix stayed blocked behind "INDEX not found"
-    # forever. These names hold produced records, not source, on every project.
     "runs", "queue", "_archive", "archive",
+    # 2026-10-08: Python venv named "runtime" (e.g. laya/runtime: 28k site-packages
+    # files). Derived state, not project source — same principle as venv/.venv.
+    # A project that genuinely has source under a dir named "runtime" can un-skip
+    # via `!runtime` in .orchestrator_ignore.
+    "runtime",
 }
 # SOT council lives in .council — searchable despite the generic dot-dir skip.
 DOT_DIRS_SEARCHABLE = {".council"}
@@ -141,6 +148,9 @@ SKIP_DIR_GLOBS = frozenset({
     # Leaked pytest temp roots (`pytest_tmp_lintfix`, ...). `.pytest_tmp` keeps
     # its exact entry above: a leading dot is not matched by this pattern.
     "pytest_tmp*",
+    # 2026-10-08: venv family (`.venv-laya`, `.venv_bge_m3`, ...). `.venv` exact
+    # stays in SKIP_DIRS; this glob covers the suffixed variants.
+    ".venv*",
 })
 
 
@@ -242,6 +252,41 @@ def should_skip_dir(name: str, project_root=None) -> bool:
     if lowered in SKIP_DIRS or name_matches_ignore(lowered, SKIP_DIR_GLOBS):
         return True
     return name.startswith(".")
+
+
+def should_skip_dir_path(dir_path, project_root=None) -> bool:
+    """Path-based skip: name check (fast) + content markers (venv, worktree).
+
+    2026-10-08: Catches Python venvs with NON-STANDARD names (e.g. laya/runtime)
+    by detecting `pyvenv.cfg` instead of relying on directory name patterns.
+    Also catches git linked worktrees: in a worktree, `.git` is a FILE containing
+    `gitdir: ...` (not a directory). This covers harness worktree copies like
+    `_iso_campaign/` without hardcoding names.
+    The name check runs first (fast path); marker checks are one stat each.
+    """
+    from pathlib import Path
+    p = Path(dir_path)
+    if should_skip_dir(p.name, project_root):
+        return True
+    try:
+        if (p / "pyvenv.cfg").is_file():
+            return True
+        # Git linked worktree: .git is a file with "gitdir:" pointer, not a dir.
+        # A real .git directory is already in SKIP_DIRS; this catches the file case.
+        # 2026-10-08 fix: git SUBMODULES also have .git as a file
+        # (gitdir: ../.git/modules/...), so only skip when the target contains
+        # "worktrees/" — that distinguishes worktree from submodule.
+        git_entry = p / ".git"
+        if git_entry.is_file():
+            try:
+                content = git_entry.read_text(encoding="utf-8", errors="replace")
+                if "worktrees/" in content.replace(chr(92), "/"):
+                    return True
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return False
 
 
 def ignored_directory_name(parts, project_root=None) -> "str | None":
@@ -379,39 +424,86 @@ def _parse_project_ignore(text: str) -> "tuple[frozenset[str], frozenset[str]]":
     return frozenset(skips), frozenset(unskips)
 
 
+def _parse_gitignore_dir_patterns(text: str) -> "frozenset[str]":
+    """Extract directory names from .gitignore text.
+
+    2026-10-08: Conservative subset — only patterns that clearly denote
+    directories. Lines ending with `/` are explicit dir patterns. Bare names
+    without wildcards are treated as dir names (gitignore matches them against
+    both files and dirs; for skip purposes we only care about the dir case).
+    Negations, comments, and complex patterns are skipped — `.orchestrator_ignore`
+    `!` remains the override mechanism.
+    """
+    dirs: set[str] = set()
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or line.startswith("!"):
+            continue
+        # Strip anchoring and trailing slash
+        line = line.lstrip("/").rstrip("/\\").strip()
+        if not line or "/" in line:
+            # Nested paths or ** patterns: not a simple dir name, skip
+            # (conservative — avoids false positives)
+            continue
+        # Skip file-only patterns (has extension-like suffix with wildcard)
+        # e.g. *.log, *.pyc — these are not directories
+        if line.startswith("*"):
+            continue
+        dirs.add(line.lower())
+    return frozenset(dirs)
+
 def load_project_ignore(project_root) -> "tuple[frozenset[str], frozenset[str]]":
     """Return (skip, unskip) name sets for one project root.
 
-    Returns two empty sets when there is no file, when it cannot be read, or when
-    the root does not resolve -- see the FAILS OPEN note above.
+    Merges `.orchestrator_ignore` (primary) with `.gitignore` (secondary).
+    2026-10-08: If a project already declares dependencies in `.gitignore`,
+    the indexer respects it instead of maintaining a separate list.
+    `.orchestrator_ignore` `!` un-skips beat everything, including `.gitignore`
+    entries. `.gitignore` negations are ignored (use `.orchestrator_ignore` to override).
+
+    Returns two empty sets when neither file exists or neither can be read.
     """
     if not project_root:
         return frozenset(), frozenset()
     from pathlib import Path as _Path
     try:
         root = _resolved_root(project_root)
-        target = root / PROJECT_IGNORE_FILENAME
-        stat_result = target.stat()
     except Exception:
         return frozenset(), frozenset()
-
-    key = (str(root).lower(), stat_result.st_mtime_ns, stat_result.st_size)
+    try:
+        oi_stat = (root / PROJECT_IGNORE_FILENAME).stat()
+        oi_key = (oi_stat.st_mtime_ns, oi_stat.st_size)
+    except Exception:
+        oi_key = None
+    try:
+        gi_stat = (root / ".gitignore").stat()
+        gi_key = (gi_stat.st_mtime_ns, gi_stat.st_size)
+    except Exception:
+        gi_key = None
+    if oi_key is None and gi_key is None:
+        return frozenset(), frozenset()
+    key = (str(root).lower(), oi_key, gi_key)
     cached = _IGNORE_CACHE.get(key)
     if cached is not None:
         return cached
-
-    try:
-        # errors="replace" over "strict": a stray byte must not take the whole
-        # overlay down, and the replacement char simply fails to match any name.
-        text = target.read_text(encoding="utf-8", errors="replace")
-    except Exception:
-        return frozenset(), frozenset()
-
-    parsed = _parse_project_ignore(text)
+    skips: set[str] = set()
+    unskips: set[str] = set()
+    if oi_key is not None:
+        try:
+            text = (root / PROJECT_IGNORE_FILENAME).read_text(encoding="utf-8", errors="replace")
+            s, u = _parse_project_ignore(text)
+            skips.update(s)
+            unskips.update(u)
+        except Exception:
+            pass
+    if gi_key is not None:
+        try:
+            text = (root / ".gitignore").read_text(encoding="utf-8", errors="replace")
+            skips.update(_parse_gitignore_dir_patterns(text))
+        except Exception:
+            pass
+    parsed = (frozenset(skips), frozenset(unskips))
     if len(_IGNORE_CACHE) >= _IGNORE_CACHE_MAX:
-        # Plain clear rather than an LRU: the cache holds at most one entry per
-        # project root, 64 is far past how many roots one daemon sees, and a
-        # dependency-free leaf module is worth more here than an eviction policy.
         _IGNORE_CACHE.clear()
     _IGNORE_CACHE[key] = parsed
     return parsed
