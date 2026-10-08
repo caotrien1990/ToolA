@@ -2616,9 +2616,12 @@ skip_verify :bool =False )->str :
         current_file_hash =current_hash ,
         ca_next_action ="repeat_dry_run",
         )
-    payload =dry .get ("payload")or {}
-    if dry .get ("tool")=="write_fix":
-        result =ct.json .loads (await write_fix (**payload ))
+    payload = dry.get("payload") or {}
+    # F-W4: pass expected_hash to make check-and-write atomic (TOCTOU fix)
+    if dry.get("target_file_hash"):
+        payload["expected_hash"] = dry["target_file_hash"]
+    if dry.get("tool") == "write_fix":
+        result = ct.json.loads(await write_fix(**payload))
     elif dry .get ("tool")=="write_new_file":
         result =ct.json .loads (await write_new_file (**payload ))
     else :

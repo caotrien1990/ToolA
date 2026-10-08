@@ -525,6 +525,12 @@ def _rate_limit_check(
     if now is None:
         now = time.time()
     key = (getattr(request, "remote", "") or "").split(":")[0] or "local"
+    # F-I5: bound bucket size to prevent unbounded growth (same pattern as _DUPLICATE_FAILURE_STATE)
+    if len(bucket) > 4096:
+        # Clear oldest entries (those with oldest last-seen timestamp)
+        oldest = sorted(bucket.items(), key=lambda kv: kv[1][1])[:1024]
+        for k, _ in oldest:
+            bucket.pop(k, None)
     tokens, last = bucket.get(key, (float(limit_max), now))
     tokens = min(float(limit_max),
                  tokens + (now - last) * (limit_max / limit_window))
@@ -16075,6 +16081,7 @@ accepted_fields=sorted(accepted_fields),
     # the disconnect-monitor stop flag is read by that try's `finally`.
     _disconnect_stop = None
     _cancel_event = None
+    _queue_wait_ms = 0  # Fix 2026-10-09: init before try (A41-tier-1c); read unconditionally at envelope build
 
     try:
         # CAN-052 admission control: bound heavy-tool concurrency (subprocess /

@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 from pathlib import Path
 
 from orchestrator.fileops import common as fo
@@ -61,14 +62,15 @@ async def list_structure(path: str = "", depth: int = 2, save_output: bool = Fal
         if overlay_root and not fo.should_skip_dir(name, overlay_root):
             return False  # an explicit !name un-skip: reveal it
         return True
-
     def _build(current: Path, current_depth: int, prefix: str) -> list[str]:
         if current_depth > effective_depth:
             return []
         lines: list[str] = []
         try:
-            entries = sorted(current.iterdir(), key=lambda e: (e.is_file(), e.name.lower()))
-        except PermissionError:
+            # F-R1: use os.scandir() for cached is_file/is_dir (no extra stat syscalls)
+            with os.scandir(current) as it:
+                entries = sorted(it, key=lambda e: (e.is_file(), e.name.lower()))
+        except (PermissionError, OSError):
             return []
         entries = [entry for entry in entries if not _hidden(entry.name)]
         if effective_compact and len(entries) > 30:
@@ -84,19 +86,23 @@ async def list_structure(path: str = "", depth: int = 2, save_output: bool = Fal
             truncated_folders.append(f"{rel} ({remaining_files} more files hidden)")
             for entry in display_entries:
                 connector = "+-- " if entry == display_entries[-1] else "|-- "
-                lines.append(f"{prefix}{connector}{entry.name}{'/' if entry.is_dir() else ''}")
-                if entry.is_dir():
+                is_dir = entry.is_dir()
+                suffix = chr(47) if is_dir else ""  # chr(47)=/
+                lines.append(f"{prefix}{connector}{entry.name}{suffix}")
+                if is_dir:
                     extension = "    " if entry == display_entries[-1] else "|   "
-                    lines.extend(_build(entry, current_depth + 1, prefix + extension))
+                    lines.extend(_build(Path(entry.path), current_depth + 1, prefix + extension))
             if remaining_files > 0:
                 lines.append(f"{prefix}+-- ... ({remaining_files} more files)")
             return lines
         for entry in entries:
             connector = "+-- " if entry == entries[-1] else "|-- "
-            lines.append(f"{prefix}{connector}{entry.name}{'/' if entry.is_dir() else ''}")
-            if entry.is_dir():
+            is_dir = entry.is_dir()
+            suffix = chr(47) if is_dir else ""
+            lines.append(f"{prefix}{connector}{entry.name}{suffix}")
+            if is_dir:
                 extension = "    " if entry == entries[-1] else "|   "
-                lines.extend(_build(entry, current_depth + 1, prefix + extension))
+                lines.extend(_build(Path(entry.path), current_depth + 1, prefix + extension))
         return lines
 
     def _run() -> str:

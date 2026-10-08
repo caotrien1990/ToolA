@@ -20,9 +20,9 @@ async def get_file_symbols(file_path: str, project_path: str = "") -> str:
         (re.compile(r"^\s*function\s+(\w+)\s*\("), "function"),
         (re.compile(r"^\s*async\s+function\s+(\w+)\s*\("), "function"),
         (re.compile(r"^\s*class\s+(\w+)\s*[\({]"), "class"),
+        (re.compile(r"^\s*(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>"), "arrow_fn"),
         (re.compile(r"^\s*(export\s+)?(const|let|var)\s+(\w+)\s*="), "variable"),
         (re.compile(r"^\s*(\w+)\s*:\s*function\s*\("), "method"),
-        (re.compile(r"^\s*(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>"), "arrow_fn"),
     ]
 
     def _scan() -> dict:

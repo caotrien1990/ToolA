@@ -171,7 +171,7 @@ _GRAPH_REFRESH_LOCKS: dict = {}
 # of this very file, 0 defect findings, proposed 15 hunks of import and noqa
 # rewrites in a repo whose config enables neither. ruff_fix adds the ones the
 # project's own config enables (_project_policy_rules) and nothing else.
-_RUFF_FIX_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541"
+_RUFF_FIX_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541,ASYNC210,ASYNC220,ASYNC221,ASYNC222,ASYNC250,ASYNC251"  # (c) 2026-10-09: +6 ASYNC rules (audit từng rule, zero noise đã werify)
 _RUFF_FIX_OVERRIDES = (
     "--config", 'lint.fixable = ["ALL"]',
     "--config", "lint.per-file-ignores = {}",

@@ -58,6 +58,7 @@ import os
 import re
 import subprocess
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -1096,7 +1097,7 @@ async def write_transaction(operations: list, project_path: str = "",
         )
 
     return _ok({
-        "transaction_id": f"txn-{int(time.time())}",
+        "transaction_id": f"txn-{int(time.time())}-{uuid.uuid4().hex[:8]}",
         "operations_count": len(operations),
         "applied_count": len(changed_files),
         "changed_files": changed_files,

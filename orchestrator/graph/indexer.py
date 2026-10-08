@@ -499,13 +499,15 @@ def _package_ancestors(file_path: str):
         yield ".".join(bits[:i])
 
 
-def _build_dependency_edges(conn) -> dict:
+def _build_dependency_edges(conn, changed_files=None) -> dict:
     """Cross-file module dependency edges (internal, mandatory - Step 14).
 
     Links every import node whose qualified_name resolves to an indexed module
-    node with an `imports_module` edge. Idempotent: the kind is rebuilt from
-    scratch each call - callers should skip this when nothing changed
-    (incremental_index guards the no-op path).
+    node with an `imports_module` edge.
+
+    When changed_files is None: full rebuild from scratch (for first-index or
+    when module map changed). When changed_files is provided: only rebuild
+    edges for those files (delta mode for incremental_index).
 
     Resolution (W0b, fixes F019/F018):
       1. absolute - longest dotted prefix of the import qualified_name that is
@@ -523,12 +525,21 @@ def _build_dependency_edges(conn) -> dict:
     prefix wins, so the edge points at `a/b/c.py` alone. Counting the traversal
     would make every package a cycle with its own submodules. Explicit package
     imports (`from a import b`, `import a.b`) still resolve to `__init__.py`
-    normally. Verified on [A]: 0 false positives over 250 files vs real AST
     resolution; the 102 differences are exactly this implicit-traversal class.
 
     Returns a stats dict; `edges` is the count callers previously got as an int.
     """
-    conn.execute("DELETE FROM edges WHERE kind='imports_module';")
+    # F-G1: delta mode - only delete edges for changed files; full mode deletes all
+    # F-G1: delta mode - only delete edges for changed files; full mode deletes all
+    # Fix 2026-10-09: use truthiness check so empty list falls back to full mode (IN () is invalid SQL)
+    if changed_files:
+        placeholders = ",".join("?" for _ in changed_files)
+        conn.execute(
+            f"DELETE FROM edges WHERE kind='imports_module' AND source IN ("
+            f"SELECT id FROM nodes WHERE file_path IN ({placeholders})"
+            f")", list(changed_files))
+    else:
+        conn.execute("DELETE FROM edges WHERE kind='imports_module';")
 
     modules: dict[str, tuple] = {}
     ambiguous: set[str] = set()
@@ -554,12 +565,23 @@ def _build_dependency_edges(conn) -> dict:
     # about dependency cycles reads `imports_module` instead, and without the
     # flag there a crash-on-import cycle and a mere technical-debt cycle look
     # identical. Joining once here beats making each consumer re-derive it.
-    for r in conn.execute(
-            "SELECT n.id, n.qualified_name, n.file_path, n.start_line, "
-            "       COALESCE(json_extract(ie.metadata, '$.deferred'), 0) AS deferred "
-            "FROM nodes n "
-            "LEFT JOIN edges ie ON ie.target = n.id AND ie.kind = 'imports' "
-            "WHERE n.kind='import';"):
+    # F-G1: in delta mode, only process import nodes from changed files
+    # F-G2: collect rows for executemany batch insert
+    import_query = (
+        "SELECT n.id, n.qualified_name, n.file_path, n.start_line, "
+        "       COALESCE(json_extract(ie.metadata, '$.deferred'), 0) AS deferred "
+        "FROM nodes n "
+        "LEFT JOIN edges ie ON ie.target = n.id AND ie.kind = 'imports' "
+        "WHERE n.kind='import'"
+    )
+    import_params = []
+    # Fix 2026-10-09: truthiness check (empty list -> no filter, same as full mode)
+    if changed_files:
+        placeholders = ",".join("?" for _ in changed_files)
+        import_query += f" AND n.file_path IN ({placeholders})"
+        import_params = list(changed_files)
+    edge_rows = []
+    for r in conn.execute(import_query, import_params):
         qn = r["qualified_name"] or ""
         if not qn:
             continue
@@ -587,18 +609,22 @@ def _build_dependency_edges(conn) -> dict:
             continue
         deferred = bool(r["deferred"])
         scope = "deferred" if deferred else "top_level"
-        conn.execute(
-            "INSERT INTO edges (source, target, kind, confidence, cbm_label, "
-            "metadata, line, col, is_external) VALUES (?,?,?,?,?,?,?,?,0);",
-            (r["id"], target_id, "imports_module",
-             0.9 if mode == "absolute" else 0.8, "inferred",
-             json.dumps({"resolution": mode, "deferred": deferred,
-                         "scope": scope}, ensure_ascii=False),
-             r["start_line"], None))
+        # F-G2: collect rows for batch insert (executemany) instead of individual executes
+        edge_rows.append((
+            r["id"], target_id, "imports_module",
+            0.9 if mode == "absolute" else 0.8, "inferred",
+            json.dumps({"resolution": mode, "deferred": deferred,
+                        "scope": scope}, ensure_ascii=False),
+            r["start_line"], None))
         added += 1
         by_mode[mode] += 1
         by_scope[scope] += 1
-
+    # F-G2: batch insert all edges in one executemany call
+    if edge_rows:
+        conn.executemany(
+            "INSERT INTO edges (source, target, kind, confidence, cbm_label, "
+            "metadata, line, col, is_external) VALUES (?,?,?,?,?,?,?,?,0);",
+            edge_rows)
     return {
         "edges": added,
         "by_resolution": by_mode,
@@ -966,7 +992,7 @@ def incremental_index(project_path: str, *, project_root: Optional[str] = None,
             # BUG-3 note: full rebuild on every incremental run (cost scales with
             # modules × imports). No-op skip would regress first-index dep edges,
             # so defer a smarter incremental-aware rebuild to Phase 4+ scale work.
-            dep_stats = _build_dependency_edges(conn)
+            dep_stats = _build_dependency_edges(conn, changed_files=reindex_paths)
             if watchdog:
                 watchdog.progress("edges", completed=1, total=3, detail="dependencies")
             dep_edges = dep_stats["edges"]

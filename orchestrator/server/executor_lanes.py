@@ -11,7 +11,6 @@ import asyncio
 import os
 import threading
 import time
-import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Callable
 from orchestrator.server.fair_admission import FAIR_ADMISSION
@@ -90,6 +89,7 @@ class ExecutorLane:
         self._pending_since: dict[str, float] = {}
         self._active_since: dict[str, float] = {}
         self._futures: dict[str, Future] = {}
+        self._work_id_counter = 0  # F-I1: monotonic counter replaces uuid4 for work_id
 
     @property
     def accepting(self) -> bool:
@@ -178,8 +178,10 @@ class ExecutorLane:
 
     def _submit(self, func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[Future, str]:
         submitted_at = time.monotonic()
-        work_id = uuid.uuid4().hex
+        # F-I1: monotonic counter instead of uuid4 (process-local, no syscall)
         with self._lock:
+            work_id = f"w{self._work_id_counter}"
+            self._work_id_counter += 1
             if not self._accepting:
                 self._rejected += 1
                 self._rejection_counts["lane_closed"] += 1
