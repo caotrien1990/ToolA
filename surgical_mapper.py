@@ -1132,7 +1132,7 @@ def _index_apply_patch(index: dict, cache_data: dict, removed: bool) -> None:
     if not rel:
         return
     index.setdefault("functions", {})
-    index.setdefault("classes", {}) 
+    index.setdefault("classes", {})
     index.setdefault("entrypoints", [])
 
     # Remove any prior entry/refs for this file (tolerate slash-variant keys defensively).

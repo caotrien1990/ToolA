@@ -2634,6 +2634,54 @@ def _write_ledger_operation_id(tool_name: str, body: dict, session_id: str) -> s
     return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
 
 
+def _setup_cancellation_scope(tool_name: str, body: dict, task_session_id: str,
+                              request_op_id: str, request) -> tuple:
+    """Set up cancellation infrastructure for a tool call.
+
+    MUST be called immediately after semaphore acquire, BEFORE any blocking
+    operation such as _write_ledger_begin_async. The ledger begin can hang on
+    _write_ledger_async_lock; without a running disconnect monitor, a wedged
+    holder bricks the per-project semaphore until restart (F-A1).
+
+    Covers both mutating tools (keyed by deterministic op_id) and read tools
+    (keyed by request_op_id) — one unified path (N-A1). The op_id is a
+    deterministic hash f(tool, payload, session), so pre-computing it here
+    before ledger begin is safe.
+
+    Returns (scope_op_id, scope_id, cancel_event, disconnect_stop).
+    Caller MUST set disconnect_stop in its finally block; the monitor thread
+    is daemon + 1s poll so a skipped finally bounds the leak (F-A6).
+    """
+    scope_op_id = (_write_ledger_operation_id(tool_name, body, task_session_id)
+                   if tool_name in _MUTATING_TOOLS else "")
+    scope_id = scope_op_id or request_op_id
+    cancel_event = _OPERATION_CANCEL_EVENTS.get(scope_op_id)
+    if cancel_event is None:
+        cancel_event = threading.Event()
+        if scope_op_id:
+            _OPERATION_CANCEL_EVENTS[scope_op_id] = cancel_event
+    # (c) 2026-10-08: orphaned holder wedges the per-project semaphore.
+    # A polling thread, not an asyncio task: the tool may block the
+    # event loop (synchronous walk), so a task would never run. On
+    # client disconnect it sets the cancel_event; the next checkpoint()
+    # raises OperationCancelled and the dispatcher finally releases
+    # the semaphore.
+    disconnect_stop = threading.Event()
+    _mon_cancel, _mon_request, _mon_stop = cancel_event, request, disconnect_stop
+    def _watch_client_disconnect():
+        while not _mon_stop.wait(1.0):
+            try:
+                if _client_transport_gone(_mon_request):
+                    _mon_cancel.set()
+                    break
+            except Exception:
+                # Transient transport read failure: keep watching.
+                continue
+    threading.Thread(target=_watch_client_disconnect,
+                     name="disconnect-watch-%s" % scope_id,
+                     daemon=True).start()
+    return scope_op_id, scope_id, cancel_event, disconnect_stop
+
 def _write_ledger_db_upsert(rec: dict) -> bool:
     """Persist one ledger record: a later send replaces an earlier one (#36), and a
     send never regresses its own terminal state."""
@@ -16039,42 +16087,13 @@ accepted_fields=sorted(accepted_fields),
                 tool_name, body, _request_op_id)
             _queue_wait_ms = int((time.time() - _q0) * 1000)
             _t0 = time.time()
-            # Sprint 3 Point 2 (F-A1): setup cancellation scope IMMEDIATELY after
-            # semaphore acquire, BEFORE ledger begin. _write_ledger_begin_async can
-            # hang on _write_ledger_async_lock; without a running monitor, a wedged
-            # holder bricks the project until restart. The op_id is a deterministic
-            # hash f(tool, payload, session), so pre-computing it here is safe.
-            # N-A1: read tools get the same scope (keyed by request_op_id); they
-            # acquire bounded semaphores and can wedge as well. One unified path.
-            _scope_op_id = (_write_ledger_operation_id(tool_name, body, _task_session_id)
-                            if tool_name in _MUTATING_TOOLS else "")
-            _scope_id = _scope_op_id or _request_op_id
-            _cancel_event = _OPERATION_CANCEL_EVENTS.get(_scope_op_id)
-            if _cancel_event is None:
-                _cancel_event = threading.Event()
-                if _scope_op_id:
-                    _OPERATION_CANCEL_EVENTS[_scope_op_id] = _cancel_event
-            # (c) 2026-10-08, Sprint 3: orphaned holder wedges the per-project semaphore.
-            # A polling thread, not an asyncio task: the tool may block the
-            # event loop (synchronous walk), so a task would never run. On
-            # client disconnect it sets the cancel_event; the next checkpoint()
-            # raises OperationCancelled and the dispatcher finally releases
-            # the semaphore. F-A6: stop event captured locally; the outer finally
-            # sets it. Daemon + 1s poll bound the leak if the finally is skipped.
-            _disconnect_stop = threading.Event()
-            _mon_cancel, _mon_request, _mon_stop = _cancel_event, request, _disconnect_stop
-            def _watch_client_disconnect():
-                while not _mon_stop.wait(1.0):
-                    try:
-                        if _client_transport_gone(_mon_request):
-                            _mon_cancel.set()
-                            break
-                    except Exception:
-                        # Transient transport read failure: keep watching.
-                        continue
-            threading.Thread(target=_watch_client_disconnect,
-                             name="disconnect-watch-%s" % _scope_id,
-                             daemon=True).start()
+            # Sprint 3 Point 2 (F-A1): cancellation scope BEFORE ledger begin.
+            # MUST stay immediately after semaphore acquire: _write_ledger_begin_async
+            # can hang, and without a running monitor a wedged holder bricks the
+            # project. See _setup_cancellation_scope docstring for the invariant.
+            _scope_op_id, _scope_id, _cancel_event, _disconnect_stop = \
+                _setup_cancellation_scope(tool_name, body, _task_session_id,
+                                          _request_op_id, request)
         # FixA2407 P1-1: record a mutating call BEFORE it runs. The server always knows
         # whether the write landed; the caller that timed out does not.
         # #17: the record names the session the call was ADMITTED to, the one its
