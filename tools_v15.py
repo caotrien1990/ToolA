@@ -7923,10 +7923,11 @@ async def restart_orchestrator_via_bat(
         "controller_fallback": False,
         "helper_path": str(helper_path),
         "helper_log": str(log_path),
+        "status_file": str(cache_dir / "restart_status.json"),
         "delay_before_restart_seconds": delay,
         "poll_health_after_seconds": delay + 8,
         "expected_health_url": "http://localhost:8083/health",
-        "ca_next_action": "wait_delay_then_poll_health_until_ok_then_verify_pid_changed",
+        "ca_next_action": "poll_restart_status_file_via_read_file_range_then_verify_health_pid_changed",
     }
     if force_result is not None:
         payload["force_drain"] = force_result

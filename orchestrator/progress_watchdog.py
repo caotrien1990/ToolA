@@ -1,6 +1,7 @@
 """Progress-based watchdog primitives for unbounded explicit repository work."""
 from __future__ import annotations
 
+import os
 import sys
 import threading
 import time
@@ -13,6 +14,15 @@ class OperationCancelled(RuntimeError):
     pass
 
 
+def _default_deadline_s() -> float | None:
+    """Read ORCH_WRITE_DEADLINE_S (default 300s). Returns None only if explicitly set to empty/0."""
+    try:
+        v = float(os.environ.get("ORCH_WRITE_DEADLINE_S", "300") or 0)
+        return v if v > 0 else None
+    except (ValueError, TypeError):
+        return 300.0
+
+
 @dataclass
 class ProgressWatchdog:
     operation_id: str = ""
@@ -23,6 +33,9 @@ class ProgressWatchdog:
     total_units: int | None = None
     revision: int = 0
     started_mono: float = field(default_factory=time.monotonic)
+    # Sprint 3 Point 3 (F-A2): wall-clock deadline enforced in checkpoint().
+    # Env ORCH_WRITE_DEADLINE_S, default 300s. None disables.
+    deadline_s: float | None = field(default_factory=_default_deadline_s)
     last_progress_mono: float = field(default_factory=time.monotonic)
     # Wall time per phase in ms, cumulative per name. #2: a 5-line write_fix took
     # 323602ms and its ledger said only duration_ms, so "contention between two calls
@@ -84,6 +97,14 @@ class ProgressWatchdog:
     def checkpoint(self, phase: str | None = None) -> None:
         if self.cancel_event is not None and self.cancel_event.is_set():
             raise OperationCancelled(f"operation cancelled during {phase or self.phase}")
+        # Sprint 3 Point 3 (F-A2): enforce a wall-clock deadline. started_mono was
+        # tracked but never compared; a holder stuck in synchronous code (long walk)
+        # never hit a cancellation point. The deadline only fires here, never in
+        # mark() (documented as not a cancellation point by design).
+        if (self.deadline_s is not None
+                and (time.monotonic() - self.started_mono) > self.deadline_s):
+            raise OperationCancelled(
+                f"operation deadline exceeded ({self.deadline_s:.0f}s) during {phase or self.phase}")
 
     def snapshot(self, *, detail: str = "") -> dict:
         now = time.monotonic()

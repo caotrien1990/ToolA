@@ -698,6 +698,10 @@ def _client_transport_gone(request) -> bool:
     call an orphan. Only a transport that EXISTS and is None-or-closing is a client
     that left -- for a real aiohttp request the attribute is always present, so this
     preserves the D4 behaviour exactly where D4 applied.
+
+    Limitation (Sprint 3 F-A7): only is_closing() is checked. A client that timed out
+    but has not closed its TCP connection yet is NOT detected as gone until the
+    socket actually closes. This is a heuristic, not a guarantee.
     """
     transport = getattr(request, "transport", _TRANSPORT_ABSENT)
     if transport is _TRANSPORT_ABSENT:
@@ -2131,6 +2135,18 @@ def _tool_concurrency_limit(category: str) -> int:
         return 1
     return max(1, int(os.environ.get(
         f"ORCH_SEM_{category.upper()}", _TOOL_SEM_LIMITS.get(category, 4))))
+def _sem_wait_timeout_s(category: str) -> float:
+    """Max seconds a caller waits for a bounded slot before a 429 reject.
+
+    Without a bound, waiters on a wedged holder hang silently until the
+    client gives up (observed: multi-minute hangs on tiny writes with no
+    server-side error). Env ORCH_SEM_WAIT_TIMEOUT_S, default 60.0, floor 1.0.
+    """
+    try:
+        timeout = float(os.environ.get("ORCH_SEM_WAIT_TIMEOUT_S", 60.0))
+    except (TypeError, ValueError):
+        timeout = 60.0
+    return max(1.0, timeout)
 
 
 def _admission_status(category: str, now: float | None = None) -> dict:
@@ -2159,7 +2175,7 @@ def _admission_status(category: str, now: float | None = None) -> dict:
 
 
 async def _acquire_tool_semaphore(tool_name: str, body: dict, operation_id: str):
-    """Acquire one bounded slot or reject immediately when its wait queue is full."""
+    """Acquire one bounded slot; reject when its wait queue is full or the wait exceeds ORCH_SEM_WAIT_TIMEOUT_S."""
     sem = _tool_semaphore(tool_name, body)
     category = _tool_semaphore_category(tool_name, body)
     if sem is None:
@@ -2171,7 +2187,11 @@ async def _acquire_tool_semaphore(tool_name: str, body: dict, operation_id: str)
     _SEMAPHORE_WAITERS[category] = waiters + 1
     _SEMAPHORE_WAITER_STARTED.setdefault(category, {})[operation_id] = time.time()
     try:
-        await sem.acquire()
+        try:
+            await asyncio.wait_for(sem.acquire(), timeout=_sem_wait_timeout_s(category))
+        except asyncio.TimeoutError:
+            _SEMAPHORE_REJECTED[category] = _SEMAPHORE_REJECTED.get(category, 0) + 1
+            raise ToolAdmissionOverloaded(category, _admission_status(category))
     finally:
         _SEMAPHORE_WAITERS[category] = max(
             0, _SEMAPHORE_WAITERS.get(category, 1) - 1)
@@ -2183,8 +2203,18 @@ async def _acquire_tool_semaphore(tool_name: str, body: dict, operation_id: str)
     return sem, category
 
 
-def _release_tool_semaphore(sem, category: str, operation_id: str) -> None:
-    """Idempotently release the exact slot owned by operation_id."""
+def _release_tool_semaphore(sem, category: str, operation_id: str, *, reason: str = "") -> None:
+    """Idempotently release the exact slot owned by operation_id.
+
+    Called TWICE per tool call by design (not a bug):
+      1. early_release_post_tool: inner finally, right after fn(**body) returns.
+         Lets the next waiter start while this call does post-tool work.
+      2. safety_net_setup_phase: outer finally. Covers exceptions in the setup
+         phase (acquire -> ledger begin -> monitor setup) that fire before the
+         early release runs.
+    Idempotent: double release (or releasing a non-holder) is a no-op.
+    `reason` names which release path fired; it is for greppability only and
+    changes no behavior."""
     if sem is None:
         return
     holders = _SEMAPHORE_HOLDERS.get(category) or {}
@@ -15993,6 +16023,10 @@ accepted_fields=sorted(accepted_fields),
     _current_task = asyncio.current_task()
     if _current_task is not None:
         _INFLIGHT_OPERATIONS[_request_op_id] = _current_task
+    # (c) 2026-10-08: init BEFORE the try below, same A41-tier-1c rule as above --
+    # the disconnect-monitor stop flag is read by that try's `finally`.
+    _disconnect_stop = None
+    _cancel_event = None
 
     try:
         # CAN-052 admission control: bound heavy-tool concurrency (subprocess /
@@ -16005,6 +16039,42 @@ accepted_fields=sorted(accepted_fields),
                 tool_name, body, _request_op_id)
             _queue_wait_ms = int((time.time() - _q0) * 1000)
             _t0 = time.time()
+            # Sprint 3 Point 2 (F-A1): setup cancellation scope IMMEDIATELY after
+            # semaphore acquire, BEFORE ledger begin. _write_ledger_begin_async can
+            # hang on _write_ledger_async_lock; without a running monitor, a wedged
+            # holder bricks the project until restart. The op_id is a deterministic
+            # hash f(tool, payload, session), so pre-computing it here is safe.
+            # N-A1: read tools get the same scope (keyed by request_op_id); they
+            # acquire bounded semaphores and can wedge as well. One unified path.
+            _scope_op_id = (_write_ledger_operation_id(tool_name, body, _task_session_id)
+                            if tool_name in _MUTATING_TOOLS else "")
+            _scope_id = _scope_op_id or _request_op_id
+            _cancel_event = _OPERATION_CANCEL_EVENTS.get(_scope_op_id)
+            if _cancel_event is None:
+                _cancel_event = threading.Event()
+                if _scope_op_id:
+                    _OPERATION_CANCEL_EVENTS[_scope_op_id] = _cancel_event
+            # (c) 2026-10-08, Sprint 3: orphaned holder wedges the per-project semaphore.
+            # A polling thread, not an asyncio task: the tool may block the
+            # event loop (synchronous walk), so a task would never run. On
+            # client disconnect it sets the cancel_event; the next checkpoint()
+            # raises OperationCancelled and the dispatcher finally releases
+            # the semaphore. F-A6: stop event captured locally; the outer finally
+            # sets it. Daemon + 1s poll bound the leak if the finally is skipped.
+            _disconnect_stop = threading.Event()
+            _mon_cancel, _mon_request, _mon_stop = _cancel_event, request, _disconnect_stop
+            def _watch_client_disconnect():
+                while not _mon_stop.wait(1.0):
+                    try:
+                        if _client_transport_gone(_mon_request):
+                            _mon_cancel.set()
+                            break
+                    except Exception:
+                        # Transient transport read failure: keep watching.
+                        continue
+            threading.Thread(target=_watch_client_disconnect,
+                             name="disconnect-watch-%s" % _scope_id,
+                             daemon=True).start()
         # FixA2407 P1-1: record a mutating call BEFORE it runs. The server always knows
         # whether the write landed; the caller that timed out does not.
         # #17: the record names the session the call was ADMITTED to, the one its
@@ -16021,8 +16091,12 @@ accepted_fields=sorted(accepted_fields),
             # "a run owns it" across two moments, and a twin whose begin landed in that gap
             # saw the row without the event and ran as well. Fall back to a new event only
             # for the paths that never went through begin.
-            _cancel_event = _OPERATION_CANCEL_EVENTS.get(_op_id) or threading.Event()
-            _OPERATION_CANCEL_EVENTS[_op_id] = _cancel_event
+            # Sprint 3 Point 2: cancel_event and disconnect monitor are set up above
+            # (before ledger begin, covering the ledger wait). Fallback for the edge
+            # case where no semaphore was acquired: create the event here.
+            if _cancel_event is None:
+                _cancel_event = _OPERATION_CANCEL_EVENTS.get(_op_id) or threading.Event()
+                _OPERATION_CANCEL_EVENTS[_op_id] = _cancel_event
             _watchdog_token = bind_watchdog(ProgressWatchdog(
                 operation_id=_op_id,
                 heartbeat=lambda p: _write_ledger_heartbeat(_op_id, p),
@@ -16106,7 +16180,10 @@ accepted_fields=sorted(accepted_fields),
                 else:
                     raw = await fn(**body)
         finally:
-            _release_tool_semaphore(_sem, _sem_category, _request_op_id)
+            # Early release: let the next waiter start while this call does post-tool
+            # work (result parsing, auto-chain, hints). The outer finally is the safety
+            # net for setup-phase exceptions. Idempotent: see _release_tool_semaphore.
+            _release_tool_semaphore(_sem, _sem_category, _request_op_id, reason="early_release_post_tool")
         # #2: the tool's own last phase ends HERE. Parsing, auto-chain and hints below
         # are the dispatcher's, and unmarked they were charged to whatever phase the
         # tool entered last. A tool that never reported progress stays unmarked.
@@ -16680,12 +16757,18 @@ accepted_fields=sorted(accepted_fields),
                 )
         except Exception as exc:
             logger.error("write ledger finalization failed for %s: %s", _op_id, exc)
-        _release_tool_semaphore(_sem, _sem_category, _request_op_id)
+        # Safety net: release if the setup phase (acquire -> ledger begin -> monitor
+        # setup) raised before the early release ran. Idempotent: no-op if already
+        # released. See _release_tool_semaphore docstring for the two-release design.
+        _release_tool_semaphore(_sem, _sem_category, _request_op_id, reason="safety_net_setup_phase")
         reset_admission_identity(_admission_tokens)
         if _INFLIGHT_OPERATIONS.get(_request_op_id) is _current_task:
             _INFLIGHT_OPERATIONS.pop(_request_op_id, None)
         if _op_id:
             _OPERATION_CANCEL_EVENTS.pop(_op_id, None)
+        if _disconnect_stop is not None:
+            # (c) stop the disconnect monitor; the tool is done.
+            _disconnect_stop.set()
         if _watchdog_token is not None:
             try:
                 from orchestrator.progress_watchdog import reset_watchdog

@@ -53,6 +53,7 @@ from orchestrator.skip_rules import (  # noqa: E402
     SKIP_DIRS,
     ignored_directory_name,
     should_skip_dir,
+    should_skip_dir_path,
 )
 
 
@@ -1118,39 +1119,20 @@ def ensure_minimal_index(project_root: str) -> dict:
         "path": str(idx_path),
         "files": len((index or {}).get("files") or {}),
     }
+def _index_apply_patch(index: dict, cache_data: dict, removed: bool) -> None:
+    """Apply ONE file patch to the in-memory INDEX dict. No I/O.
 
-
-def update_index_incremental(project_root, cache_data: dict, *, removed: bool = False) -> dict:
-    """Patch INDEX.json for ONE changed file WITHOUT re-reading the whole cache tree.
-
-    The old design called build_index() on every write, which re-reads every cached JSON
-    (minutes on a 29k-file repo -> writers fell back to native edits). Here we load the
-    existing INDEX, drop the changed file's entry + its function/class refs + entrypoint
-    flag, re-add them from `cache_data` (the freshly written cache JSON, unless removed),
-    then recompute the aggregates in memory. Cost is O(changed) disk + O(symbols) memory,
-    not O(repo) disk.
-
-    Correctness: the per-file projection and the aggregate recomputation reuse the SAME
-    helpers as build_index (_index_file_entry / _index_register_symbols /
-    _index_finalize_aggregates), so an incrementally-patched INDEX is byte-identical to a
-    full rebuild for the same cache state. If the INDEX is missing/corrupt we fall back to
-    a full build_index so first-write and recovery paths stay correct.
+    Extracted from update_index_incremental so N patches can be applied in
+    memory, then finalized (aggregates + single write) once. This fixes the
+    N+1 problem where _reconcile_external_files called
+    update_index_incremental in a loop: N full INDEX rewrites (O(N*M)).
+    Batch apply is O(N+M).
     """
-    project_root = Path(project_root).resolve()
     rel = cache_data.get("file") if isinstance(cache_data, dict) else None
     if not rel:
-        return build_index(str(project_root))
-    idx_path = project_root / CACHE_DIR_NAME / INDEX_FILENAME
-    try:
-        index = json.loads(idx_path.read_text(encoding="utf-8"))
-        if not isinstance(index.get("files"), dict):
-            raise ValueError("INDEX missing 'files' map")
-    except Exception:
-        # No usable prior index (first write, corruption) -> authoritative full rebuild.
-        return build_index(str(project_root))
-
+        return
     index.setdefault("functions", {})
-    index.setdefault("classes", {})
+    index.setdefault("classes", {}) 
     index.setdefault("entrypoints", [])
 
     # Remove any prior entry/refs for this file (tolerate slash-variant keys defensively).
@@ -1184,14 +1166,63 @@ def update_index_incremental(project_root, cache_data: dict, *, removed: bool = 
             _index_register_symbols(index, rel, cache_data)
     if not omitted:
         index.pop("snapshot_omitted_files", None)
+def update_index_incremental(project_root, cache_data: dict, *, removed: bool = False) -> dict:
+    """Patch INDEX.json for ONE changed file WITHOUT re-reading the whole cache tree.
 
+    Thin wrapper over update_index_batch: a single update is a one-element batch.
+    One implementation serves both paths, so the N+1 defect class (calling this
+    in a loop for N full INDEX rewrites) cannot reappear -- loops must call
+    update_index_batch directly.
+
+    The old design called build_index() on every write, which re-reads every cached JSON
+    (minutes on a 29k-file repo -> writers fell back to native edits). Here we load the
+    existing INDEX, drop the changed file's entry + its function/class refs + entrypoint
+    flag, re-add them from `cache_data` (the freshly written cache JSON, unless removed),
+    then recompute the aggregates in memory. Cost is O(changed) disk + O(symbols) memory,
+    not O(repo) disk.
+
+    Correctness: the per-file projection and the aggregate recomputation reuse the SAME
+    helpers as build_index (_index_file_entry / _index_register_symbols /
+    _index_finalize_aggregates), so an incrementally-patched INDEX is byte-identical to a
+    full rebuild for the same cache state. If the INDEX is missing/corrupt we fall back to
+    a full build_index so first-write and recovery paths stay correct.
+    """
+    return update_index_batch(project_root, [(cache_data, removed)])
+
+
+def update_index_batch(project_root, updates: list) -> dict:
+    """Apply N file patches with ONE INDEX load + ONE finalize + ONE write.
+
+    Batch version of update_index_incremental. Fixes the N+1 problem in
+    _reconcile_external_files: instead of N full INDEX rewrites (O(N*M)),
+    all patches are applied in memory, then finalized once (O(N+M)).
+
+    updates: list of (cache_data, removed) tuples.
+    """
+    project_root = Path(project_root).resolve()
+    idx_path = project_root / CACHE_DIR_NAME / INDEX_FILENAME
+    if not updates:
+        try:
+            return json.loads(idx_path.read_text(encoding="utf-8"))
+        except Exception:
+            return build_index(str(project_root))
+    for cache_data, _removed in updates:
+        rel = cache_data.get("file") if isinstance(cache_data, dict) else None
+        if not rel:
+            return build_index(str(project_root))
+    try:
+        index = json.loads(idx_path.read_text(encoding="utf-8"))
+        if not isinstance(index.get("files"), dict):
+            raise ValueError("INDEX missing files map")
+    except Exception:
+        return build_index(str(project_root))
+    for cache_data, removed in updates:
+        _index_apply_patch(index, cache_data, removed)
     index["generated_at"] = datetime.now().isoformat(timespec="seconds")
     _index_finalize_aggregates(index)
     index.setdefault("corrupt_cache_files", [])
     _write_index_atomic(project_root, index)
     return index
-
-
 def _should_scan_file(file_path: Path, project_root: str | Path | None = None) -> bool:
     return _skip_reason(file_path, project_root) is None
 
@@ -1368,7 +1399,7 @@ def _reindex_from_disk(project_root: Path, watchdog=None) -> dict:
         written: set[str] = set()
         scanned = 0
         for root, dirs, files in os.walk(project_root):
-            dirs[:] = [d for d in dirs if not should_skip_dir(d, project_root)]
+            dirs[:] = [d for d in dirs if not should_skip_dir_path(Path(root) / d, project_root)]
 
             for fn in files:
                 scanned += 1
@@ -1438,7 +1469,69 @@ _SNAPSHOT_WRITE_COUNTER: dict[str, int] = {}
 _SNAPSHOT_FULL_REFRESH_EVERY = 50
 _SNAPSHOT_GC_COUNTER: dict[str, int] = {}
 _SNAPSHOT_GC_EVERY = 10
+# Throttle for the per-write full-tree external-edit reconcile in
+# _update_file_cache_locked. The reconcile catches files changed OUTSIDE the
+# write pipeline, but os.walk(project_root) on every write makes each write
+# pay O(tree) while holding the per-project write semaphore. Timestamps are
+# advisory; a benign race only shifts which write does the walk.
+# Env ORCH_RECONCILE_THROTTLE_S (default 30.0); 0/negative = always run.
+_RECONCILE_LAST_RUN: dict[str, float] = {}
 
+
+def _reconcile_throttle_due(project_root: Path) -> bool:
+    """True when a full-tree external-edit reconcile is due for this root."""
+    try:
+        interval = float(os.environ.get("ORCH_RECONCILE_THROTTLE_S", 30.0))
+    except (TypeError, ValueError):
+        interval = 30.0
+    if interval <= 0:
+        return True
+    key = os.path.normcase(str(project_root))
+    now = time.monotonic()
+    if now - _RECONCILE_LAST_RUN.get(key, 0.0) < interval:
+        return False
+    _RECONCILE_LAST_RUN[key] = now
+    return True
+
+
+def _volatile_skip_roots() -> list:
+    """Roots where a full-tree reconcile/index walk is never worth its cost.
+
+    Live temp directories churn constantly (other processes create/delete files
+    outside the write pipeline), so the mapper cache is always stale there and
+    every full walk re-hashes the whole tree. Measured 2026-10-08: a full
+    _reconcile_external_files walk costs 62.44s per ~3.9k files; Temp (10k+
+    files, always dirty) wedged one write for 6+ minutes while holding the
+    per-project semaphore. Env ORCH_RECONCILE_SKIP_ROOTS adds extra
+    semicolon-separated roots.
+    """
+    roots = []
+    for cand in (os.environ.get("TEMP"), os.environ.get("TMP"), r"C:\Windows\Temp"):
+        if cand and cand.strip():
+            roots.append(cand.strip())
+    for part in os.environ.get("ORCH_RECONCILE_SKIP_ROOTS", "").split(";"):
+        part = part.strip()
+        if part:
+            roots.append(part)
+    return roots
+
+
+def _is_volatile_root(root: Path) -> bool:
+    """True when root is inside a volatile skip root (Temp etc.)."""
+    try:
+        resolved = os.path.normcase(str(root.resolve()))
+    except OSError:
+        resolved = os.path.normcase(str(root))
+    for cand in _volatile_skip_roots():
+        try:
+            norm = os.path.normcase(str(Path(cand).resolve()))
+        except OSError:
+            norm = os.path.normcase(cand)
+        if not norm:
+            continue
+        if resolved == norm or resolved.startswith(norm + os.sep):
+            return True
+    return False
 
 def _snapshot_needs_full_refresh(project_root: Path) -> bool:
     key = os.path.normcase(str(project_root))
@@ -1455,15 +1548,21 @@ def _snapshot_should_gc(project_root: Path) -> bool:
 
 
 def _reconcile_external_files(project_root: Path, index: dict, changed_paths: dict, watchdog=None) -> dict:
-    """Discover drift with P10's stat-gated hash; isolate failed file captures.
+    """Discover drift with P10s stat-gated hash; isolate failed file captures.
 
     Discovery walks the selected root, but warm unchanged sources are not read.
-    P10's same-inode/size/mtime rewrite boundary applies here too. Failed captures
+    P10s same-inode/size/mtime rewrite boundary applies here too. Failed captures
     are excluded from INDEX and the snapshot with their reasons retained; storage
     and publication failures still propagate instead of claiming a valid snapshot.
+
+    Batch optimization: changed files are collected during the walk, then applied
+    via update_index_batch (ONE INDEX load + ONE finalize + ONE write) instead
+    of update_index_incremental per file (N full rewrites, O(N*M)). This is the
+    fix for the N+1 INDEX update bottleneck: O(N+M) instead of O(N*M).
     """
     known = index.get("files", {})
     seen = set()
+    pending_updates = []
 
     def check_deadline():
         if watchdog:
@@ -1475,7 +1574,7 @@ def _reconcile_external_files(project_root: Path, index: dict, changed_paths: di
     scanned = 0
     for walk_root, dirs, files in os.walk(project_root, onerror=walk_error, followlinks=False):
         check_deadline()
-        dirs[:] = [d for d in dirs if not should_skip_dir(d, project_root)
+        dirs[:] = [d for d in dirs if not should_skip_dir_path(Path(walk_root) / d, project_root)
                    and not (Path(walk_root) / d).is_symlink()]
         for name in files:
             scanned += 1
@@ -1507,14 +1606,17 @@ def _reconcile_external_files(project_root: Path, index: dict, changed_paths: di
             # A failed capture is absent from this snapshot, not stale content
             # borrowed from the previous generation. Keep the error sidecar so
             # rebuilds preserve disclosure, and retry the source on later writes.
-            index = update_index_incremental(project_root, metadata, removed=False)
+            pending_updates.append((metadata, False))
             failed = bool(metadata.get("error") or not metadata.get("hash"))
             changed_paths[rel] = "removed" if failed else "modified"
     for rel in (set(known) | set(index.get("snapshot_omitted_files", {}))) - seen:
         check_deadline()
         remove_file_cache(str(project_root / rel), str(project_root))
-        index = update_index_incremental(project_root, {"file": rel}, removed=True)
+        pending_updates.append(({"file": rel}, True))
         changed_paths[rel] = "removed"
+    # Single batch INDEX update: O(N+M) instead of O(N*M) per-file rewrites.
+    if pending_updates:
+        index = update_index_batch(project_root, pending_updates)
     return index
 
 
@@ -1550,15 +1652,17 @@ def update_file_cache(file_path: str, project_root: str) -> dict:
 
 
 def _update_file_cache_locked(file_path: str, project_root: str) -> dict:
-    """Write/remove ONE file's cache entry, then rebuild the project INDEX.
+    """Write/remove ONE file's cache entry, then patch the project INDEX incrementally.
 
-    CAN-039 (decision D5 = document, no delta rework): the per-file cache write is
+    CAN-039 (decision D5, updated 2026-10-08): the per-file cache write is
     already incremental (write_file_cache / remove_file_cache touch only this file),
-    but the INDEX is then rebuilt in full via build_index() on every write. That full
-    rebuild is intentionally kept because it is the SIMPLE + always-CORRECT source of
-    truth — partial/delta INDEX maintenance risks drifting the functions/classes/
-    groups/hotspots aggregates. The rebuild reads cached JSON (not source), so it is
-    cheap on current project sizes; build_index is timeout-guarded (CAN-040).
+    and the INDEX is now patched incrementally too via update_index_incremental()
+    -- one patch + one aggregate recompute, O(changed) not O(repo). (Was: full
+    rebuild via build_index() on every write.) The incremental patch reuses the
+    SAME helpers as build_index (_index_file_entry / _index_register_symbols /
+    _index_finalize_aggregates), so a patched INDEX stays byte-identical to a full
+    rebuild for the same cache state. If the INDEX is missing/corrupt,
+    update_index_incremental falls back to a full build_index.
 
     CAN-039 invalidation policy (decision D8 = directory-entry): cache validity is
     scoped at the directory level — SKIP_DIRS subtrees are never cached, and a moved/
@@ -1577,6 +1681,14 @@ def _update_file_cache_locked(file_path: str, project_root: str) -> dict:
     else:
         metadata = write_file_cache(file_path, project_root)
     resolved_root = Path(project_root).resolve()
+    # (b-ext) 2026-10-08: volatile roots skip INDEX/maps/snapshots entirely.
+    # The Temp INDEX is 23MB; load + aggregate recompute + write costs 30s+
+    # per write and is instantly stale (other processes churn Temp). The
+    # per-file cache above still seeds read tokens for write_fix.
+    if _is_volatile_root(resolved_root):
+        metadata["snapshot_id"] = ""
+        metadata["index_skipped_volatile"] = True
+        return metadata
     index_existed = (resolved_root / CACHE_DIR_NAME / INDEX_FILENAME).exists()
     # Incremental single-file INDEX patch (was: full build_index on every write, which
     # re-read the entire cache tree — O(repo) disk, minutes on 29k-file repos). Falls back
@@ -1600,10 +1712,21 @@ def _update_file_cache_locked(file_path: str, project_root: str) -> dict:
     # auto-heal killed the process after ~150s of /health timeouts.
     rel_for_snapshot = metadata.get("file")
     full_refresh = bool(rel_for_snapshot) and _snapshot_needs_full_refresh(resolved_root)
+    # (c) 2026-10-08: if the client went away mid-walk, abort the index work but
+    # keep the already-written file: a cancelled reconcile must not fail the write.
+    # (Volatile roots return early above, so no _skip_full_walk check needed here.)
+    _index_cancelled = False
+    from orchestrator.progress_watchdog import OperationCancelled as _OpCancelled
     if index_existed and (full_refresh or not rel_for_snapshot):
         from orchestrator.progress_watchdog import current_watchdog
         _watchdog = current_watchdog()
-        index = _reindex_from_disk(resolved_root, watchdog=_watchdog)
+        try:
+            index = _reindex_from_disk(resolved_root, watchdog=_watchdog)
+        except _OpCancelled:
+            logging.getLogger(__name__).warning(
+                "Full reindex cancelled for %s; index refresh skipped", resolved_root)
+            _index_cancelled = True
+            metadata["reconcile_cancelled"] = True
         changed_paths = None
     else:
         snapshot_removed = removed or bool(metadata.get("error") or not metadata.get("hash"))
@@ -1611,14 +1734,32 @@ def _update_file_cache_locked(file_path: str, project_root: str) -> dict:
         if index_existed and changed_paths is not None:
             from orchestrator.progress_watchdog import current_watchdog
             _watchdog = current_watchdog()
-            index = _reconcile_external_files(resolved_root, index, changed_paths,
-                                              watchdog=_watchdog)
-            changed_paths = _snapshot_pending_changes(resolved_root, index, changed_paths)
+            try:
+                if _reconcile_throttle_due(resolved_root):
+                    index = _reconcile_external_files(resolved_root, index, changed_paths,
+                                                      watchdog=_watchdog)
+            except _OpCancelled:
+                logging.getLogger(__name__).warning(
+                    "Reconcile cancelled for %s; index refresh skipped", resolved_root)
+                _index_cancelled = True
+                metadata["reconcile_cancelled"] = True
+            if not _index_cancelled:
+                changed_paths = _snapshot_pending_changes(resolved_root, index, changed_paths)
     _write_project_map_markdown(resolved_root, index)
     _write_project_context_markdown(resolved_root, index)
-    metadata["snapshot_id"] = _publish_search_snapshot(
-        resolved_root, index, changed_paths, allow_full_walk=index_existed,
-        watchdog=locals().get("_watchdog"))
+    if _index_cancelled:
+        metadata["snapshot_id"] = ""
+    else:
+        try:
+            metadata["snapshot_id"] = _publish_search_snapshot(
+                resolved_root, index, changed_paths,
+                allow_full_walk=index_existed,
+                watchdog=locals().get("_watchdog"))
+        except _OpCancelled:
+            logging.getLogger(__name__).warning(
+                "Snapshot publish cancelled for %s", resolved_root)
+            metadata["snapshot_id"] = ""
+            metadata["reconcile_cancelled"] = True
     if index.get("snapshot_omitted_files"):
         metadata["snapshot_omitted_files"] = dict(index["snapshot_omitted_files"])
     return metadata
@@ -1784,6 +1925,7 @@ def reconcile_stale_scope_drift(project_root: str, added, modified, deleted,
 
     with _pmap_lock(root):
         changed_paths = {}
+        pending_updates: list = []
         removed_count = 0
         reconciled_files = 0
         bytes_spent = 0
@@ -1801,7 +1943,7 @@ def reconcile_stale_scope_drift(project_root: str, added, modified, deleted,
                 break
             abs_path = _abs(rel)
             remove_file_cache(abs_path, str(root))
-            index = update_index_incremental(root, {"file": rel}, removed=True)
+            pending_updates.append(({"file": rel}, True))
             changed_paths[rel] = "removed"
             removed_count += 1
 
@@ -1817,7 +1959,7 @@ def reconcile_stale_scope_drift(project_root: str, added, modified, deleted,
                     # gate: treat as a removal so the republish cannot hold its
                     # record. Removals carry no byte cost.
                     remove_file_cache(abs_path, str(root))
-                    index = update_index_incremental(root, {"file": rel}, removed=True)
+                    pending_updates.append(({"file": rel}, True))
                     changed_paths[rel] = "removed"
                     removed_count += 1
                     continue
@@ -1831,10 +1973,16 @@ def reconcile_stale_scope_drift(project_root: str, added, modified, deleted,
                     stopped_reason = "bytes_budget"
                     break
                 metadata = write_file_cache(abs_path, str(root))
-                index = update_index_incremental(root, metadata, removed=False)
+                pending_updates.append((metadata, False))
                 changed_paths[rel] = "modified"
                 reconciled_files += 1
                 bytes_spent += size
+
+        # Single batch INDEX update: O(N+M) instead of N per-file rewrites.
+        # The per-file cache work above was already time/byte-budgeted; the
+        # INDEX must reflect it for the publish step below.
+        if pending_updates:
+            index = update_index_batch(root, pending_updates)
 
         processed = set(changed_paths)
         residue = [r for r in all_drift if r not in processed]
@@ -1977,7 +2125,7 @@ def reconcile_search_snapshot_drift(project_root: str, *, scope: str = "",
         for walk_root, dirs, walk_files in os.walk(walk_target):
             if time.monotonic() >= deadline:
                 break
-            dirs[:] = [d for d in dirs if not should_skip_dir(d, root)]
+            dirs[:] = [d for d in dirs if not should_skip_dir_path(Path(walk_root) / d, root)]
             for fn in walk_files:
                 path = Path(walk_root) / fn
                 if not path.is_file() or not _should_scan_file(path, root):
