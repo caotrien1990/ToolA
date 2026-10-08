@@ -282,12 +282,14 @@ def build_dsm(
     edge_kind: str = "observed",
 ) -> dict[str, Any]:
     """Public kernel. Sparse page only — never a dense N×N matrix."""
+    unmatched: list[str] = []
     if view is not None:
         if not isinstance(view, dict) or view.get("status") not in {"ok", "partial"}:
             return _unavailable("unavailable_view")
         nodes = view.get("included_files") or []
         key = "strict_edges" if edge_kind == "strict" else "observed_edges"
         edges = view.get(key) or []
+        unmatched = list(view.get("unmatched_files") or [])
     display: dict[str, str] = {}
     for raw in nodes or []:
         path = _norm_slash(raw)
@@ -358,12 +360,18 @@ def build_dsm(
         notes.append("truncated_2000")
     if sampled:
         notes.append("propagation_sampled")
+    if unmatched:
+        notes.append("unmatched_included_files_present")
 
     status = "ok"
     reason = None
-    if truncated or sampled:
+    if unmatched or truncated or sampled:
         status = "partial"
-        reason = "truncated" if truncated else "sampled"
+        reason = (
+            "unmatched_included_files"
+            if unmatched
+            else ("truncated" if truncated else "sampled")
+        )
 
     return {
         "version": PAYLOAD_VERSION,
@@ -392,5 +400,6 @@ def build_dsm(
         "truncated": truncated,
         "sampled": sampled,
         "metric_notes": notes,
+        "unmatched_files": unmatched,
         "provenance": {"algorithm_version": ALGORITHM_NAME},
     }

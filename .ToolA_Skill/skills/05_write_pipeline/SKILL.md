@@ -79,6 +79,7 @@ Pipeline: dry_run all → backup_project → apply (mỗi op atomic) → batch v
 | Mixed batch (edit existing + create new) | `write_transaction` với `op.tool=write_fix\|write_new_file` (R13.4) | One atomic batch |
 | HTML file | `write_fix_html` (delimiter check) | For .html only |
 | New file | `write_new_file` | Set `overwrite=false` default |
+| Large file (≥100KB content) | Split into chunks <100KB, multiple `write_fix` appends | Single write ≥100KB times out ~120s (`TimeoutError`, file NOT created). Measured 2026-10-08. |
 | Replace exact line range | `write_fix(start_line, end_line, new_content)` | Re-read before write |
 | Ruff safe auto-fix | `ruff_fix(project_path, apply=false)` then review; only set `apply=true` in EXECUTE | Preview-before-apply; `unsafe_fixes` stays opt-in |
 

@@ -1481,17 +1481,23 @@ def _stage_durable_session_event(
             or ""
         )
     if not session_id:
+        # H2 2026-10-08: never drop audit for missing session — stamp a fallback
+        # session id so direct-HTTP / session-less calls stay auditable instead
+        # of vanishing from durable_audit, session events and write_operations.
+        _fb_agent = (task_meta.get("agent_id") or "anon") if isinstance(task_meta, dict) else "anon"
+        # H2-collision 2026-10-08: uuid suffix prevents same-second collisions from same agent.
+        session_id = "direct-%s-%d-%s" % (re.sub(r"[^a-z0-9_-]", "", str(_fb_agent).lower())[:32] or "anon", int(time.time()), uuid.uuid4().hex[:8])
         if (
             project
             and tool_name in _MUTATING_TOOLS
             and tool_name not in _NO_SESSION_REQUIRED
         ):
             logger.warning(
-                "Mutating tool '%s' completed without a capturable session for project '%s'.",
+                "Mutating tool '%s' used fallback session '%s' for project '%s'.",
                 tool_name,
+                session_id,
                 project,
             )
-        return None
 
     payload = {
         "session_id": session_id,

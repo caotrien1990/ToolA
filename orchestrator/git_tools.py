@@ -242,6 +242,19 @@ def stale_check(project_path, max_commit_age_hours=168, expected_state_hash=''):
 
 def diff(project_path, scope='worktree', paths=None, context_lines=3, max_chars=50000, check_whitespace=False):
     root=resolve_root(project_path); specs=_pathspecs(root,paths); scope=str(scope).lower(); base=['--literal-pathspecs','diff','--no-ext-diff','--no-textconv','--no-color',f'--unified={max(0,min(int(context_lines),20))}']
+    # P7: fail loud on pathspecs that match nothing. With --literal-pathspecs git
+    # answers an empty diff (not an error) for a nonexistent path, which reads as
+    # "no changes". A spec counts as existing when it is on disk, is tracked in
+    # the index (covers worktree-deleted files with a pending deletion diff), or
+    # is present in HEAD (covers staged deletions).
+    if specs:
+        _missing=[]
+        for _spec in specs:
+            if (root/_spec).exists(): continue
+            if _run(root,['ls-files','--',_spec],check=False)['stdout'].strip(): continue
+            if _run(root,['cat-file','-e','HEAD:'+_spec],check=False)['exit_code']==0: continue
+            _missing.append(_spec)
+        if _missing: raise GitToolError('PATHSPEC_NOT_FOUND','pathspec not found in worktree, index or HEAD: '+', '.join(_missing),pathspecs=_missing)
     if scope not in ('worktree','staged','both'): raise GitToolError('INVALID_GIT_DIFF_SCOPE',scope)
     def get(staged=False, check=False):
         args=list(base)

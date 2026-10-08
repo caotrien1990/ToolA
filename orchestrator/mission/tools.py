@@ -296,6 +296,9 @@ async def mission_next(mission_id=None):
         return lock_error
     try:
         db_path = _ensure_db()
+        mission = store.get_mission(db_path, int(mission_id))
+        if not mission:
+            return _err("MISSION_NOT_FOUND", f"mission {mission_id} not found")
         rows = _task_rows(db_path, int(mission_id))
         task = engine.next_ready_task(rows)
         return _json({"ok": True, "task": task})

@@ -257,6 +257,13 @@ async def cbm_index(project_path: str = "", scope: str = "core", **aliases) -> s
     if path_err:
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
                             "error": path_err}, ensure_ascii=False)
+    # P6 (F-01): a nonexistent project root must NOT fall through to the
+    # indexer, which would otherwise create a junk .orchestrator_cache/
+    # directory and report success.
+    if not os.path.isdir(project_path):
+        return _json.dumps({"ok": False, "error_name": "INVALID_PROJECT_PATH",
+                            "error": f"project_path is not an existing directory: {project_path}"},
+                           ensure_ascii=False)
     try:
         async with _graph_write_lock(project_path):
             from orchestrator.progress_watchdog import current_watchdog
@@ -1052,10 +1059,13 @@ def _snapshot_from_view(view: dict, metrics: dict) -> dict:
     depth = _rules.max_depth_of(nodes, pairs)
     quality = metrics.get("analysis_quality_v1")
     prov = view.get("provenance") or {}
+    view_status = view.get("status")
     return {
         "version": 1,
-        "status": "ok" if view.get("status") in {"ok", "partial"} else str(view.get("status") or "unavailable"),
+        # P4: a partial view must stay "partial" -- never mapped to "ok".
+        "status": view_status if view_status in {"ok", "partial"} else str(view_status or "unavailable"),
         "reason": view.get("reason"),
+        "unmatched_files": list(view.get("unmatched_files") or []),
         "pass": False,
         "mode": "snapshot",
         "wrote": False,
@@ -1148,6 +1158,16 @@ async def cbm_quality_gate(
             compared["mode"] = "compare"
             compared["wrote"] = False
             compared["snapshot"] = snap
+            # P4: keep a partial view partial in compare output too --
+            # compare_baseline() only looks at metric aggregates.
+            if snap.get("status") == "partial":
+                compared["status"] = "partial"
+                compared["reason"] = snap.get("reason") or "unmatched_included_files"
+                compared["pass"] = False
+                compared["unmatched_files"] = list(snap.get("unmatched_files") or [])
+                _cmp_notes = compared.get("metric_notes") or []
+                if "view_partial" not in _cmp_notes:
+                    compared["metric_notes"] = _cmp_notes + ["view_partial"]
             return compared
         if not str(toml_text).strip():
             return {

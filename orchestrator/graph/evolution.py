@@ -259,12 +259,16 @@ def compute_from_records(
     files_dropped = 0
     pairs_considered = 0
     rename_partial = False
+    matched_keys: set[str] = set()
     notes = list(_NOTES)
 
     for rec in records:
         if rec.get("rename_in_commit"):
             rename_partial = True
         present = [p for p in rec.get("files") or [] if _allowed(p)]
+        if known_keys is not None:
+            for p in present:
+                matched_keys.add(_identity_key(p))
         # Presence counts every unique file; pair cap is separate.
         for path in _sorted_display(present):
             key = _identity_key(path)
@@ -417,6 +421,17 @@ def compute_from_records(
     if deadline:
         notes.append("deadline")
 
+    # P1: a requested included_file that matches nothing in the walked history
+    # is a caller error, not an empty result. Name it instead of a silent pass.
+    unmatched_files: list[str] = []
+    if known_keys is not None:
+        unmatched_files = sorted(
+            (known_display[key] for key in known_keys if key not in matched_keys),
+            key=str.casefold,
+        )
+    if unmatched_files:
+        notes.append("unmatched_included_files_present")
+
     status = "ok"
     reason = None
     if deadline and not records:
@@ -432,11 +447,16 @@ def compute_from_records(
     if deadline or shallow or history_truncated:
         status = "partial"
         reason = "deadline" if deadline else "history_truncated"
+    if unmatched_files:
+        status = "partial"
+        if reason is None:
+            reason = "unmatched_included_files"
 
     return {
         "version": PAYLOAD_VERSION,
         "status": status,
         "reason": reason,
+        "unmatched_files": unmatched_files,
         "pass": status in {"ok", "partial"},
         "lookback_days": lookback_days,
         "commits_analyzed": len(records),

@@ -149,6 +149,15 @@ def append_measurement(path: str | Path, measurement: dict[str, Any]) -> None:
 def load_measurements(path: str | Path, limit: int = 0) -> list[dict[str, Any]]:
     target = Path(path)
     if not target.is_file():
+        # P13: fail loud on a wrong project path instead of a silent [].
+        # Layout is <project_root>/.council/<file>; a missing project root
+        # means the caller passed a bad path, not "zero measurements".
+        # (A valid root with no measurements file yet still returns [].)
+        if not target.parent.parent.is_dir():
+            raise FileNotFoundError(
+                "P13 route measurements not found: project root is not a "
+                f"directory: {target.parent.parent} (invalid project_path?)"
+            )
         return []
     rows = []
     # One row per "\n" (append_jsonl): ensure_ascii=False keeps a raw U+2028/U+0085
@@ -212,6 +221,16 @@ def build_scorecard(rows: Iterable[dict[str, Any]], min_samples: int = DEFAULT_M
 
 def write_scorecard_files(scorecard: dict[str, Any], json_path: str | Path, markdown_path: str | Path) -> None:
     jp, mp = Path(json_path), Path(markdown_path)
+    # P13: never materialize `.council/route_scorecard.*` junk under a bogus
+    # path -- mkdir(parents=True) used to silently create the whole chain.
+    # Layout is <project_root>/.council/<file>.
+    for _label, _p in (("json_path", jp), ("markdown_path", mp)):
+        _root = _p.parent.parent
+        if not _root.is_dir():
+            raise FileNotFoundError(
+                "P13 refusing to write scorecard artifact: project root is not "
+                f"a directory: {_root} (invalid project_path?)"
+            )
     jp.parent.mkdir(parents=True, exist_ok=True)
     jp.write_text(json.dumps(scorecard, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     lines = ["# Council route scorecard", "", f"Measurements: {scorecard.get('measurement_count', 0)}",

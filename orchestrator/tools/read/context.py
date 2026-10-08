@@ -552,7 +552,7 @@ async def architecture_context_pack(
     if failures and not degraded:
         degraded = "one_or_more_graph_ranges_did_not_match_current_content"
     return json.dumps({
-        "ok": bool(batch.get("ok")) and bool(batch.get("items")),
+        "ok": bool(batch.get("ok")) and any(item.get("ok") for item in batch.get("items", [])),  # P18: aggregate ok only when >=1 item read succeeded
         "graph_used": provenance.get("graph_used", False),
         "graph_degraded_reason": degraded,
         "query": query, "symbol": symbol, "depth": max(1, min(int(depth), 5)),

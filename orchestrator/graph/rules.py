@@ -700,11 +700,25 @@ def evaluate_rules(
         aggregate = "unavailable"
     else:
         aggregate = "passed"
+    # P4: a partial analysis view must stay partial in the gate output --
+    # never collapsed to "ok". Forward unmatched_files for traceability.
+    view_partial = view.get("status") == "partial"
+    view_reason = str(view.get("reason") or "unmatched_included_files")
+    if view_partial:
+        gate_status = "partial"
+        gate_reason = view_reason
+        gate_pass = False
+        gate_reasons = [view_reason]
+    else:
+        gate_status = "ok" if aggregate == "passed" else "unavailable" if aggregate == "unavailable" else "ok"
+        gate_reason = None if aggregate == "passed" else aggregate
+        gate_pass = aggregate == "passed"
+        gate_reasons = [] if aggregate == "passed" else [aggregate]
     return {
         "version": PAYLOAD_VERSION,
-        "status": "ok" if aggregate == "passed" else "unavailable" if aggregate == "unavailable" else "ok",
-        "reason": None if aggregate == "passed" else aggregate,
-        "pass": aggregate == "passed",
+        "status": gate_status,
+        "reason": gate_reason,
+        "pass": gate_pass,
         "aggregate": aggregate,
         "checks": checks,
         "counts": {
@@ -715,9 +729,10 @@ def evaluate_rules(
         },
         "cycles": cycles,
         "max_depth": depth,
-        "metric_notes": notes,
+        "metric_notes": notes + (["view_partial"] if view_partial else []),
         "truncated": truncated,
-        "reasons": [] if aggregate == "passed" else [aggregate],
+        "reasons": gate_reasons,
+        "unmatched_files": list(view.get("unmatched_files") or []),
         "provenance": provenance,
         "config": {
             "present_keys": parsed["present_keys"],

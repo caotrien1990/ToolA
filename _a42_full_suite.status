@@ -1,0 +1,29 @@
+DONE EXIT=1 ELAPSED=4104.6
+ode fallback.\n    A NEW worker added purely in config gets default broker-only caps here, so\n    roster + caps + dispatch (argv template) are all config-driven — no code edit."""\n    caps = {k: dict(v) for k, v in fallback.items()}\n    try:\n        cfg = ct._load_council_config(force=True) or {}\n        for aid, m in (cfg.get("agents") or {}).items():\n            if not isinstance(m, dict):\n                continue\n            c = caps.setdefault(aid, {"provider": str(m.get("provider") or aid),\n                                      "broker": True, "context": False, "enabled": True})\n            if m.get("provider"):\n                c["provider"] = str(m["provider"])\n            mc = m.get("caps") or {}\n            for key in ("broker", "context", "enabled"):\n                if key in mc:\n                    c[key] = bool(mc[key])\n            if "enabled" in m:\n                c["enabled"] = bool(m["enabled"])\n    except Exception as exc:\n        logger.error("council caps config load failed: %s", exc)\n    return caps\n'
+E   AssertionError: 1 != 12 : global read admission held duplicate callers outside singleflight
+C:\Users\ADMIN\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\unittest\case.py:878: AssertionError: 1 != 12 : global read admission held duplicate callers outside singleflight
+============================== warnings summary ===============================
+tests/test_dead_code_scanner_health_b029.py::AFailedScannerReachesThePayloadTest::test_a_bad_exit_code_is_recorded
+  D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\orchestrator\graph\extractors\vulture_ruff.py:426: RuntimeWarning: ruff scan failed: exit 2
+    _scanner_warning("ruff", reason)
+
+tests/test_dead_code_scanner_health_b029.py::AFailedScannerReachesThePayloadTest::test_a_timeout_is_recorded_in_the_status
+  D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\orchestrator\graph\extractors\vulture_ruff.py:368: RuntimeWarning: vulture scan failed: Command '['vulture']' timed out after 30 seconds
+    _scanner_warning("vulture", exc)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_a33b_mcp_session_shortcut_transport.py::TheProxyBranchMustKeepApplyingToBothShortcuts::test_the_exclusion_set_we_read_is_the_right_one
+FAILED tests/test_a33b_mcp_session_shortcut_transport.py::TheProxyBranchMustKeepApplyingToBothShortcuts::test_the_proxy_branch_is_gated_on_the_t4_predicate
+FAILED tests/test_a33c_mcp_shortcut_proxy_completion.py::TheProxyBranchStillCoversAllOfThem::test_the_exclusion_set_we_read_is_the_right_one
+FAILED tests/test_a34_mcp_t4_tier_authority.py::test_the_gate_no_longer_reads_tool_phases_directly
+FAILED tests/test_a34_mcp_t4_tier_authority.py::test_the_self_deadlock_guard_is_present_in_source
+FAILED tests/test_a34_mcp_t4_tier_authority.py::test_the_routing_gate_is_still_what_dispatch_calls
+FAILED tests/test_alias_contract.py::TestRegisterToolAliasInjection::test_council_status_alias_and_acceptance_order
+FAILED tests/test_browser_open_guard_a37.py::CouncilTabOptInGuardTests::test_startup_path_actually_invokes_the_guard
+FAILED tests/test_cache_delta_isolation.py::TestCacheDeltaIsolation::test_cache_delta_does_not_block_event_loop
+FAILED tests/test_durable_audit_integration.py::DurableAuditIntegrationTests::test_process_shutdown_keeps_liveness_after_durable_shutdown
+FAILED tests/test_executor_admission.py::BackupHttpAdmissionTests::test_second_concurrent_same_project_full_backup_reaches_fast_reject
+FAILED tests/test_executor_admission.py::ExecutorRoutingContractTests::test_blocking_workloads_do_not_share_asyncio_default_executor
+FAILED tests/test_search_server_admission.py::TestSearchServerAdmission::test_duplicate_http_dispatch_reaches_one_singleflight_before_release
+13 failed, 4439 passed, 1 skipped, 2 warnings, 238 subtests passed in 4091.86s (1:08:11)

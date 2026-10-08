@@ -3,8 +3,8 @@
 This file is generated for CA routing. Read it before opening source files.
 
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. AGENT TOOL - READ WRITE TEST - minimax - USE\project-orchestrator\examples\tooling`
-- Generated: 2026-05-12T00:46:49
-- Files indexed: 1
+- Generated: 2026-10-08T11:36:53
+- Files indexed: 2
 
 ## First Actions
 
@@ -26,10 +26,11 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 
 ## Groups
 
-- `doc`: 1 files, 7 LOC
+- `doc`: 2 files, 13 LOC
 
 ## Highest Value Files
 
+- `repo_vs_runtime_routing.md` | group `doc` | lang `markdown` | LOC 6 | weight 1: small_context: full read acceptable if needed
 - `tool_tiers.md` | group `doc` | lang `markdown` | LOC 7 | weight 1: small_context: full read acceptable if needed
 
 ## Entrypoints
@@ -37,6 +38,7 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 
 ## Hotspots
 
+- `repo_vs_runtime_routing.md`: complexity 6, 6 LOC, group `doc`
 - `tool_tiers.md`: complexity 2, 7 LOC, group `doc`
 
 ## Deterministic Rules

@@ -3,8 +3,8 @@
 This file is generated for CA routing. Read it before opening source files.
 
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\.council`
-- Generated: 2026-08-31T08:06:05
-- Files indexed: 5
+- Generated: 2026-10-08T09:34:27
+- Files indexed: 467
 
 ## First Actions
 
@@ -26,27 +26,50 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 
 ## Groups
 
-- `config`: 2 files, 44 LOC
-- `doc`: 3 files, 320 LOC
+- `config`: 44 files, 8974 LOC
+- `doc`: 322 files, 21690 LOC
+- `script`: 2 files, 114 LOC
+- `source`: 79 files, 21386 LOC
+- `unknown`: 20 files, 3367 LOC
 
 ## Highest Value Files
 
-- `worker_output/20260828_190715_clau_e1e9906d.md` | group `doc` | lang `markdown` | LOC 208 | weight 2: metadata_first: search or read narrow ranges
-- `worker_output/20260828_215622_clau_4cae89d3.md` | group `doc` | lang `markdown` | LOC 30 | weight 1: small_context: full read acceptable if needed
-- `rooms/room-20260830-toolq-ask-hold/ROOM.md` | group `doc` | lang `markdown` | LOC 82 | weight 1: small_context: full read acceptable if needed
-- `rooms/room-20260830-toolq-ask-hold/status.json` | group `config` | lang `json` | LOC 27 | weight 1: small_context: full read acceptable if needed
-- `rooms/room-20260830-toolq-ask-hold/room_meta.json` | group `config` | lang `json` | LOC 17 | weight 1: small_context: full read acceptable if needed
+- `tmp_ahealthhung/GROC_FIX_SNAPSHOT_1315/surgical_mapper.py` | group `source` | lang `python` | LOC 1066 | weight 20: large_file: use symbols, search, or bounded ranges before full read
+- `_r3_before/os_head.py` | group `source` | lang `python` | LOC 13917 | weight 15: large_file: use symbols, search, or bounded ranges before full read
+- `tmp_ahealthhung/GROC_FIX_SNAPSHOT_1315/orchestrator__tools__write__core.py` | group `source` | lang `python` | LOC 1762 | weight 15: large_file: use symbols, search, or bounded ranges before full read
+- `tmp_ahealthhung/GROC_FIX_SNAPSHOT_1315/orchestrator__lifecycle__restart_control_service.py` | group `source` | lang `python` | LOC 843 | weight 15: large_file: use symbols, search, or bounded ranges before full read
+- `mcp_full_surface_test.py` | group `source` | lang `python` | LOC 380 | weight 12: symbol_routed: use function/class refs from INDEX first
+- `Live_council/archives/extracted_130325/council_live.txt` | group `unknown` | lang `text` | LOC 373 | weight 8: metadata_first: search or read narrow ranges
+- `mcp_full_test_v3.py` | group `source` | lang `python` | LOC 253 | weight 8: symbol_routed: use function/class refs from INDEX first
+- `tmp_ahealthhung/REALTEST_R1/ROUTE_RULE_REALTEST.md` | group `doc` | lang `markdown` | LOC 201 | weight 7: metadata_first: search or read narrow ranges
+- `rule_guardrail_solar_rag/DATA/A_RULE_TOOL_SYMBOL_HITS.txt` | group `unknown` | lang `text` | LOC 500 | weight 7: metadata_first: search or read narrow ranges
+- `mcp_phase2_fix.py` | group `source` | lang `python` | LOC 237 | weight 7: symbol_routed: use function/class refs from INDEX first
+- `mcp_phase3_fix.py` | group `source` | lang `python` | LOC 221 | weight 7: symbol_routed: use function/class refs from INDEX first
+- `tmp_codo9_fix_3008/apply_tq9b.js` | group `source` | lang `javascript` | LOC 214 | weight 7: symbol_routed: use function/class refs from INDEX first
+- `mcp_phase4_final.py` | group `source` | lang `python` | LOC 153 | weight 7: symbol_routed: use function/class refs from INDEX first
+- `tmp_clr2_writes.js` | group `source` | lang `javascript` | LOC 399 | weight 7: symbol_routed: use function/class refs from INDEX first
+- `tools_manifest.md` | group `doc` | lang `markdown` | LOC 261 | weight 6: metadata_first: search or read narrow ranges
+- `scan_outbox/FULL_REPORT_2_ROUNDS.md` | group `doc` | lang `markdown` | LOC 547 | weight 6: large_file: use symbols, search, or bounded ranges before full read
+- `Live_council/council_live.txt` | group `unknown` | lang `text` | LOC 604 | weight 6: large_file: use symbols, search, or bounded ranges before full read
+- `tmp_ahealthhung/GROC_FIX_SNAPSHOT_1315/tests__test_autoheal_write_index_r1.py` | group `source` | lang `python` | LOC 156 | weight 6: symbol_routed: use function/class refs from INDEX first
+- `tmp_codo9_fix_3008/write_tq9b_tests.js` | group `source` | lang `javascript` | LOC 224 | weight 6: symbol_routed: use function/class refs from INDEX first
+- `route_scorecard.json` | group `config` | lang `json` | LOC 3306 | weight 6: large_file: use symbols, search, or bounded ranges before full read
 
 ## Entrypoints
 
 
 ## Hotspots
 
-- `worker_output/20260828_190715_clau_e1e9906d.md`: complexity 14, 208 LOC, group `doc`
-- `worker_output/20260828_215622_clau_4cae89d3.md`: complexity 2, 30 LOC, group `doc`
-- `rooms/room-20260830-toolq-ask-hold/ROOM.md`: complexity 0, 82 LOC, group `doc`
-- `rooms/room-20260830-toolq-ask-hold/status.json`: complexity 0, 27 LOC, group `config`
-- `rooms/room-20260830-toolq-ask-hold/room_meta.json`: complexity 0, 17 LOC, group `config`
+- `_r3_before/os_head.py`: complexity 3253, 13917 LOC, group `source`
+- `tmp_ahealthhung/GROC_FIX_SNAPSHOT_1315/orchestrator__tools__write__core.py`: complexity 445, 1762 LOC, group `source`
+- `tmp_ahealthhung/GROC_FIX_SNAPSHOT_1315/surgical_mapper.py`: complexity 243, 1066 LOC, group `source`
+- `tmp_ahealthhung/REALTEST_R1/ROUTE_RULE_REALTEST.md`: complexity 200, 201 LOC, group `doc`
+- `tmp_ahealthhung/GROC_FIX_SNAPSHOT_1315/orchestrator__lifecycle__restart_control_service.py`: complexity 168, 843 LOC, group `source`
+- `Live_council/archives/extracted_130325/council_live.txt`: complexity 157, 373 LOC, group `unknown`
+- `mcp_full_surface_test.py`: complexity 129, 380 LOC, group `source`
+- `tools_manifest.md`: complexity 92, 261 LOC, group `doc`
+- `rule_guardrail_solar_rag/DATA/A_RULE_TOOL_SYMBOL_HITS.txt`: complexity 63, 500 LOC, group `unknown`
+- `scan_outbox/CLUSTER_W1_C6_log.json`: complexity 46, 228 LOC, group `config`
 
 ## Deterministic Rules
 

@@ -4001,6 +4001,14 @@ async def workflow_status_registry(project_path: str) -> str:
     """
     try:
         root = Path(project_path).resolve()
+        # P11: guard before any mkdir/file creation — a bad path used to
+        # create junk state dirs/files and report ok.
+        if not root.is_dir():
+            return _json_error(
+                f"Invalid project_path for 'workflow_status_registry': not a directory: {project_path}",
+                error_name="INVALID_PROJECT_PATH",
+                ca_next_action="pass_absolute_project_root",
+            )
         path = _workflow_state_path(str(root))
         if not path.exists():
             state = _default_workflow_state(str(root), "T1")
@@ -4064,6 +4072,14 @@ async def workflow_status_registry(project_path: str) -> str:
 
 async def next_recommended_action(project_path: str) -> str:
     root = Path(project_path).resolve()
+    # P17: fail loud on a dead path — without this a nonexistent path still
+    # returned ok:true with a concrete recommended action.
+    if not root.is_dir():
+        return _json_error(
+            f"Invalid project_path for 'next_recommended_action': not a directory: {project_path}",
+            error_name="INVALID_PROJECT_PATH",
+            ca_next_action="pass_absolute_project_root",
+        )
     state_path = _workflow_state_path(str(root))
     state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else _default_workflow_state(str(root), "T1")
     mode = state.get("mode", "T1").upper()
@@ -4144,6 +4160,14 @@ async def suggest_missing_capabilities(project_path: str = "") -> str:
 
 async def backup_status(project_path: str) -> str:
     root = Path(project_path).resolve()
+    # P15: distinguish "bad path" from "no backup yet" — without this a wrong
+    # path silently returned ok:true + status:"missing".
+    if not root.is_dir():
+        return _json_error(
+            f"Invalid project_path for 'backup_status': not a directory: {project_path}",
+            error_name="INVALID_PROJECT_PATH",
+            ca_next_action="pass_absolute_project_root",
+        )
     manifest_path = _project_cache_dir(str(root)) / "BACKUP_MANIFEST.json"
     if not manifest_path.exists():
         return json.dumps({
@@ -4655,6 +4679,14 @@ async def cache_delta(project_path: str, scope: str = "") -> str:
     the hit set a scoped search_code(path=...) could have served -- instead of
     hashing the whole repo to answer a question about one directory.
     """
+    # P22 fix: fail loud on a non-existent project_path instead of reporting
+    # ok=true with total_changed=0 (same guard shape as get_cache_status).
+    if not Path(project_path).is_dir():
+        return _json_error(
+            f"Invalid project_path for 'cache_delta': not a directory: {project_path}",
+            error_name="INVALID_PROJECT_PATH",
+            ca_next_action="pass_absolute_project_root",
+        )
     project_key = str(Path(project_path).resolve())
     scope_key = (scope or "").replace("\\", "/").strip("/")
     # Unscoped keeps the historical plain-string futures key (tests and the
@@ -4801,8 +4833,19 @@ async def rule_drift_check(project_path: str = "", checks: str = "") -> str:
     # A34: `checks` arrives as a csv STRING from the schema, but a CA that sends a
     # JSON list (or the in-process caller that passes a real list) used to crash on
     # `.split(",")`. csv_param normalises str / json-string / list / tuple / set.
-    sel = set(csv_param(checks, lower=True)) or {
-        "tool_names", "agent_list", "behavior_sets", "constants"}
+    accepted_checks = {"tool_names", "agent_list", "behavior_sets", "constants"}
+    sel = set(csv_param(checks, lower=True)) or set(accepted_checks)
+    # P23: csv_param only coerces — a typo used to be silently accepted and
+    # every check skipped (drift_count:0). Fail loud instead.
+    unknown = sorted(sel - accepted_checks)
+    if unknown:
+        return json.dumps({
+            "ok": False,
+            "error_name": "UNSUPPORTED_CHECK",
+            "unknown_checks": unknown,
+            "accepted_checks": sorted(accepted_checks),
+            "ca_next_action": "retry_with_accepted_checks",
+        }, ensure_ascii=False)
     drifts: list[dict] = []
 
     def _add(check, severity, detail, **kw):
@@ -8278,6 +8321,10 @@ async def verify_active_electron_source(page_id: str, expected_path: str = "",
             ev_resp = json.loads(raw)
         except Exception:
             ev_resp = {"result": raw}
+        # P21 fix: propagate evaluate_js errors (e.g. PAGE_ID_INVALID) instead of
+        # treating them as an empty-but-successful page load with next_action proceed.
+        if isinstance(ev_resp, dict) and ev_resp.get("ok") is False:
+            return json.dumps(ev_resp, ensure_ascii=False)
         # evaluate_js returns nested result; try common shapes
         payload = (ev_resp.get("value") or ev_resp.get("result")
                     or ev_resp.get("data") or "")
@@ -12123,25 +12170,44 @@ async def workflow_checkpoint(
         try:
             wf_raw = await workflow_get_current(name=workflow_name, project_path=project_path)
             wf = json.loads(wf_raw)
-            workflow_health = {
-                "name": workflow_name,
-                "current_step": wf.get("current_step"),
-                "total_steps": wf.get("total_steps"),
-                "complete": wf.get("complete"),
-                "paused": (wf.get("summary") or {}).get("paused"),
-                "pause_reason": (wf.get("summary") or {}).get("pause_reason"),
-                "outcome": wf.get("outcome"),
-            }
-            if workflow_health.get("paused"):
+            # P14: workflow_get_current signals failure via JSON (ok:false) and
+            # never raises — a missing workflow used to build an empty health
+            # dict with no warning. Surface it loudly instead.
+            if isinstance(wf, dict) and wf.get("ok") is False:
+                workflow_health = {
+                    "name": workflow_name,
+                    "ok": False,
+                    "error_name": wf.get("error_name"),
+                    "error": wf.get("error"),
+                }
                 warnings.append({
-                    "kind": "WORKFLOW_PAUSED",
-                    "severity": "warn",
+                    "kind": wf.get("error_name") or "WORKFLOW_NOT_FOUND",
+                    "severity": "error",
                     "detail": (
-                        f"Workflow {workflow_name} paused: "
-                        f"{workflow_health.get('pause_reason') or 'unknown reason'}. "
-                        "Resume via workflow_retry_step / workflow_skip_step before continuing."
+                        f"workflow_get_current({workflow_name!r}) failed: "
+                        f"{wf.get('error_name')}: {wf.get('error')}"
                     ),
                 })
+            else:
+                workflow_health = {
+                    "name": workflow_name,
+                    "current_step": wf.get("current_step"),
+                    "total_steps": wf.get("total_steps"),
+                    "complete": wf.get("complete"),
+                    "paused": (wf.get("summary") or {}).get("paused"),
+                    "pause_reason": (wf.get("summary") or {}).get("pause_reason"),
+                    "outcome": wf.get("outcome"),
+                }
+                if workflow_health.get("paused"):
+                    warnings.append({
+                        "kind": "WORKFLOW_PAUSED",
+                        "severity": "warn",
+                        "detail": (
+                            f"Workflow {workflow_name} paused: "
+                            f"{workflow_health.get('pause_reason') or 'unknown reason'}. "
+                            "Resume via workflow_retry_step / workflow_skip_step before continuing."
+                        ),
+                    })
         except Exception as exc:
             workflow_health = {"name": workflow_name, "probe_error": str(exc)}
             internal_probe_failures.append({"layer": "workflow_get_current", "error": str(exc)})
@@ -12298,6 +12364,11 @@ async def parse_log_section(page_id: str, section_title: str,
         log_obj = json.loads(raw)
     except Exception:
         log_obj = {"raw": str(raw)[:5000]}
+
+    # P9 fix: if the inner tool reported an error (e.g. SECTION_TITLE_NOT_FOUND),
+    # propagate it verbatim instead of converting it into ok=true with 0 entries.
+    if isinstance(log_obj, dict) and log_obj.get("ok") is False:
+        return json.dumps(log_obj, ensure_ascii=False)
 
     log_text = log_obj.get("content", "") or log_obj.get("text", "") or log_obj.get("raw", "")
     if isinstance(log_text, dict):
@@ -16363,6 +16434,18 @@ async def validate(file_path: str = "", project_path: str = "",
         checks = ["file"]
     if isinstance(checks, str):
         checks = [checks]
+    # P20 fix: unknown check names must fail loud instead of silently running
+    # zero sub-checks while still reporting ok=true.
+    _KNOWN_CHECKS = ("file", "symbols", "encoding")
+    _unknown = [c for c in checks if c not in _KNOWN_CHECKS]
+    if _unknown:
+        return json.dumps({"ok": False, "error_name": "UNKNOWN_CHECK",
+                           "error": "Unknown check(s): " + ", ".join(str(c) for c in _unknown)
+                                    + ". Accepted checks: " + ", ".join(_KNOWN_CHECKS) + ".",
+                           "unknown_checks": [str(c) for c in _unknown],
+                           "accepted_checks": list(_KNOWN_CHECKS),
+                           "ca_next_action": "retry_with_accepted_checks"},
+                          ensure_ascii=False)
     out: dict = {"ok": True, "checks": list(checks)}
     failed: list[str] = []
 
@@ -16450,6 +16533,14 @@ async def state(project_path: str, aspect: str = "all") -> str:
             "error_name": "UNSUPPORTED_FIELD",
             "accepted_fields": list(accepted),
         })
+    # P25: fail loud on a bad project_path — without this a nonexistent path
+    # returned top-level ok:true while sub-branches created junk state files.
+    if not Path(project_path).is_dir():
+        return _json_error(
+            f"Project path not found: {project_path}",
+            error_name="PROJECT_PATH_NOT_FOUND",
+            ca_next_action="pass_absolute_project_root",
+        )
     out: dict = {"ok": True, "aspect": a}
     if a in ("cache", "all"):
         try:

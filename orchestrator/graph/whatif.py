@@ -377,11 +377,22 @@ def simulate_sequence(
         and view.get("observed_edges") == original_fingerprint["observed_edges"]
         and view.get("strict_edges") == original_fingerprint["strict_edges"]
     )
+    out_status = "ok"
+    if view.get("status") == "partial":
+        out_status = "partial"
+    metric_notes = [
+        "campaign_formulas",
+        "ram_clone_only",
+        "no_legacy_recompute",
+        "break_cycle_heuristic_not_mincut",
+    ]
+    if out_status == "partial":
+        metric_notes.append("view_partial")
     return {
         "version": PAYLOAD_VERSION,
-        "status": "ok",
-        "reason": None,
-        "pass": True,
+        "status": out_status,
+        "reason": "unmatched_included_files" if out_status == "partial" else None,
+        "pass": out_status == "ok",
         "applied": True,
         "ops_applied": len(steps),
         "steps": steps,
@@ -398,12 +409,8 @@ def simulate_sequence(
             "observed_edges": list(clone.get("observed_edges") or []),
             "strict_edges": list(clone.get("strict_edges") or []),
         },
-        "metric_notes": [
-            "campaign_formulas",
-            "ram_clone_only",
-            "no_legacy_recompute",
-            "break_cycle_heuristic_not_mincut",
-        ],
+        "unmatched_files": list(view.get("unmatched_files") or []),
+        "metric_notes": metric_notes,
         "truncated": False,
         "elapsed_ms": int((time.monotonic() - started) * 1000),
         "provenance": {

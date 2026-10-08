@@ -3,8 +3,8 @@
 This file is generated for CA routing. Read it before opening source files.
 
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\examples`
-- Generated: 2026-08-18T10:31:24
-- Files indexed: 3
+- Generated: 2026-10-08T11:37:15
+- Files indexed: 10
 
 ## First Actions
 
@@ -26,22 +26,40 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 
 ## Groups
 
-- `unknown`: 3 files, 88 LOC
+- `doc`: 3 files, 120 LOC
+- `script`: 1 files, 150 LOC
+- `source`: 1 files, 26 LOC
+- `ui`: 1 files, 5 LOC
+- `unknown`: 4 files, 244 LOC
 
 ## Highest Value Files
 
-- `CORE_RULE.txt` | group `unknown` | lang `text` | LOC 42 | weight 2: metadata_first: search or read narrow ranges
-- `SLIM_RULE.txt` | group `unknown` | lang `text` | LOC 45 | weight 1: metadata_first: search or read narrow ranges
+- `mcp_175_tool_rag.html` | group `ui` | lang `html` | LOC 5 | weight 10: metadata_first: search or read narrow ranges
+- `_extract.js` | group `source` | lang `javascript` | LOC 26 | weight 5: metadata_first: search or read narrow ranges
+- `CORE_RULE.txt` | group `unknown` | lang `text` | LOC 95 | weight 4: metadata_first: search or read narrow ranges
+- `api/write_fix_dry_run.ps1` | group `script` | lang `powershell` | LOC 150 | weight 3: metadata_first: search or read narrow ranges
+- `SLIM_RULE.txt` | group `unknown` | lang `text` | LOC 75 | weight 2: metadata_first: search or read narrow ranges
+- `SLIM_RULE_GATED.txt` | group `unknown` | lang `text` | LOC 73 | weight 2: metadata_first: search or read narrow ranges
 - `SLIM_RULE_INLINE.txt` | group `unknown` | lang `text` | LOC 1 | weight 1: metadata_first: search or read narrow ranges
+- `tooling/repo_vs_runtime_routing.md` | group `doc` | lang `markdown` | LOC 6 | weight 1: small_context: full read acceptable if needed
+- `reports/coverage_report_contract.md` | group `doc` | lang `markdown` | LOC 107 | weight 1: small_context: full read acceptable if needed
+- `tooling/tool_tiers.md` | group `doc` | lang `markdown` | LOC 7 | weight 1: small_context: full read acceptable if needed
 
 ## Entrypoints
 
 
 ## Hotspots
 
-- `CORE_RULE.txt`: complexity 21, 42 LOC, group `unknown`
-- `SLIM_RULE.txt`: complexity 12, 45 LOC, group `unknown`
+- `mcp_175_tool_rag.html`: complexity 569, 5 LOC, group `ui`
+- `CORE_RULE.txt`: complexity 60, 95 LOC, group `unknown`
+- `SLIM_RULE.txt`: complexity 29, 75 LOC, group `unknown`
+- `api/write_fix_dry_run.ps1`: complexity 23, 150 LOC, group `script`
+- `SLIM_RULE_GATED.txt`: complexity 20, 73 LOC, group `unknown`
 - `SLIM_RULE_INLINE.txt`: complexity 9, 1 LOC, group `unknown`
+- `tooling/repo_vs_runtime_routing.md`: complexity 6, 6 LOC, group `doc`
+- `reports/coverage_report_contract.md`: complexity 4, 107 LOC, group `doc`
+- `tooling/tool_tiers.md`: complexity 2, 7 LOC, group `doc`
+- `_extract.js`: complexity 0, 26 LOC, group `source`
 
 ## Deterministic Rules
 

@@ -470,6 +470,13 @@ def template_query(project_path: str, template: str, *, name: str = "",
                     payload["truncated"] = bool(tr["truncated"])
             elif template == "imports":
                 target_mod = module or name
+                if conn.execute(
+                        "SELECT id FROM nodes WHERE kind='module' AND "
+                        "(qualified_name=? OR file_path=?) LIMIT 1;",
+                        (target_mod, target_mod)).fetchone() is None:
+                    payload["error"] = ("module_not_found: pass module= or name= "
+                                        "(module qualified_name or file_path)")
+                    return payload
                 rows = conn.execute(
                     "SELECT * FROM nodes WHERE kind='import' AND file_path IN "
                     "(SELECT file_path FROM nodes WHERE kind='module' AND "
@@ -484,6 +491,13 @@ def template_query(project_path: str, template: str, *, name: str = "",
                     (target_mod, target_mod)).fetchone()[0]
             elif template == "imported_by":
                 target_mod = module or name
+                if conn.execute(
+                        "SELECT id FROM nodes WHERE kind='module' AND "
+                        "qualified_name=? LIMIT 1;",
+                        (target_mod,)).fetchone() is None:
+                    payload["error"] = ("module_not_found: pass module= or name= "
+                                        "(module qualified_name or file_path)")
+                    return payload
                 rows = conn.execute(
                     "SELECT DISTINCT n.file_path, n.qualified_name, e.line "
                     "FROM edges e JOIN nodes n ON n.id=e.source "

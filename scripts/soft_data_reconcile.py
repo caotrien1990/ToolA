@@ -70,11 +70,23 @@ def _resolve_project_path(arg: str | None) -> Path:
 
 
 def _load_registry(project_root: Path):
+    project_root = Path(project_root).expanduser().resolve()
     sys.path.insert(0, str(project_root))
     try:
         import code_tools as ct  # type: ignore
     except Exception as exc:
-        raise SystemExit(f"[ERR] cannot import code_tools from {project_root}: {exc}")
+        raise SystemExit("[ERR] cannot import code_tools from "
+                         + str(project_root) + ": " + str(exc))
+    # P24: `import code_tools` may return an already-loaded module from
+    # sys.modules (e.g. the running server) that does NOT live under
+    # project_root — auditing it would silently audit the wrong root.
+    ct_file = Path(getattr(ct, "__file__", "") or "").resolve()
+    try:
+        ct_file.relative_to(project_root)
+    except ValueError:
+        raise SystemExit(
+            "[ERR] refusing to audit: code_tools loaded from " + str(ct_file)
+            + " is not under project_root " + str(project_root))
     try:
         import orchestrator_server  # noqa: F401  (side-effect: late registrations)
     except Exception:
@@ -279,7 +291,24 @@ def _skill_index(project_root: Path, known: set) -> dict:
 
 
 def build(project_root: Path) -> dict:
-    ct = _load_registry(project_root)
+    project_root = Path(project_root).expanduser().resolve()
+    # P24: fail loud on a bad root — without this, a wrong path would
+    # silently audit the running server's registry while the report looks
+    # legitimate (see _load_registry).
+    if not project_root.is_dir():
+        return {"ok": False, "error_name": "PROJECT_PATH_NOT_FOUND",
+                "error": "project_path is not a directory: " + str(project_root),
+                "audited_root": str(project_root)}
+    try:
+        ct = _load_registry(project_root)
+    except SystemExit as exc:
+        # _load_registry raises SystemExit on import failure or when the
+        # loaded code_tools module does not live under project_root:
+        # surface it as a report-level error instead of killing the caller
+        # (the tool wrapper runs build() off the event loop; a SystemExit
+        # must not escape into the server).
+        return {"ok": False, "error_name": "REGISTRY_LOAD_FAILED",
+                "error": str(exc), "audited_root": str(project_root)}
     tool_map = ct.TOOL_MAP
     phases = ct.TOOL_PHASES
     curated = set(getattr(ct, "CURATED_CORE_TOOLS", ()) or ())
@@ -454,6 +483,7 @@ def build(project_root: Path) -> dict:
         "arg_alias_tools": len(arg_aliases),
     }
     return {
+        "audited_root": str(project_root),  # P24: always echo which root was audited
         "summary": summary,
         "flags": {k: sorted(v) for k, v in flags.items()},
         "redundancy": redundancy,
@@ -571,6 +601,12 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     root = _resolve_project_path(args.project_path)
     report = build(root)
+    if not report.get("ok", True):
+        # P24: build() fails loud with an error dict (bad root / wrong
+        # module) instead of a plausible-looking report for the wrong root.
+        err_msg = report.get("error", "build failed")
+        print("[ERR] soft_data_reconcile: " + str(err_msg), file=sys.stderr)
+        return 2
     s = report["summary"]
     if args.ci:
         defects = report.get("alias_broken_targets", []) + \

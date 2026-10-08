@@ -665,7 +665,9 @@ def build_analysis_view(
         # with no partial-scan evidence to act on.
         scan: dict | None = None
         try:
-            scan = _status._stale_count(conn, root, budget_s=0.5)
+            # STT-26/ISS-05: same floor as graph_status — a starved scan must not
+            # silently degrade the view to freshness=unknown.
+            scan = _status._stale_count(conn, root, budget_s=_status.CBM_STATUS_SCAN_MIN_BUDGET_S)
             stale_n = scan["stale_files"]
             if not scan.get("complete"):
                 status_error = "stale_scan_incomplete"
@@ -727,10 +729,16 @@ def build_analysis_view(
         digest = r["content_hash"] if not isinstance(r, tuple) else r[1]
         if _identity_key(path) in included_keys:
             hashes.append((included_keys[_identity_key(path)], str(digest or "")))
+    # A1: a requested path that matches nothing — not in the graph DB and not
+    # on disk — is a caller error, not an isolated file. Collect it so the
+    # payload names the bad path instead of a silent zero-edge pass.
+    unmatched_files: list[str] = []
     for rel in display_included:
         if not any(_identity_key(rel) == _identity_key(p) for p, _ in hashes):
             digest = _file_sha256(os.path.join(root, rel.replace("/", os.sep))) or ""
             hashes.append((rel, digest))
+            if not digest:
+                unmatched_files.append(rel)
 
     fp = _fingerprint(observed, hashes)
     included_hash = _included_set_hash(display_included)
@@ -750,8 +758,12 @@ def build_analysis_view(
     ]
     if scope_info and scope_info.get("unresolved_count"):
         notes.append("unresolved_imports_present")
+    if unmatched_files:
+        notes.append("unmatched_included_files_present")
     status = "ok"
-    if scope_info and (scope_info.get("diagnostics") or scope_info.get("unresolved_count")):
+    if unmatched_files or (
+        scope_info and (scope_info.get("diagnostics") or scope_info.get("unresolved_count"))
+    ):
         status = "partial"
 
     payload = {
@@ -763,6 +775,7 @@ def build_analysis_view(
         "included_files": display_included,
         "test_files": tests,
         "isolated_files": isolated,
+        "unmatched_files": unmatched_files,
         "strict_edges": strict,
         "observed_edges": observed,
         "counts": counts,

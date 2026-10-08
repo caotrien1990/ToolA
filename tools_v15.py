@@ -620,7 +620,8 @@ async def git_blame_symbol(symbol: str, project_path: str,
             cmd = ["git", "-C", project_path, "log",
                    f"-L{line},+10:{file_rel}", "--max-count=5", "--no-patch",
                    "--format=%h%x09%an%x09%ad%x09%s", "--date=short"]
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+            # P8: match git tools standard 60s budget (orchestrator/git_tools.py::_run default timeout=60); 20s was the only outlier (Pattern A).
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
             if r.returncode != 0:
                 return {"ok": False, "error": r.stderr.strip()[:300]}
             lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
@@ -1466,8 +1467,13 @@ _DECISION_RULES = [
      "tier": "T2", "tool": "cbm_dead_code",
      "skill": "15_search_code_intel",
      "why": "graph-first: unreferenced callables + framework-dispatch suppression trong 1 call cbm_dead_code"},
-    # --- W0b (AU3/AU4): fix route nhầm của lexical fallback (probe D/F 07/09) ---
-    {"re": r"\b(sua|fix|edit|chinh.?sua)\b[^.]{0,40}\b(file|tap.?tin|ham|function|method|class|loi|bug|dong|line|code)\b",
+     # --- H1 2026-10-08: EOL conversion must NOT route to write_fix (write_fix auto-preserves EOL per contract). Full-file rewrite via write_new_file. ---
+     {"re": r"\b(eol|lf|crlf|line.?ending|newline)s?\b.{0,50}\b(convert|change|chuyen|doi)\b|\b(convert|change|chuyen|doi)\b.{0,50}\b(eol|lf|crlf|line.?ending|newline)s?\b",
+      "tier": "T2", "tool": "write_new_file",
+      "skill": "05_write_pipeline",
+      "why": "EOL conversion needs full-file rewrite; write_fix auto-preserves EOL per its contract."},
+     # --- W0b (AU3/AU4): fix route nhầm của lexical fallback (probe D/F 07/09) ---
+     {"re": r"(?!\b.*\bno code changes\b)\b(sua|fix|edit|chinh.?sua)\b[^.]{0,40}\b(file|tap.?tin|ham|function|method|class|loi|bug|dong|line|code)\b",
      "tier": "T2", "tool": "write_fix",
      "skill": "05_write_pipeline",
      "why": "edit existing file = write_fix (line-range edit); draft_patch chỉ dành cho draft proposal"},
@@ -1630,11 +1636,15 @@ def _campaign_quality_has_code_context(folded: str) -> bool:
 
 
 def _campaign_suppress_write_fix(folded: str) -> bool:
-    """R2 rule-7 exclusion: report/prose/wording/bao cao is not a code edit."""
-    return bool(
-        re.search(r"\b(sua|fix|edit|chinh[ _-]?sua)\b", folded or "")
-        and re.search(r"\b(report|prose|wording|bao[ _-]?cao)\b", folded or "")
-    )
+    """R2 rule-7 exclusion: report/prose/wording/bao cao is not a code edit.
+    H3 2026-10-08: explicit 'no code changes' also suppresses write_fix."""
+    if re.search(r"\b(sua|fix|edit|chinh[ _-]?sua)\b", folded or "") and re.search(
+        r"\b(report|prose|wording|bao[ _-]?cao)\b", folded or ""):
+        return True
+    # H3: task explicitly says no code changes — write_fix is wrong
+    if re.search(r"\bno code changes\b", folded or ""):
+        return True
+    return False
 
 
 def _campaign_routing_prepass(folded_raw: str, live_tools: set) -> list:
@@ -1891,7 +1901,10 @@ def _wt_rank_lexical(task_expanded: str, top_k: int = 3) -> list:
         import code_tools as _ct
         schemas = getattr(_ct, "TOOL_SCHEMAS", [])
         phases = getattr(_ct, "TOOL_PHASES", {})
-    except Exception:
+    except Exception as _e:
+        # Fail loud (was silent return []): A07 guard depends on this ranker.
+        import logging as _lg
+        _lg.getLogger(__name__).warning("_wt_rank_lexical: code_tools import failed: %r", _e)
         return []
     tokens = {w for w in re.findall(r"[a-z0-9_]+", task_expanded) if len(w) >= 3}
     if not tokens:
@@ -2177,6 +2190,9 @@ async def tool_decision_hint(task_description: str = "", scope_hint: str = "",
     # find/search rule cannot silently shadow architecture intent.
     for probe in (task, task_expanded):
         for rule in _DECISION_RULES:
+            # H3 2026-10-08: never recommend write_fix when task explicitly says no code changes
+            if rule.get("tool") == "write_fix" and "no code changes" in probe:
+                continue
             if re.search(rule["re"], probe):
                 _key = tuple(_rule_names(rule))
                 if _key not in _seen_tools:
@@ -9409,6 +9425,13 @@ async def get_token_meter(session_id: str = "", project_path: str = "") -> str:
     def _q() -> dict:
         conn = sqlite3.connect(str(_SESSIONS_DB))
         try:
+            # P16: a bogus session_id used to yield ok:true + zero counters.
+            # Verify the session row exists first (mirrors get_session_events).
+            sess = conn.execute(
+                "SELECT 1 FROM sessions WHERE session_id=?", (sid,)
+            ).fetchone()
+            if not sess:
+                return {"_session_not_found": True}
             count = conn.execute(
                 "SELECT COUNT(*) FROM events WHERE session_id=?", (sid,)
             ).fetchone()[0]
@@ -9419,6 +9442,11 @@ async def get_token_meter(session_id: str = "", project_path: str = "") -> str:
             conn.close()
 
     data = await asyncio.to_thread(_q)
+    if data.get("_session_not_found"):
+        return _err(f"Session not found: {sid}",
+                    error_name="SESSION_NOT_FOUND",
+                    hint="Call list_sessions(project_path) and retry with a valid session_id.",
+                    ca_next_action="list_sessions")
     total_kb = round((data["bytes_in_estimate"] + data["bytes_out_estimate"]) / 1024, 1)
     return _ok({
         "session_id": sid, **data, "total_kb_estimate": total_kb,
@@ -9511,6 +9539,12 @@ async def list_projects(limit: int = 26) -> str:
 
 async def get_validation_queue(project_path: str) -> str:
     """V15 R8 B.7: list pending dry_run_ids from _dry_run_store (restored R42 post-patch)."""
+    # P19: reject invalid project_path upfront -- without this, a wrong path
+    # silently returned ok:true + pending:[] (indistinguishable from "no queue").
+    root = Path(project_path).resolve()
+    if not root.is_dir():
+        return _err(f"Project path not found: {project_path}",
+                    error_name="PROJECT_PATH_NOT_FOUND")
     try:
         from code_tools import _DRY_RUN_STORE
     except ImportError:

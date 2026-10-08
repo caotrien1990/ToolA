@@ -1,0 +1,32 @@
+DONE EXIT=1 ELAPSED=1774.0
+... [ 76%]
+........................................................................ [ 78%]
+........................................................................ [ 80%]
+.................................................................... [ 81%]
+................................................................ [ 83%]
+........................................................................ [ 84%]
+........................................................................ [ 86%]
+........................................................................ [ 88%]
+...................................................................... [ 90%]
+..............................................................s......... [ 91%]
+.................................................................................. [ 93%]
+.................................................................... [ 95%]
+........................................................................ [ 97%]
+.................................................................. [ 98%]
+...................................F..............                       [100%]
+================================== FAILURES ===================================
+E   assert 'SKIP_VERIFY_UNSUPPORTED' in 'async def council_tracker(open_file: bool = False, tail_lines: int = 80,\n                          return_full: bool...else ""\n        result["full_content_available"] = bool(content)\n    return json.dumps(result, ensure_ascii=False)\n'
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\tests\test_write_transaction_skip_verify.py:23: assert 'SKIP_VERIFY_UNSUPPORTED' in 'async def council_tracker(open_file: bool = False, tail_lines: int = 80,\n                          return_full: bool...else ""\n        result["full_content_available"] = bool(content)\n    return json.dumps(result, ensure_ascii=False)\n'
+============================== warnings summary ===============================
+tests/test_dead_code_scanner_health_b029.py::AFailedScannerReachesThePayloadTest::test_a_bad_exit_code_is_recorded
+  D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\orchestrator\graph\extractors\vulture_ruff.py:376: RuntimeWarning: ruff scan failed: exit 2
+    _scanner_warning("ruff", reason)
+
+tests/test_dead_code_scanner_health_b029.py::AFailedScannerReachesThePayloadTest::test_a_timeout_is_recorded_in_the_status
+  D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\orchestrator\graph\extractors\vulture_ruff.py:318: RuntimeWarning: vulture scan failed: Command '['vulture']' timed out after 30 seconds
+    _scanner_warning("vulture", exc)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_write_transaction_skip_verify.py::test_base_stays_unaware_and_wrapper_rejects_skip_verify
+1 failed, 4141 passed, 1 skipped, 2 warnings, 227 subtests passed in 1768.37s (0:29:28)

@@ -312,3 +312,31 @@ def test_human_gate_reject_keeps_skipped_behavior(mission_env):
     assert rejected["ok"] is True
     assert rejected["state"] == "skipped"
     assert store.get_task(mission_env, task_id)["state"] == "skipped"
+
+
+def test_p12_mission_next_unknown_mission_returns_not_found(mission_env):
+    # P12: unknown mission_id must report MISSION_NOT_FOUND, never silent ok+null.
+    bad = _decode(_run(mission_tools.mission_next(424242)))
+    assert bad["ok"] is False
+    assert bad["error_name"] == "MISSION_NOT_FOUND"
+
+    # Known mission with a ready task returns the task (unchanged behavior).
+    tasks_json = json.dumps([
+        {"title": "solo", "agent_hint": "ope", "output_artifact_path": "out/solo.md"},
+    ])
+    created = _decode(_run(mission_tools.mission_create("p12", tasks_json, created_by="pytest")))
+    assert created["ok"] is True
+    mid = created["mission_id"]
+    tid = created["task_ids"][0]
+
+    first = _decode(_run(mission_tools.mission_next(mid)))
+    assert first["ok"] is True
+    assert first["task"]["id"] == tid
+
+    # Known mission with no ready task still returns ok + task:null (unchanged).
+    dispatched = _decode(_run(mission_tools.mission_dispatch(tid)))
+    assert dispatched["ok"] is True
+
+    empty = _decode(_run(mission_tools.mission_next(mid)))
+    assert empty["ok"] is True
+    assert empty["task"] is None

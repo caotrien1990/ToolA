@@ -241,6 +241,7 @@ def compute_test_gap(
                 "coverage_ratio": None,
                 "vacuous": False,
                 "metric_notes": notes + ["no_tests"],
+                "unmatched_files": list(view.get("unmatched_files") or []),
             },
         )
         payload["elapsed_ms"] = round((time.monotonic() - t0) * 1000, 1)
@@ -320,14 +321,16 @@ def compute_test_gap(
 
     ratio = len(covered) / float(len(source_files))
     out_status = "ok"
+    out_reason = None
     if status == "partial":
         out_status = "partial"
+        out_reason = "unmatched_included_files"
         notes.append("view_partial")
 
     return {
         "version": PAYLOAD_VERSION,
         "status": out_status,
-        "reason": None,
+        "reason": out_reason,
         "pass": False,
         "score": None,
         "coverage_ratio": ratio,
@@ -337,6 +340,7 @@ def compute_test_gap(
         "covered_files": covered,
         "uncovered_files": uncovered,
         "isolated_uncovered": isolated_uncovered,
+        "unmatched_files": list(view.get("unmatched_files") or []),
         "gaps": gaps,
         "per_test": per_test,
         "counts": {

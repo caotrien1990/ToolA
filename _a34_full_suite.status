@@ -1,0 +1,19 @@
+DONE EXIT=1 ELAPSED=2382.6
+batched into the answer you were already waiting on, and a tool never adds a step you did not list. Every step is a READ, proven against the live _MUTATING_TOOLS set rather than a list in a doc, so a target that gains a write tomorrow fails the suite instead of shipping. Every payload is built from THIS call\\'s own result -- the neighbour range it already computed, the file holding the first match -- never from something you must pass twice. Do NOT memorize the step names or how many there are: the enum in each tool\\'s own schema IS the list, derived from ACTIVE_CHAIN_STEPS in orchestrator/core/active_chain.py, and a name that is not in it is echoed back under pipeline.rejected next to the steps that did run, never raised. The answers land under the response key `pipeline`, which accounts for EVERY step you asked for: ran / skipped (its input was not in this result) / failed, plus dropped when you ask for more than MAX_STEPS_PER_CALL -- a truncation is always NAMED, never silent, so a short report is never a claim of full coverage. An unset pipeline costs nothing, and a fields= projection that does not ask for `pipeline` skips the reads entirely instead of running them and throwing the report away.\\nDo NOT auto-execute ca_next_action / ca_next_tool / ca_chain_next without user go-ahead; present as suggestion. That covers a hint that names a pipeline step too: pipeline= runs only what the CALLER listed, so acting on a hint by adding one still needs the go-ahead like any other chained call.\\n'
+
+tests\test_a36_cbm_discovery_hints.py:347: AssertionError
+============================== warnings summary ===============================
+tests/test_dead_code_scanner_health_b029.py::AFailedScannerReachesThePayloadTest::test_a_bad_exit_code_is_recorded
+  D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\orchestrator\graph\extractors\vulture_ruff.py:376: RuntimeWarning: ruff scan failed: exit 2
+    _scanner_warning("ruff", reason)
+
+tests/test_dead_code_scanner_health_b029.py::AFailedScannerReachesThePayloadTest::test_a_timeout_is_recorded_in_the_status
+  D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\orchestrator\graph\extractors\vulture_ruff.py:318: RuntimeWarning: vulture scan failed: Command '['vulture']' timed out after 30 seconds
+    _scanner_warning("vulture", exc)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SUBFAILED[CORE_RULE.txt] tests/test_a31_rule_core_pins.py::RuleCoreSotFilesCarryTheCwdRule::test_mcp_dispatcher_sentence_names_the_mechanism
+FAILED tests/test_a31_rule_core_pins.py::RuleCoreRuntimeReadsTheCommittedFile::test_full_inline_is_the_core_rule_whitespace_collapsed
+FAILED tests/test_a36_cbm_discovery_hints.py::TestRuleFilesTeachCbmToOtherCAs::test_core_rule_read_routing_carries_the_same_route
+3 failed, 4134 passed, 1 skipped, 2 warnings, 223 subtests passed in 2376.85s (0:39:36)

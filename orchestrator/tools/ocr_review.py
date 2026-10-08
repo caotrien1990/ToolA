@@ -839,6 +839,12 @@ async def ocr_scan(project_path: str = "", path="", exclude="",
         if perr:
             return _json.dumps({"ok": False, "error_name": "PATH_OUTSIDE_PROJECT",
                                 "error": perr}, ensure_ascii=False)
+        # P10: _rel_inside checks containment only, not existence. A nonexistent
+        # path would otherwise scan silently as ok:true with files:[].
+        if not os.path.exists(os.path.join(root, rel)):
+            return _json.dumps({"ok": False, "error_name": "PATH_NOT_FOUND",
+                                "error": "path does not exist: %s" % str(candidate).strip(),
+                                "path": str(candidate).strip()}, ensure_ascii=False)
         rel_paths.append(rel)
     if rel_paths:
         args += ["--path", ",".join(rel_paths)]
