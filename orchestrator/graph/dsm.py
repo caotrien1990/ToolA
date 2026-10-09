@@ -316,7 +316,6 @@ def build_dsm(
     total_files = len(ordered)
     ordered, truncated = _truncate_extremes(ordered)
     kept_keys = {_identity_key(f) for f in ordered}
-    key_of = {_identity_key(f): _identity_key(f) for f in ordered}
     # map display -> identity
     key_of = {f: _identity_key(f) for f in ordered}
 

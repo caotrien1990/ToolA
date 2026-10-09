@@ -18,8 +18,8 @@ def _env_int(name,default):
 # council_provider MUST stay in sync with two other files:
 #   executor_lanes._LANE_DEFAULTS['council_provider'][0]
 #   lifecycle/high_il_launch.HIGH_IL_ENV['ORCH_FAIR_COUNCIL_PROVIDER_QUOTA']
-_LANE_QUOTA_DEFAULTS={'read_io':2,'search':2,'command':1,'test':1,
-                      'git':1,'backup':1,'council_provider':8}
+_LANE_QUOTA_DEFAULTS={"read_io":2,"search":2,"command":1,"test":1,
+                      "git":1,"backup":1,"council_provider":8}
 
 class FairAdmissionError(RuntimeError):
     error_name='FAIR_ADMISSION_REJECTED';rejection_reason='principal_quota';http_status=429
@@ -77,12 +77,9 @@ class FairAdmissionManager:
           'rejection_counts':dict(self.rejections),'closed':self.closed}
     def status(self):
         with self.lock:return self._status()
-    def evict_idle(self,max_idle_seconds=300.0):
-        cutoff=time.monotonic()-max(0,float(max_idle_seconds))
-        with self.lock:
-            keys=[k for k,s in self.principals.items() if not s.active and not s.waiting and s.last_used<=cutoff]
-            for key in keys:self.principals.pop(key,None)
-            return len(keys)
+    # F-C3: evict_idle() removed -- cardinality is bounded by agent IDs x 7 lanes,
+    # so unbounded growth is not a concern. No sweeper needed (YAGNI).
+    # (Former method evicted idle principals; no production callers existed.)
     async def acquire(self,lane,*,deadline,principal=None,control_plane=None):
         principal=str(principal or _PRINCIPAL.get() or "anonymous:localhost")
         control_plane=_CONTROL.get() if control_plane is None else control_plane

@@ -32,7 +32,8 @@ async def main() -> int:
     api_names = set(ct.TOOL_MAP.keys())
     # Parity validation explicitly requests the full catalog. The user-facing
     # default is intentionally bounded to prevent first-turn context inflation.
-    discovery = srv._tool_names_payload(limit=max(1, len(api_names)))
+    discovery = srv._tool_names_payload(limit=max(1, len(api_names)),
+                                        include_hidden=True)
     discovered = {item["name"] for item in discovery["tools"]}
     wrappers = _mcp_wrapper_names()
 

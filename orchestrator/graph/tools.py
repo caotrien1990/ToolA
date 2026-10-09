@@ -33,6 +33,7 @@ from .extractors.vulture_ruff import (
     scan_ruff,
     scan_vulture,
 )
+from orchestrator.skip_rules import should_skip_dir as _should_skip_dir
 
 
 def _ok(payload: dict) -> str:
@@ -171,7 +172,7 @@ _GRAPH_REFRESH_LOCKS: dict = {}
 # of this very file, 0 defect findings, proposed 15 hunks of import and noqa
 # rewrites in a repo whose config enables neither. ruff_fix adds the ones the
 # project's own config enables (_project_policy_rules) and nothing else.
-_RUFF_FIX_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541,ASYNC210,ASYNC220,ASYNC221,ASYNC222,ASYNC250,ASYNC251"  # (c) 2026-10-09: +6 ASYNC rules (audit từng rule, zero noise đã werify)
+_RUFF_FIX_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541,ASYNC210,ASYNC220,ASYNC221,ASYNC222,ASYNC250,ASYNC251"  # (c) 2026-10-09: +6 ASYNC rules (audited individually, zero noise verified)
 _RUFF_FIX_OVERRIDES = (
     "--config", 'lint.fixable = ["ALL"]',
     "--config", "lint.per-file-ignores = {}",
@@ -528,9 +529,11 @@ async def ruff_fix(project_path: str = "", path: str = ".", apply: bool = False,
     def _snapshot(candidate: str):
         files = [candidate] if os.path.isfile(candidate) else []
         if not files:
-            ignored = {".git", ".venv", "venv", "venv312", "__pycache__"}
+            # F-B2: canonical skip gate instead of a hardcoded set -- case-insensitive,
+            # covers SKIP_DIR_GLOBS, and honors per-project .orchestrator_ignore overlays
+            # (e.g. Runtime/, node_modules/, dist/ are now skipped like everywhere else).
             for base, dirs, names in os.walk(candidate):
-                dirs[:] = [directory for directory in dirs if directory not in ignored]
+                dirs[:] = [d for d in dirs if not _should_skip_dir(d, root)]
                 files.extend(os.path.join(base, name) for name in names if name.endswith(".py"))
         return {file: (stat.st_size, stat.st_mtime_ns) for file in files for stat in [os.stat(file)]}
 

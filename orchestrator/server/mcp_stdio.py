@@ -1519,9 +1519,12 @@ def run_mcp_stdio() -> None:
         def tool_names(tier: str = "", name_contains: str = "", category: str = "",
                        limit: int = 0, suppress_hints: bool = False) -> str:
             """Compact MCP discovery. Filter by tier/name/category; call tool_schema before call_tool."""
+            # P0-0: MCP is the T4-native surface (desktop/runtime tools run in the
+            # stateful host), so its discovery opts into the full callable catalog.
             return _mcp_live_discovery("/api/tools/names", {
                 "tier": tier, "name_contains": name_contains, "category": category,
-                "limit": limit, "suppress_hints": suppress_hints})
+                "limit": limit, "suppress_hints": suppress_hints,
+                "include_hidden": True})
 
         @_mcp.tool
         def tool_schema(name: str) -> str:

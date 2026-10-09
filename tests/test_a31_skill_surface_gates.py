@@ -397,10 +397,14 @@ _TRIGGER_TOKEN_SHAPE = re.compile(r"^([a-z][a-z0-9_]*)(?:\s*\(.*\)|\s+with\s+.+)
 
 
 def _live_tool_names():
-    """The set `/api/tools/names` publishes, which IS the live tool surface.
+    """Every name the daemon can route (the CALLABLE surface).
 
     `limit` must be passed explicitly: unfiltered, the endpoint may answer with the
     curated core only, and a gate keyed on a curated slice would condemn live tools.
+
+    P0-0: the default HTTP discovery view hides tier-T4 and deprecated tools, but
+    they stay callable by name -- and this gate checks callability ("must be
+    callable, not aspirational"), so it requests the full catalog explicitly.
 
     Do NOT key this on `ct.TOOL_MAP`. Measured 2026-09-17: TOOL_MAP holds 234 names
     and omits every `git_*`, every `council_*` and `restart_orchestrator_via_bat` --
@@ -408,7 +412,7 @@ def _live_tool_names():
     """
     import orchestrator_server as osrv
 
-    return {t["name"] for t in osrv._tool_names_payload(limit=5000)["tools"]}
+    return {t["name"] for t in osrv._tool_names_payload(limit=5000, include_hidden=True)["tools"]}
 
 
 def _trigger_tool_tokens():

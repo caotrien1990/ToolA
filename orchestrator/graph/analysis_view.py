@@ -477,16 +477,39 @@ def _schema_ok(conn) -> bool:
     return {"nodes", "edges", "files"}.issubset(names)
 
 
-def _edge_rows(conn) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        "SELECT s.file_path AS src, t.file_path AS dst, e.confidence AS confidence "
-        "FROM edges e "
-        "JOIN nodes s ON s.id = e.source "
-        "JOIN nodes t ON t.id = e.target "
-        "WHERE e.kind = 'imports_module' AND e.is_external = 0 "
-        "ORDER BY s.file_path, t.file_path, e.confidence DESC",
-    ).fetchall()
-    out: list[dict[str, Any]] = []
+def _edge_rows(conn, file_filter=None):
+    """Fetch imports_module edges, optionally filtered to relevant files.
+
+    When file_filter is provided (set of normalized file paths), only fetch
+    edges where source OR target is in the filter set. This avoids fetching
+    the entire graph (64k+ edges) when only a few files are requested.
+    When None, fetches all edges (backward compatible).
+
+    Note: uses COLLATE NOCASE because the old Python-side filter used
+    _identity_key() (casefold), so SQL must match case-insensitively too.
+    """
+    if file_filter:
+        placeholders = ",".join("?" for _ in file_filter)
+        rows = conn.execute(
+            "SELECT s.file_path AS src, t.file_path AS dst, e.confidence AS confidence "
+            "FROM edges e "
+            "JOIN nodes s ON s.id = e.source "
+            "JOIN nodes t ON t.id = e.target "
+            "WHERE e.kind = 'imports_module' AND e.is_external = 0 "
+            f"AND (s.file_path COLLATE NOCASE IN ({placeholders}) OR t.file_path COLLATE NOCASE IN ({placeholders})) "
+            "ORDER BY s.file_path, t.file_path, e.confidence DESC",
+            list(file_filter) * 2,
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT s.file_path AS src, t.file_path AS dst, e.confidence AS confidence "
+            "FROM edges e "
+            "JOIN nodes s ON s.id = e.source "
+            "JOIN nodes t ON t.id = e.target "
+            "WHERE e.kind = 'imports_module' AND e.is_external = 0 "
+            "ORDER BY s.file_path, t.file_path, e.confidence DESC",
+        ).fetchall()
+    out = []
     for r in rows:
         src = _norm_slash(r["src"] if not isinstance(r, tuple) else r[0])
         dst = _norm_slash(r["dst"] if not isinstance(r, tuple) else r[1])
@@ -698,10 +721,30 @@ def build_analysis_view(
             payload["created_missing_db"] = False
             payload["created_missing_parent"] = False
             return payload
-        raw_edges = _edge_rows(conn)
-        file_hash_rows = conn.execute(
-            "SELECT path, content_hash FROM files ORDER BY path",
-        ).fetchall()
+        # Filter edges to only relevant files to avoid fetching entire graph.
+        # included contains the requested files; we also need files that
+        # import them (for incoming edges), but the SQL filter on
+        # source OR target covers both directions.
+        edge_filter = set(included) if included else None
+        raw_edges = _edge_rows(conn, file_filter=edge_filter)
+        # F-B4/D3: filter hashes in SQL instead of fetching the full files table
+        # and filtering in Python. Same precedent as _edge_rows(): COLLATE NOCASE
+        # because the Python side matches via _identity_key() (casefold). The
+        # residual Unicode casefold-vs-NOCASE gap is the documented F-D2 gap;
+        # the Python-side `in included_keys` check below stays as an exact net,
+        # so the result is identical to the old full-table fetch.
+        if edge_filter:
+            _placeholders = ",".join("?" for _ in edge_filter)
+            file_hash_rows = conn.execute(
+                "SELECT path, content_hash FROM files "
+                f"WHERE path COLLATE NOCASE IN ({_placeholders}) "
+                "ORDER BY path",
+                list(edge_filter),
+            ).fetchall()
+        else:
+            file_hash_rows = conn.execute(
+                "SELECT path, content_hash FROM files ORDER BY path",
+            ).fetchall()
     finally:
         conn.close()
 
@@ -733,10 +776,13 @@ def build_analysis_view(
     # on disk — is a caller error, not an isolated file. Collect it so the
     # payload names the bad path instead of a silent zero-edge pass.
     unmatched_files: list[str] = []
+    # F-B4/D3: set lookup instead of an O(N*M) any() scan over hashes.
+    _hash_keys = {_identity_key(p) for p, _ in hashes}
     for rel in display_included:
-        if not any(_identity_key(rel) == _identity_key(p) for p, _ in hashes):
+        if _identity_key(rel) not in _hash_keys:
             digest = _file_sha256(os.path.join(root, rel.replace("/", os.sep))) or ""
             hashes.append((rel, digest))
+            _hash_keys.add(_identity_key(rel))
             if not digest:
                 unmatched_files.append(rel)
 

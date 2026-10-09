@@ -1753,6 +1753,10 @@ _DEPRECATED_TOOLS: dict[str, str] = {
     "regex_search": "Use search_code(mode='regex', query=...) directly.",
     "find_callers": "Use find_symbol(name=..., include='callers') directly.",
     "find_definition_and_usage": "Use find_symbol(name=..., include='all') directly.",
+    # P0-0 (2026-10-09): read_chunks was already taught as deprecated in the rule
+    # text (use read_file_range for chunk reads) but was missing here, so direct
+    # calls never got the deprecated:true + deprecation_hint stamp.
+    "read_chunks": "Use read_file_range(...) directly.",
 }
 
 # ─── Argument aliases (Fix 6: schema drift compat) ────────────────────────────
@@ -14599,6 +14603,7 @@ async def handle_config(request):
 # rather than silently swallowed.
 _TOOL_NAMES_KNOWN_QUERY_PARAMS = frozenset({
     "tier", "phase", "name_contains", "category", "limit", "suppress_hints", "fields",
+    "include_hidden",  # P0-0: opt back into the full callable catalog
 })
 
 
@@ -14618,6 +14623,10 @@ async def handle_tools_names(request):
     exists, then call /api/tools?name_contains=<name> for the few you need.
 
     Same filters: ?tier=T4, ?phase=T4, ?name_contains=substr.
+
+    P0-0: tier-T4 (not runnable over HTTP) and deprecated tools are hidden from
+    this listing by default; ?include_hidden=1 opts back into the full callable
+    catalog (used by MCP discovery).
     """
     tier_filter = request.query.get("tier") or request.query.get("phase") or ""
     name_contains = request.query.get("name_contains") or ""
@@ -14627,8 +14636,12 @@ async def handle_tools_names(request):
     except (TypeError, ValueError):
         limit = 0
     suppress_hints = _health_query_truthy(request.query, "suppress_hints")
+    # P0-0: MCP discovery (the T4-native surface) opts back into the full
+    # callable catalog; plain HTTP callers get the filtered discovery view.
+    include_hidden = _health_query_truthy(request.query, "include_hidden")
     payload = _tool_names_payload(tier_filter, name_contains, category, limit,
-                                  suppress_hints=suppress_hints)
+                                  suppress_hints=suppress_hints,
+                                  include_hidden=include_hidden)
     # Projected BEFORE the A09 notice below is stamped, so fields= can never hide
     # the report that a param was ignored.
     payload = _discovery_view(request, payload)
@@ -17076,16 +17089,49 @@ def _bound_tool_result(payload: dict, max_bytes: int = 4_000) -> dict:
     return bounded
 
 
+def _discoverable_tool_count() -> int:
+    """P0-0: size of the HTTP discovery catalog: TOOL_MAP minus the tools the
+    discovery view hides (tier T4 + deprecated)."""
+    return sum(
+        1 for _name in ct.TOOL_MAP
+        if not _tool_hidden_from_http_discovery(_name, ct.TOOL_PHASES.get(_name, ""))
+    )
+
+
 def _full_catalog_hint() -> str:
-    """The one producer of the catalog-size sentence. N is the WHOLE catalog: a copy
+    """The one producer of the catalog-size sentence. N is the whole HTTP
+    DISCOVERY catalog (P0-0: TOOL_MAP minus tier-T4 and deprecated tools): a copy
     that computed it from a filtered answer told ?name_contains=git to pass limit=2
     "for the full catalog", and limit=2 unfiltered returns two tools."""
-    return f"default is the curated core; pass limit={len(ct.TOOL_MAP)} for the full catalog"
+    return f"default is the curated core; pass limit={_discoverable_tool_count()} for the full catalog"
+
+
+def _tool_hidden_from_http_discovery(name: str, tool_tier: str) -> bool:
+    """P0-0 (2026-10-09): True when `name` must not be advertised over HTTP discovery.
+
+    Derived from live registry state, never a hand-kept list:
+      - tier T4 (ct.TOOL_PHASES): runtime/DOM, desktop and MCP tools are not
+        runnable over HTTP (measured 2026-10-07: a desktop probe over HTTP
+        answers ok:true with an empty result);
+      - deprecated tools (module _DEPRECATED_TOOLS): advertised nowhere.
+    A tool promoted to T4 or newly deprecated is hidden automatically. Dispatch
+    is untouched: hidden tools stay callable by name.
+    """
+    if name in _DEPRECATED_TOOLS:
+        return True
+    return (tool_tier or "").strip().upper() == "T4"
 
 
 def _tool_names_payload(tier: str = "", name_contains: str = "", category: str = "",
-                        limit: int = 0, suppress_hints: bool = False) -> dict:
-    """Compact discovery payload shared by HTTP names endpoint and MCP."""
+                        limit: int = 0, suppress_hints: bool = False,
+                        include_hidden: bool = False) -> dict:
+    """Compact discovery payload shared by HTTP names endpoint and MCP.
+
+    P0-0: the default HTTP discovery view hides tools unusable over HTTP
+    (tier T4) and deprecated tools. Pass include_hidden=True for the full
+    callable catalog (MCP discovery, parity scripts, callability gates);
+    GET /api/tools/names maps ?include_hidden=1 onto this flag.
+    """
     tier_filter = (tier or "").strip().upper()
     name_filter = (name_contains or "").strip().lower()
     category_filter = (category or "").strip().lower()
@@ -17094,6 +17140,8 @@ def _tool_names_payload(tier: str = "", name_contains: str = "", category: str =
     tools = []
     for name in sorted(ct.TOOL_MAP.keys()):
         tool_tier = ct.TOOL_PHASES.get(name, "")
+        if not include_hidden and _tool_hidden_from_http_discovery(name, tool_tier):
+            continue
         if tier_filter and (tool_tier or "").upper() != tier_filter:
             continue
         if name_filter and name_filter not in name.lower():
@@ -17135,6 +17183,9 @@ def _tool_names_payload(tier: str = "", name_contains: str = "", category: str =
         curated = [t for t in tools if t["name"] in _curated_set]
         curated_default = bool(curated)
         returned = curated if curated else tools[:max(1, _TOOL_CATALOG_DEFAULT_LIMIT)]
+    # P0-0: how many tools the HTTP discovery view hides (tier T4 + deprecated).
+    # 0 when include_hidden=True (the full callable catalog was requested).
+    _hidden_count = len(ct.TOOL_MAP) - total
     payload = {
         "ok": True,
         "count": len(returned),
@@ -17145,6 +17196,13 @@ def _tool_names_payload(tier: str = "", name_contains: str = "", category: str =
         "filtered": explicit_filter,
         "category": category_filter or "",
         "tools": returned,
+        "hidden_from_discovery": _hidden_count,
+        "hidden_from_discovery_hint": (
+            f"{_hidden_count} tools hidden from HTTP discovery "
+            "(tier T4: not runnable over HTTP; deprecated). "
+            "Pass include_hidden=1 for the full callable catalog."
+            if _hidden_count else ""
+        ),
         # The catalog-size sentence has one producer, _full_catalog_hint(): these copies
         # used `total`, the FILTERED count, so ?name_contains=git answered "use limit=2
         # for the full catalog" beside an A09 notice that said the real catalog size.
@@ -17173,7 +17231,8 @@ def _tool_names_payload(tier: str = "", name_contains: str = "", category: str =
         # whole advisory class, so it now clears the whole advisory class and says
         # which keys it emptied (silence must still be auditable). One tuple names
         # both, so the report cannot list a key the answer does not carry.
-        _hint_keys = ("ca_hint", "next_query_hint", "ca_next_action", "hint")
+        _hint_keys = ("ca_hint", "next_query_hint", "ca_next_action", "hint",
+                      "hidden_from_discovery_hint")
         for _hint_key in _hint_keys:
             payload[_hint_key] = ""
         payload["hints_suppressed"] = True

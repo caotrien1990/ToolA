@@ -174,7 +174,9 @@ def _walk_files(project_root: str, *, exts: tuple[str, ...] = PYTHON_EXTS,
             return False  # explicit opt-in wins over every skip, dot rule included
         if name_matches_ignore(low, extra_skips):
             return True
-        if d in skip or d.startswith("."):
+        # F-B1: use lowercased name for SKIP_DIRS check -- canonical gate
+        # (should_skip_dir) is case-insensitive; `Runtime/` must match `runtime`.
+        if low in skip or d.startswith("."):
             return True
         # The global glob DEFAULTS apply only when the caller did not name a set:
         # an explicit `skip_dirs=` still means "use exactly this set".
@@ -420,12 +422,24 @@ def detect_changes(project_path: str, *, project_root: Optional[str] = None,
             "elapsed_ms": round((time.monotonic() - t0) * 1000, 1)}
 
 
-def _delete_file_entries(conn, rel_path: str) -> None:
-    """Cascade delete one file's graph rows: edges first (both directions —
-    the target side has no FK), nodes second, files row last."""
-    conn.execute(
-        "DELETE FROM edges WHERE source IN (SELECT id FROM nodes WHERE file_path=?) "
-        "OR target IN (SELECT id FROM nodes WHERE file_path=?);", (rel_path, rel_path))
+def _delete_file_entries(conn, rel_path: str, delete_incoming: bool = True) -> None:
+    """Cascade delete one file's graph rows: edges first, nodes second, files row last.
+
+    When delete_incoming=True (default): deletes edges in both directions —
+    the target side has no FK. Use for deleted/renamed-old files.
+    When delete_incoming=False: only deletes outgoing edges (source side).
+    Use for reindexed files (modified/added) — incoming edges from unchanged
+    files must be preserved because those files won't be reindexed and their
+    edges won't be rebuilt (F-G1 fix: prevents silent loss of imports_module edges).
+    """
+    if delete_incoming:
+        conn.execute(
+            "DELETE FROM edges WHERE source IN (SELECT id FROM nodes WHERE file_path=?) "
+            "OR target IN (SELECT id FROM nodes WHERE file_path=?);", (rel_path, rel_path))
+    else:
+        conn.execute(
+            "DELETE FROM edges WHERE source IN (SELECT id FROM nodes WHERE file_path=?);",
+            (rel_path,))
     conn.execute("DELETE FROM nodes WHERE file_path=?;", (rel_path,))
     conn.execute("DELETE FROM files WHERE path=?;", (rel_path,))
 
@@ -524,12 +538,11 @@ def _build_dependency_edges(conn, changed_files=None) -> dict:
     traverses (`from a.b.c import X` also executes `a/b/__init__.py`). Longest
     prefix wins, so the edge points at `a/b/c.py` alone. Counting the traversal
     would make every package a cycle with its own submodules. Explicit package
-    imports (`from a import b`, `import a.b`) still resolve to `__init__.py`
-    resolution; the 102 differences are exactly this implicit-traversal class.
+     imports (`from a import b`, `import a.b`) still resolve to `__init__.py` resolution;
+     the 102 differences are exactly this implicit-traversal class.
 
     Returns a stats dict; `edges` is the count callers previously got as an int.
     """
-    # F-G1: delta mode - only delete edges for changed files; full mode deletes all
     # F-G1: delta mode - only delete edges for changed files; full mode deletes all
     # Fix 2026-10-09: use truthiness check so empty list falls back to full mode (IN () is invalid SQL)
     if changed_files:
@@ -636,8 +649,13 @@ def _build_dependency_edges(conn, changed_files=None) -> dict:
     }
 
 
-def _build_dynamic_ref_edges(conn) -> dict:
+def _build_dynamic_ref_edges(conn, changed_files=None) -> dict:
     """Cross-file dynamic-dispatch edges from `name_literal` nodes (W5).
+
+    F-F1 delta mode: when changed_files is provided (truthy), only dynamic_ref
+    edges touching changed files are rebuilt; the callable-name map is still
+    built from the full graph (a literal in a changed file may reference a
+    definition in an unchanged file). None/empty falls back to full rebuild.
 
     A registry that maps a NAME STRING to a callable -- ``TOOL_MAP`` in
     code_tools.py is the canonical case, 225 entries built by ``eval()`` over a
@@ -661,7 +679,40 @@ def _build_dynamic_ref_edges(conn) -> dict:
 
     Idempotent: the kind is rebuilt from scratch each call.
     """
-    conn.execute("DELETE FROM edges WHERE kind='dynamic_ref';")
+    # F-F1 delta: only drop dynamic_ref edges touching changed files. Full mode
+    # (None/empty) keeps the original wipe-and-rebuild. Truthiness check: an
+    # empty list would make IN () invalid SQL, so it falls back to full mode.
+    _dyn_changed_names: list = []
+    if changed_files:
+        _dph = ",".join("?" for _ in changed_files)
+        # Names (re)defined in changed files: a literal in ANY file naming one
+        # of these may gain or lose targets, so those literals are re-resolved.
+        _dyn_changed_names = [r[0] for r in conn.execute(
+            f"SELECT DISTINCT name FROM nodes WHERE kind IN ('function','method') "
+            f"AND file_path IN ({_dph})", list(changed_files))]
+        if _dyn_changed_names:
+            _nph = ",".join("?" for _ in _dyn_changed_names)
+            conn.execute(
+                f"DELETE FROM edges WHERE kind='dynamic_ref' AND ("
+                f"source IN (SELECT id FROM nodes WHERE kind='name_literal' "
+                f"AND file_path IN ({_dph})) "
+                f"OR source IN (SELECT id FROM nodes WHERE kind='name_literal' "
+                f"AND name IN ({_nph})))",
+                list(changed_files) + _dyn_changed_names)
+        else:
+            conn.execute(
+                f"DELETE FROM edges WHERE kind='dynamic_ref' AND source IN "
+                f"(SELECT id FROM nodes WHERE kind='name_literal' "
+                f"AND file_path IN ({_dph}))",
+                list(changed_files))
+        # Drop edges whose target vanished (definition re-extracted with a new
+        # node id, or deleted). The re-resolution below recreates the ones that
+        # should exist; the rest were broken dangling edges.
+        conn.execute(
+            "DELETE FROM edges WHERE kind='dynamic_ref' "
+            "AND target NOT IN (SELECT id FROM nodes)")
+    else:
+        conn.execute("DELETE FROM edges WHERE kind='dynamic_ref';")
 
     # name -> [(id, file_path, start_line, end_line)]. One scan, kept in memory:
     # at [A] scale this is ~7.6k callables, far cheaper than a per-literal
@@ -679,9 +730,22 @@ def _build_dynamic_ref_edges(conn) -> dict:
     resolved = 0
     unresolved = 0
     self_skipped = 0
-    rows = conn.execute(
+    # F-F1 delta: only re-resolve literals in changed files, or literals naming
+    # a callable (re)defined in a changed file. Full mode scans all literals.
+    _lit_q = (
         "SELECT id, name, file_path, start_line FROM nodes "
-        "WHERE kind='name_literal';").fetchall()
+        "WHERE kind='name_literal'")
+    _lit_params: list = []
+    if changed_files:
+        _lph = ",".join("?" for _ in changed_files)
+        if _dyn_changed_names:
+            _nph = ",".join("?" for _ in _dyn_changed_names)
+            _lit_q += f" AND (file_path IN ({_lph}) OR name IN ({_nph}))"
+            _lit_params = list(changed_files) + _dyn_changed_names
+        else:
+            _lit_q += f" AND file_path IN ({_lph})"
+            _lit_params = list(changed_files)
+    rows = conn.execute(_lit_q, _lit_params).fetchall()
     for r in rows:
         literals += 1
         targets = defs.get(r["name"])
@@ -719,11 +783,79 @@ def _build_dynamic_ref_edges(conn) -> dict:
         "literals_unresolved": unresolved,
         "self_mention_skipped": self_skipped,
         "callable_names": len(defs),
+        "mode": "delta" if changed_files else "full",
     }
 
 
-def _resolve_imported_calls(conn) -> dict:
+def _repair_orphan_calls(conn, changed_files=None) -> dict:
+    """Repair dangling `calls` edges whose target node was reindexed.
+
+    F-D1/H1: node IDs embed the definition's line number
+    (`<file_path>:<kind>:<qualified_name>:<line>`). When a definition moves
+    lines, reindexing mints a new node ID and the old incoming `calls` edge
+    dangles (F-G1 keeps incoming edges on reindex). Repair by
+    (file_path, qualified_name) -- "recover, don't guess": UPDATE only when
+    exactly one candidate node exists.
+
+    Scope: only orphans whose TARGET file_path is in changed_files (the
+    definition moved in the target file, not the source). None/empty
+    changed_files = full mode: repair all orphans.
+
+    Idempotent: a repaired edge points at a live node, so a second run
+    finds nothing left to do.
+    """
+    orphans = conn.execute(
+        "SELECT id, target, metadata FROM edges "
+        "WHERE kind = 'calls' AND target NOT IN (SELECT id FROM nodes)"
+    ).fetchall()
+    changed = set(changed_files) if changed_files else None
+    repaired = 0
+    skipped_ambiguous = 0
+    skipped_unparseable = 0
+    skipped_target_unchanged = 0
+    for edge in orphans:
+        parts = edge["target"].rsplit(":", 3)
+        if len(parts) != 4 or not parts[3].isdigit():
+            # Not a line-numbered node ID -- don't guess.
+            skipped_unparseable += 1
+            continue
+        file_path, _kind, qualified_name, _old_line = parts
+        if changed is not None and file_path not in changed:
+            skipped_target_unchanged += 1
+            continue
+        cands = conn.execute(
+            "SELECT id FROM nodes WHERE file_path = ? AND qualified_name = ? "
+            "AND kind IN ('function', 'method')",
+            (file_path, qualified_name),
+        ).fetchall()
+        if len(cands) != 1:
+            # Zero (definition deleted) or many (ambiguous) -- don't guess.
+            skipped_ambiguous += 1
+            continue
+        new_id = cands[0]["id"]
+        meta = json.loads(edge["metadata"] or "{}")
+        meta["orphan_repaired"] = {"from": edge["target"], "via": "F-D1/H1"}
+        conn.execute(
+            "UPDATE edges SET target = ?, metadata = ? WHERE id = ?",
+            (new_id, json.dumps(meta), edge["id"]),
+        )
+        repaired += 1
+    return {
+        "orphans_found": len(orphans),
+        "orphan_repaired": repaired,
+        "orphan_skipped_ambiguous": skipped_ambiguous,
+        "orphan_skipped_unparseable": skipped_unparseable,
+        "orphan_skipped_target_unchanged": skipped_target_unchanged,
+    }
+
+
+def _resolve_imported_calls(conn, changed_files=None) -> dict:
     """Bind a call back to the definition the caller imported.
+
+    F-F1 delta mode: when changed_files is provided (truthy), only ext:/alias
+    edges touching changed files are re-examined; the global resolution maps
+    are still built from the full graph (a call in a changed file may target a
+    definition in an unchanged file). None/empty falls back to full scan.
 
     Two ways a call to an imported name misses its definition, both measured on
     [A] while triaging a dead-code list that was mostly wrong:
@@ -804,6 +936,20 @@ def _resolve_imported_calls(conn) -> dict:
             "SELECT id, name, file_path FROM nodes WHERE kind = 'import';"):
         file_imports.setdefault(r["file_path"], {})[r["name"]] = r["id"]
 
+    # F-F1 delta: names (re)defined in changed files. An ext: call in ANY file
+    # naming one of these may newly resolve, so part 1 re-examines those too.
+    # (Truthiness check: empty list falls back to full mode, IN () is invalid.)
+    _changed_def_names: list = []
+    if changed_files:
+        _cph = ",".join("?" for _ in changed_files)
+        _changed_def_names = [r[0] for r in conn.execute(
+            f"SELECT DISTINCT name FROM nodes WHERE kind IN ('function','method') "
+            f"AND file_path IN ({_cph})", list(changed_files))]
+    # F-D1/H1: repair dangling `calls` edges (moved-line rebound) before
+    # re-resolution -- repaired targets in changed files are picked up by the
+    # delta scoping below.
+    repair_stats = _repair_orphan_calls(conn, changed_files)
+
     def _resolve_in_module(file_path: str, name: str, depth: int = 0,
                            seen: frozenset = frozenset()) -> list:
         """Definitions of `name` reachable from `file_path`, following re-exports.
@@ -834,12 +980,28 @@ def _resolve_imported_calls(conn) -> dict:
     rebound = 0
     ambiguous = 0
     recv_rebound = 0
-    for r in conn.execute(
-            "SELECT e.rowid AS rid, e.target AS tgt, s.file_path AS sf, "
-            "       json_extract(e.metadata, '$.recv_import') AS recv "
-            "FROM edges e JOIN nodes s ON s.id = e.source "
-            "WHERE e.kind = 'calls' AND e.is_external = 1 "
-            "AND e.target LIKE 'ext:%';").fetchall():
+    # F-F1 delta: only resolve ext: calls from changed files, or calls naming a
+    # callable (re)defined in a changed file (a previously-unresolved ext: edge
+    # may now resolve). Full mode scans all. Idempotent: a second run finds
+    # nothing left to do.
+    _ext_q = (
+        "SELECT e.rowid AS rid, e.target AS tgt, s.file_path AS sf, "
+        "       json_extract(e.metadata, '$.recv_import') AS recv "
+        "FROM edges e JOIN nodes s ON s.id = e.source "
+        "WHERE e.kind = 'calls' AND e.is_external = 1 "
+        "AND e.target LIKE 'ext:%'")
+    _ext_params: list = []
+    if changed_files:
+        _eph = ",".join("?" for _ in changed_files)
+        if _changed_def_names:
+            _nph = ",".join("?" for _ in _changed_def_names)
+            _ext_q += (f" AND (s.file_path IN ({_eph}) "
+                       f"OR substr(e.target, 5) IN ({_nph}))")
+            _ext_params = list(changed_files) + _changed_def_names
+        else:
+            _ext_q += f" AND s.file_path IN ({_eph})"
+            _ext_params = list(changed_files)
+    for r in conn.execute(_ext_q, _ext_params).fetchall():
         name = r["tgt"][4:]
         # A receiver the extractor could see OVERRIDES the all-imports sweep,
         # and never falls back to it. The sweep asks "does any module this file
@@ -898,10 +1060,20 @@ def _resolve_imported_calls(conn) -> dict:
     # module defines that name exactly once. `import x.y` aliases (whose
     # qualified_name is a module, not a member) find no def and are left alone.
     alias_rebound = 0
-    for r in conn.execute(
-            "SELECT DISTINCT t.id AS tid, t.qualified_name AS tq FROM edges e "
-            "JOIN nodes t ON t.id = e.target "
-            "WHERE e.kind = 'calls' AND t.kind = 'import';").fetchall():
+    # F-F1 delta: only re-examine alias edges touching changed files -- source
+    # in changed files, or target alias re-extracted in a changed file (e.g.
+    # after orphan repair by S4.3/F-D1H1). Full mode scans all.
+    _alias_q = (
+        "SELECT DISTINCT t.id AS tid, t.qualified_name AS tq FROM edges e "
+        "JOIN nodes t ON t.id = e.target "
+        "JOIN nodes s ON s.id = e.source "
+        "WHERE e.kind = 'calls' AND t.kind = 'import'")
+    _alias_params: list = []
+    if changed_files:
+        _aph = ",".join("?" for _ in changed_files)
+        _alias_q += f" AND (s.file_path IN ({_aph}) OR t.file_path IN ({_aph}))"
+        _alias_params = list(changed_files) + list(changed_files)
+    for r in conn.execute(_alias_q, _alias_params).fetchall():
         q = r["tq"] or ""
         if "." not in q:
             continue
@@ -920,7 +1092,9 @@ def _resolve_imported_calls(conn) -> dict:
     return {"rebound": rebound, "ambiguous": ambiguous,
             "recv_rebound": recv_rebound,
             "alias_rebound": alias_rebound,
-            "modules_indexed": len(mod_defs)}
+            "modules_indexed": len(mod_defs),
+            "orphan_repair": repair_stats,
+            "mode": "delta" if changed_files else "full"}
 
 
 def incremental_index(project_path: str, *, project_root: Optional[str] = None,
@@ -972,7 +1146,7 @@ def incremental_index(project_path: str, *, project_root: Optional[str] = None,
                     watchdog.progress("extract", completed=position,
                                       total=len(reindex_paths), detail=rel)
                 abs_p = os.path.join(root, rel.replace("/", os.sep))
-                _delete_file_entries(conn, rel)
+                _delete_file_entries(conn, rel, delete_incoming=False)  # F-G1 fix: preserve incoming edges from unchanged files
                 try:
                     with open(abs_p, "r", encoding="utf-8-sig", errors="replace") as f:
                         source = f.read()
@@ -989,17 +1163,16 @@ def incremental_index(project_path: str, *, project_root: Optional[str] = None,
                                        errors=res["errors"] or None)
                 except OSError as e:
                     errors.append({"file": rel, "error": f"{type(e).__name__}: {e}"})
-            # BUG-3 note: full rebuild on every incremental run (cost scales with
-            # modules × imports). No-op skip would regress first-index dep edges,
-            # so defer a smarter incremental-aware rebuild to Phase 4+ scale work.
+            # F-G1: delta mode rebuilds edges only for changed files (incoming edges
+            # from unchanged files are preserved by delete_incoming=False above).
             dep_stats = _build_dependency_edges(conn, changed_files=reindex_paths)
             if watchdog:
                 watchdog.progress("edges", completed=1, total=3, detail="dependencies")
             dep_edges = dep_stats["edges"]
-            dyn_stats = _build_dynamic_ref_edges(conn)
+            dyn_stats = _build_dynamic_ref_edges(conn, changed_files=reindex_paths)
             if watchdog:
                 watchdog.progress("edges", completed=2, total=3, detail="dynamic_refs")
-            imp_stats = _resolve_imported_calls(conn)
+            imp_stats = _resolve_imported_calls(conn, changed_files=reindex_paths)
             if watchdog:
                 watchdog.progress("edges", completed=3, total=3, detail="imported_calls")
             orphan_after = conn.execute(

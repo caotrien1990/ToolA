@@ -105,11 +105,8 @@ class FairAdmissionTests(unittest.IsolatedAsyncioTestCase):
         status = self.manager.status()
         self.assertEqual(status["global_admitted"], 0); self.assertEqual(status["permit_count"], 0)
 
-    async def test_idle_map_eviction(self):
-        permit = await self.manager.acquire("read_io", deadline=time.monotonic()+.1, principal="p")
-        permit.release()
-        self.assertEqual(self.manager.evict_idle(0), 1)
-        self.assertEqual(self.manager.status()["principal_cardinality"], 0)
+    # F-C3: test_idle_map_eviction removed -- evict_idle() was deleted (YAGNI).
+    # Cardinality is bounded by agent IDs x 7 lanes; no eviction needed.
 
     async def test_disabled_enforcement_keeps_metrics(self):
         with mock.patch.dict(os.environ, {"ORCH_FAIR_ADMISSION_ENABLED":"0", "ORCH_GLOBAL_CAP_ENABLED":"0"}, clear=False):

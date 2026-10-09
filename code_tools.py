@@ -46,6 +46,9 @@ from orchestrator.server.executor_lanes import (
     ExecutorLaneError,
     run_in_executor_lane,
 )
+# F-C1: FairAdmissionError must propagate (not be mislabeled as SCRIPT_EXEC_FAILED)
+# so the dispatcher can map it to 429 + Retry-After.
+from orchestrator.server.fair_admission import FairAdmissionError
 from orchestrator.skip_rules import (
     effective_skip_dir_names,
     ignored_directory_name,
@@ -61,6 +64,9 @@ from rule_core import get_rule_core, get_rule_core_metadata
 # and orchestrator_server alias it so all three modules share one value (previously
 # orchestrator_server held a divergent 11-entry subset).
 SKIP_DIRS = surgical_mapper.SKIP_DIRS
+# F-A1: suppress console window flash for non-interactive child processes on Windows.
+# Cross-platform safe: getattr fallback to 0 on non-Windows.
+NOWINDOW_FLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 MAX_SEARCH_RESULTS = 50
 MAX_SEARCH_CONTEXT_LINES = 1
 MAX_READ_LINES = 200            # default span when max_lines not given (token economy)
@@ -1776,7 +1782,8 @@ def _select_python_interpreter(project_root: Path | None = None, explicit: str =
     for source, candidate in _python_interpreter_candidates(project_root, explicit):
         try:
             capable = _subprocess.run([candidate, "-c", probe], capture_output=True,
-                                      timeout=8, check=False).returncode == 0
+                                      timeout=8, check=False,
+                                      creationflags=NOWINDOW_FLAGS).returncode == 0  # F-A1
         except (OSError, _subprocess.SubprocessError):
             capable = False
         attempted.append({"source": source, "executable": candidate, "capable": capable})
@@ -5146,7 +5153,9 @@ def _kill_process_tree(proc, *, is_windows: bool) -> dict:
     evidence = {"attempted": True, "pid": proc.pid, "method": "taskkill" if is_windows else "killpg"}
     try:
         if is_windows:
-            result = subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True, text=True, timeout=10)
+            result = subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                                      capture_output=True, text=True, timeout=10,
+                                      creationflags=NOWINDOW_FLAGS)  # F-A1: no console flash
             evidence.update({"succeeded": result.returncode == 0, "returncode": result.returncode, "stdout": result.stdout or "", "stderr": result.stderr or ""})
             if result.returncode != 0 and proc.poll() is None:
                 proc.kill()
@@ -5289,6 +5298,17 @@ async def run_project_command(
     # Honors CA intent instead of returning UNSUPPORTED_FIELD; takes precedence over timeout.
     if timeout_ms and isinstance(timeout_ms, (int, float)) and timeout_ms > 0:
         timeout = max(1, int(round(timeout_ms / 1000.0)))
+    # F-C4/F-E1: validate timeout - 0/negative clamped, None/non-number rejected.
+    # (Placed after timeout_ms conversion so both input paths are validated.)
+    if timeout is None or not isinstance(timeout, (int, float)) or timeout <= 0:
+        if timeout == 0 or (isinstance(timeout, (int, float)) and timeout < 0):
+            timeout = 1  # Clamp degenerate values to minimum meaningful.
+        else:
+            return _json_error(
+                f"Invalid timeout: {timeout!r}. Must be a positive number.",
+                error_name="INVALID_TIMEOUT",
+                timed_out=False,
+            )
     # V15 R34: defensive `/` → `\` for direct Python callers (API boundary already normalizes)
     if isinstance(project_path, str) and "/" in project_path and len(project_path) >= 2 and project_path[1] == ":":
         project_path = project_path.replace("/", "\\")
@@ -6000,6 +6020,12 @@ async def run_project_command(
         return "process"
 
     def _verify_launch(spawned_pid: int) -> dict:
+        # F-C5 (docs-only): _verify_launch has a known false-negative hazard --
+        # a process that starts but exits immediately (crash-on-startup) may be
+        # reported as "launch failed" when it actually launched then died.
+        # Callers should check process exit code / logs to distinguish
+        # "never started" from "started then crashed". No code change;
+        # fixing the race properly requires process-lifecycle tracking (out of scope).
         import socket
         import time as _time
         deadline = _time.time() + (max(verify_after_launch_ms, 0) / 1000.0)
@@ -6261,10 +6287,10 @@ async def run_project_command(
                         "elevated": True,
                     }
                 import ctypes
-                params = ""
+                # F-C6: subprocess.list2cmdline() is the canonical Windows argv quoter
+                # (matches ShellExecuteW parsing; handles spaces, quotes, backslashes).
                 executable = args[0]
-                if len(args) > 1:
-                    params = " ".join(str(x) for x in args[1:])
+                params = subprocess.list2cmdline([str(x) for x in args[1:]])
                 rc = ctypes.windll.shell32.ShellExecuteW(
                     None, "runas", executable, params, str(root), 1
                 )
@@ -6313,6 +6339,11 @@ async def run_project_command(
             start_new_session = (os.name != "nt")
             if _is_win:
                 creationflags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                # Hide console window: pythonw has no console, so without
+                # CREATE_NO_WINDOW Windows spawns a visible console per call.
+                # Skip only for interactive keep_alive (user wants the console).
+                if not (keep_alive and interactive):
+                    creationflags |= getattr(subprocess, "CREATE_NO_WINDOW", 0)
             if keep_alive:
                 stdin_target = subprocess.DEVNULL
                 stdout_target = subprocess.DEVNULL
@@ -6327,6 +6358,12 @@ async def run_project_command(
             proc = subprocess.Popen(
                 launch_args, cwd=str(root), stdin=stdin_target,
                 stdout=stdout_target, stderr=stderr_target, text=not keep_alive,
+                # F-C2: UTF-8 with replacement -- AI consumers need text, not byte fidelity.
+                # Invalid sequences become U+FFFD instead of crashing _pipe_text with a
+                # UnicodeDecodeError. (Inert in keep_alive mode: all targets are DEVNULL,
+                # so no stream exists to wrap. Note: encoding/errors imply text mode per
+                # CPython docs -- do not switch keep_alive targets to PIPE without review.)
+                encoding="utf-8", errors="replace",
                 shell=use_shell, creationflags=creationflags, close_fds=close_fds,
                 start_new_session=start_new_session, env=child_env,
             )
@@ -6412,6 +6449,8 @@ async def run_project_command(
                 "stdout": _truncate_output(stdout),
                 "stderr": _truncate_output(stderr),
                 "timed_out": timed_out,
+                # F-A2: machine-readable error taxonomy for timeouts.
+                **({"error_name": "COMMAND_TIMEOUT"} if timed_out else {}),
                 **({"process_evidence": proc_evidence} if proc_evidence else {}),
                 "background": False,
                 "interactive": bool(interactive),
@@ -6460,7 +6499,11 @@ async def run_project_command(
                 "expected_process_name": expected_process_name or "",
                 "root_causes": ["COMMAND_RUNNER_ERROR"],
                 "exit_code": None,
-                "timed_out": "timed out" in str(exc).lower(),
+                # F-E4: no substring sniffing — real timeouts set timed_out=True structurally
+                # upstream (TimeoutExpired is caught inside _communicate_with_tree_timeout);
+                # this generic catch is for non-timeout failures, and `timed_out` may be
+                # unbound here (assigned inside try at 6341/6389), so hardcode False.
+                "timed_out": False,
                 "interactive": bool(interactive),
                 "elevated": bool(elevated),
                 "path_resolution_note": path_resolution_note,
@@ -9496,6 +9539,12 @@ async def run_project_test_script(
       On a destructive body without acknowledgement: DESTRUCTIVE_SCRIPT_CONFIRMATION_REQUIRED.
       On a PowerShell -Include/-LiteralPath footgun: DESTRUCTIVE_SCRIPT_FOOTGUN (refused outright).
     """
+    # F-C4/F-E1: validate timeout — 0/negative clamped, None/non-number rejected.
+    if timeout is None or not isinstance(timeout, (int, float)) or timeout <= 0:
+        if timeout == 0 or (isinstance(timeout, (int, float)) and timeout < 0):
+            timeout = 1  # Clamp degenerate values to minimum meaningful.
+        else:
+            return json.dumps({"ok": False, "error_name": "INVALID_TIMEOUT", "error": f"Invalid timeout: {timeout!r}. Must be a positive number.", "timed_out": False})
     import hashlib as _hash_rpts
     import subprocess as _sp_rpts
 
@@ -9666,7 +9715,12 @@ async def run_project_test_script(
     timed_out = False
     proc_evidence = None
     try:
-        creationflags = getattr(_sp_rpts, "CREATE_NEW_PROCESS_GROUP", 0) if sys.platform == "win32" else 0
+        creationflags = 0
+        if sys.platform == "win32":
+            creationflags |= getattr(_sp_rpts, "CREATE_NEW_PROCESS_GROUP", 0)
+            # Hide console window: test scripts capture stdout via PIPE,
+            # never interactive, so no console should ever appear.
+            creationflags |= getattr(_sp_rpts, "CREATE_NO_WINDOW", 0)
         proc = await run_in_executor_lane(
             "test", _sp_rpts.Popen, cmd, cwd=str(root), stdout=_sp_rpts.PIPE,
             stderr=_sp_rpts.PIPE, text=True, encoding="utf-8", errors="replace",
@@ -9678,7 +9732,8 @@ async def run_project_test_script(
             is_windows=(sys.platform == "win32"),
         )
         rc = proc.returncode
-    except ExecutorLaneError:
+    except (ExecutorLaneError, FairAdmissionError):
+        # F-C1: propagate admission rejections - dispatcher maps to 429 + Retry-After.
         raise
     except Exception as exc:
         return json.dumps({"ok": False, "error": str(exc), "error_name": "SCRIPT_EXEC_FAILED", "script_path": str(script_path), "script_hash": script_hash, "runtime_used": runtime_clean})
@@ -9729,6 +9784,8 @@ async def run_project_test_script(
         "script_label": script_label,
         "runtime_used": runtime_clean,
         "timed_out": timed_out,
+        # F-A2: machine-readable error taxonomy for timeouts (matches COMMAND_TIMEOUT in run_project_command).
+        **({"error_name": "SCRIPT_TIMEOUT"} if timed_out else {}),
         # #29: the tree kill of a timeout, or a descendant that still held the
         # pipes after the script exited -- evidence; ok stays rc/timed_out.
         **({"process_evidence": proc_evidence} if proc_evidence else {}),
@@ -14287,7 +14344,8 @@ def _lint_only_introduced(val: dict, fp, baseline) -> dict:
         # write re-reported it as introduced).
         r = subprocess.run(_ruff_lint_argv(fp, stdin=True),
                            input=baseline.removeprefix("\ufeff").encode("utf-8"),
-                           capture_output=True, timeout=10)
+                           capture_output=True, timeout=10,
+                           creationflags=NOWINDOW_FLAGS)  # F-A1: no console flash
     except (OSError, subprocess.TimeoutExpired):
         return val
     if r.returncode not in (0, 1):
@@ -14488,7 +14546,8 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                 # argv lives in _ruff_lint_argv: the write-time baseline in
                 # _lint_only_introduced must lint with exactly these rules.
                 r = subprocess.run(_ruff_lint_argv(fp), capture_output=True, text=True,
-                                   encoding="utf-8", errors="replace", timeout=10)
+                                   encoding="utf-8", errors="replace", timeout=10,
+                                   creationflags=NOWINDOW_FLAGS)  # F-A1: no console flash
                 if r.returncode == 1:
                     err = (r.stdout or "").strip() or (r.stderr or "").strip()
                     if not err:
@@ -14512,7 +14571,8 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
             try:
                 r = subprocess.run(
                     ["node", "--check", str(fp)],
-                    capture_output=True, text=True, timeout=10
+                    capture_output=True, text=True, timeout=10,
+                    creationflags=NOWINDOW_FLAGS,  # F-A1: no console flash
                 )
                 if r.returncode == 0:
                     return {"ok": True, "lang": "js", "file": str(fp)}
@@ -14534,7 +14594,8 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                         resolved = str(candidate)
                 if resolved:
                     cmd[0] = resolved
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=10,
+                                   creationflags=NOWINDOW_FLAGS)  # F-A1: no console flash
                 try:
                     os.unlink(out_path)
                 except Exception:
@@ -14576,7 +14637,8 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                     with tempfile.NamedTemporaryFile(suffix=".js", delete=False, mode="w", encoding="utf-8") as tmp:
                         tmp.write(body)
                         tmp_path = tmp.name
-                    r = subprocess.run(["node", "--check", tmp_path], capture_output=True, text=True, timeout=10)
+                    r = subprocess.run(["node", "--check", tmp_path], capture_output=True, text=True, timeout=10,
+                                       creationflags=NOWINDOW_FLAGS)  # F-A1: no console flash
                     os.unlink(tmp_path)
                     if r.returncode != 0:
                         return {"ok": False, "lang": "html", "file": str(fp), "error": f"script[{i}] syntax error: {_strip_ansi(r.stderr.strip())}"}
@@ -14611,7 +14673,8 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                         resolved = str(candidate)
                 if resolved:
                     cmd[0] = resolved
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=10,
+                                   creationflags=NOWINDOW_FLAGS)  # F-A1: no console flash
                 for path in (tmp_path, out_path):
                     try:
                         os.unlink(path)
@@ -17729,7 +17792,8 @@ def _ma_hook_run_zcode_cli(cli_path: str, args: list, timeout: int = 120) -> dic
     try:
         r = subprocess.run(["node", cli_path, "plugins"] + list(args),
                            capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", timeout=timeout)
+                           errors="replace", timeout=timeout,
+                           creationflags=NOWINDOW_FLAGS)  # F-A1: no console flash
     except Exception as exc:
         return {"ok": False, "rc": -1, "stdout": "", "stderr": f"cli spawn failed: {exc}"}
     return {"ok": r.returncode == 0, "rc": r.returncode,
@@ -18056,7 +18120,8 @@ def _ma_probe_opencode_before(mod_path: Path, tool: str, args: dict, env: dict,
         e2["PROBE_TOOL"] = tool
         e2["PROBE_ARGS"] = json.dumps(args)
         r = subprocess.run(["node", str(probe_mod)], cwd=str(mod_path.parent),
-                           env=e2, capture_output=True, text=True, timeout=timeout)
+                           env=e2, capture_output=True, text=True, timeout=timeout,
+                           creationflags=NOWINDOW_FLAGS)  # F-A1: no console flash
         out = ((r.stdout or "") + (r.stderr or "")).strip()
         deny = ("THROW:" in out) or ('"permissionDecision"' in out and '"deny"' in out)
         return {"deny": deny, "out": out}
@@ -18140,7 +18205,9 @@ def _ma_hook_probe(target: dict, hooks_dir: Path) -> dict:
             r = subprocess.run(
                 ["node", str(hooks_dir / script)],
                 input=json.dumps(payload), env=env,
-                capture_output=True, text=True, timeout=25)
+                capture_output=True, text=True, timeout=25,
+                creationflags=NOWINDOW_FLAGS,  # F-A1: no console flash
+            )
             return (r.stdout or "").strip()
         except Exception:
             return ""
@@ -19129,6 +19196,7 @@ async def council_tracker(open_file: bool = False, tail_lines: int = 80,
                 [_sys.executable, _COUNCIL_TRACKER_SCRIPT],
                 cwd=_COUNCIL_TRACKER_ROOT, env=env,
                 capture_output=True, timeout=120,
+                creationflags=NOWINDOW_FLAGS,  # F-A1: no console flash
             )
         except subprocess.TimeoutExpired:
             return _json_error("council tracker run timed out after 120s",
