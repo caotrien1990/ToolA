@@ -78,24 +78,73 @@ def detect_text_encoding(file_path: Path, sample_size: int = 4096) -> str:
     return "utf-8"
 
 
+def _sample_cut_is_clean(stream, sample: bytes, err: UnicodeDecodeError) -> bool:
+    """Check if a UTF-8 truncation at the sample end is a clean sampling cut.
+
+    `err` must be UnicodeDecodeError with reason "unexpected end of data".
+    `stream` must be positioned right after `sample` (post-read).
+    Returns True iff the actual continuation bytes in the file complete the
+    truncated character to exactly one valid scalar value.
+
+    Soundness: CPython validates eagerly left-to-right, so "unexpected end of
+    data" ⟺ sample is a valid UTF-8 prefix cut mid-char (verified on 3.14.3).
+    Fails closed on any anomaly (non-regular file, EOF, invalid completion).
+    """
+    tail_seq = sample[err.start:]
+    if not tail_seq:
+        return False  # Unreachable; fail closed.
+    lead = tail_seq[0]
+    # Reachable lead range for "unexpected end of data": 0xC2–0xF4 (RFC 3629).
+    if lead >= 0xF0:
+        total = 4
+    elif lead >= 0xE0:
+        total = 3
+    elif lead >= 0xC0:
+        total = 2
+    else:
+        return False  # Unreachable (eager validation); fail closed.
+    need = total - len(tail_seq)
+    extra = stream.read(need)
+    if len(extra) < need:
+        return False  # EOF: file genuinely ends mid-char → not clean.
+    try:
+        return len((tail_seq + extra).decode("utf-8")) == 1
+    except UnicodeDecodeError:
+        return False
+
+
 def is_binary_file(file_path: Path, sample_size: int = 4096, allow_utf16_text: bool = False) -> bool:
     try:
         with file_path.open("rb") as stream:
             sample = stream.read(sample_size)
+            text_exts = text_file_extensions()
+            if sample.startswith((b"\xff\xfe", b"\xfe\xff")):
+                return not (allow_utf16_text and file_path.suffix.lower() in text_exts)
+            if b"\x00" in sample:
+                return True
+            if file_path.suffix.lower() in text_exts:
+                return False
+            try:
+                sample.decode("utf-8")
+                return False
+            except UnicodeDecodeError as e:
+                if e.reason == "unexpected end of data":
+                    # Pipes/FIFOs may block on the tail read; small files are
+                    # at EOF (genuinely torn). Fail closed for both.
+                    if len(sample) < sample_size:
+                        return True
+                    try:
+                        import os
+                        import stat
+                        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                            return True
+                    except Exception:
+                        return True
+                    if _sample_cut_is_clean(stream, sample, e):
+                        return False
+                return True
     except Exception:
         return False
-    text_exts = text_file_extensions()
-    if sample.startswith((b"\xff\xfe", b"\xfe\xff")):
-        return not (allow_utf16_text and file_path.suffix.lower() in text_exts)
-    if b"\x00" in sample:
-        return True
-    if file_path.suffix.lower() in text_exts:
-        return False
-    try:
-        sample.decode("utf-8")
-        return False
-    except UnicodeDecodeError:
-        return True
 
 
 def resolve_project_file(project_path: str | None, file_path: str) -> Path:

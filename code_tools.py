@@ -767,30 +767,17 @@ def _update_cache_after_write(file_path: str, project_root: str | None = None,
         return False
 
 
-def _text_file_extensions() -> set[str]:
-    text_exts = set(getattr(surgical_mapper, "SUPPORTED_EXTENSIONS", set()))
-    text_exts.update({".txt", ".md", ".json", ".html", ".css", ".csv", ".xml", ".yaml", ".yml", ".log"})
-    return text_exts
-
-
 def _is_binary_file(file_path: Path, sample_size: int = 4096, allow_utf16_text: bool = False) -> bool:
-    """Conservative binary guard for text-diff mutation tools."""
-    try:
-        sample = file_path.read_bytes()[:sample_size]
-    except Exception:
-        return False
-    text_exts = _text_file_extensions()
-    if sample.startswith((b"\xff\xfe", b"\xfe\xff")):
-        return not (allow_utf16_text and file_path.suffix.lower() in text_exts)
-    if b"\x00" in sample:
-        return True
-    if file_path.suffix.lower() in text_exts:
-        return False
-    try:
-        sample.decode("utf-8")
-        return False
-    except UnicodeDecodeError:
-        return True
+    """Conservative binary guard for text-diff mutation tools.
+
+    Single-sourced: delegates to orchestrator.fileops.common.is_binary_file.
+    (F-A3: was a duplicated copy; now a behavioral alias. All three
+    parameters are forwarded verbatim by keyword — do not add defaults here.)
+    Lazy import keeps the module import graph acyclic (common.py must never
+    import code_tools).
+    """
+    from orchestrator.fileops.common import is_binary_file
+    return is_binary_file(file_path, sample_size=sample_size, allow_utf16_text=allow_utf16_text)
 
 
 def _resolve_project_file(project_path: str | None, file_path: str) -> Path:
