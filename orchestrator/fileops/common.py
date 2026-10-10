@@ -61,7 +61,7 @@ def should_scan_for_text(file_path: Path, project_root=None) -> bool:
 
 def text_file_extensions() -> set[str]:
     text_exts = set(getattr(surgical_mapper, "SUPPORTED_EXTENSIONS", set()))
-    text_exts.update({".txt", ".md", ".json", ".html", ".css", ".csv", ".xml", ".yaml", ".yml", ".log"})
+    text_exts.update({".txt", ".md", ".json", ".jsonl", ".html", ".css", ".csv", ".xml", ".yaml", ".yml", ".log"})
     return text_exts
 
 
