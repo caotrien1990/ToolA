@@ -43,6 +43,13 @@ def _usage_log_path() -> Path:
 # cosmetic garbage into a lost log record. The tests pin both directions.
 _TMP_ORPHAN_TTL_SECONDS = 15 * 60
 
+# B031 2026-10-11. Time-based retention for USAGE_LOG.jsonl: the hot write
+# path (`_log_to_file`) only enforces a small count cap (1000), so under heavy
+# load the log's time window collapses (measured: 1000 entries ~= 9 minutes at
+# ~1.9 calls/s). `_sweep_old_entries` (called by a periodic scheduler, NOT the
+# write path) drops entries older than this many days.
+USAGE_LOG_RETENTION_DAYS = 3
+
 
 def _sweep_orphan_tmp(path: Path, ttl_seconds: float = _TMP_ORPHAN_TTL_SECONDS) -> int:
     """Remove stale `.<path.name>.<rand>.tmp` siblings; return how many went.
@@ -217,6 +224,55 @@ def _auto_trim_log(log_path: Path, keep_sessions: int = 2):
         "\n".join(json.dumps(e, ensure_ascii=False) for e in kept) + "\n",
         encoding="utf-8",
     )
+
+
+def _sweep_old_entries(log_path: Path, retention_days: float = USAGE_LOG_RETENTION_DAYS) -> int:
+    """Drop USAGE_LOG entries older than `retention_days`; return how many went.
+
+    Time-based retention for the usage ledger. The hot write path
+    (`_log_to_file`) only enforces a small count cap, so without a periodic
+    sweep the log's time window collapses to minutes under heavy load
+    (measured 2026-10-11: 1000 entries ~= 9 minutes at ~1.9 calls/s).
+
+    Fail-safe: lines that don't parse as JSON, or entries without a parseable
+    `ts`, are KEPT -- never delete data we don't understand. A timezone-aware
+    `ts` that can't be compared against the naive cutoff is also kept.
+
+    Uses the same `_LOG_FILE_LOCK` + atomic replace as the writers. NOT called
+    from `_log_to_file`; intended for a periodic scheduler (e.g. hourly), so
+    the per-write cost stays O(current file), not O(3 days of history).
+    """
+    try:
+        cutoff = datetime.now() - timedelta(days=float(retention_days))
+    except Exception:
+        return 0
+    try:
+        with _LOG_FILE_LOCK:
+            if not log_path.exists():
+                return 0
+            raw_lines = split_lines(log_path.read_text(encoding="utf-8"))
+            kept: list[str] = []
+            dropped = 0
+            for line in raw_lines:
+                if not line.strip():
+                    continue
+                try:
+                    entry = json.loads(line)
+                    ts = datetime.fromisoformat(entry.get("ts", ""))
+                    if ts >= cutoff:
+                        kept.append(line)
+                    else:
+                        dropped += 1
+                except Exception:
+                    # Unparseable line, missing/bad ts, or tz-aware vs naive
+                    # mismatch: keep the line, don't delete what we can't read.
+                    kept.append(line)
+            if dropped == 0:
+                return 0
+            _atomic_write_text(log_path, "\n".join(kept) + "\n", encoding="utf-8")
+            return dropped
+    except Exception:
+        return 0
 
 
 def _check_incomplete_sessions() -> list[dict]:
