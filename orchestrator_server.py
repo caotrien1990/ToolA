@@ -4363,21 +4363,22 @@ def _error_contract_meta(error_name: str, status: int) -> dict:
     mapping = {
         "MUTATION_TOKEN_REQUIRED": ("AUTH_ERROR", "error", True, "FETCH_TOKEN"),
         "MUTATION_TOKEN_EXPIRED": ("AUTH_ERROR", "error", True, "FETCH_TOKEN"),
-        "MISSING_REQUIRED_FIELD": ("SCHEMA_VIOLATION", "error", True, "REBUILD_PAYLOAD"),
+        "MISSING_REQUIRED_FIELD": ("SCHEMA_VIOLATION", "error", False, "REBUILD_PAYLOAD"),
         "STALE_INDEX": ("STALE_STATE", "ERROR", True, "RE_READ_OR_CACHE_DELTA"),
         "FILE_CHANGED_OUTSIDE_ORCHESTRATOR": ("STALE_STATE", "CRITICAL", True, "RE_READ_AND_RESEED"),
         "BACKUP_REQUIRED": ("SAFETY_GATE", "CRITICAL", True, "CREATE_BACKUP"),
         "ACTIVE_SESSION_REQUIRED": ("SESSION_REQUIRED", "ERROR", True, "OPEN_SESSION"),
-        "RUN_TEST_PROFILE_INVALID": ("INVALID_REQUEST", "ERROR", True, "CHOOSE_AVAILABLE_PROFILE"),
-        "UNSUPPORTED_DRY_RUN": ("SCHEMA_VIOLATION", "ERROR", True, "REMOVE_FIELD"),
-        "UNSUPPORTED_FIELD": ("SCHEMA_VIOLATION", "ERROR", True, "READ_LIVE_SCHEMA"),
-        "WRONG_ARGUMENTS": ("SCHEMA_VIOLATION", "ERROR", True, "READ_LIVE_SCHEMA"),
+        "RUN_TEST_PROFILE_INVALID": ("INVALID_REQUEST", "ERROR", False, "CHOOSE_AVAILABLE_PROFILE"),
+        "UNSUPPORTED_DRY_RUN": ("SCHEMA_VIOLATION", "ERROR", False, "REMOVE_FIELD"),
+        "UNSUPPORTED_FIELD": ("SCHEMA_VIOLATION", "ERROR", False, "READ_LIVE_SCHEMA"),
+        "WRONG_ARGUMENTS": ("SCHEMA_VIOLATION", "ERROR", False, "READ_LIVE_SCHEMA"),
         # A corrupt request body is the caller's payload to fix, so it is a schema
-        # violation and it IS retryable -- the 400 fall-through used to compute
-        # retryable=False from the status and told the caller to give up.
-        "INVALID_JSON_BODY": ("SCHEMA_VIOLATION", "ERROR", True, "REBUILD_PAYLOAD"),
+        # violation. From the client side it is deterministic: the wrapper serializes
+        # JSON reliably, and a corrupt body on the wire is not recoverable by a blind
+        # identical retry -- so it is NOT retryable.
+        "INVALID_JSON_BODY": ("SCHEMA_VIOLATION", "ERROR", False, "REBUILD_PAYLOAD"),
         "BINARY_FILE_UNSUPPORTED": ("UNSUPPORTED_MEDIA_TYPE", "CRITICAL", False, "STOP_AND_REPORT"),
-        "PROJECT_PATH_REQUIRED": ("INVALID_REQUEST", "ERROR", True, "SET_PROJECT_PATH"),
+        "PROJECT_PATH_REQUIRED": ("INVALID_REQUEST", "ERROR", False, "SET_PROJECT_PATH"),
         "SESSION_NOT_FOUND": ("SESSION_REQUIRED", "ERROR", True, "LIST_SESSIONS"),
         "FILE_ACCESS_DENIED": ("PERMISSION_ERROR", "error", False, "CHECK_PERMISSIONS"),
     }
@@ -4574,7 +4575,7 @@ def _missing_required_error(tool_name: str, body: dict, required_fields: list[st
         "error_name": "MISSING_REQUIRED_FIELD",
         "type": "SCHEMA_VIOLATION",
         "severity": "error",
-        "retryable": True,
+        "retryable": False,
         "reason": f"missing required field(s): {', '.join(missing)}",
         "missing_fields": missing,
         "required_fields": required,
