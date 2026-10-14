@@ -3,8 +3,8 @@
 This file is generated for CA routing. Read it before opening source files.
 
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\orchestrator\server`
-- Generated: 2026-08-18T10:28:22
-- Files indexed: 2
+- Generated: 2026-10-08T13:17:12
+- Files indexed: 6
 
 ## First Actions
 
@@ -26,20 +26,28 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 
 ## Groups
 
-- `source`: 2 files, 1948 LOC
+- `source`: 6 files, 3883 LOC
 
 ## Highest Value Files
 
-- `audit_writer.py` | group `source` | lang `python` | LOC 1089 | weight 15: large_file: use symbols, search, or bounded ranges before full read
-- `mcp_stdio.py` | group `source` | lang `python` | LOC 859 | weight 14: large_file: use symbols, search, or bounded ranges before full read
+- `mcp_stdio.py` | group `source` | lang `python` | LOC 1603 | weight 15: large_file: use symbols, search, or bounded ranges before full read
+- `audit_writer.py` | group `source` | lang `python` | LOC 1472 | weight 15: large_file: use symbols, search, or bounded ranges before full read
+- `executor_lanes.py` | group `source` | lang `python` | LOC 376 | weight 9: symbol_routed: use function/class refs from INDEX first
+- `accounting.py` | group `source` | lang `python` | LOC 299 | weight 8: symbol_routed: use function/class refs from INDEX first
+- `fair_admission.py` | group `source` | lang `python` | LOC 132 | weight 6: symbol_routed: use function/class refs from INDEX first
+- `__init__.py` | group `source` | lang `python` | LOC 1 | weight 5: metadata_first: search or read narrow ranges
 
 ## Entrypoints
 
 
 ## Hotspots
 
-- `audit_writer.py`: complexity 179, 1089 LOC, group `source`
-- `mcp_stdio.py`: complexity 98, 859 LOC, group `source`
+- `mcp_stdio.py`: complexity 263, 1603 LOC, group `source`
+- `audit_writer.py`: complexity 231, 1472 LOC, group `source`
+- `accounting.py`: complexity 54, 299 LOC, group `source`
+- `executor_lanes.py`: complexity 44, 376 LOC, group `source`
+- `fair_admission.py`: complexity 31, 132 LOC, group `source`
+- `__init__.py`: complexity 0, 1 LOC, group `source`
 
 ## Deterministic Rules
 

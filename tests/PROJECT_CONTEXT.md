@@ -3,8 +3,8 @@
 This file is generated for CA routing. Read it before opening source files.
 
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\tests`
-- Generated: 2026-10-08T11:36:23
-- Files indexed: 388
+- Generated: 2026-10-11T08:43:30
+- Files indexed: 389
 
 ## First Actions
 
@@ -27,7 +27,7 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 ## Groups
 
 - `script`: 2 files, 176 LOC
-- `source`: 381 files, 73953 LOC
+- `source`: 382 files, 74071 LOC
 - `unknown`: 5 files, 20 LOC
 
 ## Highest Value Files

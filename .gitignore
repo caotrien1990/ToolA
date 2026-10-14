@@ -49,6 +49,9 @@ type/
 .zverify*/
 .temp_*
 
+# PowerShell module analysis cache (local machine junk)
+Microsoft/
+
 # Local scratch and backup copies
 *.bak
 *.bak_*

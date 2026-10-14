@@ -122,3 +122,13 @@ venv312\Scripts\python.exe -c "from orchestrator.graph.indexer import cbm_index;
 A clean full re-extract (~25s) rebuilds `.orchestrator_cache/graph.db` from source.
 
 **Version marker.** Current revision: **V15 R102** (`R###` comment markers are used throughout `orchestrator_server.py`; 80 carry the `V15 R` prefix). `GET /health` exposes liveness, port, auth posture (`auto_token_inject`, `mutation_token_required`) and the running `generation`, but no version string -- use the highest in-source `R###` marker as the semver reference.
+
+## Built with Claude
+
+This project was developed with [Claude](https://claude.ai) (Anthropic, Claude Pro) as a core engineering partner:
+
+- **Architecture planning.** Claude authored the TOOLA_1210 remediation plan (V6 → V7 → V8 FINAL) — the technical blueprint that hardened ToolA from a single-agent scripting aid into a multi-agent orchestration server: concurrency control, fair admission, write-ahead ledgering, and long-operation support.
+- **Design review.** Claude audited the `_seal_read_token` server fix plan (16 findings) and correctly identified the two critical flaws: a bounded retry would rescue only ~2/10 historical contention cases, and an RLock-based path lock cannot exclude writers on the event-loop thread. Both were confirmed against production logs.
+- **Decision authority.** The hardest design calls (e.g. the B1 contention-clamp formula, capped at 25s) were delegated to Claude, with the evidence recorded in the plan.
+
+Working pattern: written question sets → Claude’s evidence-backed answers with requested changes → independent verification against code and production logs before anything is applied. Nothing ships on Claude’s word alone; everything is measured.

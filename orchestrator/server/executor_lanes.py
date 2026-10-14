@@ -14,6 +14,7 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Callable
 from orchestrator.server.fair_admission import FAIR_ADMISSION
+from orchestrator import phase_timing as _phase_timing  # Step 0.4: ORCH_PHASE_TIMING
 
 class ExecutorLaneError(RuntimeError):
     error_name = "EXECUTOR_LANE_ERROR"
@@ -360,8 +361,28 @@ async def run_in_executor_lane(
     lane = get_executor_lane(name)
     deadline = time.monotonic() + lane.queue_wait_timeout
     permit = await FAIR_ADMISSION.acquire(name, deadline=deadline)
+    # Step 0.4: fair admission passed. The recorder (if any) rides a ContextVar
+    # set by the dispatcher; a lane worker thread does NOT inherit it via
+    # ThreadPoolExecutor, so capture it here and set it explicitly inside the
+    # wrapper -- that is also where `lane_started` (true worker start) lands.
+    _pt = _phase_timing.current()
+    _phase_timing.mark(_pt, "fair_admitted")
+    if _pt is not None:
+        _pt_func = func
+
+        def _pt_wrapped(*_a: Any, **_k: Any) -> Any:
+            _pt_tok = _phase_timing.set_current(_pt)
+            try:
+                _phase_timing.mark(_pt, "lane_started")
+                return _pt_func(*_a, **_k)
+            finally:
+                _phase_timing.reset_current(_pt_tok)
+
+        _pt_run = _pt_wrapped
+    else:
+        _pt_run = func
     try:
-        return await lane.run(func, *args, queue_wait_deadline=deadline,
+        return await lane.run(_pt_run, *args, queue_wait_deadline=deadline,
                               completion_callback=lambda _done: permit.release(), **kwargs)
     except BaseException:
         # No Future means no completion callback. Idempotence covers all races.

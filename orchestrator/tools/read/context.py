@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 from orchestrator.fileops import common as fo
+from orchestrator import phase_timing as _phase_timing  # Step 0.4: ORCH_PHASE_TIMING
 from orchestrator.server.executor_lanes import run_in_executor_lane
 from . import adaptive
 
@@ -138,6 +139,9 @@ async def read_file_range(
             reseeded, reseed_detail = _seed_read_token_detailed(
                 fp, project_path, doc.text, stat_after, force_reseed,
                 precomputed_hash=doc.content_hash)
+            # Step 0.4: read-token seeding done (only on the seeded path; the
+            # RANGE_PAST_EOF branch above returns before this point).
+            _phase_timing.mark(_phase_timing.current(), "read_token_done")
         # P11 (campaign-1608) FAIL-LOUD: an EXPLICIT force_reseed that could not
         # seed the token must not return ok:true — that is the silent dead loop
         # where write_fix keeps failing FILE_CHANGED_OUTSIDE_ORCHESTRATOR and its

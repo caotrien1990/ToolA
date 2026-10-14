@@ -82,6 +82,8 @@ from orchestrator.lifecycle.restart_protocol import (
     BusySnapshotPublisher,
     reap_orphan_busy_snapshots,
 )
+from orchestrator import phase_timing as _phase_timing  # Step 0.4: ORCH_PHASE_TIMING
+from orchestrator import lock_holder_trace as _lock_holder_trace  # Step 0.6: ORCH_LOCK_HOLDER_TRACE
 from orchestrator.server.accounting import PostCallAccountingQueue
 from orchestrator.server.audit_writer import (
     SESSION_EVENT_KIND,
@@ -14938,9 +14940,18 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
     object and enters here directly, so it does not call back through localhost
     HTTP while still reusing the same validation, guard, and logging path.
     """
+    # Step 0.4 (ORCH_PHASE_TIMING): per-request phase recorder. `received` is
+    # the origin timestamp (E30: NOT _t0, which is reset after the semaphore).
+    # When the flag is OFF _pt is None and every mark below is a no-op.
+    _pt = _phase_timing.new_recorder()
+    _phase_timing.mark(_pt, "received")
+    _pt_tok = _phase_timing.set_current(_pt)
     origin = request.headers.get('Origin')
     cors = _cors(origin)
     tool_name = request.match_info.get('tool_name', '')
+    # Step 0.6 (ORCH_LOCK_HOLDER_TRACE): remember the running tool for
+    # lock-holder log context. No-op when the flag is OFF.
+    _lht_tok = _lock_holder_trace.set_current_tool(tool_name)
     # D5: snapshot the /api/call in-flight count at entry. The middleware has
     # already counted THIS request, so >1 means another tool call is genuinely
     # sharing the daemon with us. Read-only access to the global.
@@ -15339,6 +15350,9 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
                     write_performed=False,
                     applied=False,
                 )
+
+    # Step 0.4: origin + mutation-token gates done (auth_done).
+    _phase_timing.mark(_pt, "auth_done")
 
     # ── Fix: JSON body must be an object (the ONE non-dict check; the old
     # duplicate after _normalize_body was unreachable and is gone) ──
@@ -16068,6 +16082,9 @@ accepted_fields=sorted(accepted_fields),
                 _xr_session_id = None
             _admitted_session_id = str(_xr_session_id or "")
 
+    # Step 0.4: session gate (+ xroot attribution) done. E30: _t0 below is NOT
+    # the origin -- `received` (stamped at dispatcher entry) is.
+    _phase_timing.mark(_pt, "gate_done")
     logger.info(f"Tool call: {tool_name}({list(body.keys())})")
     _t0 = time.time()
     _status = "error"
@@ -16108,6 +16125,9 @@ accepted_fields=sorted(accepted_fields),
                 tool_name, body, _request_op_id)
             _queue_wait_ms = int((time.time() - _q0) * 1000)
             _t0 = time.time()
+            # Step 0.4: CAN-052 tool semaphore acquired (E30: _t0 is reset
+            # here, so it is NOT the origin -- `received` is).
+            _phase_timing.mark(_pt, "sem_acquired")
             # Sprint 3 Point 2 (F-A1): cancellation scope BEFORE ledger begin.
             # MUST stay immediately after semaphore acquire: _write_ledger_begin_async
             # can hang, and without a running monitor a wedged holder bricks the
@@ -16122,6 +16142,9 @@ accepted_fields=sorted(accepted_fields),
         # session_id, empty on a plain call; it stays the operation-id input (#9).
         _op_id = await _write_ledger_begin_async(tool_name, body, _task_session_id,
                                                  _admitted_session_id)
+        # Step 0.4: write-ledger begin done (mutating tools; _op_id stays ""
+        # for reads, in which case this phase is ~0).
+        _phase_timing.mark(_pt, "ledger_begin_done")
         if _op_id:
             from orchestrator.progress_watchdog import ProgressWatchdog, bind_watchdog
             # #36 (2026-09-25): _write_ledger_begin now registers the liveness marker
@@ -16176,6 +16199,8 @@ accepted_fields=sorted(accepted_fields),
         except Exception:
             _cache_hit = None
             _sf_key = ""
+        # Step 0.4: A41 call-cache lookup (+ singleflight join wait) done.
+        _phase_timing.mark(_pt, "cache_lookup_done")
         try:
             if _cache_hit is not None:
                 # P5: these three say something about THIS call, so they are envelope,
@@ -16220,6 +16245,10 @@ accepted_fields=sorted(accepted_fields),
                 else:
                     raw = await fn(**body)
         finally:
+            # Step 0.4: tool/cache phase ended (fn() returned, raised, or the
+            # call was served from cache). The semaphore is released next so
+            # the next waiter starts while this call does post-tool work.
+            _phase_timing.mark(_pt, "tool_done")
             # Early release: let the next waiter start while this call does post-tool
             # work (result parsing, auto-chain, hints). The outer finally is the safety
             # net for setup-phase exceptions. Idempotent: see _release_tool_semaphore.
@@ -16676,6 +16705,9 @@ accepted_fields=sorted(accepted_fields),
                 pass  # advisory disclosure only: never fail a good response over it
             _json_body = json.dumps(_result, ensure_ascii=False)
             _json_body = _shape_tool_response_text(tool_name, _json_body)
+            # Step 0.4: parse + auto-chain + hints + envelope done; the response
+            # object is fully built here.
+            _phase_timing.mark(_pt, "post_tool_done")
             return web.Response(text=_json_body, content_type="application/json",
                                   charset="utf-8", headers=cors)
         except Exception:
@@ -16925,6 +16957,9 @@ accepted_fields=sorted(accepted_fields),
                 _request_op_id,
                 exc,
             )
+        # Step 0.4 (auxiliary): E6 -- the durable-audit outbox COMMIT wait ends
+        # here; the stage call above awaits the INSERT commit on durable_audit.db.
+        _phase_timing.mark(_pt, "outbox_staged")
         try:
             _accounting_accepted = _POST_CALL_ACCOUNTING.enqueue({
                 "accounting_id": _request_op_id,
@@ -16962,6 +16997,29 @@ accepted_fields=sorted(accepted_fields),
                 _request_op_id,
                 exc,
             )
+        # Step 0.4: the whole `finally` stage is done; the response object is
+        # handed back to aiohttp next (`sent` = dispatcher done, NOT the socket
+        # write). Emit the single per-request phase line, then drop the
+        # ContextVar binding for this task. Instrumentation must never fail a
+        # real answer, so the emission is guarded.
+        _phase_timing.mark(_pt, "finally_stage_done")
+        _phase_timing.mark(_pt, "sent")
+        try:
+            _pt_line = _phase_timing.format_line(
+                _pt, tool=tool_name, op_id=_request_op_id, status=_status)
+        except Exception:
+            _pt_line = ""
+        if _pt_line:
+            logger.info(_pt_line)
+        try:
+            _phase_timing.reset_current(_pt_tok)
+        except Exception:
+            pass
+        # Step 0.6: drop the lock-holder tool binding for this task.
+        try:
+            _lock_holder_trace.reset_current_tool(_lht_tok)
+        except Exception:
+            pass
 
 
 # ─── Session REST + SSE endpoints ────────────────────────────────────────────
@@ -18983,6 +19041,33 @@ async def handle_native_preflight(request):
                  "native operation; use preferred_via_a instead."),
         "generation": SERVER_GENERATION,
     }, headers=cors, dumps=lambda x: json.dumps(x, ensure_ascii=False))
+# -- TOOLA_1210 Phase 0, Step 0.9: harness timeout measurement endpoint --
+# Provenance: ORIGINAL (campaign TOOLA_1210 FINAL, Phase 0). Pure event-loop
+# sleeper: asyncio.sleep only -- no DB, no lock/semaphore, no blocking call --
+# so concurrent sleeps never serialize and /health stays fast while a sleep is
+# in flight. Only {10,20,30,60,120} accepted; anything else -> HTTP 400, so
+# nobody can sleep(3600) through this endpoint.
+# Registered in create_app() ONLY when env ORCH_SLEEP_ENDPOINT=1 (default OFF):
+# a live instance sharing this code tree never sees the endpoint.
+# Rollback (step 0.9.6): delete this block and the gated add_get line below.
+_SLEEP_ALLOWED_SECONDS = frozenset({10, 20, 30, 60, 120})
+
+
+async def handle_sleep(request: web.Request) -> web.Response:
+    raw = request.rel_url.query.get("seconds", "")
+    try:
+        seconds = int(raw)
+    except (TypeError, ValueError):
+        seconds = None
+    if seconds not in _SLEEP_ALLOWED_SECONDS:
+        return web.json_response(
+            {"ok": False, "error": "seconds must be one of 10,20,30,60,120"},
+            status=400,
+        )
+    await asyncio.sleep(seconds)
+    return web.json_response({"ok": True, "slept_s": seconds})
+
+
 def create_app() -> web.Application:
     _assert_council_runtime_key_uniqueness()
     # CAN-006: bound request body size (clean 413 via middleware + hard backstop here).
@@ -18995,6 +19080,9 @@ def create_app() -> web.Application:
     app.router.add_get('/favicon.ico', handle_favicon)
     app.router.add_get('/health', handle_health)
     app.router.add_get('/api/health', handle_health)
+    # TOOLA_1210 Step 0.9: gated harness-timeout endpoint (ORCH_SLEEP_ENDPOINT=1 only).
+    if os.environ.get("ORCH_SLEEP_ENDPOINT") == "1":
+        app.router.add_get('/api/sleep', handle_sleep)
     app.router.add_get('/council', handle_council_dashboard)
     app.router.add_get('/council/glass', handle_council_glass_dashboard)
     app.router.add_get('/api/council/activity', handle_council_activity)
@@ -19402,6 +19490,11 @@ async def _run_server():
         logger.error("daemon generation publish failed: %s", _generation_publish)
     livez_server = _start_liveness_listener()
     _start_restart_snapshot_publisher()
+    # Step 0.6 (ORCH_LOCK_HOLDER_TRACE): wrap sqlite3.connect for sessions.db /
+    # durable_audit.db and start the lock-holder watchdog. Both are no-ops
+    # when the flag is OFF (default).
+    _lock_holder_trace.install()
+    _lock_holder_trace.start_watchdog()
     logger.info("Thread-isolated liveness: http://127.0.0.1:%s/livez", LIVEZ_PORT)
     from orchestrator.mission import reaper as _mission_reaper
     from orchestrator.mission.tools import MISSION_DB_PATH as _MISSION_DB_PATH

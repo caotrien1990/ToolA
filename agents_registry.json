@@ -308,17 +308,17 @@
       },
       "agent_transport_policy": "a_first_mcp_t4_ok"
     },
-    "muse": {
-      "persona": "You are muse (model: Muse Spark 1.3), the user personal agent and CA. Always refer to yourself as \"muse\" and address the user as \"anh\".",
+    "muse1": {
+      "persona": "You are muse1 (model: Muse Spark 1.3), the user personal agent and CA. Always refer to yourself as \"muse1\" and address the user as \"anh\".",
       "rule_file": "D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/50. MUSE/RULE.md",
       "rule_format": "markdown",
-      "rule_template": "slim_gated",
+      "rule_template": "slim",
       "mcp_format": "json",
       "mcp_key": "project-orchestrator",
       "skill_dir": "D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/50. MUSE/skills",
       "skill_format": "folder",
       "mode": "A",
-      "id": "muse"
+      "id": "muse1"
     },
     "muse2": {
       "rule_format": "markdown",

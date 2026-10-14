@@ -6,11 +6,13 @@ import hashlib
 import math
 import re
 import threading
+import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from orchestrator import phase_timing as _phase_timing  # Step 0.4: ORCH_PHASE_TIMING
 from orchestrator.fileops import common as fo
 from orchestrator.text_lines import split_lines
 
@@ -95,16 +97,27 @@ def get_document(fp: Path, project_path: str | None = None, *,
                 _CACHE_HITS += 1
                 return cached, {"cache_hit": True, "cache_waited": False,
                                 "content_hash_mismatch": False}
-            while key in _INFLIGHT:
-                waited = True
-                _CACHE_COND.wait(0.25)
-                cached = _CACHE_BY_PATH.get(key)
-                if cached and cached.stat_sig == signature and (
-                        not content_hash or cached.content_hash == content_hash):
-                    _CACHE_BY_PATH.move_to_end(key)
-                    _CACHE_HITS += 1
-                    return cached, {"cache_hit": True, "cache_waited": True,
-                                    "content_hash_mismatch": False}
+            # Step 0.4 (E31): time the singleflight wait loop. The wait is
+            # accumulated per request (a batch read calls get_document more
+            # than once). When the flag is OFF _pt is None and this is just
+            # the original loop plus one ContextVar lookup.
+            _pt = _phase_timing.current()
+            _pt_w0 = time.monotonic() if _pt is not None else 0.0
+            try:
+                while key in _INFLIGHT:
+                    waited = True
+                    _CACHE_COND.wait(0.25)
+                    cached = _CACHE_BY_PATH.get(key)
+                    if cached and cached.stat_sig == signature and (
+                            not content_hash or cached.content_hash == content_hash):
+                        _CACHE_BY_PATH.move_to_end(key)
+                        _CACHE_HITS += 1
+                        return cached, {"cache_hit": True, "cache_waited": True,
+                                        "content_hash_mismatch": False}
+            finally:
+                if _pt is not None:
+                    _phase_timing.add_ms(_pt, "doc_cache_wait_ms",
+                                         (time.monotonic() - _pt_w0) * 1000.0)
         _INFLIGHT.add(key)
         _CACHE_MISSES += 1
     try:

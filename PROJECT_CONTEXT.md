@@ -3,8 +3,8 @@
 This file is generated for CA routing. Read it before opening source files.
 
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator`
-- Generated: 2026-10-08T13:00:04
-- Files indexed: 1025
+- Generated: 2026-10-14T13:48:44
+- Files indexed: 931
 
 ## First Actions
 
@@ -26,37 +26,37 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 
 ## Groups
 
-- `config`: 40 files, 16039 LOC
-- `doc`: 342 files, 24335 LOC
-- `entrypoint`: 1 files, 15750 LOC
+- `config`: 37 files, 9763 LOC
+- `doc`: 320 files, 26798 LOC
+- `entrypoint`: 1 files, 15921 LOC
 - `script`: 11 files, 1235 LOC
-- `source`: 213 files, 94497 LOC
-- `test`: 388 files, 74149 LOC
+- `source`: 146 files, 88537 LOC
+- `test`: 389 files, 74267 LOC
 - `ui`: 2 files, 67 LOC
-- `unknown`: 28 files, 3756 LOC
+- `unknown`: 25 files, 3550 LOC
 
 ## Highest Value Files
 
-- `orchestrator_server.py` | group `entrypoint` | lang `python` | LOC 15750 | weight 24: large_file: use symbols, search, or bounded ranges before full read
-- `code_tools.py` | group `source` | lang `python` | LOC 16595 | weight 20: large_file: use symbols, search, or bounded ranges before full read
-- `surgical_mapper.py` | group `source` | lang `python` | LOC 1563 | weight 20: large_file: use symbols, search, or bounded ranges before full read
-- `.council/tmp_ahealthhung/GROC_FIX_SNAPSHOT_1315/surgical_mapper.py` | group `source` | lang `python` | LOC 1066 | weight 20: large_file: use symbols, search, or bounded ranges before full read
+- `orchestrator_server.py` | group `entrypoint` | lang `python` | LOC 15921 | weight 24: large_file: use symbols, search, or bounded ranges before full read
+- `code_tools.py` | group `source` | lang `python` | LOC 16619 | weight 20: large_file: use symbols, search, or bounded ranges before full read
+- `surgical_mapper.py` | group `source` | lang `python` | LOC 1687 | weight 20: large_file: use symbols, search, or bounded ranges before full read
 - `.council/_r3_before/os_head.py` | group `source` | lang `python` | LOC 13917 | weight 15: large_file: use symbols, search, or bounded ranges before full read
-- `tools_v15.py` | group `source` | lang `python` | LOC 8550 | weight 15: large_file: use symbols, search, or bounded ranges before full read
-- `orchestrator/tools/write/core.py` | group `source` | lang `python` | LOC 2189 | weight 15: large_file: use symbols, search, or bounded ranges before full read
+- `tools_v15.py` | group `source` | lang `python` | LOC 8552 | weight 15: large_file: use symbols, search, or bounded ranges before full read
+- `orchestrator/tools/write/core.py` | group `source` | lang `python` | LOC 2191 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/tools/search.py` | group `source` | lang `python` | LOC 2055 | weight 15: large_file: use symbols, search, or bounded ranges before full read
-- `.council/tmp_ahealthhung/GROC_FIX_SNAPSHOT_1315/orchestrator__tools__write__core.py` | group `source` | lang `python` | LOC 1762 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/session/store.py` | group `source` | lang `python` | LOC 1942 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/search_snapshots.py` | group `source` | lang `python` | LOC 1312 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/graph/tools.py` | group `source` | lang `python` | LOC 1204 | weight 15: large_file: use symbols, search, or bounded ranges before full read
-- `orchestrator/server/mcp_stdio.py` | group `source` | lang `python` | LOC 1603 | weight 15: large_file: use symbols, search, or bounded ranges before full read
+- `orchestrator/server/mcp_stdio.py` | group `source` | lang `python` | LOC 1604 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/server/audit_writer.py` | group `source` | lang `python` | LOC 1472 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/core/ca_policy_matrix.py` | group `source` | lang `python` | LOC 900 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/tools/ocr_review.py` | group `source` | lang `python` | LOC 757 | weight 15: large_file: use symbols, search, or bounded ranges before full read
-- `.council/tmp_ahealthhung/GROC_FIX_SNAPSHOT_1315/orchestrator__lifecycle__restart_control_service.py` | group `source` | lang `python` | LOC 843 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/lifecycle/restart_control_service.py` | group `source` | lang `python` | LOC 843 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/mcp_packs/generator.py` | group `source` | lang `python` | LOC 1100 | weight 15: large_file: use symbols, search, or bounded ranges before full read
+- `orchestrator/graph/indexer.py` | group `source` | lang `python` | LOC 983 | weight 15: large_file: use symbols, search, or bounded ranges before full read
 - `orchestrator/graph/query.py` | group `source` | lang `python` | LOC 883 | weight 15: large_file: use symbols, search, or bounded ranges before full read
+- `orchestrator/graph/rules.py` | group `source` | lang `python` | LOC 684 | weight 14: large_file: use symbols, search, or bounded ranges before full read
+- `orchestrator/graph/analysis_view.py` | group `source` | lang `python` | LOC 724 | weight 14: large_file: use symbols, search, or bounded ranges before full read
 
 ## Entrypoints
 
@@ -64,16 +64,16 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 
 ## Hotspots
 
-- `orchestrator_server.py`: complexity 3744, 15750 LOC, group `entrypoint`
-- `code_tools.py`: complexity 3581, 16595 LOC, group `source`
+- `orchestrator_server.py`: complexity 3774, 15921 LOC, group `entrypoint`
+- `code_tools.py`: complexity 3585, 16619 LOC, group `source`
 - `.council/_r3_before/os_head.py`: complexity 3253, 13917 LOC, group `source`
-- `tools_v15.py`: complexity 1810, 8550 LOC, group `source`
+- `tools_v15.py`: complexity 1810, 8552 LOC, group `source`
 - `examples/mcp_175_tool_rag.html`: complexity 569, 5 LOC, group `ui`
-- `orchestrator/tools/write/core.py`: complexity 525, 2189 LOC, group `source`
+- `orchestrator/tools/write/core.py`: complexity 526, 2191 LOC, group `source`
 - `orchestrator/tools/search.py`: complexity 521, 2055 LOC, group `source`
-- `.council/tmp_ahealthhung/GROC_FIX_SNAPSHOT_1315/orchestrator__tools__write__core.py`: complexity 445, 1762 LOC, group `source`
-- `surgical_mapper.py`: complexity 364, 1563 LOC, group `source`
+- `surgical_mapper.py`: complexity 399, 1687 LOC, group `source`
 - `orchestrator/session/store.py`: complexity 341, 1942 LOC, group `source`
+- `orchestrator/search_snapshots.py`: complexity 310, 1312 LOC, group `source`
 
 ## Deterministic Rules
 
