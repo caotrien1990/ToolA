@@ -1,4 +1,4 @@
-# R3 S10 — full test-suite CI gate (ADR_R3_ARCHITECTURE.md §D6)
+# R3 S10 — full test-suite CI gate (ADR_R3_ARCHITECTURE.md \u00a7D6)
 # Complements tool-matrix-ci.yml: compile every entry module, then run the full
 # pytest contract suite. A red suite blocks merge — "green before extraction"
 # is the R3 invariant that keeps the strangler refactor safe.
@@ -6,6 +6,11 @@
 # A31 (2026-09-17): every step runs from the checkout root. Do NOT re-add
 # `cd project-orchestrator` -- that directory IS the repo root, so the cd failed
 # and this gate never executed on any branch.
+#
+# 2026-10-15: suite grew past 5300 tests and outgrew the 15-min single-job
+# timeout (job cancelled at 15m with pytest still running). Now sharded 4-way
+# by test file (round-robin); each shard runs on its own windows-latest runner.
+# fail-fast:false so one red shard does not hide the results of the others.
 
 name: test-suite-ci
 
@@ -18,9 +23,13 @@ on:
 
 jobs:
   pytest-contract-suite:
-    name: py_compile + pytest
+    name: py_compile + pytest (shard ${{ matrix.shard }}/4)
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
 
     steps:
       - name: Checkout repository
@@ -42,8 +51,15 @@ jobs:
           python -m py_compile code_tools.py orchestrator_server.py tools_v15.py surgical_mapper.py restart_orchestrator.py
         shell: pwsh
 
-      - name: Run pytest suite
+      - name: Run pytest suite (shard ${{ matrix.shard }}/4)
         run: |
           $env:PYTHONPATH = (Get-Location).Path
-          python -m pytest tests -q
+          $files = @(Get-ChildItem tests/test_*.py | Sort-Object Name)
+          $want = [int]"${{ matrix.shard }}" - 1
+          $mine = @()
+          for ($i = 0; $i -lt $files.Count; $i++) {
+            if (($i % 4) -eq $want) { $mine += $files[$i].FullName }
+          }
+          Write-Host ("Shard ${{ matrix.shard }}/4: " + $mine.Count + " of " + $files.Count + " files")
+          python -m pytest $mine -q
         shell: pwsh
