@@ -156,6 +156,10 @@ class P12OperationReplayDisclosureTests(unittest.IsolatedAsyncioTestCase):
         )
 
     def tearDown(self):
+        # P12: close SessionWriter before temp_dir.cleanup() or Windows raises
+        # WinError 32 (sessions.db still held open by the writer).
+        from orchestrator.session import store
+        store.close_writer()
         if self.old_tool is None:
             code_tools.TOOL_MAP.pop(TOOL_NAME, None)
         else:

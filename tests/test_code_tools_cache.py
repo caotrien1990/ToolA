@@ -31,8 +31,15 @@ class TestCodeToolsCache(unittest.TestCase):
             '    return 1\n',
             encoding='utf-8',
         )
+        # Sprint 3: tempdir lives under %TEMP% -> the volatile-root early
+        # return would skip INDEX.json updates. Force full reconcile so the
+        # cache-sync assertions below are deterministic.
+        self._force_full_env = mock.patch.dict(
+            "os.environ", {"ORCH_RECONCILE_FORCE_FULL": "1"})
+        self._force_full_env.start()
 
     def tearDown(self):
+        self._force_full_env.stop()
         # STT-27 (B032): several tests repoint code_tools._SESSIONS_DB at a
         # file INSIDE self.tempdir; the process-global SessionWriter and
         # thread-local read conns hold it open, so rmtree(ignore_errors=True)
@@ -551,7 +558,7 @@ class TestCodeToolsCache(unittest.TestCase):
 
         self.assertTrue(result.get('ok'), msg=result)
         self.assertTrue(any(
-            call.args == (str(self.sample_file), str(self.project_path))
+            call.args[:2] == (str(self.sample_file), str(self.project_path))
             for call in update_cache.call_args_list
         ), msg=update_cache.call_args_list)
 
@@ -2997,6 +3004,7 @@ class TestCodeToolsCache(unittest.TestCase):
         'orchestrator/mcp_packs/generator.py::action_test_pack': (1, _SL_PROC),
         'orchestrator/mission/engine.py::artifact_complete': (1, _SL_TEXT),
         'orchestrator/search_regex_worker.py::validate_line_budget': (1, _SL_BYTES),
+        'orchestrator/skip_rules.py::_parse_gitignore_dir_patterns': (1, _SL_CONF),
         'orchestrator/skip_rules.py::_parse_project_ignore': (1, _SL_CONF),
         'orchestrator/storage/jsonl_store.py::read_tail': (1, _SL_BYTES),
         'orchestrator/tools/write/core.py::_markdown_pin_warnings': (1, _SL_TEXT),

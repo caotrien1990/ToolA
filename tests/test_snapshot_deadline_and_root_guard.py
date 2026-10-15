@@ -111,18 +111,23 @@ class V1PublishDeadlineTestCase(unittest.TestCase):
     def test_deadline_not_swallowed_by_cache_update(self):
         # 7-RULE #7: _update_cache_after_write must NOT mask a deadline as a plain
         # cache_synced=False; it has to re-raise so the caller sees the real state.
-        def _boom(project_root, **kw):
-            raise search_snapshots.SnapshotDeadlineExceeded("blob hash deadline exceeded")
-
-        real = search_snapshots.publish_snapshot
-        search_snapshots.publish_snapshot = _boom
+        # TEST SEAM: bypass volatile-root skip (self.tmp is under %TEMP%).
+        os.environ["ORCH_RECONCILE_FORCE_FULL"] = "1"
         try:
-            target = self.tmp / "m0.py"
-            target.write_text("x0 = 999\n", encoding="utf-8")
-            with self.assertRaises(search_snapshots.SnapshotDeadlineExceeded):
-                code_tools._update_cache_after_write(str(target), str(self.tmp))
+            def _boom(project_root, **kw):
+                raise search_snapshots.SnapshotDeadlineExceeded("blob hash deadline exceeded")
+
+            real = search_snapshots.publish_snapshot
+            search_snapshots.publish_snapshot = _boom
+            try:
+                target = self.tmp / "m0.py"
+                target.write_text("x0 = 999\n", encoding="utf-8")
+                with self.assertRaises(search_snapshots.SnapshotDeadlineExceeded):
+                    code_tools._update_cache_after_write(str(target), str(self.tmp))
+            finally:
+                search_snapshots.publish_snapshot = real
         finally:
-            search_snapshots.publish_snapshot = real
+            del os.environ["ORCH_RECONCILE_FORCE_FULL"]
 
     @unittest.skipUnless(
         (Path.home() / ".orchestrator_cache" / "search_snapshots" / "CURRENT").exists(),

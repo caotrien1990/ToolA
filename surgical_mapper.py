@@ -1518,6 +1518,13 @@ def _volatile_skip_roots() -> list:
 
 def _is_volatile_root(root: Path) -> bool:
     """True when root is inside a volatile skip root (Temp etc.)."""
+    # TEST SEAM (2026-10-15): ORCH_RECONCILE_FORCE_FULL=1 bypasses the volatile
+    # check so tests can exercise the full snapshot/INDEX pipeline on tmp dirs
+    # (which live under %TEMP% and would otherwise hit the early-return in
+    # _update_file_cache_locked). Production behavior is unchanged: the variable
+    # is never set outside tests.
+    if os.environ.get("ORCH_RECONCILE_FORCE_FULL") == "1":
+        return False
     try:
         resolved = os.path.normcase(str(root.resolve()))
     except OSError:

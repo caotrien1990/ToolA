@@ -32,7 +32,11 @@ def test_warm_reconcile_does_not_rehash_unchanged_sources(tmp_path):
 @pytest.mark.parametrize("full_refresh", [False, True])
 @pytest.mark.parametrize("poison_is_target", [False, True])
 def test_capture_failure_is_omitted_persisted_and_recovered(
-        tmp_path, full_refresh, poison_is_target):
+        tmp_path, full_refresh, poison_is_target, monkeypatch):
+    monkeypatch.setenv("ORCH_RECONCILE_FORCE_FULL", "1")  # bypass volatile-root skip (tmp_path is under %TEMP%)
+    # Disable the 30s reconcile throttle: this test does 3 rapid update_file_cache
+    # calls and expects omitted files to be retried on each one.
+    monkeypatch.setenv("ORCH_RECONCILE_THROTTLE_S", "0")
     healthy = tmp_path / "healthy.py"
     poison = tmp_path / "poison.js"
     healthy.write_text("VALUE = 1\n", encoding="utf-8")
@@ -74,7 +78,8 @@ def test_capture_failure_is_omitted_persisted_and_recovered(
 
 
 @pytest.mark.parametrize("tool", ["new", "fix"])
-def test_write_api_discloses_partial_snapshot_without_failing_healthy_write(tmp_path, tool):
+def test_write_api_discloses_partial_snapshot_without_failing_healthy_write(tmp_path, tool, monkeypatch):
+    monkeypatch.setenv("ORCH_RECONCILE_FORCE_FULL", "1")  # bypass volatile-root skip (tmp_path is under %TEMP%)
     poison = tmp_path / "poison.js"
     target = tmp_path / "healthy.py"
     poison.write_text("", encoding="utf-8")
@@ -109,7 +114,8 @@ def test_write_api_discloses_partial_snapshot_without_failing_healthy_write(tmp_
     assert "cache_sync_warning" in result
 
 
-def test_first_capture_failure_publishes_empty_but_explicit_partial_snapshot(tmp_path):
+def test_first_capture_failure_publishes_empty_but_explicit_partial_snapshot(tmp_path, monkeypatch):
+    monkeypatch.setenv("ORCH_RECONCILE_FORCE_FULL", "1")  # bypass volatile-root skip (tmp_path is under %TEMP%)
     target = tmp_path / "poison.js"
     target.write_text("", encoding="utf-8")
     with mock.patch.object(sm, "analyze_file", return_value={
