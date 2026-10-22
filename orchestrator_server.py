@@ -1953,15 +1953,59 @@ def _anti_drift_duplicate_failure(tool_name: str, body: dict, error_name: str,
 
 def _duplicate_retry_guard(agent_id: str, tool_name: str, body: dict, error_name: str) -> dict | None:
     """Return DUPLICATE_RETRY_BLOCKED on 2nd identical deterministic failure, else None (record)."""
-    import hashlib as _hl
     if len(_DUPLICATE_FAILURE_STATE) > 4096:
         _DUPLICATE_FAILURE_STATE.clear()  # bounded memory; counter reset is acceptable
-    normalized = {k: v for k, v in sorted(body.items()) if k not in ("project_path",)}
-    fp = f"{agent_id}|{tool_name}|{_hl.md5(str(normalized).encode()).hexdigest()}|{error_name}"
+    # Group-3 Area 6b: the fingerprint folds the normalized project key in
+    # (see _dedupe_call_key) instead of excluding project_path outright.
+    fp = f"{_dedupe_call_key(agent_id, tool_name, body)}|{error_name}"
     now = time.time()
     count = _DUPLICATE_FAILURE_STATE.get(fp, 0) + 1
     _DUPLICATE_FAILURE_STATE[fp] = count
     if count <= 1:
+def _dedupe_identity(session_id, agent_id) -> str:
+    """Group-3 Area 6a: the ONE identity string every dedupe consult and
+    eviction formats through -- daemon pre-gates, the daemon boundary, and
+    the MCP bridge -- so one call's entries live under exactly one identity
+    per process. Session-less calls share the "legacy" session component on
+    every transport (declared delta: they used to key by transport name)."""
+    return f"{session_id or 'legacy'}:{agent_id or 'legacy'}"
+
+
+def _dedupe_call_key(identity: str, tool_name: str, body: dict) -> str:
+    """Group-3 Areas 6b/6d shared derivation: identity | tool | normalized
+    project key | body md5. The guard appends the error_name; eviction
+    prefix-matches on this key + "|". The project key folds the normalized
+    project_path INTO the fingerprint (normpath + lower -- the daemon runs
+    on Windows) instead of excluding the field: identical calls in
+    different projects no longer collide, and spelling variants of one
+    project still do. Project-less calls share the "." key normpath
+    yields for ""."""
+    import hashlib as _hl
+    project_key = os.path.normpath(str(body.get("project_path") or "")).lower()
+    normalized = {k: v for k, v in sorted(body.items()) if k not in ("project_path",)}
+    return f"{identity}|{tool_name}|{project_key}|{_hl.md5(str(normalized).encode()).hexdigest()}"
+
+
+def _duplicate_retry_evict(identity: str, tool_name: str, body: dict) -> None:
+    """Group-3 Area 6d: a success deletes this exact call's recorded failure
+    entries (every error_name) from both dedupe dicts, so a later failure
+    is judged fresh. Post-execution bookkeeping only (A9). The scan is a
+    prefix match over both dicts (each capped at 4096 entries); tuple keys
+    written by the schema gate's inline guard are not fingerprints and
+    are never touched."""
+    prefix = _dedupe_call_key(identity, tool_name, body) + "|"
+    for _state_dict in (_DUPLICATE_FAILURE_STATE, _DUPLICATE_FIRST_SEEN):
+        for _fp in [k for k in _state_dict
+                    if isinstance(k, str) and k.startswith(prefix)]:
+            del _state_dict[_fp]
+
+
+# Group-3 Area 6c: True while a generation-absence episode is open in this
+# bridge process (a maximal run of consecutive judged payloads lacking
+# "generation"); module-level because _bridge_dedup is rebuilt per call.
+_BRIDGE_GEN0_EPISODE = False
+
+
         # P12 (campaign-1608): stamp when this exact verdict was first produced so
         # a later replayed (cached) block can disclose how stale it is.
         if len(_DUPLICATE_FIRST_SEEN) > 4096:
@@ -2002,6 +2046,11 @@ def _tool_result_failed(res) -> bool:
         return False
     if res.get("error"):
         return True
+    # agent_id fix plan sections 4.2/4.3: the registry-existence refusal
+    # (AGENT_NOT_REGISTERED) and the registry-availability refusal
+    # (AGENT_REGISTRY_UNAVAILABLE) are state-determined, so identical
+    # failing calls stay duplicate-classifiable.
+    "AGENT_NOT_REGISTERED", "AGENT_REGISTRY_UNAVAILABLE",
     if res.get("ok") is False:
         return True
     if res.get("timed_out") is True:
@@ -15108,7 +15157,15 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
                             if _agent_signature else None)
         except (TypeError, ValueError):
             _agent_param = None
-        if _agent_param is None:
+        if tool_name in ct.AGENT_ID_OBJECT_TOOLS:
+            # Classification (registry_data.AGENT_ID_OBJECT_TOOLS, fix plan
+            # section 2): for these tools body["agent_id"] is caller-supplied
+            # OBJECT/scope data, not the caller's identity -- preserve it
+            # exactly as sent, value AND absence (no overwrite, no injection,
+            # no pop). The resolved identity above keeps feeding gating and
+            # attribution via _task_agent_id and the A37 context, untouched.
+            pass
+        elif _agent_param is None:
             # Transport identity is dispatcher metadata for handlers that do not
             # declare it; never leak an unsupported keyword argument.
             body.pop("agent_id", None)
@@ -15382,7 +15439,7 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
     except _DeprecatedFieldConflict as exc:
         # CAP R3: ambiguous deprecated+canonical field conflict.
         _dup = _duplicate_retry_guard(
-            f"{_task_session_id or transport}:{_task_agent_id or 'legacy'}",
+            _dedupe_identity(_task_session_id, _task_agent_id),
             tool_name, body, "DEPRECATED_FIELD_CONFLICT")
         if _dup:
             return web.json_response({
@@ -15610,7 +15667,7 @@ accepted_fields=sorted(accepted_fields),
     if missing_required:
         missing_payload = _missing_required_error(tool_name, body, required_params)
         _dup = _duplicate_retry_guard(
-            f"{_task_session_id or transport}:{_task_agent_id or 'legacy'}",
+            _dedupe_identity(_task_session_id, _task_agent_id),
             tool_name, body, "MISSING_REQUIRED_FIELD")
         if _dup:
             missing_payload["original_error_name"] = missing_payload.get("error_name")
@@ -16409,93 +16466,118 @@ accepted_fields=sorted(accepted_fields),
                         _result[PIPELINE_RESPONSE_KEY] = _pipeline_report
             except Exception:
                 pass  # opt-in extra reads must never fail the call that already worked
-        await _write_ledger_finish_async(_op_id, _result, _status)  # BK34: SQLite off-loop
-        if _status == "error":
-            err_text = str(_result.get("error") or _result.get("reason")
-                           or ("timed out" if _result.get("timed_out") else "Tool returned ok=false / non-zero exit"))
-            err_name = _result.get("error_name") or _infer_error_name(tool_name, err_text, body)
-            # CAN-050: block the 2nd identical deterministic tool-body failure.
-            if err_name in _DETERMINISTIC_TOOLBODY_ERRORS:
-                _dup = _duplicate_retry_guard(
-                    f"{_task_session_id or transport}:{_task_agent_id or 'legacy'}",
-                    tool_name, body, err_name)
-                if _dup:
-                    _result["original_error_name"] = err_name
-                    _result.update(_dup)
-                    err_name = "DUPLICATE_RETRY_BLOCKED"
-            _result.setdefault("ok", False)
-            _result.setdefault("error_name", err_name)
-            # #27: `error` is the key every reader takes first; the envelope used to
-            # guarantee a `reason` COPY instead, so a tool answering `reason` alone
-            # left `error` empty while every other one paid for the same text twice.
-            if not _result.get("error"):
-                _result["error"] = err_text
-            _tb_hint = _default_hint(tool_name, err_name)
-            if _tb_hint:
-                _result.setdefault("hint", _tb_hint)
-            _result.setdefault("ca_next_action", _ca_next_action(err_name, tool_name))
-            # CASE-1919 item 1: the REGISTRY-driven example, not the legacy
-            # _PAYLOAD_EXAMPLES table -- that dict has no search_code entry, so its
-            # {"project_path": ...} fallback answered a missing `query` with an
-            # example that omits `query`, i.e. it taught a CA nothing it did not
-            # already have. _payload_example_for_tool honours the curated overrides
-            # first and derives everything else from the live schema.
-            try:
-                _tb_example = _payload_example_for_tool(tool_name, _schema_for_tool(tool_name))
-            except Exception:
-                _tb_example = {}
-            _result.setdefault("payload_example", _tb_example or _PAYLOAD_EXAMPLES.get(
-                tool_name, {"project_path": "D:/path/to/project"}))
-            if err_name == "MISSING_REQUIRED_FIELD":
-                # A handler-raised MISSING_REQUIRED_FIELD bypasses the registry gate
-                # (_missing_required_error), so it carried no missing_fields at all.
-                # Name the field(s) in the message itself -- prose a CA has never been
-                # taught is indistinguishable from prose about some other field.
+        # Group-3 Area 6e: the write-ledger finish used to run HERE, before
+        # error finalization -- so the ledger recorded the verdict BEFORE the
+        # duplicate-retry relabel below could replace error_name, and disagreed
+        # with what the client was actually told. It now runs in the finally
+        # under this block, after every verdict field is final. The finally is
+        # also the raise-guard: the finalization segment calls unguarded helpers
+        # (_retry_sequence, _ca_guidance, ...), and a raise at any of them must
+        # still finish the row with the verdict fields as they stand; the raise
+        # itself then reaches the boundary except, which answers with the
+        # partial _result exactly as before this move.
+        try:
+            if _status == "error":
+                err_text = str(_result.get("error") or _result.get("reason")
+                               or ("timed out" if _result.get("timed_out") else "Tool returned ok=false / non-zero exit"))
+                err_name = _result.get("error_name") or _infer_error_name(tool_name, err_text, body)
+                # CAN-050: block the 2nd identical deterministic tool-body failure.
+                if err_name in _DETERMINISTIC_TOOLBODY_ERRORS:
+                    _dup = _duplicate_retry_guard(
+                        _dedupe_identity(_task_session_id, _task_agent_id),
+                        tool_name, body, err_name)
+                    if _dup:
+                        _result["original_error_name"] = err_name
+                        _result.update(_dup)
+                        err_name = "DUPLICATE_RETRY_BLOCKED"
+                _result.setdefault("ok", False)
+                _result.setdefault("error_name", err_name)
+                # #27: `error` is the key every reader takes first; the envelope used to
+                # guarantee a `reason` COPY instead, so a tool answering `reason` alone
+                # left `error` empty while every other one paid for the same text twice.
+                if not _result.get("error"):
+                    _result["error"] = err_text
+                _tb_hint = _default_hint(tool_name, err_name)
+                if _tb_hint:
+                    _result.setdefault("hint", _tb_hint)
+                _result.setdefault("ca_next_action", _ca_next_action(err_name, tool_name))
+                # CASE-1919 item 1: the REGISTRY-driven example, not the legacy
+                # _PAYLOAD_EXAMPLES table -- that dict has no search_code entry, so its
+                # {"project_path": ...} fallback answered a missing `query` with an
+                # example that omits `query`, i.e. it taught a CA nothing it did not
+                # already have. _payload_example_for_tool honours the curated overrides
+                # first and derives everything else from the live schema.
                 try:
-                    _mrf = _missing_required_detail(tool_name, err_text, body)
+                    _tb_example = _payload_example_for_tool(tool_name, _schema_for_tool(tool_name))
                 except Exception:
-                    _mrf = {}
-                _mrf_detail = _mrf.pop("error_detail", "")
-                _mrf_example = _mrf.pop("payload_example", None) or {}
-                for _mrf_key, _mrf_val in _mrf.items():
-                    _result.setdefault(_mrf_key, _mrf_val)
-                if _mrf_example:
-                    # Union, example-wins-per-key: the tool's own example keeps every
-                    # value it chose and gains the names it left out.
-                    _mrf_prev = _result.get("payload_example")
-                    _result["payload_example"] = (
-                        {**_mrf_example, **_mrf_prev} if isinstance(_mrf_prev, dict) and _mrf_prev
-                        else _mrf_example)
-                if _mrf_detail:
-                    for _msg_key in ("error", "reason"):
-                        if _msg_key not in _result:
-                            continue
-                        _msg_old = str(_result.get(_msg_key) or "")
-                        if _mrf_detail not in _msg_old:
-                            _result[_msg_key] = (
-                                f"{_msg_old} | {_mrf_detail}" if _msg_old else _mrf_detail)
-            _result.setdefault("retry_sequence", _retry_sequence(
-                tool_name, err_name, body,
-                corrected_payload=_result.get("corrected_payload")))
-            _result.setdefault("ca_guidance", _ca_guidance(tool_name, err_text, body, err_name))
-            if tool_name == "read_file_range" and err_name == "INVALID_RANGE":
-                # Error-specific range example wins over the generic function example.
-                _range_example = _invalid_range_payload_example(body)
-                _result["payload_example"] = _range_example
-                _result["ca_guidance"]["payload_example"] = dict(_range_example)
-                _result["ca_guidance"]["ca_next_action"] = "correct_range"
-            # V15 R49 — phase taxonomy for tool-body errors (path bypasses
-            # _error_response which already adds phase). Idempotent: if the
-            # tool's own _err/_json_error already set phase, setdefault keeps it.
+                    _tb_example = {}
+                _result.setdefault("payload_example", _tb_example or _PAYLOAD_EXAMPLES.get(
+                    tool_name, {"project_path": "D:/path/to/project"}))
+                if err_name == "MISSING_REQUIRED_FIELD":
+                    # A handler-raised MISSING_REQUIRED_FIELD bypasses the registry gate
+                    # (_missing_required_error), so it carried no missing_fields at all.
+                    # Name the field(s) in the message itself -- prose a CA has never been
+                    # taught is indistinguishable from prose about some other field.
+                    try:
+                        _mrf = _missing_required_detail(tool_name, err_text, body)
+                    except Exception:
+                        _mrf = {}
+                    _mrf_detail = _mrf.pop("error_detail", "")
+                    _mrf_example = _mrf.pop("payload_example", None) or {}
+                    for _mrf_key, _mrf_val in _mrf.items():
+                        _result.setdefault(_mrf_key, _mrf_val)
+                    if _mrf_example:
+                        # Union, example-wins-per-key: the tool's own example keeps every
+                        # value it chose and gains the names it left out.
+                        _mrf_prev = _result.get("payload_example")
+                        _result["payload_example"] = (
+                            {**_mrf_example, **_mrf_prev} if isinstance(_mrf_prev, dict) and _mrf_prev
+                            else _mrf_example)
+                    if _mrf_detail:
+                        for _msg_key in ("error", "reason"):
+                            if _msg_key not in _result:
+                                continue
+                            _msg_old = str(_result.get(_msg_key) or "")
+                            if _mrf_detail not in _msg_old:
+                                _result[_msg_key] = (
+                                    f"{_msg_old} | {_mrf_detail}" if _msg_old else _mrf_detail)
+                _result.setdefault("retry_sequence", _retry_sequence(
+                    tool_name, err_name, body,
+                    corrected_payload=_result.get("corrected_payload")))
+                _result.setdefault("ca_guidance", _ca_guidance(tool_name, err_text, body, err_name))
+                if tool_name == "read_file_range" and err_name == "INVALID_RANGE":
+                    # Error-specific range example wins over the generic function example.
+                    _range_example = _invalid_range_payload_example(body)
+                    _result["payload_example"] = _range_example
+                    _result["ca_guidance"]["payload_example"] = dict(_range_example)
+                    _result["ca_guidance"]["ca_next_action"] = "correct_range"
+                # V15 R49 — phase taxonomy for tool-body errors (path bypasses
+                # _error_response which already adds phase). Idempotent: if the
+                # tool's own _err/_json_error already set phase, setdefault keeps it.
+                try:
+                    _phase_body = ct._phase_for_error_name(err_name) if hasattr(ct, "_phase_for_error_name") else "runtime"
+                except Exception:
+                    _phase_body = "runtime"
+                _result.setdefault("phase", _phase_body)
+                # V15 R40: top-level suggested_alternative_tool (so CA sees it without parsing ca_guidance)
+                _alt = _r40_suggest_alternative(tool_name, err_name)
+                if _alt:
+                    _result.setdefault("suggested_alternative_tool", _alt)
+        finally:
             try:
-                _phase_body = ct._phase_for_error_name(err_name) if hasattr(ct, "_phase_for_error_name") else "runtime"
+                await _write_ledger_finish_async(_op_id, _result, _status)  # BK34: SQLite off-loop
             except Exception:
-                _phase_body = "runtime"
-            _result.setdefault("phase", _phase_body)
-            # V15 R40: top-level suggested_alternative_tool (so CA sees it without parsing ca_guidance)
-            _alt = _r40_suggest_alternative(tool_name, err_name)
-            if _alt:
-                _result.setdefault("suggested_alternative_tool", _alt)
+                # A failed finish never alters the response and never converts
+                # the call to a success; the unfinished row is what the soak
+                # in-flight-row check surfaces.
+                logger.exception(
+                    "write-ledger finish failed for tool %s (op %s)", tool_name, _op_id)
+        # Group-3 Area 6d(i): a success clears this exact call's recorded
+        # duplicate-retry failure entries, so a later failure of the same call
+        # is judged fresh instead of replaying the pre-fix verdict.
+        if _status != "error":
+            _duplicate_retry_evict(
+                _dedupe_identity(_task_session_id, _task_agent_id), tool_name, body)
         # V15 R34: surface boundary-level path normalization audit
         if _r34_normalized_paths and isinstance(_result, dict):
             _result["path_normalized"] = _r34_normalized_paths
@@ -16740,7 +16822,7 @@ accepted_fields=sorted(accepted_fields),
         if "required positional argument" in _error_msg or "missing" in _error_msg.lower():
             _mre = _missing_required_error(tool_name, body, required_fields)
             _dup = _duplicate_retry_guard(
-                f"{_task_session_id or transport}:{_task_agent_id or 'legacy'}",
+                _dedupe_identity(_task_session_id, _task_agent_id),
                 tool_name, body, "MISSING_REQUIRED_FIELD")
             if _dup:
                 _mre["original_error_name"] = _mre.get("error_name")
@@ -17618,14 +17700,14 @@ async def dispatch_tool_call(tool_name: str, body: dict | None = None,
             or os.environ.get("COUNCIL_AGENT_ID")
             or "legacy"
         )
-        _proxy_identity = f"{_proxy_session}:{_proxy_agent}"
+        _proxy_identity = _dedupe_identity(_proxy_session, _proxy_agent)
 
         def _bridge_dedup(_payload: dict, _status: int) -> tuple[dict, int]:
             if str(_payload.get("error_name") or "") not in _DETERMINISTIC_TOOLBODY_ERRORS:
                 return _payload, _status
             _proxy_error_name = str(_payload["error_name"])
             _proxy_dup = _duplicate_retry_guard(
-                _proxy_identity, tool_name, body, _proxy_error_name
+                _scoped_identity, tool_name, body, _proxy_error_name
             )
             if not _proxy_dup:
                 return _payload, _status
@@ -17634,7 +17716,36 @@ async def dispatch_tool_call(tool_name: str, body: dict | None = None,
             return _payload, 409
 
         try:
+            # Group-3 Area 6c: bridge verdicts are scoped to the daemon
+            # generation that produced the payload being judged, so a daemon
+            # restart (new generation) makes pre-restart entries unreachable
+            # -- the same reset the daemon's own ledger gets from process
+            # death. A payload without generation is scoped "gen0"; the first
+            # payload of each generation-absence episode logs ONE warning
+            # through this module's logger (in the host process that lands in
+            # orchestrator.mcp.log -- P3 forbids holding orchestrator.log
+            # here, and NO new handler is added). The latch re-arms as soon
+            # as a judged payload carries generation again. This observation
+            # runs BEFORE the deterministic-set early return below, so a
+            # generation-less payload opens an episode even when its verdict
+            # short-circuits.
+            global _BRIDGE_GEN0_EPISODE
+            _gen = _payload.get("generation")
+            if _gen:
+                _BRIDGE_GEN0_EPISODE = False
+            elif not _BRIDGE_GEN0_EPISODE:
+                _BRIDGE_GEN0_EPISODE = True
+                logger.warning(
+                    "bridge dedup: payload for %s carries no generation; "
+                    "scoping bridge verdicts under the gen0 fallback until a "
+                    "generation-bearing payload re-arms this warning", tool_name)
+            _scoped_identity = f"{_gen or 'gen0'}|{_proxy_identity}"
             import urllib.error as _ue
+                # Group-3 Area 6d(ii): a non-error payload evicts this exact
+                # call's recorded failure entries, under the same scoped
+                # identity the consult below uses.
+                if _payload.get("ok") is not False and not _payload.get("error_name"):
+                    _duplicate_retry_evict(_scoped_identity, tool_name, body)
             import urllib.request as _ur
             _pdata = json.dumps(body if isinstance(body, dict) else {}).encode("utf-8")
             _proxy_headers = {
@@ -17656,6 +17767,14 @@ async def dispatch_tool_call(tool_name: str, body: dict | None = None,
             # tool's own schema) and the wait (idle watchdog for writes, /health pid
             # liveness for the scan tools the write ledger cannot see).
             try:
+            # Group-3 Area 1(d): forward the caller identity this dispatch was
+            # given -- building _proxy_headers from scratch used to strip it,
+            # so the daemon resolved the proxied call under its own fallback
+            # rungs instead of the dispatch's caller.
+            if headers.get("X-Agent-Id"):
+                _proxy_headers["X-Agent-Id"] = headers["X-Agent-Id"]
+            if headers.get("X-Council-Agent"):
+                _proxy_headers["X-Council-Agent"] = headers["X-Council-Agent"]
                 from orchestrator.server import mcp_stdio as _mcpw
             except Exception:
                 _mcpw = None

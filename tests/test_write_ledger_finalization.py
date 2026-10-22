@@ -635,6 +635,94 @@ class WriteLedgerFinalizationTests(unittest.IsolatedAsyncioTestCase):
             orchestrator_server._write_ledger_begin(TOOL_NAME, {}, "")
         # the refused twin opened no second run: attempts stays 1.
         self.assertEqual(orchestrator_server._WRITE_LEDGER[op]["attempts"], 1)
+    def _raise_once(self, real_fn):
+        """Fault model for the section 3.8 pins: raise on the FIRST call
+        (the one inside the finalization segment), then delegate to the
+        real helper. The dispatcher's generic error arm calls the same
+        helpers again while building its own answer; a raise-always mock
+        would fault that second, separate phase instead of the segment
+        this plan item is about."""
+        state = {"raised": False}
 
+        def flaky(*args, **kwargs):
+            if not state["raised"]:
+                state["raised"] = True
+                raise RuntimeError("injected finalization failure")
+            return real_fn(*args, **kwargs)
+
+        return flaky
+
+    def _finish_spy(self):
+        """Record every _write_ledger_finish_async call (op_id, result
+        snapshot, status), then call through to the real finish."""
+        calls = []
+        real_finish = orchestrator_server._write_ledger_finish_async
+
+        async def spy(op_id, result, status):
+            calls.append((op_id, dict(result) if isinstance(result, dict) else result, status))
+            return await real_finish(op_id, result, status)
+
+        return calls, unittest.mock.patch.object(
+            orchestrator_server, "_write_ledger_finish_async", spy)
+
+    async def test_finalization_raise_at_retry_sequence_still_finishes_row(self):
+        """Group-3 plan section 3.8 (Area 6e raise-guard), injection point
+        _retry_sequence. Pins, against the dispatcher's real flow: (1) the
+        relocated finish runs from the segment's finally with the verdict
+        fields as they stood at the raise; (2) no ledger row is left
+        in-flight; (3) the client-visible answer is the one the
+        dispatcher's generic error arm builds from the exception -- the
+        same answer the pre-move code produced, whose own segment raise
+        reached the same arm."""
+        async def failing_write() -> str:
+            return json.dumps({"ok": False, "error": "probe failure",
+                               "error_name": "FILE_NOT_FOUND"})
+
+        code_tools.TOOL_MAP[TOOL_NAME] = failing_write
+        finish_calls, spy = self._finish_spy()
+        with spy, unittest.mock.patch.object(
+                orchestrator_server, "_retry_sequence",
+                self._raise_once(orchestrator_server._retry_sequence)):
+            response = await self._dispatch()
+
+        op_id = self._operation_id()
+        segment_finishes = [c for c in finish_calls
+                            if c[0] == op_id and c[2] == "error" and c[1]]
+        self.assertTrue(segment_finishes,
+                        "the segment finally must finish this op's row")
+        self.assertEqual(segment_finishes[0][1]["error_name"],
+                         "FILE_NOT_FOUND")
+        self._assert_ledger_status("failed")
+        self.assertEqual(response.status, 500)
+        payload = json.loads(response.text)
+        self.assertFalse(payload["ok"])
+        self.assertIn("injected finalization failure", payload["error"])
+
+    async def test_finalization_raise_at_ca_next_action_still_finishes_row(self):
+        """Group-3 plan section 3.8, second injection point: _ca_next_action
+        raises earlier in the same segment; the same three pins hold."""
+        async def failing_write() -> str:
+            return json.dumps({"ok": False, "error": "probe failure",
+                               "error_name": "FILE_NOT_FOUND"})
+
+        code_tools.TOOL_MAP[TOOL_NAME] = failing_write
+        finish_calls, spy = self._finish_spy()
+        with spy, unittest.mock.patch.object(
+                orchestrator_server, "_ca_next_action",
+                self._raise_once(orchestrator_server._ca_next_action)):
+            response = await self._dispatch()
+
+        op_id = self._operation_id()
+        segment_finishes = [c for c in finish_calls
+                            if c[0] == op_id and c[2] == "error" and c[1]]
+        self.assertTrue(segment_finishes,
+                        "the segment finally must finish this op's row")
+        self.assertEqual(segment_finishes[0][1]["error_name"],
+                         "FILE_NOT_FOUND")
+        self._assert_ledger_status("failed")
+        self.assertEqual(response.status, 500)
+        payload = json.loads(response.text)
+        self.assertFalse(payload["ok"])
+        self.assertIn("injected finalization failure", payload["error"])
 if __name__ == "__main__":
     unittest.main()

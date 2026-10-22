@@ -3227,6 +3227,24 @@ def build_tool_phases() -> dict[str, str]:
 
 
 
+# agent_id classification (fix plan section 2, as amended): the tools whose
+# handlers consume body["agent_id"] as OBJECT/scope data -- the named agent
+# or scope -- not as the caller's identity. For these tools the dispatcher
+# preserves the field exactly as sent (value AND absence: no overwrite, no
+# injection, no pop); every other declaring tool keeps identity
+# canonicalization. manage_agent additionally enforces a handler-side
+# read/write split (plan section 3); mcp_pack_generate is preserve-only --
+# its agent_id is the documented alias of ca_id (the generator resolves
+# cid = ca_id or agent_id), and ca_id itself is cross-agent by design.
+AGENT_ID_OBJECT_TOOLS = {
+    "manage_agent",
+    "audit_reconciliation_report",
+    "session_audit_summary",
+    "ca_policy_metrics",
+    "mcp_pack_generate",
+}
+
+
 def build_tool_schemas() -> list[dict[str, Any]]:
 
     return (

@@ -200,8 +200,11 @@ def _atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> str:
     return _atomic_write_bytes(Path(path), text.encode(encoding))
 
 
-def _atomic_write_json(path: Path, data, *, indent: int | None = None) -> None:
-    _atomic_write_text(Path(path), json.dumps(data, ensure_ascii=False, indent=indent), encoding="utf-8")
+def _atomic_write_json(path: Path, data, *, indent: int | None = None) -> str:
+    # Returns the write mode ("atomic_replace" / "shared_inplace") from
+    # _atomic_write_text; callers that ignore it are unaffected. The
+    # registry save path (Area 2c) reads it to surface the degraded mode.
+    return _atomic_write_text(Path(path), json.dumps(data, ensure_ascii=False, indent=indent), encoding="utf-8")
 
 # === E402 ANCHOR NOTE -- READ THIS BEFORE ANY LINT SWEEP ON code_tools.py ===================
 # E402 CLUSTER: this line plus the three `from orchestrator.council.route_metrics import (...)`
@@ -220,6 +223,7 @@ def _atomic_write_json(path: Path, data, *, indent: int | None = None) -> None:
 # would warn about an invalid directive). Never run a
 # blanket `ruff --fix` or auto-organise-imports on this file. The other three E402 clusters
 # (~L6432 logging helpers, ~L7765 T4 runtime shims, ~L11503 workflow dispenser) point back here.
+    AGENT_ID_OBJECT_TOOLS,  # noqa: F401 - re-exported: orchestrator_server's dispatcher reads ct.AGENT_ID_OBJECT_TOOLS
 from orchestrator.core.registry_data import (
     BASE_TOOL_MAP_SPECS,
     T1_TOOLS,  # noqa: F401 - re-exported: tool_smoke_runner.py reads ct.T1_TOOLS
@@ -17015,22 +17019,157 @@ def _ma_rule_inline(template: str) -> str:
         return re.sub(r"\s+", " ", _ma_slim_gated_rule_body()).strip()
     return _ma_rule_file_text("SLIM_RULE_INLINE.txt")
 
+# Group-3 Areas 2-4: the loader records the outcome of its own single
+# read here, so the companion can report the state of the SAME bytes it
+# handed out instead of re-reading the file. State vocabulary:
+# ok / missing (loadable) and the FAILED states unreadable / unparseable
+# / off_shape / empty_present (file present, substitute returned).
+_REGISTRY_LOAD_OUTCOME = {"path": "", "state": "missing", "seq": 0}
+
+
+def _record_registry_load_outcome(state: str) -> None:
+    _REGISTRY_LOAD_OUTCOME["path"] = str(_AGENTS_REGISTRY_PATH)
+    _REGISTRY_LOAD_OUTCOME["state"] = state
+    _REGISTRY_LOAD_OUTCOME["seq"] += 1
+
+
+def _registry_shape_state(reg) -> str:
+    """Rule V (Area 3) shape predicate, shared by the loader and the
+    companion's patched-loader fallback: a parsed registry is valid iff
+    it is a dict whose "agents" (default {}) is a dict; a valid shape
+    with zero agents in a present file is empty_present."""
+    if not isinstance(reg, dict) or not isinstance(reg.get("agents", {}), dict):
+        return "off_shape"
+    if not reg.get("agents"):
+        return "empty_present"
+    return "ok"
+
+
 
 def _load_agents_registry() -> dict:
     # A31: decode via the shared BOM-safe helper (utf-8-sig). The fail-safe
     # try/except is kept HERE deliberately — this reader must never raise into
+    # Group-3 Area 3 (Rule V): that shape promise is now enforced HERE —
+    # a parseable-but-wrong shape ({"agents": null}, a non-dict root) used
+    # to pass through unchecked and crash or silently empty downstream
+    # consumers. Group-3 Areas 2/4: every path also records its outcome in
+    # _REGISTRY_LOAD_OUTCOME and logs the loader-decided failure classes.
     # manage_agent; callers rely on the empty-but-safe {"agents": {}} shape.
     try:
-        if _AGENTS_REGISTRY_PATH.exists():
-            from orchestrator.core.ca_policy_matrix import load_agents_registry_file
-            return load_agents_registry_file(_AGENTS_REGISTRY_PATH)
+        if not _AGENTS_REGISTRY_PATH.exists():
+            _record_registry_load_outcome("missing")
+            return {"agents": {}}
+        from orchestrator.core.ca_policy_matrix import load_agents_registry_file
+        reg = load_agents_registry_file(_AGENTS_REGISTRY_PATH)
+    except FileNotFoundError:
+        # Vanished between the existence check and the read: the missing
+        # state, not a failure (Area 4 race closure — the shared reader's
+        # FileNotFoundError log exemption agrees; nothing is logged).
+        _record_registry_load_outcome("missing")
+        return {"agents": {}}
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        # The shared reader already logged this failure (Rule O).
+        _record_registry_load_outcome("unparseable")
+        return {"agents": {}}
     except Exception:
-        pass
-    return {"agents": {}}
+        # Any other read failure (OSError family): the reader logged it
+        # as unreadable; a non-read surprise lands here too so the loader
+        # still never raises.
+        _record_registry_load_outcome("unreadable")
+        return {"agents": {}}
+    state = _registry_shape_state(reg)
+    if state != "ok":
+        # off_shape / empty_present are decided at this single point
+        # (the shared reader never emits them): one warning, then the
+        # substitute — the loader's A31 promise now covers shape too.
+        import logging
+        logging.warning(
+            "agents_registry load failed path=%s failure_class=%s",
+            _AGENTS_REGISTRY_PATH, state)
+        _record_registry_load_outcome(state)
+        return {"agents": {}}
+    _record_registry_load_outcome("ok")
+    return reg
+
+
+def _load_agents_registry_with_status() -> tuple[dict, bool, str]:
+    """Companion to _load_agents_registry (whose contract is unchanged):
+    the handler's registry, whether the load succeeded, and the load
+    state the loader decided for that read.
+
+    The dict comes from _load_agents_registry itself, so its fail-safe
+    shape -- and the seam other code patches -- is preserved exactly. The
+    status and state come from the outcome the loader recorded for THIS
+    call (Area 4, Rule T): dict and status always describe the same
+    bytes, so the old verify-by-rereading -- and the TOCTOU window in
+    which the file could change between the two reads -- is gone. The
+    status is False exactly on the FAILED states (unreadable,
+    unparseable, off_shape, empty_present): a file is present but the
+    plain loader silently substituted an empty registry. A missing file
+    is a legitimate empty start, not a failure. manage_agent's register
+    branch uses the status to refuse before its whole-registry save
+    could overwrite a real registry it failed to read (fix plan
+    section 4.3).
+
+    A patched loader (the DEV-1 test seam) never records an outcome; the
+    fallback then derives the state from the returned dict itself, using
+    a stat-only existence probe -- never a second read of the contents.
+    """
+    seq_before = _REGISTRY_LOAD_OUTCOME["seq"]
+    reg = _load_agents_registry()
+    cell = _REGISTRY_LOAD_OUTCOME
+    if cell["seq"] > seq_before and cell["path"] == str(_AGENTS_REGISTRY_PATH):
+        state = cell["state"]
+    else:
+        state = _registry_shape_state(reg)
+        if state == "empty_present" and not _AGENTS_REGISTRY_PATH.exists():
+            state = "missing"
+    return reg, state in ("ok", "missing"), state
 
 
 def _save_agents_registry(reg: dict) -> None:
-    _atomic_write_json(_AGENTS_REGISTRY_PATH, reg, indent=2)
+    mode = _atomic_write_json(_AGENTS_REGISTRY_PATH, reg, indent=2)
+    if mode == "shared_inplace":
+        # Area 2(c): the atomic replace was refused (e.g. locked file) and
+        # the write fell back to a shared in-place overwrite -- the
+        # degraded save path. Surface it; silent on the normal path.
+        import logging
+        logging.warning(
+            "agents_registry save degraded path=%s mode=shared_inplace",
+            _AGENTS_REGISTRY_PATH)
+
+
+def _delete_emptied_agents_registry(reg: dict) -> None:
+    """Area 3: unregister removed the LAST agent. An emptied registry is
+    represented by a MISSING file (register refuses into a present-empty
+    one), so delete the file instead of saving {"agents": {}}.
+
+    Safety: first back the file up to the sibling fixed name
+    agents_registry.json.bak (latest only; each delete overwrites it). If
+    the backup write fails, the file is NOT deleted. If the delete itself
+    fails (e.g. Windows file lock), fall back to saving the empty dict.
+    Both failure branches log the degraded present-empty state -- never
+    silent."""
+    import logging
+    path = _AGENTS_REGISTRY_PATH
+    try:
+        _atomic_write_bytes(path.parent / (path.name + ".bak"),
+                            path.read_bytes())
+    except Exception:
+        logging.warning(
+            "agents_registry degraded state: present-empty (backup write "
+            "failed, file kept; register refuses until the file is "
+            "removed manually) path=%s", path)
+        _save_agents_registry(reg)
+        return
+    try:
+        path.unlink()
+    except Exception:
+        logging.warning(
+            "agents_registry degraded state: present-empty (delete "
+            "failed; register refuses until the file is removed "
+            "manually) path=%s", path)
+        _save_agents_registry(reg)
 
 
 def _ma_extract_persona(text: str) -> str:
@@ -18608,9 +18747,15 @@ async def manage_agent(action: str, agent_id: str = "", target: str = "all",
     All writes auto-backup under _ma_archive + validate (json/toml) + rollback on failure.
     Use dry_run=True to preview.
     """
+        # Fix plan section 3 (confinement plumbing): read the server-validated
+        # caller identity ONCE, here at handler entry in this async frame --
+        # the context var copies into tasks and asyncio.to_thread, while a
+        # bare executor lane would see "". An empty value means no validated
+        # identity; the write branches treat it as a mismatch (fail-closed).
+        _caller_agent_id = _session_store_module._CALLER_AGENT_ID.get()
     try:
         migration = _ma_archive_legacy_bak_ma()
-        reg = _load_agents_registry()
+        reg, _registry_load_ok, _registry_state = _load_agents_registry_with_status()
         agents = reg.setdefault("agents", {})
         act = (action or "").strip().lower()
 
@@ -18631,8 +18776,23 @@ async def manage_agent(action: str, agent_id: str = "", target: str = "all",
                                    accepted_fields=["agent_id"])
             if _aid not in _agents:
                 return _json_error(f"agent not registered: {_aid}",
-                                   error_name="UNSUPPORTED_FIELD",
+                                   error_name="AGENT_NOT_REGISTERED",
                                    accepted_fields=sorted(_agents.keys()))
+        def _ma_require_caller(_aid: str):
+            """Section 3 confinement: a write on an EXISTING agent's record
+            (register on a registered id, set_mode, unregister) requires the
+            validated caller identity read at handler entry to equal the
+            target; an empty validated identity matches nothing, so
+            header-less writes fail closed. Reads and creation are not
+            confined. Returns an error string, or None to proceed."""
+            if _caller_agent_id != _aid:
+                return _json_error(
+                    f"caller '{_caller_agent_id or '<none>'}' may not write "
+                    f"agent '{_aid}': writes on an existing record require "
+                    "caller == target",
+                    error_name="AGENT_IDENTITY_MISMATCH",
+                    caller=_caller_agent_id, target=_aid)
+            return None
             return None
         if act == "list":
             return json.dumps({"ok": True, "agents": list(agents.keys()), "registry_path": str(_AGENTS_REGISTRY_PATH)}, ensure_ascii=False)
@@ -18643,7 +18803,27 @@ async def manage_agent(action: str, agent_id: str = "", target: str = "all",
             return json.dumps({"ok": True, "agent": {"id": agent_id, **agents[agent_id]}}, ensure_ascii=False)
         if act == "register":
             if not agent_id:
-                return _json_error("agent_id required for register", error_name="UNSUPPORTED_FIELD")
+                return _json_error("agent_id required for register",
+                                   error_name="MISSING_REQUIRED_FIELD",
+                                   accepted_fields=["agent_id"])
+            if not _registry_load_ok:
+                # Section 4.3: the registry file exists but did not load, so
+                # existence would be judged against a silently emptied
+                # registry and the whole-dict save below would wipe the
+                # real one. Refuse; write nothing. Group-3 Area 3: the
+                # refusal fires on every FAILED load state (unreadable,
+                # unparseable, off_shape, empty_present) and names it in
+                # the additive registry_state field.
+                return _json_error(
+                    "agents registry exists but could not be loaded; "
+                    "refusing to register over it",
+                    error_name="AGENT_REGISTRY_UNAVAILABLE",
+                    registry_state=_registry_state)
+            if agent_id in agents:
+                _bad = _ma_require_caller(agent_id)
+                if _bad:
+                    return _bad
+            existed = agent_id in agents
             rec = agents.get(agent_id, {})
             if persona: rec["persona"] = persona
             if rule_file: rec["rule_file"] = rule_file
@@ -18658,10 +18838,20 @@ async def manage_agent(action: str, agent_id: str = "", target: str = "all",
                 rec["mode"] = "native" if mode.strip().lower() == "native" else "A"
             rec.setdefault("mode", "A")
             rec["id"] = agent_id
+            if dry_run:
+                # Area 5 / Rule D: preview only -- every gate above has
+                # already fired; the registry save below must not run,
+                # so a dry_run register performs zero filesystem writes.
+                return json.dumps({"ok": True, "action": "register", "agent_id": agent_id,
+                                   "dry_run": True, "existed": existed, "agent": rec},
+                                  ensure_ascii=False)
             agents[agent_id] = rec
             _save_agents_registry(reg)
             return json.dumps({"ok": True, "registered": agent_id, "agent": rec}, ensure_ascii=False)
         if act == "set_mode":
+            if _bad:
+                return _bad
+            _bad = _ma_require_caller(agent_id)
             _bad = _ma_require_agent_id(act, agent_id, target, agents)
             if _bad:
                 return _bad
@@ -18681,6 +18871,9 @@ async def manage_agent(action: str, agent_id: str = "", target: str = "all",
                                         if new_mode == "native" else "[A]-first restored")},
                               ensure_ascii=False)
         if act == "unregister":
+            if _bad:
+                return _bad
+            _bad = _ma_require_caller(agent_id)
             _bad = _ma_require_agent_id(act, agent_id, target, agents)
             if _bad:
                 return _bad
@@ -18692,7 +18885,14 @@ async def manage_agent(action: str, agent_id: str = "", target: str = "all",
                                    "rule_file": rec.get("rule_file", ""),
                                    "mcp_file": rec.get("mcp_file", "")}, ensure_ascii=False)
             agents.pop(agent_id, None)
-            _save_agents_registry(reg)
+            if agents:
+                _save_agents_registry(reg)
+            else:
+                # Area 3: the LAST agent is gone -- delete the registry
+                # file so a missing file stays the only empty
+                # representation (register refuses into a present-empty
+                # file as state empty_present).
+                _delete_emptied_agents_registry(reg)
             if cleanup:
                 try:
                     rf = Path(rec.get("rule_file") or "")

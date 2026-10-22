@@ -41,11 +41,29 @@ _MCP_OWNER_CLAIMS: dict[tuple[str, str], str] = {}
 # ``_BROWSER_PAGES`` and its event loop alive across calls; proxying it would drop
 # that state on the floor.
 _MCP_PROXY_TOKEN: dict[str, str] = {"v": ""}
-# A37 #0b: the agent id this host process is serving, learned from whichever call
-# first carries one (normally the get_rule_core_text shortcut at bootstrap) and then
-# attached as X-Agent-Id to EVERY proxied call. Without it the daemon sees ctx
-# "default" for reads whose bootstrap epoch was opened under the real id.
+# A37 #0b / Group-3 Rule L: the agent id this host process learned from its own
+# traffic. Written ONLY when env COUNCIL_AGENT_ID is empty, memory is empty
+# (set-once / first-wins), the payload carries a non-empty agent_id, and the
+# tool is not an object tool (ct.AGENT_ID_OBJECT_TOOLS) -- never from an object
+# selector. Read through _mcp_host_identity(), never directly.
 _MCP_AGENT_ID: dict[str, str] = {"v": ""}
+
+
+def _mcp_host_identity() -> str:
+    """Group-3 Area 1: the ONE host-identity resolver, consumed by both proxy
+    paths -- env COUNCIL_AGENT_ID, then the learned memory, then ""."""
+    return (str(os.environ.get("COUNCIL_AGENT_ID") or "").strip()
+            or _MCP_AGENT_ID["v"])
+
+
+def _mcp_object_tools(srv) -> frozenset:
+    """The daemon's object-tool classification (ct.AGENT_ID_OBJECT_TOOLS),
+    read late through srv.ct -- the route _mcp_timeout_budget uses for
+    TOOL_SCHEMAS. Empty when the daemon module is unreachable from here."""
+    _ct = getattr(srv, "ct", None) if srv is not None else None
+    return frozenset(getattr(_ct, "AGENT_ID_OBJECT_TOOLS", ()) or ())
+
+
 _MCP_PROXY_TOKEN_ERRORS = (
     "MUTATION_TOKEN_REQUIRED", "MUTATION_TOKEN_EXPIRED", "TOKEN_REQUIRED",
 )
@@ -565,20 +583,31 @@ def _mcp_proxy_call(name: str, payload: dict | None = None,
     # could 403. Forward it whenever the payload names a project.
     if isinstance(payload, dict) and payload.get("project_path"):
         headers["X-Project-Path"] = str(payload["project_path"])
-    # A37 #0b: carry identity on EVERY proxied call, not only the ones whose schema
-    # happens to declare agent_id. The daemon keys the bootstrap epoch (and the
-    # rule-core fetch-once guard) by agent id, so a host that sent it ONLY on
-    # get_rule_core_text opened the epoch as "claultnai" and then read every file as
-    # "default": the Lan-1 schema push stayed armed for an identity that never called
-    # again -- inert for exactly the desktop CA it was built for. One host process
-    # serves one CA, so remembering the last id seen is the correct scope.
-    _agent_id = ""
+    # A37 #0b + Group-3 Area 1: carry identity on EVERY proxied call, not only
+    # the ones whose schema happens to declare agent_id -- the daemon keys the
+    # bootstrap epoch (and the rule-core fetch-once guard) by agent id, so a
+    # host that sent it only on get_rule_core_text opened the epoch under the
+    # real id and then read every file as "default".
+    # Rule L (learning, scoped set-once): _MCP_AGENT_ID is written ONLY when
+    # env COUNCIL_AGENT_ID is empty, memory is empty, the payload carries a
+    # non-empty agent_id, and the tool is NOT an object tool
+    # (ct.AGENT_ID_OBJECT_TOOLS) -- an object selector must never become this
+    # host's identity.
+    # Rule S (stamp, path P1): object tools stamp the host identity H
+    # (_mcp_host_identity()); every other tool stamps this call's own payload
+    # agent_id when it carries one, else H.
+    _payload_agent_id = ""
     if isinstance(payload, dict):
-        _agent_id = str(payload.get("agent_id") or "").strip()
-    if _agent_id:
-        _MCP_AGENT_ID["v"] = _agent_id
-    _agent_id = _agent_id or _MCP_AGENT_ID["v"] or str(
-        os.environ.get("COUNCIL_AGENT_ID") or "").strip()
+        _payload_agent_id = str(payload.get("agent_id") or "").strip()
+    _is_object_tool = name in _mcp_object_tools(srv)
+    if (_payload_agent_id and not _is_object_tool
+            and not _MCP_AGENT_ID["v"]
+            and not str(os.environ.get("COUNCIL_AGENT_ID") or "").strip()):
+        _MCP_AGENT_ID["v"] = _payload_agent_id
+    if _is_object_tool:
+        _agent_id = _mcp_host_identity()
+    else:
+        _agent_id = _payload_agent_id or _mcp_host_identity()
     if _agent_id:
         headers["X-Agent-Id"] = _agent_id
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
@@ -1511,8 +1540,17 @@ def run_mcp_stdio() -> None:
             if _fields_now and not payload.get("fields"):
                 payload["fields"] = _fields_now
             _fields_spec = payload.get("fields") or ""
+            # Group-3 Area 1(c) / Rule S path P2: the host identity rides the
+            # request_meta headers channel, so the daemon resolves THIS host --
+            # never the payload's agent_id -- as the caller (header-first,
+            # orchestrator_server.py:15107-15112). An empty identity sends no
+            # header at all; the daemon's own fallback rungs then decide.
+            _host_identity = _mcp_host_identity()
+            _request_meta = ({"headers": {"X-Agent-Id": _host_identity}}
+                             if _host_identity else None)
             return _mcp_guard_response(lambda: _mcp_response_text(
-                srv._run_mcp_coro(srv.dispatch_tool_call(name, payload, transport="mcp"))),
+                srv._run_mcp_coro(srv.dispatch_tool_call(
+                    name, payload, transport="mcp", request_meta=_request_meta))),
                 _fields_spec)
 
         @_mcp.tool

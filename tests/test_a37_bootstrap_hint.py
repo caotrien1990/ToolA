@@ -597,3 +597,129 @@ def test_every_proxied_mcp_call_carries_the_agent_id(monkeypatch):
     _call("read_file_range", {"file_path": "x.py"})
     assert seen.get("X-agent-id") == "zcode", \
         "a later read landed in ctx 'default' -- the Lan-1 push stays inert over MCP"
+
+# --- Group-3 Area 1: scoped learning (Rule L) + the stamp matrix (Rule S) ---------
+# Extension of the A37 #0b pin above (which passes unchanged): learning is now
+# set-once and never sourced from an object tool, and env outranks memory.
+
+def _g3_proxy_harness(monkeypatch):
+    """Same capture seam as test_every_proxied_mcp_call_carries_the_agent_id,
+    with a clean identity state: no env, empty memory."""
+    seen: dict = {}
+
+    def _capture(req, http_timeout, name, payload, base):
+        seen.clear()
+        seen.update(req.headers)
+        return json.dumps({"ok": True})
+
+    monkeypatch.setattr(mcp_stdio, "_mcp_proxy_wait", _capture)
+    monkeypatch.setattr(mcp_stdio, "_mcp_proxy_base_url", lambda _srv: "http://localhost:8083")
+    monkeypatch.setattr(mcp_stdio, "_mcp_timeout_budget", lambda *a, **k: 5.0)
+    monkeypatch.setitem(mcp_stdio._MCP_AGENT_ID, "v", "")
+    monkeypatch.delenv("COUNCIL_AGENT_ID", raising=False)
+    return seen
+
+
+def _g3_call(name, payload):
+    try:
+        mcp_stdio._mcp_proxy_call(name, payload)
+    except Exception:
+        pass  # the header block already ran; the response shape is not measured
+
+
+def test_g3_object_tool_first_teaches_nothing_and_stamps_nothing(monkeypatch):
+    """Rule L(d) + Rule S: an object tool's agent_id is a TARGET selector.
+    As the host's first-ever call it must neither teach the host identity nor
+    stamp one -- and it must not leak into a later payload-free call."""
+    seen = _g3_proxy_harness(monkeypatch)
+    _g3_call("manage_agent", {"agent_id": "muse2"})
+    assert "X-agent-id" not in seen, "an object selector stamped the host identity"
+    assert mcp_stdio._MCP_AGENT_ID["v"] == "", "an object tool taught the host identity"
+    _g3_call("read_file_range", {"file_path": "x.py"})
+    assert "X-agent-id" not in seen, "the object selector leaked into a later call"
+
+
+def test_g3_learning_is_set_once(monkeypatch):
+    """Rule L(b): the first caller-semantics id wins memory; a later different
+    id still stamps its OWN call (Rule S, non-object branch) but never
+    overwrites what payload-free calls will use."""
+    seen = _g3_proxy_harness(monkeypatch)
+    _g3_call("get_rule_core_text", {"agent_id": "first"})
+    assert seen.get("X-agent-id") == "first"
+    _g3_call("get_rule_core_text", {"agent_id": "second"})
+    assert seen.get("X-agent-id") == "second", "a caller-semantics call stamps its own id"
+    assert mcp_stdio._MCP_AGENT_ID["v"] == "first", "learning overwrote the first id"
+    _g3_call("read_file_range", {"file_path": "x.py"})
+    assert seen.get("X-agent-id") == "first", "payload-free call must use the first learned id"
+
+
+def test_g3_env_outranks_memory_for_both_tool_classes(monkeypatch):
+    """Rule S case (iii): with env set AND memory set (a state only this seam
+    can manufacture), a payload-free call stamps the ENV value for BOTH an
+    object tool and a non-object tool; env also blocks learning entirely."""
+    seen = _g3_proxy_harness(monkeypatch)
+    monkeypatch.setitem(mcp_stdio._MCP_AGENT_ID, "v", "learned")
+    monkeypatch.setenv("COUNCIL_AGENT_ID", "provisioned")
+    _g3_call("read_file_range", {"file_path": "x.py"})
+    assert seen.get("X-agent-id") == "provisioned", "non-object: env must outrank memory"
+    _g3_call("manage_agent", {"agent_id": "target"})
+    assert seen.get("X-agent-id") == "provisioned", \
+        "object tool: stamp is H (env), never the payload target"
+    assert mcp_stdio._MCP_AGENT_ID["v"] == "learned", "env present must block learning"
+
+
+def test_g3_p2_call_tool_header_wins_over_payload(monkeypatch):
+    """Rule S path P2 + Area 1(c)/(d): the bridge stamps H through the
+    request_meta headers channel and the dispatch forwards that header into
+    the proxied call, so the daemon resolves H -- never the payload's
+    agent_id -- as the caller. An object-tool payload keeps its agent_id in
+    the body as the TARGET while the header still carries H."""
+    import urllib.request
+
+    # (c) the call site wires the resolver into request_meta.
+    source = _mcp_source()
+    at = source.index("def _mcp_call_text")
+    segment = source[at:at + 3000]
+    call_at = segment.index("srv.dispatch_tool_call")
+    assert "_mcp_host_identity()" in segment[:call_at], \
+        "the P2 call site does not resolve the host identity"
+    assert "request_meta" in segment[call_at:call_at + 250], \
+        "the P2 call site does not pass request_meta"
+
+    captured: dict = {}
+
+    class _Resp:
+        def read(self):
+            return b'{"ok": true}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+    def _fake_urlopen(request, timeout=None):
+        captured["headers"] = {k.lower(): v for k, v in request.header_items()}
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        return _Resp()
+
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+    meta = {"headers": {"X-Agent-Id": "host-h"}}
+
+    # Non-object tool: payload identity must NOT become the wire caller.
+    asyncio.run(srv.dispatch_tool_call(
+        "search_code",
+        {"query": "g3-p2-pin", "agent_id": "payload-id", "session_id": "g3-p2-pin"},
+        transport="mcp", request_meta=meta))
+    assert captured["headers"].get("x-agent-id") == "host-h", \
+        "the daemon would resolve the payload id, not H, as the P2 caller"
+
+    # Object tool: body target preserved, header still H.
+    asyncio.run(srv.dispatch_tool_call(
+        "manage_agent",
+        {"action": "get", "agent_id": "target-id", "session_id": "g3-p2-pin"},
+        transport="mcp", request_meta=meta))
+    assert captured["headers"].get("x-agent-id") == "host-h", \
+        "object tool: the header must carry H, not the target"
+    assert captured["body"].get("agent_id") == "target-id", \
+        "object tool: the payload target must survive the proxy leg"

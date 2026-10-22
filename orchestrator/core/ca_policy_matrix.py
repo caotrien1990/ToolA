@@ -13,6 +13,7 @@ duplicate Matrix content — it loads SOT and derives:
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sqlite3
 from collections import defaultdict
@@ -26,6 +27,8 @@ from orchestrator.council.identity import canonical_id
 _ROOT = Path(__file__).resolve().parents[2]  # project-orchestrator/
 _MATRIX_PATH = _ROOT / ".council" / "CA_TOOL_POLICY_MATRIX.json"
 _AGENT_REGISTRY_PATH = _ROOT / "agents_registry.json"
+
+logger = logging.getLogger(__name__)
 
 # AUDIT-KEEP(roster), Anh 2026-09-29: the retired worker ids in the two sets below
 # (hermes/hermc/herm_c, kilo/kiloc/kilo_c, comc/comc_c/com_c) are inert -- the suffix
@@ -736,8 +739,27 @@ def load_agents_registry_file(path) -> dict:
     This helper RAISES on a missing/corrupt file. Callers keep their own
     existence check and error policy (fail-safe vs fail-loud) on top of it — the
     decode is unified, the caller error contracts are deliberately NOT.
+
+    Group-3 Area 2 (Rule O): a read/parse failure logs exactly one WARNING
+    here — path + failure_class + the raw exception class — then re-raises
+    the same exception, so every consumer inherits the signal with its own
+    policy untouched. FileNotFoundError is exempt: a missing registry is a
+    legitimate state, and not every consumer guards existence.
     """
-    return json.loads(Path(path).read_text(encoding="utf-8-sig"))
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8-sig"))
+    except FileNotFoundError:
+        raise
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        logger.warning(
+            "agents_registry load failed path=%s failure_class=unparseable exc=%s",
+            path, type(exc).__name__)
+        raise
+    except OSError as exc:
+        logger.warning(
+            "agents_registry load failed path=%s failure_class=unreadable exc=%s",
+            path, type(exc).__name__)
+        raise
 
 
 def normalize_agent_record(agent_id: str, record: dict) -> dict:
