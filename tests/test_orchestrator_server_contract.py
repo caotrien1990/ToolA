@@ -3665,7 +3665,7 @@ class TestHttpDefense(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(data['ready'])
         for field in ('service', 'pid', 'generation', 'started_at', 'livez_protocol'):
             self.assertEqual(data[field], livez[field])
-        self.assertEqual(data['livez_protocol'], 1)
+        self.assertEqual(data['livez_protocol'], orchestrator_server.LIVEZ_PROTOCOL)
 
     async def test_health_returns_503_while_boot_recovery_is_pending(self):
         with mock.patch.object(orchestrator_server, 'SERVER_READY', False), \

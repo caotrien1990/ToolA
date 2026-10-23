@@ -777,6 +777,48 @@ def _should_defer_auto_heal(
     if not inflight:
         return False, "not_busy"
     return True, "inflight"
+def _should_skip_heal_during_boot(
+    livez_url: str,
+    *,
+    boot_grace_s: float = 600.0,
+    timeout: float = 2.0,
+) -> tuple[bool, str]:
+    """Return (skip, reason) if the daemon reports it is still booting.
+
+    R3 (2026-10-15): the auto-heal monitor killed healthy daemons mid-boot
+    because /livez (thread-isolated) answers ~3min before /health (aiohttp
+    not started yet). If the daemon speaks livez_protocol>=2 and reports
+    startup_phase outside {ready, ready_degraded} with boot_age_s <
+    boot_grace_s, skip the heal. Protocol 1 daemons (old) keep legacy
+    behavior. Past the grace period, a non-ready daemon is treated as hung
+    like before.
+    """
+    try:
+        with urllib.request.urlopen(livez_url, timeout=timeout) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return False, "livez_unreachable"
+    if not isinstance(payload, dict):
+        return False, "invalid_payload"
+    protocol = payload.get("livez_protocol", 1)
+    try:
+        protocol = int(protocol)
+    except (TypeError, ValueError):
+        protocol = 1
+    if protocol < 2:
+        return False, "protocol_1_legacy"
+    phase = str(payload.get("startup_phase") or "")
+    if phase in {"ready", "ready_degraded"}:
+        return False, "already_ready"
+    boot_age = payload.get("boot_age_s")
+    try:
+        boot_age = float(boot_age)
+    except (TypeError, ValueError):
+        return False, "invalid_boot_age"
+    if boot_age >= boot_grace_s:
+        return False, "boot_grace_expired"
+    return True, f"booting_phase={phase}_age={boot_age:.1f}s"
+
 
 
 def _auto_heal_monitor(
@@ -863,6 +905,20 @@ def _auto_heal_monitor(
                     "event": "auto_heal_deferred_inflight",
                     "reason": defer_why,
                     "defer_streak": defer_streak,
+                    "hung_streak": hung_streak,
+                })
+                continue
+            # R3 (2026-10-15): do not count a booting daemon as hung. During
+            # boot /livez is up (thread-isolated) but /health is not (aiohttp
+            # not started yet) for ~3min. Killing here caused 5 boot-kill
+            # loops on 2026-10-15 (21:37-21:51).
+            boot_grace_s = float(os.environ.get("ORCH_BOOT_GRACE_S", "600"))
+            boot_skip, boot_why = _should_skip_heal_during_boot(
+                livez_url, boot_grace_s=boot_grace_s)
+            if boot_skip:
+                append_audit({
+                    "event": "auto_heal_skip_booting",
+                    "reason": boot_why,
                     "hung_streak": hung_streak,
                 })
                 continue
