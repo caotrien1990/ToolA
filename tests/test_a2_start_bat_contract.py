@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 BAT = ROOT / "start_orchestrator.bat"
 HELPER = ROOT / "orchestrator" / "lifecycle" / "as_bat_helpers.py"
+CONTRACT = ROOT / "orchestrator" / "lifecycle" / "livez_contract.py"
 
 
 def _lower_lines(text: str) -> list[str]:
@@ -33,6 +34,7 @@ class TestA2BatContract(unittest.TestCase):
         cls.text = BAT.read_text(encoding="utf-8").lower()
         cls.lines = _lower_lines(cls.text)
         cls.helper = HELPER.read_text(encoding="utf-8").lower()
+        cls.contract = CONTRACT.read_text(encoding="utf-8").lower()
 
     # ---------- F4: TOOLA_NO_PAUSE + no browser ----------
     def test_f4_toolano_pause_set_before_any_launch(self):
@@ -49,15 +51,21 @@ class TestA2BatContract(unittest.TestCase):
 
     # ---------- F5: livez is the authoritative readiness ----------
     def test_f5_livez_polled_before_health_generation(self):
-        livez_idx = _first_index(self.lines, "127.0.0.1:8084/livez")
-        health_gen_idx = _first_index(self.lines, "http://localhost:8083/health")
-        self.assertGreaterEqual(livez_idx, 0, "livez endpoint missing")
-        self.assertGreaterEqual(health_gen_idx, 0, "health endpoint missing")
+        owner_idx = _first_index(self.lines, "wait-new-owner")
+        wait_idx = _first_index(self.lines, "wait-livez")
+        candidates = [i for i in (owner_idx, wait_idx) if i >= 0]
+        self.assertTrue(candidates, "helper livez call missing from bat")
+        livez_idx = min(candidates)
+        health_gen_idx = _first_index(self.lines, "wait-health-gen")
+        self.assertGreaterEqual(health_gen_idx, 0, "health generation call missing")
         self.assertLess(livez_idx, health_gen_idx, "livez must be polled before /health")
+        self.assertNotIn("127.0.0.1:8084/livez", self.text)
 
     def test_f5_livez_contract_triplet(self):
-        self.assertIn("127.0.0.1:8084/livez", self.text)
-        self.assertIn("livez_protocol", self.helper)
+        self.assertIn("wait-livez", self.text)
+        self.assertIn("wait-new-owner", self.text)
+        self.assertNotIn("127.0.0.1:8084/livez", self.text)
+        self.assertIn("livez_protocol", self.contract)
         self.assertIn("project-orchestrator", self.helper)
         self.assertIn('payload.get("ok")', self.helper)
 

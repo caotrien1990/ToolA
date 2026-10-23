@@ -97,21 +97,14 @@ exit /b %SERVER_RC%
 REM Readiness gate: /livez is independent of the aiohttp event loop. A listening
 REM 8083 port with no /livez yet means the new process is still starting, not dead.
 REM Kept for --probe-readiness callers; launch path uses pythonw probe-livez.
-set "OK=0"
-for /L %%i in (1,1,120) do (
-  "%PYW%" -c "import json,urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8084/livez',timeout=2); d=json.loads(r.read()); sys.exit(0 if r.status==200 and d.get('ok') and d.get('service')=='project-orchestrator' and d.get('livez_protocol')==1 else 1)" >>"%LOG%" 2>&1
-  if not errorlevel 1 (
-    set "OK=1"
-    echo [4] livez ok at iter %%i>>"%LOG%"
-    goto PROBE_DONE
-  )
-  ping 127.0.0.1 -n 2 >nul
-)
-echo [4] livez timeout after extended 120-probe gate>>"%LOG%"
-:PROBE_DONE
-if "%OK%"=="1" (
-  echo [OK] high_il readiness complete; scheduled task retains child ownership>>"%LOG%"
-  exit /b 0
-)
-echo [FAIL] high_il readiness incomplete; scheduled task still owns child lifetime>>"%LOG%"
-exit /b 1
+REM Body delegated to as_bat_helpers probe-livez mode gate (livez_contract):
+REM the helper writes the same [4] livez ok / timeout and [OK] / [FAIL] result
+REM lines to %LOG%, plus one "[4] iter n: port 8083 listening; service still"
+REM "starting" line per iteration while the port listens but /livez is not ready.
+set "PYW=%ROOT%venv312\Scripts\pythonw.exe"
+if not exist "%PYW%" set "PYW=pythonw.exe"
+pushd "%ROOT%"
+"%PYW%" -m orchestrator.lifecycle.as_bat_helpers probe-livez --mode gate --log "%LOG%" --timeout-s 120
+set "PROBE_RC=%ERRORLEVEL%"
+popd
+exit /b %PROBE_RC%

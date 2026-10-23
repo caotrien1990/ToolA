@@ -17,6 +17,12 @@ from dataclasses import dataclass
 from typing import Callable, Mapping, Protocol
 
 from .restart_guard import GuardDecision, evaluate_restart_guard
+from .livez_contract import (
+    classify_livez,
+    fetch_result_error,
+    fetch_result_ok,
+    rcs_skip_verdict,
+)
 from .restart_protocol import (
     RestartProtocolError,
     RestartRequest,
@@ -796,28 +802,15 @@ def _should_skip_heal_during_boot(
     try:
         with urllib.request.urlopen(livez_url, timeout=timeout) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
-    except Exception:
-        return False, "livez_unreachable"
-    if not isinstance(payload, dict):
-        return False, "invalid_payload"
-    protocol = payload.get("livez_protocol", 1)
-    try:
-        protocol = int(protocol)
-    except (TypeError, ValueError):
-        protocol = 1
-    if protocol < 2:
-        return False, "protocol_1_legacy"
-    phase = str(payload.get("startup_phase") or "")
-    if phase in {"ready", "ready_degraded"}:
-        return False, "already_ready"
-    boot_age = payload.get("boot_age_s")
-    try:
-        boot_age = float(boot_age)
-    except (TypeError, ValueError):
-        return False, "invalid_boot_age"
-    if boot_age >= boot_grace_s:
-        return False, "boot_grace_expired"
-    return True, f"booting_phase={phase}_age={boot_age:.1f}s"
+    except Exception as exc:
+        return rcs_skip_verdict(
+            classify_livez(fetch_result_error(exc), grace_s=boot_grace_s),
+            grace_s=boot_grace_s,
+        )
+    return rcs_skip_verdict(
+        classify_livez(fetch_result_ok(payload), grace_s=boot_grace_s),
+        grace_s=boot_grace_s,
+    )
 
 
 

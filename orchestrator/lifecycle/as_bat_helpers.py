@@ -7,6 +7,7 @@ when one exists; otherwise CREATE_NO_WINDOW is the fallback.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import subprocess
@@ -15,6 +16,8 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+from orchestrator.lifecycle import livez_contract
 
 from orchestrator.lifecycle.console_warp import (
     CREATE_NO_WINDOW,
@@ -169,25 +172,62 @@ def cmd_schtasks(args: argparse.Namespace) -> int:
     return 0 if result.returncode == 0 else 1
 
 
-def _livez_ok(url: str, timeout: float = 2.0) -> dict | None:
+def _livez_port() -> int:
+    raw = os.environ.get("ORCHESTRATOR_LIVEZ_PORT")
+    if raw:
+        try:
+            return int(raw)
+        except ValueError:
+            pass
+    return 8084
+
+
+def _orchestrator_port() -> int:
+    raw = os.environ.get("ORCHESTRATOR_PORT")
+    if raw:
+        try:
+            return int(raw)
+        except ValueError:
+            pass
+    return 8083
+
+
+def _livez_url() -> str:
+    return f"http://127.0.0.1:{_livez_port()}/livez"
+
+
+def _fetch_livez(url: str, timeout: float = 2.0) -> dict:
+    """Fetch /livez once, normalized to a livez_contract FetchResult.
+
+    The fetch mechanism is the historical one (urllib, same exception
+    surface); only the acceptance predicate moved to livez_contract.
+    A non-dict JSON body no longer raises AttributeError here (PNT-13):
+    it flows into classify_livez, which returns INVALID.
+    """
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
-    except (OSError, ValueError, urllib.error.URLError, json.JSONDecodeError):
-        return None
-    if (
-        payload.get("ok")
-        and payload.get("service") == "project-orchestrator"
-        and payload.get("livez_protocol") == 1
-    ):
-        return payload
+    except (OSError, ValueError, urllib.error.URLError, json.JSONDecodeError, http.client.HTTPException) as exc:
+        return livez_contract.fetch_result_error(exc)
+    return livez_contract.fetch_result_ok(payload)
+
+
+def _livez_assessment(url: str, timeout: float = 2.0) -> livez_contract.Assessment:
+    return livez_contract.classify_livez(_fetch_livez(url, timeout=timeout))
+
+
+def _livez_ok(url: str, timeout: float = 2.0) -> dict | None:
+    result = _fetch_livez(url, timeout=timeout)
+    if livez_contract.classify_livez(result).is_alive:
+        return result["payload"]
     return None
 
 
 def cmd_wait_livez(args: argparse.Namespace) -> int:
+    url = getattr(args, "url", None) or _livez_url()
     deadline = time.monotonic() + float(args.timeout_s)
     while time.monotonic() < deadline:
-        if _livez_ok(args.url):
+        if _livez_ok(url):
             return 0
         time.sleep(1)
     return 1
@@ -214,10 +254,12 @@ def cmd_wait_health_gen(args: argparse.Namespace) -> int:
 
 def cmd_wait_new_owner(args: argparse.Namespace) -> int:
     before = str(args.before or "")
+    livez_url = getattr(args, "livez", None) or _livez_url()
+    port = getattr(args, "port", None) or _orchestrator_port()
     deadline = time.monotonic() + float(args.timeout_s)
     while time.monotonic() < deadline:
-        payload = _livez_ok(args.livez, timeout=3)
-        pid_now = get_listen_pid(args.port)
+        payload = _livez_ok(livez_url, timeout=3)
+        pid_now = get_listen_pid(port)
         if payload and pid_now and (not before or str(pid_now) != before):
             print(f"[OK] instance moi pid={pid_now}", flush=True)
             return 0
@@ -277,6 +319,10 @@ def cmd_run_ps1(args: argparse.Namespace) -> int:
 
 def cmd_probe_livez(args: argparse.Namespace) -> int:
     log = Path(args.log) if args.log else None
+    mode = str(getattr(args, "mode", "gate") or "gate")
+    url = getattr(args, "url", None) or _livez_url()
+    port = _orchestrator_port()
+    timeout_s = float(args.timeout_s)
 
     def _log(line: str) -> None:
         if log is None:
@@ -287,19 +333,34 @@ def cmd_probe_livez(args: argparse.Namespace) -> int:
         except OSError:
             pass
 
-    deadline = time.monotonic() + float(args.timeout_s)
+    deadline = time.monotonic() + timeout_s
     iteration = 0
+    last_state = "UNREACHABLE"
     while time.monotonic() < deadline:
         iteration += 1
-        if _livez_ok("http://127.0.0.1:8084/livez"):
+        assessment = _livez_assessment(url)
+        last_state = assessment.state
+        if assessment.is_alive:
             _log(f"[4] livez ok at iter {iteration}")
-            _log("[OK] high_il readiness complete; scheduled task retains child ownership")
+            if mode == "advisory":
+                _log(
+                    f"[4] advisory verdict: state={assessment.state} "
+                    f"phase={assessment.phase}"
+                )
+            else:
+                _log("[OK] high_il readiness complete; scheduled task retains child ownership")
             return 0
-        listening = get_listen_pid(8083) is not None
+        listening = get_listen_pid(port) is not None
         if listening:
-            _log(f"[4] iter {iteration}: port 8083 listening; service still starting")
+            _log(f"[4] iter {iteration}: port {port} listening; service still starting")
         time.sleep(1)
-    _log("[4] livez timeout after extended 120-probe gate")
+    if mode == "advisory":
+        _log(
+            f"[4] advisory verdict: state={last_state} "
+            f"(not alive within {timeout_s:g}s)"
+        )
+        return 0
+    _log(f"[4] livez timeout after extended {timeout_s:g}s gate")
     _log("[FAIL] high_il readiness incomplete; scheduled task still owns child lifetime")
     return 1
 
@@ -339,7 +400,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("name")
 
     p = sub.add_parser("wait-livez")
-    p.add_argument("--url", default="http://127.0.0.1:8084/livez")
+    p.add_argument("--url", default=None)
     p.add_argument("--timeout-s", type=float, default=60)
     p.set_defaults(func=cmd_wait_livez)
 
@@ -349,9 +410,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_wait_health_gen)
 
     p = sub.add_parser("wait-new-owner")
-    p.add_argument("--port", type=int, default=8083)
+    p.add_argument("--port", type=int, default=None)
     p.add_argument("--before", default="")
-    p.add_argument("--livez", default="http://127.0.0.1:8084/livez")
+    p.add_argument("--livez", default=None)
     p.add_argument("--timeout-s", type=float, default=90)
     p.set_defaults(func=cmd_wait_new_owner)
 
@@ -372,6 +433,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("probe-livez")
     p.add_argument("--log", default="")
+    p.add_argument("--url", default="")
+    p.add_argument("--mode", choices=["advisory", "gate"], default="gate")
     p.add_argument("--timeout-s", type=float, default=120)
     p.set_defaults(func=cmd_probe_livez)
 

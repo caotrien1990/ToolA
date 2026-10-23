@@ -234,3 +234,14 @@ R0→R5 đạt 100% PASS. R6 hoàn tất investigation. Đủ điều kiện res
 **Cần:** Anh nói literal "tiến hành" riêng cho restart.
 
 **Verify sau restart:** PID mới + generation đổi + `/health` OK.
+
+---
+
+## ERRATA — 2026-10-23 (campaign livez-drift-20261023, PNT-15)
+
+Mục này đính chính phạm vi của các khẳng định trong báo cáo trên; nội dung lịch sử của báo cáo giữ nguyên, không viết lại.
+
+1. Khẳng định "Tất cả đều pure-additive, flag-gated" (phần R6) và cách đọc "R0→R5 đạt 100% PASS" như một verdict cấp hệ thống là QUÁ PHẠM VI bằng chứng tại thời điểm viết:
+   - Việc đổi `LIVEZ_PROTOCOL` 1 → 2 (R3, thay đổi #1–#3) KHÔNG có flag và KHÔNG thuần cộng ở cấp hợp đồng: nó đổi giá trị trên wire trong khi các consumer còn lại (`watchdog_a.py`, `as_bat_helpers.py`, `start_orchestrator_high_il.cmd`) vẫn đòi `== 1`. Hệ quả đo được: watchdog bắn restart oan daemon đang sống 2 lần ngày 2026-10-23 (15:19:47 + 15:29:33) khi /health nghẽn, và cổng start [A:S] fail tất định.
+   - Các verdict PASS trong báo cáo này (gồm "5/5 PASS. Không lỗ hổng." ở R3) chỉ có giá trị ở phạm vi component đã verify lúc đó (restart_control_service + test R3), không phải verdict cấp hệ thống cho toàn bộ bề mặt tiêu thụ /livez.
+2. Vấn đề đã được xử lý bởi campaign livez-drift-20261023 (PLAN FINAL v12): hợp đồng /livez có single source of truth tại `orchestrator/lifecycle/livez_contract.py`, mọi consumer dùng chung classify; lưới chống tái drift = test_livez_contract + test_livez_parity + test_livez_future_bump + test_livez_static_guard + R3 suite.

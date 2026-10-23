@@ -58,7 +58,7 @@ def _run(monkeypatch, tmp_path, health, now=100.0, livez=None):
     monkeypatch.setattr(wd.time, "time", lambda: now)
     if livez is None:
         livez = {"ok": True, "service": "project-orchestrator",
-                 "livez_protocol": wd.LIVEZ_PROTOCOL,
+                 "livez_protocol": 1,
                  "generation": health.get("generation", "g1")}
     replies = [livez, health]
     monkeypatch.setattr(wd, "_read_json", lambda *a, **k: replies.pop(0))

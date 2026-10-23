@@ -59,15 +59,18 @@ class TestWatchdogProbeContract(unittest.TestCase):
         self.assertEqual(out_health, health)
         self.assertIn("livez_OSError", detail)
 
-    def test_livez_responds_but_wrong_protocol_is_not_livez_ok(self):
-        # livez endpoint answers cleanly but advertises an unsupported protocol:
-        # the contract check must reject it (livez_ok False), not accept the reply.
+    def test_livez_protocol2_without_phase_is_mismatch_but_alive(self):
+        # Re-pinned at Sprint 3 per plan D1/D3: protocol 2 IS the current
+        # contract, so the old "unsupported protocol" expectation is gone.
+        # A protocol-2 reply without startup_phase classifies MISMATCH --
+        # still in the alive family, so livez_ok is True -- while its
+        # anchor detail stays "livez_contract_mismatch".
         livez = {"ok": True, "service": "project-orchestrator",
                  "livez_protocol": 2, "generation": "future"}
         health = _health(generation="future", lanes=[{"active": 0, "queued": 0, "capacity": 4}])
         with mock.patch.object(watchdog_a, "_read_json", side_effect=[livez, health]):
             classification, generation, detail, _out_health, livez_ok = watchdog_a.probe()
-        self.assertFalse(livez_ok)
+        self.assertTrue(livez_ok)
         self.assertEqual(classification, "healthy")
         self.assertEqual(generation, "future")
         self.assertIn("livez_contract_mismatch", detail)
@@ -118,8 +121,11 @@ class TestWatchdogDecisionLoop(unittest.TestCase):
                 str(Path(tempdir) / "does_not_exist.log"))
 
     def _livez(self, generation="g1"):
+        # Fixture protocol is a literal (Sprint 3 re-pin, plan D5): the
+        # fixture must not read the constant from the module under test.
+        # 1 == the LEGACY payload this fixture has always produced.
         return {"ok": True, "service": "project-orchestrator",
-                "livez_protocol": watchdog_a.LIVEZ_PROTOCOL, "generation": generation}
+                "livez_protocol": 1, "generation": generation}
 
     def test_dead_daemon_restarts_exactly_once(self):
         """Pins D1 (unreachable restart): a failed health probe returns

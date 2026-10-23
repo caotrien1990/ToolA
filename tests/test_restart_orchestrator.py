@@ -140,12 +140,12 @@ class TestRestartScriptContracts(unittest.TestCase):
             high_il.index("strict stop gate blocked launch"),
             high_il.index("launch scheduler-owned pythonw"),
         )
-        self.assertIn("livez_protocol", high_il)
+        self.assertIn("orchestrator.lifecycle.as_bat_helpers probe-livez --mode gate", high_il)
         self.assertNotIn('start "toola_orchestrator" /wait', high_il)
         self.assertNotIn('start "toola_readinessprobe"', high_il)
         self.assertIn('"%pyw%" "%root%orchestrator_server.py"', high_il)
         self.assertIn("--probe-readiness", high_il)
-        self.assertIn("retains child ownership", high_il)
+        self.assertIn("retains child ownership", (root / "orchestrator" / "lifecycle" / "as_bat_helpers.py").read_text(encoding="utf-8").lower())
         self.assertIn(":after_ready", external)
         self.assertIn("ignorenew", external)
         self.assertIn("toola_forcerestart", external)

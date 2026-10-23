@@ -5,7 +5,7 @@ import argparse
 import unittest
 from unittest import mock
 
-from orchestrator.lifecycle import as_bat_helpers, console_warp
+from orchestrator.lifecycle import as_bat_helpers, console_warp, livez_contract
 
 
 class TestAsBatHelpersHidden(unittest.TestCase):
@@ -43,7 +43,8 @@ class TestAsBatHelpersHidden(unittest.TestCase):
     def test_livez_contract_requires_triplet(self):
         src = as_bat_helpers.__file__
         text = open(src, encoding="utf-8").read()
-        self.assertIn("livez_protocol", text)
+        contract_text = open(livez_contract.__file__, encoding="utf-8").read()
+        self.assertIn("livez_protocol", contract_text)
         self.assertIn("project-orchestrator", text)
         self.assertIn("CREATE_NO_WINDOW", text)
         self.assertNotIn("WindowStyle Hidden", text)
@@ -63,6 +64,24 @@ class TestAsBatHelpersHidden(unittest.TestCase):
                 argparse.Namespace(name="ToolA_Orchestrator", state="Ready", timeout_s=1)
             )
         self.assertEqual(rc, 0)
+
+
+class TestFetchLivezHttpException(unittest.TestCase):
+    """LOW-fix B-2: http.client.HTTPException from the transport (garbage
+    HTTP from a responder) normalizes to a fetch error, never a crash."""
+
+    def test_bad_status_line_normalizes_to_fetch_error(self):
+        import http.client
+
+        with mock.patch.object(
+            as_bat_helpers.urllib.request,
+            "urlopen",
+            side_effect=http.client.BadStatusLine("garbage status line"),
+        ):
+            result = as_bat_helpers._fetch_livez("http://127.0.0.1:8084/livez", timeout=1)
+        self.assertEqual(result["outcome"], "error")
+        assessment = livez_contract.classify_livez(result)
+        self.assertEqual(assessment.state, livez_contract.UNREACHABLE)
 
 
 if __name__ == "__main__":

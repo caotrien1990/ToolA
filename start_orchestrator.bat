@@ -195,7 +195,7 @@ curl.exe -sS --max-time 15 -X POST "http://localhost:8083/api/call/restart_orche
 echo.
 echo [*] Cho instance moi sau HTTP fallback ^(PID khac PID_BEFORE=!PID_BEFORE!^)...
 pushd "%~dp0"
-"!CLI_PYW!" -m orchestrator.lifecycle.as_bat_helpers wait-new-owner --port 8083 --before "!PID_BEFORE!" --livez http://127.0.0.1:8084/livez --timeout-s 90
+"!CLI_PYW!" -m orchestrator.lifecycle.as_bat_helpers wait-new-owner --port 8083 --before "!PID_BEFORE!" --timeout-s 90
 set "FALLBACK_RC=!ERRORLEVEL!"
 popd
 if not "!FALLBACK_RC!"=="0" (
@@ -206,7 +206,7 @@ goto RUN_DONE
 
 :WAIT_NEW_PID
 pushd "%~dp0"
-"!CLI_PYW!" -m orchestrator.lifecycle.as_bat_helpers wait-new-owner --port 8083 --before "!PID_BEFORE!" --livez http://127.0.0.1:8084/livez --timeout-s 90
+"!CLI_PYW!" -m orchestrator.lifecycle.as_bat_helpers wait-new-owner --port 8083 --before "!PID_BEFORE!" --timeout-s 90
 set "WAIT_RC=!ERRORLEVEL!"
 popd
 if not "!WAIT_RC!"=="0" (
@@ -219,9 +219,9 @@ goto PROVE_LIVE
 REM ================================ F5 livez readiness ================================
 :PROVE_LIVE
 REM A2 (F5): /livez on 127.0.0.1:8084 is the authoritative readiness signal (aiohttp-independent).
-echo [*] Cho /livez tren 127.0.0.1:8084 ^(ok + service + livez_protocol==1^)...
+echo [*] Cho /livez san sang ^(ok + service, theo livez contract^)...
 pushd "%~dp0"
-"!CLI_PYW!" -m orchestrator.lifecycle.as_bat_helpers wait-livez --url http://127.0.0.1:8084/livez --timeout-s 60
+"!CLI_PYW!" -m orchestrator.lifecycle.as_bat_helpers wait-livez --timeout-s 60
 set "LIVEZ_RC=!ERRORLEVEL!"
 popd
 if not "!LIVEZ_RC!"=="0" (

@@ -81,6 +81,8 @@ HIGH_IL_ENV = {
     "ORCH_EXEC_BACKUP_WORKERS": "4",
     "ORCH_EXEC_BACKUP_QUEUE": "12",
     "ORCH_DEFAULT_EXECUTOR_WORKERS": "56",
+    "ORCH_PHASE_TIMING": "1",
+    "ORCH_LOCK_HOLDER_TRACE": "1",
 }
 
 
@@ -135,7 +137,7 @@ def stop_gate(root: Path, pyw: Path, log: Path, clear_timeout: int) -> int:
 
 
 def start_probe(log: Path) -> None:
-    args = argparse.Namespace(log=str(log), timeout_s=120)
+    args = argparse.Namespace(log=str(log), timeout_s=120, mode="advisory")
     thread = threading.Thread(
         target=cmd_probe_livez,
         args=(args,),
