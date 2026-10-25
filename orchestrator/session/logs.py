@@ -50,6 +50,331 @@ _TMP_ORPHAN_TTL_SECONDS = 15 * 60
 # write path) drops entries older than this many days.
 USAGE_LOG_RETENTION_DAYS = 3
 
+# CF-09 (Phase 1, Sprint 1) — append-only log write path, flag-gated.
+#
+# Flag: PHASE1_CF9_FLAG, REQUIRED, default OFF (draft v13 §7 convention
+# PHASE1_<CF>_FLAG as a code constant). Mechanism verified in this file,
+# never assumed: this module already carries module-level constants read
+# at call time (e.g. _TMP_ORPHAN_TTL_SECONDS, USAGE_LOG_RETENTION_DAYS)
+# and the call-time env-override pattern in _usage_log_path, so a code
+# constant is a mechanism this file already supports. No config-file
+# move was needed, so no move is filed (E1-T5 cure: filed here + the
+# Gate 1 mechanism-verification duty stands). Flip requires a restart
+# (U-P2 CLOSED, Phase 0 §8.1: NO FLAG FLIP — RESTART REQUIRED).
+# Kill switch = G5 rollback (revert + restart); latency = approval +
+# drain window, NOT instant. Soak = one full Gate 3 window with
+# operational-watch criteria passing and no new error names; soak
+# deadline + removal owner are recorded in the ledger row at flag
+# creation (coordinator records; not restated here as a decision).
+PHASE1_CF9_FLAG = False
+
+# Rotation trigger: SIZE (bytes), not line count alone. A rotation file
+# at this size holds roughly an order of magnitude more records than the
+# old 1,000-line cap at typical row sizes; the exact record count is
+# load-dependent and is NOT claimed as a retention guarantee.
+CF09_ROTATION_MAX_BYTES = 10 * 1024 * 1024
+
+# Total evidence-channel disk budget: live log + ALL archives in the
+# archive directory COMBINED. Archive growth beyond this bound triggers
+# archival to a named external location (when
+# ORCHESTRATOR_CF9_EXTERNAL_ARCHIVE_DIR is set) or operator escalation
+# (marker file, automatic rotation pauses) — never silent deletion of
+# archives. Archives moved to the external location leave this local
+# bound; that move is itself hash-verified (see
+# _cf09_enforce_combined_bound).
+CF09_COMBINED_DISK_BUDGET_BYTES = 100 * 1024 * 1024
+
+CF09_EXTERNAL_ARCHIVE_ENV = "ORCHESTRATOR_CF9_EXTERNAL_ARCHIVE_DIR"
+
+# In-process rotation state, keyed by str(log_path) / str(archive_path).
+# Automatic rotation pauses for a log while its delete-fail or
+# bound-breach pause is set; an explicit _cf09_rotate() call still
+# attempts and clears the pause on success. State is intentionally
+# in-process: a restart re-derives it from disk (hash-equal archive
+# detection), so a paused rotation can never strand a log forever.
+_CF09_ROTATION_PAUSED = set()
+_CF09_DELETE_ATTEMPTS = {}
+
+
+def _phase1_cf9_enabled() -> bool:
+    """Read PHASE1_CF9_FLAG at call time (global lookup, so tests and a
+    restart-time edit both take effect without re-import tricks)."""
+    return bool(PHASE1_CF9_FLAG)
+
+
+def _cf09_now():
+    """Now, as a seam: tests pin it to fix dated archive names."""
+    return datetime.now()
+
+
+def _cf09_archive_dir(log_path: Path) -> Path:
+    """NAMED archive location: a sibling `<stem>_archive` directory next
+    to the log file (e.g. `.orchestrator_cache/USAGE_LOG_archive/`)."""
+    return Path(log_path).parent / (Path(log_path).stem + "_archive")
+
+
+def _cf09_dated_archive_name(log_path: Path, when=None) -> str:
+    # Windows-safe: strftime %Y%m%d-%H%M%S contains no ':' or '/'.
+    stamp = (_cf09_now() if when is None else when).strftime("%Y%m%d-%H%M%S")
+    return f"{Path(log_path).stem}-{stamp}.jsonl"
+
+
+def _cf09_sha256_file(path: Path) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _cf09_sha256_bytes(data: bytes) -> str:
+    import hashlib
+
+    return hashlib.sha256(data).hexdigest()
+
+
+def _cf09_escalate(log_path: Path, kind: str, detail: dict) -> None:
+    """Best-effort operator escalation: a marker file in the archive
+    directory. Never raises, never fails the append that triggered it.
+    Rotation owner (named): the Stage 3 coordinator, who owns the
+    CF-09 ledger row and consumes escalation markers at the Gate 3
+    operational watch."""
+    try:
+        archive_dir = _cf09_archive_dir(log_path)
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        stamp = _cf09_now().strftime("%Y%m%d-%H%M%S-%f")
+        marker = archive_dir / f"CF09_ESCALATION-{kind}-{stamp}.json"
+        payload = {"kind": kind, "log": str(log_path),
+                   "ts": _cf09_now().isoformat(timespec="seconds")}
+        payload.update(detail)
+        marker.write_text(json.dumps(payload, ensure_ascii=False) + "\n",
+                          encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _cf09_append_record(log_path: Path, line: str) -> bool:
+    """Append ONE record; never read the file back, never rewrite it.
+    fsync per record, preserving the durability step the old atomic
+    rewrite got from _atomic_write_bytes (flush + os.fsync)."""
+    try:
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        return True
+    except Exception:
+        return False
+
+
+def _cf09_combined_bytes(log_path: Path) -> int:
+    """Live log + *.jsonl archives COMBINED. Marker files
+    (CF09_ESCALATION-*.json) and tmp files are operational metadata,
+    not evidence, and are excluded — stated, not hidden. Archives with
+    non-standard names still count: the bound scans the whole archive
+    directory, so an interval change cannot strand archives outside it
+    (a cleanup pass is never required to keep the bound true)."""
+    total = 0
+    try:
+        if Path(log_path).exists():
+            total += Path(log_path).stat().st_size
+    except OSError:
+        pass
+    try:
+        archive_dir = _cf09_archive_dir(log_path)
+        if archive_dir.is_dir():
+            for candidate in archive_dir.iterdir():
+                if candidate.is_file() and candidate.suffix == ".jsonl":
+                    try:
+                        total += candidate.stat().st_size
+                    except OSError:
+                        continue
+    except OSError:
+        pass
+    return total
+
+
+def _cf09_delete_verified(path: Path) -> bool:
+    """Unlink + post-delete existence check. Returns False (never
+    raises) when the unlink fails or the file is still there."""
+    try:
+        os.unlink(str(path))
+    except OSError:
+        return False
+    return not Path(path).exists()
+
+
+def _cf09_find_hash_equal_archive(archive_dir: Path, source_hash: str):
+    """Any *.jsonl archive in the directory whose bytes hash to
+    source_hash, or None. A re-run after a delete failure lands in a
+    new second (new dated name) and must still recognise the archive
+    the previous attempt already verified — never duplicate it."""
+    try:
+        if not archive_dir.is_dir():
+            return None
+        for candidate in sorted(archive_dir.iterdir(), key=lambda c: c.name):
+            if candidate.is_file() and candidate.suffix == ".jsonl":
+                try:
+                    if _cf09_sha256_file(candidate) == source_hash:
+                        return candidate
+                except OSError:
+                    continue
+    except OSError:
+        pass
+    return None
+
+
+def _cf09_enforce_combined_bound(log_path: Path) -> str:
+    """After a rotation, bring log + archives back within the combined
+    budget, oldest archive first. With a named external location set,
+    oldest archives MOVE there (os.replace rename + hash verify, with
+    a suffix if the target name already exists); without one, file an
+    escalation marker and pause automatic rotation. Archives are NEVER
+    silently deleted. Never raises."""
+    try:
+        while _cf09_combined_bytes(log_path) > CF09_COMBINED_DISK_BUDGET_BYTES:
+            archive_dir = _cf09_archive_dir(log_path)
+            archives = []
+            if archive_dir.is_dir():
+                archives = sorted(
+                    (c for c in archive_dir.iterdir()
+                     if c.is_file() and c.suffix == ".jsonl"),
+                    key=lambda c: c.name,
+                )
+            if not archives:
+                break
+            external = os.environ.get(CF09_EXTERNAL_ARCHIVE_ENV, "")
+            if not external:
+                _CF09_ROTATION_PAUSED.add(str(log_path))
+                _cf09_escalate(log_path, "bound-exceeded",
+                               {"combined_bytes": _cf09_combined_bytes(log_path),
+                                "budget_bytes": CF09_COMBINED_DISK_BUDGET_BYTES})
+                return "paused-bound"
+            oldest = archives[0]
+            target_dir = Path(external)
+            try:
+                target_dir.mkdir(parents=True, exist_ok=True)
+                before_hash = _cf09_sha256_file(oldest)
+                target = target_dir / oldest.name
+                suffix = 2
+                while target.exists():
+                    target = target_dir / f"{oldest.stem}-{suffix}{oldest.suffix}"
+                    suffix += 1
+                os.replace(str(oldest), str(target))
+                if not target.is_file() or oldest.exists():
+                    return "external-move-failed"
+                if _cf09_sha256_file(target) != before_hash:
+                    return "external-move-failed"
+            except OSError:
+                _CF09_ROTATION_PAUSED.add(str(log_path))
+                _cf09_escalate(log_path, "external-move-failed",
+                               {"archive": str(oldest)})
+                return "paused-bound"
+        return "within-bound"
+    except Exception:
+        return "bound-check-failed"
+
+
+def _cf09_rotate(log_path: Path) -> str:
+    """Rotate ONE log file. The caller holds _LOG_FILE_LOCK, so
+    rotation under concurrent writes is serialised by the same lock
+    the append path uses.
+
+    Binding recovery rule (R2-S-09):
+    - archive is name-keyed and hash-verified: a re-run finding a
+      hash-equal archive (same dated name, or any archive name after
+      a delete-failure retry) SKIPS re-copy (never duplicates) and
+      proceeds to the delete step;
+    - delete is delete-verified (post-delete existence check);
+    - delete failure after a successful archive KEEPS BOTH copies,
+      retries delete on the next rotation attempt, and on the second
+      consecutive failure escalates to the operator and pauses
+      AUTOMATIC rotation (a direct _cf09_rotate() call still
+      retries and clears the pause on success);
+    - a partial archive (hash mismatch after copy) is DISCARDED and
+      retried from source on the next attempt; the live log is never
+      deleted on a failed archive;
+    - the live log is NEVER truncated in place (no copy-truncate):
+      content leaves only by whole-file delete after a verified
+      archive. Archive files themselves are created by
+      _atomic_write_bytes (tmp + os.replace rename into place), and
+      a name collision with DIFFERENT content (two rotations in one
+      second) suffixes the name, never overwriting another archive.
+    Returns a status string; never raises.
+    """
+    log_path = Path(log_path)
+    key = str(log_path)
+    try:
+        if not log_path.exists():
+            return "no-log"
+        source = log_path.read_bytes()
+    except OSError:
+        return "read-failed"
+    source_hash = _cf09_sha256_bytes(source)
+    try:
+        archive_dir = _cf09_archive_dir(log_path)
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        archive_path = _cf09_find_hash_equal_archive(archive_dir, source_hash)
+        if archive_path is None:
+            stamp = _cf09_now().strftime("%Y%m%d-%H%M%S")
+            candidate = archive_dir / f"{log_path.stem}-{stamp}.jsonl"
+            suffix = 2
+            while candidate.is_file():
+                candidate = archive_dir / f"{log_path.stem}-{stamp}-{suffix}.jsonl"
+                suffix += 1
+            archive_path = candidate
+            try:
+                _atomic_write_bytes(archive_path, source)
+            except Exception:
+                return "archive-failed"
+            try:
+                if _cf09_sha256_file(archive_path) != source_hash:
+                    raise ValueError("archive hash mismatch")
+            except Exception:
+                try:
+                    archive_path.unlink()
+                except OSError:
+                    pass
+                return "partial-discarded"
+        # Archive verified (fresh or pre-existing). Delete, verified.
+        if _cf09_delete_verified(log_path):
+            _CF09_DELETE_ATTEMPTS.pop(str(archive_path), None)
+            _CF09_ROTATION_PAUSED.discard(key)
+            _cf09_enforce_combined_bound(log_path)
+            return "rotated"
+        attempts = _CF09_DELETE_ATTEMPTS.get(str(archive_path), 0) + 1
+        _CF09_DELETE_ATTEMPTS[str(archive_path)] = attempts
+        if attempts >= 2:
+            _CF09_ROTATION_PAUSED.add(key)
+            _cf09_escalate(log_path, "delete-failed",
+                           {"archive": str(archive_path), "attempts": attempts})
+            return "paused-delete-failed"
+        return "delete-failed-retry-pending"
+    except Exception:
+        return "rotate-failed"
+
+
+def _cf09_maybe_rotate(log_path: Path) -> str:
+    """Automatic rotation from the append path. Size-triggered (or
+    size+count via the byte threshold on typical rows); never line
+    count alone. Paused logs skip automatic rotation until an
+    explicit _cf09_rotate() retry succeeds. Never raises, never
+    fails the append that triggered it."""
+    try:
+        if str(log_path) in _CF09_ROTATION_PAUSED:
+            return "paused"
+        try:
+            size = Path(log_path).stat().st_size
+        except OSError:
+            return "no-log"
+        if size < CF09_ROTATION_MAX_BYTES:
+            return "not-triggered"
+        return _cf09_rotate(log_path)
+    except Exception:
+        return "rotate-failed"
+
 
 def _sweep_orphan_tmp(path: Path, ttl_seconds: float = _TMP_ORPHAN_TTL_SECONDS) -> int:
     """Remove stale `.<path.name>.<rand>.tmp` siblings; return how many went.
@@ -105,7 +430,15 @@ def _atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> None:
 
 
 def _log_to_file(log_path: Path, entry: dict, max_entries: int = 500) -> bool:
-    """Append one JSONL record atomically; return False instead of hiding failure."""
+    """Append one JSONL record atomically; return False instead of hiding failure.
+
+    CF-09: with PHASE1_CF9_FLAG ON, the write path is append-only — each
+    record is appended, never read back and rewritten, and max_entries
+    no longer caps retention (retention is unbounded within the
+    combined log + archive disk bound; rotation archives before
+    deleting). With the flag OFF, the old capped behaviour is
+    reproduced exactly (read + trim + atomic rewrite).
+    """
     try:
         with _LOG_FILE_LOCK:
             log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -115,8 +448,14 @@ def _log_to_file(log_path: Path, entry: dict, max_entries: int = 500) -> bool:
             # One record per "\n", the only separator json.dumps below writes:
             # ensure_ascii=False keeps a raw U+2028/U+0085 INSIDE a record, and
             # str.splitlines() re-emitted it as two unparseable halves.
+            line = json.dumps(entry, ensure_ascii=False)
+            if _phase1_cf9_enabled():
+                if not _cf09_append_record(log_path, line):
+                    return False
+                _cf09_maybe_rotate(log_path)
+                return True
             lines = split_lines(log_path.read_text(encoding="utf-8")) if log_path.exists() else []
-            lines.append(json.dumps(entry, ensure_ascii=False))
+            lines.append(line)
             if len(lines) > max_entries:
                 lines = lines[-max_entries:]
             _atomic_write_text(log_path, "\n".join(lines) + "\n", encoding="utf-8")
@@ -207,6 +546,13 @@ def _log_app_session(project_path: str, tool: str, extra: dict, ok: bool, ms: in
 
 def _auto_trim_log(log_path: Path, keep_sessions: int = 2):
     """Trim USAGE_LOG, keeping only the last completed sessions."""
+    if _phase1_cf9_enabled():
+        # CF-09 append-only: the session-trim rewrite is suspended while
+        # the flag is ON. Rotation + the combined disk bound govern disk
+        # use instead; trimming here would reintroduce rewrite loss on
+        # the session_end path (log_native calls this after every
+        # session end). OFF-state behaviour is unchanged.
+        return
     try:
         if not log_path.exists():
             return
