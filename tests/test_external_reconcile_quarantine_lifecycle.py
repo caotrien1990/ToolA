@@ -6,6 +6,16 @@ import surgical_mapper as sm
 from orchestrator import search_snapshots as ss
 
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _force_full_reconcile(monkeypatch):
+    # These temporary roots exercise INDEX/snapshot semantics, not the
+    # production optimization that skips reconciliation of volatile roots.
+    monkeypatch.setenv("ORCH_RECONCILE_FORCE_FULL", "1")
+
+
 def test_summary_and_pinned_index_disclose_omissions_then_clear_deleted_source(tmp_path):
     healthy = tmp_path / "healthy.py"
     poison = tmp_path / "poison.js"

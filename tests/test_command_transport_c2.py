@@ -62,7 +62,7 @@ class CommandTransportC2Tests(unittest.TestCase):
             result = json.loads(asyncio.run(code_tools.run_project_command(str(self.project), ["python", "hung.py"], shell_mode="exec", timeout=1)))
         self.assertTrue(result["timed_out"])
         self.assertEqual(result["stderr"], "final stderr")
-        taskkill.assert_called_once_with(["taskkill", "/PID", str(fake.pid), "/T", "/F"], capture_output=True, text=True, timeout=10)
+        taskkill.assert_called_once_with(["taskkill", "/PID", str(fake.pid), "/T", "/F"], capture_output=True, text=True, timeout=10, creationflags=134217728)
         self.assertEqual(result["process_evidence"]["tree_kill"]["method"], "taskkill")
 
     def test_script_runner_uses_shared_tree_timeout_and_clean_env(self):

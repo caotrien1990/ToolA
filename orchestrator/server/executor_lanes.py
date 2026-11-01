@@ -373,10 +373,12 @@ async def run_in_executor_lane(
     def _pt_run(*_a: Any, **_k: Any) -> Any:
         _pt_tok = _phase_timing.set_current(_pt)
         _store_tok = _store._SESSION_CALL_DEADLINE.set(_store_deadline)
+        _wait_tok = _store._SESSION_WAIT_OBSERVER.set(permit.set_wait_cause)
         try:
             _phase_timing.mark(_pt, "lane_started")
             return func(*_a, **_k)
         finally:
+            _store._SESSION_WAIT_OBSERVER.reset(_wait_tok)
             _store._SESSION_CALL_DEADLINE.reset(_store_tok)
             _phase_timing.reset_current(_pt_tok)
     try:

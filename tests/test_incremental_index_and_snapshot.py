@@ -17,9 +17,11 @@ These tests pin the two invariants that make that safe:
      (reused records point at the right bytes; changed files are re-captured).
 """
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import surgical_mapper as sm
 from orchestrator import search_snapshots
@@ -42,6 +44,10 @@ def _canonical(index: dict) -> dict:
 
 class TestIncrementalIndex(unittest.TestCase):
     def setUp(self):
+        # Opt into the full snapshot pipeline for this temporary test root.
+        patcher = mock.patch.dict(os.environ, {"ORCH_RECONCILE_FORCE_FULL": "1"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.tmp = Path(tempfile.mkdtemp(prefix="inc_idx_")).resolve()
         for i in range(40):
             (self.tmp / f"m{i}.py").write_text(
@@ -112,6 +118,10 @@ class TestIncrementalIndex(unittest.TestCase):
 
 class TestSnapshotReuseServesCorrectContent(unittest.TestCase):
     def setUp(self):
+        # Opt into the full snapshot pipeline for this temporary test root.
+        patcher = mock.patch.dict(os.environ, {"ORCH_RECONCILE_FORCE_FULL": "1"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.tmp = Path(tempfile.mkdtemp(prefix="inc_snap_")).resolve()
         for i in range(30):
             (self.tmp / f"m{i}.py").write_text(f"# file {i}\nVALUE = {i}\n", encoding="utf-8")
@@ -160,6 +170,10 @@ class TestWritePublishesNewFileToSnapshot(unittest.TestCase):
     """
 
     def setUp(self):
+        # Opt into the full snapshot pipeline for this temporary test root.
+        patcher = mock.patch.dict(os.environ, {"ORCH_RECONCILE_FORCE_FULL": "1"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.tmp = Path(tempfile.mkdtemp(prefix="p13_newfile_")).resolve()
 
     def tearDown(self):
@@ -234,6 +248,10 @@ class TestDeleteRemovesFileFromSnapshot(unittest.TestCase):
     snapshot search serves (and the cache sync must not report a false failure)."""
 
     def setUp(self):
+        # Opt into the full snapshot pipeline for this temporary test root.
+        patcher = mock.patch.dict(os.environ, {"ORCH_RECONCILE_FORCE_FULL": "1"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.tmp = Path(tempfile.mkdtemp(prefix="p13_del_")).resolve()
         (self.tmp / "keep.py").write_text("KEEP = 1\n", encoding="utf-8")
         (self.tmp / "gone.py").write_text("GONE = 1\n", encoding="utf-8")
@@ -270,6 +288,10 @@ class TestWriteTransactionNewFileSearchable(unittest.IsolatedAsyncioTestCase):
     findable by search_code (the exact live repro shape)."""
 
     def setUp(self):
+        # Opt into the full snapshot pipeline for this temporary test root.
+        patcher = mock.patch.dict(os.environ, {"ORCH_RECONCILE_FORCE_FULL": "1"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         import functools
         self.tmp = Path(tempfile.mkdtemp(prefix="p13_txn_")).resolve()
         (self.tmp / "seed.py").write_text("# seed\n", encoding="utf-8")

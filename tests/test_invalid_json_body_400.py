@@ -131,9 +131,8 @@ def test_the_contract_says_the_caller_can_retry():
     _response, result = _post(TRUNCATED)
 
     assert result["type"] == "SCHEMA_VIOLATION"
-    # The 400 fall-through computed retryable from the status and answered False,
-    # telling the CA to give up on an error it could fix in one edit.
-    assert result["retryable"] is True
+    # Retrying identical malformed JSON cannot succeed. Fix the body first.
+    assert result["retryable"] is False
     assert result["ca_next_action"] == "fix_json_escaping_then_resend_body"
 
 

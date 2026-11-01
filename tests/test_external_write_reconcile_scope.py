@@ -13,6 +13,13 @@ from orchestrator import search_snapshots
 from orchestrator.tools.write.core import write_new_file
 
 
+@pytest.fixture(autouse=True)
+def _force_full_reconcile(monkeypatch):
+    # These temporary roots exercise INDEX/snapshot semantics, not the
+    # production optimization that skips reconciliation of volatile roots.
+    monkeypatch.setenv("ORCH_RECONCILE_FORCE_FULL", "1")
+
+
 @pytest.mark.parametrize("project_kind", ["omitted", "empty", "outside", "inside"])
 def test_cache_root_is_explicit_containing_project_or_file_parent(tmp_path, project_kind):
     ancestor = tmp_path / "ancestor"

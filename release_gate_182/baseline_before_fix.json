@@ -1,0 +1,201 @@
+{
+  "tool_count": 38,
+  "baseline_failure_view": {
+    "status": "captured"
+  },
+  "after_retry_coverage_view": {
+    "status": "captured"
+  },
+  "tools": [
+    {
+      "id": 1,
+      "name": "tool_1",
+      "status": "captured"
+    },
+    {
+      "id": 2,
+      "name": "tool_2",
+      "status": "captured"
+    },
+    {
+      "id": 3,
+      "name": "tool_3",
+      "status": "captured"
+    },
+    {
+      "id": 4,
+      "name": "tool_4",
+      "status": "captured"
+    },
+    {
+      "id": 5,
+      "name": "tool_5",
+      "status": "captured"
+    },
+    {
+      "id": 6,
+      "name": "tool_6",
+      "status": "captured"
+    },
+    {
+      "id": 7,
+      "name": "tool_7",
+      "status": "captured"
+    },
+    {
+      "id": 8,
+      "name": "tool_8",
+      "status": "captured"
+    },
+    {
+      "id": 9,
+      "name": "tool_9",
+      "status": "captured"
+    },
+    {
+      "id": 10,
+      "name": "tool_10",
+      "status": "captured"
+    },
+    {
+      "id": 11,
+      "name": "tool_11",
+      "status": "captured"
+    },
+    {
+      "id": 12,
+      "name": "tool_12",
+      "status": "captured"
+    },
+    {
+      "id": 13,
+      "name": "tool_13",
+      "status": "captured"
+    },
+    {
+      "id": 14,
+      "name": "tool_14",
+      "status": "captured"
+    },
+    {
+      "id": 15,
+      "name": "tool_15",
+      "status": "captured"
+    },
+    {
+      "id": 16,
+      "name": "tool_16",
+      "status": "captured"
+    },
+    {
+      "id": 17,
+      "name": "tool_17",
+      "status": "captured"
+    },
+    {
+      "id": 18,
+      "name": "tool_18",
+      "status": "captured"
+    },
+    {
+      "id": 19,
+      "name": "tool_19",
+      "status": "captured"
+    },
+    {
+      "id": 20,
+      "name": "tool_20",
+      "status": "captured"
+    },
+    {
+      "id": 21,
+      "name": "tool_21",
+      "status": "captured"
+    },
+    {
+      "id": 22,
+      "name": "tool_22",
+      "status": "captured"
+    },
+    {
+      "id": 23,
+      "name": "tool_23",
+      "status": "captured"
+    },
+    {
+      "id": 24,
+      "name": "tool_24",
+      "status": "captured"
+    },
+    {
+      "id": 25,
+      "name": "tool_25",
+      "status": "captured"
+    },
+    {
+      "id": 26,
+      "name": "tool_26",
+      "status": "captured"
+    },
+    {
+      "id": 27,
+      "name": "tool_27",
+      "status": "captured"
+    },
+    {
+      "id": 28,
+      "name": "tool_28",
+      "status": "captured"
+    },
+    {
+      "id": 29,
+      "name": "tool_29",
+      "status": "captured"
+    },
+    {
+      "id": 30,
+      "name": "tool_30",
+      "status": "captured"
+    },
+    {
+      "id": 31,
+      "name": "tool_31",
+      "status": "captured"
+    },
+    {
+      "id": 32,
+      "name": "tool_32",
+      "status": "captured"
+    },
+    {
+      "id": 33,
+      "name": "tool_33",
+      "status": "captured"
+    },
+    {
+      "id": 34,
+      "name": "tool_34",
+      "status": "captured"
+    },
+    {
+      "id": 35,
+      "name": "tool_35",
+      "status": "captured"
+    },
+    {
+      "id": 36,
+      "name": "tool_36",
+      "status": "captured"
+    },
+    {
+      "id": 37,
+      "name": "tool_37",
+      "status": "captured"
+    },
+    {
+      "id": 38,
+      "name": "tool_38",
+      "status": "captured"
+    }
+  ]
+}

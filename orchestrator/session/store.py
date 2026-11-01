@@ -126,6 +126,22 @@ class SessionStoreCommitPendingError(SessionStoreContentionError):
 _SESSION_CALL_DEADLINE: contextvars.ContextVar[float | None] = contextvars.ContextVar(
     "session_call_deadline", default=None)
 _SESSION_CALL_WAIT_SECONDS = 30.0
+# The executor supplies a permit-scoped observer; standalone store calls need none.
+_SESSION_WAIT_OBSERVER: contextvars.ContextVar = contextvars.ContextVar(
+    "session_wait_observer", default=None)
+
+
+@_contextmanager
+def _session_wait_scope(cause):
+    observer = _SESSION_WAIT_OBSERVER.get()
+    if observer is not None:
+        observer(cause)
+    try:
+        yield
+    finally:
+        if observer is not None:
+            observer(None)
+
 
 
 def _raise_session_read_error(operation: str, exc: BaseException):
@@ -527,7 +543,8 @@ class SessionWriter:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise SessionStoreContentionError("session caller budget expired before admission", contention_stage="admission")
-                self._queue.put(item, timeout=min(busy_ms / 1000.0, remaining))
+                with _session_wait_scope("session_store_admission"):
+                    self._queue.put(item, timeout=min(busy_ms / 1000.0, remaining))
             else:
                 self._queue.put_nowait(item)
         except queue.Full as exc:
@@ -552,19 +569,20 @@ class SessionWriter:
         # Bound caller occupancy without pretending to cancel a COMMIT that may
         # already be running. The writer owns completion after this waiter leaves.
         poll = min(0.25, max(0.02, self.watchdog_interval * 2))
-        while True:
-            remaining = deadline - time.monotonic()
-            try:
-                return item.future.result(timeout=max(0.0, min(poll, remaining)))
-            except FutureTimeoutError:
-                pass
-            if remaining <= 0 or self._failed_reason:
-                reason = (f"SessionWriter failed: {self._failed_reason}"
-                          if self._failed_reason else "caller wait deadline expired")
-                raise SessionStoreCommitPendingError(
-                    f"{operation}: {reason}; session commit is not yet confirmed. "
-                    "Do not resend the write; inspect write_status and persisted state.",
-                )
+        with _session_wait_scope("session_store_commit"):
+            while True:
+                remaining = deadline - time.monotonic()
+                try:
+                    return item.future.result(timeout=max(0.0, min(poll, remaining)))
+                except FutureTimeoutError:
+                    pass
+                if remaining <= 0 or self._failed_reason:
+                    reason = (f"SessionWriter failed: {self._failed_reason}"
+                              if self._failed_reason else "caller wait deadline expired")
+                    raise SessionStoreCommitPendingError(
+                        f"{operation}: {reason}; session commit is not yet confirmed. "
+                        "Do not resend the write; inspect write_status and persisted state.",
+                    )
 
     def _take_batch(self) -> list[_WriteItem]:
         # One bounded queue remains the owner of all admitted work. Inspect only
@@ -1118,15 +1136,23 @@ def _session_read_connection() -> sqlite3.Connection:
     block rmtree.
     """
     global _TEARDOWN_COMPLETE
-    writer = globals().get("_SESSION_WRITER")
-    # STT-27 (B032): reset teardown flag when a new writer exists and is alive.
-    if _TEARDOWN_COMPLETE and (writer is None or (writer is not None and not writer._closing.is_set())):
-        _TEARDOWN_COMPLETE = False
-
-    # STT-27 (B032): if teardown is complete and no new writer, return in-memory
-    # connection to prevent daemon threads from pinning sessions.db.
     if _TEARDOWN_COMPLETE:
-        return sqlite3.connect(":memory:")
+        wanted_key = os.path.normcase(os.path.abspath(str(_SESSIONS_DB)))
+        teardown_key = (
+            os.path.normcase(os.path.abspath(_TEARDOWN_DB_PATH))
+            if _TEARDOWN_DB_PATH is not None else wanted_key
+        )
+        writer = globals().get("_SESSION_WRITER")
+        resumed_writer = (
+            writer is not None and not writer._closing.is_set()
+            and os.path.normcase(os.path.abspath(str(writer.db_path))) == wanted_key
+        )
+        # A late reader is not permission to reopen the DB we just released.
+        # A different DB or an explicitly created writer starts a new lifecycle.
+        if wanted_key != teardown_key or resumed_writer:
+            _TEARDOWN_COMPLETE = False
+        else:
+            return sqlite3.connect(":memory:")
 
     _get_session_writer()
     wanted = str(Path(_SESSIONS_DB))
@@ -1194,7 +1220,9 @@ def _run_session_write(
     durable: bool = True,
 ):
     """Submit one write to the process-wide writer; durable calls wait for COMMIT."""
-    return _get_session_writer().submit(
+    with _session_wait_scope("session_store_init"):
+        writer = _get_session_writer()
+    return writer.submit(
         operation,
         write_fn,
         durable=durable,

@@ -267,7 +267,7 @@ class WalkSitesPassTheRootTest(unittest.TestCase):
         expected = {
             "orchestrator/fileops/common.py": "should_skip_dir(d, root)",
             "orchestrator/tools/search.py": "fo.should_skip_dir(d, base)",
-            "surgical_mapper.py": "should_skip_dir(d, project_root)",
+            "surgical_mapper.py": "should_skip_dir_path(Path(root) / d, project_root)",
             "code_tools.py": "surgical_mapper.should_skip_dir(d, root)",
         }
         for rel, needle in expected.items():
@@ -275,6 +275,48 @@ class WalkSitesPassTheRootTest(unittest.TestCase):
                 body = (ROOT / rel).read_text(encoding="utf-8", errors="replace")
                 self.assertIn(needle, body,
                               f"{rel} must forward a project root to should_skip_dir")
+
+    def test_mapper_path_aware_walk_sites_forward_their_root(self):
+        body = (ROOT / "surgical_mapper.py").read_text(encoding="utf-8")
+        # Full build, reconcile walk, and bounded snapshot drift walk.
+        for call in (
+            "should_skip_dir_path(Path(root) / d, project_root)",
+            "should_skip_dir_path(Path(walk_root) / d, project_root)",
+            "should_skip_dir_path(Path(walk_root) / d, root)",
+        ):
+            self.assertIn(call, body)
+
+    def test_overlay_is_honored_by_real_index_and_snapshot_walks(self):
+        import json
+        import tempfile
+        from unittest import mock
+        import surgical_mapper as sm
+        from orchestrator import search_snapshots as ss
+
+        with tempfile.TemporaryDirectory(prefix="b027_actual_") as tmp:
+            root = Path(tmp)
+            (root / "src").mkdir()
+            (root / "2.working").mkdir()
+            (root / "src" / "keep.py").write_text("def kept(): pass\n", encoding="utf-8")
+            (root / "2.working" / "hidden.py").write_text("def hidden(): pass\n", encoding="utf-8")
+            (root / ".orchestrator_ignore").write_text("2.working\n", encoding="utf-8")
+            with mock.patch.dict(os.environ, {
+                "ORCH_RECONCILE_FORCE_FULL": "1", "ORCH_RECONCILE_THROTTLE_S": "0",
+            }):
+                sm.generate_project_map(str(root))
+                (root / "src" / "added.py").write_text("def added(): pass\n", encoding="utf-8")
+                (root / "2.working" / "late.py").write_text("def hidden_late(): pass\n", encoding="utf-8")
+                sm.update_file_cache(str(root / "src" / "keep.py"), str(root))
+                index = json.loads((root / ".orchestrator_cache" / "INDEX.json").read_text(encoding="utf-8"))
+                self.assertIn("kept", index["functions"])
+                self.assertIn("added", index["functions"])
+                self.assertNotIn("hidden", index["functions"])
+                self.assertNotIn("hidden_late", index["functions"])
+                with ss.pin_current_snapshot(root) as snapshot:
+                    paths = {row["path"] for row in snapshot.manifest["files"]}
+                    self.assertIn("src/added.py", paths)
+                    self.assertFalse(any(path.startswith("2.working/") for path in paths))
+        skip_rules.clear_project_ignore_cache()
 
     def test_no_walk_site_still_uses_the_bare_one_argument_form(self):
         """A regression guard with teeth: if someone adds a new os.walk and calls

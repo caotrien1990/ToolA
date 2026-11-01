@@ -19,6 +19,16 @@ import surgical_mapper as sm
 from orchestrator.tools.write import core as write_core
 
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _force_full_reconcile(monkeypatch):
+    # These temporary roots exercise INDEX/snapshot semantics, not the
+    # production optimization that skips reconciliation of volatile roots.
+    monkeypatch.setenv("ORCH_RECONCILE_FORCE_FULL", "1")
+
+
 def _run(coro):
     return json.loads(asyncio.run(coro))
 

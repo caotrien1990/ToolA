@@ -39,6 +39,12 @@ tmp*/
 temp*/
 probe_dir_*/
 release_gate_*/
+# Tracked historical contract fixtures (not generated release evidence).
+!/release_gate_182/
+/release_gate_182/*
+!/release_gate_182/baseline_before_fix.json
+!/release_gate_182/report_viewer.html
+!/release_gate_182/README.md
 phase1p5_raw/
 staging/
 done/

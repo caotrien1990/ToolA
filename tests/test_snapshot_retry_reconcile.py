@@ -8,6 +8,13 @@ import surgical_mapper as sm
 from orchestrator import search_snapshots as ss
 
 
+@pytest.fixture(autouse=True)
+def _force_full_reconcile(monkeypatch):
+    # These temporary roots exercise INDEX/snapshot semantics, not the
+    # production optimization that skips reconciliation of volatile roots.
+    monkeypatch.setenv("ORCH_RECONCILE_FORCE_FULL", "1")
+
+
 def seed(root):
     (root / "keep.py").write_bytes(b"keep = 1\n")
     (root / "target.py").write_bytes(b"old = 1\n")

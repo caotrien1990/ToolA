@@ -21,6 +21,7 @@ handle_call, and a NON_JSON_RESPONSE answer in bin/a.ps1
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta
 import json
 from unittest import mock
 
@@ -315,8 +316,8 @@ def _seed_session(db, session_id, agent_id, started_at):
 
 
 def _two_agent_sessions(db):
-    _seed_session(db, "sess-a-muse1", "muse1", "2026-10-21T00:00:00")
-    _seed_session(db, "sess-b-muse2", "muse2", "2026-10-21T01:00:00")
+    _seed_session(db, "sess-a-muse1", "muse1", datetime.now().isoformat())
+    _seed_session(db, "sess-b-muse2", "muse2", (datetime.now() + timedelta(seconds=1)).isoformat())
 
 
 # --- T1: cross-identity read returns the NAMED agent's record ---------
@@ -483,7 +484,7 @@ def test_t4b_empty_validated_identity_fails_closed(agent_registry):
 # --- T5: audit_reconciliation_report absence shapes -------------------
 
 def test_t5_arr_single_candidate_row(sessions_db):
-    _seed_session(sessions_db, "sess-muse2-only", "muse2", "2026-10-21T00:00:00")
+    _seed_session(sessions_db, "sess-muse2-only", "muse2", datetime.now().isoformat())
     _, result = _post_as("audit_reconciliation_report",
                          {"project_path": FIXTURE_PROJECT}, agent_id="muse1")
     assert result["ok"] is True
@@ -1023,7 +1024,7 @@ _T8_BODIES = {
 
 @pytest.mark.parametrize("tool", sorted(_T8_BODIES))
 def test_t8_identity_tools_canonicalize_to_caller(tool, sessions_db):
-    _seed_session(sessions_db, "lever2-t8-session", "muse1", "2026-10-21T00:00:00")
+    _seed_session(sessions_db, "lever2-t8-session", "muse1", datetime.now().isoformat())
     delivered = []
 
     async def probe(agent_id="", session_id="", target_session_id="", **kwargs):

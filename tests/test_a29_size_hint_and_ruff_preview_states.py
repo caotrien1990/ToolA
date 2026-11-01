@@ -357,7 +357,7 @@ class RuffRuleSetsMustNotDrift(unittest.TestCase):
     config decides whether they run at all.
     """
 
-    FIXABLE_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541"
+    FIXABLE_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541,ASYNC210,ASYNC220,ASYNC221,ASYNC222,ASYNC250,ASYNC251"
     LINT_SELECT = "F401,F841,E711,E712,E731,E401,E402,F541,B006,E722,F821"
 
     def test_refactor_did_not_change_what_ruff_is_asked_to_check(self):

@@ -194,6 +194,22 @@ def pytest_configure(config):  # noqa: ARG001 - pytest hook signature
             council_dir / "council_usage_log.jsonl")
 
 
+# CF-12: each test explicitly starts a new store lifecycle. The teardown hook
+# below closes even the shared run DB; a subsequent read is not itself permission
+# to reopen it. Reset only the test lifecycle latch here, before fixture setup,
+# without creating a writer or touching the database.
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_setup(item):  # noqa: ARG001
+    from orchestrator.session import store
+    # Some adapter tests restore code_tools after its sync copied a temp DB
+    # into store. Restore the shared test-run alias before the next test too.
+    import sys
+    tools_module = sys.modules.get("code_tools")
+    if tools_module is not None:
+        store._SESSIONS_DB = tools_module._SESSIONS_DB
+    store._TEARDOWN_COMPLETE = False
+
+
 # --- STT-27 (B032): release the process-global SessionWriter after every test ---
 #
 # The SessionWriter is created lazily on first DB write and its drain-loop sqlite

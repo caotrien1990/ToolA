@@ -26,6 +26,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import surgical_mapper as sm
 from orchestrator import search_snapshots
@@ -39,6 +40,10 @@ def _drive_counter_to_next_full_refresh(root: Path) -> None:
 
 class TestPeriodicRefreshA30(unittest.TestCase):
     def setUp(self) -> None:
+        # Opt into the full snapshot pipeline for this temporary test root.
+        patcher = mock.patch.dict(os.environ, {"ORCH_RECONCILE_FORCE_FULL": "1"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         # basetemp OUTSIDE the repo so fixtures never inherit the repo ruff.toml/cache.
         self.root = Path(tempfile.mkdtemp(prefix="a30_periodic_")).resolve()
         (self.root / "keep.py").write_text("def keep():\n    return 1\n", encoding="utf-8")

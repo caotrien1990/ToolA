@@ -43,6 +43,12 @@ class AdmissionPermit:
     def __init__(self,manager,token,lane,principal,tracked):
         self.manager=manager;self.token=token;self.lane=lane;self.principal=principal;self.tracked=tracked
         self.released=False;self.lock=threading.Lock()
+        self.wait_cause=None
+    def set_wait_cause(self, cause):
+        # Updated by the lane worker; inspected under the same manager lock.
+        with self.manager.lock:
+            if not self.released:
+                self.wait_cause = cause
     def release(self):
         with self.lock:
             if self.released:return False
@@ -75,6 +81,17 @@ class FairAdmissionManager:
           'principal_active':{f'{p}|{l}':s.active for (p,l),s in self.principals.items() if s.active},
           'principal_waiting':{f'{p}|{l}':s.waiting for (p,l),s in self.principals.items() if s.waiting},
           'rejection_counts':dict(self.rejections),'closed':self.closed}
+    def _quota_status(self, principal, lane):
+        metrics = self._status()
+        causes = {}
+        holders = [p for p in self.permits.values()
+                   if p.principal == principal and p.lane == lane and not p.released]
+        for holder in holders:
+            if holder.wait_cause:
+                causes[holder.wait_cause] = causes.get(holder.wait_cause, 0) + 1
+        # Snapshot of this bucket only: observed wait, not an inferred root cause.
+        metrics["quota_holders"] = {"active": len(holders), "wait_causes": causes}
+        return metrics
     def status(self):
         with self.lock:return self._status()
     # F-C3: evict_idle() removed -- cardinality is bounded by agent IDs x 7 lanes,
@@ -102,7 +119,7 @@ class FairAdmissionManager:
                         state.waiting+=1;waiter=True
                     if now>=deadline:
                         self.rejections["principal_quota"]+=1
-                        raise PrincipalQuotaExceeded(lane,"principal quota wait budget expired",self._status(),1)
+                        raise PrincipalQuotaExceeded(lane,"principal quota wait budget expired",self._quota_status(principal,lane),1)
                 await asyncio.sleep(min(.01,max(.001,deadline-now)))
             while True:
                 now=time.monotonic()

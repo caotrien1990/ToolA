@@ -13,7 +13,7 @@ def test_unknown_query_hint_uses_current_registry_count():
     response = asyncio.run(srv.handle_tools_names(make_mocked_request(
         "GET", "/api/tools/names?curated=0")))
     payload = json.loads(response.body)
-    assert f"limit={len(srv.ct.TOOL_MAP)}" in payload["ignored_query_params_hint"]
+    assert f"limit={srv._discoverable_tool_count()}" in payload["ignored_query_params_hint"]
 
 
 @pytest.mark.parametrize("provider,model,expected", [

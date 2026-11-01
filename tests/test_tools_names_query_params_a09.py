@@ -204,7 +204,7 @@ class FullCatalogLimitIsTheCatalogSize(unittest.IsolatedAsyncioTestCase):
     FULL = re.compile(r"limit=(\d+) for (?:the )?full catalog")
 
     async def test_every_full_catalog_claim_names_the_catalog_size(self):
-        size = len(orchestrator_server.ct.TOOL_MAP)
+        size = orchestrator_server._discoverable_tool_count()
         # An uncapped filter has no next_query_hint; the A09 notice states the limit there.
         for path in ("/api/tools/names", "/api/tools/names?name_contains=git_st&bogus=1",
                      "/api/tools/names?tier=T1&limit=3&bogus=1"):
@@ -264,7 +264,7 @@ class DiscoveryHintStatesPurpose(unittest.IsolatedAsyncioTestCase):
                 hint = orchestrator_server._default_hint("write_fix", error_name)
                 self.assertIn("force_reseed=true", hint)
                 self.assertIn("Never refresh_project_map", hint)
-        size = len(orchestrator_server.ct.TOOL_MAP)
+        size = orchestrator_server._discoverable_tool_count()
         self.assertIn(f"limit={size}", (await _call("/api/tools/names"))["next_query_hint"])
         health = orchestrator_server._apply_health_view(
             {}, make_mocked_request("GET", "/health"))
