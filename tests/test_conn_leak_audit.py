@@ -78,8 +78,7 @@ WHITELIST: dict[tuple[str, str], tuple[int, str, str]] = {
     # ── releases conn on exception (no persistent leak). Grandfathered.   ──
     ("code_tools.py", "get_usage_stats"): (
         1, "CLOSE_IN_TRY", "close in try body; CPython refcount-safe on exception"),
-    ("orchestrator/session/logs.py", "log_native"): (
-        1, "CLOSE_IN_TRY", "close in try body; CPython refcount-safe on exception"),
+    # CF-08: log_native delegates to the managed session store; no direct connect.
     # ── FACTORY: returns conn; every caller closes it in a finally block ──
     ("orchestrator/server/audit_writer.py", "_connect"): (
         1, "FACTORY",

@@ -23,6 +23,8 @@ from pathlib import Path
 
 import path_runtime
 
+from orchestrator import lock_holder_trace  # R5: ORCH_LOCK_HOLDER_TRACE gate
+
 
 logger = logging.getLogger(__name__)
 
@@ -68,17 +70,19 @@ _SESSION_WRITE_BATCH_WINDOW_MS = max(
 _SESSION_WRITE_STALL_SECONDS = max(
     1.0, float(os.environ.get("ORCH_SESSION_WRITE_STALL_SECONDS", "5")),
 )
+# R5: a batch item whose write_fn runs longer than this (ms) gets one WARNING
+# line ("SLOW_WRITE_FN op=... elapsed_ms=..."). Gated by ORCH_LOCK_HOLDER_TRACE
+# (see lock_holder_trace.enabled()): flag OFF -> no timing, no log, ~no cost.
+_SLOW_WRITE_FN_MS = 1000.0
 # A33: how many consecutive stall_seconds windows a batch may make no observable
 # progress before the writer is declared FAILED rather than merely STALLED.
-# A durable waiter has no wall-clock deadline (see SessionWriter.submit), so
-# STALLED alone would leave it blocked forever on a wedged-but-alive thread --
-# the state Python cannot kill. This bounds "forever" without reintroducing a
-# deadline that fires on a writer that is merely slow: the clock only advances
-# while the SAME batch is stuck, and any commit resets it.
+# Watchdog verdicts concern missing progress, independently of the caller wait
+# budget. A caller timeout never cancels a transaction that can still commit.
 _SESSION_WRITE_WEDGE_MULTIPLIER = max(
     2.0, float(os.environ.get("ORCH_SESSION_WRITE_WEDGE_MULTIPLIER", "6")),
 )
 _SESSION_DB_INITIALIZED_PATHS: set[str] = set()
+_SESSION_INIT_FAILURES: dict[str, tuple[float, str]] = {}
 # campaign-1608 (A38): serialize in-process migration so two threads never run
 # the DDL against a fresh DB at once (the A27 race), independent of whoever calls
 # _init_session_db (tests, code_tools, or _get_session_writer under its own lock).
@@ -108,17 +112,40 @@ _SESSION_RETENTION_DAYS_ENV = "ORCHESTRATOR_SESSION_RETENTION_DAYS"
 
 
 class SessionStoreContentionError(RuntimeError):
-    """A session-store write could not commit within its fixed budget."""
+    """A bounded SQLite/queue wait failed; stage determines safe in-call replay."""
+
+    def __init__(self, message, *, contention_stage="execution"):
+        super().__init__(message)
+        self.contention_stage = contention_stage
+
+
+class SessionStoreCommitPendingError(SessionStoreContentionError):
+    """Caller wait expired; commit may still complete, so resending is unsafe."""
+
+
+_SESSION_CALL_DEADLINE: contextvars.ContextVar[float | None] = contextvars.ContextVar(
+    "session_call_deadline", default=None)
+_SESSION_CALL_WAIT_SECONDS = 30.0
+
+
+def _raise_session_read_error(operation: str, exc: BaseException):
+    """Only an exhausted SELECT may prove absence; a failed read never does."""
+    if isinstance(exc, SessionStoreContentionError):
+        raise exc
+    if isinstance(exc, sqlite3.OperationalError) and any(
+        word in str(exc).lower() for word in ("locked", "busy")
+    ):
+        raise SessionStoreContentionError(f"{operation}: {exc}") from exc
+    raise exc
 
 
 class _WriteItem:
     # ``busy_timeout_ms`` is the SQLite lock-wait budget (PRAGMA busy_timeout) for
-    # this item -- NOT a wall-clock deadline for how long the caller may wait. A33
-    # removed the wall-clock deadline: a slow-but-progressing writer (disk busy)
-    # must not be treated as a failed one. See SessionWriter.submit for why.
+    # this item. Caller wait is bounded separately and expiration reports an
+    # unconfirmed commit; it never cancels a slow-but-progressing transaction.
     __slots__ = (
         "operation", "write_fn", "durable", "future", "busy_timeout_ms",
-        "cancelled", "completed", "enqueued_at",
+        "cancelled", "completed", "enqueued_at", "principal", "work_class",
     )
 
     def __init__(self, operation, write_fn, durable: bool, busy_timeout_ms: int):
@@ -130,6 +157,15 @@ class _WriteItem:
         self.cancelled = threading.Event()
         self.completed = False
         self.enqueued_at = time.monotonic()
+        self.principal = str(_CALLER_AGENT_ID.get() or "system")
+        name = self.operation.lower()
+        self.work_class = ("maintenance" if name.startswith(("prune ", "close stale"))
+                           else "control" if any(word in name for word in ("checkpoint", "owner", "read token"))
+                           else "bulk")
+
+
+class _ProgressConnection(sqlite3.Connection):
+    """Connection subclass permits a cooperative Python progress callback."""
 
 
 class SessionWriter:
@@ -137,8 +173,9 @@ class SessionWriter:
 
     sessions.db is owned by one [A] process. WAL/busy_timeout remain enabled as a
     defensive boundary for accidental cross-process access, but no second writer
-    process is supported. Durable submissions wait for COMMIT; fire-and-forget
-    submissions are O(1) and may be dropped only with a warning and metric.
+    process is supported. Durable submissions wait for SQLite COMMIT under
+    WAL + synchronous=NORMAL: process-crash persistence, not an OS/power-loss
+    barrier. Fire-and-forget submissions may drop with a warning and metric.
     """
 
     def __init__(
@@ -149,7 +186,7 @@ class SessionWriter:
         batch_max: int = _SESSION_WRITE_BATCH_MAX,
         batch_window_ms: float = _SESSION_WRITE_BATCH_WINDOW_MS,
         busy_timeout_ms: int = _SESSION_DB_BUSY_TIMEOUT_MS,
-        checkpoint_every_batches: int = 64,
+        checkpoint_every_batches: int | None = None,
         watchdog_interval: float = 0.1,
         stall_seconds: float = _SESSION_WRITE_STALL_SECONDS,
         wedge_multiplier: float = _SESSION_WRITE_WEDGE_MULTIPLIER,
@@ -157,10 +194,10 @@ class SessionWriter:
     ):
         self.db_path = Path(db_path)
         self.capacity = max(1, int(capacity))
-        self.batch_max = max(1, int(batch_max))
+        self.batch_max = min(64, max(1, int(batch_max)))
         self.batch_window_seconds = max(0.0, float(batch_window_ms) / 1000.0)
         self.busy_timeout_ms = max(1, int(busy_timeout_ms))
-        self.checkpoint_every_batches = max(1, int(checkpoint_every_batches))
+        self.checkpoint_every_batches = max(1, int(checkpoint_every_batches)) if checkpoint_every_batches is not None else None
         self.watchdog_interval = max(0.01, float(watchdog_interval))
         self.stall_seconds = max(0.1, float(stall_seconds))
         self.wedge_seconds = self.stall_seconds * max(2.0, float(wedge_multiplier))
@@ -188,6 +225,10 @@ class SessionWriter:
         self._failed_count = 0
         self._drain_conn: sqlite3.Connection | None = None
         self._restart_count = 0
+        self._last_checkpoint_at = time.monotonic()
+        self._current_item = None
+        self._stall_count = 0
+        self._wedge_count = 0
         if auto_start:
             self.start()
 
@@ -221,19 +262,41 @@ class SessionWriter:
             return self._restart_count
 
     def metrics(self) -> dict:
-        with self._metrics_lock:
+        # Health runs on the event loop: never wait for either writer lock.
+        if not self._queue.mutex.acquire(blocking=False):
+            return {"metrics_stale": True, "reason": "queue_snapshot_busy"}
+        try:
+            depths = {"control": 0, "bulk": 0, "maintenance": 0}
+            for item in self._queue.queue:
+                depths[item.work_class] += 1
+        finally:
+            self._queue.mutex.release()
+        now = time.monotonic()
+        if not self._metrics_lock.acquire(blocking=False):
+            return {"metrics_stale": True, "reason": "writer_snapshot_busy"}
+        try:
+            item = self._current_item
             return {
+                "metrics_stale": False,
                 "enqueued_total": self._enqueued_total,
                 "committed_total": self._committed_total,
                 "dropped_count": self._dropped_count,
                 "failed_count": self._failed_count,
                 "restart_count": self._restart_count,
-                "queue_depth": self._queue.qsize(),
+                "queue_depth": sum(depths.values()), "queue_depth_by_class": depths,
                 "failed": bool(self._failed_reason),
                 "failed_reason": self._failed_reason or None,
                 "stalled": bool(self._stalled_reason),
                 "stalled_reason": self._stalled_reason or None,
+                "stall_count": self._stall_count, "wedge_count": self._wedge_count,
+                "current_operation": item.operation if item else None,
+                "current_principal": item.principal if item else None,
+                "current_class": item.work_class if item else None,
+                "batch_age_ms": max(0.0, now - self._active_batch_since) * 1000 if self._active_batch_since else 0.0,
+                "progress_age_ms": max(0.0, now - self._last_progress_at) * 1000,
             }
+        finally:
+            self._metrics_lock.release()
 
     def _start_writer_locked(self) -> None:
         if self._closing.is_set():
@@ -258,6 +321,16 @@ class SessionWriter:
                 )
                 self._watchdog.start()
 
+    def _record_progress(self) -> int:
+        """A completed item/SQLite VM step is progress; age alone is not a wedge."""
+        with self._metrics_lock:
+            self._last_progress_at = time.monotonic()
+            self._stalled_reason = ""
+            if self._failed_is_wedge:
+                self._failed_reason = ""
+                self._failed_is_wedge = False
+        return 0
+
     def _verdict_is_stale(self, batch_since: float | None) -> bool:
         """True when the batch a watchdog verdict judged has already finished.
 
@@ -279,9 +352,14 @@ class SessionWriter:
         with self._metrics_lock:
             if self._verdict_is_stale(batch_since):
                 return
+            if wedge and batch_since is not None and (
+                time.monotonic() - max(batch_since, self._last_progress_at) <= self.wedge_seconds
+            ):
+                return
             if not self._failed_reason:
                 self._failed_reason = reason
                 self._failed_is_wedge = bool(wedge)
+                self._wedge_count += int(wedge)
                 should_log = True
         if should_log:
             logger.error("SessionWriter FAILED: %s", reason)
@@ -292,8 +370,13 @@ class SessionWriter:
         with self._metrics_lock:
             if self._verdict_is_stale(batch_since):
                 return
+            if batch_since is not None and (
+                time.monotonic() - max(batch_since, self._last_progress_at) <= self.stall_seconds
+            ):
+                return
             if not self._stalled_reason:
                 self._stalled_reason = reason
+                self._stall_count += 1
                 should_log = True
         if should_log:
             logger.warning("SessionWriter STALLED: %s", reason)
@@ -336,14 +419,13 @@ class SessionWriter:
             active_since = self._active_batch_since
             if not active_since:
                 continue
-            stuck_for = time.monotonic() - active_since
+            stuck_for = time.monotonic() - max(active_since, self._last_progress_at)
             if stuck_for > self.wedge_seconds:
                 # A33: the batch is not slow, it is WEDGED. Python cannot kill a
                 # live thread and a second writer would break single-writer
                 # ownership, so the only honest move is to declare the writer
-                # failed. This is what unblocks in-flight durable waiters, which
-                # carry no wall-clock deadline of their own -- without it a
-                # thread stuck inside one write_fn blocks every caller forever.
+                # failed. In-flight callers get an unconfirmed outcome; this
+                # verdict also rejects new work until progress resumes.
                 self._mark_failed(
                     f"writer batch made no observable progress for "
                     f"{stuck_for:.2f}s (> {self.wedge_seconds:.2f}s); "
@@ -368,7 +450,15 @@ class SessionWriter:
         *,
         durable: bool,
         timeout_ms: int | None = None,
+        wait_timeout: float | None = None,
     ):
+        wait_budget = _SESSION_CALL_WAIT_SECONDS if wait_timeout is None else float(wait_timeout)
+        if wait_budget < 0:
+            raise ValueError("wait_timeout must be non-negative")
+        deadline = time.monotonic() + wait_budget
+        lane_deadline = _SESSION_CALL_DEADLINE.get()
+        if lane_deadline is not None:
+            deadline = min(deadline, lane_deadline)
         if self._closing.is_set():
             raise RuntimeError("SessionWriter is closing")
         if self._failed_reason and not self._failed_is_wedge:
@@ -392,7 +482,7 @@ class SessionWriter:
             # commit instead of leaving the writer dead for the process lifetime.
             if durable:
                 raise SessionStoreContentionError(
-                    f"SessionWriter appears wedged: {self._failed_reason}",
+                    f"SessionWriter appears wedged: {self._failed_reason}", contention_stage="admission",
                 )
             with self._metrics_lock:
                 self._dropped_count += 1
@@ -404,7 +494,7 @@ class SessionWriter:
         if self._stalled_reason:
             if durable:
                 raise SessionStoreContentionError(
-                    f"SessionWriter is temporarily stalled: {self._stalled_reason}",
+                    f"SessionWriter is temporarily stalled: {self._stalled_reason}", contention_stage="admission",
                 )
             # Not spooled, on purpose (2026-09-28). No production caller submits
             # fire-and-forget -- all of them leave durable at its True default,
@@ -434,13 +524,16 @@ class SessionWriter:
         item = _WriteItem(operation, write_fn, durable, busy_ms)
         try:
             if durable:
-                self._queue.put(item, timeout=busy_ms / 1000.0)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise SessionStoreContentionError("session caller budget expired before admission", contention_stage="admission")
+                self._queue.put(item, timeout=min(busy_ms / 1000.0, remaining))
             else:
                 self._queue.put_nowait(item)
         except queue.Full as exc:
             if durable:
                 raise SessionStoreContentionError(
-                    f"{operation} exceeded session write queue budget ({busy_ms}ms)",
+                    f"{operation} exceeded session write queue budget ({busy_ms}ms)", contention_stage="admission",
                 ) from exc
             with self._metrics_lock:
                 self._dropped_count += 1
@@ -456,51 +549,62 @@ class SessionWriter:
         if not durable:
             return None
 
-        # A33: wait for COMMIT with NO caller-side wall-clock deadline. The old
-        # code raised SessionStoreContentionError once a single item waited longer
-        # than busy_ms (default 750ms). That measured the wrong thing: under pure
-        # disk-I/O saturation (a SEPARATE db, no lock contention) a healthy writer
-        # committing normally still took p50 860ms vs a 93ms uncontended baseline,
-        # so the deadline killed a slow-but-progressing writer -- exactly the
-        # parallel-test condition where every worker has its own db but shares the
-        # disk's fsync/WAL bandwidth. "Slow" is not "stuck".
-        #
-        # True non-progress (a wedged writer thread) is detected by the watchdog
-        # via _active_batch_since/stall_seconds, which sets _stalled_reason and
-        # rejects NEW durable submits at the top of this method. An already
-        # in-flight waiter instead rides out a transient stall and still succeeds
-        # if the writer eventually progresses; it aborts only when the watchdog
-        # has declared the writer FAILED (it died and could not be restarted), at
-        # which point no thread will ever set this future.
+        # Bound caller occupancy without pretending to cancel a COMMIT that may
+        # already be running. The writer owns completion after this waiter leaves.
         poll = min(0.25, max(0.02, self.watchdog_interval * 2))
         while True:
+            remaining = deadline - time.monotonic()
             try:
-                return item.future.result(timeout=poll)
+                return item.future.result(timeout=max(0.0, min(poll, remaining)))
             except FutureTimeoutError:
                 pass
-            if self._failed_reason:
-                item.cancelled.set()
-                raise SessionStoreContentionError(
-                    f"{operation} aborted: SessionWriter failed and can no longer "
-                    f"commit ({self._failed_reason})",
+            if remaining <= 0 or self._failed_reason:
+                reason = (f"SessionWriter failed: {self._failed_reason}"
+                          if self._failed_reason else "caller wait deadline expired")
+                raise SessionStoreCommitPendingError(
+                    f"{operation}: {reason}; session commit is not yet confirmed. "
+                    "Do not resend the write; inspect write_status and persisted state.",
                 )
 
     def _take_batch(self) -> list[_WriteItem]:
-        try:
-            first = self._queue.get(timeout=0.1)
-        except queue.Empty:
-            return []
-        batch = [first]
-        drain_deadline = time.monotonic() + self.batch_window_seconds
-        while (
-            len(batch) < self.batch_max
-            and time.monotonic() <= drain_deadline
-        ):
-            try:
-                batch.append(self._queue.get_nowait())
-            except queue.Empty:
-                break
-        return batch
+        # One bounded queue remains the owner of all admitted work. Inspect only
+        # the head of each principal so scheduling cannot invert its FIFO order.
+        with self._queue.not_empty:
+            if not self._queue.queue:
+                self._queue.not_empty.wait(0.1)
+            if not self._queue.queue:
+                return []
+            deadline = time.monotonic() + self.batch_window_seconds
+            while len(self._queue.queue) < self.batch_max:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or self._stop.is_set():
+                    break
+                self._queue.not_empty.wait(remaining)
+            batch = []
+            served = {}
+            while self._queue.queue and len(batch) < self.batch_max:
+                heads = {}
+                for item in self._queue.queue:
+                    heads.setdefault(item.principal, item)
+                eligible = list(heads.values())
+                if len(heads) > 1:
+                    eligible = [item for item in eligible if served.get(item.principal, 0) < 32]
+                    if not eligible:
+                        break
+                now = time.monotonic()
+                def rank(item):
+                    # Aging guarantees bulk/maintenance progress under a steady
+                    # control stream. No scheduler can preempt a running callback.
+                    aged = now - item.enqueued_at >= 0.25
+                    priority = {"control": 0, "bulk": 1, "maintenance": 2}[item.work_class]
+                    return (0 if aged else 1, served.get(item.principal, 0),
+                            item.enqueued_at if aged else priority, item.enqueued_at)
+                chosen = min(eligible, key=rank)
+                self._queue.queue.remove(chosen)
+                batch.append(chosen)
+                served[chosen.principal] = served.get(chosen.principal, 0) + 1
+            self._queue.not_full.notify_all()
+            return batch
 
     def _open_connection(self) -> sqlite3.Connection:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -508,8 +612,13 @@ class SessionWriter:
             str(self.db_path),
             timeout=self.busy_timeout_ms / 1000.0,
             isolation_level=None,
+            factory=_ProgressConnection,
         )
         _configure_sessions_connection(conn, self.busy_timeout_ms)
+        conn.set_progress_handler(self._record_progress, 1000)
+        conn.progress_heartbeat = (self._record_progress
+                                   if os.environ.get("ORCH_SESSION_PROGRESS_HEARTBEAT", "1") != "0"
+                                   else lambda: 0)
         return conn
 
     @staticmethod
@@ -550,11 +659,23 @@ class SessionWriter:
                 item.future.set_exception(error)
 
     def _process_batch(self, conn: sqlite3.Connection, batch: list[_WriteItem]) -> bool:
+        # Keep grouped commits for equal budgets without letting a short-budget
+        # tenant reduce a neighbor's lock-wait allowance.
+        groups = []
+        for item in batch:
+            if not groups or groups[-1][0].busy_timeout_ms != item.busy_timeout_ms:
+                groups.append([])
+            groups[-1].append(item)
+        healthy = True
+        for group in groups:
+            healthy = self._process_batch_group(conn, group) and healthy
+        return healthy
+
+    def _process_batch_group(self, conn, batch):
         active = []
         for item in batch:
-            # A33: only a caller that has given up (writer FAILED, future
-            # abandoned) is cancelled. There is no wall-clock deadline any more,
-            # so a slow disk never expires a queued item before it is attempted.
+            # Cancellation is explicit; caller timeout alone never cancels an
+            # item or changes the outcome of a transaction already in progress.
             if item.cancelled.is_set():
                 self._finish_item(
                     item,
@@ -573,13 +694,33 @@ class SessionWriter:
         timeout_ms = max(1, min(item.busy_timeout_ms for item in active))
         conn.execute(f"PRAGMA busy_timeout={timeout_ms}")
         outcomes: dict[_WriteItem, tuple[object, BaseException | None]] = {}
+        began = False
+        batch_token = lock_holder_trace.set_current_tool(
+            ", ".join(dict.fromkeys(item.operation for item in active))[:500])
         try:
             conn.execute("BEGIN IMMEDIATE")
+            began = True
+            self._record_progress()
             for index, item in enumerate(active):
+                self._current_item = item
                 savepoint = f"session_item_{index}"
                 conn.execute(f"SAVEPOINT {savepoint}")
+                item_token = lock_holder_trace.set_current_tool(item.operation)
                 try:
+                    # R5: flag-gated slow-write trace. The camera blind spot was
+                    # a long write_fn with no owner in the log; time each item
+                    # and warn when one runs longer than _SLOW_WRITE_FN_MS.
+                    _trace_on = lock_holder_trace.enabled()
+                    _t0 = time.monotonic() if _trace_on else 0.0
                     result = item.write_fn(conn)
+                    if _trace_on:
+                        _elapsed_ms = (time.monotonic() - _t0) * 1000.0
+                        if _elapsed_ms > _SLOW_WRITE_FN_MS:
+                            logger.warning(
+                                "SLOW_WRITE_FN op=%s elapsed_ms=%.0f",
+                                item.operation,
+                                _elapsed_ms,
+                            )
                     if item.cancelled.is_set():
                         raise SessionStoreContentionError(
                             f"{item.operation} aborted mid-transaction (writer failed)",
@@ -603,13 +744,27 @@ class SessionWriter:
                 else:
                     conn.execute(f"RELEASE {savepoint}")
                     outcomes[item] = (result, None)
+                finally:
+                    lock_holder_trace.reset_current_tool(item_token)
+                    self._record_progress()
             conn.execute("COMMIT")
+            self._record_progress()
         except BaseException as batch_exc:
             if conn.in_transaction:
                 try:
                     conn.execute("ROLLBACK")
                 except Exception:
                     logger.exception("SessionWriter batch rollback failed")
+            if not began and self._is_locked_error(batch_exc) and len(active) > 1:
+                # No callback has run, so retrying each member cannot duplicate a
+                # write. Each tenant gets an independent acquisition attempt.
+                # The failed group BEGIN spent the first item's budget. Do not
+                # charge it twice; untouched neighbors get their own attempt.
+                self._finish_item(active[0], error=self._normalized_error(
+                    active[0], batch_exc, timeout_ms))
+                for item in active[1:]:
+                    self._process_batch_group(conn, [item])
+                return False
             for item in active:
                 prior = outcomes.get(item)
                 error = prior[1] if prior and prior[1] is not None else self._normalized_error(
@@ -617,12 +772,25 @@ class SessionWriter:
                 )
                 self._finish_item(item, error=error)
             return False
+        finally:
+            lock_holder_trace.reset_current_tool(batch_token)
 
         for item in active:
             result, error = outcomes[item]
             self._finish_item(item, result=result, error=error)
         self._batch_count += 1
-        if self._batch_count % self.checkpoint_every_batches == 0:
+        now = time.monotonic()
+        try:
+            wal_bytes = Path(str(self.db_path) + "-wal").stat().st_size
+        except OSError:
+            wal_bytes = 0
+        legacy_due = (self.checkpoint_every_batches is not None
+                      and self._batch_count % self.checkpoint_every_batches == 0)
+        # Checkpoints cannot shrink uncommitted WAL. Check only after COMMIT;
+        # time-gating a size-triggered attempt avoids hammering pinned readers.
+        size_due = wal_bytes >= 16 * 1024 * 1024 and now - self._last_checkpoint_at >= 1.0
+        if legacy_due or now - self._last_checkpoint_at >= 30.0 or size_due:
+            self._last_checkpoint_at = now
             try:
                 conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
             except sqlite3.Error:
@@ -639,6 +807,7 @@ class SessionWriter:
                         self._idle.set()
                     continue
                 self._active_batch_since = time.monotonic()
+                self._current_item = batch[0]
                 try:
                     if conn is None:
                         conn = self._open_connection()
@@ -669,7 +838,9 @@ class SessionWriter:
                     for _item in batch:
                         self._queue.task_done()
                     self._active_batch_since = 0.0
-                    self._last_progress_at = time.monotonic()
+                    self._current_item = None
+                    # Retire a verdict about a batch that has ended, even if it
+                    # rolled back. This is not a forward-progress timestamp.
                     self._clear_stalled()
                     if self._queue.empty():
                         self._idle.set()
@@ -919,8 +1090,12 @@ def _get_session_writer() -> SessionWriter:
         writer = globals().get("_SESSION_WRITER")
         if writer is not None and writer.db_path == wanted and not writer._closing.is_set():
             return writer
-        if writer is not None:
-            writer.close(timeout=5.0)
+        if writer is not None and not writer.close(timeout=5.0):
+            # close() has already requested shutdown. Keep the slot occupied
+            # until its drain thread really exits; never create a second writer.
+            raise SessionStoreContentionError(
+                "Previous SessionWriter has not stopped; replacement refused",
+                contention_stage="admission")
         if (
             os.path.normcase(os.path.abspath(str(wanted)))
             not in _SESSION_DB_INITIALIZED_PATHS
@@ -1225,6 +1400,15 @@ def _apply_session_schema(conn: sqlite3.Connection) -> None:
             "CREATE INDEX IF NOT EXISTS ix_write_operations_target_updated "
             "ON write_operations(project_path, file_path, updated_at DESC)",
         )
+        # Retention predicates need leading indexes, including cascade lookups.
+        for statement in (
+            "CREATE INDEX IF NOT EXISTS ix_sessions_started ON sessions(started_at, session_id)",
+            "CREATE INDEX IF NOT EXISTS ix_pending_audits_session ON pending_audits(session_id)",
+            "CREATE INDEX IF NOT EXISTS ix_write_operations_session ON write_operations(session_id)",
+            "CREATE INDEX IF NOT EXISTS ix_write_operations_updated ON write_operations(updated_at)",
+            "CREATE INDEX IF NOT EXISTS ix_read_tokens_updated ON read_tokens(updated_at)",
+        ):
+            conn.execute(statement)
         conn.commit()
     except BaseException:
         if conn.in_transaction:
@@ -1272,6 +1456,9 @@ def _init_session_db():
         # while we waited, so we neither redo the DDL nor re-enter the retry loop.
         if db_key in _SESSION_DB_INITIALIZED_PATHS:
             return
+        failed_until, failure = _SESSION_INIT_FAILURES.get(db_key, (0.0, ""))
+        if time.monotonic() < failed_until:
+            raise SessionStoreContentionError(failure)
         _SESSIONS_DB.parent.mkdir(parents=True, exist_ok=True)
         last_exc: sqlite3.OperationalError | None = None
         for attempt in range(_SESSION_MIGRATION_ATTEMPTS):
@@ -1290,16 +1477,17 @@ def _init_session_db():
                 time.sleep(delay_ms / 1000.0)
                 continue
             else:
+                _SESSION_INIT_FAILURES.pop(db_key, None)
                 _SESSION_DB_INITIALIZED_PATHS.add(db_key)
                 return
             finally:
                 conn.close()
         # Exhausted the retry budget under a still-held lock. The schema is
         # mandatory, so surface it LOUD instead of leaving a half-checked DB.
-        raise SessionStoreContentionError(
-            f"session schema migration could not acquire the database lock after "
-            f"{_SESSION_MIGRATION_ATTEMPTS} attempts: {last_exc}",
-        )
+        failure = (f"session schema migration could not acquire the database lock after "
+                   f"{_SESSION_MIGRATION_ATTEMPTS} attempts: {last_exc}")
+        _SESSION_INIT_FAILURES[db_key] = (time.monotonic() + 2.0, failure)
+        raise SessionStoreContentionError(failure)
 
 
 # --------------------------------------------------------------------------- #
@@ -1352,152 +1540,81 @@ def prune_sessions_older_than(
     *,
     prune_orphans: bool = False,
     busy_timeout_ms: int = 30000,
+    chunk_size: int = 500,
 ) -> dict:
-    """Delete sessions (and their child rows) older than the retention window.
+    """Prune bounded transactions, yielding the writer between committed chunks.
 
-    Keeps only the most-recent ``days`` days. When ``days`` is None the LIVE
-    window from :func:`_session_retention_days` is used (env
-    ``ORCHESTRATOR_SESSION_RETENTION_DAYS``, default 10). The whole prune runs in
-    ONE transaction through the process-wide SessionWriter (``_run_session_write``)
-    so it inherits WAL, busy_timeout and the single-writer lock -- it never opens a
-    bare sqlite3 connection that would bypass those.
-
-    Cutoff-type correctness (A22 trap)
-    ----------------------------------
-    ``write_operations`` stores time as REAL epoch; every other timestamp column
-    is TEXT ISO. This function takes both cutoffs from :func:`_retention_cutoffs`
-    and applies the epoch cutoff to ``write_operations`` and the ISO cutoff to the
-    text columns. Comparing the REAL column against an ISO string would match all
-    rows (REAL < TEXT in SQLite's type ordering) and empty the table.
-
-    Manual cascade (no NEW orphans)
-    -------------------------------
-    Only ``events`` has a real FK to ``sessions`` and it does NOT declare
-    ON DELETE CASCADE, so the cascade is done by hand. For each session pruned by
-    age, the matching child rows are deleted FIRST (children before parent) via a
-    correlated subquery -- no ``IN (?, ?, ...)`` list, so there is no
-    SQLITE_MAX_VARIABLE_NUMBER limit and no partial-orphan window:
-      * events.session_id, pending_audits.session_id,
-        write_operations.session_id  -> sessions.session_id
-      * task_checkpoints.session_key -> sessions.session_id
-    ``read_tokens`` has NO session link (keyed by project_key, rel_path); it can
-    only be pruned by its own ``updated_at`` age, done below.
-
-    Independent age-based prune
-    ---------------------------
-    Two tables also accumulate rows not tied to a surviving session and are pruned
-    by their own timestamp regardless of session linkage:
-      * write_operations.updated_at (REAL epoch) < cutoff_epoch
-      * read_tokens.updated_at       (TEXT ISO)  < cutoff_iso
-
-    Pre-existing orphans (opt-in, default OFF)
-    ------------------------------------------
-    The DB already contains orphan rows created BEFORE this function existed
-    (measured 2026-08-17: ~2180 write_operations + ~1026 task_checkpoints whose
-    session no longer exists, plus write_operations with empty session_id). This
-    function does NOT touch those by default -- retention only removes rows made
-    stale by ITS OWN pruning, so a normal run is predictable. Pass
-    ``prune_orphans=True`` to additionally delete child rows whose session
-    reference is absent from ``sessions`` entirely; that is a separate, explicitly
-    toggled behaviour reported under ``orphans_*`` keys.
-
-    Sessions with a NULL/blank ``started_at`` are undatable and are always KEPT
-    (never pruned) rather than guessed at.
-
-    Returns a dict of per-table deleted-row counts plus the resolved
-    ``retention_days`` / ``cutoff_iso`` / ``cutoff_epoch`` so a caller can verify.
-    ``VACUUM`` is NOT performed here (it cannot run inside a transaction and would
-    hold a long exclusive lock); use :func:`vacuum_sessions_db` separately.
+    Deleted rows themselves are the durable cursor: restart selects the oldest
+    remaining key. A large session's children are chunked too; its parent is
+    removed only in the transaction that observes every child table empty.
+    REAL ledger timestamps use the epoch cutoff; other tables use ISO text.
+    Undated sessions and pre-existing orphans are retained unless opted in.
+    No VACUUM or live-database maintenance is implied by importing this module.
     """
     window = _session_retention_days() if days is None else max(0, int(days))
     cutoff_iso, cutoff_epoch = _retention_cutoffs(window)
+    limit = min(2000, max(1, int(chunk_size)))
+    children = (("events", "session_id"), ("pending_audits", "session_id"),
+                ("task_checkpoints", "session_key"), ("write_operations", "session_id"))
+    stats = {name: 0 for name in ("sessions", "events", "pending_audits", "task_checkpoints",
+                                 "write_operations", "read_tokens")}
+    chunks = 0
 
-    # Correlated-subquery predicate for "session pruned by age". Reused verbatim so
-    # child deletes and the final parent delete select EXACTLY the same session set.
-    _old_sessions_sql = (
-        "SELECT session_id FROM sessions "
-        "WHERE started_at IS NOT NULL AND started_at != '' AND started_at < ?"
-    )
+    def _cascade_chunk(conn):
+        row = conn.execute(
+            "SELECT session_id FROM sessions WHERE started_at IS NOT NULL "
+            "AND started_at != '' AND started_at < ? ORDER BY started_at, session_id LIMIT 1",
+            (cutoff_iso,)).fetchone()
+        if row is None:
+            return None
+        key = row[0]
+        counts = {}
+        for table, column in children:
+            counts[table] = conn.execute(
+                f"DELETE FROM {table} WHERE rowid IN "
+                f"(SELECT rowid FROM {table} WHERE {column}=? LIMIT ?)", (key, limit)).rowcount
+        # Another process cannot insert a child between this check and DELETE:
+        # both execute under this writer item's BEGIN IMMEDIATE transaction.
+        empty = all(conn.execute(f"SELECT 1 FROM {table} WHERE {column}=? LIMIT 1",
+                                 (key,)).fetchone() is None for table, column in children)
+        counts["sessions"] = conn.execute(
+            "DELETE FROM sessions WHERE session_id=?", (key,)).rowcount if empty else 0
+        return counts
 
-    def _prune(conn: sqlite3.Connection) -> dict:
-        stats: dict[str, int] = {}
+    while True:
+        counts = _run_session_write("prune sessions retention chunk", _cascade_chunk,
+                                    busy_timeout_ms=busy_timeout_ms)
+        if counts is None:
+            break
+        chunks += 1
+        for table, count in counts.items():
+            stats[table] += count
 
-        # 1) Cascade: children of age-pruned sessions, deleted BEFORE the parent.
-        stats["events"] = conn.execute(
-            f"DELETE FROM events WHERE session_id IN ({_old_sessions_sql})",
-            (cutoff_iso,),
-        ).rowcount
-        stats["pending_audits"] = conn.execute(
-            f"DELETE FROM pending_audits WHERE session_id IN ({_old_sessions_sql})",
-            (cutoff_iso,),
-        ).rowcount
-        stats["task_checkpoints"] = conn.execute(
-            f"DELETE FROM task_checkpoints WHERE session_key IN ({_old_sessions_sql})",
-            (cutoff_iso,),
-        ).rowcount
-        wo_cascade = conn.execute(
-            "DELETE FROM write_operations "
-            "WHERE session_id IS NOT NULL AND session_id != '' "
-            f"AND session_id IN ({_old_sessions_sql})",
-            (cutoff_iso,),
-        ).rowcount
-
-        # 2) Independent age-based prune. write_operations uses the EPOCH cutoff
-        #    (REAL column) -- the A22 trap. read_tokens uses the ISO cutoff.
-        wo_by_age = conn.execute(
-            "DELETE FROM write_operations WHERE updated_at < ?",
-            (cutoff_epoch,),
-        ).rowcount
-        stats["write_operations"] = wo_cascade + wo_by_age
-        stats["read_tokens"] = conn.execute(
-            "DELETE FROM read_tokens "
-            "WHERE updated_at IS NOT NULL AND updated_at != '' AND updated_at < ?",
-            (cutoff_iso,),
-        ).rowcount
-
-        # 3) Parent last, now that no child references it.
-        stats["sessions"] = conn.execute(
-            "DELETE FROM sessions "
-            "WHERE started_at IS NOT NULL AND started_at != '' AND started_at < ?",
-            (cutoff_iso,),
-        ).rowcount
-
-        # 4) Optional, opt-in: pre-existing orphans (session gone from `sessions`).
-        if prune_orphans:
-            stats["orphans_events"] = conn.execute(
-                "DELETE FROM events WHERE session_id NOT IN "
-                "(SELECT session_id FROM sessions)",
-            ).rowcount
-            stats["orphans_pending_audits"] = conn.execute(
-                "DELETE FROM pending_audits "
-                "WHERE session_id IS NOT NULL AND session_id != '' "
-                "AND session_id NOT IN (SELECT session_id FROM sessions)",
-            ).rowcount
-            stats["orphans_write_operations"] = conn.execute(
-                "DELETE FROM write_operations "
-                "WHERE session_id IS NOT NULL AND session_id != '' "
-                "AND session_id NOT IN (SELECT session_id FROM sessions)",
-            ).rowcount
-            stats["orphans_task_checkpoints"] = conn.execute(
-                "DELETE FROM task_checkpoints WHERE session_key NOT IN "
-                "(SELECT session_id FROM sessions)",
-            ).rowcount
-
-        return stats
-
-    stats = _run_session_write(
-        "prune sessions older than retention window",
-        _prune,
-        busy_timeout_ms=busy_timeout_ms,
-    )
-    result = {
-        "retention_days": window,
-        "cutoff_iso": cutoff_iso,
-        "cutoff_epoch": cutoff_epoch,
-        "orphans_pruned": bool(prune_orphans),
-    }
-    result.update(stats)
-    return result
+    predicates = [
+        ("write_operations", "write_operations", "updated_at < ?", (cutoff_epoch,)),
+        ("read_tokens", "read_tokens", "updated_at IS NOT NULL AND updated_at != '' AND updated_at < ?", (cutoff_iso,)),
+    ]
+    if prune_orphans:
+        for table, column in children:
+            predicates.append((table, "orphans_" + table,
+                               f"{column} IS NOT NULL AND {column} != '' AND "
+                               f"{column} NOT IN (SELECT session_id FROM sessions)", ()))
+    for table, counter, predicate, parameters in predicates:
+        stats.setdefault(counter, 0)
+        def _age_chunk(conn):
+            return conn.execute(f"DELETE FROM {table} WHERE rowid IN "
+                                f"(SELECT rowid FROM {table} WHERE {predicate} LIMIT ?)",
+                                (*parameters, limit)).rowcount
+        while True:
+            count = _run_session_write("prune sessions retention chunk", _age_chunk,
+                                       busy_timeout_ms=busy_timeout_ms)
+            stats[counter] += count
+            if count == 0:
+                break
+            chunks += 1
+    return {"retention_days": window, "cutoff_iso": cutoff_iso,
+            "cutoff_epoch": cutoff_epoch, "orphans_pruned": bool(prune_orphans),
+            "committed_chunks": chunks, **stats}
 
 
 def vacuum_sessions_db(*, busy_timeout_ms: int = 60000) -> dict:
@@ -1631,40 +1748,37 @@ def _session_active_today(conn, session_id: str) -> bool:
 def _close_stale_active_sessions(project_path: str) -> int:
     try:
         norm = _session_project_key(project_path)
-        rows = _session_read_connection().execute(
-            "SELECT session_id, started_at FROM sessions "
-            "WHERE project_path=? AND status='active'",
-            (norm,),
-        ).fetchall()
-        stale_ids = [sid for sid, started_at in rows if not _session_started_today(started_at)]
-        if not stale_ids:
-            return 0
-        now = datetime.now().isoformat(timespec="seconds")
-
-        def _close(conn):
-            current = conn.execute(
+        cursor = ""
+        total = 0
+        while True:
+            rows = _session_read_connection().execute(
                 "SELECT session_id, started_at FROM sessions "
-                "WHERE project_path=? AND status='active'",
-                (norm,),
-            ).fetchall()
-            # CASE-1909-H2: same guard as _open -- this sweep is not scoped to one
-            # agent, and a session with activity today is alive whatever calendar
-            # day it was opened on.
-            current_stale = [
-                sid for sid, started_at in current
-                if not _session_started_today(started_at)
-                and not _session_active_today(conn, sid)
-            ]
-            if current_stale:
-                conn.executemany(
-                    "UPDATE sessions SET status='closed', ended_at=? WHERE session_id=?",
-                    [(now, sid) for sid in current_stale],
-                )
-            return len(current_stale)
+                "WHERE project_path=? AND status='active' AND session_id>? "
+                "ORDER BY session_id LIMIT 100", (norm, cursor)).fetchall()
+            if not rows:
+                return total
+            cursor = rows[-1][0]
+            stale_ids = tuple(sid for sid, started in rows if not _session_started_today(started))
+            if not stale_ids:
+                continue
 
-        return _run_session_write("close stale active sessions", _close)
-    except Exception:
-        return 0
+            def _close(conn):
+                current = conn.execute(
+                    "SELECT session_id, started_at FROM sessions WHERE status='active' "
+                    f"AND session_id IN ({','.join('?' for _ in stale_ids)})", stale_ids).fetchall()
+                current_stale = [sid for sid, started in current
+                                 if not _session_started_today(started)
+                                 and not _session_active_today(conn, sid)]
+                if current_stale:
+                    now = datetime.now().isoformat(timespec="seconds")
+                    conn.executemany(
+                        "UPDATE sessions SET status='closed', ended_at=? WHERE session_id=?",
+                        [(now, sid) for sid in current_stale])
+                return len(current_stale)
+
+            total += _run_session_write("close stale active sessions", _close)
+    except Exception as exc:
+        _raise_session_read_error("stale session lookup", exc)
 
 
 _SESSION_EVIDENCE_COLUMNS = (
@@ -1698,6 +1812,20 @@ def _session_owner_clause(agent_id: str | None) -> tuple[str | None, str, tuple[
     return None, " AND agent_id IS NULL", ()
 
 
+def _get_unique_caller_session() -> str:
+    """Resolve legacy project-less logging only when ownership is unambiguous."""
+    _owner, owner_sql, owner_params = _session_owner_clause(None)
+    try:
+        rows = _session_read_connection().execute(
+            "SELECT session_id FROM sessions WHERE status='active'" + owner_sql
+            + " LIMIT 2", owner_params,
+        ).fetchall()
+    except Exception as exc:
+        _raise_session_read_error("native log session lookup", exc)
+    if len(rows) != 1:
+        raise ValueError("log_native needs exactly one active session for this caller; "
+                         "use log_native_event with project_path for an explicit target")
+    return str(rows[0][0])
 def _get_active_session(project_path: str, agent_id: str | None = None) -> dict | None:
     """Return persisted evidence for the caller's active session in this project.
 
@@ -1715,8 +1843,8 @@ def _get_active_session(project_path: str, agent_id: str | None = None) -> dict 
         )
         row = _session_read_connection().execute(sql, (norm, *owner_params)).fetchone()
         return dict(zip(_SESSION_EVIDENCE_COLUMNS, row, strict=True)) if row else None
-    except Exception:
-        return None
+    except Exception as exc:
+        _raise_session_read_error("active session lookup", exc)
 
 
 def _get_active_session_id(project_path: str, agent_id: str | None = None) -> str | None:
@@ -1902,8 +2030,8 @@ def _auto_open_session(project_path: str, body: dict,
             project_path, title, "T1", scoped_agent_id,
         )
         return session["session_id"]
-    except Exception:
-        return None
+    except Exception as exc:
+        _raise_session_read_error("auto open session", exc)
 
 
 def _derive_outcome(status: str, result) -> str:
@@ -1981,8 +2109,8 @@ def _read_token_get(project_key: str, rel_path: str):
         if not row:
             return None
         return {"read_hash": row[0], "read_mtime": row[1], "read_size_bytes": row[2]}
-    except Exception:
-        return None
+    except Exception as exc:
+        _raise_session_read_error("read token lookup", exc)
 
 
 class TaskCheckpointStorageError(RuntimeError):
@@ -2054,6 +2182,39 @@ def _ensure_session_row(conn, session_key: str) -> bool:
         return False
 
 
+def _session_payload_json(value, *, session_key: str, checkpoint: bool = False, heartbeat=None):
+    """Bound encoded payloads before they can occupy the writer queue."""
+    pieces = []
+    size = 0
+    for index, piece in enumerate(json.JSONEncoder(ensure_ascii=False).iterencode(value)):
+        if heartbeat is not None and index % 256 == 0:
+            heartbeat()
+        size += len(piece.encode("utf-8"))
+        if size > 256 * 1024:
+            message = f"Session payload exceeds 262144 UTF-8 bytes for {session_key!r}"
+            if checkpoint:
+                raise TaskCheckpointStorageError(message, error_name="TASK_CHECKPOINT_TOO_LARGE")
+            return json.dumps({"truncated": True, "reason": "SESSION_EVENT_PAYLOAD_TOO_LARGE",
+                               "limit_bytes": 256 * 1024, "session_key": str(session_key)[:256]})
+        pieces.append(piece)
+    return "".join(pieces)
+
+
+def _checkpoint_storage_error(exc, session_key):
+    if isinstance(exc, TaskCheckpointStorageError):
+        return exc
+    if isinstance(exc, SessionStoreCommitPendingError):
+        error = TaskCheckpointStorageError(
+            f"Checkpoint {session_key!r}: {exc}", error_name="TASK_CHECKPOINT_COMMIT_PENDING")
+    elif isinstance(exc, SessionStoreContentionError) or SessionWriter._is_locked_error(exc):
+        error = TaskCheckpointStorageError(
+            f"Checkpoint {session_key!r}: {exc}", error_name="TASK_CHECKPOINT_CONTENTION")
+    else:
+        return TaskCheckpointStorageError(f"Checkpoint {session_key!r}: {exc}")
+    error.contention_stage = getattr(exc, "contention_stage", "execution")
+    return error
+
+
 def _decode_task_checkpoint(session_key: str, payload: str | None):
     if not payload:
         return None
@@ -2069,57 +2230,49 @@ def _decode_task_checkpoint(session_key: str, payload: str | None):
             f"Task checkpoint payload for {session_key!r} is not an object",
             error_name="TASK_CHECKPOINT_MALFORMED",
         )
+    # Keep corrupt authority in place and fail closed: an empty replacement
+    # would silently discard the owner commitment and monotonic task epoch.
     return checkpoint
 
 
 def _task_checkpoint_save(session_key: str, checkpoint: dict) -> bool:
-    """Persist a checkpoint and fail loudly if the grouped commit fails."""
+    """Wait for SQLite COMMIT (WAL/NORMAL), not an OS/power-loss durability barrier."""
     if not isinstance(checkpoint, dict):
         raise TaskCheckpointStorageError(
-            "Task checkpoint must be a dictionary",
-            error_name="TASK_CHECKPOINT_MALFORMED",
-        )
+            "Task checkpoint must be a dictionary", error_name="TASK_CHECKPOINT_MALFORMED")
+    payload = _session_payload_json(checkpoint, session_key=session_key, checkpoint=True)
 
     def _save(conn):
+        row = conn.execute("SELECT payload FROM task_checkpoints WHERE session_key=?",
+                           (str(session_key),)).fetchone()
+        if row and row[0] == payload:
+            return True
         _ensure_session_row(conn, session_key)
         conn.execute(
             """INSERT INTO task_checkpoints (session_key, payload, updated_at)
                VALUES (?,?,?)
                ON CONFLICT(session_key) DO UPDATE SET
                  payload=excluded.payload, updated_at=excluded.updated_at""",
-            (str(session_key), json.dumps(checkpoint, ensure_ascii=False),
-             datetime.now().isoformat(timespec="seconds")),
-        )
+            (str(session_key), payload, datetime.now().isoformat(timespec="seconds")))
         return True
 
     try:
+        row = _session_read_connection().execute(
+            "SELECT payload FROM task_checkpoints WHERE session_key=?", (str(session_key),)).fetchone()
+        if row and row[0] == payload:
+            return True
         return bool(_run_session_write("task checkpoint save", _save, busy_timeout_ms=5000))
     except Exception as exc:
-        if isinstance(exc, TaskCheckpointStorageError):
-            raise
-        raise TaskCheckpointStorageError(
-            f"Failed to persist task checkpoint: {exc}",
-        ) from exc
+        raise _checkpoint_storage_error(exc, session_key) from exc
 
 
 def _task_checkpoint_load(session_key: str):
     """Read the authoritative checkpoint from one thread-local read connection."""
-    try:
-        row = _session_read_connection().execute(
-            "SELECT payload FROM task_checkpoints WHERE session_key=?",
-            (str(session_key),),
-        ).fetchone()
-        return _decode_task_checkpoint(str(session_key), row[0] if row else None)
-    except Exception as exc:
-        if isinstance(exc, TaskCheckpointStorageError):
-            raise
-        raise TaskCheckpointStorageError(
-            f"Failed to load task checkpoint: {exc}",
-        ) from exc
+    return _task_checkpoint_load_with_meta(session_key)[0]
 
 
 def _task_checkpoint_load_with_meta(session_key: str):
-    """Read checkpoint payload and its durable updated_at timestamp."""
+    """Read checkpoint payload and its committed updated_at timestamp."""
     try:
         row = _session_read_connection().execute(
             "SELECT payload, updated_at FROM task_checkpoints WHERE session_key=?",
@@ -2128,20 +2281,16 @@ def _task_checkpoint_load_with_meta(session_key: str):
         checkpoint = _decode_task_checkpoint(str(session_key), row[0] if row else None)
         return checkpoint, str(row[1] or "") if row else ""
     except Exception as exc:
-        if isinstance(exc, TaskCheckpointStorageError):
-            raise
-        raise TaskCheckpointStorageError(
-            f"Failed to load task checkpoint metadata: {exc}",
-        ) from exc
+        raise _checkpoint_storage_error(exc, session_key) from exc
 
 
-def _task_checkpoint_update(session_key: str, update_fn, busy_timeout_ms: int = 5000):
-    """Atomically read, decide, and optionally replace one checkpoint row.
+def _task_checkpoint_update(session_key: str, update_fn, busy_timeout_ms: int = 5000,
+                            *, read_fastpath: bool = False):
+    """Read, decide, and optionally replace one checkpoint row atomically.
 
-    ``update_fn`` receives one authoritative snapshot and returns
-    ``(replacement_or_none, result)``. ``None`` rolls back a rejected/read-only
-    decision. A replacement is UPSERTed and committed before this function
-    returns, so competing processes receive distinct commit-ordered epochs.
+    Audited pure decision closures may opt into a read-only answer against an
+    already committed owner. Any replacement is re-decided inside the writer.
+    COMMIT with WAL/NORMAL survives process crash, not every OS/power failure.
     """
     timeout_ms = max(1, int(busy_timeout_ms))
     decision = {}
@@ -2158,33 +2307,49 @@ def _task_checkpoint_update(session_key: str, update_fn, busy_timeout_ms: int = 
         if not isinstance(replacement, dict):
             raise TaskCheckpointStorageError(
                 "Task checkpoint updater returned a non-object replacement",
-                error_name="TASK_CHECKPOINT_MALFORMED",
-            )
+                error_name="TASK_CHECKPOINT_MALFORMED")
+        payload = _session_payload_json(replacement, session_key=session_key, checkpoint=True, heartbeat=getattr(conn, "progress_heartbeat", None))
         _ensure_session_row(conn, session_key)
         conn.execute(
             """INSERT INTO task_checkpoints (session_key, payload, updated_at)
                VALUES (?,?,?)
                ON CONFLICT(session_key) DO UPDATE SET
                  payload=excluded.payload, updated_at=excluded.updated_at""",
-            (str(session_key), json.dumps(replacement, ensure_ascii=False),
-             datetime.now().isoformat(timespec="seconds")))
+            (str(session_key), payload, datetime.now().isoformat(timespec="seconds")))
         return True
 
     try:
+        if read_fastpath and os.environ.get("ORCH_TASK_CHECKPOINT_READ_FASTPATH", "1") != "0":
+            previous, _ = _task_checkpoint_load_with_meta(session_key)
+            if (previous and previous.get("owner_claim_status") == "committed"
+                    and previous.get("owner_capability_sha256")):
+                replacement, result = update_fn(dict(previous))
+                if replacement is None:
+                    return previous, result, False
         committed = _run_session_write(
-            "atomic task checkpoint update", _update, busy_timeout_ms=timeout_ms,
-        )
+            "atomic task checkpoint update", _update, busy_timeout_ms=timeout_ms)
         if not committed:
             return decision["previous"], decision["result"], False
         return dict(decision["replacement"]), decision["result"], True
-    except SessionStoreContentionError as exc:
-        raise TaskCheckpointStorageError(
-            str(exc), error_name="TASK_CHECKPOINT_CONTENTION") from exc
     except Exception as exc:
-        if isinstance(exc, TaskCheckpointStorageError):
-            raise
-        raise TaskCheckpointStorageError(
-            f"Atomic task checkpoint update failed: {exc}") from exc
+        raise _checkpoint_storage_error(exc, session_key) from exc
+
+
+_SESSION_EVENT_WARNING_LOCK = threading.Lock()
+_SESSION_EVENT_CONTENTION_COUNT = 0
+
+
+def _note_session_event_contention(failed):
+    global _SESSION_EVENT_CONTENTION_COUNT
+    with _SESSION_EVENT_WARNING_LOCK:
+        if failed:
+            _SESSION_EVENT_CONTENTION_COUNT += 1
+            if _SESSION_EVENT_CONTENTION_COUNT == 1:
+                logger.warning("session event persistence hit store contention; propagating; further warnings latched")
+        elif _SESSION_EVENT_CONTENTION_COUNT:
+            logger.warning("session event persistence recovered; suppressed_contention_warnings=%d",
+                           _SESSION_EVENT_CONTENTION_COUNT - 1)
+            _SESSION_EVENT_CONTENTION_COUNT = 0
 
 
 def _log_session_event(session_id: str, tool_name: str, body: dict, result: dict,
@@ -2241,11 +2406,11 @@ def _log_session_event(session_id: str, tool_name: str, body: dict, result: dict
         correlation_type = metadata.get("correlation_type")
         correlation_key = metadata.get("correlation_key")
         evidence = metadata.get("evidence")
-        evidence_json = json.dumps(evidence, ensure_ascii=False) if evidence is not None else None
+        evidence_json = _session_payload_json(evidence, session_key=session_id) if evidence is not None else None
         natural = _make_natural_log_line(tool_name, target, range_label, duration_ms, status)
         now = datetime.now().isoformat(timespec="seconds")
         audit_id = str(audit_id or "").strip() or None
-        result_json = json.dumps(result, ensure_ascii=False) if isinstance(result, dict) else None
+        result_json = _session_payload_json(result, session_key=session_id) if isinstance(result, dict) else None
         columns = """session_id, tool_name, tool_origin, action_type, status,
             target, range_label, duration_ms, reason, natural_log_line, created_at,
             outcome, queue_wait_ms, host_session_id, task_epoch, prompt_hash, agent_id,
@@ -2276,22 +2441,14 @@ def _log_session_event(session_id: str, tool_name: str, body: dict, result: dict
                 raise RuntimeError("audit_id insert was ignored without an existing event")
             return existing[0]
 
-        return _run_session_write(
+        event_id = _run_session_write(
             "session event persistence", _persist_event, durable=durable,
         )
+        if event_id is not None:
+            _note_session_event_contention(False)
+        return event_id
     except SessionStoreContentionError:
-        # A20/A33: a contention/backpressure failure is INFRASTRUCTURE, not a
-        # missing/committed event. Swallowing it to None silently poisoned every
-        # downstream reader -- audit_reconciliation_report saw {None,2,4,5} for a
-        # set that should have been {1,2,4,5}, i.e. corrupt data with no trace of
-        # its cause. Re-raise so the caller (durable outbox retry, or a loud tool
-        # error) handles it instead of persisting a false event_id. None is
-        # reserved below for a genuine persistence bug (e.g. a dropped table).
-        logger.warning(
-            "session event persistence hit store contention for session=%r "
-            "tool=%r audit_id=%r; propagating instead of returning a null event_id",
-            session_id, tool_name, audit_id,
-        )
+        _note_session_event_contention(True)
         raise
     except Exception:
         logger.exception(

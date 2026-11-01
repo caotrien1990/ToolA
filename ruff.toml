@@ -6,7 +6,7 @@ target-version = 'py312'
 select = ['E9', 'F63', 'F7']
 
 # ---------------------------------------------------------------------------
-# A38-B, measured 2026-09-20. READ THIS BEFORE "fixing ruff findings" again.
+# A38-B, remeasured 2026-10-31 after R3. READ THIS BEFORE "fixing ruff findings".
 #
 # `ruff check <file>` from the repo root uses the select above and answers
 # "All checks passed!" for code_tools.py. Anything a wider run reports is
@@ -36,10 +36,10 @@ select = ['E9', 'F63', 'F7']
 # legacy debt, deliberately unselected, and re-measuring them proves nothing.
 # ---------------------------------------------------------------------------
 #
-# A38-B round 2, measured 2026-09-20. The E7 one-liner family, and why the fix
-# is a scoped ignore instead of 59 edits:
+# A38-B round 2, remeasured 2026-10-31 after R3. The E7 one-liner family:
+# is a scoped ignore instead of broad formatting edits:
 #
-#   E701  17  code_tools.py -- multiple statements on one line (colon)
+#   E701  16  code_tools.py -- multiple statements on one line (colon)
 #   E702   6  code_tools.py -- multiple statements on one line (semicolon)
 #   E741   0  code_tools.py (was 1: the app-session-log reader bound the loop
 #             variable to a single lowercase L, which reads as 1 or I; renamed.

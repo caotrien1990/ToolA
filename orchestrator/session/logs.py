@@ -665,6 +665,17 @@ def _check_incomplete_sessions() -> list[dict]:
 
 
 async def log_native(native: list = None) -> str:
+    import asyncio
+    return await asyncio.to_thread(_log_native_sync, native)
+
+
+def _log_native_sync(native: list = None) -> str:
+    from .store import _get_unique_caller_session
+    try:
+        session_id = _get_unique_caller_session()
+    except ValueError as exc:
+        return json.dumps({"ok": False, "error_name": "NATIVE_LOG_SESSION_UNRESOLVED",
+                           "error": str(exc)}, ensure_ascii=False)
     if native is None:
         native = []
     cleaned = [
@@ -681,18 +692,11 @@ async def log_native(native: list = None) -> str:
     usage_path = _usage_log_path()
     _log_to_file(usage_path, entry, max_entries=1000)
     _auto_trim_log(usage_path)
-    try:
-        import sqlite3
-        conn = sqlite3.connect(str(_SESSIONS_DB))
-        row = conn.execute(
-            "SELECT session_id FROM sessions WHERE status='active' ORDER BY started_at DESC LIMIT 1",
-        ).fetchone()
-        conn.close()
-        if row:
-            _log_session_event(row[0], "log_native", {"native": cleaned}, {"ok": True, "native_count": len(cleaned)}, 0, "ok", "")
-    except Exception:
-        pass
-    msg = "Session marked complete."
+    event_id = _log_session_event(session_id, "log_native", {"native": cleaned},
+                                  {"ok": True, "native_count": len(cleaned)}, 0, "ok", "")
+    if event_id is None:
+        raise RuntimeError("log_native event persistence failed")
+    msg = "Session completion logged."
     if cleaned:
         msg += f" {len(cleaned)} native fallback(s) logged."
     return json.dumps({"ok": True, "message": msg, "native_count": len(cleaned)}, ensure_ascii=False)

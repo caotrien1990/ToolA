@@ -582,7 +582,11 @@ class DurableAuditDropPathTests(unittest.TestCase):
         with mock.patch.object(
             writer, "submit", side_effect=AuditStorageBusy("database is locked")
         ):
-            self.assertIsNone(self._stage("drop-busy-1"))
+            ack = self._stage("drop-busy-1")
+            self.assertEqual(ack.audit_id, "drop-busy-1")
+            self.assertEqual(ack.state, "spooled")
+            self.assertTrue(ack.durable)
+            self.assertFalse(ack.applied)
 
         self.assertEqual(spool_depth(writer.spool_path), 1)
         records, corrupt = read_spool(writer.spool_path)
@@ -614,7 +618,11 @@ class DurableAuditDropPathTests(unittest.TestCase):
         # Before this fix _get_durable_audit_writer(start=True) called start() on a
         # stopped writer, which raises AuditClosedError BY DESIGN. That escaped the
         # accessor, so the row never reached the spool fallback below it at all.
-        self.assertIsNone(self._stage("drop-closed-1"))
+        ack = self._stage("drop-closed-1")
+        self.assertEqual(ack.audit_id, "drop-closed-1")
+        self.assertEqual(ack.state, "spooled")
+        self.assertTrue(ack.durable)
+        self.assertFalse(ack.applied)
 
         self.assertEqual(spool_depth(writer.spool_path), 1)
         records, _corrupt = read_spool(writer.spool_path)
@@ -776,7 +784,11 @@ class DurableAuditDropPathTests(unittest.TestCase):
         with mock.patch.object(
             writer, "submit", side_effect=AuditCapacityError("queue is full")
         ):
-            self.assertIsNone(self._stage("drop-capacity-1"))
+            ack = self._stage("drop-capacity-1")
+            self.assertEqual(ack.audit_id, "drop-capacity-1")
+            self.assertEqual(ack.state, "spooled")
+            self.assertTrue(ack.durable)
+            self.assertFalse(ack.applied)
 
         self.assertEqual(spool_depth(writer.spool_path), 1)
         records, _corrupt = read_spool(writer.spool_path)

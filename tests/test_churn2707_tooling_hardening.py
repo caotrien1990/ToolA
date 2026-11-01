@@ -327,22 +327,28 @@ class PersistentWriteLedgerTests(unittest.TestCase):
         self.assertEqual(
             orchestrator_server._write_ledger_commit_state(restored), "unknown")
 
-    def test_locked_sqlite_fails_open_quickly_instead_of_blocking_write(self):
+    def test_locked_sqlite_refuses_untracked_write_within_bounded_budget(self):
+        # CF-02: a write must not begin without a durable operation identity.
+        body = {"project_path": r"D:\project", "file_path": "locked.py"}
+        before = dict(orchestrator_server._WRITE_LEDGER)
         blocker = sqlite3.connect(str(code_tools._SESSIONS_DB), timeout=1)
         blocker.execute("BEGIN EXCLUSIVE")
         try:
             started = time.perf_counter()
-            operation_id = orchestrator_server._write_ledger_begin(
-                "write_fix",
-                {"project_path": r"D:\project", "file_path": "locked.py"},
-                "round-host",
-            )
+            with self.assertRaises(code_tools._session_store_module.SessionStoreContentionError):
+                orchestrator_server._write_ledger_begin("write_fix", body, "round-host")
             elapsed = time.perf_counter() - started
         finally:
             blocker.rollback()
             blocker.close()
-        self.assertTrue(operation_id)
-        self.assertLess(elapsed, 2.0)
+        self.assertEqual(before, orchestrator_server._WRITE_LEDGER)
+        # Three 2s SQLite attempts plus bounded retry backoff, not the former
+        # 100ms budget that rejected ordinary short lock holders.
+        self.assertLess(elapsed, 8.0)
+        # Once persistence recovers, admission creates a retrievable durable row.
+        operation_id = orchestrator_server._write_ledger_begin("write_fix", body, "round-host")
+        self.assertEqual(orchestrator_server._write_ledger_db_get(
+            operation_id=operation_id)["status"], "in_flight")
 
     def test_async_write_ledger_wrapper_keeps_event_loop_responsive(self):
         import threading

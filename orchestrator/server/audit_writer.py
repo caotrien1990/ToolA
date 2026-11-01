@@ -330,6 +330,10 @@ class DurableAuditWriter:
         self._stop = threading.Event()
         self._abandon_apply_commit = threading.Event()
         self._thread: threading.Thread | None = None
+        self._replay_thread: threading.Thread | None = None
+        self._staging = 0
+        self._stage_revision = 0
+        self._replaying = False
         # Worker-thread connection cache (P16): the batch worker used to open a
         # fresh SQLite connection per claim -- ~16-20 connect()+PRAGMA pairs
         # per second on an idle outbox, measurable GIL/disk churn that starved
@@ -744,9 +748,14 @@ class DurableAuditWriter:
         deadline = time.monotonic() + wait_budget
 
         with self._condition:
+            if not self._admission_open:
+                raise AuditClosedError("durable audit admission is closed")
+            self._staging += 1
+            self._stage_revision += 1
+        try:
             while True:
-                if not self._admission_open:
-                    raise AuditClosedError("durable audit admission is closed")
+                # Admission is reserved above. SQLite owns transaction serialization;
+                # lifecycle notification must remain available during busy retries.
                 try:
                     result = self._retry_db(
                         "stage audit row",
@@ -754,17 +763,14 @@ class DurableAuditWriter:
                     )
                 except AuditIdConflict as exc:
                     self._bump("id_conflicts_total")
-                    self._set_last_error(
-                        exc, kind="id_conflict", context=audit_id,
-                    )
+                    self._set_last_error(exc, kind="id_conflict", context=audit_id)
                     raise
                 if not isinstance(result, _CapacityFull):
-                    if result.duplicate:
-                        self._bump("duplicate_total")
-                    else:
-                        self._bump("staged_total")
+                    self._bump("duplicate_total" if result.duplicate else "staged_total")
                     self._clear_last_error(kinds={"id_conflict", "capacity"})
-                    break
+                    if result.state == "pending":
+                        self._wake.set()
+                    return result
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     self._bump("capacity_rejections")
@@ -774,13 +780,15 @@ class DurableAuditWriter:
                     )
                     self._set_last_error(error)
                     raise error
-                self._condition.wait(
-                    timeout=min(remaining, self.poll_interval_s),
-                )
-
-        if result.state == "pending":
-            self._wake.set()
-        return result
+                with self._condition:
+                    if not self._admission_open:
+                        raise AuditClosedError("durable audit admission is closed")
+                    self._condition.wait(timeout=min(remaining, self.poll_interval_s))
+        finally:
+            with self._condition:
+                self._staging -= 1
+                self._stage_revision += 1
+                self._condition.notify_all()
 
     def submit(
         self,
@@ -800,41 +808,23 @@ class DurableAuditWriter:
         """
         return self.db_path.with_name(self.db_path.stem + "_spool.jsonl")
 
-    def spool_failed_row(
-        self,
-        audit_id: str,
-        kind: str,
-        payload: Any,
-        reason: str,
-    ) -> bool:
-        """Park a row stage() could not commit. Never raises: every caller is an
-        except block, and a spool that throws would turn a recoverable drop into a
-        crashed request.
+    @staticmethod
+    def park_failed_row(db_path: str | Path, audit_id: str, kind: str,
+                        payload: Any, reason: str) -> bool:
+        """Persist recovery evidence even if constructing the DB writer failed."""
+        db = Path(db_path)
+        try:
+            return append_spool(db.with_name(db.stem + "_spool.jsonl"), {
+                "audit_id": str(audit_id), "kind": str(kind), "payload": payload,
+                "reason": str(reason)[:2000], "parked_at": time.time(),
+            })
+        except Exception:
+            return False
 
-        Until this existed the caller logged the failure and returned, so the payload
-        was simply gone -- 21 rows were lost that way. A False return means even the
-        spool write failed, which is the caller's signal to fall back to logging.
-        """
-        # "Never raises" has to be enforced HERE, not inherited from append_spool.
-        # append_spool promises a False return, but this method is the contract the
-        # except blocks depend on, and a defect below it must not escape upward.
-        try:
-            parked = append_spool(
-                self.spool_path,
-                {
-                    "audit_id": str(audit_id),
-                    "kind": str(kind),
-                    "payload": payload,
-                    "reason": str(reason)[:2000],
-                    "parked_at": time.time(),
-                },
-            )
-        except Exception:
-            parked = False
-        try:
-            self._bump("spool_parked_total" if parked else "spool_park_failures")
-        except Exception:
-            pass
+    def spool_failed_row(self, audit_id: str, kind: str, payload: Any,
+                         reason: str) -> bool:
+        parked = self.park_failed_row(self.db_path, audit_id, kind, payload, reason)
+        self._bump("spool_parked_total" if parked else "spool_park_failures")
         return parked
 
     def spool_depth(self) -> int:
@@ -842,27 +832,27 @@ class DurableAuditWriter:
         return _spool_depth(self.spool_path)
 
     def replay_spool(self) -> dict[str, int]:
-        """Re-stage every parked row. Safe to call on every start: at-least-once."""
-        return drain_spool(self.spool_path, self._replay_parked_row)
+        """Replay a bounded batch; stop on transient refusal and retry later."""
+        return drain_spool(self.spool_path, self._replay_parked_row,
+                           max_records=32, max_seconds=1.0, stop_on_refusal=True)
+
+    def _quarantine_parked_row(self, record: dict[str, Any], reason: str) -> bool:
+        # Remove from retry queue only after the original payload is durable here.
+        return append_spool(self.spool_path.with_suffix(".quarantine.jsonl"),
+                            {**record, "quarantine_reason": reason}, max_records=0)
 
     def _replay_parked_row(self, record: dict[str, Any]) -> bool:
-        """Return True when the row reached the outbox, so drain_spool can drop it."""
         audit_id = str(record.get("audit_id") or "")
         kind = str(record.get("kind") or "")
         if not audit_id or not kind:
-            # Unusable record: no retry can ever make it stageable, and keeping it
-            # would block the spool from ever emptying.
             self._bump("spool_replay_unusable")
-            return True
+            return self._quarantine_parked_row(record, "missing audit identity")
         try:
-            self.stage(audit_id, kind, record.get("payload"))
-        except AuditIdConflict:
-            # The row is already in the outbox. Delivery is at-least-once by design,
-            # so "already present" is the success case, not a failure to retry.
+            self.stage(audit_id, kind, record.get("payload"), timeout=0)
+        except (AuditIdConflict, AuditSchemaMismatch, ValueError, TypeError) as exc:
             self._bump("spool_replay_conflicts")
-            return True
+            return self._quarantine_parked_row(record, str(exc))
         except Exception:
-            # Storage still unhealthy, or admission closed. Keep it for the next start.
             return False
         self._bump("spool_replayed_total")
         return True
@@ -1496,10 +1486,27 @@ class DurableAuditWriter:
             )
             self._thread.start()
             self._wake.set()
-        # Outside the condition on purpose: the replay calls stage(), which takes the
-        # same lock. Rows parked by spool_failed_row are recoverable only here, so a
-        # writer that started without draining would leave them on disk forever.
-        self.replay_spool()
+            self._replay_thread = threading.Thread(
+                target=self._replay_main,
+                name=f"audit-spool-{self.db_path.name}", daemon=True,
+            )
+            self._replaying = True
+            self._replay_thread.start()
+
+    def _replay_main(self) -> None:
+        while not self._stop.is_set():
+            with self._condition:
+                self._replaying = True
+            try:
+                self.replay_spool()
+            except Exception as exc:
+                self._set_last_error(exc, context="spool replay")
+            finally:
+                with self._condition:
+                    self._replaying = False
+                    self._condition.notify_all()
+            if self._stop.wait(max(1.0, self.poll_interval_s)):
+                break
 
     def close_admission(self) -> None:
         with self._condition:
@@ -1524,16 +1531,19 @@ class DurableAuditWriter:
         if timeout < 0:
             raise ValueError("timeout must be >= 0")
         deadline = time.monotonic() + timeout
-        with self._condition:
-            while True:
-                if self.pending_count() == 0:
+        while True:
+            with self._condition:
+                revision = self._stage_revision
+            pending = self.pending_count()
+            parked = self.spool_depth()
+            with self._condition:
+                if (pending == 0 and parked == 0 and not self._staging
+                        and not self._replaying and revision == self._stage_revision):
                     return True
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     return False
-                self._condition.wait(
-                    timeout=min(remaining, self.poll_interval_s),
-                )
+                self._condition.wait(timeout=min(remaining, self.poll_interval_s))
 
     def metrics(self) -> dict[str, Any]:
         def state_counts() -> dict[str, Any]:
@@ -1630,15 +1640,8 @@ class DurableAuditWriter:
         try:
             pending = self.pending_count()
             if drain:
-                with self._condition:
-                    while pending:
-                        remaining = deadline - time.monotonic()
-                        if remaining <= 0:
-                            break
-                        self._condition.wait(
-                            timeout=min(remaining, self.poll_interval_s),
-                        )
-                        pending = self.pending_count()
+                self.wait_until_idle(timeout=max(0.0, deadline - time.monotonic()))
+                pending = self.pending_count()
         except Exception as exc:
             errors.append(f"{type(exc).__name__}: {exc}")
             self._set_last_error(exc)
@@ -1650,6 +1653,9 @@ class DurableAuditWriter:
             with self._condition:
                 self._condition.notify_all()
 
+            replay = self._replay_thread
+            if replay is not None:
+                replay.join(timeout=max(0.0, deadline - time.monotonic()))
             thread = self._thread
             if thread is not None:
                 try:
@@ -1677,7 +1683,8 @@ class DurableAuditWriter:
             self._set_last_error(exc)
             final_pending = -1 if pending is None else pending
 
-        drained = final_pending == 0
+        drained = final_pending == 0 and self._staging == 0 and self.spool_depth() == 0
+        stopped = stopped and (self._replay_thread is None or not self._replay_thread.is_alive())
         timed_out = bool(drain and (not drained or not stopped))
         return ShutdownResult(
             drained=drained,

@@ -1646,49 +1646,37 @@ def _stage_durable_session_event(
         "status": str(status or "error"),
         "error_msg": str(error_msg or "")[:300],
     }
-    writer = _get_durable_audit_writer(start=True)
-    if writer is None:
-        raise _cf16_annotate_attempts(
-            RuntimeError("durable audit writer unavailable outside HTTP daemon"), False, False
-        )
     staged_id = _durable_audit_id(audit_id)
+    writer = None
     try:
+        writer = _get_durable_audit_writer(start=True)
+        if writer is None:
+            raise _cf16_annotate_attempts(
+                RuntimeError("durable audit writer unavailable outside HTTP daemon"), False, False
+            )
         return writer.submit(staged_id, SESSION_EVENT_KIND, payload)
     except (AuditStorageBusy, AuditCapacityError, AuditClosedError) as exc:
-        # F1/F5 2026-09-27: submit() is literally "return self.stage(...)" with no
-        # fallback, so every AuditStorageBusy (21 rows in 48h) and every
-        # AuditClosedError from a stage arriving after shutdown (3 rows, 2026-09-24
-        # 20:28) reached the caller, which only logged. Park the row instead.
-        #
-        # These three and ONLY these three, because the spool is a RETRY queue and a
-        # parked row is replayed through stage() on the next start(). The three named
-        # here are transient -- a busy DB (:457), a full queue (:714), a closed
-        # admission (:692) -- so the same row succeeds on replay. AuditIdConflict
-        # (:637) and AuditSchemaMismatch are the opposite: the first means the caller
-        # reused one operation_id for two different payloads, the second means the DB
-        # contract is broken, and NEITHER can ever succeed on replay. Spooling those
-        # would grow the spool forever while hiding a real defect, so they stay loud
-        # -- and the pre-existing test_operation_id_reuse_is_duplicate_or_loud_conflict
-        # is what proves the conflict still escapes. A bare `except Exception` here
-        # silently converted that contract violation into a parked row.
-        #
-        # Spooling -- NOT restarting the writer -- is the deliberate answer for the
-        # closed case: start() refuses a stopped writer by design, and re-opening
-        # SQLite while the process tears down trades one lost row for a corrupt DB.
-        # The spool is a plain JSONL append, so it still works with the DB closed,
-        # and the writer drains it on the next start().
-        #
-        # This is the PRODUCER, not the call site: the payload and the writer already
-        # exist here, whereas the caller would have to rebuild both.
+        # Include construction in the recovery boundary. Permanent schema/identity
+        # failures still escape; they must not turn into an endless retry queue.
         try:
-            _spooled = writer.spool_failed_row(staged_id, SESSION_EVENT_KIND, payload, repr(exc))
+            if writer is None:
+                parked = DurableAuditWriter.park_failed_row(
+                    _durable_audit_db_path(), staged_id, SESSION_EVENT_KIND, payload, repr(exc))
+            else:
+                parked = writer.spool_failed_row(staged_id, SESSION_EVENT_KIND, payload, repr(exc))
         except Exception as _spool_exc:
             raise _cf16_annotate_attempts(_spool_exc, True, True) from _spool_exc
-        if _spooled:
-            return None
+        if parked:
+            from orchestrator.server.audit_writer import AuditAck
+            return AuditAck(audit_id=staged_id, state="spooled", duplicate=False)
         raise _cf16_annotate_attempts(exc, True, True)
     except Exception as exc:
-        raise _cf16_annotate_attempts(exc, True, False)
+        # CF-16: permanent submit failures stay loud, marked stage-attempted /
+        # spool-not-attempted; an already-annotated raise (writer-unavailable)
+        # passes through untouched.
+        if getattr(exc, "_cf16_stage_attempted", None) is None:
+            raise _cf16_annotate_attempts(exc, True, False)
+        raise
 
 
 _POST_CALL_ACCOUNTING = PostCallAccountingQueue(
@@ -1736,10 +1724,16 @@ async def _flush_post_call_accounting(timeout: float = 10.0) -> dict:
 
 async def _post_call_accounting_startup(_app) -> None:
     _boot_step("on_startup.post_call_accounting.start")
-    writer = _get_durable_audit_writer(start=True)
+    _write_ledger_schedule_recovery()
+    try:
+        writer = await asyncio.to_thread(_get_durable_audit_writer, start=True)
+    except (AuditStorageBusy, AuditCapacityError, AuditClosedError) as exc:
+        # Producers can park independently of writer construction and retry later.
+        logger.error("Durable audit startup deferred: %s", exc)
+        writer = None
     _boot_step("on_startup.post_call_accounting.writer.done")
     if writer is None:
-        logger.critical("Durable audit writer unavailable in HTTP startup")
+        logger.critical("Durable audit writer unavailable in HTTP startup; producer spool remains available")
     if not _POST_CALL_ACCOUNTING.start():
         logger.critical("Post-call accounting lane failed to start")
     _boot_step("on_startup.post_call_accounting.done")
@@ -2572,14 +2566,12 @@ def _quota_principal(session_id: str, agent_id: str, epoch, prompt_hash: str,
     return "principal:" + hashlib.sha256(material.encode()).hexdigest()
 
 def _task_checkpoint_storage_response(exc, cors: dict, *, write_performed: bool = False):
-    """Convert an authoritative checkpoint failure into a loud transport error."""
+    """Preserve checkpoint admission/commit uncertainty at the HTTP boundary."""
     return web.json_response({
         "ok": False,
         "error": str(exc),
-        "error_name": getattr(exc, "error_name", "TASK_CHECKPOINT_STORAGE_ERROR"),
-        "retryable": False,
         "write_performed": write_performed,
-        "ca_next_action": "repair_task_checkpoint_storage_then_retry",
+        **ct._checkpoint_error_fields(exc),
     }, status=503, headers=cors)
 
 
@@ -2663,14 +2655,12 @@ async def _write_ledger_db_get_async(
     operation_id: str = "", target: tuple[str, str] | None = None
 ):
     """Keep write-status SQLite fallback reads off the event loop too."""
-    async with _write_ledger_async_lock():
-        return await asyncio.to_thread(_write_ledger_db_get, operation_id, target)
+    return await asyncio.to_thread(_write_ledger_db_get, operation_id, target)
 
 
 async def _write_ledger_db_list_async(target: tuple[str, str], limit: int = 20):
     """ISS-01: every ledger row for one target, newest first (not just LIMIT 1)."""
-    async with _write_ledger_async_lock():
-        return await asyncio.to_thread(_write_ledger_db_list, target, limit)
+    return await asyncio.to_thread(_write_ledger_db_list, target, limit)
 
 def _write_ledger_target_remember(pp: str, fp: str, op_id: str) -> None:
     """Append op_id to the target's candidate list (most recent last, deduped)."""
@@ -2880,15 +2870,24 @@ def _setup_cancellation_scope(tool_name: str, body: dict, task_session_id: str,
                      daemon=True).start()
     return scope_op_id, scope_id, cancel_event, disconnect_stop
 
-def _write_ledger_db_upsert(rec: dict) -> bool:
+def _write_ledger_db_upsert(rec: dict, db_path=None) -> bool:
+    for attempt in range(3):
+        if _write_ledger_db_upsert_once(rec, db_path):
+            return True
+        if attempt < 2:
+            time.sleep(0.05 * (attempt + 1))
+    return False
+
+
+def _write_ledger_db_upsert_once(rec: dict, db_path=None) -> bool:
     """Persist one ledger record: a later send replaces an earlier one (#36), and a
     send never regresses its own terminal state."""
     try:
         result = rec.get("result") if isinstance(rec.get("result"), dict) else None
         result_json = json.dumps(result, ensure_ascii=False) if result is not None else None
-        conn = sqlite3.connect(str(ct._SESSIONS_DB), timeout=0.1)
+        conn = sqlite3.connect(str(db_path or ct._SESSIONS_DB), timeout=2.0)
         try:
-            conn.execute("PRAGMA busy_timeout=100")
+            conn.execute("PRAGMA busy_timeout=2000")
             conn.execute(
                 """INSERT INTO write_operations
                    (operation_id, tool, status, project_path, file_path, session_id,
@@ -2961,76 +2960,64 @@ def _write_ledger_row_to_rec(row) -> dict:
     return rec
 
 
+class WriteLedgerLookupIncomplete(ct._session_store_module.SessionStoreContentionError):
+    """Bounded target lookup could not establish an exhaustive answer."""
+
+
 def _write_ledger_db_target_rows(conn, target: tuple[str, str], limit: int) -> list:
-    """Every stored row whose (project_path, file_path) resolves to target's file.
+    """Canonical results, or an explicit incomplete lookup; never silent starvation.
 
-    The pair is the STORAGE key, never the identity. One file written under
-    (root, "f.py"), (parent, "pkg\\f.py") or ("", "<abs>\\pkg\\f.py") produced
-    three keys, and the exact-pair WHERE answered "no ledger row" for the two
-    spellings it did not repeat (measured 2026-09-28: 15 invisible rows inside
-    one repo, incl. op 74b21aeedd7e5199 stored as parent-dir +
-    "project-orchestrator\\code_tools.py"). SQL keeps two branches -- the
-    historical exact pair (rides ix_write_operations_target_updated, LIMITed:
-    every row it returns is canonical by construction) and a basename
-    prefilter (LIKE ... ESCAPE '!', wildcards escaped, case-insensitive like
-    SQLite's LIKE) that reaches the other spellings. The prefilter carries NO
-    LIMIT: a LIMIT n BEFORE the Python filter starved the true row whenever
-    >= n NEWER same-basename rows sat in other directories (leader audit,
-    reproduced with 25 core.py rows -- exactly the silent "no ledger row" this
-    function exists to remove). Its cursor streams newest-first instead, the
-    ONE canonical matcher (_write_ledger_target_abs) decides per row, and the
-    scan stops once n canonical matches are collected -- every later cursor row
-    is older than n matches and can never enter the top n. No worse than the
-    previous no-match worst case: a leading-% LIKE scans anyway. Merged,
-    deduped by operation_id, newest-first exactly like the exact-pair ORDER BY
-    this replaces.
+    Legacy spellings require a basename scan. Bound both SQL work and Python rows;
+    if the budget expires, the caller must use operation_id instead of trusting a
+    partial result. The 25-newer-neighbor case still resolves within this budget.
     """
-    pp, fp = target
-    n = max(1, int(limit))
-    rows = conn.execute(
-        f"""SELECT {_WRITE_LEDGER_ROW_COLUMNS} FROM write_operations
-            WHERE project_path=? AND file_path=?
-            ORDER BY updated_at DESC LIMIT ?""",
-        (pp, fp, n),
-    ).fetchall()
-    want = _write_ledger_target_abs(pp, fp)
-    out: list = []
-    seen: set = set()
-    for row in rows:
-        rec = _write_ledger_row_to_rec(row)
-        seen.add(rec.get("operation_id"))
-        out.append(rec)
-    base = os.path.basename(want) if want else ""
-    if base:
-        escaped = _write_ledger_like_escape(base)
-        cursor = conn.execute(
-            f"""SELECT {_WRITE_LEDGER_ROW_COLUMNS} FROM write_operations
-                WHERE (file_path LIKE ? ESCAPE '!' OR file_path LIKE ? ESCAPE '!')
-                ORDER BY updated_at DESC""",
-            (f"%\\{escaped}", escaped),
-        )
-        try:
-            matched = 0
-            for row in cursor:
-                rec = _write_ledger_row_to_rec(row)
-                if _write_ledger_target_abs(rec.get("project_path") or "",
-                                            rec.get("file_path") or "") != want:
-                    continue
-                # Counted even when the exact-pair branch already added it:
-                # the stop rule needs n canonical CURSOR rows seen, and a
-                # duplicate is one of them.
-                matched += 1
-                op_id = rec.get("operation_id")
-                if op_id not in seen:
-                    seen.add(op_id)
-                    out.append(rec)
-                if matched >= n:
-                    break
-        finally:
-            cursor.close()
-    out.sort(key=lambda r: float(r.get("updated_at") or 0.0), reverse=True)
-    return out[:n]
-
+    deadline = time.monotonic() + 0.25
+    conn.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
+    try:
+        pp, fp = target
+        n = max(1, min(1000, int(limit)))
+        rows = conn.execute(
+            f"SELECT {_WRITE_LEDGER_ROW_COLUMNS} FROM write_operations "
+            "WHERE project_path=? AND file_path=? ORDER BY updated_at DESC LIMIT ?",
+            (pp, fp, n),
+        ).fetchall()
+        out = [_write_ledger_row_to_rec(row) for row in rows]
+        seen = {rec.get("operation_id") for rec in out}
+        want = _write_ledger_target_abs(pp, fp)
+        base = os.path.basename(want) if want else ""
+        if base:
+            escaped = _write_ledger_like_escape(base)
+            cursor = conn.execute(
+                f"SELECT {_WRITE_LEDGER_ROW_COLUMNS} FROM write_operations "
+                "WHERE (file_path LIKE ? ESCAPE '!' OR file_path LIKE ? ESCAPE '!') "
+                "ORDER BY updated_at DESC LIMIT 1001",
+                (f"%\\{escaped}", escaped),
+            )
+            try:
+                matched = 0
+                for examined, row in enumerate(cursor):
+                    if examined >= 1000 or time.monotonic() >= deadline:
+                        raise WriteLedgerLookupIncomplete("target scan budget exhausted; use operation_id")
+                    rec = _write_ledger_row_to_rec(row)
+                    if _write_ledger_target_abs(rec.get("project_path") or "",
+                                               rec.get("file_path") or "") != want:
+                        continue
+                    matched += 1
+                    if rec.get("operation_id") not in seen:
+                        seen.add(rec.get("operation_id"))
+                        out.append(rec)
+                    if matched >= n:
+                        break
+            finally:
+                cursor.close()
+        out.sort(key=lambda rec: float(rec.get("updated_at") or 0), reverse=True)
+        return out[:n]
+    except sqlite3.OperationalError as exc:
+        if "interrupted" in str(exc).lower():
+            raise WriteLedgerLookupIncomplete("target SQL budget exhausted; use operation_id") from exc
+        raise
+    finally:
+        conn.set_progress_handler(None, 0)
 
 def _write_ledger_db_get(operation_id: str = "", target: tuple[str, str] | None = None):
     try:
@@ -3055,8 +3042,7 @@ def _write_ledger_db_get(operation_id: str = "", target: tuple[str, str] | None 
             conn.close()
         return rec
     except Exception as exc:
-        logger.warning("write ledger lookup failed: %s", exc)
-        return None
+        ct._session_store_module._raise_session_read_error("write ledger lookup", exc)
 
 
 def _write_ledger_db_list(target: tuple[str, str], limit: int = 20) -> list:
@@ -3077,8 +3063,7 @@ def _write_ledger_db_list(target: tuple[str, str], limit: int = 20) -> list:
         finally:
             conn.close()
     except Exception as exc:
-        logger.warning("write ledger list failed: %s", exc)
-        return []
+        ct._session_store_module._raise_session_read_error("write ledger list", exc)
 
 
 def _write_ledger_choose(memory_rec: dict | None, disk_rec: dict | None) -> tuple[dict, str]:
@@ -3137,6 +3122,8 @@ def _write_ledger_purge() -> None:
 
 
 def _write_ledger_commit_state(rec: dict) -> str:
+    if isinstance((rec or {}).get("result"), dict) and rec["result"].get("commit_state") == "unknown":
+        return "unknown"
     status = str((rec or {}).get("status") or "")
     if status == "in_flight":
         origin = str((rec or {}).get("origin_generation") or "")
@@ -3174,17 +3161,91 @@ def _write_ledger_retry_would_double_write(rec: dict) -> bool:
     return _write_ledger_rerun_repatches(str((rec or {}).get("tool") or ""))
 
 
+_WRITE_LEDGER_RECOVERY_THREADS: dict = {}
+_WRITE_LEDGER_MEMORY_GAPS: dict = {}
+_WRITE_LEDGER_RECOVERY_LOCK = threading.Lock()
+
+
+def _write_ledger_spool_path(db_path=None):
+    db = Path(db_path or ct._SESSIONS_DB)
+    return db.with_name(db.stem + "_write_ledger_spool.jsonl")
+
+
+def _write_ledger_schedule_recovery() -> None:
+    """Own terminal retries until the spool empties, including after restart."""
+    from orchestrator.storage.spool import drain_spool, spool_depth
+    db = str(ct._SESSIONS_DB)
+    spool = _write_ledger_spool_path(db)
+    with _WRITE_LEDGER_RECOVERY_LOCK:
+        if db in _WRITE_LEDGER_RECOVERY_THREADS:
+            return
+        def replay():
+            while True:
+                try:
+                    drain_spool(spool, lambda rec: _write_ledger_db_upsert(rec, db),
+                                max_records=32, max_seconds=1, stop_on_refusal=True)
+                    with _WRITE_LEDGER_PROGRESS_LOCK:
+                        for key, rec in list(_WRITE_LEDGER_MEMORY_GAPS.items()):
+                            if key[0] == db and _write_ledger_db_upsert(rec, db):
+                                rec["persistence"] = "sqlite"
+                                _WRITE_LEDGER_MEMORY_GAPS.pop(key, None)
+                        with _WRITE_LEDGER_RECOVERY_LOCK:
+                            if (spool_depth(spool) == 0
+                                    and not any(key[0] == db for key in _WRITE_LEDGER_MEMORY_GAPS)):
+                                _WRITE_LEDGER_RECOVERY_THREADS.pop(db, None)
+                                return
+                except Exception:
+                    logger.exception("write ledger recovery failed; spool retained")
+                time.sleep(1.0)
+        thread = threading.Thread(target=replay, name="write-ledger-recovery", daemon=True)
+        _WRITE_LEDGER_RECOVERY_THREADS[db] = thread
+        thread.start()
+
+
+def _write_ledger_persist_terminal(rec: dict) -> None:
+    if _write_ledger_db_upsert(rec):
+        rec["persistence"] = "sqlite"
+        return
+    from orchestrator.storage.spool import append_spool
+    # Never cap a recovery spool: dropping a terminal row can cause a double write.
+    if append_spool(_write_ledger_spool_path(), dict(rec), max_records=0):
+        rec["persistence"] = "spooled"
+        _write_ledger_schedule_recovery()
+        return
+    rec["persistence"] = "memory_only"
+    _WRITE_LEDGER_MEMORY_GAPS[(str(ct._SESSIONS_DB), rec.get("operation_id"))] = rec
+    _write_ledger_schedule_recovery()
+    logger.error("write ledger durability gap operation_id=%s; retaining memory copy",
+                 rec.get("operation_id"))
+
+
+def _write_ledger_serialized(fn):
+    from functools import wraps
+    @wraps(fn)
+    def locked(*args, **kwargs):
+        with _WRITE_LEDGER_PROGRESS_LOCK:
+            return fn(*args, **kwargs)
+    return locked
+
+
+@_write_ledger_serialized
 def _write_ledger_begin(tool_name: str, body: dict, session_id: str = "",
                         admitted_session_id: str = "") -> str:
     """Open a ledger entry before a mutating tool runs. Returns "" for read-only tools.
 
-    The one exception it lets out is WriteLedgerSendInFlight: refusing a send whose
-    identical twin is still running is not the ledger failing, it is the only answer
-    that keeps that edit from landing twice.
+    Storage failures stop admission. An unconfirmed previous commit or running
+    identical send cannot be retried until its persisted state is verified.
     """
     try:
         if tool_name not in _MUTATING_TOOLS:
             return ""
+        from orchestrator.storage.spool import read_spool
+        parked, corrupt = read_spool(_write_ledger_spool_path())
+        gaps = any(key[0] == str(ct._SESSIONS_DB) for key in _WRITE_LEDGER_MEMORY_GAPS)
+        if parked or corrupt or gaps:
+            _write_ledger_schedule_recovery()
+            raise ct._session_store_module.SessionStoreCommitPendingError(
+                "Ledger recovery is pending; do not start another write until it settles")
         op_id = _write_ledger_operation_id(tool_name, body, session_id)
         pp, fp = _write_ledger_target(body)
         memory_rec = _WRITE_LEDGER.get(op_id)
@@ -3203,6 +3264,10 @@ def _write_ledger_begin(tool_name: str, body: dict, session_id: str = "",
             raise WriteLedgerSendInFlight(op_id)
         disk_rec = _write_ledger_db_get(operation_id=op_id)
         prior, _prior_source = _write_ledger_choose(memory_rec, disk_rec)
+        if ((prior.get("result") or {}).get("commit_state") == "unknown"
+                and _write_ledger_rerun_repatches(tool_name)):
+            raise ct._session_store_module.SessionStoreCommitPendingError(
+                "Previous send has an unconfirmed commit; verify persisted state before resending")
         # #36 (2026-09-25): every send is a send. A committed prior used to absorb this
         # one -- attempts+1 on the OLD row, never in_flight, and finish refused to touch
         # a committed row -- so a restart re-sent five days later ran for real while
@@ -3231,12 +3296,18 @@ def _write_ledger_begin(tool_name: str, body: dict, session_id: str = "",
             "origin_generation": SERVER_GENERATION,
             "updated_at": now,
         }
+        if not _write_ledger_db_upsert(rec):
+            raise ct._session_store_module.SessionStoreContentionError(
+                "write ledger begin could not be persisted; tool was not started")
+        rec["persistence"] = "sqlite"
         _WRITE_LEDGER[op_id] = rec
         _write_ledger_target_remember(pp, fp, op_id)
-        while len(_WRITE_LEDGER) > _WRITE_LEDGER_MAX:
-            _WRITE_LEDGER.pop(next(iter(_WRITE_LEDGER)), None)
-        if _write_ledger_db_upsert(rec):
-            _write_ledger_purge()
+        for key, old in list(_WRITE_LEDGER.items()):
+            if len(_WRITE_LEDGER) <= _WRITE_LEDGER_MAX:
+                break
+            if old.get("status") != "in_flight" and old.get("persistence") in ("sqlite", "spooled"):
+                _WRITE_LEDGER.pop(key, None)
+        _write_ledger_purge()
         # #36 (2026-09-25): mark this operation LIVE atomically with its in_flight row,
         # inside the async lock every begin shares. The guard above reads
         # _OPERATION_CANCEL_EVENTS to tell a running twin from a stale in_flight row; a
@@ -3251,7 +3322,8 @@ def _write_ledger_begin(tool_name: str, body: dict, session_id: str = "",
     except WriteLedgerSendInFlight:
         raise
     except Exception:
-        return ""  # the ledger is an observability aid; it must never break a write
+        logger.exception("write ledger admission failed; tool was not started")
+        raise
 
 
 # ISS-10: evidence keys the ledger keeps from a finished tool result. The first
@@ -3272,7 +3344,7 @@ _WRITE_LEDGER_RESULT_KEYS = (
     # git family
     "commit_hash", "committed", "staged_count", "branch",
     # routing
-    "ca_next_action", "operation_id",
+    "ca_next_action", "operation_id", "commit_state", "safe_to_retry",
 )
 _WRITE_LEDGER_SCALAR_MAX = 240
 
@@ -3305,6 +3377,7 @@ def _write_ledger_bound_watchdog(op_id: str):
     return watchdog if watchdog is not None and watchdog.operation_id == op_id else None
 
 
+@_write_ledger_serialized
 def _write_ledger_finish(op_id: str, result: dict, status: str) -> None:
     """Close a ledger entry without allowing committed state to regress."""
     try:
@@ -3359,11 +3432,14 @@ def _write_ledger_finish(op_id: str, result: dict, status: str) -> None:
                 summary["summary_note"] = ("no known evidence field on this tool's result; "
                                            "listing top-level keys instead")
             rec["result"] = summary
-        _write_ledger_db_upsert(rec)
+        _write_ledger_persist_terminal(rec)
     except Exception:
-        pass
+        logger.exception("write ledger terminal persistence failed; retaining memory copy")
+        if rec:
+            rec["persistence"] = "memory_only"
 
 
+@_write_ledger_serialized
 def _write_ledger_heartbeat(op_id: str, progress: dict) -> None:
     """Publish progress; periodically persist it for post-restart recovery."""
     if not op_id:
@@ -3377,9 +3453,9 @@ def _write_ledger_heartbeat(op_id: str, progress: dict) -> None:
         rec["updated_at"] = rec["last_progress_at"]
         last_persist = float(rec.get("last_progress_persist_at") or 0)
         if rec["last_progress_at"] - last_persist >= 5.0:
-            rec["last_progress_persist_at"] = rec["last_progress_at"]
             rec["result"] = {"progress": dict(progress or {})}
-            _write_ledger_db_upsert(rec)
+            if _write_ledger_db_upsert(rec):
+                rec["last_progress_persist_at"] = rec["last_progress_at"]
 
 
 def _shape_tool_response_text(tool_name: str, raw: str, max_bytes: int | None = None) -> str:
@@ -4694,7 +4770,7 @@ def _retry_sequence(tool_name: str, error_name: str, body: dict | None,
             {"action": "verify path/permissions per error detail"},
             {"action": "do not retry unchanged; report if persists"},
         ]
-    if error_name == "SESSION_STORE_CONTENTION":
+    if error_name in ("SESSION_STORE_CONTENTION", "SESSION_STORE_COMMIT_PENDING"):
         # A40 leftover: the payload already said retryable=True and
         # ca_next_action="retry_after_short_backoff", but this mapper had no
         # branch, so the SAME payload also carried retry_sequence=[] -- two
@@ -5841,6 +5917,7 @@ def _session_contention_error_payload(tool_name: str, exc: BaseException,
         "ca_next_action": fields["ca_next_action"],
         "hint": fields["hint"],
     }
+    result.update(fields)
     result["ca_guidance"] = _ca_guidance(
         tool_name, str(exc), body if isinstance(body, dict) else {},
         result["error_name"])
@@ -13497,6 +13574,15 @@ def _body_path_hint(body: dict | None) -> str:
     return ""
 
 
+def _session_gate_storage_error(tool_name, exc, body, cors):
+    payload = _session_contention_error_payload(tool_name, exc, body)
+    if payload is not None:
+        return web.json_response(payload, status=503,
+                                 headers={**cors, "Retry-After": "1"})
+    return _error_response(tool_name, str(exc), 500, cors, body,
+                           error_name="SESSION_STORE_ERROR")
+
+
 def _lookup_caller_session(project: str, agent_id: str | None) -> tuple[str | None, str, str | None]:
     """The caller's active session for a project: (session_id, project_key, resolved_root).
 
@@ -14644,7 +14730,10 @@ async def handle_health(request):
     except Exception as _cc_health_exc:
         _cc_stat = {"error": type(_cc_health_exc).__name__}
 
+    session_writer = ct._session_store_module._SESSION_WRITER
+    session_metrics = session_writer.metrics() if session_writer is not None else {"initialized": False}
     payload = {
+        "session_writer": session_metrics,
         "ok": ready,
         "ready": ready,
         "startup_phase": SERVER_STARTUP_PHASE,
@@ -16147,8 +16236,11 @@ accepted_fields=sorted(accepted_fields),
         # yields a different key with no active session (handles legacy sessions opened
         # before R1).
         _session_agent_id = _task_agent_id or None
-        _session_id, _project_key, _resolved_root = await asyncio.to_thread(
-            _lookup_caller_session, _project_for_session, _session_agent_id)
+        try:
+            _session_id, _project_key, _resolved_root = await asyncio.to_thread(
+                _lookup_caller_session, _project_for_session, _session_agent_id)
+        except Exception as exc:
+            return _session_gate_storage_error(tool_name, exc, body, cors)
         if _resolved_root:
             # Best-effort: rewrite body so downstream tool uses resolved path.
             # CAN-048: rebase relative file_path/path to the resolved root first.
@@ -16170,8 +16262,8 @@ accepted_fields=sorted(accepted_fields),
             try:
                 _session_id = await asyncio.to_thread(
                     ct._auto_open_session, _project_for_session, body, agent_id=_session_agent_id)
-            except Exception:
-                _session_id = None
+            except Exception as exc:
+                return _session_gate_storage_error(tool_name, exc, body, cors)
             if _session_id:
                 # Anh 2026-08-11 (Phase A on-loop audit): durable write pins
                 # the event loop on every dispatch; run it OFF the loop.
@@ -16983,7 +17075,9 @@ accepted_fields=sorted(accepted_fields),
         )
     except Exception as exc:
         _error_msg = _exception_text(exc)  # never "": a bare TimeoutError() names itself
-        await _write_ledger_finish_async(_op_id, {}, "error")  # BK34: crash => not_committed off-loop
+        _pending_commit = isinstance(exc, ct._session_store_module.SessionStoreCommitPendingError)
+        await _write_ledger_finish_async(_op_id,
+            {"commit_state": "unknown", "safe_to_retry": False} if _pending_commit else {}, "error")
         # A40: tools_v15 durable-write tools (record_error_resolution,
         # record_session_audit_checkpoint) let a transient
         # SessionStoreContentionError propagate to this generic handler instead
@@ -16997,7 +17091,7 @@ accepted_fields=sorted(accepted_fields),
             logger.warning(
                 "Tool '%s' hit session-store contention: %s", tool_name, exc)
             _result = _r101_dispatch_result(_contention)
-            return web.json_response(_result, status=503, headers=cors)
+            return web.json_response(_result, status=503, headers={**cors, "Retry-After": "1"})
         # `_error_msg` came from _exception_text() at the top of this arm, so it is
         # never "" -- which is the whole point: `error`, the error_name inference and
         # the CA guidance all read the SAME non-empty text, so none of them can
@@ -17892,6 +17986,7 @@ async def dispatch_tool_call(tool_name: str, body: dict | None = None,
             # given -- building _proxy_headers from scratch used to strip it,
             # so the daemon resolved the proxied call under its own fallback
             # rungs instead of the dispatch's caller.
+            # Request snapshots its headers: resolve caller identity before construction.
             if headers.get("X-Agent-Id"):
                 _proxy_headers["X-Agent-Id"] = headers["X-Agent-Id"]
             if headers.get("X-Council-Agent"):
@@ -17910,6 +18005,7 @@ async def dispatch_tool_call(tool_name: str, body: dict | None = None,
             # liveness for the scan tools the write ledger cannot see).
             _mcpw = None
             try:
+                # Budget selection is independent of optional caller identity.
                 from orchestrator.server import mcp_stdio as _mcpw
             except Exception:
                 _mcpw = None
@@ -19020,6 +19116,29 @@ async def handle_result_ref(request):
 
 
 async def handle_write_status(request):
+    try:
+        from orchestrator.storage.spool import read_spool
+        parked, corrupt = await asyncio.to_thread(read_spool, _write_ledger_spool_path())
+        gaps = any(key[0] == str(ct._SESSIONS_DB) for key in list(_WRITE_LEDGER_MEMORY_GAPS))
+        if parked or corrupt or gaps:
+            _write_ledger_schedule_recovery()
+            raise ct._session_store_module.SessionStoreCommitPendingError(
+                "Terminal ledger recovery is pending; persisted status may be stale")
+        return await _handle_write_status(request)
+    except ct._session_store_module.SessionStoreContentionError as exc:
+        payload = _session_contention_error_payload("write_status", exc, {}) or {}
+        if isinstance(exc, WriteLedgerLookupIncomplete):
+            payload.update(error_name="WRITE_STATUS_LOOKUP_INCOMPLETE",
+                           ca_next_action="retry_lookup_with_operation_id")
+        else:
+            payload["ca_next_action"] = "retry_write_status_lookup_do_not_resend_write"
+        payload.update(commit_state="unknown", safe_to_retry=False,
+                       hint="Lookup failed; this does not prove that the write failed.")
+        return web.json_response(payload, status=503,
+                                 headers={**_cors(request.headers.get('Origin')), "Retry-After": "1"})
+
+
+async def _handle_write_status(request):
     """P1-1: answer 'did my write actually commit?' after a client-side timeout.
 
     write_fix / write_transaction routinely finish server-side after the caller has
@@ -19478,6 +19597,26 @@ async def _run_boot_recovery() -> dict:
     return result
 
 
+async def _wait_session_maintenance_window(quiet_seconds=60.0):
+    """Defer boot retention until readiness and writer health remain stable."""
+    healthy_since = None
+    while not SERVER_STOPPING:
+        writer = ct._session_store_module._SESSION_WRITER
+        metrics = writer.metrics() if writer is not None else {}
+        healthy = (SERVER_READY and not SERVER_STARTUP_DEGRADED
+                   and not metrics.get("failed") and not metrics.get("stalled") and not metrics.get("metrics_stale"))
+        now = time.monotonic()
+        if healthy:
+            if healthy_since is None:
+                healthy_since = now
+            if now - healthy_since >= quiet_seconds:
+                return True
+        else:
+            healthy_since = None
+        await asyncio.sleep(0.25)
+    return False
+
+
 async def _run_session_retention_prune() -> dict:
     """A22: prune sessions.db to the retention window, OFF the startup path.
 
@@ -19501,6 +19640,8 @@ async def _run_session_retention_prune() -> dict:
     try:
         from orchestrator.session import store as _session_store
 
+        if not await _wait_session_maintenance_window():
+            return {"skipped": "server_stopping"}
         stats = await asyncio.to_thread(_session_store.prune_sessions_older_than)
         logger.info("session retention prune complete: %s", stats)
         return stats

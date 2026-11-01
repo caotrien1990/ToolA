@@ -46,6 +46,7 @@ from orchestrator.server.executor_lanes import (
     ExecutorLaneError,
     run_in_executor_lane,
 )
+
 # F-C1: FairAdmissionError must propagate (not be mislabeled as SCRIPT_EXEC_FAILED)
 # so the dispatcher can map it to 429 + Retry-After.
 from orchestrator.server.fair_admission import FairAdmissionError
@@ -1054,17 +1055,26 @@ def _session_contention_fields(exc: BaseException):
     anything else so callers keep their default (non-retryable) verdict -- the
     translation must never widen to swallow a genuine defect.
     """
-    if not isinstance(exc, _session_store_module.SessionStoreContentionError):
+    name = getattr(exc, "error_name", "")
+    checkpoint = name in {"TASK_CHECKPOINT_CONTENTION", "TASK_CHECKPOINT_COMMIT_PENDING"}
+    if (isinstance(exc, _session_store_module.SessionStoreCommitPendingError)
+            or name == "TASK_CHECKPOINT_COMMIT_PENDING"):
+        return {
+            "error_name": "TASK_CHECKPOINT_COMMIT_PENDING" if checkpoint else "SESSION_STORE_COMMIT_PENDING",
+            "retryable": False, "commit_state": "unknown", "safe_to_retry": False,
+            "ca_next_action": ("get_task_checkpoint_and_wait_do_not_resend" if checkpoint
+                               else "inspect_write_status_and_persisted_state_do_not_resend"),
+            "hint": "The caller wait ended; the session write may still commit.",
+        }
+    if not checkpoint and not isinstance(exc, _session_store_module.SessionStoreContentionError):
         return None
+    stage = getattr(exc, "contention_stage", "execution")
     return {
-        "error_name": "SESSION_STORE_CONTENTION",
+        "error_name": "TASK_CHECKPOINT_CONTENTION" if checkpoint else "SESSION_STORE_CONTENTION",
+        "contention_stage": stage,
         "retryable": True,
-        # Generic-but-accurate: the write did not commit and a short backoff +
-        # retry is the correct move for ANY session-store-touching tool, not a
-        # close_session-specific instruction.
         "ca_next_action": "retry_after_short_backoff",
-        "hint": ("The session write queue was temporarily busy; the write did "
-                 "not commit. Retry after a short backoff."),
+        "hint": "The session store is temporarily busy. Retry after a short backoff.",
     }
 
 
@@ -6981,7 +6991,7 @@ def _resolve_session_query_scope(tool_name: str, project_path, scope) -> tuple:
     return key, ""
 
 
-def _run_session_write(operation, fn, *, busy_timeout_ms=5000):
+def _run_session_write(operation, fn, *, busy_timeout_ms=_session_store_module._SESSION_DB_BUSY_TIMEOUT_MS):
     _sync_session_db_alias()
     return _session_store_module._run_session_write(
         operation, fn, busy_timeout_ms=busy_timeout_ms)
@@ -7058,10 +7068,34 @@ def _task_checkpoint_load_with_meta(session_key: str):
     return _session_store_module._task_checkpoint_load_with_meta(session_key)
 
 
-def _task_checkpoint_update(session_key: str, update_fn, busy_timeout_ms: int = 5000):
+def _task_checkpoint_update(session_key: str, update_fn, busy_timeout_ms: int = 5000,
+                            *, read_fastpath: bool = False):
     _sync_session_db_alias()
     return _session_store_module._task_checkpoint_update(
-        session_key, update_fn, busy_timeout_ms=busy_timeout_ms)
+        session_key, update_fn, busy_timeout_ms=busy_timeout_ms, read_fastpath=read_fastpath)
+
+
+async def _checkpoint_update_with_retry(session_key, update_fn, *, read_fastpath=False):
+    # Only a rejection before queue admission proves the callback never ran.
+    # Never replay an admitted item whose commit outcome is still unknown.
+    for attempt in range(4):
+        try:
+            options = {"read_fastpath": True} if read_fastpath else {}
+            return await asyncio.to_thread(
+                _task_checkpoint_update, session_key, update_fn, **options)
+        except TaskCheckpointStorageError as exc:
+            if (exc.error_name != "TASK_CHECKPOINT_CONTENTION"
+                    or getattr(exc, "contention_stage", "execution") != "admission"
+                    or attempt == 3):
+                raise
+            await asyncio.sleep(0.05 * (2 ** attempt))
+
+
+def _checkpoint_error_fields(exc):
+    return _session_contention_fields(exc) or {
+        "error_name": exc.error_name, "retryable": False,
+        "ca_next_action": "repair_task_checkpoint_storage_then_retry",
+    }
 
 
 TaskCheckpointStorageError = _session_store_module.TaskCheckpointStorageError
@@ -10016,9 +10050,10 @@ async def begin_task(session_id: str, prompt: str, agent_id: str = "", max_chars
     # OFF the loop. _task_checkpoint_update goes through the SessionWriter and blocks
     # on a durable-commit Future; calling it synchronously pinned the event loop for
     # the write — a hang vector for begin_task under contention.
-    try: checkpoint, response, wrote = await asyncio.to_thread(_task_checkpoint_update, session_key, update)
+    try:
+        checkpoint, response, wrote = await _checkpoint_update_with_retry(session_key, update)
     except TaskCheckpointStorageError as exc:
-        return _json_error(str(exc), error_name=exc.error_name, retryable=False, ca_next_action="repair_task_checkpoint_storage_then_retry")
+        return _json_error(str(exc), **_checkpoint_error_fields(exc))
     return response
 
 
@@ -10078,8 +10113,7 @@ async def owner_heartbeat(session_id: str, agent_id: str, owner_capability: str,
             _task_checkpoint_update, session_key, update
         )
     except TaskCheckpointStorageError as exc:
-        return _json_error(str(exc), error_name=exc.error_name, retryable=False,
-                           ca_next_action="repair_task_checkpoint_storage_then_retry")
+        return _json_error(str(exc), **_checkpoint_error_fields(exc))
     return response
 
 
@@ -10115,6 +10149,14 @@ def _record_authenticated_owner_activity(session_id: str, agent_id: str,
             return None, json.dumps({"recorded": False, "reason": "prompt_hash_mismatch"})
 
         now_ts = time.time()
+        age = now_ts - float(previous.get("owner_last_heartbeat_at") or 0)
+        if 0 <= age < 30:
+            return None, json.dumps({
+                "recorded": False, "reason": "activity_coalesced",
+                "owner_liveness": "active", "heartbeat_freshness": "fresh",
+                "heartbeat_at": previous.get("owner_last_heartbeat_at_iso"),
+                "heartbeat_count": int(previous.get("owner_heartbeat_count") or 0),
+            })
         heartbeat_at = datetime.fromtimestamp(now_ts).isoformat(timespec="seconds")
         replacement = dict(previous)
         replacement["owner_last_heartbeat_at"] = now_ts
@@ -10136,7 +10178,7 @@ def _record_authenticated_owner_activity(session_id: str, agent_id: str,
         }
         return replacement, json.dumps(response, ensure_ascii=False)
 
-    _checkpoint, response, _wrote = _task_checkpoint_update(session_key, update)
+    _checkpoint, response, _wrote = _task_checkpoint_update(session_key, update, read_fastpath=True)
     try:
         return json.loads(response)
     except (TypeError, json.JSONDecodeError):
@@ -10350,8 +10392,7 @@ async def get_task_checkpoint(session_id: str, include_owner_status: bool = Fals
     try:
         checkpoint, updated_at = _task_checkpoint_load_with_meta(session_key)
     except TaskCheckpointStorageError as exc:
-        return _json_error(str(exc), error_name=exc.error_name, retryable=False,
-                           ca_next_action="repair_task_checkpoint_storage_then_retry")
+        return _json_error(str(exc), **_checkpoint_error_fields(exc))
     activity = None
     if include_owner_status:
         activity = await asyncio.to_thread(_session_activity_snapshot, session_key)
@@ -10417,8 +10458,7 @@ async def _bootstrap_with_cached_owner_claim(
         try:
             checkpoint = await asyncio.to_thread(_task_checkpoint_load, key[0]) or {}
         except TaskCheckpointStorageError as exc:
-            return _json_error(str(exc), error_name=exc.error_name, retryable=False,
-                               ca_next_action="repair_task_checkpoint_storage_then_retry")
+            return _json_error(str(exc), **_checkpoint_error_fields(exc))
         if checkpoint.get("owner_capability_sha256") or checkpoint.get("owner_claim_sha256"):
             return _json_error(
                 "Persisted ownership requires the original owner_claim_id; no replacement was minted",
@@ -10515,16 +10555,10 @@ async def bootstrap_session(project_path: str = "", session_id: str = "",
                             "owner_claim_expires_at": now + _OWNER_CLAIM_TTL_SECONDS})
         return replacement, None
     try:
-        # Anh 2026-08-11: run the durable owner-claim checkpoint update OFF the loop.
-        # _task_checkpoint_update goes through the SessionWriter and blocks on a
-        # commit Future; calling it synchronously pinned the event loop for the
-        # write — a hang vector for bootstrap under contention/large sessions.
-        checkpoint, claim_error, wrote_claim = await asyncio.to_thread(
-            _task_checkpoint_update, session_key, update_claim
-        )
+        checkpoint, claim_error, wrote_claim = await _checkpoint_update_with_retry(
+            session_key, update_claim, read_fastpath=True)
     except TaskCheckpointStorageError as exc:
-        return _json_error(str(exc), error_name=exc.error_name, retryable=False,
-                           ca_next_action="repair_task_checkpoint_storage_then_retry")
+        return _json_error(str(exc), **_checkpoint_error_fields(exc))
     if claim_error: return claim_error
     checkpoint = checkpoint or {}
     # Health (cheap)
@@ -10685,8 +10719,7 @@ async def bootstrap_session(project_path: str = "", session_id: str = "",
     try:
         checkpoint = _task_checkpoint_load(session_key) or {}
     except TaskCheckpointStorageError as exc:
-        return _json_error(str(exc), error_name=exc.error_name, retryable=False,
-                           ca_next_action="repair_task_checkpoint_storage_then_retry")
+        return _json_error(str(exc), **_checkpoint_error_fields(exc))
     if agent_key:
         checkpoint = ((checkpoint.get("subtasks") or {}).get(agent_key) or checkpoint)
     checkpoint_payload = {
@@ -12414,7 +12447,7 @@ async def parse_log_section(page_id: str, section_title: str,
         log_obj = {"raw": str(raw)[:5000]}
 
     # P9 fix: if the inner tool reported an error (e.g. SECTION_TITLE_NOT_FOUND),
-    # propagate it verbatim instead of converting it into ok=true with 0 entries.
+    # propagate it verbatim instead of converting it into ok=true with an empty result.
     if isinstance(log_obj, dict) and log_obj.get("ok") is False:
         return json.dumps(log_obj, ensure_ascii=False)
 
@@ -18849,10 +18882,10 @@ async def manage_agent(action: str, agent_id: str = "", target: str = "all",
             _save_agents_registry(reg)
             return json.dumps({"ok": True, "registered": agent_id, "agent": rec}, ensure_ascii=False)
         if act == "set_mode":
+            _bad = _ma_require_agent_id(act, agent_id, target, agents)
             if _bad:
                 return _bad
             _bad = _ma_require_caller(agent_id)
-            _bad = _ma_require_agent_id(act, agent_id, target, agents)
             if _bad:
                 return _bad
             m = (mode or "").strip().lower()
@@ -18871,10 +18904,10 @@ async def manage_agent(action: str, agent_id: str = "", target: str = "all",
                                         if new_mode == "native" else "[A]-first restored")},
                               ensure_ascii=False)
         if act == "unregister":
+            _bad = _ma_require_agent_id(act, agent_id, target, agents)
             if _bad:
                 return _bad
             _bad = _ma_require_caller(agent_id)
-            _bad = _ma_require_agent_id(act, agent_id, target, agents)
             if _bad:
                 return _bad
             rec = dict(agents[agent_id])

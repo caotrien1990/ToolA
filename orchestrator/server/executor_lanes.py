@@ -367,20 +367,18 @@ async def run_in_executor_lane(
     # wrapper -- that is also where `lane_started` (true worker start) lands.
     _pt = _phase_timing.current()
     _phase_timing.mark(_pt, "fair_admitted")
-    if _pt is not None:
-        _pt_func = func
+    from orchestrator.session import store as _store
+    _store_deadline = time.monotonic() + _store._SESSION_CALL_WAIT_SECONDS
 
-        def _pt_wrapped(*_a: Any, **_k: Any) -> Any:
-            _pt_tok = _phase_timing.set_current(_pt)
-            try:
-                _phase_timing.mark(_pt, "lane_started")
-                return _pt_func(*_a, **_k)
-            finally:
-                _phase_timing.reset_current(_pt_tok)
-
-        _pt_run = _pt_wrapped
-    else:
-        _pt_run = func
+    def _pt_run(*_a: Any, **_k: Any) -> Any:
+        _pt_tok = _phase_timing.set_current(_pt)
+        _store_tok = _store._SESSION_CALL_DEADLINE.set(_store_deadline)
+        try:
+            _phase_timing.mark(_pt, "lane_started")
+            return func(*_a, **_k)
+        finally:
+            _store._SESSION_CALL_DEADLINE.reset(_store_tok)
+            _phase_timing.reset_current(_pt_tok)
     try:
         return await lane.run(_pt_run, *args, queue_wait_deadline=deadline,
                               completion_callback=lambda _done: permit.release(), **kwargs)

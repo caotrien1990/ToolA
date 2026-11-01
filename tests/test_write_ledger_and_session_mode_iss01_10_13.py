@@ -304,7 +304,7 @@ def test_resolvable_target_still_discloses_the_other_candidates():
 
 def _finish(monkeypatch, result: dict) -> dict:
     op = "iss10-evidence"
-    monkeypatch.setattr(srv, "_write_ledger_db_upsert", lambda _rec: None)
+    monkeypatch.setattr(srv, "_write_ledger_db_upsert", lambda _rec: True)
     srv._WRITE_LEDGER[op] = {"operation_id": op, "tool": "cbm_incremental_index",
                              "status": "in_flight", "attempts": 1,
                              "started_at": time.time(),

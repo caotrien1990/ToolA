@@ -465,6 +465,9 @@ class TestBootSeedLedgerDedupeA02(unittest.TestCase):
             self.assertFalse(sb.mk.exists())  # first boot: the seed must run
             with mock.patch.object(
                 write_core, "_boot_sweep_project_roots", return_value=[root],
+            ), mock.patch.object(
+                # This test owns two targets; unrelated xroot history is not its input.
+                write_core, "_boot_sweep_xroot_files", return_value=[],
             ):
                 result = asyncio.run(_boot_write_sweep(project_roots=None))
 

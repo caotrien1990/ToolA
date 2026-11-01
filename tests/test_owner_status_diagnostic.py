@@ -136,7 +136,7 @@ def test_authenticated_task_activity_updates_committed_root(monkeypatch):
         "owner_heartbeat_count": 2,
     }
 
-    def fake_update(session_key, update_fn):
+    def fake_update(session_key, update_fn, *, read_fastpath=False):
         replacement, response = update_fn(dict(previous))
         captured["session_key"] = session_key
         captured["replacement"] = replacement
@@ -161,7 +161,7 @@ def test_authenticated_task_activity_rejects_stale_envelope_without_write(monkey
 
     captured = {}
 
-    def fake_update(session_key, update_fn):
+    def fake_update(session_key, update_fn, *, read_fastpath=False):
         replacement, response = update_fn({
             "agent_id": "codo",
             "owner_capability_sha256": "hidden",
