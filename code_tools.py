@@ -223,8 +223,8 @@ def _atomic_write_json(path: Path, data, *, indent: int | None = None) -> str:
 # would warn about an invalid directive). Never run a
 # blanket `ruff --fix` or auto-organise-imports on this file. The other three E402 clusters
 # (~L6432 logging helpers, ~L7765 T4 runtime shims, ~L11503 workflow dispenser) point back here.
-    AGENT_ID_OBJECT_TOOLS,  # noqa: F401 - re-exported: orchestrator_server's dispatcher reads ct.AGENT_ID_OBJECT_TOOLS
 from orchestrator.core.registry_data import (
+    AGENT_ID_OBJECT_TOOLS,  # noqa: F401 - re-exported: orchestrator_server's dispatcher reads ct.AGENT_ID_OBJECT_TOOLS
     BASE_TOOL_MAP_SPECS,
     T1_TOOLS,  # noqa: F401 - re-exported: tool_smoke_runner.py reads ct.T1_TOOLS
     T2_TOOLS,  # noqa: F401 - re-exported: tool_smoke_runner.py reads ct.T2_TOOLS
@@ -18747,13 +18747,13 @@ async def manage_agent(action: str, agent_id: str = "", target: str = "all",
     All writes auto-backup under _ma_archive + validate (json/toml) + rollback on failure.
     Use dry_run=True to preview.
     """
+    try:
         # Fix plan section 3 (confinement plumbing): read the server-validated
         # caller identity ONCE, here at handler entry in this async frame --
         # the context var copies into tasks and asyncio.to_thread, while a
         # bare executor lane would see "". An empty value means no validated
         # identity; the write branches treat it as a mismatch (fail-closed).
         _caller_agent_id = _session_store_module._CALLER_AGENT_ID.get()
-    try:
         migration = _ma_archive_legacy_bak_ma()
         reg, _registry_load_ok, _registry_state = _load_agents_registry_with_status()
         agents = reg.setdefault("agents", {})

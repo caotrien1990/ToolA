@@ -134,11 +134,11 @@ SERVER_GENERATION_FILE = Path(
     or (_HERE / ".orchestrator_cache" / "server_generation.json")
 )
 LIVEZ_PORT = int(os.environ.get("ORCHESTRATOR_LIVEZ_PORT", "8084"))
-LIVEZ_PROTOCOL = 1
+LIVEZ_PROTOCOL = 2
 # Default ready preserves create_app() contract in tests/embedders. _run_server
 # closes the gate before binding HTTP and reopens it after boot recovery.
 SERVER_READY = True
-SERVER_STARTUP_PHASE = "ready"
+SERVER_STARTUP_PHASE = "booting"
 SERVER_STOPPING = False
 SERVER_STARTUP_DEGRADED = False
 SERVER_STARTUP_ERROR = ""
@@ -164,6 +164,13 @@ def _liveness_payload() -> dict:
         "generation": SERVER_GENERATION,
         "started_at": SERVER_STARTED_AT,
         "livez_protocol": LIVEZ_PROTOCOL,
+        # R3 (2026-10-15): startup phase + boot age so the auto-heal monitor can
+        # tell "daemon still booting" apart from "event loop hung". During the
+        # ~3min boot, /livez is up (thread-isolated) but /health isn't (aiohttp
+        # not started yet) -- without this the healer kills a healthy booting
+        # daemon (5 boot-kill loops on 2026-10-15).
+        "startup_phase": SERVER_STARTUP_PHASE,
+        "boot_age_s": round(time.time() - SERVER_STARTED_AT, 1),
         # A39/PH-5: LIVE thread-liveness of the busy-snapshot publisher, served on
         # the lock-free /livez channel so the out-of-process restart guard can tell
         # "publisher thread blocked but alive" (captured_at frozen, but .alive True
@@ -1015,6 +1022,7 @@ def _get_durable_audit_writer(*, start: bool = False) -> DurableAuditWriter | No
                     auto_start=False,
                 )
                 _DURABLE_AUDIT = writer
+                _boot_step("durable_audit_writer.init.done")
     if start and writer is not None:
         start_method = getattr(writer, "start", None)
         if callable(start_method):
@@ -1450,6 +1458,124 @@ def _durable_audit_id(operation_id: str) -> str:
     return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+# CF-16 (Phase 1, Sprint 2): attempt-tracking for the dispatch-epilogue
+# durable stage/spool log line. The stage path records, on the exception
+# escaping _stage_durable_session_event, whether the stage submit and the
+# spool fallback were actually attempted, so the epilogue can tell a true
+# joint failure apart from a construction failure or a stage failure whose
+# spool was never attempted. The booleans ride on the exception object
+# itself, so they survive the asyncio.to_thread executor boundary between
+# the helper and the epilogue: the same object raised in the worker thread
+# is delivered to the epilogue's except block.
+#
+# Flag mechanism (verified from code, not assumed): orchestrator_server.py
+# carries no flag-constant mechanism of its own (a scope-time search for
+# PHASE1_ / _FLAG = in this file returns no flag constant), so the flag is
+# a module-level code constant, following the Sprint 1 precedent
+# PHASE1_CF9_FLAG in orchestrator/session/logs.py. Default OFF reproduces
+# the old joint message verbatim. Flipping it requires a code change plus
+# a restart: there is NO runtime flag flip (U-P2 CLOSED, "NO FLAG FLIP --
+# RESTART REQUIRED"), and the kill switch is the G5 rollback (revert +
+# restart), whose latency is approval + drain window, NOT instant.
+PHASE1_CF16_FLAG = False
+
+
+def _cf16_annotate_attempts(exc, stage_attempted, spool_attempted):
+    """Attach CF-16 attempt booleans to an exception escaping the stage path.
+
+    Returns the same exception object so call sites can `raise` it directly.
+    A failure to set attributes (e.g. an exotic exception type) never masks
+    the original failure: the exception still propagates, and the epilogue
+    reads absent attributes as "never attempted".
+    """
+    try:
+        exc._cf16_stage_attempted = bool(stage_attempted)
+        exc._cf16_spool_attempted = bool(spool_attempted)
+    except Exception:
+        pass
+    return exc
+
+
+def _cf16_attempts(exc):
+    """Read CF-16 attempt booleans off an exception.
+
+    Absent attributes mean the exception was never annotated, which by
+    construction happens only on paths where neither the stage submit nor
+    the spool was attempted (construction failures before writer.submit,
+    including the writer-unavailable raise, which IS annotated False/False
+    explicitly). Returns (stage_attempted, spool_attempted).
+    """
+    return (
+        bool(getattr(exc, "_cf16_stage_attempted", False)),
+        bool(getattr(exc, "_cf16_spool_attempted", False)),
+    )
+
+
+def _cf16_epilogue_outcome(exc):
+    """Pure epilogue decision for a stage-path exception.
+
+    Returns (outcome, message_template) where the template takes
+    (tool_name, request_op_id, exc). Every boolean combination has its own
+    distinct message; only (attempted, attempted) yields the joint-failure
+    claim. The (not-stage, spool) combination cannot occur in the current
+    helper (the spool is only attempted after a submit attempt) but is
+    given its own message rather than silently collapsing into joint.
+    """
+    stage_attempted, spool_attempted = _cf16_attempts(exc)
+    if stage_attempted and spool_attempted:
+        return (
+            "joint_failure",
+            "Durable session-event stage AND spool failed for tool=%s id=%s: %s",
+        )
+    if stage_attempted:
+        return (
+            "stage_failed_spool_unattempted",
+            "Durable session-event stage failed, spool unattempted for tool=%s id=%s: %s",
+        )
+    if spool_attempted:
+        return (
+            "spool_failed",
+            "Durable session-event spool failed for tool=%s id=%s: %s",
+        )
+    return (
+        "construction_failed_spool_unreached",
+        "Durable session-event construction failed, spool never reached for tool=%s id=%s: %s",
+    )
+
+
+def _cf16_log_epilogue(log, tool_name, request_op_id, exc):
+    """Emit the dispatch-epilogue log line for a stage-path exception.
+
+    This is the single call site the epilogue uses, so tests can exercise
+    both flag states without dispatching a tool call. OFF reproduces the
+    old joint message verbatim (the pre-fix behaviour); ON emits the
+    attempt-tracked message plus structured outcome fields (a fields
+    addition: the message text stays the primary signal for consumers
+    that parse text only).
+    """
+    if PHASE1_CF16_FLAG:
+        outcome, message = _cf16_epilogue_outcome(exc)
+        stage_attempted, spool_attempted = _cf16_attempts(exc)
+        log.critical(
+            message,
+            tool_name,
+            request_op_id,
+            exc,
+            extra={
+                "cf16_outcome": outcome,
+                "cf16_stage_attempted": stage_attempted,
+                "cf16_spool_attempted": spool_attempted,
+            },
+        )
+    else:
+        log.critical(
+            "Durable session-event stage AND spool failed for tool=%s id=%s: %s",
+            tool_name,
+            request_op_id,
+            exc,
+        )
+
+
 def _stage_durable_session_event(
     audit_id: str,
     tool_name: str,
@@ -1522,7 +1648,9 @@ def _stage_durable_session_event(
     }
     writer = _get_durable_audit_writer(start=True)
     if writer is None:
-        raise RuntimeError("durable audit writer unavailable outside HTTP daemon")
+        raise _cf16_annotate_attempts(
+            RuntimeError("durable audit writer unavailable outside HTTP daemon"), False, False
+        )
     staged_id = _durable_audit_id(audit_id)
     try:
         return writer.submit(staged_id, SESSION_EVENT_KIND, payload)
@@ -1552,9 +1680,15 @@ def _stage_durable_session_event(
         #
         # This is the PRODUCER, not the call site: the payload and the writer already
         # exist here, whereas the caller would have to rebuild both.
-        if writer.spool_failed_row(staged_id, SESSION_EVENT_KIND, payload, repr(exc)):
+        try:
+            _spooled = writer.spool_failed_row(staged_id, SESSION_EVENT_KIND, payload, repr(exc))
+        except Exception as _spool_exc:
+            raise _cf16_annotate_attempts(_spool_exc, True, True) from _spool_exc
+        if _spooled:
             return None
-        raise
+        raise _cf16_annotate_attempts(exc, True, True)
+    except Exception as exc:
+        raise _cf16_annotate_attempts(exc, True, False)
 
 
 _POST_CALL_ACCOUNTING = PostCallAccountingQueue(
@@ -1601,11 +1735,14 @@ async def _flush_post_call_accounting(timeout: float = 10.0) -> dict:
 
 
 async def _post_call_accounting_startup(_app) -> None:
+    _boot_step("on_startup.post_call_accounting.start")
     writer = _get_durable_audit_writer(start=True)
+    _boot_step("on_startup.post_call_accounting.writer.done")
     if writer is None:
         logger.critical("Durable audit writer unavailable in HTTP startup")
     if not _POST_CALL_ACCOUNTING.start():
         logger.critical("Post-call accounting lane failed to start")
+    _boot_step("on_startup.post_call_accounting.done")
 
 
 async def _durable_audit_cleanup(_app) -> None:
@@ -1951,17 +2088,6 @@ def _anti_drift_duplicate_failure(tool_name: str, body: dict, error_name: str,
     return _duplicate_retry_guard(identity, tool_name, body, error_name)
 
 
-def _duplicate_retry_guard(agent_id: str, tool_name: str, body: dict, error_name: str) -> dict | None:
-    """Return DUPLICATE_RETRY_BLOCKED on 2nd identical deterministic failure, else None (record)."""
-    if len(_DUPLICATE_FAILURE_STATE) > 4096:
-        _DUPLICATE_FAILURE_STATE.clear()  # bounded memory; counter reset is acceptable
-    # Group-3 Area 6b: the fingerprint folds the normalized project key in
-    # (see _dedupe_call_key) instead of excluding project_path outright.
-    fp = f"{_dedupe_call_key(agent_id, tool_name, body)}|{error_name}"
-    now = time.time()
-    count = _DUPLICATE_FAILURE_STATE.get(fp, 0) + 1
-    _DUPLICATE_FAILURE_STATE[fp] = count
-    if count <= 1:
 def _dedupe_identity(session_id, agent_id) -> str:
     """Group-3 Area 6a: the ONE identity string every dedupe consult and
     eviction formats through -- daemon pre-gates, the daemon boundary, and
@@ -2006,6 +2132,17 @@ def _duplicate_retry_evict(identity: str, tool_name: str, body: dict) -> None:
 _BRIDGE_GEN0_EPISODE = False
 
 
+def _duplicate_retry_guard(agent_id: str, tool_name: str, body: dict, error_name: str) -> dict | None:
+    """Return DUPLICATE_RETRY_BLOCKED on 2nd identical deterministic failure, else None (record)."""
+    if len(_DUPLICATE_FAILURE_STATE) > 4096:
+        _DUPLICATE_FAILURE_STATE.clear()  # bounded memory; counter reset is acceptable
+    # Group-3 Area 6b: the fingerprint folds the normalized project key in
+    # (see _dedupe_call_key) instead of excluding project_path outright.
+    fp = f"{_dedupe_call_key(agent_id, tool_name, body)}|{error_name}"
+    now = time.time()
+    count = _DUPLICATE_FAILURE_STATE.get(fp, 0) + 1
+    _DUPLICATE_FAILURE_STATE[fp] = count
+    if count <= 1:
         # P12 (campaign-1608): stamp when this exact verdict was first produced so
         # a later replayed (cached) block can disclose how stale it is.
         if len(_DUPLICATE_FIRST_SEEN) > 4096:
@@ -2035,6 +2172,11 @@ _DETERMINISTIC_TOOLBODY_ERRORS = {
     "MISSING_REQUIRED_FIELD", "SCHEMA_VIOLATION", "UNSUPPORTED_FIELD",
     "FILE_NOT_FOUND", "PATH_NOT_FOUND", "REGEX_INVALID", "UNKNOWN_TOOL",
     "INVALID_QUERY_ENCODING",
+    # agent_id fix plan sections 4.2/4.3: the registry-existence refusal
+    # (AGENT_NOT_REGISTERED) and the registry-availability refusal
+    # (AGENT_REGISTRY_UNAVAILABLE) are state-determined, so identical
+    # failing calls stay duplicate-classifiable.
+    "AGENT_NOT_REGISTERED", "AGENT_REGISTRY_UNAVAILABLE",
 }
 
 
@@ -2046,11 +2188,6 @@ def _tool_result_failed(res) -> bool:
         return False
     if res.get("error"):
         return True
-    # agent_id fix plan sections 4.2/4.3: the registry-existence refusal
-    # (AGENT_NOT_REGISTERED) and the registry-availability refusal
-    # (AGENT_REGISTRY_UNAVAILABLE) are state-determined, so identical
-    # failing calls stay duplicate-classifiable.
-    "AGENT_NOT_REGISTERED", "AGENT_REGISTRY_UNAVAILABLE",
     if res.get("ok") is False:
         return True
     if res.get("timed_out") is True:
@@ -11943,7 +12080,9 @@ async def _council_cron_narrate(job: dict, worker_reply: str) -> dict:
 
 
 async def _council_cron_startup(app):
+    _boot_step("on_startup.council_cron.start")
     await _COUNCIL_CRON_SERVICE.start(_council_cron_dispatch, _council_cron_narrate)
+    _boot_step("on_startup.council_cron.done")
 
 
 async def _council_cron_cleanup(app):
@@ -17029,16 +17168,11 @@ accepted_fields=sorted(accepted_fields),
             )
         except Exception as exc:
             # The tool has already completed, so its response is preserved either way.
-            # The row itself is parked by _stage_durable_session_event now; that helper
-            # only re-raises when the SPOOL also failed. So reaching here means the row
-            # really is lost -- which is what the old comment claimed could never
-            # happen while the body did nothing but log.
-            logger.critical(
-                "Durable session-event stage AND spool failed for tool=%s id=%s: %s",
-                tool_name,
-                _request_op_id,
-                exc,
-            )
+            # CF-16: the message below must not claim a joint failure unless both
+            # paths were actually attempted and failed. _cf16_log_epilogue owns the
+            # flag branch (OFF reproduces the old joint message verbatim; ON emits
+            # the attempt-tracked message), so this call site stays one line.
+            _cf16_log_epilogue(logger, tool_name, _request_op_id, exc)
         # Step 0.4 (auxiliary): E6 -- the durable-audit outbox COMMIT wait ends
         # here; the stage call above awaits the INSERT commit on durable_audit.db.
         _phase_timing.mark(_pt, "outbox_staged")
@@ -17703,19 +17837,6 @@ async def dispatch_tool_call(tool_name: str, body: dict | None = None,
         _proxy_identity = _dedupe_identity(_proxy_session, _proxy_agent)
 
         def _bridge_dedup(_payload: dict, _status: int) -> tuple[dict, int]:
-            if str(_payload.get("error_name") or "") not in _DETERMINISTIC_TOOLBODY_ERRORS:
-                return _payload, _status
-            _proxy_error_name = str(_payload["error_name"])
-            _proxy_dup = _duplicate_retry_guard(
-                _scoped_identity, tool_name, body, _proxy_error_name
-            )
-            if not _proxy_dup:
-                return _payload, _status
-            _payload["original_error_name"] = _proxy_error_name
-            _payload.update(_proxy_dup)
-            return _payload, 409
-
-        try:
             # Group-3 Area 6c: bridge verdicts are scoped to the daemon
             # generation that produced the payload being judged, so a daemon
             # restart (new generation) makes pre-restart entries unreachable
@@ -17740,12 +17861,25 @@ async def dispatch_tool_call(tool_name: str, body: dict | None = None,
                     "scoping bridge verdicts under the gen0 fallback until a "
                     "generation-bearing payload re-arms this warning", tool_name)
             _scoped_identity = f"{_gen or 'gen0'}|{_proxy_identity}"
-            import urllib.error as _ue
+            if str(_payload.get("error_name") or "") not in _DETERMINISTIC_TOOLBODY_ERRORS:
                 # Group-3 Area 6d(ii): a non-error payload evicts this exact
                 # call's recorded failure entries, under the same scoped
                 # identity the consult below uses.
                 if _payload.get("ok") is not False and not _payload.get("error_name"):
                     _duplicate_retry_evict(_scoped_identity, tool_name, body)
+                return _payload, _status
+            _proxy_error_name = str(_payload["error_name"])
+            _proxy_dup = _duplicate_retry_guard(
+                _scoped_identity, tool_name, body, _proxy_error_name
+            )
+            if not _proxy_dup:
+                return _payload, _status
+            _payload["original_error_name"] = _proxy_error_name
+            _payload.update(_proxy_dup)
+            return _payload, 409
+
+        try:
+            import urllib.error as _ue
             import urllib.request as _ur
             _pdata = json.dumps(body if isinstance(body, dict) else {}).encode("utf-8")
             _proxy_headers = {
@@ -17754,6 +17888,14 @@ async def dispatch_tool_call(tool_name: str, body: dict | None = None,
             }
             if headers.get("X-Orchestrator-Token"):
                 _proxy_headers["X-Orchestrator-Token"] = headers["X-Orchestrator-Token"]
+            # Group-3 Area 1(d): forward the caller identity this dispatch was
+            # given -- building _proxy_headers from scratch used to strip it,
+            # so the daemon resolved the proxied call under its own fallback
+            # rungs instead of the dispatch's caller.
+            if headers.get("X-Agent-Id"):
+                _proxy_headers["X-Agent-Id"] = headers["X-Agent-Id"]
+            if headers.get("X-Council-Agent"):
+                _proxy_headers["X-Council-Agent"] = headers["X-Council-Agent"]
             _preq = _ur.Request(
                 f"{_proxy_base}/api/call/{tool_name}", data=_pdata,
                 headers=_proxy_headers)
@@ -17766,15 +17908,8 @@ async def dispatch_tool_call(tool_name: str, body: dict | None = None,
             # them instead of re-deriving either: the budget (never None, suy from the
             # tool's own schema) and the wait (idle watchdog for writes, /health pid
             # liveness for the scan tools the write ledger cannot see).
+            _mcpw = None
             try:
-            # Group-3 Area 1(d): forward the caller identity this dispatch was
-            # given -- building _proxy_headers from scratch used to strip it,
-            # so the daemon resolved the proxied call under its own fallback
-            # rungs instead of the dispatch's caller.
-            if headers.get("X-Agent-Id"):
-                _proxy_headers["X-Agent-Id"] = headers["X-Agent-Id"]
-            if headers.get("X-Council-Agent"):
-                _proxy_headers["X-Council-Agent"] = headers["X-Council-Agent"]
                 from orchestrator.server import mcp_stdio as _mcpw
             except Exception:
                 _mcpw = None
@@ -19160,31 +19295,6 @@ async def handle_native_preflight(request):
                  "native operation; use preferred_via_a instead."),
         "generation": SERVER_GENERATION,
     }, headers=cors, dumps=lambda x: json.dumps(x, ensure_ascii=False))
-# -- TOOLA_1210 Phase 0, Step 0.9: harness timeout measurement endpoint --
-# Provenance: ORIGINAL (campaign TOOLA_1210 FINAL, Phase 0). Pure event-loop
-# sleeper: asyncio.sleep only -- no DB, no lock/semaphore, no blocking call --
-# so concurrent sleeps never serialize and /health stays fast while a sleep is
-# in flight. Only {10,20,30,60,120} accepted; anything else -> HTTP 400, so
-# nobody can sleep(3600) through this endpoint.
-# Registered in create_app() ONLY when env ORCH_SLEEP_ENDPOINT=1 (default OFF):
-# a live instance sharing this code tree never sees the endpoint.
-# Rollback (step 0.9.6): delete this block and the gated add_get line below.
-_SLEEP_ALLOWED_SECONDS = frozenset({10, 20, 30, 60, 120})
-
-
-async def handle_sleep(request: web.Request) -> web.Response:
-    raw = request.rel_url.query.get("seconds", "")
-    try:
-        seconds = int(raw)
-    except (TypeError, ValueError):
-        seconds = None
-    if seconds not in _SLEEP_ALLOWED_SECONDS:
-        return web.json_response(
-            {"ok": False, "error": "seconds must be one of 10,20,30,60,120"},
-            status=400,
-        )
-    await asyncio.sleep(seconds)
-    return web.json_response({"ok": True, "slept_s": seconds})
 
 
 def create_app() -> web.Application:
@@ -19199,9 +19309,6 @@ def create_app() -> web.Application:
     app.router.add_get('/favicon.ico', handle_favicon)
     app.router.add_get('/health', handle_health)
     app.router.add_get('/api/health', handle_health)
-    # TOOLA_1210 Step 0.9: gated harness-timeout endpoint (ORCH_SLEEP_ENDPOINT=1 only).
-    if os.environ.get("ORCH_SLEEP_ENDPOINT") == "1":
-        app.router.add_get('/api/sleep', handle_sleep)
     app.router.add_get('/council', handle_council_dashboard)
     app.router.add_get('/council/glass', handle_council_glass_dashboard)
     app.router.add_get('/api/council/activity', handle_council_activity)
@@ -19581,6 +19688,16 @@ def _maybe_open_council_tab() -> bool:
     return True
 
 
+def _boot_step(name: str) -> None:
+    """R4: emit BOOT_STEP timing line when ORCH_PHASE_TIMING is on. No-op otherwise."""
+    if _phase_timing.enabled():
+        logger.info(
+            "BOOT_STEP %s ms=%d",
+            name,
+            int((time.monotonic() - SERVER_STARTED_MONOTONIC) * 1000),
+        )
+
+
 async def _run_server():
     global SERVER_READY, SERVER_STOPPING, SERVER_STARTUP_PHASE
     default_executor_workers = max(
@@ -19614,33 +19731,47 @@ async def _run_server():
     # when the flag is OFF (default).
     _lock_holder_trace.install()
     _lock_holder_trace.start_watchdog()
+    # D3 (ORCH_PHASE_TIMING): install the phase-timing boot hook that emits
+    # the "PHASE_TIMING enabled" line A3(5) greps to prove the flag is ACTIVE.
+    # No-op when the flag is OFF (default).
+    _phase_timing.install()
     logger.info("Thread-isolated liveness: http://127.0.0.1:%s/livez", LIVEZ_PORT)
     from orchestrator.mission import reaper as _mission_reaper
     from orchestrator.mission.tools import MISSION_DB_PATH as _MISSION_DB_PATH
+    _boot_step("mission_reaper.init.start")
     _reaper_task = _mission_reaper.start_reaper_task(
         _MISSION_DB_PATH,
         kill_process_tree=_council_kill_process_tree,
     )
+    _boot_step("mission_reaper.init.done")
     # Pass no interval: the monitor now derives it from COUNCIL_MONITOR_INTERVAL_SEC
     # (default 60s). The old hardcoded 600 meant a stalled worker could go unnoticed for
     # ten minutes ON TOP of the silence window, which is why a dead dispatch looked
     # indistinguishable from a slow one.
     _council_monitor_task = asyncio.create_task(_council_runtime_monitor())
+    _boot_step("create_app.start")
     app = create_app()
+    _boot_step("create_app.done")
     runner = web.AppRunner(app, access_log_class=_DashboardAccessLogger)
+    _boot_step("runner.setup.start")
     await runner.setup()
+    _boot_step("runner.setup.done")
     site = web.TCPSite(runner, 'localhost', PORT)
     SERVER_READY = False
     SERVER_STOPPING = False
     SERVER_STARTUP_PHASE = "boot_write_sweep"
+    _boot_step("site.start.start")
     await site.start()
+    _boot_step("site.start.done")
     # BROKER-RETRY-AFTER-SUCCESS (F2): ensure the dedup cache dir exists at startup
     # (the cache write helper also mkdirs lazily; this is the documented mkdir-once).
     try:
         _council_completed_tasks_dir().mkdir(parents=True, exist_ok=True)
     except Exception:
         pass
+    _boot_step("boot_recovery.start")
     await _run_boot_recovery()
+    _boot_step("boot_recovery.done")
     # A22: sessions.db retention runs AFTER boot recovery so it never counts toward
     # the startup deadline; the task drives DELETEs on the writer thread off-loop.
     _session_retention_task = asyncio.create_task(_run_session_retention_prune())
