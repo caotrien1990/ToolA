@@ -2598,7 +2598,7 @@ _BOOTSTRAP_EPOCH_LOCK = threading.Lock()
 # the failure mode is a few wasted tokens, never a wrong answer.
 _BOOTSTRAP_EPOCH_MAX = 64
 # A purpose is ONE sentence, capped. The cap is what keeps Tang 0 a net saving:
-# ~40 read tools x ~120 chars lands once, against 1-3KB per schema x ~18 avoided.
+# each purpose lands once at bootstrap, capped per purpose, against the far larger per-schema cost it avoids.
 _BOOTSTRAP_PURPOSE_MAX_CHARS = 140
 
 
@@ -2699,26 +2699,23 @@ def _purpose_sentence(text: str) -> str:
 
 
 def bootstrap_tool_purposes() -> dict:
-    """Purpose map for the READ surface, derived from the live registry.
+    """Purpose map for the non-source-mutation surface, derived from the live registry.
 
-    Membership = (cbm_* | ocr_* | CURATED_CORE_TOOLS) & the non-source mutation scopes.
-    The cbm and ocr families are named explicitly because they are exactly the two
-    surfaces measured never to be discovered. The scope intersection is what keeps a
-    write tool out, and it answers the question a CA is actually asking -- "can this
-    change MY files?" -- instead of trusting a name prefix: cbm_get_architecture
-    answers mutation_scope="derived_index", not "none", so a none-only filter would
-    have dropped the whole cbm family right back out of view.
+    Membership is scope-only: a tool is included exactly when
+    tool_mutation_scope(name) is in NON_SOURCE_MUTATION_SCOPES. No name prefix,
+    family, or curated list decides membership, so a future tool is classified
+    by its declared mutation scope alone. The scope test answers the question a
+    CA is actually asking -- "can this change MY files?" -- and it keeps a tool
+    whose scope is "derived_index" or another non-source scope in view, where a
+    none-only filter would have dropped it.
 
-    Write tools are excluded BY DESIGN. They keep fetching their schema on every call;
-    that costs S and t and we accept it, because a wrong write costs Correctness, which
-    outranks both.
+    Source-mutating tools are excluded BY DESIGN. They keep fetching their
+    schema on every call; that costs S and t and we accept it, because a wrong
+    write costs Correctness, which outranks both.
+
+    Purposes are derived, never stored: each purpose is the first sentence of
+    the tool's own registry description, capped.
     """
-    try:
-        # Lazy: one name, imported at call time, rather than renumbering ~2300 lines
-        # of this module to extend the top-level registry_data import block.
-        from orchestrator.core.registry_data import CURATED_CORE_TOOLS as _curated
-    except Exception:
-        _curated = ()
     # globals() and not a direct reference: TOOL_SCHEMAS is rebound as later batches
     # append to it, and this must read whatever the module holds when the CA calls.
     schemas = globals().get("TOOL_SCHEMAS") or []
@@ -2729,8 +2726,6 @@ def bootstrap_tool_purposes() -> dict:
             continue
         name = str(fn.get("name") or "")
         if not name:
-            continue
-        if not (name.startswith("cbm_") or name.startswith("ocr_") or name in _curated):
             continue
         try:
             if tool_mutation_scope(name) not in NON_SOURCE_MUTATION_SCOPES:
@@ -2826,7 +2821,7 @@ async def get_rule_core_text(agent_id: str = "", force: bool = False) -> str:
             if purposes:
                 payload["tool_purposes"] = purposes
                 payload["tool_purposes_note"] = (
-                    "What each read tool is FOR, not how to call it -- the schema owns the "
+                    "What each tool in the non-source-mutation set is FOR, not how to call it -- the schema owns the "
                     "how. The FIRST call of one of these after this bootstrap returns its "
                     "schema next to the result (response key pushed_schema), so do not fetch "
                     "it: call the tool. A later call does not repeat the push, and an ERROR "
@@ -3339,11 +3334,21 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
           coverage: {tool_name: {in_code, in_skills, in_router, in_inventory, tier}},
           matrix_log_path, persisted
         }
+
+    Coverage families (P23 Sprint 3): the summary also carries doc coverage
+    (description presence/weakness plus parameter description and example
+    counts, at the registry layer unless a key names the served layer),
+    purpose coverage (tools eligible by mutation scope versus the purposes
+    served by bootstrap_tool_purposes), and error-name phase coverage (a
+    closed system-level error-name set derived in memory and checked
+    against _R49_PHASE_MAP). Detail for these families lives under the
+    top-level coverage_detail key. Every input is an in-memory structure
+    already loaded in this process; no source files are scanned.
     """
     import re as _re
     skill_root = path_runtime.ORCHESTRATOR_DIR / ".ToolA_Skill"
     if not skill_root.exists():
-        return {"ok": False, "error": "skill_root_missing", "path": str(skill_root)}
+        return {"ok": False, "error": "skill_root_missing", "error_name": "SKILL_ROOT_MISSING", "path": str(skill_root)}
 
     # D1 (2026-08-11): when invoked standalone (scripts/sync_tool_matrix.py --ci),
     # code_tools is imported but orchestrator_server is not — so the late
@@ -3365,11 +3370,100 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
 
     code_tools_set = set(TOOL_MAP.keys())
     schema_names = set()
+    _doc_desc_present = 0
+    _doc_desc_weak = []
+    _doc_params_total = 0
+    _doc_params_described = 0
+    _doc_params_undescribed = 0
+    _doc_params_undescribed_list = []
+    _doc_param_examples_registry = 0
     for s in TOOL_SCHEMAS:
         fn = s.get("function", {}) if isinstance(s, dict) else {}
         name = fn.get("name")
         if name:
             schema_names.add(name)
+            _desc = fn.get("description")
+            if isinstance(_desc, str) and _desc.strip():
+                _doc_desc_present += 1
+                if len(_desc) < 40:
+                    _doc_desc_weak.append({"tool": name, "chars": len(_desc)})
+            _params = fn.get("parameters") if isinstance(fn.get("parameters"), dict) else {}
+            _props = _params.get("properties") if isinstance(_params.get("properties"), dict) else {}
+            _tool_undescribed = 0
+            for _pspec in _props.values():
+                _doc_params_total += 1
+                if isinstance(_pspec, dict) and isinstance(_pspec.get("description"), str) and _pspec.get("description").strip():
+                    _doc_params_described += 1
+                else:
+                    _doc_params_undescribed += 1
+                    _tool_undescribed += 1
+                if isinstance(_pspec, dict) and (_pspec.get("example") not in (None, "", [], {}) or _pspec.get("examples") not in (None, "", [], {})):
+                    _doc_param_examples_registry += 1
+            if _tool_undescribed:
+                _doc_params_undescribed_list.append({"tool": name, "undescribed": _tool_undescribed})
+
+    # ---- P23 Sprint 3: purpose + error-name phase coverage (in-memory only) ----
+    _purpose_map = {}
+    try:
+        _purpose_map = bootstrap_tool_purposes() or {}
+    except Exception:
+        _purpose_map = {}
+    _purpose_eligible = sorted(
+        n for n in schema_names
+        if tool_mutation_scope(n) in NON_SOURCE_MUTATION_SCOPES
+    )
+    _purpose_gap = [n for n in _purpose_eligible if n not in _purpose_map]
+    _error_system_names = set()
+    _error_sources = 0
+    try:
+        _en = _json_error_dict("probe").get("error_name")
+        if _en:
+            _error_system_names.add(str(_en))
+            _error_sources += 1
+    except Exception:
+        pass
+    try:
+        import inspect as _inspect_cov
+
+        import tools_v15 as _v15_cov
+        _default = _inspect_cov.signature(_v15_cov._err).parameters["error_name"].default
+        if _default:
+            _error_system_names.add(str(_default))
+            _error_sources += 1
+    except Exception:
+        pass
+    try:
+        from orchestrator.core import errors as _errors_cov
+        _before_err = len(_error_system_names)
+        for _obj in vars(_errors_cov).values():
+            if isinstance(_obj, type) and issubclass(_obj, BaseException):
+                _en2 = getattr(_obj, "error_name", None)
+                if _en2:
+                    _error_system_names.add(str(_en2))
+        if len(_error_system_names) > _before_err:
+            _error_sources += 1
+    except Exception:
+        pass
+    _server_mod_cov = _sys_audit.modules.get("orchestrator_server")
+    _det_cov = getattr(_server_mod_cov, "_DETERMINISTIC_TOOLBODY_ERRORS", None) if _server_mod_cov is not None else None
+    if _det_cov:
+        _error_system_names.update(str(x) for x in _det_cov)
+        _error_sources += 1
+    _error_system_set_source = "full" if _error_sources == 4 else "partial_no_server_lift"
+    _error_unmapped = sorted(n for n in _error_system_names if n not in _R49_PHASE_MAP)
+    _error_mapped_count = len(_error_system_names) - len(_error_unmapped)
+    _doc_params_by_tool_sorted = sorted(
+        _doc_params_undescribed_list, key=lambda r: (-r["undescribed"], r["tool"])
+    )
+    _coverage_detail = {
+        "doc_weak_descriptions": _doc_desc_weak,
+        "doc_purpose_gap": _purpose_gap,
+        "doc_params_undescribed_by_tool": _doc_params_by_tool_sorted[:50],
+        "doc_params_undescribed_tools_total": len(_doc_params_by_tool_sorted),
+        "doc_params_undescribed_tools_shown": len(_doc_params_by_tool_sorted[:50]),
+        "error_system_names_unmapped": _error_unmapped,
+        "error_system_set_source": _error_system_set_source,
+    }
 
     # ---- Skill router (SKILLS.md) ----
     # A31 Q4 (2026-09-17): SKILLS.md is a markdown table ("| task | `folder/` | conf |").
@@ -3804,6 +3898,21 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
         "alias_drift_count": len(alias_drift),
         "alias_drift_severity": _ad_sev,
         "progressive_gap_count": progressive_gap_count,
+        "doc_description_present_count": _doc_desc_present,
+        "doc_description_weak_count": len(_doc_desc_weak),
+        "doc_params_total": _doc_params_total,
+        "doc_params_described_count": _doc_params_described,
+        "doc_params_undescribed_count": _doc_params_undescribed,
+        "doc_param_examples_registry_count": _doc_param_examples_registry,
+        "doc_param_examples_served_count": len(schema_names),
+        "doc_fields_absent_by_design_count": 4,
+        "purpose_eligible_count": len(_purpose_eligible),
+        "purpose_covered_count": len(_purpose_map),
+        "purpose_eligible_gap_count": len(_purpose_gap),
+        "error_phase_map_entries": len(_R49_PHASE_MAP),
+        "error_system_names_total": len(_error_system_names),
+        "error_system_names_phase_mapped_count": _error_mapped_count,
+        "error_system_names_unmapped_count": len(_error_unmapped),
     }
     record = {
         "ts": datetime.now().isoformat(timespec="seconds"),
@@ -3874,6 +3983,7 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
             "extras_unknown": inventory_extra_unknown[:30],
         },
         "coverage": coverage,
+        "coverage_detail": _coverage_detail,
         "router_topics_count": len(router_topics),
         "matrix_log_path": str(matrix_log_path),
         "persisted": persisted,
@@ -3906,6 +4016,7 @@ async def audit_tool_matrix(project_path: str = "", include_coverage: bool = Fal
         result = _audit_tool_matrix_sync(project_path, persist=persist)
         if not include_coverage:
             result.pop("coverage", None)
+            result.pop("coverage_detail", None)
         return result
     result = await run_in_executor_lane("read_io", _run)
     # R22 Phase C — drift safety net

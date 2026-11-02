@@ -96,7 +96,7 @@ _VERBOSE_BLOCKS_SESSION_OPEN = (
 )
 _VERBOSE_BLOCKS_MATRIX = (
     "drift", "alias_drift", "progressive_gaps", "coverage",
-    "inventory_classification",
+    "coverage_detail", "inventory_classification",
 )
 _VERBOSE_BLOCKS_SKILL_STATE_PER_ENTRY = (
     "path", "path_absolute", "size_bytes",
@@ -286,7 +286,7 @@ def _apply_verbosity(response: dict, mode: str = "full", kind: str = "payload") 
             if isinstance(response.get("alias_drift"), list):
                 response["alias_drift"] = response["alias_drift"][:3]
                 response["alias_drift_truncated_at"] = 3
-            for k in ("coverage", "inventory_classification"):
+            for k in ("coverage", "coverage_detail", "inventory_classification"):
                 response.pop(k, None)
     elif kind == "skill_state":
         # R22: get_skill_state — strip per-entry path metadata from every entry
@@ -5839,6 +5839,10 @@ async def acceptance_dashboard(project_path: str = "",
         "mutation_scope_consistent": True,
         "alias_contract_intact": True,
         "duplicate_key_count_max": 0,  # R43.2
+        "purpose_eligible_gap_max": 0,  # P23
+        "doc_params_undescribed_max": 272,  # P23
+        "doc_weak_description_count_max": 9,  # P23
+        "error_system_names_unmapped_max": 39,  # P23
     }
     actuals = {
         "drift_count": s.get("drift_count", 0),
@@ -5848,6 +5852,10 @@ async def acceptance_dashboard(project_path: str = "",
         "alias_contract_intact": alias_contract_intact,
         "duplicate_key_count": len(duplicate_key_findings),  # R43.2
         "import_topology_violation_count": len(import_topology_violations),  # R43.3 H11
+        "purpose_eligible_gap_count": s.get("purpose_eligible_gap_count", 0),  # P23
+        "doc_params_undescribed_count": s.get("doc_params_undescribed_count", 0),  # P23
+        "doc_description_weak_count": s.get("doc_description_weak_count", 0),  # P23
+        "error_system_names_unmapped_count": s.get("error_system_names_unmapped_count", 0),  # P23
     }
     deltas = {
         "drift_ok": actuals["drift_count"] == 0,
@@ -5861,6 +5869,10 @@ async def acceptance_dashboard(project_path: str = "",
         # R43.3 H11: no top-level os/ct imports in tools_v15.py
         "import_topology_ok": (import_topology_scan_ok
                                 and actuals["import_topology_violation_count"] == 0),
+        "purpose_eligible_gap_ok": actuals["purpose_eligible_gap_count"] <= targets["purpose_eligible_gap_max"],  # P23
+        "doc_params_undescribed_ok": actuals["doc_params_undescribed_count"] <= targets["doc_params_undescribed_max"],  # P23
+        "doc_weak_description_ok": actuals["doc_description_weak_count"] <= targets["doc_weak_description_count_max"],  # P23
+        "error_system_names_unmapped_ok": actuals["error_system_names_unmapped_count"] <= targets["error_system_names_unmapped_max"],  # P23
     }
     all_pass = all(deltas.values())
 

@@ -1946,7 +1946,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["port"]),
 
-    ("port_owner_inspect", "T4 read-only: compact output using server_lifecycle_status scan/cache. Success returns port, listening (boolean or null when unknown), pid (integer or null), process_name (string or null), plus response metadata. It is output-light, not a separate cheaper scan. Errors pass through.", {
+    ("port_owner_inspect", "T4 read-only: inspect which process owns a port, returning listening state, pid, and process name. Success returns port, listening (boolean or null when unknown), pid (integer or null), process_name (string or null), plus response metadata. It is output-light, reusing the server_lifecycle_status scan/cache, not a separate cheaper scan. Errors pass through.", {
 
             "port": {"type": "integer"},
 
@@ -2242,7 +2242,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["name"]),
 
-    ('checkpoint_loop_dom_state', 'V15 R16.9 / R16.10 T4: server-side polling loop. R16.10: accepts `baseline_id` (from prior dom_state_diff, TTL 10min) OR `baseline_fields` (inline state dict) — fixes baseline-timing pitfall when CA clicked before calling loop. If both empty, fresh-baseline at t=0 (R16.9 legacy). Returns baseline, baseline_source, final_state, changed, polls, elapsed_sec.', {
+    ('checkpoint_loop_dom_state', 'V15 R16.9 / R16.10 T4: poll DOM element state server-side and report changes from a baseline snapshot. R16.10: accepts `baseline_id` (from prior dom_state_diff, TTL 10min) OR `baseline_fields` (inline state dict) — fixes baseline-timing pitfall when CA clicked before calling loop. If both empty, fresh-baseline at t=0 (R16.9 legacy). Returns baseline, baseline_source, final_state, changed, polls, elapsed_sec.', {
 
             "page_id": {"type": "string"},
 
@@ -2596,7 +2596,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["page_id"]),
 
-    ('bootstrap_session', 'V15 R42 T1 plus mandatory two-phase owner claim. New ownership requires caller-generated high-entropy owner_claim_id. Retry with the same claim recovers the same capability; a different claim cannot replace pending or committed ownership. Pending claims expire and begin_task commits. Existing committed legacy checkpoints remain readable; no new legacy one-shot claim is created.', {
+    ('bootstrap_session', 'V15 R42 T1: bootstrap a session with a mandatory two-phase owner claim. New ownership requires caller-generated high-entropy owner_claim_id. Retry with the same claim recovers the same capability; a different claim cannot replace pending or committed ownership. Pending claims expire and begin_task commits. Existing committed legacy checkpoints remain readable; no new legacy one-shot claim is created.', {
 
             "project_path": {"type": "string", "default": "", "description": "Optional absolute project root for workflow/session context"},
 
@@ -3004,7 +3004,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["state"]),
 
-    ('desktop_screenshot', 'T4d: PIL.ImageGrab. Default captures ALL monitors (virtual desktop); monitor=N (1-based) captures one monitor; hwnd>0 captures a window. Result includes monitors[] (bounds+primary).', {
+    ('desktop_screenshot', 'T4d: capture a desktop screenshot of all monitors, one monitor, or one window. Default captures ALL monitors (virtual desktop); monitor=N (1-based) captures one monitor; hwnd>0 captures a window. Result includes monitors[] (bounds+primary).', {
 
             "hwnd": {"type": "integer", "default": 0},
 
@@ -3044,7 +3044,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["text", "project_path"]),
 
-    ('electron_devtools_log', "⚠️ DEPRECATED R41 — DO NOT USE. Use `list_cdp_targets` for CDP target enumeration, `read_console_errors` for console messages, or `evaluate_js` for log inspection. This tool will be removed in R42+. Reason: confusing name (it's enumeration not log read), overlaps with list_cdp_targets. Migration: replace `electron_devtools_log(cdp_port=9223)` with `list_cdp_targets(cdp_port=9223)`.", {
+    ('electron_devtools_log', "⚠️ DEPRECATED R41: enumerate Electron CDP targets — do not use; use list_cdp_targets instead. Use `list_cdp_targets` for CDP target enumeration, `read_console_errors` for console messages, or `evaluate_js` for log inspection. This tool will be removed in R42+. Reason: confusing name (it's enumeration not log read), overlaps with list_cdp_targets. Migration: replace `electron_devtools_log(cdp_port=9223)` with `list_cdp_targets(cdp_port=9223)`.", {
 
             "cdp_port": {"type": "integer", "default": 9223},
 
