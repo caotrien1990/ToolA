@@ -1,5 +1,11 @@
 # Release-gate 182 historical fixtures
 
+P-50 disposition (2026-11-02): **fixtures by design**, permanent contract
+fixtures (option a in CODO_5POINT_PACK_20261102.md). This directory is not a
+release approval gate. No generator or current audit measurements are claimed.
+The contract tests must run from tracked files in a clean checkout. New release
+approval requires separately produced, independently verified run evidence.
+
 These files preserve the legacy test contract; they are not a new run of ToolA
 and do not certify the current tools or the 2026-11-01 release.
 

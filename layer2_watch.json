@@ -1,0 +1,18 @@
+{
+  "log_path": "orchestrator.log",
+  "state_path": ".tmp/layer2-watch/state.json",
+  "archive_dir": ".tmp/archive/layer2",
+  "own_log": ".tmp/layer2-watch/watcher.jsonl",
+  "db_path": ".orchestrator_cache/sessions.db",
+  "cache_dir": ".orchestrator_cache",
+  "poll_seconds": 5,
+  "window_seconds": 30,
+  "quiet_seconds": 60,
+  "heartbeat_seconds": 60,
+  "retention_hours": 72,
+  "threshold": 119,
+  "min_free_bytes": 67108864,
+  "capture_timeout_seconds": 30,
+  "start_at_end": true,
+  "calibration": "docs/LAYER2_CALIBRATION_20261102.json"
+}

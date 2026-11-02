@@ -1,0 +1,59 @@
+{
+  "storm_day": "2026-10-15",
+  "calm_day": "2026-10-31",
+  "days": {
+    "2026-10-15": {
+      "lines": 32713,
+      "trigger_lines": 19183,
+      "max_30s": 405,
+      "median_event_window": 227
+    },
+    "2026-10-31": {
+      "lines": 186734,
+      "trigger_lines": 44,
+      "max_30s": 11,
+      "median_event_window": 4.0
+    }
+  },
+  "sources": [
+    {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\docs\\incident_1510\\orchestrator.log",
+      "captured_bytes": 7226699,
+      "sha256": "f9b8d73d46c22ff685bb7b9dd1851590adbd8921a1461180df4114ad2f9a88ad"
+    },
+    {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\orchestrator.log",
+      "captured_bytes": 9623408,
+      "sha256": "872ed2e2a4b79c73fb1b61d5b0572fe8aa740da53ebad6348ce3a9af6a240737"
+    },
+    {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\orchestrator.log.1",
+      "captured_bytes": 52428445,
+      "sha256": "f1dbcb01e378ee02e394ff141535cc47163339d7dd4779552276b3f6e9e35319"
+    },
+    {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\orchestrator.log.2",
+      "captured_bytes": 52428690,
+      "sha256": "6afbb096adaf23d6a66eb3262a075caf0328f793c80962ead0ab95f40c346b63"
+    },
+    {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\orchestrator.log.3",
+      "captured_bytes": 52428762,
+      "sha256": "0f59a649ca1db3e1d3f75971b6dd3b2190c8798ecfcf02eca2e0eb14070613d8"
+    },
+    {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\orchestrator.log.4",
+      "captured_bytes": 52428756,
+      "sha256": "1f5a166073375be95bd9ffb5872a52ce4bf46e3a4abd8de9a2a3c3417be53f34"
+    },
+    {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\orchestrator.log.5",
+      "captured_bytes": 52428796,
+      "sha256": "93635c0e7364e5795ef44ac0f88d4c4ffaa4ff554341ffc291afd394b5d7ef70"
+    }
+  ],
+  "window_seconds": 30,
+  "threshold": 119,
+  "formula": "ceil((calm.max_30s + storm.median_event_window) / 2)",
+  "sampling": "trailing inclusive 30s windows at matching log lines"
+}

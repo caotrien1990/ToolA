@@ -365,12 +365,15 @@ async def run_in_executor_lane(
     # set by the dispatcher; a lane worker thread does NOT inherit it via
     # ThreadPoolExecutor, so capture it here and set it explicitly inside the
     # wrapper -- that is also where `lane_started` (true worker start) lands.
+    from orchestrator import lock_holder_trace as _holder_trace
+    _holder_tool = _holder_trace.current_tool() if _holder_trace.enabled() else None
     _pt = _phase_timing.current()
     _phase_timing.mark(_pt, "fair_admitted")
     from orchestrator.session import store as _store
     _store_deadline = time.monotonic() + _store._SESSION_CALL_WAIT_SECONDS
 
     def _pt_run(*_a: Any, **_k: Any) -> Any:
+        _holder_tok = _holder_trace.set_current_tool(_holder_tool)
         _pt_tok = _phase_timing.set_current(_pt)
         _store_tok = _store._SESSION_CALL_DEADLINE.set(_store_deadline)
         _wait_tok = _store._SESSION_WAIT_OBSERVER.set(permit.set_wait_cause)
@@ -381,6 +384,7 @@ async def run_in_executor_lane(
             _store._SESSION_WAIT_OBSERVER.reset(_wait_tok)
             _store._SESSION_CALL_DEADLINE.reset(_store_tok)
             _phase_timing.reset_current(_pt_tok)
+            _holder_trace.reset_current_tool(_holder_tok)
     try:
         return await lane.run(_pt_run, *args, queue_wait_deadline=deadline,
                               completion_callback=lambda _done: permit.release(), **kwargs)

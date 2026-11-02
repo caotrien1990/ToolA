@@ -11,7 +11,7 @@ Layer 1 -- in process:
   The wrapper records, per open transaction, the stack that opened it, the
   thread, and the tool running at open time (best effort: the dispatcher
   sets a ContextVar; asyncio.to_thread propagates it, custom
-  executor-lane worker threads do not inherit it).
+  executor-lane worker threads explicitly propagate it).
   start_watchdog() runs a daemon thread ticking every 1 s. A wrapped
   connection with in_transaction True for more than 2 s gets ONE WARNING
   log carrying the transaction-open stack; more than 30 s gets ONE ERROR
@@ -38,6 +38,8 @@ Contract (Step 0.6 item 4 + G4):
 from __future__ import annotations
 
 import contextvars
+import copy
+import sys
 import logging
 import os
 import sqlite3
@@ -124,19 +126,151 @@ def _capture_stack(limit: int = 30):
     return traceback.format_list(frames[-limit:])
 
 
+# -- R5: pre-execute SQL trace (camera blind-spot fix) -------------------------
+# The 22:05 camera saw ONE long-running SQL on another connection but could not
+# say WHICH statement it was. B1 redesign (ClauLTN CHANGES-REQUESTED): the
+# original design logged one INFO line BEFORE every statement (~403 bytes
+# each) -- at ~10 SQLs/call and 170k calls/day the log grew ~680MB/day,
+# exceeding the 50MBx5 rotation in <9h and adding log-write latency while the
+# writer held the DB lock. Now _record_stmt only stores SQL/thread/tool/stack/
+# start_time in the connection's RAM record (no log); the 1s watchdog logs ONE
+# warning when a statement is still running after 2s. Fast statements produce
+# zero log lines. Params are NEVER recorded (only args[0] is read).
+_SQL_HEAD_CHARS = 120
+_SQL_TRACE_STACK_FRAMES = 8
+
+
+def _first_sql(args, kwargs):
+    """SQL text of execute/executemany/executescript: always args[0].
+
+    The kwargs fallback is defensive only (sqlite3's C signature takes the
+    statement positionally). Params (args[1]) are never returned from here.
+    """
+    if args:
+        return args[0]
+    if kwargs:
+        return next(iter(kwargs.values()), None)
+    return None
+
+
+def _sql_head(sql) -> str:
+    try:
+        text = " ".join(str(sql).split())
+    except Exception:
+        text = "<unprintable-sql>"
+    return text[:_SQL_HEAD_CHARS]
+
+
+def _short_stack(limit: int = _SQL_TRACE_STACK_FRAMES, *, thread_id=None) -> str:
+    # Alert-time inspection reads the HOLDER's frame, never the watchdog's.
+    # Format only code locations: no locals, parameters, source text or retained
+    # frame references (which would pin whole transactions/closures in memory).
+    frame = (sys._current_frames().get(thread_id) if thread_id is not None
+             else sys._getframe())
+    parts = []
+    try:
+        while frame is not None and len(parts) < limit:
+            code = frame.f_code
+            if code.co_filename != __file__:
+                parts.append("%s:%d:%s" % (
+                    os.path.basename(code.co_filename), frame.f_lineno, code.co_name))
+            frame = frame.f_back
+        return " <- ".join(parts) or "<holder frame unavailable>"
+    finally:
+        del frame
+
+
+def _alert_snapshot(rec, *, statement=False):
+    # _REG_LOCK is held. The writer may commit/clear immediately after this
+    # snapshot; logging outside the lock must never see the cleared record.
+    snapshot = copy.copy(rec)
+    ref = rec.stmt_thread_ref if statement else rec.thread_ref
+    thread = ref() if ref is not None else None
+    snapshot.live_stack = (
+        _short_stack(thread_id=thread.ident)
+        if thread is not None and thread.is_alive() and thread.ident is not None
+        else "<holder frame unavailable>"
+    )
+    return snapshot
+
+
+def _record_stmt(conn_key: int, op: str, sql) -> None:
+    """Record statement info in RAM. No log line. Flag-gated; never fatal.
+
+    B1 (ClauLTN): the old _trace_sql logged one INFO line per statement
+    (~403 bytes each), exploding the log to ~680MB/day at 170k calls/day.
+    Now we only store the record in RAM; the 1s watchdog logs ONE warning
+    if the statement is still running after 2s. Fast statements produce
+    zero log lines. Params are NEVER recorded (only _sql_head of args[0]).
+    """
+    if not _ENABLED:
+        return
+    try:
+        with _REG_LOCK:
+            rec = _REG.get(conn_key)
+            if rec is None:
+                return
+            rec.stmt_op = op
+            rec.stmt_sql = _sql_head(sql)
+            rec.stmt_thread = threading.current_thread().name
+            rec.stmt_thread_ref = weakref.ref(threading.current_thread())
+            rec.stmt_tool = _current_tool.get()
+            rec.stmt_stack = _short_stack()
+            rec.stmt_started_at = time.monotonic()
+            rec.stmt_alerted = False
+    except Exception:
+        # Recording must never break the statement it observes.
+        pass
+
+
+def _clear_stmt(conn_key: int) -> None:
+    """Clear the per-statement record after execute. Never fatal."""
+    try:
+        with _REG_LOCK:
+            rec = _REG.get(conn_key)
+            if rec is not None:
+                rec.stmt_op = None
+                rec.stmt_sql = None
+                rec.stmt_thread = None
+                rec.stmt_thread_ref = None
+                rec.stmt_tool = None
+                rec.stmt_stack = None
+                rec.stmt_started_at = None
+                rec.stmt_alerted = False
+    except Exception:
+        pass
+
+
 class _Record:
     __slots__ = ("ref", "db_path", "thread_name", "open_tool", "opened_at",
-                 "open_stack", "alerted_2s", "alerted_30s")
+                 "open_stack", "alerted_2s", "alerted_30s",
+                 # B1 (ClauLTN): per-statement record (RAM only). Set by
+                 # _record_stmt before execute, cleared by _clear_stmt after.
+                 # The 1s watchdog logs ONE warning if a statement is still
+                 # running after 2s. Fast statements never produce a log line.
+                 "stmt_op", "stmt_sql", "stmt_thread", "stmt_tool",
+                 "stmt_stack", "stmt_started_at", "stmt_alerted",
+                 "thread_ref", "stmt_thread_ref", "live_stack")
 
     def __init__(self, ref, db_path):
         self.ref = ref
         self.db_path = db_path
         self.thread_name = None
+        self.thread_ref = None
+        self.stmt_thread_ref = None
+        self.live_stack = None
         self.open_tool = None
         self.opened_at = None
         self.open_stack = None
         self.alerted_2s = False
         self.alerted_30s = False
+        self.stmt_op = None
+        self.stmt_sql = None
+        self.stmt_thread = None
+        self.stmt_tool = None
+        self.stmt_stack = None
+        self.stmt_started_at = None
+        self.stmt_alerted = False
 
 
 _REG = {}
@@ -212,6 +346,7 @@ class _TracedConnection:
                 if rec.opened_at is None:
                     rec.opened_at = time.monotonic()
                     rec.thread_name = threading.current_thread().name
+                    rec.thread_ref = weakref.ref(threading.current_thread())
                     rec.open_tool = _current_tool.get()
                     rec.open_stack = stack
                     rec.alerted_2s = False
@@ -220,23 +355,40 @@ class _TracedConnection:
                 rec.opened_at = None
                 rec.open_stack = None
                 rec.thread_name = None
+                rec.thread_ref = None
                 rec.open_tool = None
                 rec.alerted_2s = False
                 rec.alerted_30s = False
 
     # -- tracked entry points ----------------------------------------------
     def execute(self, *args, **kwargs):
-        cur = self._conn.execute(*args, **kwargs)
+        # B1 (ClauLTN): record in RAM only -- no log line. The 1s watchdog
+        # logs ONE warning if this statement is still running after 2s.
+        _record_stmt(id(self), "execute", _first_sql(args, kwargs))
+        try:
+            cur = self._conn.execute(*args, **kwargs)
+        finally:
+            _clear_stmt(id(self))
         self._reconcile()
         return _TracedCursor(cur, self)
 
     def executemany(self, *args, **kwargs):
-        cur = self._conn.executemany(*args, **kwargs)
+        # B1 (ClauLTN): record in RAM only -- no log line.
+        _record_stmt(id(self), "executemany", _first_sql(args, kwargs))
+        try:
+            cur = self._conn.executemany(*args, **kwargs)
+        finally:
+            _clear_stmt(id(self))
         self._reconcile()
         return _TracedCursor(cur, self)
 
     def executescript(self, *args, **kwargs):
-        cur = self._conn.executescript(*args, **kwargs)
+        # B1 (ClauLTN): record in RAM only -- no log line.
+        _record_stmt(id(self), "executescript", _first_sql(args, kwargs))
+        try:
+            cur = self._conn.executescript(*args, **kwargs)
+        finally:
+            _clear_stmt(id(self))
         self._reconcile()
         return _TracedCursor(cur, self)
 
@@ -306,12 +458,23 @@ class _TracedCursor:
         return iter(self._cur)
 
     def execute(self, *args, **kwargs):
-        r = self._cur.execute(*args, **kwargs)
+        # B1 (ClauLTN): record in RAM only -- no log line. The 1s watchdog
+        # logs ONE warning if this statement is still running after 2s.
+        _record_stmt(id(self._owner), "execute", _first_sql(args, kwargs))
+        try:
+            r = self._cur.execute(*args, **kwargs)
+        finally:
+            _clear_stmt(id(self._owner))
         self._owner._reconcile()
         return r
 
     def executemany(self, *args, **kwargs):
-        r = self._cur.executemany(*args, **kwargs)
+        # B1 (ClauLTN): record in RAM only -- no log line.
+        _record_stmt(id(self._owner), "executemany", _first_sql(args, kwargs))
+        try:
+            r = self._cur.executemany(*args, **kwargs)
+        finally:
+            _clear_stmt(id(self._owner))
         self._owner._reconcile()
         return r
 
@@ -409,17 +572,26 @@ def _watchdog_tick() -> None:
                 age = now - rec.opened_at
                 if age > _ALERT_AFTER_S and not rec.alerted_2s:
                     rec.alerted_2s = True
-                    pending_logs.append((_log_holder, rec, age))
+                    pending_logs.append((_log_holder, _alert_snapshot(rec), age))
                 elif age > _LAYER2_AFTER_S and not rec.alerted_30s:
                     rec.alerted_30s = True
-                    pending_logs.append((_log_layer2_cue, rec, age))
+                    pending_logs.append((_log_layer2_cue, _alert_snapshot(rec), age))
             else:
                 rec.opened_at = None
                 rec.open_stack = None
                 rec.thread_name = None
+                rec.thread_ref = None
                 rec.open_tool = None
                 rec.alerted_2s = False
                 rec.alerted_30s = False
+            # B1 (ClauLTN): slow-statement check. A statement still running
+            # after 2s gets ONE warning with its SQL/thread/stack (recorded
+            # in RAM pre-execute). Fast statements never reach this branch.
+            if rec.stmt_started_at is not None:
+                stmt_age = now - rec.stmt_started_at
+                if stmt_age > _ALERT_AFTER_S and not rec.stmt_alerted:
+                    rec.stmt_alerted = True
+                    pending_logs.append((_log_slow_stmt, _alert_snapshot(rec, statement=True), stmt_age))
     for fn, rec, age in pending_logs:
         try:
             fn(rec, age)
@@ -431,9 +603,23 @@ def _log_holder(rec, age: float) -> None:
     stack_txt = "".join(rec.open_stack) if rec.open_stack else "<stack unavailable>"
     logger.warning(
         "LOCK_HOLDER_TRACE txn_open>%.0fs db=%s thread=%s tool=%s age=%.1fs\n"
-        "open_stack (most recent call last):\n%s",
+        "open_stack (most recent call last):\n%s\nlive_stack=%s",
         _ALERT_AFTER_S, rec.db_path, rec.thread_name, rec.open_tool, age,
-        stack_txt,
+        stack_txt, rec.live_stack,
+    )
+
+
+def _log_slow_stmt(rec, age: float) -> None:
+    # B1 (ClauLTN): one WARNING per slow statement (>2s). The statement's
+    # SQL/thread/tool/stack were recorded in RAM before execute; this is the
+    # ONLY log line a slow statement produces. Fast statements produce zero.
+    stack_txt = "".join(rec.stmt_stack) if rec.stmt_stack else "<stack unavailable>"
+    logger.warning(
+        "LOCK_HOLDER_TRACE slow_stmt>%.0fs db=%s thread=%s tool=%s op=%s age=%.1fs\n"
+        "sql=%s\n"
+        "stmt_stack (most recent call last):\n%s\nlive_stack=%s",
+        _ALERT_AFTER_S, rec.db_path, rec.stmt_thread, rec.stmt_tool,
+        rec.stmt_op, age, rec.stmt_sql, stack_txt, rec.live_stack,
     )
 
 
@@ -441,6 +627,6 @@ def _log_layer2_cue(rec, age: float) -> None:
     logger.error(
         "LOCK_HOLDER_TRACE lock_hold>%.0fs db=%s thread=%s tool=%s age=%.1fs -- "
         "run the layer-2 script (lock_holder_layer2.ps1 via run_ps1_script) "
-        "to list external holders",
-        _LAYER2_AFTER_S, rec.db_path, rec.thread_name, rec.open_tool, age,
+        "to list external holders; live_stack=%s",
+        _LAYER2_AFTER_S, rec.db_path, rec.thread_name, rec.open_tool, age, rec.live_stack,
     )

@@ -2984,7 +2984,9 @@ class TestCodeToolsCache(unittest.TestCase):
     _SL_PROC = 'subprocess text output: not a JSON record, no line number handed back'
     _SL_TEXT = 'plain text scanned for display / a marker / a regex: no line number handed back, no JSON record'
     _SL_CONF = 'config / markup (.bat, YAML, ignore file, model list) read line by line: no line number handed back'
+    _SL_WATCH = 'standalone layer-2 observer of the daemon log: stdlib-only by design, must not import the orchestrator package it watches; hands back no line number, parses no JSON record'
     SPLITLINES_ALLOWED = {
+        'bin/layer2_watch.py::Watcher._read': (1, _SL_WATCH),
         'code_tools.py::_audit_tool_matrix_sync': (1, _SL_TEXT),
         'code_tools.py::_dedup_session_vs_core': (2, _SL_TEXT),
         'code_tools.py::_lint_only_introduced': (1, _SL_PROC),

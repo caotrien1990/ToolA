@@ -234,6 +234,42 @@ def pytest_runtest_teardown(item, nextitem):  # noqa: ARG001
 # afterwards is the documented meaning of the flag, not a new leniency.
 _CLEANUP_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.8)
 
+def _close_test_server_audit():
+    """Stop producers before their durable consumer, without importing the server.
+
+    P-51: closing SessionWriter alone leaves durable_audit.db pinned in the same
+    run-owned directory. Its 2s idle release races the 1.55s cleanup retries.
+    Explicit shutdown removes that timing dependency; never broaden the cleanup
+    whitelist or hide a leaked directory in the B031 guard.
+    """
+    import sys
+    import warnings
+
+    server = sys.modules.get("orchestrator_server")
+    if server is None:
+        return
+    failures = []
+    accounting = getattr(server, "_POST_CALL_ACCOUNTING", None)
+    if accounting is not None:
+        try:
+            report = accounting.close(10.0)
+            if not report.get("drained"):
+                failures.append("post-call accounting did not drain")
+        except Exception as exc:
+            failures.append(f"post-call accounting: {exc!r}")
+    writer = getattr(server, "_DURABLE_AUDIT", None)
+    if writer is not None:
+        try:
+            report = writer.shutdown(timeout=10.0, drain=True)
+            if not report.worker_stopped or not report.drained or report.storage_error:
+                failures.append(f"durable audit: {report!r}")
+        except Exception as exc:
+            failures.append(f"durable audit: {exc!r}")
+    if failures:
+        warnings.warn("P51 test teardown incomplete: " + "; ".join(failures),
+                      RuntimeWarning, stacklevel=2)
+
+
 def pytest_unconfigure(config):  # noqa: ARG001 - pytest hook signature
     """Remove only what `pytest_configure` created. Runs after all finalisers.
 
@@ -250,6 +286,7 @@ def pytest_unconfigure(config):  # noqa: ARG001 - pytest hook signature
     ImportError here would take the whole session down.
     """
     if _B031_OWNED_TEMP_DIRS:
+        _close_test_server_audit()
         try:
             from orchestrator.session import store
 
@@ -264,7 +301,8 @@ def pytest_unconfigure(config):  # noqa: ARG001 - pytest hook signature
         try:
             import logging
 
-            import orchestrator_server as _srv
+            import sys
+            _srv = sys.modules.get("orchestrator_server")
 
             for _h in (
                 logging.getLogger("orchestrator.access").handlers
