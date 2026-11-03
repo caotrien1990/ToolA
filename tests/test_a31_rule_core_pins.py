@@ -118,6 +118,18 @@ class RuleCoreSotFilesCarryTheCwdRule(unittest.TestCase):
                 for fragment in WRITE_GATE_RULE:
                     self.assertIn(fragment, text)
 
+    def test_blind_audit_paragraph_present_in_every_sot_file(self):
+        # Point 7 (Q4): the blind-audit law lands as ONE identical paragraph in
+        # every SOT file (decision record UPGRADE_P7916_P7_DECISION_20261103, §2).
+        # Pin the FULL paragraph by assertIn, never by sha (module docstring);
+        # the byte count is an inline literal, so a wording drift that kept the
+        # opening phrase but changed the bytes would still go red here.
+        paragraph = "- BLIND AUDIT (HARD): an auditor of a fix receives ONLY the diff, the raw evidence, and the standard the fix is judged against (plan, spec, or SOT), in the form that standard stood before the fix began or, for any part of the fix, at the last recorded adoption before that part was implemented; if an input's provenance is in doubt, it is treated as rationale. No one may give the auditor the fixer's rationale, explanation, summary, or self-assessment, and no one may materially trim the diff, the evidence, or the standard; scoping a brief to the identifiers a pre-existing procedure assigns the audit is not trimming. The auditor must not request or rely on the fixer's rationale, and an auditor who has already seen it must disclose that before delivering a verdict and stand aside. A verdict formed with a prohibited input, or on a materially trimmed input, is invalid and must be re-run blind by an auditor who has not seen it."
+        self.assertEqual(len(paragraph.encode("utf-8")), 933)
+        for name in SOT_FILES:
+            with self.subTest(name):
+                self.assertIn(paragraph, _read(name))
+
 
 class RuleCoreRuntimeReadsTheCommittedFile(unittest.TestCase):
     """Bind the committed bytes to the runtime accessors that propagate them."""
