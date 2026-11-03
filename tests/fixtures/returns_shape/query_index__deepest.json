@@ -1,0 +1,64 @@
+{
+  "ok": true,
+  "matched": 5,
+  "returned": 5,
+  "truncated": false,
+  "total_files": 974,
+  "files": [
+    {
+      "path": "orchestrator_server.py",
+      "group": "entrypoint",
+      "loc": 16252,
+      "complexity": 3852,
+      "matched_via": [
+        "content"
+      ]
+    },
+    {
+      "path": "code_tools.py",
+      "group": "source",
+      "loc": 16936,
+      "complexity": 3650,
+      "matched_via": [
+        "content"
+      ]
+    },
+    {
+      "path": "orchestrator/core/returns_shape.py",
+      "group": "source",
+      "loc": 437,
+      "complexity": 147,
+      "matched_via": [
+        "path"
+      ]
+    },
+    {
+      "path": "orchestrator/session/logs.py",
+      "group": "source",
+      "loc": 574,
+      "complexity": 134,
+      "matched_via": [
+        "content"
+      ]
+    },
+    {
+      "path": "tests/test_a45_returns_shape.py",
+      "group": "test",
+      "loc": 553,
+      "complexity": 7,
+      "matched_via": [
+        "path"
+      ]
+    }
+  ],
+  "snapshot_id": "v1-3576f1338e1c037eddf1ff6448292fd6011758069960fd8a6e2c1228b6609e4a",
+  "query_scope": [
+    "path",
+    "symbol",
+    "content"
+  ],
+  "content_files_scanned": 972,
+  "ca_hint": "matched files listed, contents not read",
+  "ca_next_action": "read_file_range",
+  "ca_next_tool": "read_file_range"
+}

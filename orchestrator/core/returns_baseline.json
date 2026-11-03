@@ -1,0 +1,42 @@
+{
+  "architecture_context_pack": {
+    "sha256": "c7aa5c8a38151e5fcb31e3ae3f6753bf2d574b21ed41ac4efaee83919b5d13e7",
+    "depth_D": 6
+  },
+  "cbm_get_architecture": {
+    "sha256": "e24872c8ec18bdd20899bb7ffcbc7d7e2de0d6ec9f8a1400e66c596236c61b4a",
+    "depth_D": 5
+  },
+  "find_symbol": {
+    "sha256": "da799fb941b901f2ef4386b42d059f80e489def1f36472cc97e8e5364dbd8d9f",
+    "depth_D": 3
+  },
+  "get_rule_core_text": {
+    "sha256": "0f28d8648ac8524a132109789aa73403e5a49180922d6725e70d7a95b40a1478",
+    "depth_D": 2
+  },
+  "list_structure": {
+    "sha256": "f7769ac090f177b91d107060defc887c6cf59064d77fe5b3b779890631499550",
+    "depth_D": 1
+  },
+  "ocr_map": {
+    "sha256": "636a75c7fe35f54f32298999d71cc283ae7ba4e3bd684de60a1208b0d6da426f",
+    "depth_D": 3
+  },
+  "query_index": {
+    "sha256": "ef3a776280b701d6af04782a04838ce5089b336173d51b8b8bf9bc773a1b7c41",
+    "depth_D": 4
+  },
+  "read_context_batch": {
+    "sha256": "2ea5c1e4a374e24bbd6d8e637b561c889d12cef1723e2038f34ba6dd0a2ee8b9",
+    "depth_D": 5
+  },
+  "read_file_range": {
+    "sha256": "2494cecbd8a55ee1879588d8005fde9625960bd21c1f46d5158dc76805d86791",
+    "depth_D": 4
+  },
+  "search_code": {
+    "sha256": "7f1a267c706cf5b1ddd670ef0d98122f38f22f08a8f07755b9450de9dd6001ea",
+    "depth_D": 3
+  }
+}

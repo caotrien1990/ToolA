@@ -466,7 +466,9 @@ def _log_to_file(log_path: Path, entry: dict, max_entries: int = 500) -> bool:
 
 def _log_usage(tool: str, params: dict, ok: bool, ms: int, error: str = "", *,
                delivered: bool = True, client_gone: bool = False,
-               error_name: str = "", agent_id: str = "") -> bool:
+               error_name: str = "", agent_id: str = "",
+               returns_shape_verdict: str = "", returns_shape_errors=None,
+               accounting_id: str = "", accounting_sequence=None) -> bool:
     """Ghi vao USAGE_LOG cua Orchestrator (meta-log ve chinh Orchestrator).
 
     D6: the row used to be {ts, tool, ok, ms, project} where `project` was only a
@@ -498,6 +500,8 @@ def _log_usage(tool: str, params: dict, ok: bool, ms: int, error: str = "", *,
     looked for a bare `agent_id`, so a resolved identity sat one key away from the
     row it belonged to. The params loop is kept for the `session_id` case and for
     any caller that does carry a plain `agent_id`; the explicit argument wins.
+    P16: the returns_shape verdict keys follow the same A41-style discipline --
+    they arrive only from `_persist_post_call_accounting`, for window-reaching dispatches.
     """
     project_hint = params.get("project_path", params.get("file_path", ""))
     entry = {
@@ -525,6 +529,17 @@ def _log_usage(tool: str, params: dict, ok: bool, ms: int, error: str = "", *,
         entry["undelivered_reason"] = "client_transport_gone"
     if error_name:
         entry["error_name"] = str(error_name)[:80]
+    if returns_shape_verdict:
+        entry["returns_shape_verdict"] = str(returns_shape_verdict)[:40]
+    if returns_shape_errors:
+        entry["returns_shape_errors"] = [str(x)[:80] for x in list(returns_shape_errors)[:5]]
+    if accounting_id:
+        entry["accounting_id"] = str(accounting_id)[:80]
+    if accounting_sequence is not None:
+        try:
+            entry["accounting_sequence"] = int(accounting_sequence)
+        except Exception:
+            pass
     if error:
         entry["error"] = error[:120]
     return _log_to_file(_usage_log_path(), entry, max_entries=1000)

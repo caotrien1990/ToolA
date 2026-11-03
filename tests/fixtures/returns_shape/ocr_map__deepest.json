@@ -1,0 +1,234 @@
+{
+  "ok": true,
+  "mode": "delegate_map",
+  "repository": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+  "ref_metadata": {
+    "ocr_mode": "workspace",
+    "schema_version": "1",
+    "commit": null,
+    "from_ref": null,
+    "to_ref": null,
+    "merge_base": null,
+    "merge_base_source": "not_emitted_by_ocr_preview"
+  },
+  "files": [
+    {
+      "path": "tests/test_a45_returns_shape.py",
+      "status": "added",
+      "changed": 695
+    },
+    {
+      "path": "orchestrator/core/returns_shape.py",
+      "status": "added",
+      "changed": 533
+    },
+    {
+      "path": "orchestrator_server.py",
+      "status": "modified",
+      "changed": 36
+    },
+    {
+      "path": "orchestrator/session/logs.py",
+      "status": "modified",
+      "changed": 14
+    },
+    {
+      "path": "install_restart_control_task.ps1",
+      "status": "modified",
+      "changed": 8
+    },
+    {
+      "path": "code_tools.py",
+      "status": "modified",
+      "changed": 6
+    }
+  ],
+  "counts": {
+    "previewed": 32,
+    "mapped": 6,
+    "dropped_by_ocr": 23,
+    "dropped_by_a": 3
+  },
+  "totals": {
+    "insertions": 2507,
+    "deletions": 190
+  },
+  "min_changed_lines": 1,
+  "excluded_summary": {
+    "runtime_state_dir": 2,
+    "data_json": 1,
+    "unsupported_ext": 23
+  },
+  "excluded_files": [
+    {
+      "path": ".council/context_registry.json",
+      "status": "modified",
+      "changed": 2,
+      "exclude_reason": "runtime_state_dir"
+    },
+    {
+      "path": ".council/session_meta.json",
+      "status": "modified",
+      "changed": 4,
+      "exclude_reason": "runtime_state_dir"
+    },
+    {
+      "path": "agents_registry.json",
+      "status": "modified",
+      "changed": 10,
+      "exclude_reason": "data_json"
+    },
+    {
+      "path": "PROJECT_CONTEXT.md",
+      "status": "modified",
+      "changed": 46,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "PROJECT_MAP.md",
+      "status": "modified",
+      "changed": 28,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "_a34_full_suite.status",
+      "status": "deleted",
+      "changed": 19,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "_a37_regB2.status",
+      "status": "deleted",
+      "changed": 1,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "_a38_full_suite.status",
+      "status": "deleted",
+      "changed": 32,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "_a41_full_suite.status",
+      "status": "deleted",
+      "changed": 52,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "_a42_full_suite.status",
+      "status": "deleted",
+      "changed": 29,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "_realtest_write_new.txt",
+      "status": "deleted",
+      "changed": 1,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/PLAN_TOOLA_1210_FINAL.md",
+      "status": "modified",
+      "changed": 163,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "orchestrator/PROJECT_CONTEXT.md",
+      "status": "modified",
+      "changed": 6,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "orchestrator/PROJECT_MAP.md",
+      "status": "modified",
+      "changed": 6,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "tests/PROJECT_CONTEXT.md",
+      "status": "modified",
+      "changed": 10,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "tests/PROJECT_MAP.md",
+      "status": "modified",
+      "changed": 8,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/workflows/mcp_175_tool_workflow_fixture.md",
+      "status": "added",
+      "changed": 31,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/G0_VERDICT_CONGESTION_20261024.md",
+      "status": "added",
+      "changed": 51,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/PLAN_TOOLA_1210_G0_AMENDMENT_A_PRIME.md",
+      "status": "added",
+      "changed": 160,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/PROMPT_AI_WEB_KET_NOI_TOOLA.md",
+      "status": "added",
+      "changed": 86,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/incident_1510/EVIDENCE_NOTES.md",
+      "status": "added",
+      "changed": 30,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/incident_1510/R4_BOOTSTEP_SPAM_ROOTCAUSE.md",
+      "status": "added",
+      "changed": 62,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/incident_1510/R4_MUSEB_1031_VERDICT.md",
+      "status": "added",
+      "changed": 127,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "docs/incident_1510/pyspy_52372.txt",
+      "status": "added",
+      "changed": 296,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "muse_tunnel.bat",
+      "status": "added",
+      "changed": 127,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": "toola_shell.bat",
+      "status": "added",
+      "changed": 18,
+      "exclude_reason": "unsupported_ext"
+    }
+  ],
+  "binary": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\venv_ocr\\node_modules\\@alibaba-group\\ocr-win32-x64\\bin\\opencodereview.exe",
+  "binary_source": "venv_ocr",
+  "exit_code": 0,
+  "stdout_bytes": 5486,
+  "stderr_bytes": 0,
+  "stdout_empty": false,
+  "duration_s": 0.279,
+  "color_flag": "never",
+  "force_color_scrubbed": false,
+  "llm_used": false,
+  "token_cost": 0,
+  "ca_next_action": "ocr_rule",
+  "ca_hint_map": "files[] is sorted by changed-line count, so the first entry is where the change lives. excluded_summary counts every dropped file by reason; lower min_changed_lines or pass include_excluded=true to see them.",
+  "ca_next_tool": "ocr_rule"
+}

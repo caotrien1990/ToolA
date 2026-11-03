@@ -1,0 +1,1230 @@
+{
+  "ok": true,
+  "results": [
+    {
+      "file": "COUNCIL_TRACKER.py",
+      "line": 174,
+      "match": "def main():",
+      "range_id": "COUNCIL_TRACKER.py:174p1",
+      "body": "def main():"
+    },
+    {
+      "file": "mcp_client_manager.py",
+      "line": 9,
+      "match": "async def main():",
+      "range_id": "mcp_client_manager.py:9p1",
+      "body": "async def main():"
+    },
+    {
+      "file": "orchestrator_ui.py",
+      "line": 136,
+      "match": "def main():",
+      "range_id": "orchestrator_ui.py:136p1",
+      "body": "def main():"
+    },
+    {
+      "file": "watchdog_a.py",
+      "line": 346,
+      "match": "def main() -> int:",
+      "range_id": "watchdog_a.py:346p1",
+      "body": "def main() -> int:"
+    },
+    {
+      "file": ".council\\mcp_full_surface_test.py",
+      "line": 306,
+      "match": "def main():",
+      "range_id": "mcp_full_surface_test.py:306p1",
+      "body": "def main():"
+    },
+    {
+      "file": ".council\\mcp_phase2_fix.py",
+      "line": 135,
+      "match": "def main():",
+      "range_id": "mcp_phase2_fix.py:135p1",
+      "body": "def main():"
+    },
+    {
+      "file": ".council\\mcp_phase3_fix.py",
+      "line": 109,
+      "match": "def main():",
+      "range_id": "mcp_phase3_fix.py:109p1",
+      "body": "def main():"
+    },
+    {
+      "file": "bin\\calibrate_layer2.py",
+      "line": 63,
+      "match": "def main():",
+      "range_id": "calibrate_layer2.py:63p1",
+      "body": "def main():"
+    },
+    {
+      "file": "bin\\layer2_watch.py",
+      "line": 358,
+      "match": "def main(argv=None):",
+      "range_id": "layer2_watch.py:358p1",
+      "body": "def main(argv=None):"
+    },
+    {
+      "file": "docs\\gen_tool_surface_doc.py",
+      "line": 31,
+      "match": "def main() -> int:",
+      "range_id": "gen_tool_surface_doc.py:31p1",
+      "body": "def main() -> int:"
+    },
+    {
+      "file": "hooks\\native-write-gate.js",
+      "line": 204,
+      "match": "function main() {",
+      "range_id": "native-write-gate.js:204p1",
+      "body": "function main() {"
+    },
+    {
+      "file": "hooks\\read-gate.js",
+      "line": 659,
+      "match": "function main() {",
+      "range_id": "read-gate.js:659p1",
+      "body": "function main() {"
+    },
+    {
+      "file": "hooks\\adapters\\codex.js",
+      "line": 92,
+      "match": "function main() {",
+      "range_id": "codex.js:92p1",
+      "body": "function main() {"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\as_bat_helpers.py",
+      "line": 444,
+      "match": "def main(argv: list[str] | None = None) -> int:",
+      "range_id": "as_bat_helpers.py:444p1",
+      "body": "def main(argv: list[str] | None = None) -> int:"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\high_il_launch.py",
+      "line": 212,
+      "match": "def main(argv: list[str] | None = None) -> int:",
+      "range_id": "high_il_launch.py:212p1",
+      "body": "def main(argv: list[str] | None = None) -> int:"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\request_orchestrator_restart.py",
+      "line": 200,
+      "match": "def main(argv: list[str] | None = None) -> int:",
+      "range_id": "request_orchestrator_restart.py:200p1",
+      "body": "def main(argv: list[str] | None = None) -> int:"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\restart_control_service.py",
+      "line": 959,
+      "match": "def main() -> int:",
+      "range_id": "restart_control_service.py:959p1",
+      "body": "def main() -> int:"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\via_bat_helper.py",
+      "line": 89,
+      "match": "def main(argv: list[str] | None = None) -> int:",
+      "range_id": "via_bat_helper.py:89p1",
+      "body": "def main(argv: list[str] | None = None) -> int:"
+    },
+    {
+      "file": "scripts\\bench_p6_clustering.py",
+      "line": 66,
+      "match": "def main():",
+      "range_id": "bench_p6_clustering.py:66p1",
+      "body": "def main():"
+    },
+    {
+      "file": "scripts\\comc_real_tool_usage_test.py",
+      "line": 340,
+      "match": "def main() -> int:",
+      "range_id": "comc_real_tool_usage_test.py:340p1",
+      "body": "def main() -> int:"
+    }
+  ],
+  "count": 20,
+  "warning": "INDEX stale; returned live filesystem search results",
+  "category": "stale_index_live_fallback",
+  "drift": {
+    "ok": true,
+    "added": [],
+    "modified": [
+      ".council/STATE.md",
+      ".council/inbox_clau.md",
+      ".council/inbox_clin.md",
+      ".council/inbox_codo.md",
+      ".council/inbox_com.md",
+      ".council/inbox_ope.md",
+      ".council/metrics_codo.json",
+      ".council/metrics_ope.json",
+      ".council/outbox_clau.md",
+      ".council/outbox_clin.md",
+      ".council/outbox_codo.md",
+      ".council/outbox_com.md",
+      ".council/outbox_comc.md",
+      ".council/outbox_leader.md",
+      ".council/outbox_ope.md",
+      ".council/route_measurements.jsonl.lock",
+      ".council/usage_log.jsonl.lock",
+      "orchestrator/core/__init__.py",
+      "orchestrator/council/__init__.py",
+      "orchestrator/mission/__init__.py",
+      "orchestrator/tools/__init__.py",
+      "tests/_full_suite_result.txt",
+      ".council/tools_manifest.md"
+    ],
+    "deleted": []
+  },
+  "callers": [
+    {
+      "file": "COUNCIL_TRACKER.py",
+      "line": 384,
+      "match": "main()",
+      "range_id": "COUNCIL_TRACKER.py:384"
+    },
+    {
+      "file": "mcp_client_manager.py",
+      "line": 31,
+      "match": "asyncio.run(main())",
+      "range_id": "mcp_client_manager.py:31"
+    },
+    {
+      "file": "orchestrator_ui.py",
+      "line": 143,
+      "match": "main()",
+      "range_id": "orchestrator_ui.py:143"
+    },
+    {
+      "file": "test_council_reply_fallback.py",
+      "line": 224,
+      "match": "unittest.main()",
+      "range_id": "test_council_reply_fallback.py:224"
+    },
+    {
+      "file": "test_open_session_drift_note.py",
+      "line": 99,
+      "match": "unittest.main()",
+      "range_id": "test_open_session_drift_note.py:99"
+    },
+    {
+      "file": "watchdog_a.py",
+      "line": 45,
+      "match": "relative to this file, inside main() after log() is available. Any load",
+      "range_id": "watchdog_a.py:45"
+    },
+    {
+      "file": "watchdog_a.py",
+      "line": 46,
+      "match": "failure raises here; main() turns it into WATCHDOG_CONTRACT_UNAVAILABLE",
+      "range_id": "watchdog_a.py:46"
+    },
+    {
+      "file": "watchdog_a.py",
+      "line": 373,
+      "match": "sys.exit(main())",
+      "range_id": "watchdog_a.py:373"
+    },
+    {
+      "file": ".council\\mcp_full_surface_test.py",
+      "line": 429,
+      "match": "report = main()",
+      "range_id": "mcp_full_surface_test.py:429"
+    },
+    {
+      "file": ".council\\mcp_phase2_fix.py",
+      "line": 280,
+      "match": "report = main()",
+      "range_id": "mcp_phase2_fix.py:280"
+    },
+    {
+      "file": ".council\\mcp_phase3_fix.py",
+      "line": 263,
+      "match": "report = main()",
+      "range_id": "mcp_phase3_fix.py:263"
+    },
+    {
+      "file": "bin\\calibrate_layer2.py",
+      "line": 76,
+      "match": "main()",
+      "range_id": "calibrate_layer2.py:76"
+    },
+    {
+      "file": "bin\\layer2_watch.py",
+      "line": 386,
+      "match": "raise SystemExit(main())",
+      "range_id": "layer2_watch.py:386"
+    },
+    {
+      "file": "docs\\gen_tool_surface_doc.py",
+      "line": 61,
+      "match": "raise SystemExit(main())",
+      "range_id": "gen_tool_surface_doc.py:61"
+    },
+    {
+      "file": "hooks\\native-write-gate.js",
+      "line": 225,
+      "match": "main();",
+      "range_id": "native-write-gate.js:225"
+    },
+    {
+      "file": "hooks\\read-gate.js",
+      "line": 683,
+      "match": "main();",
+      "range_id": "read-gate.js:683"
+    },
+    {
+      "file": "hooks\\adapters\\codex.js",
+      "line": 146,
+      "match": "main();",
+      "range_id": "codex.js:146"
+    },
+    {
+      "file": "orchestrator\\graph\\extractors\\python.py",
+      "line": 468,
+      "match": "read as dead. That is not an edge case: `raise SystemExit(main())`, a",
+      "range_id": "python.py:468"
+    },
+    {
+      "file": "orchestrator\\graph\\extractors\\python.py",
+      "line": 472,
+      "match": "alone were invisible, including all 5 `main()` entry points, every one",
+      "range_id": "python.py:472"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\as_bat_helpers.py",
+      "line": 457,
+      "match": "raise SystemExit(main())",
+      "range_id": "as_bat_helpers.py:457"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\high_il_launch.py",
+      "line": 220,
+      "match": "raise SystemExit(main())",
+      "range_id": "high_il_launch.py:220"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\request_orchestrator_restart.py",
+      "line": 288,
+      "match": "raise SystemExit(main())",
+      "range_id": "request_orchestrator_restart.py:288"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\restart_control_service.py",
+      "line": 1029,
+      "match": "raise SystemExit(main())",
+      "range_id": "restart_control_service.py:1029"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\via_bat_helper.py",
+      "line": 117,
+      "match": "raise SystemExit(main())",
+      "range_id": "via_bat_helper.py:117"
+    },
+    {
+      "file": "scripts\\bench_p6_clustering.py",
+      "line": 124,
+      "match": "main()",
+      "range_id": "bench_p6_clustering.py:124"
+    },
+    {
+      "file": "scripts\\comc_real_tool_usage_test.py",
+      "line": 380,
+      "match": "raise SystemExit(main())",
+      "range_id": "comc_real_tool_usage_test.py:380"
+    },
+    {
+      "file": "scripts\\gen_alias_contract.py",
+      "line": 74,
+      "match": "def main(argv: list[str] | None = None) -> int:",
+      "range_id": "gen_alias_contract.py:74"
+    },
+    {
+      "file": "scripts\\gen_alias_contract.py",
+      "line": 92,
+      "match": "raise SystemExit(main())",
+      "range_id": "gen_alias_contract.py:92"
+    },
+    {
+      "file": "scripts\\live_answer_doctor.py",
+      "line": 582,
+      "match": "def main(argv: list[str] | None = None) -> int:",
+      "range_id": "live_answer_doctor.py:582"
+    },
+    {
+      "file": "scripts\\live_answer_doctor.py",
+      "line": 638,
+      "match": "sys.exit(main())",
+      "range_id": "live_answer_doctor.py:638"
+    },
+    {
+      "file": "scripts\\mcp_api_parity_check.py",
+      "line": 31,
+      "match": "async def main() -> int:",
+      "range_id": "mcp_api_parity_check.py:31"
+    },
+    {
+      "file": "scripts\\mcp_api_parity_check.py",
+      "line": 73,
+      "match": "raise SystemExit(asyncio.run(main()))",
+      "range_id": "mcp_api_parity_check.py:73"
+    },
+    {
+      "file": "scripts\\missions_migrate.py",
+      "line": 82,
+      "match": "def main(argv: list[str] | None = None) -> int:",
+      "range_id": "missions_migrate.py:82"
+    },
+    {
+      "file": "scripts\\missions_migrate.py",
+      "line": 107,
+      "match": "raise SystemExit(main())",
+      "range_id": "missions_migrate.py:107"
+    },
+    {
+      "file": "scripts\\soft_data_reconcile.py",
+      "line": 592,
+      "match": "def main(argv=None) -> int:",
+      "range_id": "soft_data_reconcile.py:592"
+    },
+    {
+      "file": "scripts\\soft_data_reconcile.py",
+      "line": 637,
+      "match": "raise SystemExit(main())",
+      "range_id": "soft_data_reconcile.py:637"
+    },
+    {
+      "file": "scripts\\sync_tool_matrix.py",
+      "line": 291,
+      "match": "def main(argv: list[str] | None = None) -> int:",
+      "range_id": "sync_tool_matrix.py:291"
+    },
+    {
+      "file": "scripts\\sync_tool_matrix.py",
+      "line": 338,
+      "match": "sys.exit(main())",
+      "range_id": "sync_tool_matrix.py:338"
+    },
+    {
+      "file": "tests\\test_a02_a30_interaction.py",
+      "line": 153,
+      "match": "unittest.main()",
+      "range_id": "test_a02_a30_interaction.py:153"
+    },
+    {
+      "file": "tests\\test_a29_size_hint_and_ruff_preview_states.py",
+      "line": 595,
+      "match": "unittest.main()",
+      "range_id": "test_a29_size_hint_and_ruff_preview_states.py:595"
+    },
+    {
+      "file": "tests\\test_a2_start_bat_contract.py",
+      "line": 191,
+      "match": "unittest.main()",
+      "range_id": "test_a2_start_bat_contract.py:191"
+    },
+    {
+      "file": "tests\\test_a31_git_ocr_attach.py",
+      "line": 234,
+      "match": "unittest.main()",
+      "range_id": "test_a31_git_ocr_attach.py:234"
+    },
+    {
+      "file": "tests\\test_a31_rule_core_pins.py",
+      "line": 276,
+      "match": "unittest.main()",
+      "range_id": "test_a31_rule_core_pins.py:276"
+    },
+    {
+      "file": "tests\\test_a31_soft_data_binding.py",
+      "line": 150,
+      "match": "unittest.main()",
+      "range_id": "test_a31_soft_data_binding.py:150"
+    },
+    {
+      "file": "tests\\test_a33b_mcp_session_shortcut_transport.py",
+      "line": 224,
+      "match": "unittest.main()",
+      "range_id": "test_a33b_mcp_session_shortcut_transport.py:224"
+    },
+    {
+      "file": "tests\\test_a33_matrix_audit_provenance_gate.py",
+      "line": 244,
+      "match": "unittest.main()",
+      "range_id": "test_a33_matrix_audit_provenance_gate.py:244"
+    },
+    {
+      "file": "tests\\test_a36_cbm_discovery_hints.py",
+      "line": 352,
+      "match": "unittest.main(verbosity=2)",
+      "range_id": "test_a36_cbm_discovery_hints.py:352"
+    },
+    {
+      "file": "tests\\test_a39_unsupported_field_retry_payload.py",
+      "line": 92,
+      "match": "unittest.main()",
+      "range_id": "test_a39_unsupported_field_retry_payload.py:92"
+    },
+    {
+      "file": "tests\\test_a7_env_verify.py",
+      "line": 92,
+      "match": "unittest.main()",
+      "range_id": "test_a7_env_verify.py:92"
+    },
+    {
+      "file": "tests\\test_adaptive_read_contract.py",
+      "line": 270,
+      "match": "unittest.main()",
+      "range_id": "test_adaptive_read_contract.py:270"
+    }
+  ],
+  "callers_count": 50,
+  "usages": [
+    {
+      "file": "code_tools.py",
+      "line": 15797,
+      "match": "(e.g. v4 had Rawcut/[Ac] + GetLink/[Ad] sessions plus the main [Ab] one,",
+      "range_id": "code_tools.py:15797"
+    },
+    {
+      "file": "COUNCIL_TRACKER.py",
+      "line": 384,
+      "match": "main()",
+      "range_id": "COUNCIL_TRACKER.py:384"
+    },
+    {
+      "file": "mcp_client_manager.py",
+      "line": 31,
+      "match": "asyncio.run(main())",
+      "range_id": "mcp_client_manager.py:31"
+    },
+    {
+      "file": "muse_tunnel.bat",
+      "line": 23,
+      "match": "goto :main",
+      "range_id": "muse_tunnel.bat:23"
+    },
+    {
+      "file": "muse_tunnel.bat",
+      "line": 49,
+      "match": ":main",
+      "range_id": "muse_tunnel.bat:49"
+    },
+    {
+      "file": "orchestrator_server.py",
+      "line": 274,
+      "match": "_access_logger.propagate = False  # don't bubble up to root → main log",
+      "range_id": "orchestrator_server.py:274"
+    },
+    {
+      "file": "orchestrator_server.py",
+      "line": 4405,
+      "match": "\"_example_selectors\": [\"#main\", \".btn-primary\", \"button[aria-label='Submit']\"],",
+      "range_id": "orchestrator_server.py:4405"
+    },
+    {
+      "file": "orchestrator_server.py",
+      "line": 4427,
+      "match": "\"url\": \"http://localhost:3000/main.js\",",
+      "range_id": "orchestrator_server.py:4427"
+    },
+    {
+      "file": "orchestrator_ui.py",
+      "line": 143,
+      "match": "main()",
+      "range_id": "orchestrator_ui.py:143"
+    },
+    {
+      "file": "surgical_mapper.py",
+      "line": 89,
+      "match": "ENTRYPOINT_FILES = {\"main.py\", \"app.py\", \"index.js\", \"server.js\"}",
+      "range_id": "surgical_mapper.py:89"
+    },
+    {
+      "file": "test_council_reply_fallback.py",
+      "line": 224,
+      "match": "unittest.main()",
+      "range_id": "test_council_reply_fallback.py:224"
+    },
+    {
+      "file": "test_open_session_drift_note.py",
+      "line": 99,
+      "match": "unittest.main()",
+      "range_id": "test_open_session_drift_note.py:99"
+    },
+    {
+      "file": "tools_v15.py",
+      "line": 2606,
+      "match": "result[\"entry_file\"] = pj.get(\"main\") or pj.get(\"module\")",
+      "range_id": "tools_v15.py:2606"
+    },
+    {
+      "file": "tools_v15.py",
+      "line": 2822,
+      "match": "PRIORITY_NAMES = {\"main.js\", \"preload.js\", \"renderer.js\", \"app.js\", \"index.js\", \"core.js\"}",
+      "range_id": "tools_v15.py:2822"
+    },
+    {
+      "file": "tools_v15.py",
+      "line": 2844,
+      "match": "for sub in (\"Source\", \"src\", \"lib\", \"app\", \"renderer\", \"main\", \".\"):",
+      "range_id": "tools_v15.py:2844"
+    },
+    {
+      "file": "tools_v15.py",
+      "line": 3397,
+      "match": "f\"Likely cause: Electron main.js called app.commandLine.appendSwitch('remote-debugging-port', '{detected_port}') \"",
+      "range_id": "tools_v15.py:3397"
+    },
+    {
+      "file": "tool_smoke_runner.py",
+      "line": 106,
+      "match": "\"root\", \"base\", \"main\", \"core\", \"full\", \"text\", \"list\", \"find\", \"read\",",
+      "range_id": "tool_smoke_runner.py:106"
+    },
+    {
+      "file": "watchdog_a.py",
+      "line": 45,
+      "match": "relative to this file, inside main() after log() is available. Any load",
+      "range_id": "watchdog_a.py:45"
+    },
+    {
+      "file": "watchdog_a.py",
+      "line": 46,
+      "match": "failure raises here; main() turns it into WATCHDOG_CONTRACT_UNAVAILABLE",
+      "range_id": "watchdog_a.py:46"
+    },
+    {
+      "file": "watchdog_a.py",
+      "line": 373,
+      "match": "sys.exit(main())",
+      "range_id": "watchdog_a.py:373"
+    },
+    {
+      "file": ".council\\mcp_debug_fails.py",
+      "line": 25,
+      "match": "(\"git_blame_symbol\", {\"symbol\": \"main\", \"project_path\": PROJ}),",
+      "range_id": "mcp_debug_fails.py:25"
+    },
+    {
+      "file": ".council\\mcp_full_surface_test.py",
+      "line": 36,
+      "match": "return {\"query\": \"def main\", \"file_pattern\": \"*.py\"}",
+      "range_id": "mcp_full_surface_test.py:36"
+    },
+    {
+      "file": ".council\\mcp_full_surface_test.py",
+      "line": 429,
+      "match": "report = main()",
+      "range_id": "mcp_full_surface_test.py:429"
+    },
+    {
+      "file": ".council\\mcp_phase2_fix.py",
+      "line": 65,
+      "match": "\"query\": \"def main\",",
+      "range_id": "mcp_phase2_fix.py:65"
+    },
+    {
+      "file": ".council\\mcp_phase2_fix.py",
+      "line": 101,
+      "match": "\"start_anchor\": \"def main\",",
+      "range_id": "mcp_phase2_fix.py:101"
+    },
+    {
+      "file": ".council\\mcp_phase2_fix.py",
+      "line": 280,
+      "match": "report = main()",
+      "range_id": "mcp_phase2_fix.py:280"
+    },
+    {
+      "file": ".council\\mcp_phase3_fix.py",
+      "line": 263,
+      "match": "report = main()",
+      "range_id": "mcp_phase3_fix.py:263"
+    },
+    {
+      "file": ".council\\mcp_phase4_final.py",
+      "line": 54,
+      "match": "\"git_blame_symbol\": ({\"symbol\": \"main\", \"project_path\": PROJ, \"file_pattern\": \"*.py\"}, None),  # PASS even if not git repo",
+      "range_id": "mcp_phase4_final.py:54"
+    },
+    {
+      "file": ".council\\mcp_phase4_fix.py",
+      "line": 40,
+      "match": "\"git_blame_symbol\": {\"symbol\": \"main\", \"project_path\": PROJ, \"file_pattern\": \"*.py\"},",
+      "range_id": "mcp_phase4_fix.py:40"
+    },
+    {
+      "file": ".council\\_r3_before\\os_head.py",
+      "line": 246,
+      "match": "_access_logger.propagate = False  # don't bubble up to root → main log",
+      "range_id": "os_head.py:246"
+    },
+    {
+      "file": ".council\\_r3_before\\os_head.py",
+      "line": 3195,
+      "match": "\"_example_selectors\": [\"#main\", \".btn-primary\", \"button[aria-label='Submit']\"],",
+      "range_id": "os_head.py:3195"
+    },
+    {
+      "file": ".council\\_r3_before\\os_head.py",
+      "line": 3217,
+      "match": "\"url\": \"http://localhost:3000/main.js\",",
+      "range_id": "os_head.py:3217"
+    },
+    {
+      "file": "bin\\calibrate_layer2.py",
+      "line": 76,
+      "match": "main()",
+      "range_id": "calibrate_layer2.py:76"
+    },
+    {
+      "file": "bin\\layer2_watch.py",
+      "line": 386,
+      "match": "raise SystemExit(main())",
+      "range_id": "layer2_watch.py:386"
+    },
+    {
+      "file": "docs\\gen_tool_surface_doc.py",
+      "line": 61,
+      "match": "raise SystemExit(main())",
+      "range_id": "gen_tool_surface_doc.py:61"
+    },
+    {
+      "file": "hooks\\native-write-gate.js",
+      "line": 225,
+      "match": "main();",
+      "range_id": "native-write-gate.js:225"
+    },
+    {
+      "file": "hooks\\read-gate.js",
+      "line": 683,
+      "match": "main();",
+      "range_id": "read-gate.js:683"
+    },
+    {
+      "file": "hooks\\adapters\\codex.js",
+      "line": 146,
+      "match": "main();",
+      "range_id": "codex.js:146"
+    },
+    {
+      "file": "orchestrator\\council\\dashboard.py",
+      "line": 17,
+      "match": "main = sys.modules.get(\"__main__\")",
+      "range_id": "dashboard.py:17"
+    },
+    {
+      "file": "orchestrator\\council\\dashboard.py",
+      "line": 18,
+      "match": "if main is not None and hasattr(main, \"_council_dashboard_agents\"):",
+      "range_id": "dashboard.py:18"
+    },
+    {
+      "file": "orchestrator\\council\\dashboard.py",
+      "line": 19,
+      "match": "return main",
+      "range_id": "dashboard.py:19"
+    },
+    {
+      "file": "orchestrator\\council\\dashboard.py",
+      "line": 413,
+      "match": "main {{",
+      "range_id": "dashboard.py:413"
+    },
+    {
+      "file": "orchestrator\\council\\dashboard.py",
+      "line": 760,
+      "match": "main {{",
+      "range_id": "dashboard.py:760"
+    },
+    {
+      "file": "orchestrator\\council\\dashboard.py",
+      "line": 809,
+      "match": "main {{ display: grid; padding: 9px; overflow: visible; grid-template-columns: 1fr; }}",
+      "range_id": "dashboard.py:809"
+    },
+    {
+      "file": "orchestrator\\council\\dashboard.py",
+      "line": 813,
+      "match": "main {{ display: flex; }}",
+      "range_id": "dashboard.py:813"
+    },
+    {
+      "file": "orchestrator\\council\\dashboard.py",
+      "line": 2201,
+      "match": "<main>",
+      "range_id": "dashboard.py:2201"
+    },
+    {
+      "file": "orchestrator\\council\\dashboard.py",
+      "line": 2203,
+      "match": "</main>",
+      "range_id": "dashboard.py:2203"
+    },
+    {
+      "file": "orchestrator\\graph\\liveness.py",
+      "line": 39,
+      "match": "_ENTRY_NAMES = {\"main\", \"run\", \"cli\", \"start\", \"serve\", \"app\"}",
+      "range_id": "liveness.py:39"
+    },
+    {
+      "file": "orchestrator\\graph\\store.py",
+      "line": 106,
+      "match": "main = os.stat(db)",
+      "range_id": "store.py:106"
+    },
+    {
+      "file": "orchestrator\\graph\\store.py",
+      "line": 112,
+      "match": "return (db, main.st_mtime_ns, main.st_size, wal_key)",
+      "range_id": "store.py:112"
+    },
+    {
+      "file": "orchestrator\\graph\\extractors\\python.py",
+      "line": 468,
+      "match": "read as dead. That is not an edge case: `raise SystemExit(main())`, a",
+      "range_id": "python.py:468"
+    },
+    {
+      "file": "orchestrator\\graph\\extractors\\python.py",
+      "line": 472,
+      "match": "alone were invisible, including all 5 `main()` entry points, every one",
+      "range_id": "python.py:472"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\as_bat_helpers.py",
+      "line": 457,
+      "match": "raise SystemExit(main())",
+      "range_id": "as_bat_helpers.py:457"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\high_il_launch.py",
+      "line": 220,
+      "match": "raise SystemExit(main())",
+      "range_id": "high_il_launch.py:220"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\request_orchestrator_restart.py",
+      "line": 288,
+      "match": "raise SystemExit(main())",
+      "range_id": "request_orchestrator_restart.py:288"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\restart_control_service.py",
+      "line": 267,
+      "match": "server's `start /wait` pythonw child outlives the task's terminated main process",
+      "range_id": "restart_control_service.py:267"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\restart_control_service.py",
+      "line": 1029,
+      "match": "raise SystemExit(main())",
+      "range_id": "restart_control_service.py:1029"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\via_bat_helper.py",
+      "line": 117,
+      "match": "raise SystemExit(main())",
+      "range_id": "via_bat_helper.py:117"
+    },
+    {
+      "file": "orchestrator\\session\\store.py",
+      "line": 1048,
+      "match": "WinError 32 even after the writer and the main-thread read conn are closed.",
+      "range_id": "store.py:1048"
+    },
+    {
+      "file": "scripts\\bench_p6_clustering.py",
+      "line": 124,
+      "match": "main()",
+      "range_id": "bench_p6_clustering.py:124"
+    },
+    {
+      "file": "scripts\\comc_real_tool_usage_test.py",
+      "line": 380,
+      "match": "raise SystemExit(main())",
+      "range_id": "comc_real_tool_usage_test.py:380"
+    },
+    {
+      "file": "scripts\\gen_alias_contract.py",
+      "line": 74,
+      "match": "def main(argv: list[str] | None = None) -> int:",
+      "range_id": "gen_alias_contract.py:74"
+    },
+    {
+      "file": "scripts\\gen_alias_contract.py",
+      "line": 92,
+      "match": "raise SystemExit(main())",
+      "range_id": "gen_alias_contract.py:92"
+    },
+    {
+      "file": "scripts\\live_answer_doctor.py",
+      "line": 582,
+      "match": "def main(argv: list[str] | None = None) -> int:",
+      "range_id": "live_answer_doctor.py:582"
+    },
+    {
+      "file": "scripts\\live_answer_doctor.py",
+      "line": 638,
+      "match": "sys.exit(main())",
+      "range_id": "live_answer_doctor.py:638"
+    },
+    {
+      "file": "scripts\\mcp_api_parity_check.py",
+      "line": 31,
+      "match": "async def main() -> int:",
+      "range_id": "mcp_api_parity_check.py:31"
+    },
+    {
+      "file": "scripts\\mcp_api_parity_check.py",
+      "line": 73,
+      "match": "raise SystemExit(asyncio.run(main()))",
+      "range_id": "mcp_api_parity_check.py:73"
+    },
+    {
+      "file": "scripts\\missions_migrate.py",
+      "line": 82,
+      "match": "def main(argv: list[str] | None = None) -> int:",
+      "range_id": "missions_migrate.py:82"
+    },
+    {
+      "file": "scripts\\missions_migrate.py",
+      "line": 107,
+      "match": "raise SystemExit(main())",
+      "range_id": "missions_migrate.py:107"
+    },
+    {
+      "file": "scripts\\soft_data_reconcile.py",
+      "line": 592,
+      "match": "def main(argv=None) -> int:",
+      "range_id": "soft_data_reconcile.py:592"
+    },
+    {
+      "file": "scripts\\soft_data_reconcile.py",
+      "line": 637,
+      "match": "raise SystemExit(main())",
+      "range_id": "soft_data_reconcile.py:637"
+    },
+    {
+      "file": "scripts\\sync_tool_matrix.py",
+      "line": 291,
+      "match": "def main(argv: list[str] | None = None) -> int:",
+      "range_id": "sync_tool_matrix.py:291"
+    },
+    {
+      "file": "scripts\\sync_tool_matrix.py",
+      "line": 338,
+      "match": "sys.exit(main())",
+      "range_id": "sync_tool_matrix.py:338"
+    },
+    {
+      "file": "tests\\test_a02_a30_interaction.py",
+      "line": 153,
+      "match": "unittest.main()",
+      "range_id": "test_a02_a30_interaction.py:153"
+    },
+    {
+      "file": "tests\\test_a29_size_hint_and_ruff_preview_states.py",
+      "line": 595,
+      "match": "unittest.main()",
+      "range_id": "test_a29_size_hint_and_ruff_preview_states.py:595"
+    },
+    {
+      "file": "tests\\test_a2_start_bat_contract.py",
+      "line": 191,
+      "match": "unittest.main()",
+      "range_id": "test_a2_start_bat_contract.py:191"
+    },
+    {
+      "file": "tests\\test_a31_git_ocr_attach.py",
+      "line": 234,
+      "match": "unittest.main()",
+      "range_id": "test_a31_git_ocr_attach.py:234"
+    },
+    {
+      "file": "tests\\test_a31_rule_core_pins.py",
+      "line": 276,
+      "match": "unittest.main()",
+      "range_id": "test_a31_rule_core_pins.py:276"
+    },
+    {
+      "file": "tests\\test_a31_soft_data_binding.py",
+      "line": 150,
+      "match": "unittest.main()",
+      "range_id": "test_a31_soft_data_binding.py:150"
+    },
+    {
+      "file": "tests\\test_a32_ci_workflow_gates.py",
+      "line": 136,
+      "match": "\"    branches: [main]\\n\"",
+      "range_id": "test_a32_ci_workflow_gates.py:136"
+    },
+    {
+      "file": "tests\\test_a32_ci_workflow_gates.py",
+      "line": 138,
+      "match": "\"    branches: [main, \\\"fix/**\\\"]\\n\")",
+      "range_id": "test_a32_ci_workflow_gates.py:138"
+    },
+    {
+      "file": "tests\\test_a33b_mcp_session_shortcut_transport.py",
+      "line": 224,
+      "match": "unittest.main()",
+      "range_id": "test_a33b_mcp_session_shortcut_transport.py:224"
+    },
+    {
+      "file": "tests\\test_a33_matrix_audit_provenance_gate.py",
+      "line": 244,
+      "match": "unittest.main()",
+      "range_id": "test_a33_matrix_audit_provenance_gate.py:244"
+    },
+    {
+      "file": "tests\\test_a36_cbm_discovery_hints.py",
+      "line": 352,
+      "match": "unittest.main(verbosity=2)",
+      "range_id": "test_a36_cbm_discovery_hints.py:352"
+    },
+    {
+      "file": "tests\\test_a39_unsupported_field_retry_payload.py",
+      "line": 92,
+      "match": "unittest.main()",
+      "range_id": "test_a39_unsupported_field_retry_payload.py:92"
+    },
+    {
+      "file": "tests\\test_a7_env_verify.py",
+      "line": 92,
+      "match": "unittest.main()",
+      "range_id": "test_a7_env_verify.py:92"
+    },
+    {
+      "file": "tests\\test_adaptive_read_contract.py",
+      "line": 270,
+      "match": "unittest.main()",
+      "range_id": "test_adaptive_read_contract.py:270"
+    },
+    {
+      "file": "tests\\test_agents_registry_bom_a31.py",
+      "line": 143,
+      "match": "unittest.main()",
+      "range_id": "test_agents_registry_bom_a31.py:143"
+    },
+    {
+      "file": "tests\\test_agent_enablement.py",
+      "line": 426,
+      "match": "unittest.main()",
+      "range_id": "test_agent_enablement.py:426"
+    },
+    {
+      "file": "tests\\test_alias_contract.py",
+      "line": 621,
+      "match": "unittest.main()",
+      "range_id": "test_alias_contract.py:621"
+    },
+    {
+      "file": "tests\\test_antidrift_contract.py",
+      "line": 223,
+      "match": "unittest.main()",
+      "range_id": "test_antidrift_contract.py:223"
+    },
+    {
+      "file": "tests\\test_anti_drift_contract.py",
+      "line": 83,
+      "match": "unittest.main()",
+      "range_id": "test_anti_drift_contract.py:83"
+    },
+    {
+      "file": "tests\\test_as_bat_helpers.py",
+      "line": 88,
+      "match": "unittest.main()",
+      "range_id": "test_as_bat_helpers.py:88"
+    },
+    {
+      "file": "tests\\test_audit_tool_matrix_persist_e04.py",
+      "line": 234,
+      "match": "unittest.main()",
+      "range_id": "test_audit_tool_matrix_persist_e04.py:234"
+    },
+    {
+      "file": "tests\\test_audit_writer_busy_budget.py",
+      "line": 433,
+      "match": "unittest.main()",
+      "range_id": "test_audit_writer_busy_budget.py:433"
+    },
+    {
+      "file": "tests\\test_autoheal_write_index_r1.py",
+      "line": 196,
+      "match": "unittest.main()",
+      "range_id": "test_autoheal_write_index_r1.py:196"
+    },
+    {
+      "file": "tests\\test_binary_heuristic_regression.py",
+      "line": 187,
+      "match": "unittest.main()",
+      "range_id": "test_binary_heuristic_regression.py:187"
+    },
+    {
+      "file": "tests\\test_bin_a_ps1_client.py",
+      "line": 189,
+      "match": "unittest.main()",
+      "range_id": "test_bin_a_ps1_client.py:189"
+    },
+    {
+      "file": "tests\\test_boot_sweep_root_usable_a22.py",
+      "line": 194,
+      "match": "unittest.main()",
+      "range_id": "test_boot_sweep_root_usable_a22.py:194"
+    },
+    {
+      "file": "tests\\test_boot_write_sweep_ledger_a02.py",
+      "line": 516,
+      "match": "unittest.main()",
+      "range_id": "test_boot_write_sweep_ledger_a02.py:516"
+    }
+  ],
+  "usages_count": 100,
+  "definition": [
+    {
+      "file": "COUNCIL_TRACKER.py",
+      "line": 174,
+      "match": "def main():",
+      "range_id": "COUNCIL_TRACKER.py:174p1",
+      "body": "def main():"
+    },
+    {
+      "file": "mcp_client_manager.py",
+      "line": 9,
+      "match": "async def main():",
+      "range_id": "mcp_client_manager.py:9p1",
+      "body": "async def main():"
+    },
+    {
+      "file": "orchestrator_ui.py",
+      "line": 136,
+      "match": "def main():",
+      "range_id": "orchestrator_ui.py:136p1",
+      "body": "def main():"
+    },
+    {
+      "file": "watchdog_a.py",
+      "line": 346,
+      "match": "def main() -> int:",
+      "range_id": "watchdog_a.py:346p1",
+      "body": "def main() -> int:"
+    },
+    {
+      "file": ".council\\mcp_full_surface_test.py",
+      "line": 306,
+      "match": "def main():",
+      "range_id": "mcp_full_surface_test.py:306p1",
+      "body": "def main():"
+    },
+    {
+      "file": ".council\\mcp_phase2_fix.py",
+      "line": 135,
+      "match": "def main():",
+      "range_id": "mcp_phase2_fix.py:135p1",
+      "body": "def main():"
+    },
+    {
+      "file": ".council\\mcp_phase3_fix.py",
+      "line": 109,
+      "match": "def main():",
+      "range_id": "mcp_phase3_fix.py:109p1",
+      "body": "def main():"
+    },
+    {
+      "file": "bin\\calibrate_layer2.py",
+      "line": 63,
+      "match": "def main():",
+      "range_id": "calibrate_layer2.py:63p1",
+      "body": "def main():"
+    },
+    {
+      "file": "bin\\layer2_watch.py",
+      "line": 358,
+      "match": "def main(argv=None):",
+      "range_id": "layer2_watch.py:358p1",
+      "body": "def main(argv=None):"
+    },
+    {
+      "file": "docs\\gen_tool_surface_doc.py",
+      "line": 31,
+      "match": "def main() -> int:",
+      "range_id": "gen_tool_surface_doc.py:31p1",
+      "body": "def main() -> int:"
+    },
+    {
+      "file": "hooks\\native-write-gate.js",
+      "line": 204,
+      "match": "function main() {",
+      "range_id": "native-write-gate.js:204p1",
+      "body": "function main() {"
+    },
+    {
+      "file": "hooks\\read-gate.js",
+      "line": 659,
+      "match": "function main() {",
+      "range_id": "read-gate.js:659p1",
+      "body": "function main() {"
+    },
+    {
+      "file": "hooks\\adapters\\codex.js",
+      "line": 92,
+      "match": "function main() {",
+      "range_id": "codex.js:92p1",
+      "body": "function main() {"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\as_bat_helpers.py",
+      "line": 444,
+      "match": "def main(argv: list[str] | None = None) -> int:",
+      "range_id": "as_bat_helpers.py:444p1",
+      "body": "def main(argv: list[str] | None = None) -> int:"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\high_il_launch.py",
+      "line": 212,
+      "match": "def main(argv: list[str] | None = None) -> int:",
+      "range_id": "high_il_launch.py:212p1",
+      "body": "def main(argv: list[str] | None = None) -> int:"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\request_orchestrator_restart.py",
+      "line": 200,
+      "match": "def main(argv: list[str] | None = None) -> int:",
+      "range_id": "request_orchestrator_restart.py:200p1",
+      "body": "def main(argv: list[str] | None = None) -> int:"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\restart_control_service.py",
+      "line": 959,
+      "match": "def main() -> int:",
+      "range_id": "restart_control_service.py:959p1",
+      "body": "def main() -> int:"
+    },
+    {
+      "file": "orchestrator\\lifecycle\\via_bat_helper.py",
+      "line": 89,
+      "match": "def main(argv: list[str] | None = None) -> int:",
+      "range_id": "via_bat_helper.py:89p1",
+      "body": "def main(argv: list[str] | None = None) -> int:"
+    },
+    {
+      "file": "scripts\\bench_p6_clustering.py",
+      "line": 66,
+      "match": "def main():",
+      "range_id": "bench_p6_clustering.py:66p1",
+      "body": "def main():"
+    },
+    {
+      "file": "scripts\\comc_real_tool_usage_test.py",
+      "line": 340,
+      "match": "def main() -> int:",
+      "range_id": "comc_real_tool_usage_test.py:340p1",
+      "body": "def main() -> int:"
+    }
+  ],
+  "include": "all",
+  "normalization_applied": [
+    "mode defaulted to 'symbol' (dispatcher, post-S4)"
+  ]
+}

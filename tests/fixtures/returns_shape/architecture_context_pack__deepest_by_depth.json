@@ -1,0 +1,278 @@
+{
+  "ok": true,
+  "graph_used": false,
+  "graph_degraded_reason": null,
+  "query": "",
+  "symbol": "",
+  "depth": 2,
+  "ranked_files": [
+    "orchestrator_server.py"
+  ],
+  "ranked_symbols": [],
+  "items": [
+    {
+      "ok": true,
+      "result": "{\n  \"file\": \"orchestrator_server.py\",\n  \"line_count\": 20050,\n  \"size_bytes\": 1002968,\n  \"content_hash\": \"a4311c2fa6b9a98e9c905469a05c24d26f3d0f55ef152f29a21666470a9c88f3\",\n  \"parser\": \"python_ast\",\n  \"parse_error\": null,\n  \"imports\": [\n    \"aiohttp.web\",\n    \"asyncio\",\n    \"base64\",\n    \"code_tools\",\n    \"codecs\",\n    \"collections.deque\",\n    \"concurrent.futures\",\n    \"contextvars\",\n    \"copy\",\n    \"ctypes\",\n    \"dataclasses.asdict\",\n    \"dataclasses.dataclass\",\n    \"dataclasses.replace\",\n    \"datetime.datetime\",\n    \"datetime.timezone\",\n    \"difflib.SequenceMatcher\",\n    \"functools.wraps\",\n    \"hashlib\",\n    \"hmac\",\n    \"http.server.BaseHTTPRequestHandler\",\n    \"http.server.ThreadingHTTPServer\",\n    \"inspect\",\n    \"json\",\n    \"logging\",\n    \"logging.handlers.RotatingFileHandler\",\n    \"magika.Magika\",\n    \"math\",\n    \"msvcrt\",\n    \"orchestrator.core.active_chain.PIPELINE_RESPONSE_KEY\",\n    \"orchestrator.core.active_chain.execute_active_pipeline\",\n    \"orchestrator.core.active_chain.pipeline_key_requested\",\n    \"orchestrator.core.ca_policy_matrix.classify_action\",\n    \"orchestrator.core.call_cache\",\n    \"orchestrator.core.call_cache.CALL_CACHE_MIN_MS\",\n    \"orchestrator.core.fields_param.FIELDS_PARAM_NAME\",\n    \"orchestrator.core.fields_param.R101_MARKER\",\n    \"orchestrator.core.fields_param.prune_unknown_fields\",\n    \"orchestrator.core.next_tool.annotate_next_tool\",\n    \"orchestrator.core.passive_chain.apply_passive_chain\",\n    \"orchestrator.core.registry.register_tool\"\n  ],\n  \"symbols\": [\n    {\n      \"name\": \"_liveness_payload\",\n      \"qualified_name\": \"_liveness_payload\",\n      \"kind\": \"function\",\n      \"start_line\": 159,\n      \"end_line\": 200\n    },\n    {\n      \"name\": \"_LivenessHandler\",\n      \"qualified_name\": \"_LivenessHandler\",\n      \"kind\": \"class\",\n      \"start_line\": 203,\n      \"end_line\": 219\n    },\n    {\n      \"name\": \"do_GET\",\n      \"qualified_name\": \"_LivenessHandler.do_GET\",\n      \"kind\": \"method\",\n      \"start_line\": 206,\n      \"end_line\": 216\n    },\n    {\n      \"name\": \"log_message\",\n      \"qualified_name\": \"_LivenessHandler.log_message\",\n      \"kind\": \"method\",\n      \"start_line\": 218,\n      \"end_line\": 219\n    },\n    {\n      \"name\": \"_start_liveness_listener\",\n      \"qualified_name\": \"_start_liveness_listener\",\n      \"kind\": \"function\",\n      \"start_line\": 222,\n      \"end_line\": 228\n    },\n    {\n      \"name\": \"_SafeRotatingFileHandler\",\n      \"qualified_name\": \"_SafeRotatingFileHandler\",\n      \"kind\": \"class\",\n      \"start_line\": 240,\n      \"end_line\": 253\n    },\n    {\n      \"name\": \"doRollover\",\n      \"qualified_name\": \"_SafeRotatingFileHandler.doRollover\",\n      \"kind\": \"method\",\n      \"start_line\": 243,\n      \"end_line\": 247\n    },\n    {\n      \"name\": \"emit\",\n      \"qualified_name\": \"_SafeRotatingFileHandler.emit\",\n      \"kind\": \"method\",\n      \"start_line\": 249,\n      \"end_line\": 253\n    },\n    {\n      \"name\": \"_DashboardAccessLogger\",\n      \"qualified_name\": \"_DashboardAccessLogger\",\n      \"kind\": \"class\",\n      \"start_line\": 287,\n      \"end_line\": 301\n    },\n    {\n      \"name\": \"log\",\n      \"qualified_name\": \"_DashboardAccessLogger.log\",\n      \"kind\": \"method\",\n      \"start_line\": 290,\n      \"end_line\": 301\n    },\n    {\n      \"name\": \"_ensure_mcp_loop\",\n      \"qualified_name\": \"_ensure_mcp_loop\",\n      \"kind\": \"function\",\n      \"start_line\": 310,\n      \"end_line\": 330\n    },\n    {\n      \"name\": \"_run_loop\",\n      \"qualified_name\": \"_ensure_mcp_loop._run_loop\",\n      \"kind\": \"function\",\n      \"start_line\": 318,\n      \"end_line\": 320\n    },\n    {\n      \"name\": \"_run_mcp_coro\",\n      \"qualified_name\": \"_run_mcp_coro\",\n      \"kind\": \"function\",\n      \"start_line\": 333,\n      \"end_line\": 342\n    },\n    {\n      \"name\": \"_log_session_event_safe\",\n      \"qualified_name\": \"_log_session_event_safe\",\n      \"kind\": \"function\",\n      \"start_line\": 404,\n      \"end_line\": 419\n    },\n    {\n      \"name\": \"_publish_token_file\",\n      \"qualified_name\": \"_publish_token_file\",\n      \"kind\": \"function\",\n      \"start_line\": 422,\n      \"end_line\": 442\n    },\n    {\n      \"name\": \"_token_is_expired\",\n      \"qualified_name\": \"_token_is_expired\",\n      \"kind\": \"function\",\n      \"start_line\": 445,\n      \"end_line\": 452\n    },\n    {\n      \"name\": \"_rotate_token\",\n      \"qualified_name\": \"_rotate_token\",\n      \"kind\": \"function\",\n      \"start_line\": 458,\n      \"end_line\": 472\n    },\n    {\n      \"name\": \"_validate_mutation_token\",\n      \"qualified_name\": \"_validate_mutation_token\",\n      \"kind\": \"function\",\n      \"start_line\": 475,\n      \"end_line\": 487\n    },\n    {\n      \"name\": \"_sse_token_ok\",\n      \"qualified_name\": \"_sse_token_ok\",\n      \"kind\": \"function\",\n      \"start_line\": 513,\n      \"end_line\": 518\n    },\n    {\n      \"name\": \"_rate_limit_check\",\n      \"qualified_name\": \"_rate_limit_check\",\n      \"kind\": \"function\",\n      \"start_line\": 521,\n      \"end_line\": 551\n    }\n  ],\n  \"sections\": [\n    {\n      \"name\": \"2): for these tools body[\\\"agent_id\\\"] is caller-supplied\",\n      \"qualified_name\": \"2): for these tools body[\\\"agent_id\\\"] is caller-supplied\",\n      \"kind\": \"section\",\n      \"start_line\": 15400,\n      \"end_line\": 20050\n    }\n  ],\n  \"symbols_total\": 578,\n  \"sections_total\": 1\n}",
+      "summary": {
+        "file": "orchestrator_server.py",
+        "line_count": 20050,
+        "size_bytes": 1002968,
+        "content_hash": "a4311c2fa6b9a98e9c905469a05c24d26f3d0f55ef152f29a21666470a9c88f3",
+        "parser": "python_ast",
+        "parse_error": null,
+        "imports": [
+          "aiohttp.web",
+          "asyncio",
+          "base64",
+          "code_tools",
+          "codecs",
+          "collections.deque",
+          "concurrent.futures",
+          "contextvars",
+          "copy",
+          "ctypes",
+          "dataclasses.asdict",
+          "dataclasses.dataclass",
+          "dataclasses.replace",
+          "datetime.datetime",
+          "datetime.timezone",
+          "difflib.SequenceMatcher",
+          "functools.wraps",
+          "hashlib",
+          "hmac",
+          "http.server.BaseHTTPRequestHandler",
+          "http.server.ThreadingHTTPServer",
+          "inspect",
+          "json",
+          "logging",
+          "logging.handlers.RotatingFileHandler",
+          "magika.Magika",
+          "math",
+          "msvcrt",
+          "orchestrator.core.active_chain.PIPELINE_RESPONSE_KEY",
+          "orchestrator.core.active_chain.execute_active_pipeline",
+          "orchestrator.core.active_chain.pipeline_key_requested",
+          "orchestrator.core.ca_policy_matrix.classify_action",
+          "orchestrator.core.call_cache",
+          "orchestrator.core.call_cache.CALL_CACHE_MIN_MS",
+          "orchestrator.core.fields_param.FIELDS_PARAM_NAME",
+          "orchestrator.core.fields_param.R101_MARKER",
+          "orchestrator.core.fields_param.prune_unknown_fields",
+          "orchestrator.core.next_tool.annotate_next_tool",
+          "orchestrator.core.passive_chain.apply_passive_chain",
+          "orchestrator.core.registry.register_tool"
+        ],
+        "symbols": [
+          {
+            "name": "_liveness_payload",
+            "qualified_name": "_liveness_payload",
+            "kind": "function",
+            "start_line": 159,
+            "end_line": 200
+          },
+          {
+            "name": "_LivenessHandler",
+            "qualified_name": "_LivenessHandler",
+            "kind": "class",
+            "start_line": 203,
+            "end_line": 219
+          },
+          {
+            "name": "do_GET",
+            "qualified_name": "_LivenessHandler.do_GET",
+            "kind": "method",
+            "start_line": 206,
+            "end_line": 216
+          },
+          {
+            "name": "log_message",
+            "qualified_name": "_LivenessHandler.log_message",
+            "kind": "method",
+            "start_line": 218,
+            "end_line": 219
+          },
+          {
+            "name": "_start_liveness_listener",
+            "qualified_name": "_start_liveness_listener",
+            "kind": "function",
+            "start_line": 222,
+            "end_line": 228
+          },
+          {
+            "name": "_SafeRotatingFileHandler",
+            "qualified_name": "_SafeRotatingFileHandler",
+            "kind": "class",
+            "start_line": 240,
+            "end_line": 253
+          },
+          {
+            "name": "doRollover",
+            "qualified_name": "_SafeRotatingFileHandler.doRollover",
+            "kind": "method",
+            "start_line": 243,
+            "end_line": 247
+          },
+          {
+            "name": "emit",
+            "qualified_name": "_SafeRotatingFileHandler.emit",
+            "kind": "method",
+            "start_line": 249,
+            "end_line": 253
+          },
+          {
+            "name": "_DashboardAccessLogger",
+            "qualified_name": "_DashboardAccessLogger",
+            "kind": "class",
+            "start_line": 287,
+            "end_line": 301
+          },
+          {
+            "name": "log",
+            "qualified_name": "_DashboardAccessLogger.log",
+            "kind": "method",
+            "start_line": 290,
+            "end_line": 301
+          },
+          {
+            "name": "_ensure_mcp_loop",
+            "qualified_name": "_ensure_mcp_loop",
+            "kind": "function",
+            "start_line": 310,
+            "end_line": 330
+          },
+          {
+            "name": "_run_loop",
+            "qualified_name": "_ensure_mcp_loop._run_loop",
+            "kind": "function",
+            "start_line": 318,
+            "end_line": 320
+          },
+          {
+            "name": "_run_mcp_coro",
+            "qualified_name": "_run_mcp_coro",
+            "kind": "function",
+            "start_line": 333,
+            "end_line": 342
+          },
+          {
+            "name": "_log_session_event_safe",
+            "qualified_name": "_log_session_event_safe",
+            "kind": "function",
+            "start_line": 404,
+            "end_line": 419
+          },
+          {
+            "name": "_publish_token_file",
+            "qualified_name": "_publish_token_file",
+            "kind": "function",
+            "start_line": 422,
+            "end_line": 442
+          },
+          {
+            "name": "_token_is_expired",
+            "qualified_name": "_token_is_expired",
+            "kind": "function",
+            "start_line": 445,
+            "end_line": 452
+          },
+          {
+            "name": "_rotate_token",
+            "qualified_name": "_rotate_token",
+            "kind": "function",
+            "start_line": 458,
+            "end_line": 472
+          },
+          {
+            "name": "_validate_mutation_token",
+            "qualified_name": "_validate_mutation_token",
+            "kind": "function",
+            "start_line": 475,
+            "end_line": 487
+          },
+          {
+            "name": "_sse_token_ok",
+            "qualified_name": "_sse_token_ok",
+            "kind": "function",
+            "start_line": 513,
+            "end_line": 518
+          },
+          {
+            "name": "_rate_limit_check",
+            "qualified_name": "_rate_limit_check",
+            "kind": "function",
+            "start_line": 521,
+            "end_line": 551
+          }
+        ],
+        "sections": [
+          {
+            "name": "2): for these tools body[\"agent_id\"] is caller-supplied",
+            "qualified_name": "2): for these tools body[\"agent_id\"] is caller-supplied",
+            "kind": "section",
+            "start_line": 15400,
+            "end_line": 20050
+          }
+        ],
+        "symbols_total": 578,
+        "sections_total": 1
+      },
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\orchestrator_server.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "file_group": null,
+      "lang": "python",
+      "total_lines": 20050,
+      "shown": "file_summary",
+      "range_id": "orchestrator_server.py:summary",
+      "bounded": true,
+      "max_lines": 200,
+      "max_lines_cap": 800,
+      "max_lines_default": 200,
+      "scope_requested": "file_summary",
+      "scope_resolved": "file_summary",
+      "selection": {
+        "ok": true,
+        "scope": "file_summary",
+        "name": "orchestrator_server.py",
+        "start_line": 1,
+        "end_line": 20050,
+        "source": "python_ast"
+      },
+      "content_hash": "a4311c2fa6b9a98e9c905469a05c24d26f3d0f55ef152f29a21666470a9c88f3",
+      "range_ref": "orchestrator_server.py@a4311c2fa6b9:summary",
+      "cache_hit": false,
+      "cache_waited": false,
+      "estimated_tokens": 1296,
+      "token_budget": 6000,
+      "token_estimator": "utf8_bytes/4",
+      "auto_full_file": false,
+      "truncated": false,
+      "next_ranges": [],
+      "read_token_seeded": true,
+      "derived_state_touched": false,
+      "request_index": 0
+    }
+  ],
+  "next_ranges": [],
+  "budget": {
+    "requested": 6000,
+    "used": 1296,
+    "remaining": 4704,
+    "within_budget": true
+  },
+  "cache": {
+    "entries": 10,
+    "bytes": 1097399,
+    "hits": 10,
+    "misses": 10,
+    "parse_hits": 10,
+    "max_entries": 64,
+    "max_bytes": 33554432
+  },
+  "provenance": {
+    "graph_used": false,
+    "graph_error": null,
+    "graph_truncated": false,
+    "graph_auto_reindex": false
+  },
+  "derived_state_touched": false
+}

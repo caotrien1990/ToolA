@@ -1,0 +1,26 @@
+{
+  "results": [
+    {
+      "file": "code_tools.py",
+      "line": 7287,
+      "match": "function _log_usage -> code_tools._log_usage",
+      "range_id": "code_tools.py:7287p1",
+      "body": "_log_usage(*args, **kwargs)"
+    },
+    {
+      "file": "orchestrator/session/logs.py",
+      "line": 467,
+      "match": "function _log_usage -> logs._log_usage",
+      "range_id": "orchestrator/session/logs.py:467p1",
+      "body": "_log_usage(tool, params, ok, ms, error, *, delivered, client_gone, error_name, agent_id, returns_shape_verdict, returns_shape_errors, accounting_id, accounting_sequence)"
+    }
+  ],
+  "count": 2,
+  "total_count": 2,
+  "truncated": false,
+  "source": "graph",
+  "ok": true,
+  "normalization_applied": [
+    "mode defaulted to 'symbol' (dispatcher, post-S4)"
+  ]
+}

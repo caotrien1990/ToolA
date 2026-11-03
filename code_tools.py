@@ -3455,6 +3455,11 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
     _doc_params_by_tool_sorted = sorted(
         _doc_params_undescribed_list, key=lambda r: (-r["undescribed"], r["tool"])
     )
+    try:
+        from orchestrator.core import returns_shape as _rs_cov
+        _returns_coverage = _rs_cov.compute_returns_coverage()
+    except Exception:
+        _returns_coverage = {"covered": 0, "depth_suspect": 0, "disabled": 0, "eligible": 38}
     _coverage_detail = {
         "doc_weak_descriptions": _doc_desc_weak,
         "doc_purpose_gap": _purpose_gap,
@@ -3463,6 +3468,7 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
         "doc_params_undescribed_tools_shown": len(_doc_params_by_tool_sorted[:50]),
         "error_system_names_unmapped": _error_unmapped,
         "error_system_set_source": _error_system_set_source,
+        "returns_coverage": _returns_coverage,
     }
 
     # ---- Skill router (SKILLS.md) ----
@@ -20223,6 +20229,161 @@ try:
                 },
                 "required": ["project_path"],
             },
+            "returns": {
+                'properties': {
+                    'error': {
+                        'type': 'string'
+                    },
+                    'error_name': {
+                        'type': 'string'
+                    },
+                    'ok': {
+                        'type': 'boolean'
+                    },
+                    'result': {
+                        'properties': {
+                            'auto_index_result': {
+                                'properties': {
+                                    'auto_indexed': {
+                                        'type': 'boolean'
+                                    },
+                                    'reason': {
+                                        'type': 'string'
+                                    }
+                                },
+                                'type': 'object'
+                            },
+                            'auto_reindex': {
+                                'anyOf': [
+                                    {
+                                        'type': 'null'
+                                    },
+                                    {
+                                        'properties': {
+                                            'reason': {
+                                                'type': 'string'
+                                            },
+                                            'triggered': {
+                                                'type': 'boolean'
+                                            }
+                                        },
+                                        'type': 'object'
+                                    }
+                                ]
+                            },
+                            'elapsed_ms': {
+                                'type': 'number'
+                            },
+                            'enabled': {
+                                'type': 'boolean'
+                            },
+                            'entry_points': {
+                                'items': {
+                                    'properties': {
+                                        'file': {
+                                            'type': 'string'
+                                        },
+                                        'line': {
+                                            'type': 'integer'
+                                        },
+                                        'name': {
+                                            'type': 'string'
+                                        }
+                                    },
+                                    'required': [
+                                        'name',
+                                        'file',
+                                        'line'
+                                    ],
+                                    'type': 'object'
+                                },
+                                'type': 'array'
+                            },
+                            'entry_points_excluded_tests': {
+                                'type': 'integer'
+                            },
+                            'error': {
+                                'anyOf': [
+                                    {
+                                        'type': 'null'
+                                    },
+                                    {
+                                        'type': 'string'
+                                    }
+                                ]
+                            },
+                            'files_seen': {
+                                'type': 'integer'
+                            },
+                            'modules': {
+                                'items': {
+                                    'properties': {
+                                        'depends_on': {
+                                            'items': {
+                                                'type': 'string'
+                                            },
+                                            'type': 'array'
+                                        },
+                                        'file': {
+                                            'type': 'string'
+                                        },
+                                        'module': {
+                                            'type': 'string'
+                                        },
+                                        'symbols': {
+                                            'type': 'integer'
+                                        },
+                                        'symbols_counted': {
+                                            'type': 'integer'
+                                        }
+                                    },
+                                    'required': [
+                                        'module',
+                                        'file',
+                                        'symbols',
+                                        'symbols_counted',
+                                        'depends_on'
+                                    ],
+                                    'type': 'object'
+                                },
+                                'type': 'array'
+                            },
+                            'modules_total': {
+                                'type': 'integer'
+                            },
+                            'per_module_symbol_cap': {
+                                'type': 'integer'
+                            },
+                            'symbols_seen': {
+                                'type': 'integer'
+                            },
+                            'truncated': {
+                                'type': 'boolean'
+                            },
+                            'truncation_reason': {
+                                'anyOf': [
+                                    {
+                                        'type': 'null'
+                                    },
+                                    {
+                                        'type': 'string'
+                                    }
+                                ]
+                            }
+                        },
+                        'type': 'object'
+                    }
+                },
+                'required': [
+                    'ok'
+                ],
+                'type': 'object',
+                'x-audit': {
+                    'status': 'audited',
+                    'schema_sha256': 'e24872c8ec18bdd20899bb7ffcbc7d7e2de0d6ec9f8a1400e66c596236c61b4a',
+                    'depth_D': 5
+                }
+            },
         },
     )
 
@@ -20477,6 +20638,367 @@ try:
                     "timeout": {"type": "integer", "default": 120, "description": "Seconds for the OCR subprocess ONLY -- it does NOT bound the call. Lane admission, the git diff that feeds OCR and result assembly all sit outside it, so wall clock can exceed this number; size a client timeout off measured wall clock, never off this value. Kept under the MCP proxy ceiling."},
                 },
                 "required": ["project_path"],
+            },
+            "returns": {
+                'properties': {
+                    'anomaly': {
+                        'type': 'string'
+                    },
+                    'binary': {
+                        'type': 'string'
+                    },
+                    'binary_source': {
+                        'type': 'string'
+                    },
+                    'ca_hint_map': {
+                        'type': 'string'
+                    },
+                    'ca_next_action': {
+                        'type': 'string',
+                        'x-dual': True
+                    },
+                    'ca_next_tool': {
+                        'type': 'string',
+                        'x-dual': True
+                    },
+                    'color_flag': {
+                        'type': 'string'
+                    },
+                    'command': {
+                        'items': {
+                            'type': 'string'
+                        },
+                        'type': 'array'
+                    },
+                    'counts': {
+                        'properties': {
+                            'dropped_by_a': {
+                                'type': 'integer'
+                            },
+                            'dropped_by_ocr': {
+                                'type': 'integer'
+                            },
+                            'mapped': {
+                                'type': 'integer'
+                            },
+                            'previewed': {
+                                'type': 'integer'
+                            }
+                        },
+                        'required': [
+                            'previewed',
+                            'mapped',
+                            'dropped_by_ocr',
+                            'dropped_by_a'
+                        ],
+                        'type': 'object'
+                    },
+                    'duration_s': {
+                        'type': 'number'
+                    },
+                    'error': {
+                        'type': 'string'
+                    },
+                    'error_name': {
+                        'type': 'string'
+                    },
+                    'excluded_files': {
+                        'items': {
+                            'properties': {
+                                'changed': {
+                                    'type': 'integer'
+                                },
+                                'exclude_reason': {
+                                    'type': 'string'
+                                },
+                                'path': {
+                                    'type': 'string'
+                                },
+                                'status': {
+                                    'anyOf': [
+                                        {
+                                            'type': 'string'
+                                        },
+                                        {
+                                            'type': 'null'
+                                        }
+                                    ]
+                                }
+                            },
+                            'required': [
+                                'path',
+                                'status',
+                                'changed',
+                                'exclude_reason'
+                            ],
+                            'type': 'object'
+                        },
+                        'type': 'array'
+                    },
+                    'excluded_summary': {
+                        'type': 'object'
+                    },
+                    'exit_code': {
+                        'type': 'integer'
+                    },
+                    'expected_path': {
+                        'type': 'string'
+                    },
+                    'files': {
+                        'items': {
+                            'properties': {
+                                'changed': {
+                                    'type': 'integer'
+                                },
+                                'path': {
+                                    'type': 'string'
+                                },
+                                'status': {
+                                    'anyOf': [
+                                        {
+                                            'type': 'string'
+                                        },
+                                        {
+                                            'type': 'null'
+                                        }
+                                    ]
+                                }
+                            },
+                            'required': [
+                                'path',
+                                'status',
+                                'changed'
+                            ],
+                            'type': 'object'
+                        },
+                        'type': 'array'
+                    },
+                    'force_color_scrubbed': {
+                        'type': 'boolean'
+                    },
+                    'hint': {
+                        'type': 'string'
+                    },
+                    'install_command': {
+                        'type': 'string'
+                    },
+                    'install_dir': {
+                        'type': 'string'
+                    },
+                    'llm_used': {
+                        'type': 'boolean'
+                    },
+                    'measured_cost': {
+                        'properties': {
+                            'max_s': {
+                                'type': 'number'
+                            },
+                            'median_s': {
+                                'type': 'number'
+                            },
+                            'min_s': {
+                                'type': 'number'
+                            },
+                            'p95_s': {
+                                'type': 'number'
+                            },
+                            'samples': {
+                                'type': 'integer'
+                            }
+                        },
+                        'type': 'object'
+                    },
+                    'min_changed_lines': {
+                        'type': 'integer'
+                    },
+                    'min_timeout_s': {
+                        'type': 'integer'
+                    },
+                    'mode': {
+                        'type': 'string'
+                    },
+                    'ok': {
+                        'type': 'boolean'
+                    },
+                    'package': {
+                        'type': 'string'
+                    },
+                    'pinned_version': {
+                        'anyOf': [
+                            {
+                                'type': 'string'
+                            },
+                            {
+                                'type': 'null'
+                            }
+                        ]
+                    },
+                    'ref_metadata': {
+                        'properties': {
+                            'commit': {
+                                'anyOf': [
+                                    {
+                                        'type': 'string'
+                                    },
+                                    {
+                                        'type': 'null'
+                                    }
+                                ]
+                            },
+                            'from_ref': {
+                                'anyOf': [
+                                    {
+                                        'type': 'string'
+                                    },
+                                    {
+                                        'type': 'null'
+                                    }
+                                ]
+                            },
+                            'merge_base': {
+                                'type': 'null'
+                            },
+                            'merge_base_source': {
+                                'type': 'string'
+                            },
+                            'ocr_mode': {
+                                'anyOf': [
+                                    {
+                                        'type': 'string'
+                                    },
+                                    {
+                                        'type': 'null'
+                                    }
+                                ]
+                            },
+                            'schema_version': {
+                                'anyOf': [
+                                    {
+                                        'type': 'string'
+                                    },
+                                    {
+                                        'type': 'null'
+                                    }
+                                ]
+                            },
+                            'to_ref': {
+                                'anyOf': [
+                                    {
+                                        'type': 'string'
+                                    },
+                                    {
+                                        'type': 'null'
+                                    }
+                                ]
+                            }
+                        },
+                        'required': [
+                            'ocr_mode',
+                            'schema_version',
+                            'commit',
+                            'from_ref',
+                            'to_ref',
+                            'merge_base',
+                            'merge_base_source'
+                        ],
+                        'type': 'object'
+                    },
+                    'repository': {
+                        'type': 'string'
+                    },
+                    'retry_sequence': {
+                        'items': {
+                            'properties': {
+                                'note': {
+                                    'type': 'string'
+                                },
+                                'timeout': {
+                                    'type': 'integer'
+                                }
+                            },
+                            'required': [
+                                'timeout',
+                                'note'
+                            ],
+                            'type': 'object'
+                        },
+                        'type': 'array'
+                    },
+                    'spawned': {
+                        'type': 'boolean'
+                    },
+                    'stderr': {
+                        'type': 'string'
+                    },
+                    'stderr_bytes': {
+                        'type': 'integer'
+                    },
+                    'stdout_bytes': {
+                        'type': 'integer'
+                    },
+                    'stdout_empty': {
+                        'type': 'boolean'
+                    },
+                    'stdout_head': {
+                        'type': 'string'
+                    },
+                    'stopped_by': {
+                        'type': 'string'
+                    },
+                    'timeout': {
+                        'type': 'integer'
+                    },
+                    'timeout_exceeded': {
+                        'type': 'boolean'
+                    },
+                    'token_cost': {
+                        'type': 'integer'
+                    },
+                    'totals': {
+                        'properties': {
+                            'deletions': {
+                                'type': 'integer'
+                            },
+                            'insertions': {
+                                'type': 'integer'
+                            }
+                        },
+                        'required': [
+                            'insertions',
+                            'deletions'
+                        ],
+                        'type': 'object'
+                    },
+                    'unmanaged_note': {
+                        'anyOf': [
+                            {
+                                'type': 'string'
+                            },
+                            {
+                                'type': 'null'
+                            }
+                        ]
+                    },
+                    'unmanaged_on_path': {
+                        'anyOf': [
+                            {
+                                'type': 'string'
+                            },
+                            {
+                                'type': 'null'
+                            }
+                        ]
+                    }
+                },
+                'required': [
+                    'ok'
+                ],
+                'type': 'object',
+                'x-audit': {
+                    'status': 'audited',
+                    'schema_sha256': '636a75c7fe35f54f32298999d71cc283ae7ba4e3bd684de60a1208b0d6da426f',
+                    'depth_D': 3
+                }
             },
         },
     )

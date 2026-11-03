@@ -1,0 +1,111 @@
+{
+  "ok": false,
+  "error": "File not found: orchestrator/core/__p16_no_such_file_7f3a__.py",
+  "error_name": "FILE_NOT_FOUND",
+  "exists": false,
+  "repeat_probe": false,
+  "probe_count": 1,
+  "fuzzy_suggestions": [],
+  "fuzzy_suggestions_source": "code_index",
+  "fuzzy_suggestions_limitation": "The code index carries CODE files only. A .md / .txt / .log target can never appear in fuzzy_suggestions even when it does exist on disk -- an empty list is NOT evidence the file is absent. Use list_structure(compact=true) or query_index(file_pattern=...) for non-code paths.",
+  "ca_next_action": "check_fuzzy_suggestions_or_list_structure",
+  "payload_example": {
+    "file_path": "relative/file.py",
+    "project_path": "D:/path/to/project",
+    "start_line": 1,
+    "max_lines": 200,
+    "force_reseed": false,
+    "scope": "range",
+    "symbol": "",
+    "section": "",
+    "related_query": "",
+    "query": "",
+    "token_budget": 0,
+    "small_file_threshold": 240,
+    "include_next_ranges": true,
+    "content_hash": "",
+    "force_refresh": false,
+    "pipeline": []
+  },
+  "retry_sequence": [],
+  "ca_guidance": {
+    "phase": "T1",
+    "phase_label": "Discover / Analyze / Read",
+    "error_name": "FILE_NOT_FOUND",
+    "ca_next_action": "read_error",
+    "call_pattern": "$body = @{ ... } | ConvertTo-Json -Depth 20\nInvoke-RestMethod -Method Post -Uri \"http://localhost:8083/api/call/read_file_range\" -ContentType \"application/json\" -Body $body",
+    "payload_example": {
+      "file_path": "relative/file.py",
+      "project_path": "D:/path/to/project",
+      "start_line": 1,
+      "max_lines": 200,
+      "force_reseed": false,
+      "scope": "range",
+      "symbol": "",
+      "section": "",
+      "related_query": "",
+      "query": "",
+      "token_budget": 0,
+      "small_file_threshold": 240,
+      "include_next_ranges": true,
+      "content_hash": "",
+      "force_refresh": false,
+      "pipeline": []
+    },
+    "required_fields": [
+      "file_path"
+    ],
+    "accepted_aliases": {
+      "path": {
+        "maps_to": "file_path",
+        "status": "verified"
+      },
+      "file": {
+        "maps_to": "file_path",
+        "status": "verified"
+      },
+      "start": {
+        "maps_to": "start_line",
+        "status": "verified"
+      },
+      "end": {
+        "maps_to": "end_line",
+        "status": "verified"
+      },
+      "from_line": {
+        "maps_to": "start_line",
+        "status": "verified"
+      },
+      "to_line": {
+        "maps_to": "end_line",
+        "status": "verified"
+      },
+      "line_start": {
+        "maps_to": "start_line",
+        "status": "verified"
+      },
+      "line_end": {
+        "maps_to": "end_line",
+        "status": "verified"
+      }
+    },
+    "notes": [
+      "Use PowerShell hashtable -> ConvertTo-Json; do not hand-write JSON for multiline content.",
+      "Use project_path for the project root. Prefer relative file_path/path inside that root.",
+      "For write_fix, write_fix_html, and write_new_file, use content_encoding='base64' when content has newlines, quotes, backslashes, HTML, JS, or large blocks.",
+      "Read schema with GET http://localhost:8083/api/tools if a field is unclear."
+    ],
+    "known_gotchas": [],
+    "recommended_prompt_rule": "",
+    "see_also": {},
+    "suggested_alternative_tool": {
+      "tool": "query_index",
+      "reason": "Use query_index to locate file by pattern."
+    }
+  },
+  "phase": "runtime",
+  "suggested_alternative_tool": {
+    "tool": "query_index",
+    "reason": "Use query_index to locate file by pattern."
+  }
+}

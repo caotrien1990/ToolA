@@ -1,0 +1,616 @@
+{
+  "ok": true,
+  "result": {
+    "enabled": true,
+    "modules": [
+      {
+        "module": "code_tools",
+        "file": "code_tools.py",
+        "symbols": 3125,
+        "symbols_counted": 5,
+        "depends_on": [
+          "path_runtime",
+          "surgical_mapper",
+          "search_snapshots",
+          "text_cap",
+          "tools",
+          "executor_lanes",
+          "fair_admission",
+          "skip_rules",
+          "text_lines",
+          "rule_core"
+        ]
+      },
+      {
+        "module": "orchestrator_server",
+        "file": "orchestrator_server.py",
+        "symbols": 2742,
+        "symbols_counted": 5,
+        "depends_on": [
+          "code_tools",
+          "path_runtime",
+          "identity",
+          "route_metrics",
+          "snapshots",
+          "xroot",
+          "request_orchestrator_restart",
+          "restart_protocol",
+          "phase_timing",
+          "lock_holder_trace"
+        ]
+      },
+      {
+        "module": "tools_v15",
+        "file": "tools_v15.py",
+        "symbols": 1688,
+        "symbols_counted": 5,
+        "depends_on": [
+          "params",
+          "text_lines",
+          "code_tools",
+          "xroot",
+          "core",
+          "orchestrator_server",
+          "path_runtime",
+          "store",
+          "restart_protocol",
+          "restart_control_service"
+        ]
+      },
+      {
+        "module": "test_orchestrator_server_contract",
+        "file": "tests/test_orchestrator_server_contract.py",
+        "symbols": 810,
+        "symbols_counted": 5,
+        "depends_on": [
+          "code_tools",
+          "orchestrator_server",
+          "tools_v15",
+          "audit_writer",
+          "store",
+          "mcp_stdio",
+          "instance_lock",
+          "call_cache",
+          "registry",
+          "surgical_mapper"
+        ]
+      },
+      {
+        "module": "registry_data",
+        "file": "orchestrator/core/registry_data.py",
+        "symbols": 643,
+        "symbols_counted": 5,
+        "depends_on": [
+          "active_chain"
+        ]
+      },
+      {
+        "module": "test_code_tools_cache",
+        "file": "tests/test_code_tools_cache.py",
+        "symbols": 545,
+        "symbols_counted": 5,
+        "depends_on": [
+          "code_tools",
+          "core",
+          "surgical_mapper",
+          "text_lines",
+          "draft",
+          "search_regex_worker",
+          "tools_v15",
+          "path_runtime",
+          "skip_rules"
+        ]
+      },
+      {
+        "module": "mcp_stdio",
+        "file": "orchestrator/server/mcp_stdio.py",
+        "symbols": 424,
+        "symbols_counted": 5,
+        "depends_on": [
+          "orchestrator_server",
+          "params",
+          "fields_param"
+        ]
+      },
+      {
+        "module": "core",
+        "file": "orchestrator/tools/write/core.py",
+        "symbols": 386,
+        "symbols_counted": 5,
+        "depends_on": [
+          "skip_rules",
+          "text_lines",
+          "progress_watchdog",
+          "code_tools",
+          "xroot",
+          "surgical_mapper",
+          "draft",
+          "restart_protocol"
+        ]
+      },
+      {
+        "module": "store",
+        "file": "orchestrator/session/store.py",
+        "symbols": 361,
+        "symbols_counted": 5,
+        "depends_on": [
+          "path_runtime",
+          "lock_holder_trace",
+          "draft"
+        ]
+      },
+      {
+        "module": "ca_policy_matrix",
+        "file": "orchestrator/core/ca_policy_matrix.py",
+        "symbols": 272,
+        "symbols_counted": 5,
+        "depends_on": [
+          "identity"
+        ]
+      },
+      {
+        "module": "search",
+        "file": "orchestrator/tools/search.py",
+        "symbols": 266,
+        "symbols_counted": 5,
+        "depends_on": [
+          "search_snapshots",
+          "common",
+          "executor_lanes",
+          "fair_admission",
+          "text_lines",
+          "query",
+          "config",
+          "search_regex_worker",
+          "code_tools",
+          "tools_v15"
+        ]
+      },
+      {
+        "module": "surgical_mapper",
+        "file": "surgical_mapper.py",
+        "symbols": 254,
+        "symbols_counted": 5,
+        "depends_on": [
+          "search_snapshots",
+          "text_lines",
+          "skip_rules",
+          "progress_watchdog"
+        ]
+      },
+      {
+        "module": "tools",
+        "file": "orchestrator/graph/tools.py",
+        "symbols": 239,
+        "symbols_counted": 5,
+        "depends_on": [
+          "analysis_service",
+          "cycle_point",
+          "indexer",
+          "status",
+          "query",
+          "testgap",
+          "stability",
+          "attack",
+          "rules",
+          "baseline"
+        ]
+      },
+      {
+        "module": "test_dispatch_identity_field_type_gate",
+        "file": "tests/test_dispatch_identity_field_type_gate.py",
+        "symbols": 210,
+        "symbols_counted": 5,
+        "depends_on": [
+          "code_tools",
+          "orchestrator_server",
+          "ca_policy_matrix",
+          "registry_data"
+        ]
+      },
+      {
+        "module": "ocr_review",
+        "file": "orchestrator/tools/ocr_review.py",
+        "symbols": 209,
+        "symbols_counted": 5,
+        "depends_on": [
+          "call_cache"
+        ]
+      },
+      {
+        "module": "test_manage_agent_rule_sync",
+        "file": "tests/test_manage_agent_rule_sync.py",
+        "symbols": 203,
+        "symbols_counted": 5,
+        "depends_on": [
+          "code_tools"
+        ]
+      },
+      {
+        "module": "audit_writer",
+        "file": "orchestrator/server/audit_writer.py",
+        "symbols": 196,
+        "symbols_counted": 5,
+        "depends_on": [
+          "spool"
+        ]
+      },
+      {
+        "module": "test_a34_passive_chain",
+        "file": "tests/test_a34_passive_chain.py",
+        "symbols": 193,
+        "symbols_counted": 5,
+        "depends_on": [
+          "code_tools",
+          "orchestrator_server",
+          "next_tool",
+          "passive_chain"
+        ]
+      },
+      {
+        "module": "comc_real_tool_usage_test",
+        "file": "scripts/comc_real_tool_usage_test.py",
+        "symbols": 172,
+        "symbols_counted": 5,
+        "depends_on": []
+      },
+      {
+        "module": "test_ca_first_upgrade_contract",
+        "file": "tests/test_ca_first_upgrade_contract.py",
+        "symbols": 172,
+        "symbols_counted": 5,
+        "depends_on": [
+          "code_tools",
+          "orchestrator_server",
+          "tools_v15"
+        ]
+      },
+      {
+        "module": "restart_control_service",
+        "file": "orchestrator/lifecycle/restart_control_service.py",
+        "symbols": 169,
+        "symbols_counted": 5,
+        "depends_on": [
+          "restart_guard",
+          "livez_contract",
+          "restart_protocol",
+          "console_warp",
+          "text_lines"
+        ]
+      },
+      {
+        "module": "test_search_regex_budget",
+        "file": "tests/test_search_regex_budget.py",
+        "symbols": 166,
+        "symbols_counted": 5,
+        "depends_on": [
+          "search_regex_worker",
+          "search",
+          "executor_lanes",
+          "code_tools"
+        ]
+      },
+      {
+        "module": "tools",
+        "file": "orchestrator/mission/tools.py",
+        "symbols": 164,
+        "symbols_counted": 5,
+        "depends_on": [
+          "engine",
+          "instance_lock",
+          "store"
+        ]
+      },
+      {
+        "module": "test_a45_returns_shape",
+        "file": "tests/test_a45_returns_shape.py",
+        "symbols": 164,
+        "symbols_counted": 5,
+        "depends_on": [
+          "code_tools",
+          "orchestrator_server",
+          "call_cache",
+          "returns_shape"
+        ]
+      },
+      {
+        "module": "generator",
+        "file": "orchestrator/mcp_packs/generator.py",
+        "symbols": 163,
+        "symbols_counted": 5,
+        "depends_on": [
+          "registry_data",
+          "mcp_stdio"
+        ]
+      },
+      {
+        "module": "test_durable_audit_integration",
+        "file": "tests/test_durable_audit_integration.py",
+        "symbols": 162,
+        "symbols_counted": 5,
+        "depends_on": [
+          "code_tools",
+          "orchestrator_server",
+          "accounting",
+          "audit_writer",
+          "spool"
+        ]
+      },
+      {
+        "module": "test_ocr_integration_p5",
+        "file": "tests/test_ocr_integration_p5.py",
+        "symbols": 159,
+        "symbols_counted": 5,
+        "depends_on": [
+          "ocr_review"
+        ]
+      },
+      {
+        "module": "git_tools",
+        "file": "orchestrator/git_tools.py",
+        "symbols": 152,
+        "symbols_counted": 5,
+        "depends_on": [
+          "text_cap",
+          "text_lines",
+          "hooks",
+          "enrich_producers"
+        ]
+      },
+      {
+        "module": "indexer",
+        "file": "orchestrator/graph/indexer.py",
+        "symbols": 151,
+        "symbols_counted": 5,
+        "depends_on": [
+          "config",
+          "store",
+          "progress_watchdog",
+          "python",
+          "javascript",
+          "surgical_mapper",
+          "skip_rules"
+        ]
+      },
+      {
+        "module": "test_restart_control_core",
+        "file": "tests/test_restart_control_core.py",
+        "symbols": 150,
+        "symbols_counted": 5,
+        "depends_on": [
+          "restart_control_service",
+          "restart_guard",
+          "restart_protocol"
+        ]
+      },
+      {
+        "module": "call_cache",
+        "file": "orchestrator/core/call_cache.py",
+        "symbols": 150,
+        "symbols_counted": 5,
+        "depends_on": [
+          "search_snapshots",
+          "config"
+        ]
+      },
+      {
+        "module": "rules",
+        "file": "orchestrator/graph/rules.py",
+        "symbols": 150,
+        "symbols_counted": 5,
+        "depends_on": [
+          "analysis_view",
+          "stability"
+        ]
+      },
+      {
+        "module": "test_a37_bootstrap_hint",
+        "file": "tests/test_a37_bootstrap_hint.py",
+        "symbols": 150,
+        "symbols_counted": 5,
+        "depends_on": [
+          "code_tools",
+          "orchestrator_server",
+          "active_chain",
+          "fields_param",
+          "registry_data",
+          "mcp_stdio"
+        ]
+      },
+      {
+        "module": "tool_smoke_runner",
+        "file": "tool_smoke_runner.py",
+        "symbols": 149,
+        "symbols_counted": 5,
+        "depends_on": []
+      },
+      {
+        "module": "test_a29_size_hint_and_ruff_preview_states",
+        "file": "tests/test_a29_size_hint_and_ruff_preview_states.py",
+        "symbols": 144,
+        "symbols_counted": 5,
+        "depends_on": [
+          "core",
+          "orchestrator_server",
+          "code_tools",
+          "tools"
+        ]
+      },
+      {
+        "module": "analysis_view",
+        "file": "orchestrator/graph/analysis_view.py",
+        "symbols": 143,
+        "symbols_counted": 5,
+        "depends_on": [
+          "skip_rules",
+          "config",
+          "schema",
+          "status",
+          "store"
+        ]
+      },
+      {
+        "module": "test_a34_active_chain",
+        "file": "tests/test_a34_active_chain.py",
+        "symbols": 143,
+        "symbols_counted": 5,
+        "depends_on": [
+          "code_tools",
+          "orchestrator_server",
+          "active_chain"
+        ]
+      },
+      {
+        "module": "query",
+        "file": "orchestrator/graph/query.py",
+        "symbols": 142,
+        "symbols_counted": 5,
+        "depends_on": [
+          "config",
+          "store",
+          "indexer",
+          "status",
+          "liveness"
+        ]
+      },
+      {
+        "module": "search_snapshots",
+        "file": "orchestrator/search_snapshots.py",
+        "symbols": 142,
+        "symbols_counted": 5,
+        "depends_on": [
+          "skip_rules"
+        ]
+      },
+      {
+        "module": "test_self_edit_policy_a54",
+        "file": "tests/test_self_edit_policy_a54.py",
+        "symbols": 140,
+        "symbols_counted": 5,
+        "depends_on": [
+          "ca_policy_matrix",
+          "orchestrator_server"
+        ]
+      }
+    ],
+    "entry_points": [
+      {
+        "name": "__getattr__",
+        "file": "orchestrator/graph/config.py",
+        "line": 225
+      },
+      {
+        "name": "main",
+        "file": "mcp_client_manager.py",
+        "line": 9
+      },
+      {
+        "name": "main",
+        "file": "orchestrator_ui.py",
+        "line": 136
+      },
+      {
+        "name": "main",
+        "file": "restart_orchestrator.py",
+        "line": 339
+      },
+      {
+        "name": "main",
+        "file": "scripts/bench_p6_clustering.py",
+        "line": 66
+      },
+      {
+        "name": "main",
+        "file": "scripts/gen_alias_contract.py",
+        "line": 74
+      },
+      {
+        "name": "main",
+        "file": "scripts/live_answer_doctor.py",
+        "line": 582
+      },
+      {
+        "name": "main",
+        "file": "scripts/missions_migrate.py",
+        "line": 82
+      },
+      {
+        "name": "main",
+        "file": "scripts/sync_tool_matrix.py",
+        "line": 291
+      },
+      {
+        "name": "main",
+        "file": "COUNCIL_TRACKER.py",
+        "line": 174
+      },
+      {
+        "name": "main",
+        "file": "scripts/mcp_api_parity_check.py",
+        "line": 31
+      },
+      {
+        "name": "main",
+        "file": "docs/gen_tool_surface_doc.py",
+        "line": 31
+      },
+      {
+        "name": "main",
+        "file": "hooks/adapters/codex.js",
+        "line": 92
+      },
+      {
+        "name": "main",
+        "file": "hooks/native-write-gate.js",
+        "line": 204
+      },
+      {
+        "name": "main",
+        "file": "hooks/read-gate.js",
+        "line": 659
+      },
+      {
+        "name": "main",
+        "file": "orchestrator/lifecycle/request_orchestrator_restart.py",
+        "line": 200
+      },
+      {
+        "name": "main",
+        "file": "orchestrator/lifecycle/via_bat_helper.py",
+        "line": 89
+      },
+      {
+        "name": "main",
+        "file": "scripts/soft_data_reconcile.py",
+        "line": 592
+      },
+      {
+        "name": "main",
+        "file": "orchestrator/lifecycle/high_il_launch.py",
+        "line": 212
+      },
+      {
+        "name": "main",
+        "file": "orchestrator/lifecycle/restart_control_service.py",
+        "line": 959
+      }
+    ],
+    "files_seen": 40,
+    "symbols_seen": 200,
+    "truncated": true,
+    "truncation_reason": "max_symbols",
+    "error": null,
+    "elapsed_ms": 125.0,
+    "auto_reindex": {
+      "triggered": false,
+      "reason": "wrapper_governs_refresh"
+    },
+    "modules_total": 551,
+    "per_module_symbol_cap": 5,
+    "entry_points_excluded_tests": 0,
+    "auto_index_result": {
+      "auto_indexed": false,
+      "reason": "fresh"
+    }
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "ok": true,
+  "mode": "delegate_map",
+  "repository": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+  "ref_metadata": {
+    "ocr_mode": "workspace",
+    "schema_version": "1",
+    "commit": null,
+    "from_ref": null,
+    "to_ref": null,
+    "merge_base": null,
+    "merge_base_source": "not_emitted_by_ocr_preview"
+  },
+  "files": [
+    {
+      "path": "orchestrator/core/returns_shape.py",
+      "status": "added",
+      "changed": 533
+    },
+    {
+      "path": "orchestrator_server.py",
+      "status": "modified",
+      "changed": 36
+    },
+    {
+      "path": "orchestrator/session/logs.py",
+      "status": "modified",
+      "changed": 14
+    },
+    {
+      "path": "install_restart_control_task.ps1",
+      "status": "modified",
+      "changed": 8
+    },
+    {
+      "path": "code_tools.py",
+      "status": "modified",
+      "changed": 6
+    }
+  ],
+  "counts": {
+    "previewed": 32,
+    "mapped": 5,
+    "dropped_by_ocr": 24,
+    "dropped_by_a": 3
+  },
+  "totals": {
+    "insertions": 2507,
+    "deletions": 190
+  },
+  "min_changed_lines": 1,
+  "excluded_summary": {
+    "runtime_state_dir": 2,
+    "data_json": 1,
+    "unsupported_ext": 21,
+    "user_exclude": 3
+  },
+  "binary": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\venv_ocr\\node_modules\\@alibaba-group\\ocr-win32-x64\\bin\\opencodereview.exe",
+  "binary_source": "venv_ocr",
+  "exit_code": 0,
+  "stdout_bytes": 5520,
+  "stderr_bytes": 0,
+  "stdout_empty": false,
+  "duration_s": 0.31,
+  "color_flag": "never",
+  "force_color_scrubbed": false,
+  "llm_used": false,
+  "token_cost": 0,
+  "ca_next_action": "ocr_rule",
+  "ca_hint_map": "files[] is sorted by changed-line count, so the first entry is where the change lives. excluded_summary counts every dropped file by reason; lower min_changed_lines or pass include_excluded=true to see them.",
+  "ca_next_tool": "ocr_rule"
+}

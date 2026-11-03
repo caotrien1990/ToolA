@@ -1,0 +1,313 @@
+{
+  "ok": true,
+  "matched": 406,
+  "returned": 50,
+  "truncated": true,
+  "total_files": 974,
+  "files": [
+    {
+      "path": "tests/test_orchestrator_server_contract.py",
+      "group": "test",
+      "loc": 4194,
+      "complexity": 122
+    },
+    {
+      "path": "tests/test_code_tools_cache.py",
+      "group": "test",
+      "loc": 2553,
+      "complexity": 96
+    },
+    {
+      "path": "tests/test_a39_chain_registration_gate.py",
+      "group": "test",
+      "loc": 454,
+      "complexity": 61
+    },
+    {
+      "path": "tests/test_manage_agent_rule_sync.py",
+      "group": "test",
+      "loc": 880,
+      "complexity": 61
+    },
+    {
+      "path": "tests/test_conn_leak_audit.py",
+      "group": "test",
+      "loc": 284,
+      "complexity": 54
+    },
+    {
+      "path": "tests/test_a34_active_chain.py",
+      "group": "test",
+      "loc": 585,
+      "complexity": 52
+    },
+    {
+      "path": "tests/test_dispatch_identity_field_type_gate.py",
+      "group": "test",
+      "loc": 814,
+      "complexity": 39
+    },
+    {
+      "path": "tests/test_cbm_campaign_contracts.py",
+      "group": "test",
+      "loc": 334,
+      "complexity": 37
+    },
+    {
+      "path": "tests/test_cf09_append_only.py",
+      "group": "test",
+      "loc": 302,
+      "complexity": 37
+    },
+    {
+      "path": "tests/test_session_store_writer.py",
+      "group": "test",
+      "loc": 474,
+      "complexity": 37
+    },
+    {
+      "path": "tests/test_graph_analysis_service.py",
+      "group": "test",
+      "loc": 389,
+      "complexity": 36
+    },
+    {
+      "path": "tests/test_session_writer_stall_contract.py",
+      "group": "test",
+      "loc": 258,
+      "complexity": 35
+    },
+    {
+      "path": "tests/test_tool_decision_hint_a07.py",
+      "group": "test",
+      "loc": 369,
+      "complexity": 34
+    },
+    {
+      "path": "tests/test_upgrade_p5_registration_b5.py",
+      "group": "test",
+      "loc": 294,
+      "complexity": 33
+    },
+    {
+      "path": "tests/test_search_regex_budget.py",
+      "group": "test",
+      "loc": 768,
+      "complexity": 32
+    },
+    {
+      "path": "tests/test_a31_autochain_registry.py",
+      "group": "test",
+      "loc": 225,
+      "complexity": 31
+    },
+    {
+      "path": "tests/test_durable_audit_writer.py",
+      "group": "test",
+      "loc": 651,
+      "complexity": 31
+    },
+    {
+      "path": "tests/test_a34_csv_param_contract.py",
+      "group": "test",
+      "loc": 215,
+      "complexity": 30
+    },
+    {
+      "path": "tests/test_graph_analysis_view.py",
+      "group": "test",
+      "loc": 427,
+      "complexity": 30
+    },
+    {
+      "path": "tests/test_p23_slim_gated_coverage.py",
+      "group": "test",
+      "loc": 110,
+      "complexity": 30
+    },
+    {
+      "path": "tests/test_schema_params_contract.py",
+      "group": "test",
+      "loc": 203,
+      "complexity": 30
+    },
+    {
+      "path": "tests/test_session_db_lazy_init_a38.py",
+      "group": "test",
+      "loc": 270,
+      "complexity": 30
+    },
+    {
+      "path": "tests/test_a36_cbm_discovery_hints.py",
+      "group": "test",
+      "loc": 297,
+      "complexity": 29
+    },
+    {
+      "path": "tests/test_a33b_mcp_session_shortcut_transport.py",
+      "group": "test",
+      "loc": 169,
+      "complexity": 28
+    },
+    {
+      "path": "tests/test_a34_ca_next_tool.py",
+      "group": "test",
+      "loc": 277,
+      "complexity": 28
+    },
+    {
+      "path": "tests/test_p0_graph_fixture_suite.py",
+      "group": "test",
+      "loc": 352,
+      "complexity": 28
+    },
+    {
+      "path": "tests/test_session_retention_a22.py",
+      "group": "test",
+      "loc": 359,
+      "complexity": 28
+    },
+    {
+      "path": "tests/test_a31_skill_surface_gates.py",
+      "group": "test",
+      "loc": 471,
+      "complexity": 26
+    },
+    {
+      "path": "tests/test_r5_camera_blindspot_verify.py",
+      "group": "test",
+      "loc": 190,
+      "complexity": 26
+    },
+    {
+      "path": "tests/test_session_gate_required_contract.py",
+      "group": "test",
+      "loc": 148,
+      "complexity": 26
+    },
+    {
+      "path": "tests/_a39_probe.py",
+      "group": "test",
+      "loc": 135,
+      "complexity": 24
+    },
+    {
+      "path": "tests/test_post_call_accounting.py",
+      "group": "test",
+      "loc": 416,
+      "complexity": 24
+    },
+    {
+      "path": "tests/test_registry_parity.py",
+      "group": "test",
+      "loc": 120,
+      "complexity": 24
+    },
+    {
+      "path": "tests/test_search_singleflight_concurrency.py",
+      "group": "test",
+      "loc": 406,
+      "complexity": 24
+    },
+    {
+      "path": "tests/test_a34_mcp_transport_split.py",
+      "group": "test",
+      "loc": 177,
+      "complexity": 23
+    },
+    {
+      "path": "tests/test_a37_bootstrap_hint.py",
+      "group": "test",
+      "loc": 558,
+      "complexity": 23
+    },
+    {
+      "path": "tests/test_livez_contract.py",
+      "group": "test",
+      "loc": 202,
+      "complexity": 23
+    },
+    {
+      "path": "tests/test_snapshot_deadline_and_root_guard.py",
+      "group": "test",
+      "loc": 167,
+      "complexity": 22
+    },
+    {
+      "path": "tests/test_search_snapshots.py",
+      "group": "test",
+      "loc": 528,
+      "complexity": 21
+    },
+    {
+      "path": "tests/test_a31_rule_core_pins.py",
+      "group": "test",
+      "loc": 191,
+      "complexity": 20
+    },
+    {
+      "path": "tests/test_alias_contract.py",
+      "group": "test",
+      "loc": 465,
+      "complexity": 20
+    },
+    {
+      "path": "tests/test_ca_first_upgrade_contract.py",
+      "group": "test",
+      "loc": 460,
+      "complexity": 20
+    },
+    {
+      "path": "tests/test_payload_says_each_thing_once_b021.py",
+      "group": "test",
+      "loc": 675,
+      "complexity": 20
+    },
+    {
+      "path": "tests/test_write_ledger_finalization.py",
+      "group": "test",
+      "loc": 612,
+      "complexity": 20
+    },
+    {
+      "path": "tests/test_cbm_enrich_producers_campaign.py",
+      "group": "test",
+      "loc": 253,
+      "complexity": 19
+    },
+    {
+      "path": "tests/test_payload_example_contract.py",
+      "group": "test",
+      "loc": 94,
+      "complexity": 19
+    },
+    {
+      "path": "tests/test_progress_watchdog_contract.py",
+      "group": "test",
+      "loc": 311,
+      "complexity": 19
+    },
+    {
+      "path": "tests/test_a44_matrix_coverage.py",
+      "group": "test",
+      "loc": 144,
+      "complexity": 18
+    },
+    {
+      "path": "tests/test_destructive_command_guard_case2008.py",
+      "group": "test",
+      "loc": 371,
+      "complexity": 18
+    },
+    {
+      "path": "tests/test_durable_audit_integration.py",
+      "group": "test",
+      "loc": 667,
+      "complexity": 18
+    }
+  ],
+  "snapshot_id": "v1-3576f1338e1c037eddf1ff6448292fd6011758069960fd8a6e2c1228b6609e4a",
+  "ca_hint": "matched files listed, contents not read",
+  "ca_next_action": "read_file_range",
+  "ca_next_tool": "read_file_range"
+}

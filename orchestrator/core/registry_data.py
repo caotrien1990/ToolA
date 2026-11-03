@@ -140,7 +140,60 @@ BASE_TOOL_SCHEMAS = [
 				},
 
 			},
-
+			"returns": {
+				'properties': {
+					'ca_next_action': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'compact_mode': {
+						'type': 'boolean'
+					},
+					'depth': {
+						'type': 'integer'
+					},
+					'error': {
+						'type': 'string'
+					},
+					'error_name': {
+						'type': 'string'
+					},
+					'exists': {
+						'type': 'boolean'
+					},
+					'ok': {
+						'type': 'boolean'
+					},
+					'path': {
+						'type': 'string'
+					},
+					'result': {
+						'type': 'string'
+					},
+					'save_output': {
+						'type': 'boolean'
+					},
+					'truncated_folders': {
+						'items': {
+							'type': 'string'
+						},
+						'type': 'array'
+					},
+					'truncation_hint': {
+						'type': 'string'
+					}
+				},
+				'required': [
+					'ok',
+					'path'
+				],
+				'type': 'object',
+				'x-audit': {
+					'status': 'audited',
+					'schema_sha256': 'f7769ac090f177b91d107060defc887c6cf59064d77fe5b3b779890631499550',
+					'depth_D': 1
+				}
+			},
 		},
 
 	},
@@ -184,7 +237,312 @@ BASE_TOOL_SCHEMAS = [
 				"accepted_encodings": ["plain", "base64"],
 
 			},
-
+			"returns": {
+				'type': 'object',
+				'properties': {
+					'ok': {
+						'type': 'boolean',
+						'x-dual': True
+					},
+					'error': {
+						'x-dual': True,
+						'type': 'string'
+					},
+					'error_name': {
+						'x-dual': True,
+						'type': 'string'
+					},
+					'type': {
+						'type': 'string'
+					},
+					'severity': {
+						'type': 'string'
+					},
+					'retryable': {
+						'type': 'boolean'
+					},
+					'missing_fields': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'required_fields': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'accepted_fields': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'payload_example': {
+						'x-dual': True,
+						'type': 'object'
+					},
+					'ca_next_action': {
+						'x-dual': True,
+						'type': 'string'
+					},
+					'write_performed': {
+						'type': 'boolean'
+					},
+					'applied': {
+						'type': 'boolean'
+					},
+					'path': {
+						'type': 'string'
+					},
+					'hint': {
+						'x-dual': True,
+						'type': 'string'
+					},
+					'results': {
+						'type': 'array',
+						'items': {
+							'type': 'object',
+							'properties': {
+								'file': {
+									'type': 'string'
+								},
+								'line': {
+									'type': 'integer'
+								},
+								'match': {
+									'type': 'string'
+								},
+								'range_id': {
+									'type': 'string'
+								},
+								'body': {
+									'type': 'string'
+								}
+							}
+						}
+					},
+					'count': {
+						'type': 'integer'
+					},
+					'source': {
+						'type': 'string'
+					},
+					'total_count': {
+						'type': 'integer'
+					},
+					'truncated': {
+						'type': 'boolean'
+					},
+					'truncation_reason': {
+						'type': 'string'
+					},
+					'result_cap': {
+						'type': 'integer'
+					},
+					'warning': {
+						'type': 'string'
+					},
+					'category': {
+						'type': 'string'
+					},
+					'drift': {
+						'type': 'object',
+						'properties': {
+							'ok': {
+								'type': 'boolean'
+							},
+							'added': {
+								'type': 'array'
+							},
+							'modified': {
+								'type': 'array',
+								'items': {
+									'type': 'string'
+								}
+							},
+							'deleted': {
+								'type': 'array'
+							}
+						}
+					},
+					'stale_index': {
+						'anyOf': [
+							{
+								'type': 'boolean'
+							},
+							{
+								'type': 'null'
+							}
+						]
+					},
+					'stale_index_reason': {
+						'type': 'string'
+					},
+					'impact_scope': {
+						'type': 'object'
+					},
+					'callers': {
+						'type': 'array',
+						'items': {
+							'type': 'object',
+							'properties': {
+								'file': {
+									'type': 'string'
+								},
+								'line': {
+									'type': 'integer'
+								},
+								'match': {
+									'type': 'string'
+								},
+								'range_id': {
+									'type': 'string'
+								}
+							}
+						}
+					},
+					'callers_count': {
+						'type': 'integer'
+					},
+					'usages': {
+						'type': 'array',
+						'items': {
+							'type': 'object',
+							'properties': {
+								'file': {
+									'type': 'string'
+								},
+								'line': {
+									'type': 'integer'
+								},
+								'match': {
+									'type': 'string'
+								},
+								'range_id': {
+									'type': 'string'
+								}
+							}
+						}
+					},
+					'usages_count': {
+						'type': 'integer'
+					},
+					'definition': {
+						'type': 'array',
+						'items': {
+							'type': 'object',
+							'properties': {
+								'file': {
+									'type': 'string'
+								},
+								'line': {
+									'type': 'integer'
+								},
+								'match': {
+									'type': 'string'
+								},
+								'range_id': {
+									'type': 'string'
+								},
+								'body': {
+									'type': 'string'
+								}
+							}
+						}
+					},
+					'include': {
+						'type': 'string'
+					},
+					'wall_clock_budget_seconds': {
+						'type': 'number'
+					},
+					'bounded': {
+						'type': 'boolean'
+					},
+					'mode': {
+						'type': 'string'
+					},
+					'query': {
+						'type': 'string'
+					},
+					'accepted_narrowing_fields': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						}
+					},
+					'retry_sequence': {
+						'x-dual': True,
+						'type': 'array'
+					},
+					'ca_hint': {
+						'x-dual': True,
+						'type': 'string'
+					},
+					'ca_next_tool': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'ca_guidance': {
+						'x-dual': True,
+						'type': 'object'
+					},
+					'phase': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'suggested_alternative_tool': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'normalization_applied': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'original_error_name': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'path_normalized': {
+						'x-dual': True
+					},
+					'project_path_resolution': {
+						'x-dual': True
+					},
+					'deprecated_fields': {
+						'type': 'array',
+						'x-dual': True
+					},
+					'canonical_replacements': {
+						'type': 'object',
+						'x-dual': True
+					},
+					'compatibility_applied': {
+						'type': 'boolean',
+						'x-dual': True
+					},
+					'removal_version': {
+						'type': 'string',
+						'x-dual': True
+					}
+				},
+				'required': [
+					'ok'
+				],
+				'x-audit': {
+					'status': 'audited',
+					'schema_sha256': 'da799fb941b901f2ef4386b42d059f80e489def1f36472cc97e8e5364dbd8d9f',
+					'depth_D': 3
+				}
+			},
 		},
 
 	},
@@ -218,6 +576,652 @@ BASE_TOOL_SCHEMAS = [
 					"pipeline": {"type": "array", "default": [], "items": {"type": "string", "enum": sorted(ACTIVE_CHAIN_STEPS.get("read_file_range", ()))}, "description": "OPT-IN follow-up READS to run inside this same call, at most %d; each answer lands under the response key `pipeline`. Every step is built from THIS call's own result -- the neighbour range it already computed, the symbol map of the file it just read -- so nothing runs unless you name it here and an unset pipeline costs nothing. An unknown name is echoed under pipeline.rejected next to the steps that did run, never raised." % MAX_STEPS_PER_CALL},
 				},
 				"required": ["file_path"],
+			},
+			"returns": {
+				'type': 'object',
+				'properties': {
+					'ok': {
+						'type': 'boolean',
+						'x-dual': True
+					},
+					'result': {
+						'type': 'string'
+					},
+					'summary': {
+						'type': 'object',
+						'properties': {
+							'file': {
+								'type': 'string'
+							},
+							'line_count': {
+								'type': 'integer'
+							},
+							'size_bytes': {
+								'type': 'integer'
+							},
+							'content_hash': {
+								'type': 'string'
+							},
+							'parser': {
+								'type': 'string'
+							},
+							'parse_error': {
+								'anyOf': [
+									{
+										'type': 'string'
+									},
+									{
+										'type': 'null'
+									}
+								]
+							},
+							'imports': {
+								'type': 'array',
+								'items': {
+									'type': 'string'
+								}
+							},
+							'symbols': {
+								'type': 'array',
+								'items': {
+									'type': 'object'
+								}
+							},
+							'sections': {
+								'type': 'array',
+								'items': {
+									'type': 'object'
+								}
+							},
+							'symbols_total': {
+								'type': 'integer'
+							},
+							'sections_total': {
+								'type': 'integer'
+							}
+						}
+					},
+					'file': {
+						'type': 'string'
+					},
+					'project_path': {
+						'type': 'string'
+					},
+					'file_group': {
+						'type': 'null'
+					},
+					'lang': {
+						'type': 'string'
+					},
+					'total_lines': {
+						'type': 'integer'
+					},
+					'shown': {
+						'type': 'string'
+					},
+					'range_id': {
+						'type': 'string'
+					},
+					'bounded': {
+						'type': 'boolean'
+					},
+					'max_lines': {
+						'type': 'integer'
+					},
+					'max_lines_cap': {
+						'type': 'integer'
+					},
+					'max_lines_default': {
+						'type': 'integer'
+					},
+					'scope_requested': {
+						'type': 'string'
+					},
+					'scope_resolved': {
+						'type': 'string'
+					},
+					'selection': {
+						'type': 'object',
+						'properties': {
+							'ok': {
+								'type': 'boolean'
+							},
+							'scope': {
+								'type': 'string'
+							},
+							'name': {
+								'anyOf': [
+									{
+										'type': 'null'
+									},
+									{
+										'type': 'string'
+									}
+								]
+							},
+							'start_line': {
+								'type': 'integer'
+							},
+							'end_line': {
+								'type': 'integer'
+							},
+							'source': {
+								'type': 'string'
+							},
+							'qualified_name': {
+								'type': 'string'
+							},
+							'kind': {
+								'type': 'string'
+							}
+						}
+					},
+					'content_hash': {
+						'type': 'string'
+					},
+					'range_ref': {
+						'type': 'string'
+					},
+					'cache_hit': {
+						'type': 'boolean'
+					},
+					'cache_waited': {
+						'type': 'boolean'
+					},
+					'estimated_tokens': {
+						'type': 'integer'
+					},
+					'token_budget': {
+						'type': 'null'
+					},
+					'token_estimator': {
+						'type': 'string'
+					},
+					'auto_full_file': {
+						'type': 'boolean'
+					},
+					'small_file_threshold': {
+						'type': 'integer'
+					},
+					'truncated': {
+						'type': 'boolean'
+					},
+					'next_ranges': {
+						'type': 'array'
+					},
+					'read_token_seeded': {
+						'type': 'boolean'
+					},
+					'derived_state_touched': {
+						'type': 'boolean'
+					},
+					'empty_file': {
+						'type': 'boolean'
+					},
+					'read_token_seed_failure': {
+						'type': 'object'
+					},
+					'content_hash_mismatch': {
+						'type': 'boolean'
+					},
+					'warn': {
+						'type': 'string'
+					},
+					'read_unstable': {
+						'type': 'boolean'
+					},
+					'error': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'error_name': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'hint': {
+						'x-dual': True,
+						'type': 'string'
+					},
+					'ca_next_action': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'retryable': {
+						'type': 'boolean'
+					},
+					'reseed_failure_reason': {
+						'type': 'string'
+					},
+					'reseed_error': {
+						'type': 'string'
+					},
+					'exists': {
+						'type': 'boolean'
+					},
+					'repeat_probe': {
+						'type': 'boolean'
+					},
+					'probe_count': {
+						'type': 'integer'
+					},
+					'fuzzy_suggestions': {
+						'type': 'array'
+					},
+					'fuzzy_suggestions_source': {
+						'type': 'string'
+					},
+					'fuzzy_suggestions_limitation': {
+						'type': 'string'
+					},
+					'markdown_escape_detected': {
+						'type': 'boolean'
+					},
+					'unescaped_path_candidate': {
+						'type': 'string'
+					},
+					'circuit_breaker': {
+						'type': 'object'
+					},
+					'type': {
+						'type': 'string'
+					},
+					'severity': {
+						'type': 'string'
+					},
+					'path': {
+						'type': 'string'
+					},
+					'suggested_tools': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						}
+					},
+					'suffix': {
+						'type': 'string'
+					},
+					'size_bytes': {
+						'anyOf': [
+							{
+								'type': 'integer'
+							},
+							{
+								'type': 'null'
+							}
+						]
+					},
+					'accepted_values': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						}
+					},
+					'requested_start_line': {},
+					'requested_end_line': {},
+					'action_required': {
+						'type': 'string'
+					},
+					'candidates': {
+						'type': 'array',
+						'items': {
+							'type': 'object'
+						}
+					},
+					'parse_error': {
+						'anyOf': [
+							{
+								'type': 'string'
+							},
+							{
+								'type': 'null'
+							}
+						]
+					},
+					'ca_hint': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'ca_next_tool': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'ca_guidance': {
+						'type': 'object',
+						'properties': {
+							'phase': {
+								'type': 'string'
+							},
+							'phase_label': {
+								'type': 'string'
+							},
+							'error_name': {
+								'type': 'string'
+							},
+							'ca_next_action': {
+								'type': 'string'
+							},
+							'call_pattern': {
+								'type': 'string'
+							},
+							'payload_example': {
+								'type': 'object',
+								'properties': {
+									'file_path': {
+										'type': 'string'
+									},
+									'project_path': {
+										'type': 'string'
+									},
+									'start_line': {
+										'type': 'integer'
+									},
+									'max_lines': {
+										'type': 'integer'
+									},
+									'force_reseed': {
+										'type': 'boolean'
+									},
+									'scope': {
+										'type': 'string'
+									},
+									'symbol': {
+										'type': 'string'
+									},
+									'section': {
+										'type': 'string'
+									},
+									'related_query': {
+										'type': 'string'
+									},
+									'query': {
+										'type': 'string'
+									},
+									'token_budget': {
+										'type': 'integer'
+									},
+									'small_file_threshold': {
+										'type': 'integer'
+									},
+									'include_next_ranges': {
+										'type': 'boolean'
+									},
+									'content_hash': {
+										'type': 'string'
+									},
+									'force_refresh': {
+										'type': 'boolean'
+									},
+									'pipeline': {
+										'type': 'array'
+									}
+								}
+							},
+							'required_fields': {
+								'type': 'array',
+								'items': {
+									'type': 'string'
+								}
+							},
+							'accepted_aliases': {
+								'type': 'object',
+								'properties': {
+									'path': {
+										'type': 'object',
+										'properties': {
+											'maps_to': {
+												'type': 'string'
+											},
+											'status': {
+												'type': 'string'
+											}
+										}
+									},
+									'file': {
+										'type': 'object',
+										'properties': {
+											'maps_to': {
+												'type': 'string'
+											},
+											'status': {
+												'type': 'string'
+											}
+										}
+									},
+									'start': {
+										'type': 'object',
+										'properties': {
+											'maps_to': {
+												'type': 'string'
+											},
+											'status': {
+												'type': 'string'
+											}
+										}
+									},
+									'end': {
+										'type': 'object',
+										'properties': {
+											'maps_to': {
+												'type': 'string'
+											},
+											'status': {
+												'type': 'string'
+											}
+										}
+									},
+									'from_line': {
+										'type': 'object',
+										'properties': {
+											'maps_to': {
+												'type': 'string'
+											},
+											'status': {
+												'type': 'string'
+											}
+										}
+									},
+									'to_line': {
+										'type': 'object',
+										'properties': {
+											'maps_to': {
+												'type': 'string'
+											},
+											'status': {
+												'type': 'string'
+											}
+										}
+									},
+									'line_start': {
+										'type': 'object',
+										'properties': {
+											'maps_to': {
+												'type': 'string'
+											},
+											'status': {
+												'type': 'string'
+											}
+										}
+									},
+									'line_end': {
+										'type': 'object',
+										'properties': {
+											'maps_to': {
+												'type': 'string'
+											},
+											'status': {
+												'type': 'string'
+											}
+										}
+									}
+								}
+							},
+							'notes': {
+								'type': 'array',
+								'items': {
+									'type': 'string'
+								}
+							},
+							'known_gotchas': {
+								'type': 'array'
+							},
+							'recommended_prompt_rule': {
+								'type': 'string'
+							},
+							'see_also': {
+								'type': 'object',
+								'properties': {}
+							},
+							'suggested_alternative_tool': {
+								'type': 'object',
+								'properties': {
+									'tool': {
+										'type': 'string'
+									},
+									'reason': {
+										'type': 'string'
+									}
+								}
+							}
+						},
+						'x-dual': True
+					},
+					'retry_sequence': {
+						'type': 'array',
+						'x-dual': True
+					},
+					'payload_example': {
+						'type': 'object',
+						'properties': {
+							'file_path': {
+								'type': 'string'
+							},
+							'project_path': {
+								'type': 'string'
+							},
+							'start_line': {
+								'type': 'integer'
+							},
+							'max_lines': {
+								'type': 'integer'
+							},
+							'force_reseed': {
+								'type': 'boolean'
+							},
+							'scope': {
+								'type': 'string'
+							},
+							'symbol': {
+								'type': 'string'
+							},
+							'section': {
+								'type': 'string'
+							},
+							'related_query': {
+								'type': 'string'
+							},
+							'query': {
+								'type': 'string'
+							},
+							'token_budget': {
+								'type': 'integer'
+							},
+							'small_file_threshold': {
+								'type': 'integer'
+							},
+							'include_next_ranges': {
+								'type': 'boolean'
+							},
+							'content_hash': {
+								'type': 'string'
+							},
+							'force_refresh': {
+								'type': 'boolean'
+							},
+							'pipeline': {
+								'type': 'array'
+							}
+						},
+						'x-dual': True
+					},
+					'phase': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'suggested_alternative_tool': {
+						'type': 'object',
+						'properties': {
+							'tool': {
+								'type': 'string'
+							},
+							'reason': {
+								'type': 'string'
+							}
+						},
+						'x-dual': True
+					},
+					'normalization_applied': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'missing_fields': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'required_fields': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'accepted_fields': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'original_error_name': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'path_normalized': {
+						'x-dual': True
+					},
+					'project_path_resolution': {
+						'x-dual': True
+					},
+					'deprecated_fields': {
+						'type': 'array',
+						'x-dual': True
+					},
+					'canonical_replacements': {
+						'type': 'object',
+						'x-dual': True
+					},
+					'compatibility_applied': {
+						'type': 'boolean',
+						'x-dual': True
+					},
+					'removal_version': {
+						'type': 'string',
+						'x-dual': True
+					}
+				},
+				'required': [
+					'ok'
+				],
+				'x-audit': {
+					'status': 'audited',
+					'schema_sha256': '2494cecbd8a55ee1879588d8005fde9625960bd21c1f46d5158dc76805d86791',
+					'depth_D': 4
+				}
 			},
 		},
 	},
@@ -259,6 +1263,415 @@ BASE_TOOL_SCHEMAS = [
 				},
 				"required": ["project_path", "requests"],
 			},
+			"returns": {
+				'type': 'object',
+				'properties': {
+					'ok': {
+						'type': 'boolean',
+						'x-dual': True
+					},
+					'error': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'error_name': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'ca_next_action': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'items': {
+						'type': 'array',
+						'items': {
+							'type': 'object',
+							'properties': {
+								'ok': {
+									'type': 'boolean'
+								},
+								'result': {
+									'type': 'string'
+								},
+								'file': {
+									'type': 'string'
+								},
+								'project_path': {
+									'type': 'string'
+								},
+								'file_group': {
+									'type': 'null'
+								},
+								'lang': {
+									'type': 'string'
+								},
+								'total_lines': {
+									'type': 'integer'
+								},
+								'shown': {
+									'type': 'string'
+								},
+								'range_id': {
+									'type': 'string'
+								},
+								'bounded': {
+									'type': 'boolean'
+								},
+								'max_lines': {
+									'type': 'integer'
+								},
+								'max_lines_cap': {
+									'type': 'integer'
+								},
+								'max_lines_default': {
+									'type': 'integer'
+								},
+								'scope_requested': {
+									'type': 'string'
+								},
+								'scope_resolved': {
+									'type': 'string'
+								},
+								'selection': {
+									'type': 'object',
+									'properties': {
+										'ok': {
+											'type': 'boolean'
+										},
+										'scope': {
+											'type': 'string'
+										},
+										'name': {
+											'anyOf': [
+												{
+													'type': 'null'
+												},
+												{
+													'type': 'string'
+												}
+											]
+										},
+										'start_line': {
+											'type': 'integer'
+										},
+										'end_line': {
+											'type': 'integer'
+										},
+										'source': {
+											'type': 'string'
+										},
+										'qualified_name': {
+											'type': 'string'
+										},
+										'kind': {
+											'type': 'string'
+										}
+									}
+								},
+								'content_hash': {
+									'type': 'string'
+								},
+								'range_ref': {
+									'type': 'string'
+								},
+								'cache_hit': {
+									'type': 'boolean'
+								},
+								'cache_waited': {
+									'type': 'boolean'
+								},
+								'estimated_tokens': {
+									'type': 'integer'
+								},
+								'token_budget': {
+									'type': 'integer'
+								},
+								'token_estimator': {
+									'type': 'string'
+								},
+								'auto_full_file': {
+									'type': 'boolean'
+								},
+								'small_file_threshold': {
+									'type': 'integer'
+								},
+								'truncated': {
+									'type': 'boolean'
+								},
+								'next_ranges': {
+									'type': 'array',
+									'items': {
+										'type': 'object',
+										'properties': {
+											'file_path': {
+												'type': 'string'
+											},
+											'scope': {
+												'type': 'string'
+											},
+											'start_line': {
+												'type': 'integer'
+											},
+											'end_line': {
+												'type': 'integer'
+											},
+											'name': {
+												'anyOf': [
+													{
+														'type': 'string'
+													},
+													{
+														'type': 'null'
+													}
+												]
+											},
+											'kind': {
+												'type': 'string'
+											},
+											'relevance_score': {
+												'type': 'number'
+											},
+											'reason': {
+												'type': 'string'
+											},
+											'source': {
+												'type': 'string'
+											}
+										}
+									}
+								},
+								'read_token_seeded': {
+									'type': 'boolean'
+								},
+								'derived_state_touched': {
+									'type': 'boolean'
+								},
+								'request_index': {
+									'type': 'integer'
+								},
+								'error': {
+									'type': 'string'
+								},
+								'error_name': {
+									'type': 'string'
+								},
+								'exists': {
+									'type': 'boolean'
+								},
+								'repeat_probe': {
+									'type': 'boolean'
+								},
+								'probe_count': {
+									'type': 'integer'
+								},
+								'fuzzy_suggestions': {
+									'type': 'array'
+								},
+								'fuzzy_suggestions_source': {
+									'type': 'string'
+								},
+								'fuzzy_suggestions_limitation': {
+									'type': 'string'
+								},
+								'ca_next_action': {
+									'type': 'string'
+								},
+								'hint': {
+									'type': 'string'
+								}
+							}
+						}
+					},
+					'count': {
+						'type': 'integer'
+					},
+					'token_budget': {
+						'type': 'integer'
+					},
+					'used_tokens': {
+						'type': 'integer'
+					},
+					'remaining_tokens': {
+						'type': 'integer'
+					},
+					'within_budget': {
+						'type': 'boolean'
+					},
+					'token_estimator': {
+						'type': 'string'
+					},
+					'truncated': {
+						'type': 'boolean'
+					},
+					'deferred': {
+						'type': 'array'
+					},
+					'next_ranges': {
+						'type': 'array',
+						'items': {
+							'type': 'object',
+							'properties': {
+								'file_path': {
+									'type': 'string'
+								},
+								'scope': {
+									'type': 'string'
+								},
+								'start_line': {
+									'type': 'integer'
+								},
+								'end_line': {
+									'type': 'integer'
+								},
+								'name': {
+									'anyOf': [
+										{
+											'type': 'string'
+										},
+										{
+											'type': 'null'
+										}
+									]
+								},
+								'kind': {
+									'type': 'string'
+								},
+								'relevance_score': {
+									'type': 'number'
+								},
+								'reason': {
+									'type': 'string'
+								},
+								'source': {
+									'type': 'string'
+								}
+							}
+						}
+					},
+					'deduplicated': {
+						'type': 'integer'
+					},
+					'cache': {
+						'type': 'object',
+						'properties': {
+							'entries': {
+								'type': 'integer'
+							},
+							'bytes': {
+								'type': 'integer'
+							},
+							'hits': {
+								'type': 'integer'
+							},
+							'misses': {
+								'type': 'integer'
+							},
+							'parse_hits': {
+								'type': 'integer'
+							},
+							'max_entries': {
+								'type': 'integer'
+							},
+							'max_bytes': {
+								'type': 'integer'
+							}
+						}
+					},
+					'derived_state_touched': {
+						'type': 'boolean'
+					},
+					'ca_hint': {
+						'x-dual': True,
+						'type': 'string'
+					},
+					'ca_next_tool': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'ca_guidance': {
+						'x-dual': True,
+						'type': 'object'
+					},
+					'retry_sequence': {
+						'x-dual': True,
+						'type': 'array'
+					},
+					'payload_example': {
+						'x-dual': True,
+						'type': 'object'
+					},
+					'phase': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'suggested_alternative_tool': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'normalization_applied': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'missing_fields': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'required_fields': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'accepted_fields': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'original_error_name': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'path_normalized': {
+						'x-dual': True
+					},
+					'project_path_resolution': {
+						'x-dual': True
+					},
+					'deprecated_fields': {
+						'type': 'array',
+						'x-dual': True
+					},
+					'canonical_replacements': {
+						'type': 'object',
+						'x-dual': True
+					},
+					'compatibility_applied': {
+						'type': 'boolean',
+						'x-dual': True
+					},
+					'removal_version': {
+						'type': 'string',
+						'x-dual': True
+					}
+				},
+				'required': [
+					'ok'
+				],
+				'x-audit': {
+					'status': 'audited',
+					'schema_sha256': '2ea5c1e4a374e24bbd6d8e637b561c889d12cef1723e2038f34ba6dd0a2ee8b9',
+					'depth_D': 5
+				}
+			},
 		},
 	},
 	{
@@ -279,6 +1692,586 @@ BASE_TOOL_SCHEMAS = [
 					"max_ranges": {"type": "integer", "default": 20, "minimum": 1, "maximum": 20, "description": "Maximum structural ranges in the context pack."},
 				},
 				"required": ["project_path"],
+			},
+			"returns": {
+				'type': 'object',
+				'properties': {
+					'ok': {
+						'type': 'boolean',
+						'x-dual': True
+					},
+					'error': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'error_name': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'graph_used': {
+						'type': 'boolean'
+					},
+					'graph_degraded_reason': {
+						'anyOf': [
+							{
+								'type': 'string'
+							},
+							{
+								'type': 'null'
+							}
+						]
+					},
+					'recommended_action': {
+						'type': 'string'
+					},
+					'provenance': {
+						'type': 'object',
+						'properties': {
+							'graph_used': {
+								'type': 'boolean'
+							},
+							'graph_error': {
+								'type': 'null'
+							},
+							'graph_truncated': {
+								'type': 'boolean'
+							},
+							'graph_auto_reindex': {
+								'type': 'boolean'
+							},
+							'target_node_id': {
+								'type': 'string'
+							},
+							'nodes_seen': {
+								'type': 'integer'
+							}
+						}
+					},
+					'derived_state_touched': {
+						'type': 'boolean'
+					},
+					'query': {
+						'type': 'string'
+					},
+					'symbol': {
+						'type': 'string'
+					},
+					'depth': {
+						'type': 'integer'
+					},
+					'ranked_files': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						}
+					},
+					'ranked_symbols': {
+						'type': 'array',
+						'items': {
+							'type': 'object',
+							'properties': {
+								'id': {
+									'type': 'string'
+								},
+								'kind': {
+									'type': 'string'
+								},
+								'name': {
+									'type': 'string'
+								},
+								'qualified_name': {
+									'type': 'string'
+								},
+								'file_path': {
+									'type': 'string'
+								},
+								'start_line': {
+									'type': 'integer'
+								},
+								'end_line': {
+									'type': 'integer'
+								}
+							}
+						}
+					},
+					'items': {
+						'type': 'array',
+						'items': {
+							'type': 'object',
+							'properties': {
+								'ok': {
+									'type': 'boolean'
+								},
+								'result': {
+									'type': 'string'
+								},
+								'summary': {
+									'type': 'object',
+									'properties': {
+										'file': {
+											'type': 'string'
+										},
+										'line_count': {
+											'type': 'integer'
+										},
+										'size_bytes': {
+											'type': 'integer'
+										},
+										'content_hash': {
+											'type': 'string'
+										},
+										'parser': {
+											'type': 'string'
+										},
+										'parse_error': {
+											'type': 'null'
+										},
+										'imports': {
+											'type': 'array',
+											'items': {
+												'type': 'string'
+											}
+										},
+										'symbols': {
+											'type': 'array',
+											'items': {
+												'type': 'object',
+												'properties': {
+													'name': {
+														'type': 'string'
+													},
+													'qualified_name': {
+														'type': 'string'
+													},
+													'kind': {
+														'type': 'string'
+													},
+													'start_line': {
+														'type': 'integer'
+													},
+													'end_line': {
+														'type': 'integer'
+													}
+												}
+											}
+										},
+										'sections': {
+											'type': 'array',
+											'items': {
+												'type': 'object',
+												'properties': {
+													'name': {
+														'type': 'string'
+													},
+													'qualified_name': {
+														'type': 'string'
+													},
+													'kind': {
+														'type': 'string'
+													},
+													'start_line': {
+														'type': 'integer'
+													},
+													'end_line': {
+														'type': 'integer'
+													}
+												}
+											}
+										},
+										'symbols_total': {
+											'type': 'integer'
+										},
+										'sections_total': {
+											'type': 'integer'
+										}
+									}
+								},
+								'file': {
+									'type': 'string'
+								},
+								'project_path': {
+									'type': 'string'
+								},
+								'file_group': {
+									'type': 'null'
+								},
+								'lang': {
+									'type': 'string'
+								},
+								'total_lines': {
+									'type': 'integer'
+								},
+								'shown': {
+									'type': 'string'
+								},
+								'range_id': {
+									'type': 'string'
+								},
+								'bounded': {
+									'type': 'boolean'
+								},
+								'max_lines': {
+									'type': 'integer'
+								},
+								'max_lines_cap': {
+									'type': 'integer'
+								},
+								'max_lines_default': {
+									'type': 'integer'
+								},
+								'scope_requested': {
+									'type': 'string'
+								},
+								'scope_resolved': {
+									'type': 'string'
+								},
+								'selection': {
+									'type': 'object',
+									'properties': {
+										'ok': {
+											'type': 'boolean'
+										},
+										'scope': {
+											'type': 'string'
+										},
+										'name': {
+											'type': 'string'
+										},
+										'start_line': {
+											'type': 'integer'
+										},
+										'end_line': {
+											'type': 'integer'
+										},
+										'source': {
+											'type': 'string'
+										}
+									}
+								},
+								'content_hash': {
+									'type': 'string'
+								},
+								'range_ref': {
+									'type': 'string'
+								},
+								'cache_hit': {
+									'type': 'boolean'
+								},
+								'cache_waited': {
+									'type': 'boolean'
+								},
+								'estimated_tokens': {
+									'type': 'integer'
+								},
+								'token_budget': {
+									'type': 'integer'
+								},
+								'token_estimator': {
+									'type': 'string'
+								},
+								'auto_full_file': {
+									'type': 'boolean'
+								},
+								'truncated': {
+									'type': 'boolean'
+								},
+								'next_ranges': {
+									'type': 'array'
+								},
+								'read_token_seeded': {
+									'type': 'boolean'
+								},
+								'derived_state_touched': {
+									'type': 'boolean'
+								},
+								'request_index': {
+									'type': 'integer'
+								},
+								'error_name': {
+									'type': 'string'
+								},
+								'error': {
+									'type': 'string'
+								},
+								'candidates': {
+									'type': 'array',
+									'items': {
+										'type': 'object',
+										'properties': {
+											'name': {
+												'type': 'string'
+											},
+											'qualified_name': {
+												'type': 'string'
+											},
+											'kind': {
+												'type': 'string'
+											},
+											'start_line': {
+												'type': 'integer'
+											},
+											'end_line': {
+												'type': 'integer'
+											}
+										}
+									}
+								},
+								'parse_error': {
+									'type': 'null'
+								},
+								'ca_next_action': {
+									'type': 'string'
+								}
+							}
+						}
+					},
+					'next_ranges': {
+						'type': 'array'
+					},
+					'budget': {
+						'type': 'object',
+						'properties': {
+							'requested': {
+								'type': 'integer'
+							},
+							'used': {
+								'type': 'integer'
+							},
+							'remaining': {
+								'type': 'integer'
+							},
+							'within_budget': {
+								'type': 'boolean'
+							}
+						}
+					},
+					'cache': {
+						'type': 'object',
+						'properties': {
+							'entries': {
+								'type': 'integer'
+							},
+							'bytes': {
+								'type': 'integer'
+							},
+							'hits': {
+								'type': 'integer'
+							},
+							'misses': {
+								'type': 'integer'
+							},
+							'parse_hits': {
+								'type': 'integer'
+							},
+							'max_entries': {
+								'type': 'integer'
+							},
+							'max_bytes': {
+								'type': 'integer'
+							}
+						}
+					},
+					'ca_hint': {
+						'x-dual': True,
+						'type': 'string'
+					},
+					'ca_next_action': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'ca_next_tool': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'ca_guidance': {
+						'type': 'object',
+						'properties': {
+							'phase': {
+								'type': 'string'
+							},
+							'phase_label': {
+								'type': 'string'
+							},
+							'error_name': {
+								'type': 'string'
+							},
+							'ca_next_action': {
+								'type': 'string'
+							},
+							'call_pattern': {
+								'type': 'string'
+							},
+							'payload_example': {
+								'type': 'object',
+								'properties': {
+									'project_path': {
+										'type': 'string'
+									},
+									'symbol': {
+										'type': 'string'
+									},
+									'file_path': {
+										'type': 'string'
+									},
+									'query': {
+										'type': 'string'
+									},
+									'depth': {
+										'type': 'integer'
+									},
+									'token_budget': {
+										'type': 'integer'
+									},
+									'max_files': {
+										'type': 'integer'
+									},
+									'max_ranges': {
+										'type': 'integer'
+									}
+								}
+							},
+							'required_fields': {
+								'type': 'array',
+								'items': {
+									'type': 'string'
+								}
+							},
+							'accepted_aliases': {
+								'type': 'object',
+								'properties': {}
+							},
+							'notes': {
+								'type': 'array',
+								'items': {
+									'type': 'string'
+								}
+							},
+							'known_gotchas': {
+								'type': 'array'
+							},
+							'recommended_prompt_rule': {
+								'type': 'string'
+							},
+							'see_also': {
+								'type': 'object',
+								'properties': {}
+							},
+							'suggested_alternative_tool': {
+								'type': 'object',
+								'properties': {}
+							}
+						},
+						'x-dual': True
+					},
+					'retry_sequence': {
+						'type': 'array',
+						'x-dual': True
+					},
+					'payload_example': {
+						'type': 'object',
+						'properties': {
+							'project_path': {
+								'type': 'string'
+							},
+							'symbol': {
+								'type': 'string'
+							},
+							'file_path': {
+								'type': 'string'
+							},
+							'query': {
+								'type': 'string'
+							},
+							'depth': {
+								'type': 'integer'
+							},
+							'token_budget': {
+								'type': 'integer'
+							},
+							'max_files': {
+								'type': 'integer'
+							},
+							'max_ranges': {
+								'type': 'integer'
+							}
+						},
+						'x-dual': True
+					},
+					'phase': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'suggested_alternative_tool': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'normalization_applied': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'missing_fields': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'required_fields': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'accepted_fields': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'original_error_name': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'path_normalized': {
+						'x-dual': True
+					},
+					'project_path_resolution': {
+						'x-dual': True
+					},
+					'deprecated_fields': {
+						'type': 'array',
+						'x-dual': True
+					},
+					'canonical_replacements': {
+						'type': 'object',
+						'x-dual': True
+					},
+					'compatibility_applied': {
+						'type': 'boolean',
+						'x-dual': True
+					},
+					'removal_version': {
+						'type': 'string',
+						'x-dual': True
+					}
+				},
+				'required': [
+					'derived_state_touched',
+					'graph_degraded_reason',
+					'graph_used',
+					'ok',
+					'provenance'
+				],
+				'x-audit': {
+					'status': 'audited',
+					'schema_sha256': 'c7aa5c8a38151e5fcb31e3ae3f6753bf2d574b21ed41ac4efaee83919b5d13e7',
+					'depth_D': 6
+				}
 			},
 		},
 	},
@@ -340,7 +2333,410 @@ BASE_TOOL_SCHEMAS = [
 				"accepted_encodings": ["plain", "base64"],
 
 			},
-
+			"returns": {
+				'type': 'object',
+				'properties': {
+					'ok': {
+						'type': 'boolean',
+						'x-dual': True
+					},
+					'error': {
+						'x-dual': True,
+						'type': 'string'
+					},
+					'error_name': {
+						'x-dual': True,
+						'type': 'string'
+					},
+					'type': {
+						'type': 'string'
+					},
+					'severity': {
+						'type': 'string'
+					},
+					'retryable': {
+						'type': 'boolean'
+					},
+					'ca_next_action': {
+						'x-dual': True,
+						'type': 'string'
+					},
+					'accepted_modes': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						}
+					},
+					'accepted_encodings': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						}
+					},
+					'mode_aliases': {
+						'type': 'object'
+					},
+					'accepted_fields': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'accepted_narrowing_fields': {},
+					'hint': {
+						'x-dual': True,
+						'type': 'string'
+					},
+					'payload_example': {
+						'x-dual': True,
+						'type': 'object'
+					},
+					'corrected_payload': {},
+					'bounded': {
+						'type': 'boolean'
+					},
+					'query': {},
+					'wall_clock_budget_seconds': {},
+					'retry_sequence': {
+						'x-dual': True,
+						'type': 'array'
+					},
+					'file_pattern': {
+						'type': 'string'
+					},
+					'strategy_hint': {
+						'type': 'string'
+					},
+					'timeout_phase': {
+						'type': 'string'
+					},
+					'timeout_phase_unknown_reason': {
+						'type': 'string'
+					},
+					'input_files_read': {
+						'type': 'integer'
+					},
+					'input_bytes_read': {
+						'type': 'integer'
+					},
+					'results': {
+						'type': 'array',
+						'items': {
+							'type': 'object',
+							'properties': {
+								'file': {
+									'type': 'string'
+								},
+								'line': {
+									'type': 'integer'
+								},
+								'match': {
+									'type': 'string'
+								},
+								'context_before': {
+									'type': 'string'
+								},
+								'context_after': {
+									'type': 'string'
+								},
+								'range_id': {
+									'type': 'string'
+								},
+								'body': {
+									'type': 'string'
+								}
+							}
+						}
+					},
+					'count': {
+						'type': 'integer'
+					},
+					'partial': {
+						'type': 'boolean'
+					},
+					'truncated_by_deadline': {
+						'type': 'boolean'
+					},
+					'partial_files_scanned': {
+						'type': 'integer'
+					},
+					'partial_files_total': {
+						'type': 'integer'
+					},
+					'partial_files_remaining': {
+						'type': 'integer'
+					},
+					'partial_checkpoint_age_ms': {
+						'type': 'integer'
+					},
+					'partial_hint': {
+						'type': 'string'
+					},
+					'input_budget_bytes': {
+						'type': 'integer'
+					},
+					'input_budget_records': {
+						'type': 'integer'
+					},
+					'tried_paths': {
+						'type': 'array'
+					},
+					'snapshot_root': {
+						'type': 'string'
+					},
+					'mode': {
+						'type': 'string'
+					},
+					'max_results': {
+						'type': 'integer'
+					},
+					'max_context_lines': {
+						'type': 'integer'
+					},
+					'snapshot_id': {
+						'anyOf': [
+							{
+								'type': 'string'
+							},
+							{
+								'type': 'null'
+							}
+						]
+					},
+					'ca_chain_hint': {
+						'type': 'string'
+					},
+					'ca_chain_next': {
+						'type': 'string'
+					},
+					'ca_hint': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'regex_deadline_floor_applied': {
+						'type': 'number'
+					},
+					'skipped_large_files': {},
+					'skipped_large_count': {},
+					'skipped_large_listed': {},
+					'skipped_large_hint': {},
+					'max_file_bytes': {},
+					'file_pattern_matched_files': {},
+					'indexed_files_scanned': {},
+					'inconclusive': {},
+					'tip': {},
+					'stale_index': {
+						'anyOf': [
+							{
+								'type': 'boolean'
+							},
+							{
+								'type': 'null'
+							}
+						]
+					},
+					'stale_index_reason': {},
+					'stale_index_error': {},
+					'stale_files_count': {},
+					'stale_index_scope': {},
+					'snapshot_missing_indexed_files': {},
+					'snapshot_missing_indexed_sample': {},
+					'stale_reconcile': {
+						'type': 'object'
+					},
+					'warning': {
+						'type': 'string'
+					},
+					'category': {
+						'type': 'string'
+					},
+					'drift': {
+						'type': 'object',
+						'properties': {
+							'ok': {
+								'type': 'boolean'
+							},
+							'added': {
+								'type': 'array'
+							},
+							'modified': {
+								'type': 'array',
+								'items': {
+									'type': 'string'
+								}
+							},
+							'deleted': {
+								'type': 'array'
+							}
+						}
+					},
+					'callers': {
+						'type': 'array',
+						'items': {
+							'type': 'object',
+							'properties': {
+								'file': {
+									'type': 'string'
+								},
+								'line': {
+									'type': 'integer'
+								},
+								'match': {
+									'type': 'string'
+								},
+								'range_id': {
+									'type': 'string'
+								}
+							}
+						}
+					},
+					'callers_count': {
+						'type': 'integer'
+					},
+					'usages': {
+						'type': 'array',
+						'items': {
+							'type': 'object',
+							'properties': {
+								'file': {
+									'type': 'string'
+								},
+								'line': {
+									'type': 'integer'
+								},
+								'match': {
+									'type': 'string'
+								},
+								'range_id': {
+									'type': 'string'
+								}
+							}
+						}
+					},
+					'usages_count': {
+						'type': 'integer'
+					},
+					'definition': {
+						'type': 'array',
+						'items': {
+							'type': 'object',
+							'properties': {
+								'file': {
+									'type': 'string'
+								},
+								'line': {
+									'type': 'integer'
+								},
+								'match': {
+									'type': 'string'
+								},
+								'range_id': {
+									'type': 'string'
+								},
+								'body': {
+									'type': 'string'
+								}
+							}
+						}
+					},
+					'include': {
+						'type': 'string'
+					},
+					'source': {},
+					'total_count': {},
+					'truncated': {},
+					'truncation_reason': {
+						'type': 'string'
+					},
+					'result_cap': {
+						'type': 'integer'
+					},
+					'impact_scope': {
+						'type': 'object'
+					},
+					'missing_fields': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'required_fields': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'write_performed': {
+						'type': 'boolean'
+					},
+					'applied': {
+						'type': 'boolean'
+					},
+					'path': {
+						'type': 'string'
+					},
+					'ca_next_tool': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'ca_guidance': {
+						'x-dual': True,
+						'type': 'object'
+					},
+					'phase': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'suggested_alternative_tool': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'normalization_applied': {
+						'type': 'array',
+						'items': {
+							'type': 'string'
+						},
+						'x-dual': True
+					},
+					'original_error_name': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'path_normalized': {
+						'x-dual': True
+					},
+					'project_path_resolution': {
+						'x-dual': True
+					},
+					'deprecated_fields': {
+						'type': 'array',
+						'x-dual': True
+					},
+					'canonical_replacements': {
+						'type': 'object',
+						'x-dual': True
+					},
+					'compatibility_applied': {
+						'type': 'boolean',
+						'x-dual': True
+					},
+					'removal_version': {
+						'type': 'string',
+						'x-dual': True
+					}
+				},
+				'required': [
+					'ok'
+				],
+				'x-audit': {
+					'status': 'audited',
+					'schema_sha256': '7f1a267c706cf5b1ddd670ef0d98122f38f22f08a8f07755b9450de9dd6001ea',
+					'depth_D': 3
+				}
+			},
 		},
 
 	},
@@ -681,7 +3077,7 @@ EXTRA_TOOL_SCHEMAS = [
 
 {"type": "function", "function": {"name": "get_task_checkpoint", "description": "Return the current compact active-task checkpoint for host reinsertion after tool batches or compaction. When include_owner_status=true, add safe diagnostic state for the server-owned owner claim without returning capabilities or hashes.", "parameters": {"type": "object", "properties": {"session_id": {"type": "string", "description": "Stable host conversation/session id"}, "include_owner_status": {"type": "boolean", "default": False, "description": "Include safe owner claim state, checkpoint freshness, and liveness limits; never returns opaque capabilities or hashes."}}, "required": ["session_id"]}}},
 
-{"type": "function", "function": {"name": "get_rule_core_text", "description": "Return the rendered CORE_RULE text plus runtime path metadata and a content hash. HTTP bootstrap is canonical; pass a stable agent_id so per-agent cache does not collide.", "parameters": {"type": "object", "properties": {"agent_id": {"type": "string", "default": "", "description": "Your own stable agent id. agents_registry.json is SOT and manage_agent(action='list') prints the live ids; never copy an id list into this description -- measured 2026-09-20 it listed 7 ids of which 3 (comc, ope, cozo) were not registry ids at all while 6 live ids were missing, and no drift check reads a description."}, "force": {"type": "boolean", "default": False, "description": "Force re-read when explicitly upgrading or verifying rules; otherwise omit."}}}}},
+{"type": "function", "function": {"name": "get_rule_core_text", "description": "Return the rendered CORE_RULE text plus runtime path metadata and a content hash. HTTP bootstrap is canonical; pass a stable agent_id so per-agent cache does not collide.", "parameters": {"type": "object", "properties": {"agent_id": {"type": "string", "default": "", "description": "Your own stable agent id. agents_registry.json is SOT and manage_agent(action='list') prints the live ids; never copy an id list into this description -- measured 2026-09-20 it listed 7 ids of which 3 (comc, ope, cozo) were not registry ids at all while 6 live ids were missing, and no drift check reads a description."}, "force": {"type": "boolean", "default": False, "description": "Force re-read when explicitly upgrading or verifying rules; otherwise omit."}}}, "returns": {'properties': {'agent_id': {'type': 'string'}, 'already_fetched': {'type': 'boolean'}, 'app_root': {'type': 'string'}, 'bootstrap_epoch': {'type': 'integer'}, 'bytes': {'type': 'integer'}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'core_rule_path': {'type': 'string'}, 'ctx_id': {'type': 'string'}, 'error': {'type': 'string'}, 'error_name': {'type': 'string'}, 'hint': {'type': 'string'}, 'mtime_ns': {'type': 'integer'}, 'ok': {'type': 'boolean'}, 'orchestrator_dir': {'type': 'string'}, 'phase': {'type': 'string'}, 'reason': {'type': 'string'}, 'retryable': {'type': 'boolean'}, 'severity': {'type': 'string'}, 'sha256': {'type': 'string'}, 'start_script': {'type': 'string'}, 'text': {'type': 'string'}, 'text_omitted': {'type': 'boolean'}, 'text_omitted_reason': {'type': 'string'}, 'tool_purposes': {'type': 'object'}, 'tool_purposes_error': {'type': 'string'}, 'tool_purposes_note': {'type': 'string'}, 'type': {'type': 'string'}}, 'required': ['ok'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '0f28d8648ac8524a132109789aa73403e5a49180922d6725e70d7a95b40a1478', 'depth_D': 2}}}},
 
     {"type": "function", "function": {"name": "audit_tool_matrix", "description": "V15 R13 / R22 / E-04 — Cross-check TOOL_MAP / TOOL_SCHEMAS / TOOL_PHASES against skill SKILL.md trigger.tool, SKILLS.md router, harness *.md, and .ToolA_Skill/references/tool_surface_current.md. Returns drift list + summary + matrix_log_path. Auto-invoked by prepare_ca_session and open_session. R22 verbosity ∈ {full|terse|ref}: terse caps drift/alias_drift arrays at 3 + drops coverage/inventory_classification (~1500 tokens saved). Drift safety: auto-force full when drift_count>0 or progressive_gap_count>0. E-04: persist defaults False — a read call is pure read; pass persist=True to append the record to matrix_log.jsonl (auto-invocations from prepare_ca_session/open_session keep persist=True).", "parameters": {"type": "object", "properties": {"project_path": {"type": "string", "default": ""}, "include_coverage": {"type": "boolean", "default": False, "description": "Include per-tool coverage map (heavier response)"}, "verbosity": {"type": "string", "enum": ["full", "terse", "ref"], "default": "full", "description": "R22: terse caps arrays + drops coverage; ref drops all arrays."}, "persist": {"type": "boolean", "default": False, "description": "E-04: when True, append the audit record to .orchestrator_cache/matrix_log.jsonl. Default False makes this tool a pure read."}}, "required": []}}},
 
@@ -793,7 +3189,7 @@ EXTRA_TOOL_SCHEMAS = [
 
 	{"type": "function", "function": {"name": "get_project_summary", "description": "Quick INDEX overview: groups, hotspots, and entry points. Use this instead of reading INDEX.json manually.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}}, "required": ["project_path"]}}},
 
-	{"type": "function", "function": {"name": "query_index", "description": "Filter files from INDEX by group, complexity, LOC, fnmatch pattern, and optional text query (query MAY be empty). V15 R11: auto_refresh=true (default) silently refreshes INDEX inline when drift detected; response sets auto_refreshed=true so CA knows. Set auto_refresh=false to receive STALE_INDEX error instead. file_pattern uses fnmatch against both the file name and the full relative path (e.g. '*.py', '*service*', '*autocutter*', 'src/*.ts'). CAN-051 mutation_scope=derived_index: auto_refresh rewrites INDEX.json (derived state, not source).", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "query": {"type": "string", "default": "", "description": "Optional text query to filter files. Aliases: pattern, regex, q."}, "group": {"type": "string"}, "min_complexity": {"type": "integer"}, "min_loc": {"type": "integer"}, "file_pattern": {"type": "string", "description": "fnmatch pattern matched against basename or full relative path"}, "max_results": {"type": "integer", "default": 50}, "auto_refresh": {"type": "boolean", "default": True, "description": "When true and INDEX is stale, refresh inline then query."}}, "required": ["project_path"]}}},
+	{"type": "function", "function": {"name": "query_index", "description": "Filter files from INDEX by group, complexity, LOC, fnmatch pattern, and optional text query (query MAY be empty). V15 R11: auto_refresh=true (default) silently refreshes INDEX inline when drift detected; response sets auto_refreshed=true so CA knows. Set auto_refresh=false to receive STALE_INDEX error instead. file_pattern uses fnmatch against both the file name and the full relative path (e.g. '*.py', '*service*', '*autocutter*', 'src/*.ts'). CAN-051 mutation_scope=derived_index: auto_refresh rewrites INDEX.json (derived state, not source).", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "query": {"type": "string", "default": "", "description": "Optional text query to filter files. Aliases: pattern, regex, q."}, "group": {"type": "string"}, "min_complexity": {"type": "integer"}, "min_loc": {"type": "integer"}, "file_pattern": {"type": "string", "description": "fnmatch pattern matched against basename or full relative path"}, "max_results": {"type": "integer", "default": 50}, "auto_refresh": {"type": "boolean", "default": True, "description": "When true and INDEX is stale, refresh inline then query."}}, "required": ["project_path"]}, "returns": {'properties': {'auto_refreshed': {'type': 'boolean'}, 'ca_hint': {'type': 'string', 'x-dual': True}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'ca_next_tool': {'type': 'string', 'x-dual': True}, 'category': {'type': 'string'}, 'content_files_scanned': {'type': 'integer'}, 'drift': {'type': 'object'}, 'error': {'type': 'string'}, 'error_name': {'type': 'string'}, 'files': {'items': {'properties': {'complexity': {'type': 'integer'}, 'group': {'anyOf': [{'type': 'string'}, {'type': 'null'}]}, 'loc': {'type': 'integer'}, 'matched_symbols': {'items': {'type': 'string'}, 'type': 'array'}, 'matched_via': {'items': {'type': 'string'}, 'type': 'array'}, 'path': {'type': 'string'}}, 'required': ['path', 'group', 'loc', 'complexity'], 'type': 'object'}, 'type': 'array'}, 'hint': {'type': 'string'}, 'matched': {'type': 'integer'}, 'note': {'type': 'string'}, 'ok': {'type': 'boolean'}, 'query_scope': {'items': {'type': 'string'}, 'type': 'array'}, 'returned': {'type': 'integer'}, 'snapshot_id': {'anyOf': [{'type': 'string'}, {'type': 'null'}]}, 'total_files': {'type': 'integer'}, 'truncated': {'type': 'boolean'}}, 'required': ['ok', 'snapshot_id'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': 'ef3a776280b701d6af04782a04838ce5089b336173d51b8b8bf9bc773a1b7c41', 'depth_D': 4}}}},
 
 	{"type": "function", "function": {"name": "get_usage_stats", "description": "Read APP_SESSION_LOG.jsonl and SQLite session events for ONE project (project-scoped only). Commit E (S3-CONTRACT-01): project-scoped by default; project_path is required for scope='project'. scope='all' (cross-project global) is DEFERRED until orchestrator-token auth + audit lands and returns GLOBAL_SCOPE_NOT_ENABLED. E-01: include_global_usage and include_http_log are tombstoned escape hatches — they leaked process-global root/UI/HTTP data into project scope and now fail loud with GLOBAL_SCOPE_NOT_ENABLED on explicit use; they are no longer advertised in this schema.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string", "description": "Absolute project root path. Canonicalized before filtering; required for scope='project'."}, "scope": {"type": "string", "enum": ["project", "all"], "default": "project", "description": "'project' (default) scopes results to project_path. 'all' is deferred (GLOBAL_SCOPE_NOT_ENABLED) until auth+audit lands."}, "last_n": {"type": "integer", "default": 200}}, "required": ["project_path"]}}},
 

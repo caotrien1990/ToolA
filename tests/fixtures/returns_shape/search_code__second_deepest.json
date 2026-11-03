@@ -1,0 +1,364 @@
+{
+  "ok": true,
+  "results": [
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 4118,
+      "match": "_R101_FIELDS = contextvars.ContextVar(\"_r101_fields\", default=None)",
+      "context_before": "# success path and every _error_response return can filter without rewriting call sites.",
+      "context_after": "_R101_ALWAYS_KEEP = {\"ok\", \"error\", \"error_name\"}"
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 4119,
+      "match": "_R101_ALWAYS_KEEP = {\"ok\", \"error\", \"error_name\"}",
+      "context_before": "_R101_FIELDS = contextvars.ContextVar(\"_r101_fields\", default=None)",
+      "context_after": ""
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 4122,
+      "match": "def _r101_parse_fields(value) -> set:",
+      "context_before": "",
+      "context_after": "if value is None:"
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 4130,
+      "match": "def _r101_filter(payload, fields):",
+      "context_before": "",
+      "context_after": "if not fields or not isinstance(payload, dict):"
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 4133,
+      "match": "keep = set(fields) | _R101_ALWAYS_KEEP",
+      "context_before": "return payload",
+      "context_after": "out = {k: v for k, v in payload.items() if k in keep}"
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 4140,
+      "match": "# understood. Exclude _R101_ALWAYS_KEEP: those are force-kept by the",
+      "context_before": "# (ignored query param): report the drop, keep serving what was",
+      "context_after": "# filter, so their absence on a success payload is not a caller mistake."
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 4142,
+      "match": "unknown = sorted(set(fields) - set(payload) - _R101_ALWAYS_KEEP)",
+      "context_before": "# filter, so their absence on a success payload is not a caller mistake.",
+      "context_after": "if unknown:"
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 4231,
+      "match": "payload = _r101_filter(payload, _R101_FIELDS.get())",
+      "context_before": "}",
+      "context_after": "logger.warning(json.dumps({"
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 12626,
+      "match": "fields = _r101_parse_fields(",
+      "context_before": "payload[\"health_view\"] = \"verbose\"",
+      "context_after": "query.get(\"fields\") if query is not None and hasattr(query, \"get\") else None"
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 13090,
+      "match": "_r101_fields = _r101_parse_fields(getattr(request, \"query\", {}).get(\"fields\"))",
+      "context_before": "try:",
+      "context_after": "except Exception:"
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 13092,
+      "match": "_r101_fields = set()",
+      "context_before": "except Exception:",
+      "context_after": "_R101_FIELDS.set(_r101_fields or None)"
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 13093,
+      "match": "_R101_FIELDS.set(_r101_fields or None)",
+      "context_before": "_r101_fields = set()",
+      "context_after": ""
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 13532,
+      "match": "_r101_bf = _r101_parse_fields(body.pop(\"fields\", None))",
+      "context_before": "# UNSUPPORTED_FIELD; union with any HTTP ?fields= selector.",
+      "context_after": "if _r101_bf:"
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 13533,
+      "match": "if _r101_bf:",
+      "context_before": "_r101_bf = _r101_parse_fields(body.pop(\"fields\", None))",
+      "context_after": "_r101_fields = (_r101_fields or set()) | _r101_bf"
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 13534,
+      "match": "_r101_fields = (_r101_fields or set()) | _r101_bf",
+      "context_before": "if _r101_bf:",
+      "context_after": "_R101_FIELDS.set(_r101_fields or None)"
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 13535,
+      "match": "_R101_FIELDS.set(_r101_fields or None)",
+      "context_before": "_r101_fields = (_r101_fields or set()) | _r101_bf",
+      "context_after": ""
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 14172,
+      "match": "_result = _r101_filter(_result, _R101_FIELDS.get())",
+      "context_before": "_status = \"error\"",
+      "context_after": "return web.json_response(_result, status=422, headers=cors)"
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 14240,
+      "match": "_result = _r101_filter(_result, _R101_FIELDS.get())",
+      "context_before": "try:",
+      "context_after": "# CSLt 2026-07-16: refresh the task metadata AFTER the tool ran and stamp"
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 14323,
+      "match": "return web.json_response(_r101_filter(_result, _R101_FIELDS.get()), status=status_code, headers=response_headers)",
+      "context_before": "logger.warning(\"Tool '%s' admission rejected: %s\", tool_name, exc)",
+      "context_after": "except TypeError as exc:"
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 14368,
+      "match": "_result = _r101_filter(_contention, _R101_FIELDS.get())",
+      "context_before": "\"Tool '%s' hit session-store contention: %s\", tool_name, exc)",
+      "context_after": "return web.json_response(_result, status=503, headers=cors)"
+    },
+    {
+      "file": ".council/_r3_before/os_head.py",
+      "line": 14381,
+      "match": "_result = _r101_filter(_result, _R101_FIELDS.get())",
+      "context_before": "logger.error(f\"Tool '{tool_name}' error: {exc}\")",
+      "context_after": "return web.json_response(_result, status=500, headers=cors)"
+    },
+    {
+      "file": ".council/rooms/full_bug_scan_20260723/OPEC_R1_TOOLA_AUDIT.md",
+      "line": 319,
+      "match": "2. **R101 field filtering** (`orchestrator_server.py:8943-8949`): Progressive disclosure via `fields` parameter is cleanly implemented with HTTP query-string union and explicit `_R101_FIELDS` thread-local.",
+      "context_before": "1. **Session auto-open and backup workflow** (`orchestrator_server.py:9329-9342`): Auto-open session + backup_project before mutation is a well-designed safety net. Cleanly separates open-or-fail from auto-open.",
+      "context_after": "3. **CAN-050 deterministic duplicate retry blocking** (`orchestrator_server.py:9469-9476`): Prevents CA from hammering the same broken payload. Strong guard with scope-isolated retry keys."
+    },
+    {
+      "file": "CHANGELOG.md",
+      "line": 31,
+      "match": "`_R101_TOP_NAMESPACE = \"(top)\"`, referenced by the docstring, the hint (an f-string, so",
+      "context_before": "measured three times in one session before the cause was found. Fixed with one constant,",
+      "context_after": "it cannot drift) and all five existing asserts; a new test pins the LABEL itself, because"
+    },
+    {
+      "file": "CHANGELOG.md",
+      "line": 38,
+      "match": "**712 passed** across the 15 test files that touch `_r101_filter` / `fields_available`.",
+      "context_before": "rendered all **8** CA rule files (`persona_preserved:true` on every one).",
+      "context_after": ""
+    },
+    {
+      "file": "CHANGELOG.md",
+      "line": 279,
+      "match": "- The fix is one key on the success branch, with the semantics written down so it cannot later be overloaded: a search that **ran** is `ok:True`; \"found nothing\" is carried by `count`/`stale_index`, never by `ok`. Otherwise a clean zero-hit and a broken search become indistinguishable again one layer down. Pinned by `tests/test_search_ok_field_b018.py` (4 — two pin the fix, one asserts the rest of the success payload is untouched, one bounds it so adding the key never becomes \"always say ok\"). Mutation-verified: removing the line failed exactly 2. Adjacent suites clean: **77 passed / 1 xfailed** across the 13 `test_search_*` suites plus `test_r101_fields_unknown_a23p2`.",
+      "context_before": "- **B018** — `search_code` answered `ok:False` when it failed and answered **nothing** when it succeeded. Measured on the live daemon at gen `7d870da7e301`: `count=2` with no `ok` key, `count=0` with no `ok` key, and `ok:False` only on an empty query. Surveyed the same way, every other tool answers `ok` on both paths — `read_file_range`, `git_status`, `validate_file`, `list_sessions`, `cbm_graph_status`, `regex_search`. So the ordinary caller guard `if not resp.get(\"ok\")` read a **successful** search with real hits as a failure, because a missing key is falsy in exactly the same way `False` is. This is the *safe-looking* direction of the B012/F021/B017 family: nothing errors, no gate denies, the results are right there in the payload — the caller simply throws them away and goes looking for a bug that does not exist. It is the same wound A03 was written for, one field further out.",
+      "context_after": "- **The doctor earned itself in one line.** The B018 check was added to `scripts/live_answer_doctor.py` while the running daemon still held the old `search.py` in memory, and it FAILED immediately — `search_code answered count=3 with no ok field` — exit 1, 11 pass / 1 fail / 1 warn. The fix was on disk, the suite was green, and the live answer was still wrong. That is the entire reason the answers layer exists, demonstrated against the very defect that motivated it. 4 tests added to `test_live_answer_doctor.py` (now 27), including the bounding one: a `search_code` that says `ok:True` to *everything* must also FAIL, or the check would bless a fix that destroys the failure signal."
+    },
+    {
+      "file": "code_tools.py",
+      "line": 19971,
+      "match": "_R101_FIELDS_STAMPED = stamp_all_fields_parameters(TOOL_SCHEMAS)",
+      "context_before": "from orchestrator.core.fields_param import stamp_all_fields_parameters",
+      "context_after": "except Exception as _r101_exc:  # fail-open: boot must survive one malformed schema row"
+    },
+    {
+      "file": "code_tools.py",
+      "line": 19972,
+      "match": "except Exception as _r101_exc:  # fail-open: boot must survive one malformed schema row",
+      "context_before": "_R101_FIELDS_STAMPED = stamp_all_fields_parameters(TOOL_SCHEMAS)",
+      "context_after": "import logging as _logging_r101"
+    },
+    {
+      "file": "code_tools.py",
+      "line": 19974,
+      "match": "_logging_r101.warning(f\"R101 fields= declaration not stamped: {_r101_exc}\")",
+      "context_before": "import logging as _logging_r101",
+      "context_after": "_R101_FIELDS_STAMPED = 0"
+    },
+    {
+      "file": "code_tools.py",
+      "line": 19975,
+      "match": "_R101_FIELDS_STAMPED = 0",
+      "context_before": "_logging_r101.warning(f\"R101 fields= declaration not stamped: {_r101_exc}\")",
+      "context_after": ""
+    },
+    {
+      "file": "orchestrator/core/fields_param.py",
+      "line": 74,
+      "match": "R101_MARKER = \"x_r101_projection\"",
+      "context_before": "# without a hand-maintained list of exceptions.",
+      "context_after": ""
+    },
+    {
+      "file": "orchestrator/core/fields_param.py",
+      "line": 178,
+      "match": "``_r101_dispatch_result``), so what is still stamped late is only what a caller",
+      "context_before": "per-call envelope goes THROUGH the projection (orchestrator_server",
+      "context_after": "cannot know to ask for -- ``pushed_schema``, ``schema_rearmed``,"
+    },
+    {
+      "file": "orchestrator/core/params.py",
+      "line": 23,
+      "match": "(`orchestrator_server._r101_parse_fields`, `orchestrator.graph.tools._as_path_list`).",
+      "context_before": "The same coercion already existed twice in this tree before A34",
+      "context_after": "Those two keep their own copies -- neither is broken, and rewriting a working"
+    },
+    {
+      "file": "orchestrator/core/passive_chain.py",
+      "line": 36,
+      "match": "2. R101 `fields=` projection runs INSIDE the tool (the _R101_FIELDS contextvar is read",
+      "context_before": "passive hint on every tool of that shape. Presence is TRUTHINESS here.",
+      "context_after": "there), so the payload reaching the funnel is ALREADY projected. A key added afterwards"
+    },
+    {
+      "file": "orchestrator/server/mcp_stdio.py",
+      "line": 558,
+      "match": "``_r101_dispatch_result``; a fields= projection that does not name it leaves it",
+      "context_before": "The daemon stamps the response with its OWN ``generation`` (orchestrator_server",
+      "context_after": "out), so proxied blocks need no ``_mcp_guard_response`` wrapper: a stamp they"
+    },
+    {
+      "file": "orchestrator_server.py",
+      "line": 5470,
+      "match": "_R101_FIELDS = contextvars.ContextVar(\"_r101_fields\", default=None)",
+      "context_before": "# success path and every _error_response return can filter without rewriting call sites.",
+      "context_after": "# A43: the FULL dispatch answer, before fields= projection. dispatch_tool_call"
+    },
+    {
+      "file": "orchestrator_server.py",
+      "line": 5475,
+      "match": "# Set ONLY from _r101_dispatch_result, i.e. only for a real dispatch result:",
+      "context_before": "# projected call poisoned the cache for every later caller asking for other keys.",
+      "context_after": "# _error_response projects through _r101_filter too, and recording there would"
+    },
+    {
+      "file": "orchestrator_server.py",
+      "line": 5476,
+      "match": "# _error_response projects through _r101_filter too, and recording there would",
+      "context_before": "# Set ONLY from _r101_dispatch_result, i.e. only for a real dispatch result:",
+      "context_after": "# overwrite this with an error payload on paths that never reached the tool."
+    },
+    {
+      "file": "orchestrator_server.py",
+      "line": 5478,
+      "match": "_R101_DISPATCH_FULL = contextvars.ContextVar(\"_r101_dispatch_full\", default=None)",
+      "context_before": "# overwrite this with an error payload on paths that never reached the tool.",
+      "context_after": "# R101 (2026-09-24): the per-call envelope (generation, operation_*, task epoch,"
+    },
+    {
+      "file": "orchestrator_server.py",
+      "line": 5485,
+      "match": "# apart from _R101_SAFETY_KEEP on purpose: that rescue stamps RESPONSE_INCOMPLETE,",
+      "context_before": "# the note carries the count, so the bare counters are not rescued beside it. Kept",
+      "context_after": "# which here would be false and would invite the full re-call fields= was avoiding."
+    },
+    {
+      "file": "orchestrator_server.py",
+      "line": 5487,
+      "match": "_R101_ENVELOPE_WARNS = {  # key -> still_warns(value)",
+      "context_before": "# which here would be false and would invite the full re-call fields= was avoiding.",
+      "context_after": "\"likely_already_applied\": lambda v: v is True,"
+    },
+    {
+      "file": "orchestrator_server.py",
+      "line": 5495,
+      "match": "def _r101_dispatch_result(result, envelope=None):",
+      "context_before": "",
+      "context_after": "\"\"\"Project one dispatch result for the wire while remembering the full answer."
+    },
+    {
+      "file": "orchestrator_server.py",
+      "line": 5506,
+      "match": "fields = _R101_FIELDS.get()",
+      "context_before": "\"\"\"",
+      "context_after": "if not isinstance(result, dict):"
+    },
+    {
+      "file": "orchestrator_server.py",
+      "line": 5508,
+      "match": "return _r101_filter(result, fields)",
+      "context_before": "if not isinstance(result, dict):",
+      "context_after": "_R101_DISPATCH_FULL.set(result)"
+    },
+    {
+      "file": "orchestrator_server.py",
+      "line": 5509,
+      "match": "_R101_DISPATCH_FULL.set(result)",
+      "context_before": "return _r101_filter(result, fields)",
+      "context_after": "view = dict(result)"
+    },
+    {
+      "file": "orchestrator_server.py",
+      "line": 5513,
+      "match": "out = _r101_filter(view, fields)",
+      "context_before": "view.setdefault(key, value)",
+      "context_after": "if fields and isinstance(out, dict):"
+    },
+    {
+      "file": "orchestrator_server.py",
+      "line": 5515,
+      "match": "for key, warns in _R101_ENVELOPE_WARNS.items():",
+      "context_before": "if fields and isinstance(out, dict):",
+      "context_after": "if (key in (envelope or {}) and key not in result and key not in out"
+    },
+    {
+      "file": "orchestrator_server.py",
+      "line": 5522,
+      "match": "# sites that never carry identity. Same reason as _R101_FIELDS above: per-dispatch state",
+      "context_before": "# _dispatch_tool_call_request and read by _error_response, which is called from dozens of",
+      "context_after": "# without rewriting every call site. Default \"\" resolves to bootstrap ctx \"default\", so a"
+    },
+    {
+      "file": "orchestrator_server.py",
+      "line": 5528,
+      "match": "_R101_ALWAYS_KEEP = {\"ok\", \"error\", \"error_name\"}",
+      "context_before": "_A37_AGENT_CTX = ct._session_store_module._CALLER_AGENT_ID",
+      "context_after": "# ISS-14: keys a projection must never be able to hide, because dropping them"
+    },
+    {
+      "file": "orchestrator_server.py",
+      "line": 5544,
+      "match": "_R101_SAFETY_KEEP = {  # key -> (still_warns(value), what hiding it costs)",
+      "context_before": "# two-domain hint on every fields= read that held no digest and no relative path.",
+      "context_after": "\"hash_domain\": ("
+    },
+    {
+      "file": "orchestrator_server.py",
+      "line": 5558,
+      "match": "def _r101_rescued(value: dict, asked: set) -> list:",
+      "context_before": "",
+      "context_after": "\"\"\"Safety keys a projection of `value` would hide while their value still warns.\"\"\""
+    }
+  ],
+  "count": 50,
+  "mode": "regex",
+  "max_results": 50,
+  "max_context_lines": 1,
+  "bounded": true,
+  "snapshot_id": "v1-3576f1338e1c037eddf1ff6448292fd6011758069960fd8a6e2c1228b6609e4a",
+  "ca_chain_hint": "Regex on the full repo may time out. Narrow it with file_pattern='<the one filename you mean>' or path='<subdir>/'. A language-wide glob such as '*.py' is NOT a narrowing here.",
+  "ca_chain_next": "search_code with file_pattern or path",
+  "ca_hint": "read_file_range available for detailed view of matched files"
+}

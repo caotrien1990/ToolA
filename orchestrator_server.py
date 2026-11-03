@@ -949,6 +949,10 @@ def _persist_post_call_accounting(record: dict) -> None:
             client_gone=bool(record.get("client_gone", False)),
             error_name=str(record.get("error_name") or ""),
             agent_id=str(record.get("agent_id") or ""),
+            returns_shape_verdict=str(record.get("returns_shape_verdict") or ""),
+            returns_shape_errors=record.get("returns_shape_errors") or [],
+            accounting_id=str(record.get("accounting_id") or ""),
+            accounting_sequence=record.get("accounting_sequence"),
         )
         if usage_ok is False:
             raise RuntimeError("usage_jsonl_write_failed")
@@ -15141,6 +15145,7 @@ async def handle_tools(request):
         # stop assuming idempotence on mutation_scope='none' tools.
         out_fn["stateful"] = (_scope == "stateful")
         out_fn["requires_session"] = _requires_session(name)
+        out_fn.pop("returns", None)  # P16: served schemas never carry returns; the registry copy keeps it.
         schemas.append(out_schema)
     return web.json_response(
         schemas,
@@ -15174,6 +15179,7 @@ def _enriched_tool_schema(name: str):
         except Exception:
             out_fn["mutation_scope"] = "none"
         out_fn["requires_session"] = _requires_session(name)
+        out_fn.pop("returns", None)  # P16: served schemas never carry returns; the registry copy keeps it.
         return out_schema
     return None
 
@@ -15240,6 +15246,10 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
     except Exception:
         _r101_fields = set()
     _R101_FIELDS.set(_r101_fields or None)
+    # P16 (Q13): output-shape verdict locals; set at the verdict window below.
+    _rs_verdict = None
+    _rs_errors = None
+    _rs_raw_len = 0
 
     # ── Fix 1: localhost-only + Origin allowlist ──
     if not _is_local(request):
@@ -16562,8 +16572,14 @@ accepted_fields=sorted(accepted_fields),
             }
             _result["ca_guidance"] = _ca_guidance(tool_name, _result["error"], body, _result["error_name"])
             _status = "error"
+            _rs_verdict = "skipped/dispatcher_payload"
+            _rs_errors = []
             _result = _r101_dispatch_result(_result)
             return web.json_response(_result, status=422, headers=cors)
+        try:
+            _rs_raw_len = len(raw.encode("utf-8")) if isinstance(raw, str) else (len(raw) if isinstance(raw, (bytes, bytearray)) else 0)
+        except Exception:
+            _rs_raw_len = 0
         if isinstance(_result, dict) and _queue_wait_ms:
             _envelope["queue_wait_ms"] = _queue_wait_ms
         _status = "error" if _tool_result_failed(_result) else "ok"
@@ -16849,6 +16865,21 @@ accepted_fields=sorted(accepted_fields),
             ]
             if _mode_norm:
                 _result.setdefault("normalization_applied", _mode_norm)
+        # P16 (Q13): output-shape verdict window — AFTER every post-tool stamp,
+        # BEFORE the envelope/projection try below. Warn-only + fail-open: the
+        # verdict rides channel 2 (accounting) only; the answer is never altered.
+        try:
+            from orchestrator.core import returns_shape as _rs_mod
+            _rs_mod.append_window_journal(_request_op_id, tool_name)
+        except Exception:
+            pass  # journal is fail-open by design; its loss is reconciliation-visible
+        try:
+            from orchestrator.core import returns_shape as _rs_mod
+            _rs_v, _rs_r, _rs_m = _rs_mod.check_returns(tool_name, _result, _rs_raw_len)
+            _rs_verdict = f"skipped/{_rs_r}" if _rs_v == "skipped" else _rs_v
+            _rs_errors = list(_rs_m)
+        except Exception:
+            _rs_verdict, _rs_errors = "check_error", []
         # with ensure_ascii=False so CA sees raw UTF-8 text.
         try:
             # CSLt 2026-07-16: refresh the task metadata AFTER the tool ran and stamp
@@ -17293,6 +17324,10 @@ accepted_fields=sorted(accepted_fields),
                 # record, which is the single container `_persist_post_call_accounting`
                 # reads; do not re-derive agent_id from a nested compact again.
                 "agent_id": _task_agent_id or "",
+                # P16: shape verdict rides channel 2 (accounting) only; None for
+                # pre-window dispatches, and _persist drops Nones to empty.
+                "returns_shape_verdict": _rs_verdict,
+                "returns_shape_errors": _rs_errors,
             })
             if not _accounting_accepted:
                 logger.critical(
@@ -17686,6 +17721,7 @@ def _tool_schema_payload(name: str) -> tuple[dict, int]:
         except Exception:
             out_fn["mutation_scope"] = "none"
         out_fn["requires_session"] = _requires_session(name)
+        out_fn.pop("returns", None)  # P16: served schemas never carry returns; the registry copy keeps it.
         return {"ok": True, "tool": out_schema}, 200
     return {"ok": False, "error": f"No schema for '{name}'", "error_name": "SCHEMA_MISSING"}, 500
 

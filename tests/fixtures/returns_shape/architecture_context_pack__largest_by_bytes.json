@@ -1,0 +1,3407 @@
+{
+  "ok": false,
+  "graph_used": true,
+  "graph_degraded_reason": "one_or_more_graph_ranges_did_not_match_current_content",
+  "query": "",
+  "symbol": "depth_of",
+  "depth": 2,
+  "ranked_files": [
+    "tests/test_a45_returns_shape.py",
+    "orchestrator/core/returns_shape.py"
+  ],
+  "ranked_symbols": [
+    {
+      "id": "orchestrator/core/returns_shape.py:function:returns_shape.depth_of:217",
+      "kind": "function",
+      "name": "depth_of",
+      "qualified_name": "returns_shape.depth_of",
+      "file_path": "orchestrator/core/returns_shape.py",
+      "start_line": 217,
+      "end_line": 227
+    },
+    {
+      "id": "orchestrator/core/returns_shape.py:function:returns_shape.check_returns:339",
+      "kind": "function",
+      "name": "check_returns",
+      "qualified_name": "returns_shape.check_returns",
+      "file_path": "orchestrator/core/returns_shape.py",
+      "start_line": 339,
+      "end_line": 376
+    },
+    {
+      "id": "tests/test_a45_returns_shape.py:function:test_a45_returns_shape._nest:62",
+      "kind": "function",
+      "name": "_nest",
+      "qualified_name": "test_a45_returns_shape._nest",
+      "file_path": "tests/test_a45_returns_shape.py",
+      "start_line": 62,
+      "end_line": 67
+    },
+    {
+      "id": "orchestrator/core/returns_shape.py:function:returns_shape.resolve_returns:191",
+      "kind": "function",
+      "name": "resolve_returns",
+      "qualified_name": "returns_shape.resolve_returns",
+      "file_path": "orchestrator/core/returns_shape.py",
+      "start_line": 191,
+      "end_line": 210
+    },
+    {
+      "id": "orchestrator/core/returns_shape.py:function:returns_shape.schema_state:147",
+      "kind": "function",
+      "name": "schema_state",
+      "qualified_name": "returns_shape.schema_state",
+      "file_path": "orchestrator/core/returns_shape.py",
+      "start_line": 147,
+      "end_line": 175
+    },
+    {
+      "id": "orchestrator/core/returns_shape.py:function:returns_shape.count_nodes:230",
+      "kind": "function",
+      "name": "count_nodes",
+      "qualified_name": "returns_shape.count_nodes",
+      "file_path": "orchestrator/core/returns_shape.py",
+      "start_line": 230,
+      "end_line": 243
+    },
+    {
+      "id": "orchestrator/core/returns_shape.py:function:returns_shape.cap_for:178",
+      "kind": "function",
+      "name": "cap_for",
+      "qualified_name": "returns_shape.cap_for",
+      "file_path": "orchestrator/core/returns_shape.py",
+      "start_line": 178,
+      "end_line": 184
+    },
+    {
+      "id": "orchestrator/core/returns_shape.py:function:returns_shape._validate:278",
+      "kind": "function",
+      "name": "_validate",
+      "qualified_name": "returns_shape._validate",
+      "file_path": "orchestrator/core/returns_shape.py",
+      "start_line": 278,
+      "end_line": 332
+    },
+    {
+      "id": "tests/test_a45_returns_shape.py:method:test_a45_returns_shape.TestLeafVerdictLogic.test_disabled_tool_is_skipped_disabled:86",
+      "kind": "method",
+      "name": "test_disabled_tool_is_skipped_disabled",
+      "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_disabled_tool_is_skipped_disabled",
+      "file_path": "tests/test_a45_returns_shape.py",
+      "start_line": 86,
+      "end_line": 89
+    },
+    {
+      "id": "tests/test_a45_returns_shape.py:method:test_a45_returns_shape.TestLeafVerdictLogic.test_disabled_check_precedes_non_dict:91",
+      "kind": "method",
+      "name": "test_disabled_check_precedes_non_dict",
+      "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_disabled_check_precedes_non_dict",
+      "file_path": "tests/test_a45_returns_shape.py",
+      "start_line": 91,
+      "end_line": 94
+    },
+    {
+      "id": "tests/test_a45_returns_shape.py:method:test_a45_returns_shape.TestLeafVerdictLogic.test_non_dict_answer_is_skipped_non_dict:96",
+      "kind": "method",
+      "name": "test_non_dict_answer_is_skipped_non_dict",
+      "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_non_dict_answer_is_skipped_non_dict",
+      "file_path": "tests/test_a45_returns_shape.py",
+      "start_line": 96,
+      "end_line": 98
+    },
+    {
+      "id": "tests/test_a45_returns_shape.py:method:test_a45_returns_shape.TestLeafVerdictLogic.test_budget_error_name_is_dispatcher_payload:100",
+      "kind": "method",
+      "name": "test_budget_error_name_is_dispatcher_payload",
+      "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_budget_error_name_is_dispatcher_payload",
+      "file_path": "tests/test_a45_returns_shape.py",
+      "start_line": 100,
+      "end_line": 103
+    },
+    {
+      "id": "tests/test_a45_returns_shape.py:method:test_a45_returns_shape.TestLeafVerdictLogic.test_partial_plus_stopped_by_is_dispatcher_payload:105",
+      "kind": "method",
+      "name": "test_partial_plus_stopped_by_is_dispatcher_payload",
+      "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_partial_plus_stopped_by_is_dispatcher_payload",
+      "file_path": "tests/test_a45_returns_shape.py",
+      "start_line": 105,
+      "end_line": 108
+    },
+    {
+      "id": "tests/test_a45_returns_shape.py:method:test_a45_returns_shape.TestLeafVerdictLogic.test_partial_without_stopped_by_falls_through:110",
+      "kind": "method",
+      "name": "test_partial_without_stopped_by_falls_through",
+      "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_partial_without_stopped_by_falls_through",
+      "file_path": "tests/test_a45_returns_shape.py",
+      "start_line": 110,
+      "end_line": 114
+    },
+    {
+      "id": "tests/test_a45_returns_shape.py:method:test_a45_returns_shape.TestLeafVerdictLogic.test_tool_with_no_returns_is_skipped_no_schema:116",
+      "kind": "method",
+      "name": "test_tool_with_no_returns_is_skipped_no_schema",
+      "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_tool_with_no_returns_is_skipped_no_schema",
+      "file_path": "tests/test_a45_returns_shape.py",
+      "start_line": 116,
+      "end_line": 119
+    },
+    {
+      "id": "tests/test_a45_returns_shape.py:method:test_a45_returns_shape.TestLeafVerdictLogic.test_sha_mismatched_block_is_skipped_schema_invalid:121",
+      "kind": "method",
+      "name": "test_sha_mismatched_block_is_skipped_schema_invalid",
+      "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_sha_mismatched_block_is_skipped_schema_invalid",
+      "file_path": "tests/test_a45_returns_shape.py",
+      "start_line": 121,
+      "end_line": 126
+    },
+    {
+      "id": "tests/test_a45_returns_shape.py:method:test_a45_returns_shape.TestLeafVerdictLogic.test_raw_len_over_cap_is_skipped_too_large:128",
+      "kind": "method",
+      "name": "test_raw_len_over_cap_is_skipped_too_large",
+      "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_raw_len_over_cap_is_skipped_too_large",
+      "file_path": "tests/test_a45_returns_shape.py",
+      "start_line": 128,
+      "end_line": 131
+    },
+    {
+      "id": "tests/test_a45_returns_shape.py:method:test_a45_returns_shape.TestLeafVerdictLogic.test_node_budget_overflow_is_skipped_node_budget:133",
+      "kind": "method",
+      "name": "test_node_budget_overflow_is_skipped_node_budget",
+      "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_node_budget_overflow_is_skipped_node_budget",
+      "file_path": "tests/test_a45_returns_shape.py",
+      "start_line": 133,
+      "end_line": 137
+    },
+    {
+      "id": "tests/test_a45_returns_shape.py:method:test_a45_returns_shape.TestLeafVerdictLogic.test_deep_answer_vs_small_depth_d_is_skipped_depth:139",
+      "kind": "method",
+      "name": "test_deep_answer_vs_small_depth_d_is_skipped_depth",
+      "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_deep_answer_vs_small_depth_d_is_skipped_depth",
+      "file_path": "tests/test_a45_returns_shape.py",
+      "start_line": 139,
+      "end_line": 143
+    },
+    {
+      "id": "tests/test_a45_returns_shape.py:method:test_a45_returns_shape.TestLeafVerdictLogic.test_same_answer_vs_deepest_variant_depth_d_passes:145",
+      "kind": "method",
+      "name": "test_same_answer_vs_deepest_variant_depth_d_passes",
+      "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_same_answer_vs_deepest_variant_depth_d_passes",
+      "file_path": "tests/test_a45_returns_shape.py",
+      "start_line": 145,
+      "end_line": 148
+    }
+  ],
+  "items": [
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'returns_shape.depth_of'",
+      "candidates": [
+        {
+          "name": "canonical_schema_sha",
+          "qualified_name": "canonical_schema_sha",
+          "kind": "function",
+          "start_line": 66,
+          "end_line": 78
+        },
+        {
+          "name": "_canonical_bytes",
+          "qualified_name": "_canonical_bytes",
+          "kind": "function",
+          "start_line": 81,
+          "end_line": 88
+        },
+        {
+          "name": "_subschemas",
+          "qualified_name": "_subschemas",
+          "kind": "function",
+          "start_line": 91,
+          "end_line": 106
+        },
+        {
+          "name": "_count_properties",
+          "qualified_name": "_count_properties",
+          "kind": "function",
+          "start_line": 109,
+          "end_line": 117
+        },
+        {
+          "name": "_schema_depth",
+          "qualified_name": "_schema_depth",
+          "kind": "function",
+          "start_line": 120,
+          "end_line": 124
+        },
+        {
+          "name": "_schema_keywords_ok",
+          "qualified_name": "_schema_keywords_ok",
+          "kind": "function",
+          "start_line": 127,
+          "end_line": 144
+        },
+        {
+          "name": "schema_state",
+          "qualified_name": "schema_state",
+          "kind": "function",
+          "start_line": 147,
+          "end_line": 175
+        },
+        {
+          "name": "cap_for",
+          "qualified_name": "cap_for",
+          "kind": "function",
+          "start_line": 178,
+          "end_line": 184
+        },
+        {
+          "name": "resolve_returns",
+          "qualified_name": "resolve_returns",
+          "kind": "function",
+          "start_line": 191,
+          "end_line": 210
+        },
+        {
+          "name": "depth_of",
+          "qualified_name": "depth_of",
+          "kind": "function",
+          "start_line": 217,
+          "end_line": 227
+        },
+        {
+          "name": "count_nodes",
+          "qualified_name": "count_nodes",
+          "kind": "function",
+          "start_line": 230,
+          "end_line": 243
+        },
+        {
+          "name": "_json_type",
+          "qualified_name": "_json_type",
+          "kind": "function",
+          "start_line": 250,
+          "end_line": 265
+        },
+        {
+          "name": "_type_matches",
+          "qualified_name": "_type_matches",
+          "kind": "function",
+          "start_line": 268,
+          "end_line": 271
+        },
+        {
+          "name": "_join",
+          "qualified_name": "_join",
+          "kind": "function",
+          "start_line": 274,
+          "end_line": 275
+        },
+        {
+          "name": "_validate",
+          "qualified_name": "_validate",
+          "kind": "function",
+          "start_line": 278,
+          "end_line": 332
+        },
+        {
+          "name": "check_returns",
+          "qualified_name": "check_returns",
+          "kind": "function",
+          "start_line": 339,
+          "end_line": 376
+        },
+        {
+          "name": "_rows_for_tool",
+          "qualified_name": "_rows_for_tool",
+          "kind": "function",
+          "start_line": 383,
+          "end_line": 388
+        },
+        {
+          "name": "verdict_counts",
+          "qualified_name": "verdict_counts",
+          "kind": "function",
+          "start_line": 391,
+          "end_line": 396
+        },
+        {
+          "name": "depth_skip_gate",
+          "qualified_name": "depth_skip_gate",
+          "kind": "function",
+          "start_line": 399,
+          "end_line": 409
+        },
+        {
+          "name": "read_usage_rows",
+          "qualified_name": "read_usage_rows",
+          "kind": "function",
+          "start_line": 412,
+          "end_line": 430
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\orchestrator\\core\\returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "a7ed96dac6d5e75b90bbd072a26c6ff81a2b776673e816638b725202e646d9ea",
+      "cache_hit": true,
+      "total_lines": 533,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 0
+    },
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'returns_shape.check_returns'",
+      "candidates": [
+        {
+          "name": "canonical_schema_sha",
+          "qualified_name": "canonical_schema_sha",
+          "kind": "function",
+          "start_line": 66,
+          "end_line": 78
+        },
+        {
+          "name": "_canonical_bytes",
+          "qualified_name": "_canonical_bytes",
+          "kind": "function",
+          "start_line": 81,
+          "end_line": 88
+        },
+        {
+          "name": "_subschemas",
+          "qualified_name": "_subschemas",
+          "kind": "function",
+          "start_line": 91,
+          "end_line": 106
+        },
+        {
+          "name": "_count_properties",
+          "qualified_name": "_count_properties",
+          "kind": "function",
+          "start_line": 109,
+          "end_line": 117
+        },
+        {
+          "name": "_schema_depth",
+          "qualified_name": "_schema_depth",
+          "kind": "function",
+          "start_line": 120,
+          "end_line": 124
+        },
+        {
+          "name": "_schema_keywords_ok",
+          "qualified_name": "_schema_keywords_ok",
+          "kind": "function",
+          "start_line": 127,
+          "end_line": 144
+        },
+        {
+          "name": "schema_state",
+          "qualified_name": "schema_state",
+          "kind": "function",
+          "start_line": 147,
+          "end_line": 175
+        },
+        {
+          "name": "cap_for",
+          "qualified_name": "cap_for",
+          "kind": "function",
+          "start_line": 178,
+          "end_line": 184
+        },
+        {
+          "name": "resolve_returns",
+          "qualified_name": "resolve_returns",
+          "kind": "function",
+          "start_line": 191,
+          "end_line": 210
+        },
+        {
+          "name": "depth_of",
+          "qualified_name": "depth_of",
+          "kind": "function",
+          "start_line": 217,
+          "end_line": 227
+        },
+        {
+          "name": "count_nodes",
+          "qualified_name": "count_nodes",
+          "kind": "function",
+          "start_line": 230,
+          "end_line": 243
+        },
+        {
+          "name": "_json_type",
+          "qualified_name": "_json_type",
+          "kind": "function",
+          "start_line": 250,
+          "end_line": 265
+        },
+        {
+          "name": "_type_matches",
+          "qualified_name": "_type_matches",
+          "kind": "function",
+          "start_line": 268,
+          "end_line": 271
+        },
+        {
+          "name": "_join",
+          "qualified_name": "_join",
+          "kind": "function",
+          "start_line": 274,
+          "end_line": 275
+        },
+        {
+          "name": "_validate",
+          "qualified_name": "_validate",
+          "kind": "function",
+          "start_line": 278,
+          "end_line": 332
+        },
+        {
+          "name": "check_returns",
+          "qualified_name": "check_returns",
+          "kind": "function",
+          "start_line": 339,
+          "end_line": 376
+        },
+        {
+          "name": "_rows_for_tool",
+          "qualified_name": "_rows_for_tool",
+          "kind": "function",
+          "start_line": 383,
+          "end_line": 388
+        },
+        {
+          "name": "verdict_counts",
+          "qualified_name": "verdict_counts",
+          "kind": "function",
+          "start_line": 391,
+          "end_line": 396
+        },
+        {
+          "name": "depth_skip_gate",
+          "qualified_name": "depth_skip_gate",
+          "kind": "function",
+          "start_line": 399,
+          "end_line": 409
+        },
+        {
+          "name": "read_usage_rows",
+          "qualified_name": "read_usage_rows",
+          "kind": "function",
+          "start_line": 412,
+          "end_line": 430
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\orchestrator\\core\\returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "a7ed96dac6d5e75b90bbd072a26c6ff81a2b776673e816638b725202e646d9ea",
+      "cache_hit": true,
+      "total_lines": 533,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 1
+    },
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'test_a45_returns_shape._nest'",
+      "candidates": [
+        {
+          "name": "_audited_block",
+          "qualified_name": "_audited_block",
+          "kind": "function",
+          "start_line": 43,
+          "end_line": 51
+        },
+        {
+          "name": "_schemas_for",
+          "qualified_name": "_schemas_for",
+          "kind": "function",
+          "start_line": 54,
+          "end_line": 59
+        },
+        {
+          "name": "_nest",
+          "qualified_name": "_nest",
+          "kind": "function",
+          "start_line": 62,
+          "end_line": 67
+        },
+        {
+          "name": "_rows",
+          "qualified_name": "_rows",
+          "kind": "function",
+          "start_line": 70,
+          "end_line": 71
+        },
+        {
+          "name": "install_schemas",
+          "qualified_name": "install_schemas",
+          "kind": "function",
+          "start_line": 74,
+          "end_line": 78
+        },
+        {
+          "name": "_install",
+          "qualified_name": "install_schemas._install",
+          "kind": "function",
+          "start_line": 76,
+          "end_line": 77
+        },
+        {
+          "name": "test_disabled_tool_is_skipped_disabled",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_tool_is_skipped_disabled",
+          "kind": "method",
+          "start_line": 86,
+          "end_line": 89
+        },
+        {
+          "name": "test_disabled_check_precedes_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_check_precedes_non_dict",
+          "kind": "method",
+          "start_line": 91,
+          "end_line": 94
+        },
+        {
+          "name": "test_non_dict_answer_is_skipped_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_non_dict_answer_is_skipped_non_dict",
+          "kind": "method",
+          "start_line": 96,
+          "end_line": 98
+        },
+        {
+          "name": "test_budget_error_name_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_budget_error_name_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 100,
+          "end_line": 103
+        },
+        {
+          "name": "test_partial_plus_stopped_by_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_plus_stopped_by_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 105,
+          "end_line": 108
+        },
+        {
+          "name": "test_partial_without_stopped_by_falls_through",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_without_stopped_by_falls_through",
+          "kind": "method",
+          "start_line": 110,
+          "end_line": 114
+        },
+        {
+          "name": "test_tool_with_no_returns_is_skipped_no_schema",
+          "qualified_name": "TestLeafVerdictLogic.test_tool_with_no_returns_is_skipped_no_schema",
+          "kind": "method",
+          "start_line": 116,
+          "end_line": 119
+        },
+        {
+          "name": "test_sha_mismatched_block_is_skipped_schema_invalid",
+          "qualified_name": "TestLeafVerdictLogic.test_sha_mismatched_block_is_skipped_schema_invalid",
+          "kind": "method",
+          "start_line": 121,
+          "end_line": 126
+        },
+        {
+          "name": "test_raw_len_over_cap_is_skipped_too_large",
+          "qualified_name": "TestLeafVerdictLogic.test_raw_len_over_cap_is_skipped_too_large",
+          "kind": "method",
+          "start_line": 128,
+          "end_line": 131
+        },
+        {
+          "name": "test_node_budget_overflow_is_skipped_node_budget",
+          "qualified_name": "TestLeafVerdictLogic.test_node_budget_overflow_is_skipped_node_budget",
+          "kind": "method",
+          "start_line": 133,
+          "end_line": 137
+        },
+        {
+          "name": "test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "qualified_name": "TestLeafVerdictLogic.test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "kind": "method",
+          "start_line": 139,
+          "end_line": 143
+        },
+        {
+          "name": "test_same_answer_vs_deepest_variant_depth_d_passes",
+          "qualified_name": "TestLeafVerdictLogic.test_same_answer_vs_deepest_variant_depth_d_passes",
+          "kind": "method",
+          "start_line": 145,
+          "end_line": 148
+        },
+        {
+          "name": "test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "qualified_name": "TestLeafVerdictLogic.test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "kind": "method",
+          "start_line": 150,
+          "end_line": 168
+        },
+        {
+          "name": "test_mismatch_cap_is_five",
+          "qualified_name": "TestLeafVerdictLogic.test_mismatch_cap_is_five",
+          "kind": "method",
+          "start_line": 170,
+          "end_line": 180
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\tests\\test_a45_returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "d6b155a80db622f4c3a176abc9f7f7cb6a21d9417bc6be77bad7582ac3f52b04",
+      "cache_hit": false,
+      "total_lines": 695,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 2
+    },
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'returns_shape.resolve_returns'",
+      "candidates": [
+        {
+          "name": "canonical_schema_sha",
+          "qualified_name": "canonical_schema_sha",
+          "kind": "function",
+          "start_line": 66,
+          "end_line": 78
+        },
+        {
+          "name": "_canonical_bytes",
+          "qualified_name": "_canonical_bytes",
+          "kind": "function",
+          "start_line": 81,
+          "end_line": 88
+        },
+        {
+          "name": "_subschemas",
+          "qualified_name": "_subschemas",
+          "kind": "function",
+          "start_line": 91,
+          "end_line": 106
+        },
+        {
+          "name": "_count_properties",
+          "qualified_name": "_count_properties",
+          "kind": "function",
+          "start_line": 109,
+          "end_line": 117
+        },
+        {
+          "name": "_schema_depth",
+          "qualified_name": "_schema_depth",
+          "kind": "function",
+          "start_line": 120,
+          "end_line": 124
+        },
+        {
+          "name": "_schema_keywords_ok",
+          "qualified_name": "_schema_keywords_ok",
+          "kind": "function",
+          "start_line": 127,
+          "end_line": 144
+        },
+        {
+          "name": "schema_state",
+          "qualified_name": "schema_state",
+          "kind": "function",
+          "start_line": 147,
+          "end_line": 175
+        },
+        {
+          "name": "cap_for",
+          "qualified_name": "cap_for",
+          "kind": "function",
+          "start_line": 178,
+          "end_line": 184
+        },
+        {
+          "name": "resolve_returns",
+          "qualified_name": "resolve_returns",
+          "kind": "function",
+          "start_line": 191,
+          "end_line": 210
+        },
+        {
+          "name": "depth_of",
+          "qualified_name": "depth_of",
+          "kind": "function",
+          "start_line": 217,
+          "end_line": 227
+        },
+        {
+          "name": "count_nodes",
+          "qualified_name": "count_nodes",
+          "kind": "function",
+          "start_line": 230,
+          "end_line": 243
+        },
+        {
+          "name": "_json_type",
+          "qualified_name": "_json_type",
+          "kind": "function",
+          "start_line": 250,
+          "end_line": 265
+        },
+        {
+          "name": "_type_matches",
+          "qualified_name": "_type_matches",
+          "kind": "function",
+          "start_line": 268,
+          "end_line": 271
+        },
+        {
+          "name": "_join",
+          "qualified_name": "_join",
+          "kind": "function",
+          "start_line": 274,
+          "end_line": 275
+        },
+        {
+          "name": "_validate",
+          "qualified_name": "_validate",
+          "kind": "function",
+          "start_line": 278,
+          "end_line": 332
+        },
+        {
+          "name": "check_returns",
+          "qualified_name": "check_returns",
+          "kind": "function",
+          "start_line": 339,
+          "end_line": 376
+        },
+        {
+          "name": "_rows_for_tool",
+          "qualified_name": "_rows_for_tool",
+          "kind": "function",
+          "start_line": 383,
+          "end_line": 388
+        },
+        {
+          "name": "verdict_counts",
+          "qualified_name": "verdict_counts",
+          "kind": "function",
+          "start_line": 391,
+          "end_line": 396
+        },
+        {
+          "name": "depth_skip_gate",
+          "qualified_name": "depth_skip_gate",
+          "kind": "function",
+          "start_line": 399,
+          "end_line": 409
+        },
+        {
+          "name": "read_usage_rows",
+          "qualified_name": "read_usage_rows",
+          "kind": "function",
+          "start_line": 412,
+          "end_line": 430
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\orchestrator\\core\\returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "a7ed96dac6d5e75b90bbd072a26c6ff81a2b776673e816638b725202e646d9ea",
+      "cache_hit": true,
+      "total_lines": 533,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 3
+    },
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'returns_shape.schema_state'",
+      "candidates": [
+        {
+          "name": "canonical_schema_sha",
+          "qualified_name": "canonical_schema_sha",
+          "kind": "function",
+          "start_line": 66,
+          "end_line": 78
+        },
+        {
+          "name": "_canonical_bytes",
+          "qualified_name": "_canonical_bytes",
+          "kind": "function",
+          "start_line": 81,
+          "end_line": 88
+        },
+        {
+          "name": "_subschemas",
+          "qualified_name": "_subschemas",
+          "kind": "function",
+          "start_line": 91,
+          "end_line": 106
+        },
+        {
+          "name": "_count_properties",
+          "qualified_name": "_count_properties",
+          "kind": "function",
+          "start_line": 109,
+          "end_line": 117
+        },
+        {
+          "name": "_schema_depth",
+          "qualified_name": "_schema_depth",
+          "kind": "function",
+          "start_line": 120,
+          "end_line": 124
+        },
+        {
+          "name": "_schema_keywords_ok",
+          "qualified_name": "_schema_keywords_ok",
+          "kind": "function",
+          "start_line": 127,
+          "end_line": 144
+        },
+        {
+          "name": "schema_state",
+          "qualified_name": "schema_state",
+          "kind": "function",
+          "start_line": 147,
+          "end_line": 175
+        },
+        {
+          "name": "cap_for",
+          "qualified_name": "cap_for",
+          "kind": "function",
+          "start_line": 178,
+          "end_line": 184
+        },
+        {
+          "name": "resolve_returns",
+          "qualified_name": "resolve_returns",
+          "kind": "function",
+          "start_line": 191,
+          "end_line": 210
+        },
+        {
+          "name": "depth_of",
+          "qualified_name": "depth_of",
+          "kind": "function",
+          "start_line": 217,
+          "end_line": 227
+        },
+        {
+          "name": "count_nodes",
+          "qualified_name": "count_nodes",
+          "kind": "function",
+          "start_line": 230,
+          "end_line": 243
+        },
+        {
+          "name": "_json_type",
+          "qualified_name": "_json_type",
+          "kind": "function",
+          "start_line": 250,
+          "end_line": 265
+        },
+        {
+          "name": "_type_matches",
+          "qualified_name": "_type_matches",
+          "kind": "function",
+          "start_line": 268,
+          "end_line": 271
+        },
+        {
+          "name": "_join",
+          "qualified_name": "_join",
+          "kind": "function",
+          "start_line": 274,
+          "end_line": 275
+        },
+        {
+          "name": "_validate",
+          "qualified_name": "_validate",
+          "kind": "function",
+          "start_line": 278,
+          "end_line": 332
+        },
+        {
+          "name": "check_returns",
+          "qualified_name": "check_returns",
+          "kind": "function",
+          "start_line": 339,
+          "end_line": 376
+        },
+        {
+          "name": "_rows_for_tool",
+          "qualified_name": "_rows_for_tool",
+          "kind": "function",
+          "start_line": 383,
+          "end_line": 388
+        },
+        {
+          "name": "verdict_counts",
+          "qualified_name": "verdict_counts",
+          "kind": "function",
+          "start_line": 391,
+          "end_line": 396
+        },
+        {
+          "name": "depth_skip_gate",
+          "qualified_name": "depth_skip_gate",
+          "kind": "function",
+          "start_line": 399,
+          "end_line": 409
+        },
+        {
+          "name": "read_usage_rows",
+          "qualified_name": "read_usage_rows",
+          "kind": "function",
+          "start_line": 412,
+          "end_line": 430
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\orchestrator\\core\\returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "a7ed96dac6d5e75b90bbd072a26c6ff81a2b776673e816638b725202e646d9ea",
+      "cache_hit": true,
+      "total_lines": 533,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 4
+    },
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'returns_shape.count_nodes'",
+      "candidates": [
+        {
+          "name": "canonical_schema_sha",
+          "qualified_name": "canonical_schema_sha",
+          "kind": "function",
+          "start_line": 66,
+          "end_line": 78
+        },
+        {
+          "name": "_canonical_bytes",
+          "qualified_name": "_canonical_bytes",
+          "kind": "function",
+          "start_line": 81,
+          "end_line": 88
+        },
+        {
+          "name": "_subschemas",
+          "qualified_name": "_subschemas",
+          "kind": "function",
+          "start_line": 91,
+          "end_line": 106
+        },
+        {
+          "name": "_count_properties",
+          "qualified_name": "_count_properties",
+          "kind": "function",
+          "start_line": 109,
+          "end_line": 117
+        },
+        {
+          "name": "_schema_depth",
+          "qualified_name": "_schema_depth",
+          "kind": "function",
+          "start_line": 120,
+          "end_line": 124
+        },
+        {
+          "name": "_schema_keywords_ok",
+          "qualified_name": "_schema_keywords_ok",
+          "kind": "function",
+          "start_line": 127,
+          "end_line": 144
+        },
+        {
+          "name": "schema_state",
+          "qualified_name": "schema_state",
+          "kind": "function",
+          "start_line": 147,
+          "end_line": 175
+        },
+        {
+          "name": "cap_for",
+          "qualified_name": "cap_for",
+          "kind": "function",
+          "start_line": 178,
+          "end_line": 184
+        },
+        {
+          "name": "resolve_returns",
+          "qualified_name": "resolve_returns",
+          "kind": "function",
+          "start_line": 191,
+          "end_line": 210
+        },
+        {
+          "name": "depth_of",
+          "qualified_name": "depth_of",
+          "kind": "function",
+          "start_line": 217,
+          "end_line": 227
+        },
+        {
+          "name": "count_nodes",
+          "qualified_name": "count_nodes",
+          "kind": "function",
+          "start_line": 230,
+          "end_line": 243
+        },
+        {
+          "name": "_json_type",
+          "qualified_name": "_json_type",
+          "kind": "function",
+          "start_line": 250,
+          "end_line": 265
+        },
+        {
+          "name": "_type_matches",
+          "qualified_name": "_type_matches",
+          "kind": "function",
+          "start_line": 268,
+          "end_line": 271
+        },
+        {
+          "name": "_join",
+          "qualified_name": "_join",
+          "kind": "function",
+          "start_line": 274,
+          "end_line": 275
+        },
+        {
+          "name": "_validate",
+          "qualified_name": "_validate",
+          "kind": "function",
+          "start_line": 278,
+          "end_line": 332
+        },
+        {
+          "name": "check_returns",
+          "qualified_name": "check_returns",
+          "kind": "function",
+          "start_line": 339,
+          "end_line": 376
+        },
+        {
+          "name": "_rows_for_tool",
+          "qualified_name": "_rows_for_tool",
+          "kind": "function",
+          "start_line": 383,
+          "end_line": 388
+        },
+        {
+          "name": "verdict_counts",
+          "qualified_name": "verdict_counts",
+          "kind": "function",
+          "start_line": 391,
+          "end_line": 396
+        },
+        {
+          "name": "depth_skip_gate",
+          "qualified_name": "depth_skip_gate",
+          "kind": "function",
+          "start_line": 399,
+          "end_line": 409
+        },
+        {
+          "name": "read_usage_rows",
+          "qualified_name": "read_usage_rows",
+          "kind": "function",
+          "start_line": 412,
+          "end_line": 430
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\orchestrator\\core\\returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "a7ed96dac6d5e75b90bbd072a26c6ff81a2b776673e816638b725202e646d9ea",
+      "cache_hit": true,
+      "total_lines": 533,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 5
+    },
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'returns_shape.cap_for'",
+      "candidates": [
+        {
+          "name": "canonical_schema_sha",
+          "qualified_name": "canonical_schema_sha",
+          "kind": "function",
+          "start_line": 66,
+          "end_line": 78
+        },
+        {
+          "name": "_canonical_bytes",
+          "qualified_name": "_canonical_bytes",
+          "kind": "function",
+          "start_line": 81,
+          "end_line": 88
+        },
+        {
+          "name": "_subschemas",
+          "qualified_name": "_subschemas",
+          "kind": "function",
+          "start_line": 91,
+          "end_line": 106
+        },
+        {
+          "name": "_count_properties",
+          "qualified_name": "_count_properties",
+          "kind": "function",
+          "start_line": 109,
+          "end_line": 117
+        },
+        {
+          "name": "_schema_depth",
+          "qualified_name": "_schema_depth",
+          "kind": "function",
+          "start_line": 120,
+          "end_line": 124
+        },
+        {
+          "name": "_schema_keywords_ok",
+          "qualified_name": "_schema_keywords_ok",
+          "kind": "function",
+          "start_line": 127,
+          "end_line": 144
+        },
+        {
+          "name": "schema_state",
+          "qualified_name": "schema_state",
+          "kind": "function",
+          "start_line": 147,
+          "end_line": 175
+        },
+        {
+          "name": "cap_for",
+          "qualified_name": "cap_for",
+          "kind": "function",
+          "start_line": 178,
+          "end_line": 184
+        },
+        {
+          "name": "resolve_returns",
+          "qualified_name": "resolve_returns",
+          "kind": "function",
+          "start_line": 191,
+          "end_line": 210
+        },
+        {
+          "name": "depth_of",
+          "qualified_name": "depth_of",
+          "kind": "function",
+          "start_line": 217,
+          "end_line": 227
+        },
+        {
+          "name": "count_nodes",
+          "qualified_name": "count_nodes",
+          "kind": "function",
+          "start_line": 230,
+          "end_line": 243
+        },
+        {
+          "name": "_json_type",
+          "qualified_name": "_json_type",
+          "kind": "function",
+          "start_line": 250,
+          "end_line": 265
+        },
+        {
+          "name": "_type_matches",
+          "qualified_name": "_type_matches",
+          "kind": "function",
+          "start_line": 268,
+          "end_line": 271
+        },
+        {
+          "name": "_join",
+          "qualified_name": "_join",
+          "kind": "function",
+          "start_line": 274,
+          "end_line": 275
+        },
+        {
+          "name": "_validate",
+          "qualified_name": "_validate",
+          "kind": "function",
+          "start_line": 278,
+          "end_line": 332
+        },
+        {
+          "name": "check_returns",
+          "qualified_name": "check_returns",
+          "kind": "function",
+          "start_line": 339,
+          "end_line": 376
+        },
+        {
+          "name": "_rows_for_tool",
+          "qualified_name": "_rows_for_tool",
+          "kind": "function",
+          "start_line": 383,
+          "end_line": 388
+        },
+        {
+          "name": "verdict_counts",
+          "qualified_name": "verdict_counts",
+          "kind": "function",
+          "start_line": 391,
+          "end_line": 396
+        },
+        {
+          "name": "depth_skip_gate",
+          "qualified_name": "depth_skip_gate",
+          "kind": "function",
+          "start_line": 399,
+          "end_line": 409
+        },
+        {
+          "name": "read_usage_rows",
+          "qualified_name": "read_usage_rows",
+          "kind": "function",
+          "start_line": 412,
+          "end_line": 430
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\orchestrator\\core\\returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "a7ed96dac6d5e75b90bbd072a26c6ff81a2b776673e816638b725202e646d9ea",
+      "cache_hit": true,
+      "total_lines": 533,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 6
+    },
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'returns_shape._validate'",
+      "candidates": [
+        {
+          "name": "canonical_schema_sha",
+          "qualified_name": "canonical_schema_sha",
+          "kind": "function",
+          "start_line": 66,
+          "end_line": 78
+        },
+        {
+          "name": "_canonical_bytes",
+          "qualified_name": "_canonical_bytes",
+          "kind": "function",
+          "start_line": 81,
+          "end_line": 88
+        },
+        {
+          "name": "_subschemas",
+          "qualified_name": "_subschemas",
+          "kind": "function",
+          "start_line": 91,
+          "end_line": 106
+        },
+        {
+          "name": "_count_properties",
+          "qualified_name": "_count_properties",
+          "kind": "function",
+          "start_line": 109,
+          "end_line": 117
+        },
+        {
+          "name": "_schema_depth",
+          "qualified_name": "_schema_depth",
+          "kind": "function",
+          "start_line": 120,
+          "end_line": 124
+        },
+        {
+          "name": "_schema_keywords_ok",
+          "qualified_name": "_schema_keywords_ok",
+          "kind": "function",
+          "start_line": 127,
+          "end_line": 144
+        },
+        {
+          "name": "schema_state",
+          "qualified_name": "schema_state",
+          "kind": "function",
+          "start_line": 147,
+          "end_line": 175
+        },
+        {
+          "name": "cap_for",
+          "qualified_name": "cap_for",
+          "kind": "function",
+          "start_line": 178,
+          "end_line": 184
+        },
+        {
+          "name": "resolve_returns",
+          "qualified_name": "resolve_returns",
+          "kind": "function",
+          "start_line": 191,
+          "end_line": 210
+        },
+        {
+          "name": "depth_of",
+          "qualified_name": "depth_of",
+          "kind": "function",
+          "start_line": 217,
+          "end_line": 227
+        },
+        {
+          "name": "count_nodes",
+          "qualified_name": "count_nodes",
+          "kind": "function",
+          "start_line": 230,
+          "end_line": 243
+        },
+        {
+          "name": "_json_type",
+          "qualified_name": "_json_type",
+          "kind": "function",
+          "start_line": 250,
+          "end_line": 265
+        },
+        {
+          "name": "_type_matches",
+          "qualified_name": "_type_matches",
+          "kind": "function",
+          "start_line": 268,
+          "end_line": 271
+        },
+        {
+          "name": "_join",
+          "qualified_name": "_join",
+          "kind": "function",
+          "start_line": 274,
+          "end_line": 275
+        },
+        {
+          "name": "_validate",
+          "qualified_name": "_validate",
+          "kind": "function",
+          "start_line": 278,
+          "end_line": 332
+        },
+        {
+          "name": "check_returns",
+          "qualified_name": "check_returns",
+          "kind": "function",
+          "start_line": 339,
+          "end_line": 376
+        },
+        {
+          "name": "_rows_for_tool",
+          "qualified_name": "_rows_for_tool",
+          "kind": "function",
+          "start_line": 383,
+          "end_line": 388
+        },
+        {
+          "name": "verdict_counts",
+          "qualified_name": "verdict_counts",
+          "kind": "function",
+          "start_line": 391,
+          "end_line": 396
+        },
+        {
+          "name": "depth_skip_gate",
+          "qualified_name": "depth_skip_gate",
+          "kind": "function",
+          "start_line": 399,
+          "end_line": 409
+        },
+        {
+          "name": "read_usage_rows",
+          "qualified_name": "read_usage_rows",
+          "kind": "function",
+          "start_line": 412,
+          "end_line": 430
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\orchestrator\\core\\returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "a7ed96dac6d5e75b90bbd072a26c6ff81a2b776673e816638b725202e646d9ea",
+      "cache_hit": true,
+      "total_lines": 533,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 7
+    },
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'test_a45_returns_shape.TestLeafVerdictLogic.test_disabled_tool_is_skipped_disabled'",
+      "candidates": [
+        {
+          "name": "_audited_block",
+          "qualified_name": "_audited_block",
+          "kind": "function",
+          "start_line": 43,
+          "end_line": 51
+        },
+        {
+          "name": "_schemas_for",
+          "qualified_name": "_schemas_for",
+          "kind": "function",
+          "start_line": 54,
+          "end_line": 59
+        },
+        {
+          "name": "_nest",
+          "qualified_name": "_nest",
+          "kind": "function",
+          "start_line": 62,
+          "end_line": 67
+        },
+        {
+          "name": "_rows",
+          "qualified_name": "_rows",
+          "kind": "function",
+          "start_line": 70,
+          "end_line": 71
+        },
+        {
+          "name": "install_schemas",
+          "qualified_name": "install_schemas",
+          "kind": "function",
+          "start_line": 74,
+          "end_line": 78
+        },
+        {
+          "name": "_install",
+          "qualified_name": "install_schemas._install",
+          "kind": "function",
+          "start_line": 76,
+          "end_line": 77
+        },
+        {
+          "name": "test_disabled_tool_is_skipped_disabled",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_tool_is_skipped_disabled",
+          "kind": "method",
+          "start_line": 86,
+          "end_line": 89
+        },
+        {
+          "name": "test_disabled_check_precedes_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_check_precedes_non_dict",
+          "kind": "method",
+          "start_line": 91,
+          "end_line": 94
+        },
+        {
+          "name": "test_non_dict_answer_is_skipped_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_non_dict_answer_is_skipped_non_dict",
+          "kind": "method",
+          "start_line": 96,
+          "end_line": 98
+        },
+        {
+          "name": "test_budget_error_name_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_budget_error_name_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 100,
+          "end_line": 103
+        },
+        {
+          "name": "test_partial_plus_stopped_by_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_plus_stopped_by_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 105,
+          "end_line": 108
+        },
+        {
+          "name": "test_partial_without_stopped_by_falls_through",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_without_stopped_by_falls_through",
+          "kind": "method",
+          "start_line": 110,
+          "end_line": 114
+        },
+        {
+          "name": "test_tool_with_no_returns_is_skipped_no_schema",
+          "qualified_name": "TestLeafVerdictLogic.test_tool_with_no_returns_is_skipped_no_schema",
+          "kind": "method",
+          "start_line": 116,
+          "end_line": 119
+        },
+        {
+          "name": "test_sha_mismatched_block_is_skipped_schema_invalid",
+          "qualified_name": "TestLeafVerdictLogic.test_sha_mismatched_block_is_skipped_schema_invalid",
+          "kind": "method",
+          "start_line": 121,
+          "end_line": 126
+        },
+        {
+          "name": "test_raw_len_over_cap_is_skipped_too_large",
+          "qualified_name": "TestLeafVerdictLogic.test_raw_len_over_cap_is_skipped_too_large",
+          "kind": "method",
+          "start_line": 128,
+          "end_line": 131
+        },
+        {
+          "name": "test_node_budget_overflow_is_skipped_node_budget",
+          "qualified_name": "TestLeafVerdictLogic.test_node_budget_overflow_is_skipped_node_budget",
+          "kind": "method",
+          "start_line": 133,
+          "end_line": 137
+        },
+        {
+          "name": "test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "qualified_name": "TestLeafVerdictLogic.test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "kind": "method",
+          "start_line": 139,
+          "end_line": 143
+        },
+        {
+          "name": "test_same_answer_vs_deepest_variant_depth_d_passes",
+          "qualified_name": "TestLeafVerdictLogic.test_same_answer_vs_deepest_variant_depth_d_passes",
+          "kind": "method",
+          "start_line": 145,
+          "end_line": 148
+        },
+        {
+          "name": "test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "qualified_name": "TestLeafVerdictLogic.test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "kind": "method",
+          "start_line": 150,
+          "end_line": 168
+        },
+        {
+          "name": "test_mismatch_cap_is_five",
+          "qualified_name": "TestLeafVerdictLogic.test_mismatch_cap_is_five",
+          "kind": "method",
+          "start_line": 170,
+          "end_line": 180
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\tests\\test_a45_returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "d6b155a80db622f4c3a176abc9f7f7cb6a21d9417bc6be77bad7582ac3f52b04",
+      "cache_hit": true,
+      "total_lines": 695,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 8
+    },
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'test_a45_returns_shape.TestLeafVerdictLogic.test_disabled_check_precedes_non_dict'",
+      "candidates": [
+        {
+          "name": "_audited_block",
+          "qualified_name": "_audited_block",
+          "kind": "function",
+          "start_line": 43,
+          "end_line": 51
+        },
+        {
+          "name": "_schemas_for",
+          "qualified_name": "_schemas_for",
+          "kind": "function",
+          "start_line": 54,
+          "end_line": 59
+        },
+        {
+          "name": "_nest",
+          "qualified_name": "_nest",
+          "kind": "function",
+          "start_line": 62,
+          "end_line": 67
+        },
+        {
+          "name": "_rows",
+          "qualified_name": "_rows",
+          "kind": "function",
+          "start_line": 70,
+          "end_line": 71
+        },
+        {
+          "name": "install_schemas",
+          "qualified_name": "install_schemas",
+          "kind": "function",
+          "start_line": 74,
+          "end_line": 78
+        },
+        {
+          "name": "_install",
+          "qualified_name": "install_schemas._install",
+          "kind": "function",
+          "start_line": 76,
+          "end_line": 77
+        },
+        {
+          "name": "test_disabled_tool_is_skipped_disabled",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_tool_is_skipped_disabled",
+          "kind": "method",
+          "start_line": 86,
+          "end_line": 89
+        },
+        {
+          "name": "test_disabled_check_precedes_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_check_precedes_non_dict",
+          "kind": "method",
+          "start_line": 91,
+          "end_line": 94
+        },
+        {
+          "name": "test_non_dict_answer_is_skipped_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_non_dict_answer_is_skipped_non_dict",
+          "kind": "method",
+          "start_line": 96,
+          "end_line": 98
+        },
+        {
+          "name": "test_budget_error_name_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_budget_error_name_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 100,
+          "end_line": 103
+        },
+        {
+          "name": "test_partial_plus_stopped_by_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_plus_stopped_by_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 105,
+          "end_line": 108
+        },
+        {
+          "name": "test_partial_without_stopped_by_falls_through",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_without_stopped_by_falls_through",
+          "kind": "method",
+          "start_line": 110,
+          "end_line": 114
+        },
+        {
+          "name": "test_tool_with_no_returns_is_skipped_no_schema",
+          "qualified_name": "TestLeafVerdictLogic.test_tool_with_no_returns_is_skipped_no_schema",
+          "kind": "method",
+          "start_line": 116,
+          "end_line": 119
+        },
+        {
+          "name": "test_sha_mismatched_block_is_skipped_schema_invalid",
+          "qualified_name": "TestLeafVerdictLogic.test_sha_mismatched_block_is_skipped_schema_invalid",
+          "kind": "method",
+          "start_line": 121,
+          "end_line": 126
+        },
+        {
+          "name": "test_raw_len_over_cap_is_skipped_too_large",
+          "qualified_name": "TestLeafVerdictLogic.test_raw_len_over_cap_is_skipped_too_large",
+          "kind": "method",
+          "start_line": 128,
+          "end_line": 131
+        },
+        {
+          "name": "test_node_budget_overflow_is_skipped_node_budget",
+          "qualified_name": "TestLeafVerdictLogic.test_node_budget_overflow_is_skipped_node_budget",
+          "kind": "method",
+          "start_line": 133,
+          "end_line": 137
+        },
+        {
+          "name": "test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "qualified_name": "TestLeafVerdictLogic.test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "kind": "method",
+          "start_line": 139,
+          "end_line": 143
+        },
+        {
+          "name": "test_same_answer_vs_deepest_variant_depth_d_passes",
+          "qualified_name": "TestLeafVerdictLogic.test_same_answer_vs_deepest_variant_depth_d_passes",
+          "kind": "method",
+          "start_line": 145,
+          "end_line": 148
+        },
+        {
+          "name": "test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "qualified_name": "TestLeafVerdictLogic.test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "kind": "method",
+          "start_line": 150,
+          "end_line": 168
+        },
+        {
+          "name": "test_mismatch_cap_is_five",
+          "qualified_name": "TestLeafVerdictLogic.test_mismatch_cap_is_five",
+          "kind": "method",
+          "start_line": 170,
+          "end_line": 180
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\tests\\test_a45_returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "d6b155a80db622f4c3a176abc9f7f7cb6a21d9417bc6be77bad7582ac3f52b04",
+      "cache_hit": true,
+      "total_lines": 695,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 9
+    },
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'test_a45_returns_shape.TestLeafVerdictLogic.test_non_dict_answer_is_skipped_non_dict'",
+      "candidates": [
+        {
+          "name": "_audited_block",
+          "qualified_name": "_audited_block",
+          "kind": "function",
+          "start_line": 43,
+          "end_line": 51
+        },
+        {
+          "name": "_schemas_for",
+          "qualified_name": "_schemas_for",
+          "kind": "function",
+          "start_line": 54,
+          "end_line": 59
+        },
+        {
+          "name": "_nest",
+          "qualified_name": "_nest",
+          "kind": "function",
+          "start_line": 62,
+          "end_line": 67
+        },
+        {
+          "name": "_rows",
+          "qualified_name": "_rows",
+          "kind": "function",
+          "start_line": 70,
+          "end_line": 71
+        },
+        {
+          "name": "install_schemas",
+          "qualified_name": "install_schemas",
+          "kind": "function",
+          "start_line": 74,
+          "end_line": 78
+        },
+        {
+          "name": "_install",
+          "qualified_name": "install_schemas._install",
+          "kind": "function",
+          "start_line": 76,
+          "end_line": 77
+        },
+        {
+          "name": "test_disabled_tool_is_skipped_disabled",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_tool_is_skipped_disabled",
+          "kind": "method",
+          "start_line": 86,
+          "end_line": 89
+        },
+        {
+          "name": "test_disabled_check_precedes_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_check_precedes_non_dict",
+          "kind": "method",
+          "start_line": 91,
+          "end_line": 94
+        },
+        {
+          "name": "test_non_dict_answer_is_skipped_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_non_dict_answer_is_skipped_non_dict",
+          "kind": "method",
+          "start_line": 96,
+          "end_line": 98
+        },
+        {
+          "name": "test_budget_error_name_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_budget_error_name_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 100,
+          "end_line": 103
+        },
+        {
+          "name": "test_partial_plus_stopped_by_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_plus_stopped_by_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 105,
+          "end_line": 108
+        },
+        {
+          "name": "test_partial_without_stopped_by_falls_through",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_without_stopped_by_falls_through",
+          "kind": "method",
+          "start_line": 110,
+          "end_line": 114
+        },
+        {
+          "name": "test_tool_with_no_returns_is_skipped_no_schema",
+          "qualified_name": "TestLeafVerdictLogic.test_tool_with_no_returns_is_skipped_no_schema",
+          "kind": "method",
+          "start_line": 116,
+          "end_line": 119
+        },
+        {
+          "name": "test_sha_mismatched_block_is_skipped_schema_invalid",
+          "qualified_name": "TestLeafVerdictLogic.test_sha_mismatched_block_is_skipped_schema_invalid",
+          "kind": "method",
+          "start_line": 121,
+          "end_line": 126
+        },
+        {
+          "name": "test_raw_len_over_cap_is_skipped_too_large",
+          "qualified_name": "TestLeafVerdictLogic.test_raw_len_over_cap_is_skipped_too_large",
+          "kind": "method",
+          "start_line": 128,
+          "end_line": 131
+        },
+        {
+          "name": "test_node_budget_overflow_is_skipped_node_budget",
+          "qualified_name": "TestLeafVerdictLogic.test_node_budget_overflow_is_skipped_node_budget",
+          "kind": "method",
+          "start_line": 133,
+          "end_line": 137
+        },
+        {
+          "name": "test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "qualified_name": "TestLeafVerdictLogic.test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "kind": "method",
+          "start_line": 139,
+          "end_line": 143
+        },
+        {
+          "name": "test_same_answer_vs_deepest_variant_depth_d_passes",
+          "qualified_name": "TestLeafVerdictLogic.test_same_answer_vs_deepest_variant_depth_d_passes",
+          "kind": "method",
+          "start_line": 145,
+          "end_line": 148
+        },
+        {
+          "name": "test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "qualified_name": "TestLeafVerdictLogic.test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "kind": "method",
+          "start_line": 150,
+          "end_line": 168
+        },
+        {
+          "name": "test_mismatch_cap_is_five",
+          "qualified_name": "TestLeafVerdictLogic.test_mismatch_cap_is_five",
+          "kind": "method",
+          "start_line": 170,
+          "end_line": 180
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\tests\\test_a45_returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "d6b155a80db622f4c3a176abc9f7f7cb6a21d9417bc6be77bad7582ac3f52b04",
+      "cache_hit": true,
+      "total_lines": 695,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 10
+    },
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'test_a45_returns_shape.TestLeafVerdictLogic.test_budget_error_name_is_dispatcher_payload'",
+      "candidates": [
+        {
+          "name": "_audited_block",
+          "qualified_name": "_audited_block",
+          "kind": "function",
+          "start_line": 43,
+          "end_line": 51
+        },
+        {
+          "name": "_schemas_for",
+          "qualified_name": "_schemas_for",
+          "kind": "function",
+          "start_line": 54,
+          "end_line": 59
+        },
+        {
+          "name": "_nest",
+          "qualified_name": "_nest",
+          "kind": "function",
+          "start_line": 62,
+          "end_line": 67
+        },
+        {
+          "name": "_rows",
+          "qualified_name": "_rows",
+          "kind": "function",
+          "start_line": 70,
+          "end_line": 71
+        },
+        {
+          "name": "install_schemas",
+          "qualified_name": "install_schemas",
+          "kind": "function",
+          "start_line": 74,
+          "end_line": 78
+        },
+        {
+          "name": "_install",
+          "qualified_name": "install_schemas._install",
+          "kind": "function",
+          "start_line": 76,
+          "end_line": 77
+        },
+        {
+          "name": "test_disabled_tool_is_skipped_disabled",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_tool_is_skipped_disabled",
+          "kind": "method",
+          "start_line": 86,
+          "end_line": 89
+        },
+        {
+          "name": "test_disabled_check_precedes_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_check_precedes_non_dict",
+          "kind": "method",
+          "start_line": 91,
+          "end_line": 94
+        },
+        {
+          "name": "test_non_dict_answer_is_skipped_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_non_dict_answer_is_skipped_non_dict",
+          "kind": "method",
+          "start_line": 96,
+          "end_line": 98
+        },
+        {
+          "name": "test_budget_error_name_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_budget_error_name_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 100,
+          "end_line": 103
+        },
+        {
+          "name": "test_partial_plus_stopped_by_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_plus_stopped_by_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 105,
+          "end_line": 108
+        },
+        {
+          "name": "test_partial_without_stopped_by_falls_through",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_without_stopped_by_falls_through",
+          "kind": "method",
+          "start_line": 110,
+          "end_line": 114
+        },
+        {
+          "name": "test_tool_with_no_returns_is_skipped_no_schema",
+          "qualified_name": "TestLeafVerdictLogic.test_tool_with_no_returns_is_skipped_no_schema",
+          "kind": "method",
+          "start_line": 116,
+          "end_line": 119
+        },
+        {
+          "name": "test_sha_mismatched_block_is_skipped_schema_invalid",
+          "qualified_name": "TestLeafVerdictLogic.test_sha_mismatched_block_is_skipped_schema_invalid",
+          "kind": "method",
+          "start_line": 121,
+          "end_line": 126
+        },
+        {
+          "name": "test_raw_len_over_cap_is_skipped_too_large",
+          "qualified_name": "TestLeafVerdictLogic.test_raw_len_over_cap_is_skipped_too_large",
+          "kind": "method",
+          "start_line": 128,
+          "end_line": 131
+        },
+        {
+          "name": "test_node_budget_overflow_is_skipped_node_budget",
+          "qualified_name": "TestLeafVerdictLogic.test_node_budget_overflow_is_skipped_node_budget",
+          "kind": "method",
+          "start_line": 133,
+          "end_line": 137
+        },
+        {
+          "name": "test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "qualified_name": "TestLeafVerdictLogic.test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "kind": "method",
+          "start_line": 139,
+          "end_line": 143
+        },
+        {
+          "name": "test_same_answer_vs_deepest_variant_depth_d_passes",
+          "qualified_name": "TestLeafVerdictLogic.test_same_answer_vs_deepest_variant_depth_d_passes",
+          "kind": "method",
+          "start_line": 145,
+          "end_line": 148
+        },
+        {
+          "name": "test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "qualified_name": "TestLeafVerdictLogic.test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "kind": "method",
+          "start_line": 150,
+          "end_line": 168
+        },
+        {
+          "name": "test_mismatch_cap_is_five",
+          "qualified_name": "TestLeafVerdictLogic.test_mismatch_cap_is_five",
+          "kind": "method",
+          "start_line": 170,
+          "end_line": 180
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\tests\\test_a45_returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "d6b155a80db622f4c3a176abc9f7f7cb6a21d9417bc6be77bad7582ac3f52b04",
+      "cache_hit": true,
+      "total_lines": 695,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 11
+    },
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'test_a45_returns_shape.TestLeafVerdictLogic.test_partial_plus_stopped_by_is_dispatcher_payload'",
+      "candidates": [
+        {
+          "name": "_audited_block",
+          "qualified_name": "_audited_block",
+          "kind": "function",
+          "start_line": 43,
+          "end_line": 51
+        },
+        {
+          "name": "_schemas_for",
+          "qualified_name": "_schemas_for",
+          "kind": "function",
+          "start_line": 54,
+          "end_line": 59
+        },
+        {
+          "name": "_nest",
+          "qualified_name": "_nest",
+          "kind": "function",
+          "start_line": 62,
+          "end_line": 67
+        },
+        {
+          "name": "_rows",
+          "qualified_name": "_rows",
+          "kind": "function",
+          "start_line": 70,
+          "end_line": 71
+        },
+        {
+          "name": "install_schemas",
+          "qualified_name": "install_schemas",
+          "kind": "function",
+          "start_line": 74,
+          "end_line": 78
+        },
+        {
+          "name": "_install",
+          "qualified_name": "install_schemas._install",
+          "kind": "function",
+          "start_line": 76,
+          "end_line": 77
+        },
+        {
+          "name": "test_disabled_tool_is_skipped_disabled",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_tool_is_skipped_disabled",
+          "kind": "method",
+          "start_line": 86,
+          "end_line": 89
+        },
+        {
+          "name": "test_disabled_check_precedes_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_check_precedes_non_dict",
+          "kind": "method",
+          "start_line": 91,
+          "end_line": 94
+        },
+        {
+          "name": "test_non_dict_answer_is_skipped_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_non_dict_answer_is_skipped_non_dict",
+          "kind": "method",
+          "start_line": 96,
+          "end_line": 98
+        },
+        {
+          "name": "test_budget_error_name_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_budget_error_name_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 100,
+          "end_line": 103
+        },
+        {
+          "name": "test_partial_plus_stopped_by_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_plus_stopped_by_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 105,
+          "end_line": 108
+        },
+        {
+          "name": "test_partial_without_stopped_by_falls_through",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_without_stopped_by_falls_through",
+          "kind": "method",
+          "start_line": 110,
+          "end_line": 114
+        },
+        {
+          "name": "test_tool_with_no_returns_is_skipped_no_schema",
+          "qualified_name": "TestLeafVerdictLogic.test_tool_with_no_returns_is_skipped_no_schema",
+          "kind": "method",
+          "start_line": 116,
+          "end_line": 119
+        },
+        {
+          "name": "test_sha_mismatched_block_is_skipped_schema_invalid",
+          "qualified_name": "TestLeafVerdictLogic.test_sha_mismatched_block_is_skipped_schema_invalid",
+          "kind": "method",
+          "start_line": 121,
+          "end_line": 126
+        },
+        {
+          "name": "test_raw_len_over_cap_is_skipped_too_large",
+          "qualified_name": "TestLeafVerdictLogic.test_raw_len_over_cap_is_skipped_too_large",
+          "kind": "method",
+          "start_line": 128,
+          "end_line": 131
+        },
+        {
+          "name": "test_node_budget_overflow_is_skipped_node_budget",
+          "qualified_name": "TestLeafVerdictLogic.test_node_budget_overflow_is_skipped_node_budget",
+          "kind": "method",
+          "start_line": 133,
+          "end_line": 137
+        },
+        {
+          "name": "test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "qualified_name": "TestLeafVerdictLogic.test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "kind": "method",
+          "start_line": 139,
+          "end_line": 143
+        },
+        {
+          "name": "test_same_answer_vs_deepest_variant_depth_d_passes",
+          "qualified_name": "TestLeafVerdictLogic.test_same_answer_vs_deepest_variant_depth_d_passes",
+          "kind": "method",
+          "start_line": 145,
+          "end_line": 148
+        },
+        {
+          "name": "test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "qualified_name": "TestLeafVerdictLogic.test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "kind": "method",
+          "start_line": 150,
+          "end_line": 168
+        },
+        {
+          "name": "test_mismatch_cap_is_five",
+          "qualified_name": "TestLeafVerdictLogic.test_mismatch_cap_is_five",
+          "kind": "method",
+          "start_line": 170,
+          "end_line": 180
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\tests\\test_a45_returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "d6b155a80db622f4c3a176abc9f7f7cb6a21d9417bc6be77bad7582ac3f52b04",
+      "cache_hit": true,
+      "total_lines": 695,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 12
+    },
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'test_a45_returns_shape.TestLeafVerdictLogic.test_partial_without_stopped_by_falls_through'",
+      "candidates": [
+        {
+          "name": "_audited_block",
+          "qualified_name": "_audited_block",
+          "kind": "function",
+          "start_line": 43,
+          "end_line": 51
+        },
+        {
+          "name": "_schemas_for",
+          "qualified_name": "_schemas_for",
+          "kind": "function",
+          "start_line": 54,
+          "end_line": 59
+        },
+        {
+          "name": "_nest",
+          "qualified_name": "_nest",
+          "kind": "function",
+          "start_line": 62,
+          "end_line": 67
+        },
+        {
+          "name": "_rows",
+          "qualified_name": "_rows",
+          "kind": "function",
+          "start_line": 70,
+          "end_line": 71
+        },
+        {
+          "name": "install_schemas",
+          "qualified_name": "install_schemas",
+          "kind": "function",
+          "start_line": 74,
+          "end_line": 78
+        },
+        {
+          "name": "_install",
+          "qualified_name": "install_schemas._install",
+          "kind": "function",
+          "start_line": 76,
+          "end_line": 77
+        },
+        {
+          "name": "test_disabled_tool_is_skipped_disabled",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_tool_is_skipped_disabled",
+          "kind": "method",
+          "start_line": 86,
+          "end_line": 89
+        },
+        {
+          "name": "test_disabled_check_precedes_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_check_precedes_non_dict",
+          "kind": "method",
+          "start_line": 91,
+          "end_line": 94
+        },
+        {
+          "name": "test_non_dict_answer_is_skipped_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_non_dict_answer_is_skipped_non_dict",
+          "kind": "method",
+          "start_line": 96,
+          "end_line": 98
+        },
+        {
+          "name": "test_budget_error_name_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_budget_error_name_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 100,
+          "end_line": 103
+        },
+        {
+          "name": "test_partial_plus_stopped_by_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_plus_stopped_by_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 105,
+          "end_line": 108
+        },
+        {
+          "name": "test_partial_without_stopped_by_falls_through",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_without_stopped_by_falls_through",
+          "kind": "method",
+          "start_line": 110,
+          "end_line": 114
+        },
+        {
+          "name": "test_tool_with_no_returns_is_skipped_no_schema",
+          "qualified_name": "TestLeafVerdictLogic.test_tool_with_no_returns_is_skipped_no_schema",
+          "kind": "method",
+          "start_line": 116,
+          "end_line": 119
+        },
+        {
+          "name": "test_sha_mismatched_block_is_skipped_schema_invalid",
+          "qualified_name": "TestLeafVerdictLogic.test_sha_mismatched_block_is_skipped_schema_invalid",
+          "kind": "method",
+          "start_line": 121,
+          "end_line": 126
+        },
+        {
+          "name": "test_raw_len_over_cap_is_skipped_too_large",
+          "qualified_name": "TestLeafVerdictLogic.test_raw_len_over_cap_is_skipped_too_large",
+          "kind": "method",
+          "start_line": 128,
+          "end_line": 131
+        },
+        {
+          "name": "test_node_budget_overflow_is_skipped_node_budget",
+          "qualified_name": "TestLeafVerdictLogic.test_node_budget_overflow_is_skipped_node_budget",
+          "kind": "method",
+          "start_line": 133,
+          "end_line": 137
+        },
+        {
+          "name": "test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "qualified_name": "TestLeafVerdictLogic.test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "kind": "method",
+          "start_line": 139,
+          "end_line": 143
+        },
+        {
+          "name": "test_same_answer_vs_deepest_variant_depth_d_passes",
+          "qualified_name": "TestLeafVerdictLogic.test_same_answer_vs_deepest_variant_depth_d_passes",
+          "kind": "method",
+          "start_line": 145,
+          "end_line": 148
+        },
+        {
+          "name": "test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "qualified_name": "TestLeafVerdictLogic.test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "kind": "method",
+          "start_line": 150,
+          "end_line": 168
+        },
+        {
+          "name": "test_mismatch_cap_is_five",
+          "qualified_name": "TestLeafVerdictLogic.test_mismatch_cap_is_five",
+          "kind": "method",
+          "start_line": 170,
+          "end_line": 180
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\tests\\test_a45_returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "d6b155a80db622f4c3a176abc9f7f7cb6a21d9417bc6be77bad7582ac3f52b04",
+      "cache_hit": true,
+      "total_lines": 695,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 13
+    },
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'test_a45_returns_shape.TestLeafVerdictLogic.test_tool_with_no_returns_is_skipped_no_schema'",
+      "candidates": [
+        {
+          "name": "_audited_block",
+          "qualified_name": "_audited_block",
+          "kind": "function",
+          "start_line": 43,
+          "end_line": 51
+        },
+        {
+          "name": "_schemas_for",
+          "qualified_name": "_schemas_for",
+          "kind": "function",
+          "start_line": 54,
+          "end_line": 59
+        },
+        {
+          "name": "_nest",
+          "qualified_name": "_nest",
+          "kind": "function",
+          "start_line": 62,
+          "end_line": 67
+        },
+        {
+          "name": "_rows",
+          "qualified_name": "_rows",
+          "kind": "function",
+          "start_line": 70,
+          "end_line": 71
+        },
+        {
+          "name": "install_schemas",
+          "qualified_name": "install_schemas",
+          "kind": "function",
+          "start_line": 74,
+          "end_line": 78
+        },
+        {
+          "name": "_install",
+          "qualified_name": "install_schemas._install",
+          "kind": "function",
+          "start_line": 76,
+          "end_line": 77
+        },
+        {
+          "name": "test_disabled_tool_is_skipped_disabled",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_tool_is_skipped_disabled",
+          "kind": "method",
+          "start_line": 86,
+          "end_line": 89
+        },
+        {
+          "name": "test_disabled_check_precedes_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_check_precedes_non_dict",
+          "kind": "method",
+          "start_line": 91,
+          "end_line": 94
+        },
+        {
+          "name": "test_non_dict_answer_is_skipped_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_non_dict_answer_is_skipped_non_dict",
+          "kind": "method",
+          "start_line": 96,
+          "end_line": 98
+        },
+        {
+          "name": "test_budget_error_name_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_budget_error_name_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 100,
+          "end_line": 103
+        },
+        {
+          "name": "test_partial_plus_stopped_by_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_plus_stopped_by_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 105,
+          "end_line": 108
+        },
+        {
+          "name": "test_partial_without_stopped_by_falls_through",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_without_stopped_by_falls_through",
+          "kind": "method",
+          "start_line": 110,
+          "end_line": 114
+        },
+        {
+          "name": "test_tool_with_no_returns_is_skipped_no_schema",
+          "qualified_name": "TestLeafVerdictLogic.test_tool_with_no_returns_is_skipped_no_schema",
+          "kind": "method",
+          "start_line": 116,
+          "end_line": 119
+        },
+        {
+          "name": "test_sha_mismatched_block_is_skipped_schema_invalid",
+          "qualified_name": "TestLeafVerdictLogic.test_sha_mismatched_block_is_skipped_schema_invalid",
+          "kind": "method",
+          "start_line": 121,
+          "end_line": 126
+        },
+        {
+          "name": "test_raw_len_over_cap_is_skipped_too_large",
+          "qualified_name": "TestLeafVerdictLogic.test_raw_len_over_cap_is_skipped_too_large",
+          "kind": "method",
+          "start_line": 128,
+          "end_line": 131
+        },
+        {
+          "name": "test_node_budget_overflow_is_skipped_node_budget",
+          "qualified_name": "TestLeafVerdictLogic.test_node_budget_overflow_is_skipped_node_budget",
+          "kind": "method",
+          "start_line": 133,
+          "end_line": 137
+        },
+        {
+          "name": "test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "qualified_name": "TestLeafVerdictLogic.test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "kind": "method",
+          "start_line": 139,
+          "end_line": 143
+        },
+        {
+          "name": "test_same_answer_vs_deepest_variant_depth_d_passes",
+          "qualified_name": "TestLeafVerdictLogic.test_same_answer_vs_deepest_variant_depth_d_passes",
+          "kind": "method",
+          "start_line": 145,
+          "end_line": 148
+        },
+        {
+          "name": "test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "qualified_name": "TestLeafVerdictLogic.test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "kind": "method",
+          "start_line": 150,
+          "end_line": 168
+        },
+        {
+          "name": "test_mismatch_cap_is_five",
+          "qualified_name": "TestLeafVerdictLogic.test_mismatch_cap_is_five",
+          "kind": "method",
+          "start_line": 170,
+          "end_line": 180
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\tests\\test_a45_returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "d6b155a80db622f4c3a176abc9f7f7cb6a21d9417bc6be77bad7582ac3f52b04",
+      "cache_hit": true,
+      "total_lines": 695,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 14
+    },
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'test_a45_returns_shape.TestLeafVerdictLogic.test_sha_mismatched_block_is_skipped_schema_invalid'",
+      "candidates": [
+        {
+          "name": "_audited_block",
+          "qualified_name": "_audited_block",
+          "kind": "function",
+          "start_line": 43,
+          "end_line": 51
+        },
+        {
+          "name": "_schemas_for",
+          "qualified_name": "_schemas_for",
+          "kind": "function",
+          "start_line": 54,
+          "end_line": 59
+        },
+        {
+          "name": "_nest",
+          "qualified_name": "_nest",
+          "kind": "function",
+          "start_line": 62,
+          "end_line": 67
+        },
+        {
+          "name": "_rows",
+          "qualified_name": "_rows",
+          "kind": "function",
+          "start_line": 70,
+          "end_line": 71
+        },
+        {
+          "name": "install_schemas",
+          "qualified_name": "install_schemas",
+          "kind": "function",
+          "start_line": 74,
+          "end_line": 78
+        },
+        {
+          "name": "_install",
+          "qualified_name": "install_schemas._install",
+          "kind": "function",
+          "start_line": 76,
+          "end_line": 77
+        },
+        {
+          "name": "test_disabled_tool_is_skipped_disabled",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_tool_is_skipped_disabled",
+          "kind": "method",
+          "start_line": 86,
+          "end_line": 89
+        },
+        {
+          "name": "test_disabled_check_precedes_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_check_precedes_non_dict",
+          "kind": "method",
+          "start_line": 91,
+          "end_line": 94
+        },
+        {
+          "name": "test_non_dict_answer_is_skipped_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_non_dict_answer_is_skipped_non_dict",
+          "kind": "method",
+          "start_line": 96,
+          "end_line": 98
+        },
+        {
+          "name": "test_budget_error_name_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_budget_error_name_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 100,
+          "end_line": 103
+        },
+        {
+          "name": "test_partial_plus_stopped_by_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_plus_stopped_by_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 105,
+          "end_line": 108
+        },
+        {
+          "name": "test_partial_without_stopped_by_falls_through",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_without_stopped_by_falls_through",
+          "kind": "method",
+          "start_line": 110,
+          "end_line": 114
+        },
+        {
+          "name": "test_tool_with_no_returns_is_skipped_no_schema",
+          "qualified_name": "TestLeafVerdictLogic.test_tool_with_no_returns_is_skipped_no_schema",
+          "kind": "method",
+          "start_line": 116,
+          "end_line": 119
+        },
+        {
+          "name": "test_sha_mismatched_block_is_skipped_schema_invalid",
+          "qualified_name": "TestLeafVerdictLogic.test_sha_mismatched_block_is_skipped_schema_invalid",
+          "kind": "method",
+          "start_line": 121,
+          "end_line": 126
+        },
+        {
+          "name": "test_raw_len_over_cap_is_skipped_too_large",
+          "qualified_name": "TestLeafVerdictLogic.test_raw_len_over_cap_is_skipped_too_large",
+          "kind": "method",
+          "start_line": 128,
+          "end_line": 131
+        },
+        {
+          "name": "test_node_budget_overflow_is_skipped_node_budget",
+          "qualified_name": "TestLeafVerdictLogic.test_node_budget_overflow_is_skipped_node_budget",
+          "kind": "method",
+          "start_line": 133,
+          "end_line": 137
+        },
+        {
+          "name": "test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "qualified_name": "TestLeafVerdictLogic.test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "kind": "method",
+          "start_line": 139,
+          "end_line": 143
+        },
+        {
+          "name": "test_same_answer_vs_deepest_variant_depth_d_passes",
+          "qualified_name": "TestLeafVerdictLogic.test_same_answer_vs_deepest_variant_depth_d_passes",
+          "kind": "method",
+          "start_line": 145,
+          "end_line": 148
+        },
+        {
+          "name": "test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "qualified_name": "TestLeafVerdictLogic.test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "kind": "method",
+          "start_line": 150,
+          "end_line": 168
+        },
+        {
+          "name": "test_mismatch_cap_is_five",
+          "qualified_name": "TestLeafVerdictLogic.test_mismatch_cap_is_five",
+          "kind": "method",
+          "start_line": 170,
+          "end_line": 180
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\tests\\test_a45_returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "d6b155a80db622f4c3a176abc9f7f7cb6a21d9417bc6be77bad7582ac3f52b04",
+      "cache_hit": true,
+      "total_lines": 695,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 15
+    },
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'test_a45_returns_shape.TestLeafVerdictLogic.test_raw_len_over_cap_is_skipped_too_large'",
+      "candidates": [
+        {
+          "name": "_audited_block",
+          "qualified_name": "_audited_block",
+          "kind": "function",
+          "start_line": 43,
+          "end_line": 51
+        },
+        {
+          "name": "_schemas_for",
+          "qualified_name": "_schemas_for",
+          "kind": "function",
+          "start_line": 54,
+          "end_line": 59
+        },
+        {
+          "name": "_nest",
+          "qualified_name": "_nest",
+          "kind": "function",
+          "start_line": 62,
+          "end_line": 67
+        },
+        {
+          "name": "_rows",
+          "qualified_name": "_rows",
+          "kind": "function",
+          "start_line": 70,
+          "end_line": 71
+        },
+        {
+          "name": "install_schemas",
+          "qualified_name": "install_schemas",
+          "kind": "function",
+          "start_line": 74,
+          "end_line": 78
+        },
+        {
+          "name": "_install",
+          "qualified_name": "install_schemas._install",
+          "kind": "function",
+          "start_line": 76,
+          "end_line": 77
+        },
+        {
+          "name": "test_disabled_tool_is_skipped_disabled",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_tool_is_skipped_disabled",
+          "kind": "method",
+          "start_line": 86,
+          "end_line": 89
+        },
+        {
+          "name": "test_disabled_check_precedes_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_check_precedes_non_dict",
+          "kind": "method",
+          "start_line": 91,
+          "end_line": 94
+        },
+        {
+          "name": "test_non_dict_answer_is_skipped_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_non_dict_answer_is_skipped_non_dict",
+          "kind": "method",
+          "start_line": 96,
+          "end_line": 98
+        },
+        {
+          "name": "test_budget_error_name_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_budget_error_name_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 100,
+          "end_line": 103
+        },
+        {
+          "name": "test_partial_plus_stopped_by_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_plus_stopped_by_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 105,
+          "end_line": 108
+        },
+        {
+          "name": "test_partial_without_stopped_by_falls_through",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_without_stopped_by_falls_through",
+          "kind": "method",
+          "start_line": 110,
+          "end_line": 114
+        },
+        {
+          "name": "test_tool_with_no_returns_is_skipped_no_schema",
+          "qualified_name": "TestLeafVerdictLogic.test_tool_with_no_returns_is_skipped_no_schema",
+          "kind": "method",
+          "start_line": 116,
+          "end_line": 119
+        },
+        {
+          "name": "test_sha_mismatched_block_is_skipped_schema_invalid",
+          "qualified_name": "TestLeafVerdictLogic.test_sha_mismatched_block_is_skipped_schema_invalid",
+          "kind": "method",
+          "start_line": 121,
+          "end_line": 126
+        },
+        {
+          "name": "test_raw_len_over_cap_is_skipped_too_large",
+          "qualified_name": "TestLeafVerdictLogic.test_raw_len_over_cap_is_skipped_too_large",
+          "kind": "method",
+          "start_line": 128,
+          "end_line": 131
+        },
+        {
+          "name": "test_node_budget_overflow_is_skipped_node_budget",
+          "qualified_name": "TestLeafVerdictLogic.test_node_budget_overflow_is_skipped_node_budget",
+          "kind": "method",
+          "start_line": 133,
+          "end_line": 137
+        },
+        {
+          "name": "test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "qualified_name": "TestLeafVerdictLogic.test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "kind": "method",
+          "start_line": 139,
+          "end_line": 143
+        },
+        {
+          "name": "test_same_answer_vs_deepest_variant_depth_d_passes",
+          "qualified_name": "TestLeafVerdictLogic.test_same_answer_vs_deepest_variant_depth_d_passes",
+          "kind": "method",
+          "start_line": 145,
+          "end_line": 148
+        },
+        {
+          "name": "test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "qualified_name": "TestLeafVerdictLogic.test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "kind": "method",
+          "start_line": 150,
+          "end_line": 168
+        },
+        {
+          "name": "test_mismatch_cap_is_five",
+          "qualified_name": "TestLeafVerdictLogic.test_mismatch_cap_is_five",
+          "kind": "method",
+          "start_line": 170,
+          "end_line": 180
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\tests\\test_a45_returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "d6b155a80db622f4c3a176abc9f7f7cb6a21d9417bc6be77bad7582ac3f52b04",
+      "cache_hit": true,
+      "total_lines": 695,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 16
+    },
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'test_a45_returns_shape.TestLeafVerdictLogic.test_node_budget_overflow_is_skipped_node_budget'",
+      "candidates": [
+        {
+          "name": "_audited_block",
+          "qualified_name": "_audited_block",
+          "kind": "function",
+          "start_line": 43,
+          "end_line": 51
+        },
+        {
+          "name": "_schemas_for",
+          "qualified_name": "_schemas_for",
+          "kind": "function",
+          "start_line": 54,
+          "end_line": 59
+        },
+        {
+          "name": "_nest",
+          "qualified_name": "_nest",
+          "kind": "function",
+          "start_line": 62,
+          "end_line": 67
+        },
+        {
+          "name": "_rows",
+          "qualified_name": "_rows",
+          "kind": "function",
+          "start_line": 70,
+          "end_line": 71
+        },
+        {
+          "name": "install_schemas",
+          "qualified_name": "install_schemas",
+          "kind": "function",
+          "start_line": 74,
+          "end_line": 78
+        },
+        {
+          "name": "_install",
+          "qualified_name": "install_schemas._install",
+          "kind": "function",
+          "start_line": 76,
+          "end_line": 77
+        },
+        {
+          "name": "test_disabled_tool_is_skipped_disabled",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_tool_is_skipped_disabled",
+          "kind": "method",
+          "start_line": 86,
+          "end_line": 89
+        },
+        {
+          "name": "test_disabled_check_precedes_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_check_precedes_non_dict",
+          "kind": "method",
+          "start_line": 91,
+          "end_line": 94
+        },
+        {
+          "name": "test_non_dict_answer_is_skipped_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_non_dict_answer_is_skipped_non_dict",
+          "kind": "method",
+          "start_line": 96,
+          "end_line": 98
+        },
+        {
+          "name": "test_budget_error_name_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_budget_error_name_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 100,
+          "end_line": 103
+        },
+        {
+          "name": "test_partial_plus_stopped_by_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_plus_stopped_by_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 105,
+          "end_line": 108
+        },
+        {
+          "name": "test_partial_without_stopped_by_falls_through",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_without_stopped_by_falls_through",
+          "kind": "method",
+          "start_line": 110,
+          "end_line": 114
+        },
+        {
+          "name": "test_tool_with_no_returns_is_skipped_no_schema",
+          "qualified_name": "TestLeafVerdictLogic.test_tool_with_no_returns_is_skipped_no_schema",
+          "kind": "method",
+          "start_line": 116,
+          "end_line": 119
+        },
+        {
+          "name": "test_sha_mismatched_block_is_skipped_schema_invalid",
+          "qualified_name": "TestLeafVerdictLogic.test_sha_mismatched_block_is_skipped_schema_invalid",
+          "kind": "method",
+          "start_line": 121,
+          "end_line": 126
+        },
+        {
+          "name": "test_raw_len_over_cap_is_skipped_too_large",
+          "qualified_name": "TestLeafVerdictLogic.test_raw_len_over_cap_is_skipped_too_large",
+          "kind": "method",
+          "start_line": 128,
+          "end_line": 131
+        },
+        {
+          "name": "test_node_budget_overflow_is_skipped_node_budget",
+          "qualified_name": "TestLeafVerdictLogic.test_node_budget_overflow_is_skipped_node_budget",
+          "kind": "method",
+          "start_line": 133,
+          "end_line": 137
+        },
+        {
+          "name": "test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "qualified_name": "TestLeafVerdictLogic.test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "kind": "method",
+          "start_line": 139,
+          "end_line": 143
+        },
+        {
+          "name": "test_same_answer_vs_deepest_variant_depth_d_passes",
+          "qualified_name": "TestLeafVerdictLogic.test_same_answer_vs_deepest_variant_depth_d_passes",
+          "kind": "method",
+          "start_line": 145,
+          "end_line": 148
+        },
+        {
+          "name": "test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "qualified_name": "TestLeafVerdictLogic.test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "kind": "method",
+          "start_line": 150,
+          "end_line": 168
+        },
+        {
+          "name": "test_mismatch_cap_is_five",
+          "qualified_name": "TestLeafVerdictLogic.test_mismatch_cap_is_five",
+          "kind": "method",
+          "start_line": 170,
+          "end_line": 180
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\tests\\test_a45_returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "d6b155a80db622f4c3a176abc9f7f7cb6a21d9417bc6be77bad7582ac3f52b04",
+      "cache_hit": true,
+      "total_lines": 695,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 17
+    },
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'test_a45_returns_shape.TestLeafVerdictLogic.test_deep_answer_vs_small_depth_d_is_skipped_depth'",
+      "candidates": [
+        {
+          "name": "_audited_block",
+          "qualified_name": "_audited_block",
+          "kind": "function",
+          "start_line": 43,
+          "end_line": 51
+        },
+        {
+          "name": "_schemas_for",
+          "qualified_name": "_schemas_for",
+          "kind": "function",
+          "start_line": 54,
+          "end_line": 59
+        },
+        {
+          "name": "_nest",
+          "qualified_name": "_nest",
+          "kind": "function",
+          "start_line": 62,
+          "end_line": 67
+        },
+        {
+          "name": "_rows",
+          "qualified_name": "_rows",
+          "kind": "function",
+          "start_line": 70,
+          "end_line": 71
+        },
+        {
+          "name": "install_schemas",
+          "qualified_name": "install_schemas",
+          "kind": "function",
+          "start_line": 74,
+          "end_line": 78
+        },
+        {
+          "name": "_install",
+          "qualified_name": "install_schemas._install",
+          "kind": "function",
+          "start_line": 76,
+          "end_line": 77
+        },
+        {
+          "name": "test_disabled_tool_is_skipped_disabled",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_tool_is_skipped_disabled",
+          "kind": "method",
+          "start_line": 86,
+          "end_line": 89
+        },
+        {
+          "name": "test_disabled_check_precedes_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_check_precedes_non_dict",
+          "kind": "method",
+          "start_line": 91,
+          "end_line": 94
+        },
+        {
+          "name": "test_non_dict_answer_is_skipped_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_non_dict_answer_is_skipped_non_dict",
+          "kind": "method",
+          "start_line": 96,
+          "end_line": 98
+        },
+        {
+          "name": "test_budget_error_name_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_budget_error_name_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 100,
+          "end_line": 103
+        },
+        {
+          "name": "test_partial_plus_stopped_by_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_plus_stopped_by_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 105,
+          "end_line": 108
+        },
+        {
+          "name": "test_partial_without_stopped_by_falls_through",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_without_stopped_by_falls_through",
+          "kind": "method",
+          "start_line": 110,
+          "end_line": 114
+        },
+        {
+          "name": "test_tool_with_no_returns_is_skipped_no_schema",
+          "qualified_name": "TestLeafVerdictLogic.test_tool_with_no_returns_is_skipped_no_schema",
+          "kind": "method",
+          "start_line": 116,
+          "end_line": 119
+        },
+        {
+          "name": "test_sha_mismatched_block_is_skipped_schema_invalid",
+          "qualified_name": "TestLeafVerdictLogic.test_sha_mismatched_block_is_skipped_schema_invalid",
+          "kind": "method",
+          "start_line": 121,
+          "end_line": 126
+        },
+        {
+          "name": "test_raw_len_over_cap_is_skipped_too_large",
+          "qualified_name": "TestLeafVerdictLogic.test_raw_len_over_cap_is_skipped_too_large",
+          "kind": "method",
+          "start_line": 128,
+          "end_line": 131
+        },
+        {
+          "name": "test_node_budget_overflow_is_skipped_node_budget",
+          "qualified_name": "TestLeafVerdictLogic.test_node_budget_overflow_is_skipped_node_budget",
+          "kind": "method",
+          "start_line": 133,
+          "end_line": 137
+        },
+        {
+          "name": "test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "qualified_name": "TestLeafVerdictLogic.test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "kind": "method",
+          "start_line": 139,
+          "end_line": 143
+        },
+        {
+          "name": "test_same_answer_vs_deepest_variant_depth_d_passes",
+          "qualified_name": "TestLeafVerdictLogic.test_same_answer_vs_deepest_variant_depth_d_passes",
+          "kind": "method",
+          "start_line": 145,
+          "end_line": 148
+        },
+        {
+          "name": "test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "qualified_name": "TestLeafVerdictLogic.test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "kind": "method",
+          "start_line": 150,
+          "end_line": 168
+        },
+        {
+          "name": "test_mismatch_cap_is_five",
+          "qualified_name": "TestLeafVerdictLogic.test_mismatch_cap_is_five",
+          "kind": "method",
+          "start_line": 170,
+          "end_line": 180
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\tests\\test_a45_returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "d6b155a80db622f4c3a176abc9f7f7cb6a21d9417bc6be77bad7582ac3f52b04",
+      "cache_hit": true,
+      "total_lines": 695,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 18
+    },
+    {
+      "ok": false,
+      "error_name": "SYMBOL_NOT_FOUND",
+      "error": "No function matched 'test_a45_returns_shape.TestLeafVerdictLogic.test_same_answer_vs_deepest_variant_depth_d_passes'",
+      "candidates": [
+        {
+          "name": "_audited_block",
+          "qualified_name": "_audited_block",
+          "kind": "function",
+          "start_line": 43,
+          "end_line": 51
+        },
+        {
+          "name": "_schemas_for",
+          "qualified_name": "_schemas_for",
+          "kind": "function",
+          "start_line": 54,
+          "end_line": 59
+        },
+        {
+          "name": "_nest",
+          "qualified_name": "_nest",
+          "kind": "function",
+          "start_line": 62,
+          "end_line": 67
+        },
+        {
+          "name": "_rows",
+          "qualified_name": "_rows",
+          "kind": "function",
+          "start_line": 70,
+          "end_line": 71
+        },
+        {
+          "name": "install_schemas",
+          "qualified_name": "install_schemas",
+          "kind": "function",
+          "start_line": 74,
+          "end_line": 78
+        },
+        {
+          "name": "_install",
+          "qualified_name": "install_schemas._install",
+          "kind": "function",
+          "start_line": 76,
+          "end_line": 77
+        },
+        {
+          "name": "test_disabled_tool_is_skipped_disabled",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_tool_is_skipped_disabled",
+          "kind": "method",
+          "start_line": 86,
+          "end_line": 89
+        },
+        {
+          "name": "test_disabled_check_precedes_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_disabled_check_precedes_non_dict",
+          "kind": "method",
+          "start_line": 91,
+          "end_line": 94
+        },
+        {
+          "name": "test_non_dict_answer_is_skipped_non_dict",
+          "qualified_name": "TestLeafVerdictLogic.test_non_dict_answer_is_skipped_non_dict",
+          "kind": "method",
+          "start_line": 96,
+          "end_line": 98
+        },
+        {
+          "name": "test_budget_error_name_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_budget_error_name_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 100,
+          "end_line": 103
+        },
+        {
+          "name": "test_partial_plus_stopped_by_is_dispatcher_payload",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_plus_stopped_by_is_dispatcher_payload",
+          "kind": "method",
+          "start_line": 105,
+          "end_line": 108
+        },
+        {
+          "name": "test_partial_without_stopped_by_falls_through",
+          "qualified_name": "TestLeafVerdictLogic.test_partial_without_stopped_by_falls_through",
+          "kind": "method",
+          "start_line": 110,
+          "end_line": 114
+        },
+        {
+          "name": "test_tool_with_no_returns_is_skipped_no_schema",
+          "qualified_name": "TestLeafVerdictLogic.test_tool_with_no_returns_is_skipped_no_schema",
+          "kind": "method",
+          "start_line": 116,
+          "end_line": 119
+        },
+        {
+          "name": "test_sha_mismatched_block_is_skipped_schema_invalid",
+          "qualified_name": "TestLeafVerdictLogic.test_sha_mismatched_block_is_skipped_schema_invalid",
+          "kind": "method",
+          "start_line": 121,
+          "end_line": 126
+        },
+        {
+          "name": "test_raw_len_over_cap_is_skipped_too_large",
+          "qualified_name": "TestLeafVerdictLogic.test_raw_len_over_cap_is_skipped_too_large",
+          "kind": "method",
+          "start_line": 128,
+          "end_line": 131
+        },
+        {
+          "name": "test_node_budget_overflow_is_skipped_node_budget",
+          "qualified_name": "TestLeafVerdictLogic.test_node_budget_overflow_is_skipped_node_budget",
+          "kind": "method",
+          "start_line": 133,
+          "end_line": 137
+        },
+        {
+          "name": "test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "qualified_name": "TestLeafVerdictLogic.test_deep_answer_vs_small_depth_d_is_skipped_depth",
+          "kind": "method",
+          "start_line": 139,
+          "end_line": 143
+        },
+        {
+          "name": "test_same_answer_vs_deepest_variant_depth_d_passes",
+          "qualified_name": "TestLeafVerdictLogic.test_same_answer_vs_deepest_variant_depth_d_passes",
+          "kind": "method",
+          "start_line": 145,
+          "end_line": 148
+        },
+        {
+          "name": "test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "qualified_name": "TestLeafVerdictLogic.test_sim2_malformed_answer_warns_with_exact_mismatches",
+          "kind": "method",
+          "start_line": 150,
+          "end_line": 168
+        },
+        {
+          "name": "test_mismatch_cap_is_five",
+          "qualified_name": "TestLeafVerdictLogic.test_mismatch_cap_is_five",
+          "kind": "method",
+          "start_line": 170,
+          "end_line": 180
+        }
+      ],
+      "parse_error": null,
+      "ca_next_action": "choose_candidate_or_retry_with_anchor_line",
+      "file": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\tests\\test_a45_returns_shape.py",
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "content_hash": "d6b155a80db622f4c3a176abc9f7f7cb6a21d9417bc6be77bad7582ac3f52b04",
+      "cache_hit": true,
+      "total_lines": 695,
+      "read_token_seeded": false,
+      "derived_state_touched": false,
+      "request_index": 19
+    }
+  ],
+  "next_ranges": [],
+  "budget": {
+    "requested": 6000,
+    "used": 0,
+    "remaining": 6000,
+    "within_budget": true
+  },
+  "cache": {
+    "entries": 11,
+    "bytes": 1125514,
+    "hits": 29,
+    "misses": 11,
+    "parse_hits": 29,
+    "max_entries": 64,
+    "max_bytes": 33554432
+  },
+  "provenance": {
+    "graph_used": true,
+    "graph_error": null,
+    "graph_truncated": false,
+    "graph_auto_reindex": false,
+    "target_node_id": "orchestrator/core/returns_shape.py:function:returns_shape.depth_of:217",
+    "nodes_seen": 29
+  },
+  "derived_state_touched": false,
+  "error_name": "TOOL_ERROR",
+  "error": "Tool returned ok=false / non-zero exit",
+  "ca_next_action": "read_error",
+  "payload_example": {
+    "project_path": "D:/path/to/project",
+    "symbol": "",
+    "file_path": "",
+    "query": "",
+    "depth": 2,
+    "token_budget": 6000,
+    "max_files": 8,
+    "max_ranges": 20
+  },
+  "retry_sequence": [],
+  "ca_guidance": {
+    "phase": "T1",
+    "phase_label": "Discover / Analyze / Read",
+    "error_name": "TOOL_ERROR",
+    "ca_next_action": "read_error",
+    "call_pattern": "$body = @{ ... } | ConvertTo-Json -Depth 20\nInvoke-RestMethod -Method Post -Uri \"http://localhost:8083/api/call/architecture_context_pack\" -ContentType \"application/json\" -Body $body",
+    "payload_example": {
+      "project_path": "D:/path/to/project",
+      "symbol": "",
+      "file_path": "",
+      "query": "",
+      "depth": 2,
+      "token_budget": 6000,
+      "max_files": 8,
+      "max_ranges": 20
+    },
+    "required_fields": [
+      "project_path"
+    ],
+    "accepted_aliases": {},
+    "notes": [
+      "Use PowerShell hashtable -> ConvertTo-Json; do not hand-write JSON for multiline content.",
+      "Use project_path for the project root. Prefer relative file_path/path inside that root.",
+      "For write_fix, write_fix_html, and write_new_file, use content_encoding='base64' when content has newlines, quotes, backslashes, HTML, JS, or large blocks.",
+      "Read schema with GET http://localhost:8083/api/tools if a field is unclear."
+    ],
+    "known_gotchas": [],
+    "recommended_prompt_rule": "",
+    "see_also": {},
+    "suggested_alternative_tool": {}
+  },
+  "phase": "runtime"
+}
