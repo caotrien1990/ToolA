@@ -3491,6 +3491,7 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
     skill_tools = {}  # tool_name -> [skill_folder]
     skill_folders = []
     skill_bodies = {}  # folder -> SKILL.md text, reused by the A31 gates below
+    skill_risk_levels = {}  # folder -> declared risk_level value (F-P9-1)
     skills_without_frontmatter = []
     skills_dir = skill_root / "skills"
     if skills_dir.exists():
@@ -3512,6 +3513,13 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
                 skills_without_frontmatter.append(skill_dir.name)
                 continue
             front = fm.group(1)
+            # F-P9-1: harvest the declared risk_level value (first occurrence,
+            # top-level key only -- all 27 live declarations are column-0).
+            # Presence is NOT gated (a folder may legitimately declare none);
+            # the contract gate below checks the VALUE when one is declared.
+            _rl = _re.search(r"^risk_level[ \t]*:[ \t]*(.*)$", front, _re.M)
+            if _rl is not None:
+                skill_risk_levels[skill_dir.name] = _rl.group(1).strip().strip("'\"").strip()
             # YAML scan: look for `tool: "<list>"` lines inside trigger block.
             # Filter: only treat tokens that look like real tool names (in TOOL_MAP or schema).
             # Avoids false positives from descriptive strings like "any protected T2/T3 tool".
@@ -3535,6 +3543,7 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
 
     # ---- Drift detection ----
     drift = []
+    contract_drift = []  # F-P9-1: informational findings (alias_drift channel) -- never part of drift_count
     coverage = {}
     for tool in sorted(code_tools_set | schema_names | set(skill_tools.keys())):
         tier = TOOL_PHASES.get(tool, "?")
@@ -3637,6 +3646,39 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
                            "exists neither beside the skill nor in "
                            ".ToolA_Skill/references/."),
             })
+    # ---- F-P9-1 (2026-11-03): frontmatter contract-VALUE gate ----
+    # The five gates above check presence and routing (folder exists, is
+    # routed, has frontmatter, documents the core tools, links at real
+    # files). None of them reads a declared VALUE, so `risk_level:
+    # low-medium` sat in 17_session_audit while the audit reported no
+    # drift. The contract for the field is {low, medium, high}: 26 of the
+    # 27 declared values use it and SKILLS.md routes on the same three
+    # levels (risk-high skills require the user's explicit trigger).
+    # Findings are informational (the contract_drift list, the alias_drift
+    # channel), NOT drift: the one live offender is pre-existing
+    # skill-content debt, tests/test_a31_soft_data_binding.py tolerates no
+    # drift of any type on the shipped tree, and choosing the skill's
+    # correct level is a content decision this gate does not own. The
+    # gate's job is to make the debt visible and keep it from growing.
+    _RISK_LEVEL_CONTRACT = {"low", "medium", "high"}
+    for folder in sorted(skill_risk_levels):
+        _declared = skill_risk_levels[folder]
+        if _declared.lower() in _RISK_LEVEL_CONTRACT:
+            continue
+        contract_drift.append({
+            "type": "skill_frontmatter_value_off_contract",
+            "skill": folder,
+            "field": "risk_level",
+            "value": _declared,
+            "severity": "medium",
+            "detail": (f"skills/{folder}/SKILL.md declares risk_level "
+                       f"{_declared!r}, outside the contract values "
+                       "\"low\" | \"medium\" | \"high\" -- no reader matching "
+                       "the three contract levels will recognise it, so the "
+                       "skill's risk routing silently does not apply. "
+                       "Correct the declared value in the SKILL.md "
+                       "frontmatter."),
+        })
     # ---- Harness scan for obsolete payloads ----
     harness_dir = skill_root / "harness"
     obsolete_patterns = {
@@ -3897,6 +3939,7 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
         "ok_count": len(code_tools_set) - len(drift),
         "alias_drift_count": len(alias_drift),
         "alias_drift_severity": _ad_sev,
+        "contract_drift_count": len(contract_drift),
         "progressive_gap_count": progressive_gap_count,
         "doc_description_present_count": _doc_desc_present,
         "doc_description_weak_count": len(_doc_desc_weak),
@@ -3947,6 +3990,8 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
         _next = "review_alias_drift_for_S_L"
     elif progressive_gap_count > 0:
         _next = "review_progressive_gaps"
+    elif contract_drift:
+        _next = "review_contract_drift"
     elif alias_drift:
         _next = "alias_drift_informational"
     else:
@@ -3969,7 +4014,8 @@ def _audit_tool_matrix_sync(project_path: str = "", persist: bool = True) -> dic
         ),
         "summary": summary,
         "drift": drift,
-        "alias_drift": alias_drift,  # R19: informational, not failing
+        "alias_drift": alias_drift,
+        "contract_drift": contract_drift,  # F-P9-1: informational, not failing
         "progressive_gaps": progressive_gaps,  # R20: surface UI progressive gates
         "inventory_classification": {
             "active_in_code": inventory_active[:50],

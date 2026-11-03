@@ -523,3 +523,79 @@ def test_harness_and_alias_scans_number_lines_by_newline_only(tmp_path, monkeypa
             if d.get("type") == "obsolete_payload_in_harness"] == [2]
     assert [d["line"] for d in res["alias_drift"]
             if d.get("legacy_term") == "tool_inspector"] == [5]
+
+# ------------------------------------------------- F-P9-1: contract-VALUE gate
+#
+# The five gates above check presence and routing. This one checks a declared
+# VALUE: risk_level has a three-value contract ({low, medium, high}) and the
+# audit never read the field at all, so `risk_level: low-medium` shipped in
+# 17_session_audit invisibly. Findings ride the informational contract_drift
+# channel (the alias_drift precedent), NOT drift: the shipped tree carries
+# exactly one genuine offender, and test_a31_soft_data_binding.py tolerates
+# no drift of any type -- the gate makes the debt visible and stops it
+# growing; it does not fail the matrix over content it does not own.
+
+def _fm_with_risk(value):
+    """Frontmatter carrying a risk_level line (no line at all when None)."""
+    lines = ["---", "name: fixture"]
+    if value is not None:
+        lines.append("risk_level: %s" % value)
+    lines += ["---", ""]
+    return "\n".join(lines)
+
+
+def _contract_offenders(res):
+    return {d.get("skill") for d in res.get("contract_drift", [])
+            if d.get("type") == "skill_frontmatter_value_off_contract"}
+
+
+def test_contract_gate_flags_off_contract_value(tmp_path, monkeypatch):
+    res = _audit_synthetic(
+        tmp_path, monkeypatch,
+        rows=[("task", "bad"), ("task2", "good")],
+        skills={"bad": _fm_with_risk("low-medium"),
+                "good": _fm_with_risk("high")},
+    )
+    assert _contract_offenders(res) == {"bad"}
+    entry = [d for d in res["contract_drift"]
+             if d["type"] == "skill_frontmatter_value_off_contract"][0]
+    assert entry["field"] == "risk_level"
+    assert entry["value"] == "low-medium"
+    assert entry["severity"] == "medium"
+    # informational channel: this gate never enters the failing drift list
+    assert _offenders(res["drift"], "skill_frontmatter_value_off_contract") == set()
+    assert res["summary"]["contract_drift_count"] == 1
+
+
+def test_contract_gate_accepts_the_three_contract_values(tmp_path, monkeypatch):
+    res = _audit_synthetic(
+        tmp_path, monkeypatch,
+        rows=[("a", "lo"), ("b", "mid"), ("c", "hi")],
+        skills={"lo": _fm_with_risk("low"), "mid": _fm_with_risk("medium"),
+                "hi": _fm_with_risk("high")},
+    )
+    assert _contract_offenders(res) == set()
+    assert res["summary"]["contract_drift_count"] == 0
+
+
+def test_contract_gate_ignores_absent_risk_level(tmp_path, monkeypatch):
+    """Presence is not gated: 8 shipped folders declare no risk_level at all."""
+    res = _audit_synthetic(
+        tmp_path, monkeypatch,
+        rows=[("a", "plain")],
+        skills={"plain": _fm_with_risk(None)},
+    )
+    assert _contract_offenders(res) == set()
+
+
+def test_real_tree_contract_offenders_are_exactly_the_known_debt(real_audit):
+    """The shipped tree carries exactly one off-contract declaration today:
+    17_session_audit's `risk_level: low-medium` (SKILL.md:16). The pin cuts
+    both ways: a second offender fails the suite, and fixing the SKILL.md --
+    a content change owned by the skill-update lane -- must update this pin
+    in the same commit."""
+    assert _contract_offenders(real_audit) == {"17_session_audit"}
+    entry = [d for d in real_audit["contract_drift"]
+             if d["type"] == "skill_frontmatter_value_off_contract"][0]
+    assert entry["value"] == "low-medium"
+    assert real_audit["summary"]["contract_drift_count"] == 1
