@@ -1853,7 +1853,7 @@ def _cors(request_origin: str | None = None, extra: dict | None = None) -> dict:
     h = {
         'Access-Control-Allow-Origin': origin,
         'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, X-Orchestrator-Token',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Orchestrator-Token, X-ToolA-Response',
         'Vary': 'Origin',
     }
     if extra:
@@ -6002,6 +6002,10 @@ def _error_response(tool_name: str, error: str, status: int, headers: dict,
         if discovery.get("surface"):
             payload["ca_guidance"]["surface"] = discovery["surface"]
     payload = _r101_filter(payload, _R101_FIELDS.get())
+    if error_name == "STALE_TOOL_DEFINITION":
+        # Even a projected error must supply the fresh contract for correction.
+        payload["definition_version"] = extra["definition_version"]
+        payload["pushed_schema"] = extra["pushed_schema"]
     # A37 #0b: an error means the CA has NOT yet had a working call of this tool, so re-arm
     # its once-per-bootstrap schema push HERE, at the single producer of every
     # dispatcher-level error payload -- not at each gate, which is how the promise rotted in
@@ -15127,25 +15131,9 @@ async def handle_tools(request):
             continue
         if tier_filter and ct.TOOL_PHASES.get(name, "").upper() != tier_filter:
             continue
-        out_schema = copy.deepcopy(schema)
-        out_fn = out_schema.setdefault("function", {})
-        out_fn["payload_example"] = _payload_example_for_tool(name, out_fn)
-        out_fn["protected"] = name in ct.PROTECTED_TOOL_NAMES
-        out_fn["mutating"] = _is_mutating_tool(name)
-        out_fn["requires_token"] = name in _TOKEN_REQUIRED_TOOLS
-        # V15 R28 — finer risk scope (file_artifact|runtime_ui|process|audit|none)
-        try:
-            _scope = ct.tool_mutation_scope(name)
-        except Exception:
-            _scope = "none"
-        out_fn["mutation_scope"] = _scope
-        # E-03 (2026-08-10): stateful marker for workflow/mission run-state
-        # tools. Distinguishes "writes durable state but is not in the
-        # destructive token/session gate" from "truly read-only" so clients
-        # stop assuming idempotence on mutation_scope='none' tools.
-        out_fn["stateful"] = (_scope == "stateful")
-        out_fn["requires_session"] = _requires_session(name)
-        out_fn.pop("returns", None)  # P16: served schemas never carry returns; the registry copy keeps it.
+        out_schema = _prepare_tool_schema(name, schema)
+        out_fn = out_schema["function"]
+        out_fn["stateful"] = out_fn["mutation_scope"] == "stateful"
         schemas.append(out_schema)
     return web.json_response(
         schemas,
@@ -15165,23 +15153,26 @@ def _enriched_tool_schema(name: str):
     if name not in ct.TOOL_MAP:
         return None
     for schema in ct.TOOL_SCHEMAS:
-        fn = schema.get("function", {})
-        if fn.get("name") != name:
-            continue
-        out_schema = copy.deepcopy(schema)
-        out_fn = out_schema.setdefault("function", {})
-        out_fn["payload_example"] = _payload_example_for_tool(name, out_fn)
-        out_fn["protected"] = name in ct.PROTECTED_TOOL_NAMES
-        out_fn["mutating"] = _is_mutating_tool(name)
-        out_fn["requires_token"] = name in _TOKEN_REQUIRED_TOOLS
-        try:
-            out_fn["mutation_scope"] = ct.tool_mutation_scope(name)
-        except Exception:
-            out_fn["mutation_scope"] = "none"
-        out_fn["requires_session"] = _requires_session(name)
-        out_fn.pop("returns", None)  # P16: served schemas never carry returns; the registry copy keeps it.
-        return out_schema
+        if schema.get("function", {}).get("name") == name:
+            return _prepare_tool_schema(name, schema)
     return None
+
+
+def _prepare_tool_schema(name: str, schema: dict) -> dict:
+    from orchestrator.core.definition_contract import decorate_schema
+
+    out_schema = copy.deepcopy(schema)
+    out_fn = out_schema["function"]
+    out_fn["payload_example"] = _payload_example_for_tool(name, out_fn)
+    out_fn["protected"] = name in ct.PROTECTED_TOOL_NAMES
+    out_fn["mutating"] = _is_mutating_tool(name)
+    out_fn["requires_token"] = name in _TOKEN_REQUIRED_TOOLS
+    out_fn["mutation_scope"] = ct.tool_mutation_scope(name)
+    out_fn["requires_session"] = _requires_session(name)
+    out_fn.pop("returns", None)
+    purpose = (ct._purpose_sentence(out_fn.get("description"))
+               if out_fn["mutation_scope"] in ct.NON_SOURCE_MUTATION_SCOPES else "")
+    return decorate_schema(out_schema, schema, purpose)
 
 
 async def handle_tool_describe(request):
@@ -15659,6 +15650,32 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
             hint="Wrap the tool arguments in ONE JSON object, e.g. {\"project_path\": \"...\"}.",
             ca_next_action="send_a_json_object_body",
         )
+
+    from orchestrator.core.response_contract import observe
+    observe((_task_session_id, _task_agent_id, str(_task_epoch_raw or "")), tool_name, body)
+    # Definition versions are transport preconditions, never handler arguments.
+    # Check after authentication and before normalization or any tool side effect.
+    if "definition_version" in body:
+        _supplied_definition = body.pop("definition_version")
+        _current_schema = _enriched_tool_schema(tool_name)
+        if _current_schema is not None:
+            _current_definition = _current_schema["function"]["definition_version"]
+            if not isinstance(_supplied_definition, str) or not _supplied_definition:
+                return _error_response(
+                    tool_name, "definition_version must be a non-empty string",
+                    400, cors, body, error_name="SCHEMA_VIOLATION",
+                    accepted_fields=["definition_version"], retryable=False,
+                    pushed_schema=_current_schema,
+                )
+            if _supplied_definition != _current_definition:
+                return _error_response(
+                    tool_name, "The supplied tool definition is stale",
+                    409, cors, body, error_name="STALE_TOOL_DEFINITION",
+                    retryable=False, write_performed=False, applied=False,
+                    definition_version=_current_definition,
+                    pushed_schema=_current_schema,
+                    ca_next_action="review_current_schema_then_retry",
+                )
 
     # ── Fix 6: normalize aliased args + reject embedded path controls ──
     try:
@@ -17706,23 +17723,9 @@ def _tool_schema_payload(name: str) -> tuple[dict, int]:
     name = (name or "").strip()
     if name not in ct.TOOL_MAP:
         return _unknown_tool_payload(name), 404
-    for schema in ct.TOOL_SCHEMAS:
-        fn = schema.get("function", {})
-        if fn.get("name") != name:
-            continue
-        out_schema = copy.deepcopy(schema)
-        out_fn = out_schema.setdefault("function", {})
-        out_fn["payload_example"] = _payload_example_for_tool(name, out_fn)
-        out_fn["protected"] = name in ct.PROTECTED_TOOL_NAMES
-        out_fn["mutating"] = _is_mutating_tool(name)
-        out_fn["requires_token"] = name in _TOKEN_REQUIRED_TOOLS
-        try:
-            out_fn["mutation_scope"] = ct.tool_mutation_scope(name)
-        except Exception:
-            out_fn["mutation_scope"] = "none"
-        out_fn["requires_session"] = _requires_session(name)
-        out_fn.pop("returns", None)  # P16: served schemas never carry returns; the registry copy keeps it.
-        return {"ok": True, "tool": out_schema}, 200
+    schema = _enriched_tool_schema(name)
+    if schema is not None:
+        return {"ok": True, "tool": schema}, 200
     return {"ok": False, "error": f"No schema for '{name}'", "error_name": "SCHEMA_MISSING"}, 500
 
 
@@ -18117,13 +18120,53 @@ async def dispatch_tool_call(tool_name: str, body: dict | None = None,
     if body.get("project_path"):
         headers.setdefault("X-Project-Path", str(body.get("project_path")))
     request = _InProcessToolRequest(tool_name, body, headers=headers)
-    return await _dispatch_tool_call_request(request, transport=transport)
+    return await _dispatch_wire_response(request, transport=transport)
+
+
+async def _dispatch_wire_response(request, transport):
+    """Apply the wire contract once, after accounting, projection and auth."""
+    from orchestrator.core import response_contract as contract
+
+    token = contract._repeat.set(False)
+    try:
+        response = await _dispatch_tool_call_request(request, transport=transport)
+        if response.content_type != "application/json" or not response.body:
+            return response
+        mode = request.headers.get("X-ToolA-Response", "")
+        fields = _R101_FIELDS.get()
+        name = request.match_info.get("tool_name", "")
+        if fields and mode not in {"2", "dual"} and not contract._repeat.get() and name != "get_usage_stats":
+            contract.render(name, None, mode, fields, ct.AUTO_CHAIN_FIELDS)
+            return response
+        payload = json.loads(response.body)
+        if name == "get_usage_stats" and isinstance(payload, dict) and not fields:
+            payload = {**payload, "response_contract_usage": contract.usage_snapshot()}
+        view = contract.render(name, payload, mode, fields, ct.AUTO_CHAIN_FIELDS, response.status)
+        if view is not payload or name == "get_usage_stats":
+            wire = json.dumps(view, ensure_ascii=False)
+            shaped = _shape_tool_response_text(name, wire)
+            if mode == "2" and shaped != wire:
+                # Keep the negotiated envelope even when its complete contents
+                # move behind the existing lossless continuation reference.
+                ref = json.loads(shaped)
+                shaped = json.dumps({
+                    "ok": view["ok"], "result": {
+                        key: ref[key] for key in
+                        ("result_ref", "result_ref_url", "original_bytes", "read_hint")
+                    }, "summary": f"{name} returned a response available by reference.",
+                    "hint": {"next": "", "why": ref["read_hint"], "chain": {},
+                             "ask": view["hint"]["ask"], "ask_reason": view["hint"]["ask_reason"]},
+                }, ensure_ascii=False)
+            response.body = shaped.encode("utf-8")
+        return response
+    finally:
+        contract._repeat.reset(token)
 
 
 async def handle_call(request):
     """Universal tool invocation: POST /api/call/{tool_name}"""
     try:
-        return await _dispatch_tool_call_request(request, transport="api")
+        return await _dispatch_wire_response(request, transport="api")
     except web.HTTPException:
         raise
     except Exception as exc:

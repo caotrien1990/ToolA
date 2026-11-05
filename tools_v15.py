@@ -2044,9 +2044,33 @@ def _wt_q_z2_refs(task: str) -> list:
         return []
 
 
+def _rank_hint(task, legacy, eligible=None):
+    import code_tools as ct
+    from orchestrator.core.tool_retrieval import rank_tools
+
+    # Only actual routing rules get a prior. A lexical fallback cannot vote for itself.
+    primary = legacy.get("recommended_tool", "")
+    qualified = "tools_validation" in legacy or "recipe" in legacy or primary in {"file_sha256", "write_status"}
+    boosts = [primary] if qualified else []
+    return rank_tools(_wt_vn_expand(task), ct.TOOL_SCHEMAS, ct.bootstrap_tool_purposes(),
+                      _deprecated_tool_names(), boosts, eligible)
+
+
 async def tool_decision_hint(task_description: str = "", scope_hint: str = "",
-                              risk_hint: str = "", task: str = "",
-                              verbosity: str = "full") -> str:
+                             risk_hint: str = "", task: str = "",
+                             verbosity: str = "full") -> str:
+    """Return the current routing recommendation and scored BM25 candidates."""
+    query = (task_description or task).strip()
+    legacy = json.loads(await _legacy_decision_hint(query, scope_hint, risk_hint))
+    if not legacy.get("ok"):
+        return json.dumps(legacy, ensure_ascii=False)
+    legacy["ranked_tools"] = _rank_hint(query, legacy)
+    return _ok(_apply_verbosity(legacy, verbosity, "decision_hint"))
+
+
+async def _legacy_decision_hint(task_description: str = "", scope_hint: str = "",
+                                risk_hint: str = "", task: str = "",
+                                verbosity: str = "full", *, use_memory=True) -> str:
     """V15 R8 B.2: server-side rule engine matching task description → tier+skill.
 
     V15 R16.6: accepts both `task_description` (canonical) and `task` (alias).
@@ -2266,7 +2290,7 @@ async def tool_decision_hint(task_description: str = "", scope_hint: str = "",
     # (VN-aware) instead of the old flat 0.4 find_symbol/search_code default,
     # and enrich with [Q] Z2 memory refs (fail-open).
     ranked = _lex_ranked
-    q_refs = _wt_q_z2_refs(task_description or task)
+    q_refs = _wt_q_z2_refs(task_description or task) if use_memory else []
     if ranked:
         q_text = " ".join(_wt_vn_fold(str(h.get("snippet") or "")) for h in q_refs)
         if q_text:

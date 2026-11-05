@@ -1451,7 +1451,7 @@ def run_mcp_stdio() -> None:
             })
 
         @_mcp.tool
-        def get_rule_core_text(agent_id: str = "", force: bool = False) -> str:
+        def get_rule_core_text(agent_id: str = "", force: bool = False, task_hint: str = "") -> str:
             """Return canonical CORE_RULE text and metadata, guarded per agent."""
             # A33-C: daemon-only transport, and the agent id is resolved HERE for the
             # same reason as open_session. Measured: the per-agent fetch guard
@@ -1465,7 +1465,7 @@ def run_mcp_stdio() -> None:
             return _mcp_call_text("get_rule_core_text", {
                 "agent_id": ((agent_id or "").strip()
                              or (os.environ.get("COUNCIL_AGENT_ID") or "").strip()),
-                "force": force,
+                "force": force, "task_hint": task_hint,
             })
 
         @_mcp.tool
