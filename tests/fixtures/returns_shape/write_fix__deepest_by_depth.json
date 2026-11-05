@@ -1,0 +1,106 @@
+{
+  "error": "File not found: C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\missing.txt",
+  "ok": false,
+  "error_name": "TOOL_ERROR",
+  "ca_next_action": "read_error",
+  "payload_example": {
+    "file_path": "relative/file.py",
+    "start_line": 1,
+    "end_line": 1,
+    "new_content": "<New content to insert for that range>",
+    "project_path": "D:/path/to/project",
+    "dry_run": false,
+    "content_encoding": "none",
+    "expected_hash": "",
+    "backup_override": false,
+    "skip_symbol_check": false
+  },
+  "retry_sequence": [],
+  "ca_guidance": {
+    "phase": "T2",
+    "phase_label": "Mutate / Verify / Refresh",
+    "error_name": "TOOL_ERROR",
+    "ca_next_action": "read_error",
+    "call_pattern": "$body = @{ ... } | ConvertTo-Json -Depth 20\nInvoke-RestMethod -Method Post -Uri \"http://localhost:8083/api/call/write_fix\" -ContentType \"application/json\" -Body $body",
+    "payload_example": {
+      "file_path": "relative/file.py",
+      "start_line": 1,
+      "end_line": 1,
+      "new_content": "<New content to insert for that range>",
+      "project_path": "D:/path/to/project",
+      "dry_run": false,
+      "content_encoding": "none",
+      "expected_hash": "",
+      "backup_override": false,
+      "skip_symbol_check": false
+    },
+    "required_fields": [
+      "file_path",
+      "start_line",
+      "end_line",
+      "new_content"
+    ],
+    "accepted_aliases": {
+      "path": {
+        "maps_to": "file_path",
+        "status": "verified"
+      },
+      "content": {
+        "maps_to": "new_content",
+        "status": "verified"
+      },
+      "replacement": {
+        "maps_to": "new_content",
+        "status": "verified"
+      },
+      "start": {
+        "maps_to": "start_line",
+        "status": "verified"
+      },
+      "end": {
+        "maps_to": "end_line",
+        "status": "verified"
+      },
+      "line_start": {
+        "maps_to": "start_line",
+        "status": "verified"
+      },
+      "line_end": {
+        "maps_to": "end_line",
+        "status": "verified"
+      }
+    },
+    "notes": [
+      "Use PowerShell hashtable -> ConvertTo-Json; do not hand-write JSON for multiline content.",
+      "Use project_path for the project root. Prefer relative file_path/path inside that root.",
+      "For write_fix, write_fix_html, and write_new_file, use content_encoding='base64' when content has newlines, quotes, backslashes, HTML, JS, or large blocks.",
+      "Read schema with GET http://localhost:8083/api/tools if a field is unclear."
+    ],
+    "known_gotchas": [
+      "start_line/end_line are 1-based and inclusive",
+      "content_encoding='base64' required for multiline/JS/HTML/backslash content",
+      "FILE_CHANGED_OUTSIDE_ORCHESTRATOR: read_file_range + force_reseed + retry; never refresh_project_map on [A:P]",
+      "SYNTAX_ERROR_PRE_WRITE or VALIDATION_FAILED_AUTO_REVERT: use draft_id/failed_parts and write_draft_patch; do not retry the original range blindly",
+      "A may auto-ship only after the draft is clean; it must not invent replacement content for ambiguous line drift"
+    ],
+    "recommended_prompt_rule": "Always read_file_range first; use base64 for non-trivial content; on SYNTAX_ERROR_PRE_WRITE use draft_id/failed_parts and never retry a stale range blindly",
+    "see_also": {
+      "write_transaction": "Multi-hunk same file (sort ops bottom-up to avoid line shift)",
+      "search_code": "If you don't know line numbers, find anchor with search_code(mode='literal') first",
+      "read_file_range": "Always read target range BEFORE write_fix to confirm content"
+    },
+    "suggested_alternative_tool": {
+      "tool": "write_transaction",
+      "reason": "(low-confidence see_also hint) Multi-hunk same file (sort ops bottom-up to avoid line shift)"
+    }
+  },
+  "phase": "runtime",
+  "suggested_alternative_tool": {
+    "tool": "write_transaction",
+    "reason": "(low-confidence see_also hint) Multi-hunk same file (sort ops bottom-up to avoid line shift)"
+  },
+  "generation": "2ade6b9e99a1",
+  "operation_id": "6b1b5f595d5819a1",
+  "write_status_url": "/api/write_status?operation_id=6b1b5f595d5819a1",
+  "operation_attempts": 1
+}

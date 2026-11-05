@@ -1,0 +1,48 @@
+{
+  "ok": true,
+  "file": "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\a.txt",
+  "replaced_lines": "2-2",
+  "warnings": [],
+  "new_lines_count": 1,
+  "backup": "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\a.txt.bak",
+  "write_mode": "atomic_replace",
+  "range_id": "a.txt:2p1",
+  "encoding_check": {
+    "encoding_used": "base64",
+    "utf8_valid": true,
+    "mojibake_risk": false,
+    "mojibake_markers_present": false,
+    "mojibake_confirmed": false,
+    "vietnamese_diacritic_check": {
+      "has_vietnamese_diacritics": false,
+      "status": "not_detected"
+    },
+    "suspicious_sequences": [],
+    "bytes_written": 15
+  },
+  "encoding_used": "base64",
+  "bytes_written": 36,
+  "utf8_valid": true,
+  "mojibake_risk": false,
+  "vietnamese_diacritic_check": {
+    "has_vietnamese_diacritics": false,
+    "status": "not_detected"
+  },
+  "cache_synced": true,
+  "new_hash": "38ec78a50eedfdfa6f11771e2915bb0d58a64d9c2748955973f281f302ba9f4b",
+  "new_mtime": 1793857102.5791867,
+  "sequential_chain_hint": "If patching the same file again this round, pass expected_hash=<this response's new_hash> to skip FILE_CHANGED re-check.",
+  "guardrail_warning": "project_root khong tim thay - conflict detection bi bo qua cho lan write nay.",
+  "ca_hint_commit": "git_stage available to stage changes for commit",
+  "read_token_sealed": false,
+  "read_token_seal_error": "ValueError",
+  "ca_next_action": "read_file_range(file_path=C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\a.txt, force_reseed=true) before the next write_fix",
+  "ca_next_tool": "read_file_range",
+  "generation": "2ade6b9e99a1",
+  "operation_id": "daddd2b196ba4427",
+  "write_status_url": "/api/write_status?operation_id=daddd2b196ba4427",
+  "operation_attempts": 1,
+  "_harness_warnings": [
+    "diff_stat: +0/-0 lines in C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\a.txt"
+  ]
+}

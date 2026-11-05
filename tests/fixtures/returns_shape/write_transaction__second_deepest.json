@@ -1,0 +1,99 @@
+{
+  "ok": false,
+  "error": "dry_run failed at operation[1] (tool=write_fix): File not found: nope_missing.txt",
+  "error_name": "DRY_RUN_FAILED",
+  "index": 1,
+  "dry_run_results": [
+    {
+      "ok": true,
+      "dry_run": true,
+      "would_create": true,
+      "target_exists": false,
+      "target_new_ok": true,
+      "parent_exists": true,
+      "parent_path": "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch",
+      "overwrite_risk": false,
+      "file": "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\tx2.txt",
+      "preview": "tx two\n",
+      "preview_truncated": false,
+      "encoding_check": {
+        "encoding_used": "base64",
+        "utf8_valid": true,
+        "mojibake_risk": false,
+        "mojibake_markers_present": false,
+        "mojibake_confirmed": false,
+        "vietnamese_diacritic_check": {
+          "has_vietnamese_diacritics": false,
+          "status": "not_detected"
+        },
+        "suspicious_sequences": [],
+        "bytes_written": 7
+      },
+      "diff_preview": {
+        "changed_lines": 1,
+        "added": 1,
+        "removed": 0,
+        "preview_before": "",
+        "preview_after": "tx two",
+        "diff_unified": "--- /dev/null\n+++ tx2.txt (after)\n@@ -0,0 +1 @@\n+tx two\n",
+        "truncated": false,
+        "preview_hash": "b5809b1b676f9271dddb2d374bd85e917880e55a94c449feb7e83d17f0ebb245"
+      },
+      "dry_run_id": "dry_8dfbcaf6fb9046a590eb48b3e2cf8293",
+      "payload_hash": "6c105bf245869d0f3a680eb4bf3739b32dad5b986038620b8086c7a78218d38f",
+      "target_file_hash": null,
+      "expires_at": "2026-11-05T13:12:23",
+      "ca_next_action": "review_diff_then_apply_after_dry_run"
+    },
+    {
+      "error": "File not found: nope_missing.txt"
+    }
+  ],
+  "schema_version": "v15.r18",
+  "ca_next_action": "read_error",
+  "payload_example": {
+    "operations": [],
+    "project_path": "D:/path/to/project",
+    "backup": true,
+    "structural_check": true,
+    "skip_verify": false
+  },
+  "retry_sequence": [],
+  "ca_guidance": {
+    "phase": "T2",
+    "phase_label": "Mutate / Verify / Refresh",
+    "error_name": "DRY_RUN_FAILED",
+    "ca_next_action": "read_error",
+    "call_pattern": "$body = @{ ... } | ConvertTo-Json -Depth 20\nInvoke-RestMethod -Method Post -Uri \"http://localhost:8083/api/call/write_transaction\" -ContentType \"application/json\" -Body $body",
+    "payload_example": {
+      "operations": [],
+      "project_path": "D:/path/to/project",
+      "backup": true,
+      "structural_check": true,
+      "skip_verify": false
+    },
+    "required_fields": [
+      "operations",
+      "project_path"
+    ],
+    "accepted_aliases": {},
+    "notes": [
+      "Use PowerShell hashtable -> ConvertTo-Json; do not hand-write JSON for multiline content.",
+      "Use project_path for the project root. Prefer relative file_path/path inside that root.",
+      "For write_fix, write_fix_html, and write_new_file, use content_encoding='base64' when content has newlines, quotes, backslashes, HTML, JS, or large blocks.",
+      "Read schema with GET http://localhost:8083/api/tools if a field is unclear."
+    ],
+    "known_gotchas": [],
+    "recommended_prompt_rule": "",
+    "see_also": {
+      "write_fix": "Single-hunk patch (use this if only 1 change)",
+      "backup_project": "Optional pre-batch full backup (write_transaction auto-creates .bak per op)"
+    },
+    "suggested_alternative_tool": {}
+  },
+  "phase": "runtime",
+  "generation": "2ade6b9e99a1",
+  "operation_id": "e8a0e8cd877c15cf",
+  "write_status_url": "/api/write_status?operation_id=e8a0e8cd877c15cf",
+  "operation_attempts": 1
+}

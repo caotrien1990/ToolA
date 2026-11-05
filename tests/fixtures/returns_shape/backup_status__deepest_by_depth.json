@@ -1,0 +1,53 @@
+{
+  "ok": true,
+  "status": "available",
+  "total_backups": 2,
+  "latest": {
+    "created_at": "2026-10-25T09:30:16",
+    "backup_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\_orchestrator_backups\\project-orchestrator_backup_20261025_092946_288864.zip",
+    "files_written": 13231,
+    "files_skipped": 3,
+    "backup_scope": "full",
+    "target_paths": [],
+    "skipped_sample": [
+      ".council\\route_measurements.jsonl.lock",
+      ".council\\runtime_state.json.lock",
+      ".council\\usage_log.jsonl.lock"
+    ],
+    "size_mb": 32.76,
+    "backup_age_hours": 267.22
+  },
+  "all_backups": [
+    {
+      "created_at": "2026-10-25T09:30:16",
+      "backup_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\_orchestrator_backups\\project-orchestrator_backup_20261025_092946_288864.zip",
+      "files_written": 13231,
+      "files_skipped": 3,
+      "backup_scope": "full",
+      "target_paths": [],
+      "skipped_sample": [
+        ".council\\route_measurements.jsonl.lock",
+        ".council\\runtime_state.json.lock",
+        ".council\\usage_log.jsonl.lock"
+      ],
+      "size_mb": 32.76,
+      "backup_age_hours": 267.22
+    },
+    {
+      "created_at": "2026-10-25T08:26:45",
+      "backup_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\_orchestrator_backups\\project-orchestrator_backup_20261025_082616_124885.zip",
+      "files_written": 13229,
+      "files_skipped": 3,
+      "backup_scope": "full",
+      "target_paths": [],
+      "skipped_sample": [
+        ".council\\route_measurements.jsonl.lock",
+        ".council\\runtime_state.json.lock",
+        ".council\\usage_log.jsonl.lock"
+      ],
+      "size_mb": 32.68,
+      "backup_age_hours": 268.28
+    }
+  ],
+  "generation": "2ade6b9e99a1"
+}

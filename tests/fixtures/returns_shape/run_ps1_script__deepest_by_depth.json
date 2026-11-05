@@ -1,0 +1,34 @@
+{
+  "ok": true,
+  "exit_code": 0,
+  "stdout": "p16b2-hello\n",
+  "stdout_metadata": {
+    "original_chars": 12,
+    "returned_chars": 12,
+    "truncated": false,
+    "sha256": "23c8d16787f8ee5564e31fd31b4f0be18967a1211dbc31b521f8aa459721c2a4"
+  },
+  "stderr": "",
+  "stderr_metadata": {
+    "original_chars": 0,
+    "returned_chars": 0,
+    "truncated": false,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "duration_seconds": 0.916,
+  "script_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\.orchestrator_cache\\test_scripts\\ps1_script_257b65740854ceca.ps1",
+  "script_hash": "257b65740854ceca",
+  "script_label": "ps1_script",
+  "runtime_used": "powershell",
+  "timed_out": false,
+  "ca_next_action": "evaluate_stdout_assertions",
+  "test_gap": {
+    "status": "skipped",
+    "reason": "test_selection_unknown",
+    "payload": null
+  },
+  "generation": "2ade6b9e99a1",
+  "operation_id": "1241f4b0ac3d6b10",
+  "write_status_url": "/api/write_status?operation_id=1241f4b0ac3d6b10",
+  "operation_attempts": 1
+}

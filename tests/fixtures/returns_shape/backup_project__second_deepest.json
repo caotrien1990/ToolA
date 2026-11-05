@@ -1,0 +1,7 @@
+{
+  "ok": true,
+  "skipped": true,
+  "reason": "Backup already exists from today (2026-11-05). Use force=True to override.",
+  "backup_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\_orchestrator_backups\\project-orchestrator_backup_20261105_080000_000000.zip",
+  "created_at": "2026-11-05 08:00:00"
+}

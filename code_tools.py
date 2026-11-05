@@ -19788,6 +19788,1994 @@ try:
         "electron_devtools_log",  # R41 — use list_cdp_targets / read_console_errors / evaluate_js
     }
 
+    _RETURNS_BY_NAME = {
+        'convene_council': {
+            'properties': {
+                'addressing_rule': {
+                    'type': 'string'
+                },
+                'bridge_dir': {
+                    'type': 'string'
+                },
+                'broker_only_rule': {
+                    'type': 'string'
+                },
+                'broker_read_rule': {
+                    'type': 'string'
+                },
+                'cli_identity_rule': {
+                    'type': 'string'
+                },
+                'config_source': {
+                    'type': 'string'
+                },
+                'coordination_rule': {
+                    'type': 'string'
+                },
+                'council_leader_skill': {
+                    'properties': {
+                        'error': {
+                            'type': 'string'
+                        },
+                        'missing': {
+                            'type': 'boolean'
+                        },
+                        'name': {
+                            'type': 'string'
+                        },
+                        'path': {
+                            'type': 'string'
+                        },
+                        'sha256': {
+                            'type': 'string'
+                        },
+                        'text': {
+                            'type': 'string'
+                        }
+                    },
+                    'required': [
+                        'name',
+                        'path',
+                        'text',
+                        'missing'
+                    ],
+                    'type': 'object'
+                },
+                'dispatch_rule': {
+                    'type': 'string'
+                },
+                'guardrail_harness_rule': {
+                    'type': 'string'
+                },
+                'io_language': {
+                    'type': 'string'
+                },
+                'leader_frugality_rule': {
+                    'type': 'string'
+                },
+                'leadership_rule': {
+                    'type': 'string'
+                },
+                'liveness_rule': {
+                    'type': 'string'
+                },
+                'message_format': {
+                    'properties': {
+                        'files': {
+                            'items': {
+                                'type': 'string'
+                            },
+                            'type': 'array'
+                        },
+                        'reply': {
+                            'type': 'string'
+                        },
+                        'request': {
+                            'type': 'string'
+                        }
+                    },
+                    'required': [
+                        'request',
+                        'reply',
+                        'files'
+                    ],
+                    'type': 'object'
+                },
+                'messaging_rule': {
+                    'type': 'string'
+                },
+                'messaging_to_enum': {
+                    'items': {
+                        'type': 'string'
+                    },
+                    'type': 'array'
+                },
+                'mission': {
+                    'type': 'string'
+                },
+                'ok': {
+                    'type': 'boolean',
+                    'x-dual': True
+                },
+                'parallelism_rule': {
+                    'type': 'string'
+                },
+                'project_path': {
+                    'type': 'string'
+                },
+                'prompt_style_rule': {
+                    'type': 'string'
+                },
+                'roster': {
+                    'items': {
+                        'properties': {
+                            'agent': {
+                                'type': 'string'
+                            },
+                            'bridge_agent': {
+                                'type': 'string'
+                            },
+                            'cli_channel': {
+                                'type': 'string'
+                            },
+                            'role': {
+                                'type': 'string'
+                            }
+                        },
+                        'required': [
+                            'agent',
+                            'bridge_agent',
+                            'role',
+                            'cli_channel'
+                        ],
+                        'type': 'object'
+                    },
+                    'type': 'array'
+                },
+                'route_capabilities': {
+                    'properties': {
+                        'clauC': {
+                            'type': 'string'
+                        },
+                        'codoC': {
+                            'type': 'string'
+                        },
+                        'groC': {
+                            'type': 'string'
+                        },
+                        'opeC': {
+                            'type': 'string'
+                        },
+                        'selection_rule': {
+                            'type': 'string'
+                        }
+                    },
+                    'required': [
+                        'selection_rule',
+                        'clauC',
+                        'codoC'
+                    ],
+                    'type': 'object'
+                },
+                'task_routing': {
+                    'properties': {},
+                    'type': 'object'
+                },
+                'verify_outbox_rule': {
+                    'type': 'string'
+                },
+                'worker_prompt_route_rule': {
+                    'type': 'string'
+                }
+            },
+            'required': [
+                'ok',
+                'roster',
+                'config_source',
+                'bridge_dir',
+                'message_format',
+                'cli_identity_rule',
+                'addressing_rule',
+                'verify_outbox_rule',
+                'prompt_style_rule',
+                'leadership_rule',
+                'leader_frugality_rule',
+                'worker_prompt_route_rule',
+                'broker_only_rule',
+                'messaging_rule',
+                'broker_read_rule',
+                'parallelism_rule',
+                'io_language',
+                'coordination_rule',
+                'task_routing',
+                'guardrail_harness_rule',
+                'mission',
+                'messaging_to_enum',
+                'dispatch_rule',
+                'liveness_rule',
+                'route_capabilities',
+                'council_leader_skill'
+            ],
+            'type': 'object',
+            'x-audit': {
+                'status': 'audited',
+                'schema_sha256': '2e8855239640b71433a105caace5eeb40e1a474025ea29313a2b7f4151e27974',
+                'depth_D': 3
+            }
+        },
+        'copy_file': {
+            'properties': {
+                'backup': {
+                    'type': 'null'
+                },
+                'bytes': {
+                    'type': 'integer'
+                },
+                'ca_guidance': {
+                    'properties': {
+                        'accepted_aliases': {
+                            'properties': {},
+                            'type': 'object'
+                        },
+                        'ca_next_action': {
+                            'type': 'string'
+                        },
+                        'call_pattern': {
+                            'type': 'string'
+                        },
+                        'error_name': {
+                            'type': 'string'
+                        },
+                        'known_gotchas': {
+                            'items': {
+                                'type': 'string'
+                            },
+                            'type': 'array'
+                        },
+                        'notes': {
+                            'items': {
+                                'type': 'string'
+                            },
+                            'type': 'array'
+                        },
+                        'payload_example': {
+                            'properties': {
+                                'backup_existing': {
+                                    'type': 'boolean'
+                                },
+                                'dst': {
+                                    'type': 'string'
+                                },
+                                'overwrite': {
+                                    'type': 'boolean'
+                                },
+                                'project_path': {
+                                    'type': 'string'
+                                },
+                                'src': {
+                                    'type': 'string'
+                                }
+                            },
+                            'required': [
+                                'src',
+                                'dst',
+                                'project_path',
+                                'overwrite',
+                                'backup_existing'
+                            ],
+                            'type': 'object'
+                        },
+                        'phase': {
+                            'type': 'string'
+                        },
+                        'phase_label': {
+                            'type': 'string'
+                        },
+                        'recommended_prompt_rule': {
+                            'type': 'string'
+                        },
+                        'required_fields': {
+                            'items': {
+                                'type': 'string'
+                            },
+                            'type': 'array'
+                        },
+                        'see_also': {
+                            'properties': {},
+                            'type': 'object'
+                        },
+                        'suggested_alternative_tool': {
+                            'properties': {},
+                            'type': 'object'
+                        }
+                    },
+                    'required': [
+                        'phase',
+                        'phase_label',
+                        'error_name',
+                        'ca_next_action',
+                        'call_pattern',
+                        'payload_example',
+                        'required_fields',
+                        'accepted_aliases',
+                        'notes',
+                        'known_gotchas',
+                        'recommended_prompt_rule',
+                        'see_also',
+                        'suggested_alternative_tool'
+                    ],
+                    'type': 'object',
+                    'x-dual': True
+                },
+                'ca_next_action': {
+                    'type': 'string',
+                    'x-dual': True
+                },
+                'dst': {
+                    'type': 'string'
+                },
+                'dst_existed': {
+                    'type': 'boolean'
+                },
+                'error': {
+                    'type': 'string',
+                    'x-dual': True
+                },
+                'error_name': {
+                    'type': 'string',
+                    'x-dual': True
+                },
+                'generation': {
+                    'type': 'string'
+                },
+                'hash_verified': {
+                    'type': 'boolean'
+                },
+                'ok': {
+                    'type': 'boolean',
+                    'x-dual': True
+                },
+                'operation_attempts': {
+                    'type': 'integer'
+                },
+                'operation_id': {
+                    'type': 'string'
+                },
+                'payload_example': {
+                    'properties': {
+                        'backup_existing': {
+                            'type': 'boolean'
+                        },
+                        'dst': {
+                            'type': 'string'
+                        },
+                        'overwrite': {
+                            'type': 'boolean'
+                        },
+                        'project_path': {
+                            'type': 'string'
+                        },
+                        'src': {
+                            'type': 'string'
+                        }
+                    },
+                    'required': [
+                        'src',
+                        'dst',
+                        'project_path',
+                        'overwrite',
+                        'backup_existing'
+                    ],
+                    'type': 'object',
+                    'x-dual': True
+                },
+                'phase': {
+                    'type': 'string',
+                    'x-dual': True
+                },
+                'reason': {
+                    'type': 'string'
+                },
+                'retry_sequence': {
+                    'type': 'array',
+                    'x-dual': True
+                },
+                'retryable': {
+                    'type': 'boolean'
+                },
+                'severity': {
+                    'type': 'string'
+                },
+                'sha256': {
+                    'type': 'string'
+                },
+                'src': {
+                    'type': 'string'
+                },
+                'type': {
+                    'type': 'string'
+                },
+                'write_status_url': {
+                    'type': 'string'
+                }
+            },
+            'required': [
+                'ok',
+                'generation',
+                'operation_id',
+                'write_status_url',
+                'operation_attempts'
+            ],
+            'type': 'object',
+            'x-audit': {
+                'status': 'audited',
+                'schema_sha256': '18eb1dfd6355dc806d85189c9d5458533eb0083685ea38dc7f6d0f115fa5f723',
+                'depth_D': 3
+            }
+        },
+        'run_project_test_script': {
+            'properties': {
+                'ca_guidance': {
+                    'properties': {
+                        'accepted_aliases': {
+                            'properties': {},
+                            'type': 'object'
+                        },
+                        'ca_next_action': {
+                            'type': 'string'
+                        },
+                        'call_pattern': {
+                            'type': 'string'
+                        },
+                        'error_name': {
+                            'type': 'string'
+                        },
+                        'known_gotchas': {
+                            'type': 'array'
+                        },
+                        'notes': {
+                            'items': {
+                                'type': 'string'
+                            },
+                            'type': 'array'
+                        },
+                        'payload_example': {
+                            'properties': {
+                                'confirm_destructive': {
+                                    'type': 'integer'
+                                },
+                                'content_encoding': {
+                                    'type': 'string'
+                                },
+                                'dry_run': {
+                                    'type': 'boolean'
+                                },
+                                'project_path': {
+                                    'type': 'string'
+                                },
+                                'python_exe': {
+                                    'type': 'string'
+                                },
+                                'required_python_modules': {
+                                    'type': 'array'
+                                },
+                                'return_full_stdout': {
+                                    'type': 'boolean'
+                                },
+                                'runtime': {
+                                    'type': 'string'
+                                },
+                                'script_content': {
+                                    'type': 'string'
+                                },
+                                'script_label': {
+                                    'type': 'string'
+                                },
+                                'skip_backup': {
+                                    'type': 'boolean'
+                                },
+                                'stderr_max_chars': {
+                                    'type': 'integer'
+                                },
+                                'stdout_max_chars': {
+                                    'type': 'integer'
+                                },
+                                'timeout': {
+                                    'type': 'integer'
+                                }
+                            },
+                            'required': [
+                                'project_path',
+                                'script_content',
+                                'runtime',
+                                'timeout',
+                                'script_label',
+                                'return_full_stdout',
+                                'stdout_max_chars',
+                                'stderr_max_chars',
+                                'content_encoding',
+                                'python_exe',
+                                'required_python_modules',
+                                'dry_run',
+                                'confirm_destructive',
+                                'skip_backup'
+                            ],
+                            'type': 'object'
+                        },
+                        'phase': {
+                            'type': 'string'
+                        },
+                        'phase_label': {
+                            'type': 'string'
+                        },
+                        'recommended_prompt_rule': {
+                            'type': 'string'
+                        },
+                        'required_fields': {
+                            'items': {
+                                'type': 'string'
+                            },
+                            'type': 'array'
+                        },
+                        'see_also': {
+                            'properties': {},
+                            'type': 'object'
+                        },
+                        'suggested_alternative_tool': {
+                            'properties': {},
+                            'type': 'object'
+                        }
+                    },
+                    'required': [
+                        'phase',
+                        'phase_label',
+                        'error_name',
+                        'ca_next_action',
+                        'call_pattern',
+                        'payload_example',
+                        'required_fields',
+                        'accepted_aliases',
+                        'notes',
+                        'known_gotchas',
+                        'recommended_prompt_rule',
+                        'see_also',
+                        'suggested_alternative_tool'
+                    ],
+                    'type': 'object',
+                    'x-dual': True
+                },
+                'ca_next_action': {
+                    'type': 'string',
+                    'x-dual': True
+                },
+                'child_encoding': {
+                    'properties': {
+                        'PYTHONIOENCODING': {
+                            'type': 'string'
+                        },
+                        'PYTHONUTF8': {
+                            'type': 'string'
+                        },
+                        'override': {
+                            'type': 'string'
+                        },
+                        'why': {
+                            'type': 'string'
+                        }
+                    },
+                    'required': [
+                        'PYTHONIOENCODING',
+                        'PYTHONUTF8',
+                        'why',
+                        'override'
+                    ],
+                    'type': 'object'
+                },
+                'duration_seconds': {
+                    'type': 'number'
+                },
+                'error': {
+                    'type': 'string',
+                    'x-dual': True
+                },
+                'error_name': {
+                    'type': 'string',
+                    'x-dual': True
+                },
+                'exit_code': {
+                    'type': 'integer'
+                },
+                'generation': {
+                    'type': 'string'
+                },
+                'ok': {
+                    'type': 'boolean',
+                    'x-dual': True
+                },
+                'operation_attempts': {
+                    'type': 'integer'
+                },
+                'operation_id': {
+                    'type': 'string'
+                },
+                'payload_example': {
+                    'properties': {
+                        'confirm_destructive': {
+                            'type': 'integer'
+                        },
+                        'content_encoding': {
+                            'type': 'string'
+                        },
+                        'dry_run': {
+                            'type': 'boolean'
+                        },
+                        'project_path': {
+                            'type': 'string'
+                        },
+                        'python_exe': {
+                            'type': 'string'
+                        },
+                        'required_python_modules': {
+                            'type': 'array'
+                        },
+                        'return_full_stdout': {
+                            'type': 'boolean'
+                        },
+                        'runtime': {
+                            'type': 'string'
+                        },
+                        'script_content': {
+                            'type': 'string'
+                        },
+                        'script_label': {
+                            'type': 'string'
+                        },
+                        'skip_backup': {
+                            'type': 'boolean'
+                        },
+                        'stderr_max_chars': {
+                            'type': 'integer'
+                        },
+                        'stdout_max_chars': {
+                            'type': 'integer'
+                        },
+                        'timeout': {
+                            'type': 'integer'
+                        }
+                    },
+                    'required': [
+                        'project_path',
+                        'script_content',
+                        'runtime',
+                        'timeout',
+                        'script_label',
+                        'return_full_stdout',
+                        'stdout_max_chars',
+                        'stderr_max_chars',
+                        'content_encoding',
+                        'python_exe',
+                        'required_python_modules',
+                        'dry_run',
+                        'confirm_destructive',
+                        'skip_backup'
+                    ],
+                    'type': 'object',
+                    'x-dual': True
+                },
+                'phase': {
+                    'type': 'string',
+                    'x-dual': True
+                },
+                'retry_sequence': {
+                    'type': 'array',
+                    'x-dual': True
+                },
+                'runtime_used': {
+                    'type': 'string'
+                },
+                'script_hash': {
+                    'type': 'string'
+                },
+                'script_label': {
+                    'type': 'string'
+                },
+                'script_path': {
+                    'type': 'string'
+                },
+                'stderr': {
+                    'type': 'string'
+                },
+                'stderr_metadata': {
+                    'properties': {
+                        'original_chars': {
+                            'type': 'integer'
+                        },
+                        'returned_chars': {
+                            'type': 'integer'
+                        },
+                        'sha256': {
+                            'type': 'string'
+                        },
+                        'truncated': {
+                            'type': 'boolean'
+                        }
+                    },
+                    'required': [
+                        'original_chars',
+                        'returned_chars',
+                        'truncated',
+                        'sha256'
+                    ],
+                    'type': 'object'
+                },
+                'stdout': {
+                    'type': 'string'
+                },
+                'stdout_metadata': {
+                    'properties': {
+                        'original_chars': {
+                            'type': 'integer'
+                        },
+                        'returned_chars': {
+                            'type': 'integer'
+                        },
+                        'sha256': {
+                            'type': 'string'
+                        },
+                        'truncated': {
+                            'type': 'boolean'
+                        }
+                    },
+                    'required': [
+                        'original_chars',
+                        'returned_chars',
+                        'truncated',
+                        'sha256'
+                    ],
+                    'type': 'object'
+                },
+                'test_gap': {
+                    'properties': {
+                        'payload': {
+                            'type': 'null'
+                        },
+                        'reason': {
+                            'type': 'string'
+                        },
+                        'status': {
+                            'type': 'string'
+                        }
+                    },
+                    'required': [
+                        'status',
+                        'reason',
+                        'payload'
+                    ],
+                    'type': 'object'
+                },
+                'timed_out': {
+                    'type': 'boolean'
+                },
+                'write_status_url': {
+                    'type': 'string'
+                }
+            },
+            'required': [
+                'ok',
+                'exit_code',
+                'stdout',
+                'stdout_metadata',
+                'stderr',
+                'stderr_metadata',
+                'duration_seconds',
+                'script_path',
+                'script_hash',
+                'script_label',
+                'runtime_used',
+                'timed_out',
+                'child_encoding',
+                'ca_next_action',
+                'test_gap',
+                'generation',
+                'operation_id',
+                'write_status_url',
+                'operation_attempts'
+            ],
+            'type': 'object',
+            'x-audit': {
+                'status': 'audited',
+                'schema_sha256': '97863f0b4431381f75751273ef7243b34eb157803a9a6d3c3cb437eb22b7799b',
+                'depth_D': 4
+            }
+        },
+        'run_ps1_script': {
+            'properties': {
+                'ca_next_action': {
+                    'type': 'string',
+                    'x-dual': True
+                },
+                'duration_seconds': {
+                    'type': 'number'
+                },
+                'exit_code': {
+                    'type': 'integer'
+                },
+                'generation': {
+                    'type': 'string'
+                },
+                'ok': {
+                    'type': 'boolean',
+                    'x-dual': True
+                },
+                'operation_attempts': {
+                    'type': 'integer'
+                },
+                'operation_id': {
+                    'type': 'string'
+                },
+                'runtime_used': {
+                    'type': 'string'
+                },
+                'script_hash': {
+                    'type': 'string'
+                },
+                'script_label': {
+                    'type': 'string'
+                },
+                'script_path': {
+                    'type': 'string'
+                },
+                'stderr': {
+                    'type': 'string'
+                },
+                'stderr_metadata': {
+                    'properties': {
+                        'original_chars': {
+                            'type': 'integer'
+                        },
+                        'returned_chars': {
+                            'type': 'integer'
+                        },
+                        'sha256': {
+                            'type': 'string'
+                        },
+                        'truncated': {
+                            'type': 'boolean'
+                        }
+                    },
+                    'required': [
+                        'original_chars',
+                        'returned_chars',
+                        'truncated',
+                        'sha256'
+                    ],
+                    'type': 'object'
+                },
+                'stdout': {
+                    'type': 'string'
+                },
+                'stdout_metadata': {
+                    'properties': {
+                        'original_chars': {
+                            'type': 'integer'
+                        },
+                        'returned_chars': {
+                            'type': 'integer'
+                        },
+                        'sha256': {
+                            'type': 'string'
+                        },
+                        'truncated': {
+                            'type': 'boolean'
+                        }
+                    },
+                    'required': [
+                        'original_chars',
+                        'returned_chars',
+                        'truncated',
+                        'sha256'
+                    ],
+                    'type': 'object'
+                },
+                'test_gap': {
+                    'properties': {
+                        'payload': {
+                            'type': 'null'
+                        },
+                        'reason': {
+                            'type': 'string'
+                        },
+                        'status': {
+                            'type': 'string'
+                        }
+                    },
+                    'required': [
+                        'status',
+                        'reason',
+                        'payload'
+                    ],
+                    'type': 'object'
+                },
+                'timed_out': {
+                    'type': 'boolean'
+                },
+                'write_status_url': {
+                    'type': 'string'
+                }
+            },
+            'required': [
+                'ok',
+                'exit_code',
+                'stdout',
+                'stdout_metadata',
+                'stderr',
+                'stderr_metadata',
+                'duration_seconds',
+                'script_path',
+                'script_hash',
+                'script_label',
+                'runtime_used',
+                'timed_out',
+                'ca_next_action',
+                'test_gap',
+                'generation',
+                'operation_id',
+                'write_status_url',
+                'operation_attempts'
+            ],
+            'type': 'object',
+            'x-audit': {
+                'status': 'audited',
+                'schema_sha256': '4f2f7714d76ce0dfe093f30738537253a86fa1934abee887eef37266e3e1da72',
+                'depth_D': 2
+            }
+        },
+        'tool_decision_hint': {
+            'properties': {
+                'all_recommended_tools_live': {
+                    'type': 'boolean'
+                },
+                'candidates': {
+                    'items': {
+                        'properties': {
+                            'description': {
+                                'type': 'string'
+                            },
+                            'score': {
+                                'type': 'number'
+                            },
+                            'see_also': {
+                                'type': 'null'
+                            },
+                            'tier': {
+                                'type': 'string'
+                            },
+                            'tool': {
+                                'type': 'string'
+                            }
+                        },
+                        'required': [
+                            'tool',
+                            'tier',
+                            'score',
+                            'description',
+                            'see_also'
+                        ],
+                        'type': 'object'
+                    },
+                    'type': 'array'
+                },
+                'concurrent_api_calls_observed': {
+                    'type': 'integer'
+                },
+                'confidence': {
+                    'type': 'number'
+                },
+                'contention_note': {
+                    'type': 'string'
+                },
+                'generation': {
+                    'type': 'string'
+                },
+                'next_step': {
+                    'type': 'string'
+                },
+                'ok': {
+                    'type': 'boolean',
+                    'x-dual': True
+                },
+                'payload_example_per_tool': {
+                    'properties': {
+                        'read_context_batch': {
+                            'properties': {
+                                'project_path': {
+                                    'type': 'string'
+                                },
+                                'requests': {
+                                    'type': 'string'
+                                }
+                            },
+                            'required': [
+                                'project_path',
+                                'requests'
+                            ],
+                            'type': 'object'
+                        },
+                        'read_file_range': {
+                            'properties': {
+                                'file_path': {
+                                    'type': 'string'
+                                }
+                            },
+                            'required': [
+                                'file_path'
+                            ],
+                            'type': 'object'
+                        }
+                    },
+                    'required': [
+                        'read_file_range',
+                        'read_context_batch'
+                    ],
+                    'type': 'object'
+                },
+                'q_memory_refs': {
+                    'type': 'array'
+                },
+                'rationale': {
+                    'type': 'string'
+                },
+                'recipe': {
+                    'properties': {
+                        'advisory_only': {
+                            'type': 'boolean'
+                        },
+                        'execution_note': {
+                            'type': 'string'
+                        },
+                        'name': {
+                            'type': 'string'
+                        },
+                        'steps': {
+                            'items': {
+                                'properties': {
+                                    'action': {
+                                        'type': 'string'
+                                    },
+                                    'tool': {
+                                        'type': 'string'
+                                    }
+                                },
+                                'required': [
+                                    'tool',
+                                    'action'
+                                ],
+                                'type': 'object'
+                            },
+                            'type': 'array'
+                        }
+                    },
+                    'required': [
+                        'name',
+                        'advisory_only',
+                        'steps',
+                        'execution_note'
+                    ],
+                    'type': 'object'
+                },
+                'recommended_skill': {
+                    'type': 'string'
+                },
+                'recommended_tier': {
+                    'type': 'string'
+                },
+                'recommended_tool': {
+                    'type': 'string'
+                },
+                'schema_version': {
+                    'type': 'string'
+                },
+                'suggestion': {
+                    'properties': {
+                        'payload_example': {
+                            'properties': {
+                                'file_path': {
+                                    'type': 'string'
+                                },
+                                'port': {
+                                    'type': 'integer'
+                                }
+                            },
+                            'type': 'object'
+                        },
+                        'reason': {
+                            'type': 'string'
+                        },
+                        'tier': {
+                            'type': 'string'
+                        },
+                        'tool': {
+                            'type': 'string'
+                        }
+                    },
+                    'required': [
+                        'tool',
+                        'tier',
+                        'payload_example',
+                        'reason'
+                    ],
+                    'type': 'object'
+                },
+                'verbosity_mode': {
+                    'type': 'string'
+                }
+            },
+            'required': [
+                'recommended_tier',
+                'recommended_tool',
+                'recommended_skill',
+                'suggestion',
+                'ok',
+                'schema_version',
+                'generation'
+            ],
+            'type': 'object',
+            'x-audit': {
+                'status': 'audited',
+                'schema_sha256': 'b4375a13cd8dfaf2575ed5cb561e3b55572ed5ca2a256ab1426aa67751a2d236',
+                'depth_D': 4
+            }
+        },
+        'write_transaction': {
+            'properties': {
+                'applied_count': {
+                    'type': 'integer'
+                },
+                'apply_results': {
+                    'items': {
+                        'properties': {
+                            'action_required': {
+                                'type': 'string'
+                            },
+                            'backup': {
+                                'type': 'string'
+                            },
+                            'bytes_written': {
+                                'type': 'integer'
+                            },
+                            'ca_hint_commit': {
+                                'type': 'string'
+                            },
+                            'ca_next_action': {
+                                'type': 'string'
+                            },
+                            'cache_sync_error': {
+                                'properties': {
+                                    'message': {
+                                        'type': 'string'
+                                    },
+                                    'type': {
+                                        'type': 'string'
+                                    }
+                                },
+                                'required': [
+                                    'type',
+                                    'message'
+                                ],
+                                'type': 'object'
+                            },
+                            'cache_sync_warning': {
+                                'type': 'string'
+                            },
+                            'cache_synced': {
+                                'type': 'boolean'
+                            },
+                            'diff_preview': {
+                                'properties': {
+                                    'added': {
+                                        'type': 'integer'
+                                    },
+                                    'changed_lines': {
+                                        'type': 'integer'
+                                    },
+                                    'diff_unified': {
+                                        'type': 'string'
+                                    },
+                                    'preview_after': {
+                                        'type': 'string'
+                                    },
+                                    'preview_before': {
+                                        'type': 'string'
+                                    },
+                                    'preview_hash': {
+                                        'type': 'string'
+                                    },
+                                    'removed': {
+                                        'type': 'integer'
+                                    },
+                                    'truncated': {
+                                        'type': 'boolean'
+                                    }
+                                },
+                                'required': [
+                                    'changed_lines',
+                                    'added',
+                                    'removed',
+                                    'preview_before',
+                                    'preview_after',
+                                    'diff_unified',
+                                    'truncated',
+                                    'preview_hash'
+                                ],
+                                'type': 'object'
+                            },
+                            'encoding_check': {
+                                'properties': {
+                                    'bytes_written': {
+                                        'type': 'integer'
+                                    },
+                                    'encoding_used': {
+                                        'type': 'string'
+                                    },
+                                    'mojibake_confirmed': {
+                                        'type': 'boolean'
+                                    },
+                                    'mojibake_markers_present': {
+                                        'type': 'boolean'
+                                    },
+                                    'mojibake_risk': {
+                                        'type': 'boolean'
+                                    },
+                                    'suspicious_sequences': {
+                                        'type': 'array'
+                                    },
+                                    'utf8_valid': {
+                                        'type': 'boolean'
+                                    },
+                                    'vietnamese_diacritic_check': {
+                                        'properties': {
+                                            'has_vietnamese_diacritics': {
+                                                'type': 'boolean'
+                                            },
+                                            'status': {
+                                                'type': 'string'
+                                            }
+                                        },
+                                        'required': [
+                                            'has_vietnamese_diacritics',
+                                            'status'
+                                        ],
+                                        'type': 'object'
+                                    }
+                                },
+                                'required': [
+                                    'encoding_used',
+                                    'utf8_valid',
+                                    'mojibake_risk',
+                                    'mojibake_markers_present',
+                                    'mojibake_confirmed',
+                                    'vietnamese_diacritic_check',
+                                    'suspicious_sequences',
+                                    'bytes_written'
+                                ],
+                                'type': 'object'
+                            },
+                            'encoding_used': {
+                                'type': 'string'
+                            },
+                            'fallback_sequence': {
+                                'items': {
+                                    'type': 'string'
+                                },
+                                'type': 'array'
+                            },
+                            'file': {
+                                'type': 'string'
+                            },
+                            'lines_written': {
+                                'type': 'integer'
+                            },
+                            'mojibake_risk': {
+                                'type': 'boolean'
+                            },
+                            'new_hash': {
+                                'type': 'string'
+                            },
+                            'new_lines_count': {
+                                'type': 'integer'
+                            },
+                            'new_mtime': {
+                                'type': 'number'
+                            },
+                            'ok': {
+                                'type': 'boolean'
+                            },
+                            'range_id': {
+                                'type': 'string'
+                            },
+                            'replaced_lines': {
+                                'type': 'string'
+                            },
+                            'sequential_chain_hint': {
+                                'type': 'string'
+                            },
+                            'utf8_valid': {
+                                'type': 'boolean'
+                            },
+                            'vietnamese_diacritic_check': {
+                                'properties': {
+                                    'has_vietnamese_diacritics': {
+                                        'type': 'boolean'
+                                    },
+                                    'status': {
+                                        'type': 'string'
+                                    }
+                                },
+                                'required': [
+                                    'has_vietnamese_diacritics',
+                                    'status'
+                                ],
+                                'type': 'object'
+                            },
+                            'warnings': {
+                                'type': 'array'
+                            },
+                            'write_mode': {
+                                'type': 'string'
+                            }
+                        },
+                        'required': [
+                            'ok',
+                            'file',
+                            'write_mode',
+                            'encoding_check',
+                            'encoding_used',
+                            'bytes_written',
+                            'utf8_valid',
+                            'mojibake_risk',
+                            'vietnamese_diacritic_check',
+                            'cache_synced',
+                            'new_hash',
+                            'ca_hint_commit'
+                        ],
+                        'type': 'object'
+                    },
+                    'type': 'array'
+                },
+                'backup': {
+                    'items': {
+                        'properties': {
+                            'backup_path': {
+                                'type': 'string'
+                            },
+                            'backup_scope': {
+                                'type': 'string'
+                            },
+                            'created_at': {
+                                'type': 'string'
+                            },
+                            'files_skipped': {
+                                'type': 'integer'
+                            },
+                            'files_written': {
+                                'type': 'integer'
+                            },
+                            'ok': {
+                                'type': 'boolean'
+                            },
+                            'skipped_sample': {
+                                'type': 'array'
+                            },
+                            'target_paths': {
+                                'items': {
+                                    'type': 'string'
+                                },
+                                'type': 'array'
+                            },
+                            'total_backups': {
+                                'type': 'integer'
+                            }
+                        },
+                        'required': [
+                            'ok',
+                            'backup_path',
+                            'created_at',
+                            'total_backups',
+                            'files_written',
+                            'files_skipped',
+                            'skipped_sample',
+                            'backup_scope',
+                            'target_paths'
+                        ],
+                        'type': 'object'
+                    },
+                    'type': 'array'
+                },
+                'ca_guidance': {
+                    'properties': {
+                        'accepted_aliases': {
+                            'properties': {},
+                            'type': 'object'
+                        },
+                        'ca_next_action': {
+                            'type': 'string'
+                        },
+                        'call_pattern': {
+                            'type': 'string'
+                        },
+                        'error_name': {
+                            'type': 'string'
+                        },
+                        'known_gotchas': {
+                            'type': 'array'
+                        },
+                        'notes': {
+                            'items': {
+                                'type': 'string'
+                            },
+                            'type': 'array'
+                        },
+                        'payload_example': {
+                            'properties': {
+                                'backup': {
+                                    'type': 'boolean'
+                                },
+                                'operations': {
+                                    'type': 'array'
+                                },
+                                'project_path': {
+                                    'type': 'string'
+                                },
+                                'skip_verify': {
+                                    'type': 'boolean'
+                                },
+                                'structural_check': {
+                                    'type': 'boolean'
+                                }
+                            },
+                            'required': [
+                                'operations',
+                                'project_path',
+                                'backup',
+                                'structural_check',
+                                'skip_verify'
+                            ],
+                            'type': 'object'
+                        },
+                        'phase': {
+                            'type': 'string'
+                        },
+                        'phase_label': {
+                            'type': 'string'
+                        },
+                        'recommended_prompt_rule': {
+                            'type': 'string'
+                        },
+                        'required_fields': {
+                            'items': {
+                                'type': 'string'
+                            },
+                            'type': 'array'
+                        },
+                        'see_also': {
+                            'properties': {
+                                'backup_project': {
+                                    'type': 'string'
+                                },
+                                'write_fix': {
+                                    'type': 'string'
+                                }
+                            },
+                            'required': [
+                                'write_fix',
+                                'backup_project'
+                            ],
+                            'type': 'object'
+                        },
+                        'suggested_alternative_tool': {
+                            'properties': {},
+                            'type': 'object'
+                        }
+                    },
+                    'required': [
+                        'phase',
+                        'phase_label',
+                        'error_name',
+                        'ca_next_action',
+                        'call_pattern',
+                        'payload_example',
+                        'required_fields',
+                        'accepted_aliases',
+                        'notes',
+                        'known_gotchas',
+                        'recommended_prompt_rule',
+                        'see_also',
+                        'suggested_alternative_tool'
+                    ],
+                    'type': 'object',
+                    'x-dual': True
+                },
+                'ca_next_action': {
+                    'type': 'string',
+                    'x-dual': True
+                },
+                'changed_files': {
+                    'items': {
+                        'type': 'string'
+                    },
+                    'type': 'array'
+                },
+                'dry_run_results': {
+                    'items': {
+                        'properties': {
+                            'ca_next_action': {
+                                'type': 'string'
+                            },
+                            'diff_preview': {
+                                'properties': {
+                                    'added': {
+                                        'type': 'integer'
+                                    },
+                                    'changed_lines': {
+                                        'type': 'integer'
+                                    },
+                                    'diff_unified': {
+                                        'type': 'string'
+                                    },
+                                    'preview_after': {
+                                        'type': 'string'
+                                    },
+                                    'preview_before': {
+                                        'type': 'string'
+                                    },
+                                    'preview_hash': {
+                                        'type': 'string'
+                                    },
+                                    'removed': {
+                                        'type': 'integer'
+                                    },
+                                    'truncated': {
+                                        'type': 'boolean'
+                                    }
+                                },
+                                'required': [
+                                    'changed_lines',
+                                    'added',
+                                    'removed',
+                                    'preview_before',
+                                    'preview_after',
+                                    'diff_unified',
+                                    'truncated',
+                                    'preview_hash'
+                                ],
+                                'type': 'object'
+                            },
+                            'dry_run': {
+                                'type': 'boolean'
+                            },
+                            'dry_run_id': {
+                                'type': 'string'
+                            },
+                            'encoding_check': {
+                                'properties': {
+                                    'bytes_written': {
+                                        'type': 'integer'
+                                    },
+                                    'encoding_used': {
+                                        'type': 'string'
+                                    },
+                                    'mojibake_confirmed': {
+                                        'type': 'boolean'
+                                    },
+                                    'mojibake_markers_present': {
+                                        'type': 'boolean'
+                                    },
+                                    'mojibake_risk': {
+                                        'type': 'boolean'
+                                    },
+                                    'suspicious_sequences': {
+                                        'type': 'array'
+                                    },
+                                    'utf8_valid': {
+                                        'type': 'boolean'
+                                    },
+                                    'vietnamese_diacritic_check': {
+                                        'properties': {
+                                            'has_vietnamese_diacritics': {
+                                                'type': 'boolean'
+                                            },
+                                            'status': {
+                                                'type': 'string'
+                                            }
+                                        },
+                                        'required': [
+                                            'has_vietnamese_diacritics',
+                                            'status'
+                                        ],
+                                        'type': 'object'
+                                    }
+                                },
+                                'required': [
+                                    'encoding_used',
+                                    'utf8_valid',
+                                    'mojibake_risk',
+                                    'mojibake_markers_present',
+                                    'mojibake_confirmed',
+                                    'vietnamese_diacritic_check',
+                                    'suspicious_sequences',
+                                    'bytes_written'
+                                ],
+                                'type': 'object'
+                            },
+                            'error': {
+                                'type': 'string'
+                            },
+                            'expires_at': {
+                                'type': 'string'
+                            },
+                            'file': {
+                                'type': 'string'
+                            },
+                            'ok': {
+                                'type': 'boolean'
+                            },
+                            'overwrite_risk': {
+                                'type': 'boolean'
+                            },
+                            'parent_exists': {
+                                'type': 'boolean'
+                            },
+                            'parent_path': {
+                                'type': 'string'
+                            },
+                            'payload_hash': {
+                                'type': 'string'
+                            },
+                            'preview': {
+                                'type': 'string'
+                            },
+                            'preview_truncated': {
+                                'type': 'boolean'
+                            },
+                            'target_exists': {
+                                'type': 'boolean'
+                            },
+                            'target_file_hash': {
+                                'type': 'null'
+                            },
+                            'target_new_ok': {
+                                'type': 'boolean'
+                            },
+                            'would_create': {
+                                'type': 'boolean'
+                            }
+                        },
+                        'type': 'object'
+                    },
+                    'type': 'array'
+                },
+                'error': {
+                    'type': 'string',
+                    'x-dual': True
+                },
+                'error_name': {
+                    'type': 'string',
+                    'x-dual': True
+                },
+                'generation': {
+                    'type': 'string'
+                },
+                'index': {
+                    'type': 'integer'
+                },
+                'ok': {
+                    'type': 'boolean',
+                    'x-dual': True
+                },
+                'operation_attempts': {
+                    'type': 'integer'
+                },
+                'operation_id': {
+                    'type': 'string'
+                },
+                'operations_count': {
+                    'type': 'integer'
+                },
+                'payload_example': {
+                    'properties': {
+                        'backup': {
+                            'type': 'boolean'
+                        },
+                        'operations': {
+                            'type': 'array'
+                        },
+                        'project_path': {
+                            'type': 'string'
+                        },
+                        'skip_verify': {
+                            'type': 'boolean'
+                        },
+                        'structural_check': {
+                            'type': 'boolean'
+                        }
+                    },
+                    'required': [
+                        'operations',
+                        'project_path',
+                        'backup',
+                        'structural_check',
+                        'skip_verify'
+                    ],
+                    'type': 'object',
+                    'x-dual': True
+                },
+                'phase': {
+                    'type': 'string',
+                    'x-dual': True
+                },
+                'retry_sequence': {
+                    'type': 'array',
+                    'x-dual': True
+                },
+                'schema_version': {
+                    'type': 'string'
+                },
+                'structural_warnings': {
+                    'type': 'array'
+                },
+                'transaction_id': {
+                    'type': 'string'
+                },
+                'validation': {
+                    'properties': {
+                        'ca_next_action': {
+                            'type': 'string'
+                        },
+                        'cache_delta_result': {
+                            'properties': {
+                                'added': {
+                                    'items': {
+                                        'type': 'string'
+                                    },
+                                    'type': 'array'
+                                },
+                                'cache_updated_at': {
+                                    'type': 'string'
+                                },
+                                'deleted': {
+                                    'type': 'array'
+                                },
+                                'modified': {
+                                    'items': {
+                                        'type': 'string'
+                                    },
+                                    'type': 'array'
+                                },
+                                'ok': {
+                                    'type': 'boolean'
+                                },
+                                'total_changed': {
+                                    'type': 'integer'
+                                }
+                            },
+                            'required': [
+                                'ok',
+                                'added',
+                                'modified',
+                                'deleted',
+                                'total_changed',
+                                'cache_updated_at'
+                            ],
+                            'type': 'object'
+                        },
+                        'cache_delta_runs': {
+                            'type': 'integer'
+                        },
+                        'encoding_results': {
+                            'items': {
+                                'properties': {
+                                    'bom': {
+                                        'type': 'boolean'
+                                    },
+                                    'bytes': {
+                                        'type': 'integer'
+                                    },
+                                    'ca_next_action': {
+                                        'type': 'string'
+                                    },
+                                    'encoding_detected': {
+                                        'type': 'string'
+                                    },
+                                    'encoding_used': {
+                                        'type': 'string'
+                                    },
+                                    'expected_encoding': {
+                                        'type': 'string'
+                                    },
+                                    'file': {
+                                        'type': 'string'
+                                    },
+                                    'language_hint': {
+                                        'type': 'string'
+                                    },
+                                    'mojibake_confirmed': {
+                                        'type': 'boolean'
+                                    },
+                                    'mojibake_markers_present': {
+                                        'type': 'boolean'
+                                    },
+                                    'mojibake_risk': {
+                                        'type': 'boolean'
+                                    },
+                                    'ok': {
+                                        'type': 'boolean'
+                                    },
+                                    'suspicious_sequences': {
+                                        'type': 'array'
+                                    },
+                                    'utf8_valid': {
+                                        'type': 'boolean'
+                                    },
+                                    'vietnamese_diacritic_check': {
+                                        'properties': {
+                                            'has_vietnamese_diacritics': {
+                                                'type': 'boolean'
+                                            },
+                                            'status': {
+                                                'type': 'string'
+                                            }
+                                        },
+                                        'required': [
+                                            'has_vietnamese_diacritics',
+                                            'status'
+                                        ],
+                                        'type': 'object'
+                                    }
+                                },
+                                'required': [
+                                    'ok',
+                                    'file',
+                                    'expected_encoding',
+                                    'language_hint',
+                                    'encoding_used',
+                                    'utf8_valid',
+                                    'mojibake_risk',
+                                    'mojibake_markers_present',
+                                    'mojibake_confirmed',
+                                    'vietnamese_diacritic_check',
+                                    'suspicious_sequences',
+                                    'encoding_detected',
+                                    'bom',
+                                    'bytes',
+                                    'ca_next_action'
+                                ],
+                                'type': 'object'
+                            },
+                            'type': 'array'
+                        },
+                        'failed_checks': {
+                            'type': 'array'
+                        },
+                        'files_checked': {
+                            'items': {
+                                'type': 'string'
+                            },
+                            'type': 'array'
+                        },
+                        'ok': {
+                            'type': 'boolean'
+                        },
+                        'overall_status': {
+                            'type': 'string'
+                        },
+                        'project_path': {
+                            'type': 'string'
+                        },
+                        'unsupported_tools': {
+                            'items': {
+                                'properties': {
+                                    'file_path': {
+                                        'type': 'string'
+                                    },
+                                    'reason': {
+                                        'type': 'string'
+                                    },
+                                    'tool': {
+                                        'type': 'string'
+                                    }
+                                },
+                                'required': [
+                                    'tool',
+                                    'file_path',
+                                    'reason'
+                                ],
+                                'type': 'object'
+                            },
+                            'type': 'array'
+                        },
+                        'validate_file_results': {
+                            'items': {
+                                'properties': {
+                                    'checked': {
+                                        'type': 'boolean'
+                                    },
+                                    'file': {
+                                        'type': 'string'
+                                    },
+                                    'lang': {
+                                        'type': 'string'
+                                    },
+                                    'note': {
+                                        'type': 'string'
+                                    },
+                                    'ok': {
+                                        'type': 'boolean'
+                                    },
+                                    'ruff_fix_applicable': {
+                                        'type': 'boolean'
+                                    },
+                                    'ruff_fix_hint': {
+                                        'type': 'string'
+                                    },
+                                    'ruff_rules_matched': {
+                                        'type': 'array'
+                                    }
+                                },
+                                'required': [
+                                    'ok',
+                                    'lang',
+                                    'file',
+                                    'checked',
+                                    'note',
+                                    'ruff_fix_applicable',
+                                    'ruff_rules_matched',
+                                    'ruff_fix_hint'
+                                ],
+                                'type': 'object'
+                            },
+                            'type': 'array'
+                        },
+                        'validate_symbols_results': {
+                            'type': 'array'
+                        }
+                    },
+                    'required': [
+                        'project_path',
+                        'ok',
+                        'overall_status',
+                        'files_checked',
+                        'validate_file_results',
+                        'validate_symbols_results',
+                        'encoding_results',
+                        'cache_delta_result',
+                        'unsupported_tools',
+                        'failed_checks',
+                        'cache_delta_runs',
+                        'ca_next_action'
+                    ],
+                    'type': 'object'
+                },
+                'write_status_url': {
+                    'type': 'string'
+                }
+            },
+            'required': [
+                'ok',
+                'schema_version',
+                'generation',
+                'operation_id',
+                'write_status_url',
+                'operation_attempts'
+            ],
+            'type': 'object',
+            'x-audit': {
+                'status': 'audited',
+                'schema_sha256': '3646a791f314d1787f61d10e2799fe19ac19682d3b57cb81c8b0e71d45cca882',
+                'depth_D': 5
+            }
+        },
+    }
+
     def _v15_schema(name: str, description: str, params: dict, required: list = None) -> dict:
         # V15 R40: attach see_also if defined
         schema_function = {
@@ -19800,6 +21788,9 @@ try:
         # V15 R41: attach deprecated flag if defined
         if name in _DEPRECATED_TOOLS:
             schema_function["deprecated"] = True
+        # P16 batch 2: attach audited returns schema if defined
+        if name in _RETURNS_BY_NAME:
+            schema_function["returns"] = _RETURNS_BY_NAME[name]
         return {"type": "function", "function": schema_function}
 
     _V15_R8_NEW_SCHEMAS = [
@@ -20420,6 +22411,137 @@ try:
         phase_labels=PHASE_LABELS,
         schema={
             "description": "T2 Ruff auto-fix. Defaults to preview: returns Ruff unified diff and does not edit. Set apply=true to apply safe fixes; unsafe_fixes is opt-in.",
+            "returns": {
+                'properties': {
+                    'generation': {
+                        'type': 'string'
+                    },
+                    'ok': {
+                        'type': 'boolean',
+                        'x-dual': True
+                    },
+                    'operation_attempts': {
+                        'type': 'integer'
+                    },
+                    'operation_id': {
+                        'type': 'string'
+                    },
+                    'result': {
+                        'properties': {
+                            'applied': {
+                                'type': 'boolean'
+                            },
+                            'changed': {
+                                'type': 'boolean'
+                            },
+                            'config': {
+                                'type': 'string'
+                            },
+                            'diff': {
+                                'type': 'string'
+                            },
+                            'exit_code': {
+                                'type': 'integer'
+                            },
+                            'hash_pin_note': {
+                                'type': 'string'
+                            },
+                            'mode': {
+                                'type': 'string'
+                            },
+                            'path': {
+                                'type': 'string'
+                            },
+                            'post_ruff_validation': {
+                                'properties': {
+                                    'all_ok': {
+                                        'type': 'boolean'
+                                    },
+                                    'details': {
+                                        'items': {
+                                            'properties': {
+                                                'error': {
+                                                    'type': 'string'
+                                                },
+                                                'file': {
+                                                    'type': 'string'
+                                                },
+                                                'ok': {
+                                                    'type': 'boolean'
+                                                }
+                                            },
+                                            'required': [
+                                                'file',
+                                                'ok',
+                                                'error'
+                                            ],
+                                            'type': 'object'
+                                        },
+                                        'type': 'array'
+                                    },
+                                    'validated': {
+                                        'type': 'integer'
+                                    }
+                                },
+                                'required': [
+                                    'validated',
+                                    'all_ok',
+                                    'details'
+                                ],
+                                'type': 'object'
+                            },
+                            'preserve_hash': {
+                                'type': 'boolean'
+                            },
+                            'select': {
+                                'type': 'string'
+                            },
+                            'stderr': {
+                                'type': 'string'
+                            },
+                            'stdout': {
+                                'type': 'string'
+                            },
+                            'unsafe_fixes': {
+                                'type': 'boolean'
+                            }
+                        },
+                        'required': [
+                            'mode',
+                            'applied',
+                            'unsafe_fixes',
+                            'preserve_hash',
+                            'hash_pin_note',
+                            'path',
+                            'diff',
+                            'stdout',
+                            'stderr',
+                            'exit_code',
+                            'changed',
+                            'config',
+                            'select'
+                        ],
+                        'type': 'object'
+                    },
+                    'write_status_url': {
+                        'type': 'string'
+                    }
+                },
+                'required': [
+                    'ok',
+                    'result',
+                    'generation',
+                    'operation_id',
+                    'write_status_url',
+                    'operation_attempts'
+                ],
+                'type': 'object',
+                'x-audit': {
+                    'status': 'audited',
+                    'schema_sha256': '2f736223ac4105e238c6633b9c242e985f8a230692c37ddb73f55c2c1f91e01e',
+                    'depth_D': 5
+                }
+            },
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -20464,6 +22586,145 @@ try:
         phase_labels=PHASE_LABELS,
         schema={
             "description": "T1 read-only: bounded advisory graph context pack for council dispatch (Step 21). Leader embeds the block in worker prompts explicitly — never auto-injected, fail-open, never blocks dispatch. name= -> symbol + inbound blast radius; file_path= (name empty) -> all symbols in file + direct callers; omit both -> changed-files pack (detect_changes + direct callers). Bounds COUNCIL_CONTEXT_MAX_FILES=10 / COUNCIL_CONTEXT_MAX_SYMBOLS=50; truncated + truncation_reason list every cap hit.",
+            "returns": {
+                'properties': {
+                    'concurrent_api_calls_observed': {
+                        'type': 'integer'
+                    },
+                    'contention_note': {
+                        'type': 'string'
+                    },
+                    'generation': {
+                        'type': 'string'
+                    },
+                    'ok': {
+                        'type': 'boolean',
+                        'x-dual': True
+                    },
+                    'result': {
+                        'properties': {
+                            'budget': {
+                                'properties': {
+                                    'max_files': {
+                                        'type': 'integer'
+                                    },
+                                    'max_symbols': {
+                                        'type': 'integer'
+                                    }
+                                },
+                                'required': [
+                                    'max_files',
+                                    'max_symbols'
+                                ],
+                                'type': 'object'
+                            },
+                            'elapsed_ms': {
+                                'type': 'number'
+                            },
+                            'empty': {
+                                'type': 'boolean'
+                            },
+                            'files': {
+                                'items': {
+                                    'type': 'string'
+                                },
+                                'type': 'array'
+                            },
+                            'graph_degraded_reason': {
+                                'type': 'null'
+                            },
+                            'graph_status': {
+                                'type': 'string'
+                            },
+                            'graph_used': {
+                                'type': 'boolean'
+                            },
+                            'source': {
+                                'type': 'string'
+                            },
+                            'symbols': {
+                                'items': {
+                                    'properties': {
+                                        'confidence': {
+                                            'anyOf': [
+                                                {
+                                                    'type': 'number'
+                                                },
+                                                {
+                                                    'type': 'null'
+                                                }
+                                            ]
+                                        },
+                                        'file_path': {
+                                            'type': 'string'
+                                        },
+                                        'kind': {
+                                            'type': 'string'
+                                        },
+                                        'qualified_name': {
+                                            'type': 'string'
+                                        },
+                                        'role': {
+                                            'type': 'string'
+                                        },
+                                        'start_line': {
+                                            'type': 'integer'
+                                        }
+                                    },
+                                    'required': [
+                                        'qualified_name',
+                                        'kind',
+                                        'file_path',
+                                        'start_line',
+                                        'confidence',
+                                        'role'
+                                    ],
+                                    'type': 'object'
+                                },
+                                'type': 'array'
+                            },
+                            'truncated': {
+                                'type': 'boolean'
+                            },
+                            'truncation_reason': {
+                                'anyOf': [
+                                    {
+                                        'type': 'string'
+                                    },
+                                    {
+                                        'type': 'null'
+                                    }
+                                ]
+                            }
+                        },
+                        'required': [
+                            'graph_status',
+                            'graph_used',
+                            'graph_degraded_reason',
+                            'source',
+                            'files',
+                            'symbols',
+                            'truncated',
+                            'truncation_reason',
+                            'empty',
+                            'budget',
+                            'elapsed_ms'
+                        ],
+                        'type': 'object'
+                    }
+                },
+                'required': [
+                    'ok',
+                    'result',
+                    'generation'
+                ],
+                'type': 'object',
+                'x-audit': {
+                    'status': 'audited',
+                    'schema_sha256': '0927e7150d11e1a9d5c92d4aa3902b137c82805f5e99d6fe6f95c9d9db742b7f',
+                    'depth_D': 4
+                }
+            },
             "parameters": {
                 "type": "object",
                 "properties": {

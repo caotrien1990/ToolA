@@ -2809,6 +2809,604 @@ BASE_TOOL_SCHEMAS = [
 
 			},
 
+			"returns": {
+				'properties': {
+					'_harness_warnings': {
+						'items': {
+							'type': 'string'
+						},
+						'type': 'array'
+					},
+					'backup': {
+						'type': 'string'
+					},
+					'bytes_written': {
+						'type': 'integer'
+					},
+					'ca_guidance': {
+						'properties': {
+							'accepted_aliases': {
+								'properties': {
+									'content': {
+										'properties': {
+											'maps_to': {
+												'type': 'string'
+											},
+											'status': {
+												'type': 'string'
+											}
+										},
+										'required': [
+											'maps_to',
+											'status'
+										],
+										'type': 'object'
+									},
+									'end': {
+										'properties': {
+											'maps_to': {
+												'type': 'string'
+											},
+											'status': {
+												'type': 'string'
+											}
+										},
+										'required': [
+											'maps_to',
+											'status'
+										],
+										'type': 'object'
+									},
+									'line_end': {
+										'properties': {
+											'maps_to': {
+												'type': 'string'
+											},
+											'status': {
+												'type': 'string'
+											}
+										},
+										'required': [
+											'maps_to',
+											'status'
+										],
+										'type': 'object'
+									},
+									'line_start': {
+										'properties': {
+											'maps_to': {
+												'type': 'string'
+											},
+											'status': {
+												'type': 'string'
+											}
+										},
+										'required': [
+											'maps_to',
+											'status'
+										],
+										'type': 'object'
+									},
+									'path': {
+										'properties': {
+											'maps_to': {
+												'type': 'string'
+											},
+											'status': {
+												'type': 'string'
+											}
+										},
+										'required': [
+											'maps_to',
+											'status'
+										],
+										'type': 'object'
+									},
+									'replacement': {
+										'properties': {
+											'maps_to': {
+												'type': 'string'
+											},
+											'status': {
+												'type': 'string'
+											}
+										},
+										'required': [
+											'maps_to',
+											'status'
+										],
+										'type': 'object'
+									},
+									'start': {
+										'properties': {
+											'maps_to': {
+												'type': 'string'
+											},
+											'status': {
+												'type': 'string'
+											}
+										},
+										'required': [
+											'maps_to',
+											'status'
+										],
+										'type': 'object'
+									}
+								},
+								'required': [
+									'path',
+									'content',
+									'replacement',
+									'start',
+									'end',
+									'line_start',
+									'line_end'
+								],
+								'type': 'object'
+							},
+							'ca_next_action': {
+								'type': 'string'
+							},
+							'call_pattern': {
+								'type': 'string'
+							},
+							'error_name': {
+								'type': 'string'
+							},
+							'known_gotchas': {
+								'items': {
+									'type': 'string'
+								},
+								'type': 'array'
+							},
+							'notes': {
+								'items': {
+									'type': 'string'
+								},
+								'type': 'array'
+							},
+							'payload_example': {
+								'properties': {
+									'backup_override': {
+										'type': 'boolean'
+									},
+									'content_encoding': {
+										'type': 'string'
+									},
+									'dry_run': {
+										'type': 'boolean'
+									},
+									'end_line': {
+										'type': 'integer'
+									},
+									'expected_hash': {
+										'type': 'string'
+									},
+									'file_path': {
+										'type': 'string'
+									},
+									'new_content': {
+										'type': 'string'
+									},
+									'project_path': {
+										'type': 'string'
+									},
+									'skip_symbol_check': {
+										'type': 'boolean'
+									},
+									'start_line': {
+										'type': 'integer'
+									}
+								},
+								'required': [
+									'file_path',
+									'start_line',
+									'end_line',
+									'new_content',
+									'project_path',
+									'dry_run',
+									'content_encoding',
+									'expected_hash',
+									'backup_override',
+									'skip_symbol_check'
+								],
+								'type': 'object'
+							},
+							'phase': {
+								'type': 'string'
+							},
+							'phase_label': {
+								'type': 'string'
+							},
+							'recommended_prompt_rule': {
+								'type': 'string'
+							},
+							'required_fields': {
+								'items': {
+									'type': 'string'
+								},
+								'type': 'array'
+							},
+							'see_also': {
+								'properties': {
+									'read_file_range': {
+										'type': 'string'
+									},
+									'search_code': {
+										'type': 'string'
+									},
+									'write_transaction': {
+										'type': 'string'
+									}
+								},
+								'required': [
+									'write_transaction',
+									'search_code',
+									'read_file_range'
+								],
+								'type': 'object'
+							},
+							'suggested_alternative_tool': {
+								'properties': {
+									'reason': {
+										'type': 'string'
+									},
+									'tool': {
+										'type': 'string'
+									}
+								},
+								'required': [
+									'tool',
+									'reason'
+								],
+								'type': 'object'
+							}
+						},
+						'required': [
+							'phase',
+							'phase_label',
+							'error_name',
+							'ca_next_action',
+							'call_pattern',
+							'payload_example',
+							'required_fields',
+							'accepted_aliases',
+							'notes',
+							'known_gotchas',
+							'recommended_prompt_rule',
+							'see_also',
+							'suggested_alternative_tool'
+						],
+						'type': 'object',
+						'x-dual': True
+					},
+					'ca_hint_commit': {
+						'type': 'string'
+					},
+					'ca_next_action': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'ca_next_tool': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'cache_synced': {
+						'type': 'boolean'
+					},
+					'diff': {
+						'type': 'string'
+					},
+					'diff_preview': {
+						'properties': {
+							'added': {
+								'type': 'integer'
+							},
+							'changed_lines': {
+								'type': 'integer'
+							},
+							'diff_unified': {
+								'type': 'string'
+							},
+							'preview_after': {
+								'type': 'string'
+							},
+							'preview_before': {
+								'type': 'string'
+							},
+							'preview_hash': {
+								'type': 'string'
+							},
+							'removed': {
+								'type': 'integer'
+							},
+							'truncated': {
+								'type': 'boolean'
+							}
+						},
+						'required': [
+							'changed_lines',
+							'added',
+							'removed',
+							'preview_before',
+							'preview_after',
+							'diff_unified',
+							'truncated',
+							'preview_hash'
+						],
+						'type': 'object'
+					},
+					'dry_run': {
+						'type': 'boolean'
+					},
+					'dry_run_id': {
+						'type': 'string'
+					},
+					'encoding_check': {
+						'properties': {
+							'bytes_written': {
+								'type': 'integer'
+							},
+							'encoding_used': {
+								'type': 'string'
+							},
+							'mojibake_confirmed': {
+								'type': 'boolean'
+							},
+							'mojibake_markers_present': {
+								'type': 'boolean'
+							},
+							'mojibake_risk': {
+								'type': 'boolean'
+							},
+							'suspicious_sequences': {
+								'type': 'array'
+							},
+							'utf8_valid': {
+								'type': 'boolean'
+							},
+							'vietnamese_diacritic_check': {
+								'properties': {
+									'has_vietnamese_diacritics': {
+										'type': 'boolean'
+									},
+									'status': {
+										'type': 'string'
+									}
+								},
+								'required': [
+									'has_vietnamese_diacritics',
+									'status'
+								],
+								'type': 'object'
+							}
+						},
+						'required': [
+							'encoding_used',
+							'utf8_valid',
+							'mojibake_risk',
+							'mojibake_markers_present',
+							'mojibake_confirmed',
+							'vietnamese_diacritic_check',
+							'suspicious_sequences',
+							'bytes_written'
+						],
+						'type': 'object'
+					},
+					'encoding_used': {
+						'type': 'string'
+					},
+					'error': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'error_name': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'expires_at': {
+						'type': 'string'
+					},
+					'file': {
+						'type': 'string'
+					},
+					'generation': {
+						'type': 'string'
+					},
+					'guardrail_warning': {
+						'type': 'string'
+					},
+					'hint': {
+						'type': 'string'
+					},
+					'index_auto_seed_pending': {
+						'type': 'boolean'
+					},
+					'mojibake_risk': {
+						'type': 'boolean'
+					},
+					'new_hash': {
+						'type': 'string'
+					},
+					'new_lines_count': {
+						'type': 'integer'
+					},
+					'new_mtime': {
+						'type': 'number'
+					},
+					'ok': {
+						'type': 'boolean',
+						'x-dual': True
+					},
+					'operation_attempts': {
+						'type': 'integer'
+					},
+					'operation_id': {
+						'type': 'string'
+					},
+					'payload_example': {
+						'properties': {
+							'backup_override': {
+								'type': 'boolean'
+							},
+							'content_encoding': {
+								'type': 'string'
+							},
+							'dry_run': {
+								'type': 'boolean'
+							},
+							'end_line': {
+								'type': 'integer'
+							},
+							'expected_hash': {
+								'type': 'string'
+							},
+							'file_path': {
+								'type': 'string'
+							},
+							'new_content': {
+								'type': 'string'
+							},
+							'project_path': {
+								'type': 'string'
+							},
+							'skip_symbol_check': {
+								'type': 'boolean'
+							},
+							'start_line': {
+								'type': 'integer'
+							}
+						},
+						'required': [
+							'file_path',
+							'start_line',
+							'end_line',
+							'new_content',
+							'project_path',
+							'dry_run',
+							'content_encoding',
+							'expected_hash',
+							'backup_override',
+							'skip_symbol_check'
+						],
+						'type': 'object',
+						'x-dual': True
+					},
+					'payload_hash': {
+						'type': 'string'
+					},
+					'phase': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'preview': {
+						'properties': {
+							'lines_added': {
+								'items': {
+									'type': 'string'
+								},
+								'type': 'array'
+							},
+							'lines_removed': {
+								'items': {
+									'type': 'string'
+								},
+								'type': 'array'
+							},
+							'range': {
+								'type': 'string'
+							}
+						},
+						'required': [
+							'range',
+							'lines_removed',
+							'lines_added'
+						],
+						'type': 'object'
+					},
+					'range_id': {
+						'type': 'string'
+					},
+					'read_token_seal_error': {
+						'type': 'string'
+					},
+					'read_token_sealed': {
+						'type': 'boolean'
+					},
+					'replaced_lines': {
+						'type': 'string'
+					},
+					'retry_sequence': {
+						'type': 'array',
+						'x-dual': True
+					},
+					'sequential_chain_hint': {
+						'type': 'string'
+					},
+					'suggested_alternative_tool': {
+						'properties': {
+							'reason': {
+								'type': 'string'
+							},
+							'tool': {
+								'type': 'string'
+							}
+						},
+						'required': [
+							'tool',
+							'reason'
+						],
+						'type': 'object',
+						'x-dual': True
+					},
+					'target_file_hash': {
+						'type': 'string'
+					},
+					'utf8_valid': {
+						'type': 'boolean'
+					},
+					'validation': {
+						'type': 'null'
+					},
+					'vietnamese_diacritic_check': {
+						'properties': {
+							'has_vietnamese_diacritics': {
+								'type': 'boolean'
+							},
+							'status': {
+								'type': 'string'
+							}
+						},
+						'required': [
+							'has_vietnamese_diacritics',
+							'status'
+						],
+						'type': 'object'
+					},
+					'warnings': {
+						'type': 'array'
+					},
+					'write_mode': {
+						'type': 'string'
+					},
+					'write_status_url': {
+						'type': 'string'
+					}
+				},
+				'required': [
+					'ok',
+					'generation',
+					'operation_id',
+					'write_status_url',
+					'operation_attempts'
+				],
+				'type': 'object',
+				'x-audit': {
+					'status': 'audited',
+					'schema_sha256': '9d47953f5ee4b5e439825ee72a99480683ce578e2c2df614e1a05cbbf6d0693c',
+					'depth_D': 4
+				}
+			},
 		},
 
 	},
@@ -2842,6 +3440,449 @@ BASE_TOOL_SCHEMAS = [
 
 			},
 
+			"returns": {
+				'properties': {
+					'bytes_written': {
+						'type': 'integer'
+					},
+					'ca_guidance': {
+						'properties': {
+							'accepted_aliases': {
+								'properties': {
+									'content': {
+										'properties': {
+											'maps_to': {
+												'type': 'string'
+											},
+											'status': {
+												'type': 'string'
+											}
+										},
+										'required': [
+											'maps_to',
+											'status'
+										],
+										'type': 'object'
+									},
+									'file_path': {
+										'properties': {
+											'maps_to': {
+												'type': 'string'
+											},
+											'status': {
+												'type': 'string'
+											}
+										},
+										'required': [
+											'maps_to',
+											'status'
+										],
+										'type': 'object'
+									}
+								},
+								'required': [
+									'file_path',
+									'content'
+								],
+								'type': 'object'
+							},
+							'ca_next_action': {
+								'type': 'string'
+							},
+							'call_pattern': {
+								'type': 'string'
+							},
+							'error_name': {
+								'type': 'string'
+							},
+							'known_gotchas': {
+								'items': {
+									'type': 'string'
+								},
+								'type': 'array'
+							},
+							'notes': {
+								'items': {
+									'type': 'string'
+								},
+								'type': 'array'
+							},
+							'payload_example': {
+								'properties': {
+									'backup_override': {
+										'type': 'boolean'
+									},
+									'content_encoding': {
+										'type': 'string'
+									},
+									'dry_run': {
+										'type': 'boolean'
+									},
+									'overwrite': {
+										'type': 'boolean'
+									},
+									'path': {
+										'type': 'string'
+									},
+									'project_path': {
+										'type': 'string'
+									}
+								},
+								'required': [
+									'path',
+									'project_path',
+									'content_encoding',
+									'dry_run',
+									'overwrite',
+									'backup_override'
+								],
+								'type': 'object'
+							},
+							'phase': {
+								'type': 'string'
+							},
+							'phase_label': {
+								'type': 'string'
+							},
+							'recommended_prompt_rule': {
+								'type': 'string'
+							},
+							'required_fields': {
+								'items': {
+									'type': 'string'
+								},
+								'type': 'array'
+							},
+							'see_also': {
+								'properties': {
+									'write_transaction': {
+										'type': 'string'
+									}
+								},
+								'required': [
+									'write_transaction'
+								],
+								'type': 'object'
+							},
+							'suggested_alternative_tool': {
+								'properties': {},
+								'type': 'object'
+							}
+						},
+						'required': [
+							'phase',
+							'phase_label',
+							'error_name',
+							'ca_next_action',
+							'call_pattern',
+							'payload_example',
+							'required_fields',
+							'accepted_aliases',
+							'notes',
+							'known_gotchas',
+							'recommended_prompt_rule',
+							'see_also',
+							'suggested_alternative_tool'
+						],
+						'type': 'object',
+						'x-dual': True
+					},
+					'ca_hint_commit': {
+						'type': 'string'
+					},
+					'ca_next_action': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'ca_next_tool': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'cache_synced': {
+						'type': 'boolean'
+					},
+					'diff_preview': {
+						'properties': {
+							'added': {
+								'type': 'integer'
+							},
+							'changed_lines': {
+								'type': 'integer'
+							},
+							'diff_unified': {
+								'type': 'string'
+							},
+							'preview_after': {
+								'type': 'string'
+							},
+							'preview_before': {
+								'type': 'string'
+							},
+							'preview_hash': {
+								'type': 'string'
+							},
+							'removed': {
+								'type': 'integer'
+							},
+							'truncated': {
+								'type': 'boolean'
+							}
+						},
+						'required': [
+							'changed_lines',
+							'added',
+							'removed',
+							'preview_before',
+							'preview_after',
+							'diff_unified',
+							'truncated',
+							'preview_hash'
+						],
+						'type': 'object'
+					},
+					'encoding_check': {
+						'properties': {
+							'bytes_written': {
+								'type': 'integer'
+							},
+							'encoding_used': {
+								'type': 'string'
+							},
+							'mojibake_confirmed': {
+								'type': 'boolean'
+							},
+							'mojibake_markers_present': {
+								'type': 'boolean'
+							},
+							'mojibake_risk': {
+								'type': 'boolean'
+							},
+							'suspicious_sequences': {
+								'type': 'array'
+							},
+							'utf8_valid': {
+								'type': 'boolean'
+							},
+							'vietnamese_diacritic_check': {
+								'properties': {
+									'has_vietnamese_diacritics': {
+										'type': 'boolean'
+									},
+									'status': {
+										'type': 'string'
+									}
+								},
+								'required': [
+									'has_vietnamese_diacritics',
+									'status'
+								],
+								'type': 'object'
+							}
+						},
+						'required': [
+							'encoding_used',
+							'utf8_valid',
+							'mojibake_risk',
+							'mojibake_markers_present',
+							'mojibake_confirmed',
+							'vietnamese_diacritic_check',
+							'suspicious_sequences',
+							'bytes_written'
+						],
+						'type': 'object'
+					},
+					'encoding_used': {
+						'type': 'string'
+					},
+					'error': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'error_name': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'file': {
+						'type': 'string'
+					},
+					'generation': {
+						'type': 'string'
+					},
+					'lines_written': {
+						'type': 'integer'
+					},
+					'mojibake_risk': {
+						'type': 'boolean'
+					},
+					'new_hash': {
+						'type': 'string'
+					},
+					'ok': {
+						'type': 'boolean',
+						'x-dual': True
+					},
+					'operation_attempts': {
+						'type': 'integer'
+					},
+					'operation_id': {
+						'type': 'string'
+					},
+					'overwrite_risk': {
+						'type': 'boolean'
+					},
+					'overwrite_warning': {
+						'type': 'boolean'
+					},
+					'payload_example': {
+						'properties': {
+							'backup_override': {
+								'type': 'boolean'
+							},
+							'content_encoding': {
+								'type': 'string'
+							},
+							'dry_run': {
+								'type': 'boolean'
+							},
+							'overwrite': {
+								'type': 'boolean'
+							},
+							'path': {
+								'type': 'string'
+							},
+							'project_path': {
+								'type': 'string'
+							}
+						},
+						'required': [
+							'path',
+							'project_path',
+							'content_encoding',
+							'dry_run',
+							'overwrite',
+							'backup_override'
+						],
+						'type': 'object',
+						'x-dual': True
+					},
+					'phase': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'read_token_seal_error': {
+						'type': 'string'
+					},
+					'read_token_sealed': {
+						'type': 'boolean'
+					},
+					'retry_sequence': {
+						'type': 'array',
+						'x-dual': True
+					},
+					'tag_errors': {
+						'type': 'array'
+					},
+					'target_exists': {
+						'type': 'boolean'
+					},
+					'truncated': {
+						'type': 'boolean'
+					},
+					'unclosed_tags': {
+						'type': 'array'
+					},
+					'utf8_valid': {
+						'type': 'boolean'
+					},
+					'validation': {
+						'properties': {
+							'checked': {
+								'type': 'boolean'
+							},
+							'file': {
+								'type': 'string'
+							},
+							'lang': {
+								'type': 'string'
+							},
+							'note': {
+								'type': 'string'
+							},
+							'ok': {
+								'type': 'boolean'
+							},
+							'ruff_fix_applicable': {
+								'type': 'boolean'
+							},
+							'ruff_fix_hint': {
+								'type': 'string'
+							},
+							'ruff_rules_matched': {
+								'type': 'array'
+							},
+							'tag_errors': {
+								'type': 'array'
+							},
+							'truncated': {
+								'type': 'boolean'
+							},
+							'unclosed_tags': {
+								'type': 'array'
+							}
+						},
+						'required': [
+							'ok',
+							'lang',
+							'file',
+							'note',
+							'unclosed_tags',
+							'tag_errors',
+							'truncated',
+							'ruff_fix_applicable',
+							'checked',
+							'ruff_rules_matched',
+							'ruff_fix_hint'
+						],
+						'type': 'object'
+					},
+					'vietnamese_diacritic_check': {
+						'properties': {
+							'has_vietnamese_diacritics': {
+								'type': 'boolean'
+							},
+							'status': {
+								'type': 'string'
+							}
+						},
+						'required': [
+							'has_vietnamese_diacritics',
+							'status'
+						],
+						'type': 'object'
+					},
+					'write_mode': {
+						'type': 'string'
+					},
+					'write_status_url': {
+						'type': 'string'
+					}
+				},
+				'required': [
+					'ok',
+					'ca_next_action',
+					'ca_next_tool',
+					'generation',
+					'operation_id',
+					'write_status_url',
+					'operation_attempts'
+				],
+				'type': 'object',
+				'x-audit': {
+					'status': 'audited',
+					'schema_sha256': '2c8dde626def537456cad75477b17ddcc7e4e29bccff14ee426aba73e1c1c3cc',
+					'depth_D': 4
+				}
+			},
 		},
 
 	},
@@ -3028,6 +4069,122 @@ BASE_TOOL_SCHEMAS = [
 
 			},
 
+			"returns": {
+				'properties': {
+					'ca_next_action': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'ca_next_tool': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'cache_age_hours': {
+						'type': 'number'
+					},
+					'cache_exists': {
+						'type': 'boolean'
+					},
+					'cache_files': {
+						'type': 'integer'
+					},
+					'concurrent_api_calls_observed': {
+						'type': 'integer'
+					},
+					'contention_note': {
+						'type': 'string'
+					},
+					'drift': {
+						'properties': {
+							'added': {
+								'items': {
+									'type': 'string'
+								},
+								'type': 'array'
+							},
+							'added_total': {
+								'type': 'integer'
+							},
+							'deleted': {
+								'items': {
+									'type': 'string'
+								},
+								'type': 'array'
+							},
+							'deleted_total': {
+								'type': 'integer'
+							},
+							'modified': {
+								'items': {
+									'type': 'string'
+								},
+								'type': 'array'
+							},
+							'modified_total': {
+								'type': 'integer'
+							}
+						},
+						'required': [
+							'added',
+							'modified',
+							'deleted',
+							'added_total',
+							'modified_total',
+							'deleted_total'
+						],
+						'type': 'object'
+					},
+					'drift_action': {
+						'type': 'string'
+					},
+					'drift_warning': {
+						'type': 'boolean'
+					},
+					'generation': {
+						'type': 'string'
+					},
+					'index_exists': {
+						'type': 'boolean'
+					},
+					'last_updated': {
+						'type': 'number'
+					},
+					'last_updated_iso': {
+						'type': 'string'
+					},
+					'message': {
+						'type': 'string'
+					},
+					'ok': {
+						'type': 'boolean',
+						'x-dual': True
+					},
+					'stale_warning': {
+						'type': 'boolean'
+					},
+					'status': {
+						'type': 'string'
+					}
+				},
+				'required': [
+					'cache_exists',
+					'index_exists',
+					'status',
+					'last_updated',
+					'last_updated_iso',
+					'cache_files',
+					'message',
+					'cache_age_hours',
+					'ok',
+					'generation'
+				],
+				'type': 'object',
+				'x-audit': {
+					'status': 'audited',
+					'schema_sha256': '9209f4136492a4264857220e643e522baa80960019c78d224d5ae25130d63e51',
+					'depth_D': 3
+				}
+			},
 		},
 
 	},
@@ -3057,6 +4214,33 @@ BASE_TOOL_SCHEMAS = [
 
 			},
 
+			"returns": {
+				'properties': {
+					'deleted': {
+						'type': 'string'
+					},
+					'error': {
+						'type': 'string',
+						'x-dual': True
+					},
+					'hint': {
+						'type': 'string'
+					},
+					'ok': {
+						'type': 'boolean',
+						'x-dual': True
+					}
+				},
+				'required': [
+					'ok'
+				],
+				'type': 'object',
+				'x-audit': {
+					'status': 'audited',
+					'schema_sha256': '03065cb310d9c32f913b3ef4d73ff76ae9eda8b801b0bd7e0430217e2d806832',
+					'depth_D': 1
+				}
+			},
 		},
 
 	},
@@ -3079,7 +4263,7 @@ EXTRA_TOOL_SCHEMAS = [
 
 {"type": "function", "function": {"name": "get_rule_core_text", "description": "Return the rendered CORE_RULE text plus runtime path metadata and a content hash. HTTP bootstrap is canonical; pass a stable agent_id so per-agent cache does not collide.", "parameters": {"type": "object", "properties": {"agent_id": {"type": "string", "default": "", "description": "Your own stable agent id. agents_registry.json is SOT and manage_agent(action='list') prints the live ids; never copy an id list into this description -- measured 2026-09-20 it listed 7 ids of which 3 (comc, ope, cozo) were not registry ids at all while 6 live ids were missing, and no drift check reads a description."}, "force": {"type": "boolean", "default": False, "description": "Force re-read when explicitly upgrading or verifying rules; otherwise omit."}}}, "returns": {'properties': {'agent_id': {'type': 'string'}, 'already_fetched': {'type': 'boolean'}, 'app_root': {'type': 'string'}, 'bootstrap_epoch': {'type': 'integer'}, 'bytes': {'type': 'integer'}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'core_rule_path': {'type': 'string'}, 'ctx_id': {'type': 'string'}, 'error': {'type': 'string'}, 'error_name': {'type': 'string'}, 'hint': {'type': 'string'}, 'mtime_ns': {'type': 'integer'}, 'ok': {'type': 'boolean'}, 'orchestrator_dir': {'type': 'string'}, 'phase': {'type': 'string'}, 'reason': {'type': 'string'}, 'retryable': {'type': 'boolean'}, 'severity': {'type': 'string'}, 'sha256': {'type': 'string'}, 'start_script': {'type': 'string'}, 'text': {'type': 'string'}, 'text_omitted': {'type': 'boolean'}, 'text_omitted_reason': {'type': 'string'}, 'tool_purposes': {'type': 'object'}, 'tool_purposes_error': {'type': 'string'}, 'tool_purposes_note': {'type': 'string'}, 'type': {'type': 'string'}}, 'required': ['ok'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '0f28d8648ac8524a132109789aa73403e5a49180922d6725e70d7a95b40a1478', 'depth_D': 2}}}},
 
-    {"type": "function", "function": {"name": "audit_tool_matrix", "description": "V15 R13 / R22 / E-04 — Cross-check TOOL_MAP / TOOL_SCHEMAS / TOOL_PHASES against skill SKILL.md trigger.tool, SKILLS.md router, harness *.md, and .ToolA_Skill/references/tool_surface_current.md. Returns drift list + summary + matrix_log_path. Auto-invoked by prepare_ca_session and open_session. R22 verbosity ∈ {full|terse|ref}: terse caps drift/alias_drift arrays at 3 + drops coverage/inventory_classification (~1500 tokens saved). Drift safety: auto-force full when drift_count>0 or progressive_gap_count>0. E-04: persist defaults False — a read call is pure read; pass persist=True to append the record to matrix_log.jsonl (auto-invocations from prepare_ca_session/open_session keep persist=True).", "parameters": {"type": "object", "properties": {"project_path": {"type": "string", "default": ""}, "include_coverage": {"type": "boolean", "default": False, "description": "Include per-tool coverage map (heavier response)"}, "verbosity": {"type": "string", "enum": ["full", "terse", "ref"], "default": "full", "description": "R22: terse caps arrays + drops coverage; ref drops all arrays."}, "persist": {"type": "boolean", "default": False, "description": "E-04: when True, append the audit record to .orchestrator_cache/matrix_log.jsonl. Default False makes this tool a pure read."}}, "required": []}}},
+    {"type": "function", "function": {"name": "audit_tool_matrix", "description": "V15 R13 / R22 / E-04 — Cross-check TOOL_MAP / TOOL_SCHEMAS / TOOL_PHASES against skill SKILL.md trigger.tool, SKILLS.md router, harness *.md, and .ToolA_Skill/references/tool_surface_current.md. Returns drift list + summary + matrix_log_path. Auto-invoked by prepare_ca_session and open_session. R22 verbosity ∈ {full|terse|ref}: terse caps drift/alias_drift arrays at 3 + drops coverage/inventory_classification (~1500 tokens saved). Drift safety: auto-force full when drift_count>0 or progressive_gap_count>0. E-04: persist defaults False — a read call is pure read; pass persist=True to append the record to matrix_log.jsonl (auto-invocations from prepare_ca_session/open_session keep persist=True).", "parameters": {"type": "object", "properties": {"project_path": {"type": "string", "default": ""}, "include_coverage": {"type": "boolean", "default": False, "description": "Include per-tool coverage map (heavier response)"}, "verbosity": {"type": "string", "enum": ["full", "terse", "ref"], "default": "full", "description": "R22: terse caps arrays + drops coverage; ref drops all arrays."}, "persist": {"type": "boolean", "default": False, "description": "E-04: when True, append the audit record to .orchestrator_cache/matrix_log.jsonl. Default False makes this tool a pure read."}}, "required": []}, "returns": {'properties': {'alias_drift': {'type': 'array'}, 'alias_drift_truncated_at': {'type': 'integer'}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'concurrent_api_calls_observed': {'type': 'integer'}, 'contention_note': {'type': 'string'}, 'contract_drift': {'items': {'properties': {'detail': {'type': 'string'}, 'field': {'type': 'string'}, 'severity': {'type': 'string'}, 'skill': {'type': 'string'}, 'type': {'type': 'string'}, 'value': {'type': 'string'}}, 'required': ['type', 'skill', 'field', 'value', 'severity', 'detail'], 'type': 'object'}, 'type': 'array'}, 'coverage_detail': {'properties': {'returns_coverage': {'properties': {'covered': {'type': 'integer'}, 'depth_suspect': {'type': 'integer'}, 'disabled': {'type': 'integer'}, 'eligible': {'type': 'integer'}}, 'required': ['covered', 'depth_suspect', 'disabled', 'eligible'], 'type': 'object'}}, 'required': ['returns_coverage'], 'type': 'object'}, 'drift': {'type': 'array'}, 'drift_truncated_at': {'type': 'integer'}, 'generated_at': {'type': 'string'}, 'generation': {'type': 'string'}, 'inventory_classification': {'properties': {'active_in_code': {'items': {'type': 'string'}, 'type': 'array'}, 'extras_doc_only': {'type': 'array'}, 'extras_endpoints': {'type': 'array'}, 'extras_internal': {'type': 'array'}, 'extras_or_endpoints': {'type': 'array'}, 'extras_planned': {'type': 'array'}, 'extras_unknown': {'type': 'array'}, 'retired_referenced': {'type': 'array'}}, 'required': ['active_in_code', 'retired_referenced', 'extras_or_endpoints', 'extras_endpoints', 'extras_internal', 'extras_planned', 'extras_doc_only', 'extras_unknown'], 'type': 'object'}, 'matrix_log_path': {'type': 'string'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'persisted': {'type': 'boolean'}, 'progressive_gaps': {'type': 'array'}, 'router_topics_count': {'type': 'integer'}, 'scope': {'type': 'string'}, 'scope_note': {'type': 'string'}, 'summary': {'properties': {'alias_drift_count': {'type': 'integer'}, 'alias_drift_severity': {'type': 'string'}, 'code_tools': {'type': 'integer'}, 'contract_drift_count': {'type': 'integer'}, 'doc_description_present_count': {'type': 'integer'}, 'doc_description_weak_count': {'type': 'integer'}, 'doc_fields_absent_by_design_count': {'type': 'integer'}, 'doc_param_examples_registry_count': {'type': 'integer'}, 'doc_param_examples_served_count': {'type': 'integer'}, 'doc_params_described_count': {'type': 'integer'}, 'doc_params_total': {'type': 'integer'}, 'doc_params_undescribed_count': {'type': 'integer'}, 'drift_count': {'type': 'integer'}, 'error_phase_map_entries': {'type': 'integer'}, 'error_system_names_phase_mapped_count': {'type': 'integer'}, 'error_system_names_total': {'type': 'integer'}, 'error_system_names_unmapped_count': {'type': 'integer'}, 'inventory_active_count': {'type': 'integer'}, 'inventory_extra_count': {'type': 'integer'}, 'inventory_extra_doc_only_count': {'type': 'integer'}, 'inventory_extra_endpoints_count': {'type': 'integer'}, 'inventory_extra_internal_count': {'type': 'integer'}, 'inventory_extra_planned_count': {'type': 'integer'}, 'inventory_extra_unknown_count': {'type': 'integer'}, 'inventory_retired_count': {'type': 'integer'}, 'inventory_tools': {'type': 'integer'}, 'ok_count': {'type': 'integer'}, 'progressive_gap_count': {'type': 'integer'}, 'purpose_covered_count': {'type': 'integer'}, 'purpose_eligible_count': {'type': 'integer'}, 'purpose_eligible_gap_count': {'type': 'integer'}, 'schema_tools': {'type': 'integer'}, 'skill_folders': {'type': 'integer'}, 'skill_tools': {'type': 'integer'}}, 'required': ['code_tools', 'schema_tools', 'skill_tools', 'skill_folders', 'inventory_tools', 'inventory_active_count', 'inventory_retired_count', 'inventory_extra_count', 'inventory_extra_endpoints_count', 'inventory_extra_internal_count', 'inventory_extra_planned_count', 'inventory_extra_doc_only_count', 'inventory_extra_unknown_count', 'drift_count', 'ok_count', 'alias_drift_count', 'alias_drift_severity', 'contract_drift_count', 'progressive_gap_count', 'doc_description_present_count', 'doc_description_weak_count', 'doc_params_total', 'doc_params_described_count', 'doc_params_undescribed_count', 'doc_param_examples_registry_count', 'doc_param_examples_served_count', 'doc_fields_absent_by_design_count', 'purpose_eligible_count', 'purpose_covered_count', 'purpose_eligible_gap_count', 'error_phase_map_entries', 'error_system_names_total', 'error_system_names_phase_mapped_count', 'error_system_names_unmapped_count'], 'type': 'object'}, 'verbosity_mode': {'type': 'string'}}, 'required': ['ok', 'contention_note'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': 'c865dc59356c79896c450440de38a43e7cf0724d9e1d96b80fa23f6ed6aa8496', 'depth_D': 3}}}},
 
     {"type": "function", "function": {"name": "prepare_ca_session", "description": "Canonical one-call startup: prepare project context, open/resume the agent session, generate or reuse a caller-side owner_claim_id, then run bootstrap_session. The response exposes owner_claim_id and owner_capability so the host can persist them for begin_task/retry.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "mode": {"type": "string", "default": "T1"}, "idea": {"type": "string", "default": ""}, "agent_id": {"type": "string", "default": "", "description": "Stable calling agent identity; transport header and environment fallback may supply it"}, "host_session_id": {"type": "string", "default": "", "description": "Stable host conversation/session id required to run bootstrap_session and return bootstrap_ref"}, "owner_claim_id": {"type": "string", "default": "", "description": "Caller-generated stable claim id; helper generates one before bootstrap when omitted and returns it for retry reuse"}}, "required": ["project_path"]}}},
 
@@ -3097,7 +4281,7 @@ EXTRA_TOOL_SCHEMAS = [
 
     {"type": "function", "function": {"name": "suggest_missing_capabilities", "description": "Suggest optional parser libraries without installing them.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string", "default": ""}}}}},
 
-    {"type": "function", "function": {"name": "backup_status", "description": "Read Orchestrator backup manifest status.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}}, "required": ["project_path"]}}},
+    {"type": "function", "function": {"name": "backup_status", "description": "Read Orchestrator backup manifest status.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}}, "required": ["project_path"]}, "returns": {'properties': {'all_backups': {'items': {'properties': {'backup_age_hours': {'type': 'number'}, 'backup_path': {'type': 'string'}, 'backup_scope': {'type': 'string'}, 'created_at': {'type': 'string'}, 'files_skipped': {'type': 'integer'}, 'files_written': {'type': 'integer'}, 'size_mb': {'type': 'number'}, 'skipped_sample': {'items': {'type': 'string'}, 'type': 'array'}, 'target_paths': {'items': {'type': 'string'}, 'type': 'array'}}, 'required': ['created_at', 'backup_path', 'files_written', 'files_skipped', 'backup_scope', 'target_paths', 'skipped_sample', 'size_mb', 'backup_age_hours'], 'type': 'object'}, 'type': 'array'}, 'generation': {'type': 'string'}, 'latest': {'properties': {'backup_age_hours': {'type': 'number'}, 'backup_path': {'type': 'string'}, 'backup_scope': {'type': 'string'}, 'created_at': {'type': 'string'}, 'files_skipped': {'type': 'integer'}, 'files_written': {'type': 'integer'}, 'size_mb': {'type': 'number'}, 'skipped_sample': {'items': {'type': 'string'}, 'type': 'array'}, 'target_paths': {'items': {'type': 'string'}, 'type': 'array'}}, 'required': ['created_at', 'backup_path', 'files_written', 'files_skipped', 'backup_scope', 'target_paths', 'skipped_sample', 'size_mb', 'backup_age_hours'], 'type': 'object'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'status': {'type': 'string'}, 'total_backups': {'type': 'integer'}}, 'required': ['ok', 'status', 'total_backups', 'latest', 'all_backups', 'generation'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '491ad60ff5504f99051030934b3bfc75aed492b1a9112e58ed1bdaf91bcb0d12', 'depth_D': 4}}}},
 
     {"type": "function", "function": {"name": "resolve_project_path", "description": "Resolve any Windows file/folder path into project_path plus file_path/folder_path metadata without guessing.", "parameters": {"type": "object", "properties": {"input_path": {"type": "string"}, "preferred_root": {"type": "string", "default": ""}, "mode": {"type": "string", "default": "auto", "enum": ["file", "folder", "auto"]}}, "required": ["input_path"]}}},
 
@@ -3107,7 +4291,7 @@ EXTRA_TOOL_SCHEMAS = [
 
     {"type": "function", "function": {"name": "optional_tool_probe", "description": "Check whether optional helper tools or endpoints are available without mutating state or fetching raw tokens.", "parameters": {"type": "object", "properties": {"tools": {"type": "array", "items": {"type": "string"}, "description": "Tool names or /api endpoint paths to probe."}}, "required": ["tools"]}}},
 
-	{"type": "function", "function": {"name": "backup_project", "description": "Create timestamped zip backup and manifest. The 600-second timeout matches the handler default.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "backup_dir": {"type": "string"}, "force": {"type": "boolean", "default": False, "description": "Overwrite a backup from the same day"}, "keep_last_n": {"type": "integer", "default": 2, "description": "Maximum backups to keep"}, "timeout": {"type": "integer", "default": 600, "description": "Maximum archive time in seconds; matches handler default"}, "target_paths": {"type": "array", "items": {"type": "string"}, "description": "Optional project-relative archive targets"}}, "required": ["project_path"]}}},
+	{"type": "function", "function": {"name": "backup_project", "description": "Create timestamped zip backup and manifest. The 600-second timeout matches the handler default.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "backup_dir": {"type": "string"}, "force": {"type": "boolean", "default": False, "description": "Overwrite a backup from the same day"}, "keep_last_n": {"type": "integer", "default": 2, "description": "Maximum backups to keep"}, "timeout": {"type": "integer", "default": 600, "description": "Maximum archive time in seconds; matches handler default"}, "target_paths": {"type": "array", "items": {"type": "string"}, "description": "Optional project-relative archive targets"}}, "required": ["project_path"]}, "returns": {'properties': {'backup_path': {'type': 'string'}, 'backup_scope': {'type': 'string'}, 'created_at': {'type': 'string'}, 'files_skipped': {'type': 'integer'}, 'files_written': {'type': 'integer'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'reason': {'type': 'string'}, 'skipped': {'type': 'boolean'}, 'skipped_sample': {'items': {'type': 'string'}, 'type': 'array'}, 'target_paths': {'type': 'array'}, 'total_backups': {'type': 'integer'}}, 'required': ['ok', 'backup_path', 'created_at'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': 'ac898615fe10a95f8515063b0608cf31b8a6c7e9e2d08eb8026586e75c4543af', 'depth_D': 2}}}},
 
 	{"type": "function", "function": {"name": "cache_delta", "description": "Compare filesystem against INDEX for added/modified/deleted files.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}}, "required": ["project_path"]}}},
 
@@ -3177,6 +4361,149 @@ EXTRA_TOOL_SCHEMAS = [
 
         },
 
+            "returns": {
+                'properties': {
+                    'background': {
+                        'type': 'boolean'
+                    },
+                    'command': {
+                        'items': {
+                            'type': 'string'
+                        },
+                        'type': 'array'
+                    },
+                    'command_executed': {
+                        'items': {
+                            'type': 'string'
+                        },
+                        'type': 'array'
+                    },
+                    'command_received': {
+                        'type': 'string'
+                    },
+                    'cwd': {
+                        'type': 'string'
+                    },
+                    'duration_seconds': {
+                        'type': 'number'
+                    },
+                    'elevated': {
+                        'type': 'boolean'
+                    },
+                    'exit_code': {
+                        'type': 'integer'
+                    },
+                    'expected_port': {
+                        'type': 'null'
+                    },
+                    'expected_process_name': {
+                        'type': 'string'
+                    },
+                    'generation': {
+                        'type': 'string'
+                    },
+                    'interactive': {
+                        'type': 'boolean'
+                    },
+                    'launch_verified': {
+                        'type': 'null'
+                    },
+                    'ok': {
+                        'type': 'boolean',
+                        'x-dual': True
+                    },
+                    'operation_attempts': {
+                        'type': 'integer'
+                    },
+                    'operation_id': {
+                        'type': 'string'
+                    },
+                    'path_resolution_note': {
+                        'type': 'string'
+                    },
+                    'port_probe': {
+                        'type': 'null'
+                    },
+                    'process_probe': {
+                        'type': 'null'
+                    },
+                    'project_path': {
+                        'type': 'string'
+                    },
+                    'redirection_requested': {
+                        'type': 'boolean'
+                    },
+                    'returncode': {
+                        'type': 'integer'
+                    },
+                    'root_causes': {
+                        'type': 'array'
+                    },
+                    'shell': {
+                        'type': 'string'
+                    },
+                    'shell_mode_requested': {
+                        'type': 'string'
+                    },
+                    'shell_mode_resolved': {
+                        'type': 'string'
+                    },
+                    'spawned_pid': {
+                        'type': 'integer'
+                    },
+                    'stderr': {
+                        'type': 'string'
+                    },
+                    'stdout': {
+                        'type': 'string'
+                    },
+                    'timed_out': {
+                        'type': 'boolean'
+                    },
+                    'write_status_url': {
+                        'type': 'string'
+                    }
+                },
+                'required': [
+                    'ok',
+                    'project_path',
+                    'command_received',
+                    'command',
+                    'command_executed',
+                    'shell',
+                    'shell_mode_requested',
+                    'shell_mode_resolved',
+                    'cwd',
+                    'returncode',
+                    'exit_code',
+                    'duration_seconds',
+                    'stdout',
+                    'stderr',
+                    'timed_out',
+                    'background',
+                    'interactive',
+                    'elevated',
+                    'path_resolution_note',
+                    'redirection_requested',
+                    'spawned_pid',
+                    'launch_verified',
+                    'expected_port',
+                    'expected_process_name',
+                    'port_probe',
+                    'process_probe',
+                    'root_causes',
+                    'generation',
+                    'operation_id',
+                    'write_status_url',
+                    'operation_attempts'
+                ],
+                'type': 'object',
+                'x-audit': {
+                    'status': 'audited',
+                    'schema_sha256': '7aca2fddc838dde3113b563f93c71c14148402798ed20160b5124ce75e1bf3b1',
+                    'depth_D': 2
+                }
+            },
     }},
 
 	{"type": "function", "function": {"name": "kill_process", "description": "Terminate process by pid or process_name. Protected T2 cleanup tool for runtime/test environments.", "parameters": {"type": "object", "properties": {"pid": {"type": "integer", "default": 0}, "process_name": {"type": "string", "default": ""}, "force": {"type": "boolean", "default": True}}}}},
@@ -3195,7 +4522,7 @@ EXTRA_TOOL_SCHEMAS = [
 
 	{"type": "function", "function": {"name": "get_folder_size", "description": "Count files and total folder size recursively without blocking the API loop. Safe defaults skip generated/cache trees; include_skipped=true scans them.", "parameters": {"type": "object", "properties": {"folder_path": {"type": "string"}, "include_skipped": {"type": "boolean", "default": False, "description": "When true, include .git, virtual environments, node_modules and cache trees."}}, "required": ["folder_path"]}}},
 
-	{"type": "function", "function": {"name": "validate_file", "description": "Check syntax/validity of a file after write_fix/write_new_file. Python: py_compile. JS: node --check. TS/JSX/TSX/Vue: esbuild syntax check (never a type check). Call immediately after a write to catch errors early.", "parameters": {"type": "object", "properties": {"file_path": {"type": "string"}, "lang": {"type": "string", "description": "auto|python|js|ts|esbuild|html|vue|json|css|toml (common aliases accepted; ts routes to the esbuild syntax check)", "default": "auto"}, "project_path": {"type": "string", "description": "Project root to resolve relative file_path", "default": ""}}, "required": ["file_path"]}}},
+	{"type": "function", "function": {"name": "validate_file", "description": "Check syntax/validity of a file after write_fix/write_new_file. Python: py_compile. JS: node --check. TS/JSX/TSX/Vue: esbuild syntax check (never a type check). Call immediately after a write to catch errors early.", "parameters": {"type": "object", "properties": {"file_path": {"type": "string"}, "lang": {"type": "string", "description": "auto|python|js|ts|esbuild|html|vue|json|css|toml (common aliases accepted; ts routes to the esbuild syntax check)", "default": "auto"}, "project_path": {"type": "string", "description": "Project root to resolve relative file_path", "default": ""}}, "required": ["file_path"]}, "returns": {'properties': {'checked': {'type': 'boolean'}, 'file': {'type': 'string'}, 'generation': {'type': 'string'}, 'lang': {'type': 'string'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'ruff_fix_applicable': {'type': 'boolean'}, 'ruff_fix_hint': {'type': 'string'}, 'ruff_rules_matched': {'type': 'array'}}, 'required': ['ok', 'lang', 'file', 'checked', 'ruff_fix_applicable', 'ruff_rules_matched', 'ruff_fix_hint', 'generation'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '1240aa10ab26ad5f52cb1f75f02aa183154b03bf7e5e7bff08169fe35b89d0f0', 'depth_D': 2}}}},
 
 	{"type": "function", "function": {"name": "validate_symbols", "description": "Post-write integration check: syntax plus function/class comparison against INDEX. Detects accidentally deleted functions. Use after write_fix on .py/.js/.ts files.", "parameters": {"type": "object", "properties": {"file_path": {"type": "string"}, "project_path": {"type": "string", "default": ""}}, "required": ["file_path"]}}},
 
@@ -3203,9 +4530,9 @@ EXTRA_TOOL_SCHEMAS = [
 
 	{"type": "function", "function": {"name": "post_write_batch_verify", "description": "Run standard non-mutating post-write checks for a batch: validate_file per file, optional validate_symbols, optional validate_encoding, and one cache_delta.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "changed_files": {"type": "array", "items": {"type": "string"}}, "run_validate_symbols": {"type": "boolean", "default": True}, "run_cache_delta": {"type": "boolean", "default": True}, "run_validate_encoding": {"type": "boolean", "default": True}}, "required": ["project_path", "changed_files"]}}},
 
-    {"type": "function", "function": {"name": "write_fix_html", "description": "Edit a code range in an .html file. Automatically runs dry_run and checks closing delimiters (<script> <style> <body> <html>) before writing. Use force=True to bypass. When Python validation fails with a Ruff safe-fixable diagnostic, the response includes ruff_fix_applicable and ruff_fix_hint suggesting ruff_fix(path=<file>, apply=false) for CA-controlled preview; it never auto-fixes.", "parameters": {"type": "object", "properties": {"file_path": {"type": "string"}, "start_line": {"type": "integer"}, "end_line": {"type": "integer"}, "new_content": {"type": "string"}, "project_path": {"type": "string", "default": ""}, "content_encoding": {"type": "string", "default": "none"}, "force": {"type": "boolean", "default": False}, "backup_override": {"type": "boolean", "default": False, "description": "Skip the pre-write project backup gate after explicit user approval. Use only for tiny/temp/derived files."}}, "required": ["file_path", "start_line", "end_line", "new_content"]}}},
+    {"type": "function", "function": {"name": "write_fix_html", "description": "Edit a code range in an .html file. Automatically runs dry_run and checks closing delimiters (<script> <style> <body> <html>) before writing. Use force=True to bypass. When Python validation fails with a Ruff safe-fixable diagnostic, the response includes ruff_fix_applicable and ruff_fix_hint suggesting ruff_fix(path=<file>, apply=false) for CA-controlled preview; it never auto-fixes.", "parameters": {"type": "object", "properties": {"file_path": {"type": "string"}, "start_line": {"type": "integer"}, "end_line": {"type": "integer"}, "new_content": {"type": "string"}, "project_path": {"type": "string", "default": ""}, "content_encoding": {"type": "string", "default": "none"}, "force": {"type": "boolean", "default": False}, "backup_override": {"type": "boolean", "default": False, "description": "Skip the pre-write project backup gate after explicit user approval. Use only for tiny/temp/derived files."}}, "required": ["file_path", "start_line", "end_line", "new_content"]}, "returns": {'properties': {'backup': {'type': 'string'}, 'bytes_written': {'type': 'integer'}, 'ca_guidance': {'properties': {'accepted_aliases': {'properties': {'content': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}, 'end': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}, 'line_end': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}, 'line_start': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}, 'path': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}, 'replacement': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}, 'start': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}}, 'required': ['path', 'content', 'start', 'end', 'line_start', 'line_end', 'replacement'], 'type': 'object'}, 'ca_next_action': {'type': 'string'}, 'call_pattern': {'type': 'string'}, 'error_name': {'type': 'string'}, 'known_gotchas': {'items': {'type': 'string'}, 'type': 'array'}, 'notes': {'items': {'type': 'string'}, 'type': 'array'}, 'payload_example': {'properties': {'backup_override': {'type': 'boolean'}, 'content_encoding': {'type': 'string'}, 'end_line': {'type': 'integer'}, 'file_path': {'type': 'string'}, 'force': {'type': 'boolean'}, 'new_content': {'type': 'string'}, 'project_path': {'type': 'string'}, 'start_line': {'type': 'integer'}}, 'required': ['file_path', 'start_line', 'end_line', 'new_content', 'project_path', 'content_encoding', 'force', 'backup_override'], 'type': 'object'}, 'phase': {'type': 'string'}, 'phase_label': {'type': 'string'}, 'recommended_prompt_rule': {'type': 'string'}, 'required_fields': {'items': {'type': 'string'}, 'type': 'array'}, 'see_also': {'properties': {}, 'type': 'object'}, 'suggested_alternative_tool': {'properties': {}, 'type': 'object'}}, 'required': ['phase', 'phase_label', 'error_name', 'ca_next_action', 'call_pattern', 'payload_example', 'required_fields', 'accepted_aliases', 'notes', 'known_gotchas', 'recommended_prompt_rule', 'see_also', 'suggested_alternative_tool'], 'type': 'object', 'x-dual': True}, 'ca_hint_commit': {'type': 'string'}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'cache_synced': {'type': 'boolean'}, 'changed_lines': {'type': 'integer'}, 'delimiter_check': {'type': 'string'}, 'diff': {'type': 'string'}, 'diff_preview': {'properties': {'added': {'type': 'integer'}, 'changed_lines': {'type': 'integer'}, 'diff_unified': {'type': 'string'}, 'preview_after': {'type': 'string'}, 'preview_before': {'type': 'string'}, 'preview_hash': {'type': 'string'}, 'removed': {'type': 'integer'}, 'truncated': {'type': 'boolean'}}, 'required': ['changed_lines', 'added', 'removed', 'preview_before', 'preview_after', 'diff_unified', 'truncated', 'preview_hash'], 'type': 'object'}, 'encoding_check': {'properties': {'bytes_written': {'type': 'integer'}, 'encoding_used': {'type': 'string'}, 'mojibake_confirmed': {'type': 'boolean'}, 'mojibake_markers_present': {'type': 'boolean'}, 'mojibake_risk': {'type': 'boolean'}, 'suspicious_sequences': {'type': 'array'}, 'utf8_valid': {'type': 'boolean'}, 'vietnamese_diacritic_check': {'properties': {'has_vietnamese_diacritics': {'type': 'boolean'}, 'status': {'type': 'string'}}, 'required': ['has_vietnamese_diacritics', 'status'], 'type': 'object'}}, 'required': ['encoding_used', 'utf8_valid', 'mojibake_risk', 'mojibake_markers_present', 'mojibake_confirmed', 'vietnamese_diacritic_check', 'suspicious_sequences', 'bytes_written'], 'type': 'object'}, 'encoding_used': {'type': 'string'}, 'error': {'type': 'string', 'x-dual': True}, 'error_name': {'type': 'string', 'x-dual': True}, 'file': {'type': 'string'}, 'generation': {'type': 'string'}, 'html_tool': {'type': 'boolean'}, 'mojibake_risk': {'type': 'boolean'}, 'new_hash': {'type': 'string'}, 'new_lines_count': {'type': 'integer'}, 'new_mtime': {'type': 'number'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'operation_attempts': {'type': 'integer'}, 'operation_id': {'type': 'string'}, 'payload_example': {'properties': {'backup_override': {'type': 'boolean'}, 'content_encoding': {'type': 'string'}, 'end_line': {'type': 'integer'}, 'file_path': {'type': 'string'}, 'force': {'type': 'boolean'}, 'new_content': {'type': 'string'}, 'project_path': {'type': 'string'}, 'start_line': {'type': 'integer'}}, 'required': ['file_path', 'start_line', 'end_line', 'new_content', 'project_path', 'content_encoding', 'force', 'backup_override'], 'type': 'object', 'x-dual': True}, 'phase': {'type': 'string', 'x-dual': True}, 'range_id': {'type': 'string'}, 'replaced_lines': {'type': 'string'}, 'retry_sequence': {'type': 'array', 'x-dual': True}, 'sequential_chain_hint': {'type': 'string'}, 'symbol_check': {'properties': {'ok': {'type': 'boolean'}}, 'required': ['ok'], 'type': 'object'}, 'symbols_changed': {'type': 'array'}, 'symbols_deleted': {'type': 'array'}, 'syntax_ok': {'type': 'boolean'}, 'tag_errors': {'type': 'array'}, 'truncated': {'type': 'boolean'}, 'unclosed_tags': {'type': 'array'}, 'utf8_valid': {'type': 'boolean'}, 'validation': {'properties': {'checked': {'type': 'boolean'}, 'file': {'type': 'string'}, 'lang': {'type': 'string'}, 'note': {'type': 'string'}, 'ok': {'type': 'boolean'}, 'ruff_fix_applicable': {'type': 'boolean'}, 'ruff_fix_hint': {'type': 'string'}, 'ruff_rules_matched': {'type': 'array'}, 'tag_errors': {'type': 'array'}, 'truncated': {'type': 'boolean'}, 'unclosed_tags': {'type': 'array'}}, 'required': ['ok', 'lang', 'file', 'note', 'unclosed_tags', 'tag_errors', 'truncated', 'ruff_fix_applicable', 'checked', 'ruff_rules_matched', 'ruff_fix_hint'], 'type': 'object'}, 'vietnamese_diacritic_check': {'properties': {'has_vietnamese_diacritics': {'type': 'boolean'}, 'status': {'type': 'string'}}, 'required': ['has_vietnamese_diacritics', 'status'], 'type': 'object'}, 'warnings': {'type': 'array'}, 'write_mode': {'type': 'string'}, 'write_status_url': {'type': 'string'}}, 'required': ['ok', 'generation', 'operation_id', 'write_status_url', 'operation_attempts'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': 'ff2d3b02a8d182594bc7c486dbf6ec682cfb11108edc74da6455862c1dbf869d', 'depth_D': 4}}}},
 
-{"type": "function", "function": {"name": "apply_after_dry_run", "description": "Apply an exact previously previewed dry-run payload by dry_run_id. Rejects stale target files and expired previews.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "dry_run_id": {"type": "string"}, "confirm_hash": {"type": "string", "default": ""}, "confirm_warnings": {"type": "boolean", "default": False}, "backup_override": {"type": "boolean", "default": False, "description": "Dispatcher-only backup bypass approval; removed before handler binding."}}, "required": ["project_path", "dry_run_id"]}}},
+{"type": "function", "function": {"name": "apply_after_dry_run", "description": "Apply an exact previously previewed dry-run payload by dry_run_id. Rejects stale target files and expired previews.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "dry_run_id": {"type": "string"}, "confirm_hash": {"type": "string", "default": ""}, "confirm_warnings": {"type": "boolean", "default": False}, "backup_override": {"type": "boolean", "default": False, "description": "Dispatcher-only backup bypass approval; removed before handler binding."}}, "required": ["project_path", "dry_run_id"]}, "returns": {'properties': {'admission': {'properties': {'category': {'type': 'string'}, 'held': {'type': 'integer'}, 'held_for_sec': {'type': 'number'}, 'holder_op_id': {'type': 'string'}, 'limit': {'type': 'integer'}, 'oldest_wait_ms': {'type': 'number'}, 'queue_capacity': {'type': 'integer'}, 'queue_rejected': {'type': 'integer'}, 'waiters': {'type': 'integer'}}, 'required': ['category', 'limit', 'held', 'waiters', 'queue_capacity', 'queue_rejected', 'holder_op_id', 'held_for_sec', 'oldest_wait_ms'], 'type': 'object'}, 'ca_guidance': {'properties': {'accepted_aliases': {'properties': {}, 'type': 'object'}, 'ca_next_action': {'type': 'string'}, 'call_pattern': {'type': 'string'}, 'error_name': {'type': 'string'}, 'known_gotchas': {'type': 'array'}, 'notes': {'items': {'type': 'string'}, 'type': 'array'}, 'payload_example': {'properties': {'backup_override': {'type': 'boolean'}, 'confirm_hash': {'type': 'string'}, 'confirm_warnings': {'type': 'boolean'}, 'dry_run_id': {'type': 'string'}, 'project_path': {'type': 'string'}, 'skip_verify': {'type': 'boolean'}}, 'required': ['project_path', 'dry_run_id', 'confirm_hash', 'confirm_warnings', 'backup_override', 'skip_verify'], 'type': 'object'}, 'phase': {'type': 'string'}, 'phase_label': {'type': 'string'}, 'recommended_prompt_rule': {'type': 'string'}, 'required_fields': {'items': {'type': 'string'}, 'type': 'array'}, 'see_also': {'properties': {}, 'type': 'object'}, 'suggested_alternative_tool': {'properties': {}, 'type': 'object'}}, 'required': ['phase', 'phase_label', 'error_name', 'ca_next_action', 'call_pattern', 'payload_example', 'required_fields', 'accepted_aliases', 'notes', 'known_gotchas', 'recommended_prompt_rule', 'see_also', 'suggested_alternative_tool'], 'type': 'object', 'x-dual': True}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'error': {'type': 'string', 'x-dual': True}, 'error_name': {'type': 'string', 'x-dual': True}, 'generation': {'type': 'string'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'operation_attempts': {'type': 'integer'}, 'operation_id': {'type': 'string'}, 'payload_example': {'properties': {'backup_override': {'type': 'boolean'}, 'confirm_hash': {'type': 'string'}, 'confirm_warnings': {'type': 'boolean'}, 'dry_run_id': {'type': 'string'}, 'project_path': {'type': 'string'}, 'skip_verify': {'type': 'boolean'}}, 'required': ['project_path', 'dry_run_id', 'confirm_hash', 'confirm_warnings', 'backup_override', 'skip_verify'], 'type': 'object', 'x-dual': True}, 'phase': {'type': 'string', 'x-dual': True}, 'reason': {'type': 'string'}, 'retry_after_seconds': {'type': 'integer'}, 'retry_sequence': {'type': 'array', 'x-dual': True}, 'retryable': {'type': 'boolean'}, 'severity': {'type': 'string'}, 'tool_category': {'type': 'string'}, 'type': {'type': 'string'}, 'write_status_url': {'type': 'string'}}, 'required': ['ok', 'error', 'reason', 'error_name', 'retryable', 'ca_next_action', 'generation'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '9194a748c3123c58d7d979a6a0093ebecd513c8385b22221de32d131001859ce', 'depth_D': 3}}}},
 
 ]
 
@@ -3213,7 +4540,7 @@ EXTRA_TOOL_SCHEMAS = [
 
 EXTRA_TOOL_SCHEMAS_R43 = [
 
-		{"type": "function", "function": {"name": "open_session", "description": "Open or resume the active session for a project and optional agent identity. Resume preserves title and mode by default; call rename_session to apply a different title. Opt-in force_new_session closes then creates atomically and refuses pending writes, drafts or audits; apply_requested_title renames in place without changing mode. Flags are mutually exclusive and require agent_id. Distinct non-empty agent_id values may hold concurrent active sessions on one project. R22 verbosity ∈ {full|terse|ref}; drift auto-forces full.", "parameters": {"type": "object", "properties": {"session_title": {"type": "string", "default": "", "description": "Session title (if empty -> 'Untitled Session {time}')"}, "project_path": {"type": "string", "default": ".", "description": "Project root (default '.')"}, "mode": {"type": "string", "enum": ["T1", "T2"], "default": "T1", "description": "Workflow TIER, never an execution verb. ONLY T1 or T2 are valid values. Aliases are accepted and folded: T1_FIX / T1_EXISTING_APP -> T1 (work inside an app that already exists), T2_BUILD / T2_NEW_APP -> T2 (build a new one). 'execute', 'write' and 'fix' are INVALID_MODE. Resume ignores mode; change an open session via set_workflow_mode."}, "verbosity": {"type": "string", "enum": ["full", "terse", "ref"], "default": "full", "description": "R22: terse compresses metadata; drift auto-forces full."}, "agent_id": {"type": "string", "default": "", "description": "Stable agent identity used to isolate concurrent active sessions"}, "force_new_session": {"type": "boolean", "default": False, "description": "Explicitly close the active session before creating a new one; returns closed_session_id. Refuses pending work. Cannot combine with apply_requested_title."}, "apply_requested_title": {"type": "boolean", "default": False, "description": "Explicitly apply a non-empty requested title on resume. Preserves session_id, mode and events; returns old_title, new_title and renamed."}}}}},
+		{"type": "function", "function": {"name": "open_session", "description": "Open or resume the active session for a project and optional agent identity. Resume preserves title and mode by default; call rename_session to apply a different title. Opt-in force_new_session closes then creates atomically and refuses pending writes, drafts or audits; apply_requested_title renames in place without changing mode. Flags are mutually exclusive and require agent_id. Distinct non-empty agent_id values may hold concurrent active sessions on one project. R22 verbosity ∈ {full|terse|ref}; drift auto-forces full.", "parameters": {"type": "object", "properties": {"session_title": {"type": "string", "default": "", "description": "Session title (if empty -> 'Untitled Session {time}')"}, "project_path": {"type": "string", "default": ".", "description": "Project root (default '.')"}, "mode": {"type": "string", "enum": ["T1", "T2"], "default": "T1", "description": "Workflow TIER, never an execution verb. ONLY T1 or T2 are valid values. Aliases are accepted and folded: T1_FIX / T1_EXISTING_APP -> T1 (work inside an app that already exists), T2_BUILD / T2_NEW_APP -> T2 (build a new one). 'execute', 'write' and 'fix' are INVALID_MODE. Resume ignores mode; change an open session via set_workflow_mode."}, "verbosity": {"type": "string", "enum": ["full", "terse", "ref"], "default": "full", "description": "R22: terse compresses metadata; drift auto-forces full."}, "agent_id": {"type": "string", "default": "", "description": "Stable agent identity used to isolate concurrent active sessions"}, "force_new_session": {"type": "boolean", "default": False, "description": "Explicitly close the active session before creating a new one; returns closed_session_id. Refuses pending work. Cannot combine with apply_requested_title."}, "apply_requested_title": {"type": "boolean", "default": False, "description": "Explicitly apply a non-empty requested title on resume. Preserves session_id, mode and events; returns old_title, new_title and renamed."}}}, "returns": {'properties': {'agent_id': {'type': 'string'}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'ca_next_tool': {'type': 'string', 'x-dual': True}, 'concurrent_api_calls_observed': {'type': 'integer'}, 'contention_note': {'type': 'string'}, 'cslt_policy': {'properties': {'a_first': {'type': 'boolean'}, 'agent_transport_policy': {'type': 'string'}, 'host_gate': {'properties': {'agent_id': {'type': 'string'}, 'allowed': {'type': 'boolean'}, 'decision': {'type': 'string'}, 'is_hermes': {'type': 'boolean'}, 'native_policy': {'type': 'string'}, 'reason': {'type': 'string'}, 'scope': {'type': 'string'}}, 'required': ['agent_id', 'is_hermes', 'scope', 'decision', 'allowed', 'reason', 'native_policy'], 'type': 'object'}, 'matrix': {'properties': {'path': {'type': 'string'}, 'task_class_count': {'type': 'integer'}}, 'required': ['path', 'task_class_count'], 'type': 'object'}, 'metrics_contract': {'properties': {'bypass_event': {'type': 'string'}, 'bypass_rate_formula': {'type': 'string'}, 'group_by': {'items': {'type': 'string'}, 'type': 'array'}, 'required_counters': {'items': {'type': 'string'}, 'type': 'array'}, 'zero_denominator': {'type': 'string'}}, 'required': ['bypass_event', 'bypass_rate_formula', 'required_counters', 'zero_denominator', 'group_by'], 'type': 'object'}, 'north_star': {'properties': {'acronym': {'type': 'string'}, 'note': {'type': 'string'}, 'order': {'items': {'type': 'string'}, 'type': 'array'}, 'text': {'type': 'string'}}, 'required': ['acronym', 'order', 'text', 'note'], 'type': 'object'}, 'rules': {'items': {'type': 'string'}, 'type': 'array'}}, 'required': ['north_star', 'agent_transport_policy', 'matrix', 'a_first', 'host_gate', 'metrics_contract', 'rules'], 'type': 'object'}, 'effective_mode': {'type': 'string'}, 'effective_project_path': {'type': 'string'}, 'effective_session_title': {'type': 'string'}, 'generation': {'type': 'string'}, 'matrix_audit': {'properties': {'alias_drift_count': {'type': 'integer'}, 'alias_drift_severity': {'type': 'string'}, 'audit_scope': {'type': 'string'}, 'code_tools': {'type': 'integer'}, 'contract_drift_count': {'type': 'integer'}, 'doc_description_present_count': {'type': 'integer'}, 'doc_description_weak_count': {'type': 'integer'}, 'doc_fields_absent_by_design_count': {'type': 'integer'}, 'doc_param_examples_registry_count': {'type': 'integer'}, 'doc_param_examples_served_count': {'type': 'integer'}, 'doc_params_described_count': {'type': 'integer'}, 'doc_params_total': {'type': 'integer'}, 'doc_params_undescribed_count': {'type': 'integer'}, 'drift_count': {'type': 'integer'}, 'error_phase_map_entries': {'type': 'integer'}, 'error_system_names_phase_mapped_count': {'type': 'integer'}, 'error_system_names_total': {'type': 'integer'}, 'error_system_names_unmapped_count': {'type': 'integer'}, 'inventory_active_count': {'type': 'integer'}, 'inventory_extra_count': {'type': 'integer'}, 'inventory_extra_doc_only_count': {'type': 'integer'}, 'inventory_extra_endpoints_count': {'type': 'integer'}, 'inventory_extra_internal_count': {'type': 'integer'}, 'inventory_extra_planned_count': {'type': 'integer'}, 'inventory_extra_unknown_count': {'type': 'integer'}, 'inventory_retired_count': {'type': 'integer'}, 'inventory_tools': {'type': 'integer'}, 'ok_count': {'type': 'integer'}, 'progressive_gap_count': {'type': 'integer'}, 'purpose_covered_count': {'type': 'integer'}, 'purpose_eligible_count': {'type': 'integer'}, 'purpose_eligible_gap_count': {'type': 'integer'}, 'schema_tools': {'type': 'integer'}, 'skill_folders': {'type': 'integer'}, 'skill_tools': {'type': 'integer'}}, 'required': ['code_tools', 'schema_tools', 'skill_tools', 'skill_folders', 'inventory_tools', 'inventory_active_count', 'inventory_retired_count', 'inventory_extra_count', 'inventory_extra_endpoints_count', 'inventory_extra_internal_count', 'inventory_extra_planned_count', 'inventory_extra_doc_only_count', 'inventory_extra_unknown_count', 'drift_count', 'ok_count', 'alias_drift_count', 'alias_drift_severity', 'contract_drift_count', 'progressive_gap_count', 'doc_description_present_count', 'doc_description_weak_count', 'doc_params_total', 'doc_params_described_count', 'doc_params_undescribed_count', 'doc_param_examples_registry_count', 'doc_param_examples_served_count', 'doc_fields_absent_by_design_count', 'purpose_eligible_count', 'purpose_covered_count', 'purpose_eligible_gap_count', 'error_phase_map_entries', 'error_system_names_total', 'error_system_names_phase_mapped_count', 'error_system_names_unmapped_count', 'audit_scope'], 'type': 'object'}, 'matrix_drift_present': {'type': 'boolean'}, 'mode_applied': {'type': 'boolean'}, 'mode_ignored_on_resume': {'type': 'boolean'}, 'mode_matches_persisted': {'type': 'boolean'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'path_resolution_note': {'type': 'string'}, 'progressive_gap_count': {'type': 'integer'}, 'progressive_gaps_hint': {'type': 'string'}, 'project_name': {'type': 'string'}, 'project_path': {'type': 'string'}, 'project_path_confirmed': {'type': 'boolean'}, 'project_switch_context': {'properties': {'current_project_active_workflow_hint': {'type': 'string'}, 'current_project_recent_files_5': {'items': {'type': 'string'}, 'type': 'array'}, 'current_project_recent_queries_5': {'items': {'properties': {'query': {'type': 'string'}, 'tool': {'type': 'string'}}, 'required': ['tool', 'query'], 'type': 'object'}, 'type': 'array'}, 'recent_projects_today': {'items': {'properties': {'ended_at': {'type': 'null'}, 'is_current': {'type': 'boolean'}, 'last_session_id': {'type': 'string'}, 'project_path': {'type': 'string'}, 'started_at': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['project_path', 'last_session_id', 'started_at', 'ended_at', 'status', 'is_current'], 'type': 'object'}, 'type': 'array'}}, 'required': ['recent_projects_today', 'current_project_recent_files_5', 'current_project_recent_queries_5', 'current_project_active_workflow_hint'], 'type': 'object'}, 'relative_base_hint': {'type': 'string'}, 'rename_session_payload': {'properties': {'agent_id': {'type': 'string'}, 'new_title': {'type': 'string'}, 'project_path': {'type': 'string'}}, 'required': ['project_path', 'new_title', 'agent_id'], 'type': 'object'}, 'requested_mode': {'type': 'string'}, 'requested_project_path': {'type': 'string'}, 'requested_session_title': {'type': 'string'}, 'resolved_from': {'type': 'string'}, 'resume_policy': {'type': 'string'}, 'resumed': {'type': 'boolean'}, 'root_exists': {'type': 'boolean'}, 'session_id': {'type': 'string'}, 'session_title': {'type': 'string'}, 'session_title_mismatch': {'type': 'boolean'}, 'started_at': {'type': 'string'}, 'transport_policy': {'properties': {'ca_next_action': {'type': 'string'}, 'platform': {'type': 'string'}, 'posix': {'properties': {'powershell_inline': {'type': 'string'}, 'preferred_tool': {'type': 'string'}, 'preferred_transport': {'type': 'string'}, 'shell_mode': {'type': 'string'}}, 'required': ['powershell_inline', 'preferred_transport', 'preferred_tool', 'shell_mode'], 'type': 'object'}, 'schema_version': {'type': 'string'}, 'windows': {'properties': {'enforcement': {'properties': {'error_names': {'items': {'type': 'string'}, 'type': 'array'}, 'tool': {'type': 'string'}, 'triggers_common': {'items': {'type': 'string'}, 'type': 'array'}, 'triggers_ps_only': {'items': {'type': 'string'}, 'type': 'array'}}, 'required': ['tool', 'error_names', 'triggers_common', 'triggers_ps_only'], 'type': 'object'}, 'node_inline': {'type': 'string'}, 'one_shot_recipe_node': {'properties': {'args': {'properties': {'project_path': {'type': 'string'}, 'runtime': {'type': 'string'}, 'script_content': {'type': 'string'}, 'script_label': {'type': 'string'}}, 'required': ['project_path', 'runtime', 'script_content', 'script_label'], 'type': 'object'}, 'behaviour': {'type': 'string'}, 'tool': {'type': 'string'}}, 'required': ['tool', 'args', 'behaviour'], 'type': 'object'}, 'one_shot_recipe_powershell': {'properties': {'args': {'properties': {'project_path': {'type': 'string'}, 'runtime': {'type': 'string'}, 'script_content': {'type': 'string'}, 'script_label': {'type': 'string'}}, 'required': ['project_path', 'runtime', 'script_content', 'script_label'], 'type': 'object'}, 'behaviour': {'type': 'string'}, 'tool': {'type': 'string'}}, 'required': ['tool', 'args', 'behaviour'], 'type': 'object'}, 'path_as_argv_warning': {'type': 'string'}, 'powershell_inline': {'type': 'string'}, 'preferred_tool': {'type': 'string'}, 'preferred_transport': {'type': 'string'}, 'rationale': {'type': 'string'}}, 'required': ['powershell_inline', 'node_inline', 'preferred_transport', 'preferred_tool', 'enforcement', 'rationale', 'path_as_argv_warning', 'one_shot_recipe_powershell', 'one_shot_recipe_node'], 'type': 'object'}}, 'required': ['platform', 'windows', 'posix', 'ca_next_action', 'schema_version'], 'type': 'object'}}, 'required': ['ok', 'session_id', 'session_title', 'started_at', 'resumed', 'agent_id', 'project_name', 'project_path', 'requested_project_path', 'effective_project_path', 'relative_base_hint', 'project_path_confirmed', 'root_exists', 'path_resolution_note', 'resolved_from', 'matrix_audit', 'matrix_drift_present', 'progressive_gap_count', 'progressive_gaps_hint', 'project_switch_context', 'transport_policy', 'cslt_policy', 'requested_mode', 'effective_mode', 'mode_applied', 'mode_matches_persisted', 'mode_ignored_on_resume', 'requested_session_title', 'effective_session_title', 'session_title_mismatch', 'resume_policy', 'ca_next_action', 'rename_session_payload', 'ca_next_tool', 'generation'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '03cd75210f9888da30669f241903760cf6061ffe7ef00f7381c2e3783ec100ca', 'depth_D': 5}}}},
 
 	{"type": "function", "function": {"name": "close_session", "description": "Close the active session after log_native(native=[...]) has been called. V15 R64-D: now accepts either project_path (primary session lookup) OR session_id (direct lookup for sub-sessions like [Ac]/[Ad] opened mid-workflow). At least one of the two MUST be provided.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string", "default": "", "description": "Project root of the session to close. Use for the primary [Ab] session."}, "session_id": {"type": "string", "default": "", "description": "V15 R64-D: direct session_id lookup. Use when you opened multiple sessions (e.g. [Ac], [Ad] sub-sessions) and need to close a specific one without re-deriving its project_path. Pulled from open_session's response."}, "agent_id": {"type": "string", "default": "", "description": "Stable agent identity; scopes active-session selection when non-empty."}}}}},
 
@@ -3223,7 +4550,7 @@ EXTRA_TOOL_SCHEMAS_R43 = [
 
 	{"type": "function", "function": {"name": "log_native", "description": "At the end of each CA session: mark the session complete and record the list of native fallbacks. Use native=[] when no native tool was used. Each item: {tool, instead_of, reason}.", "parameters": {"type": "object", "properties": {"native": {"type": "array", "items": {"type": "object"}, "default": [], "description": "Array [{tool, instead_of, reason}]. Pass [] when no native tool was used."}}}}},
 
-	{"type": "function", "function": {"name": "log_native_event", "description": "Record one native action in the session immediately when native is used instead of an [A] Rule C tool. Call inline right after the action.", "parameters": {"type": "object", "properties": {"action_type": {"type": "string", "description": "read|write|execute|validate|cache|backup|workflow"}, "tool_name": {"type": "string", "description": "Name of the native tool/command used, e.g. 'Edit', 'Bash', 'Read'"}, "target": {"type": "string", "default": ""}, "duration_ms": {"type": "integer", "default": 0}, "status": {"type": "string", "default": "ok", "description": "ok|error|warn"}, "reason": {"type": "string", "default": ""}, "instead_of": {"type": "string", "default": ""}, "failed_payload": {"type": "object", "default": {}}, "failed_error": {"type": "string", "default": ""}, "native_command": {"type": "string", "default": ""}, "scope": {"type": "string", "default": ""}, "risk": {"type": "string", "default": ""}, "transport": {"type": "string", "default": "native", "description": "R81: 'native' (true bypass of [A]) | 'via_a' (work done THROUGH an [A] tool e.g. write_new_file/run_project_test_script — logged for traceability, tagged via_A, NOT counted as a native fallback)."}, "project_path": {"type": "string"}, "agent_id": {"type": "string", "default": "", "description": "Stable agent identity; logs to that agent's active session."}}, "required": ["action_type", "tool_name", "project_path"]}}},
+	{"type": "function", "function": {"name": "log_native_event", "description": "Record one native action in the session immediately when native is used instead of an [A] Rule C tool. Call inline right after the action.", "parameters": {"type": "object", "properties": {"action_type": {"type": "string", "description": "read|write|execute|validate|cache|backup|workflow"}, "tool_name": {"type": "string", "description": "Name of the native tool/command used, e.g. 'Edit', 'Bash', 'Read'"}, "target": {"type": "string", "default": ""}, "duration_ms": {"type": "integer", "default": 0}, "status": {"type": "string", "default": "ok", "description": "ok|error|warn"}, "reason": {"type": "string", "default": ""}, "instead_of": {"type": "string", "default": ""}, "failed_payload": {"type": "object", "default": {}}, "failed_error": {"type": "string", "default": ""}, "native_command": {"type": "string", "default": ""}, "scope": {"type": "string", "default": ""}, "risk": {"type": "string", "default": ""}, "transport": {"type": "string", "default": "native", "description": "R81: 'native' (true bypass of [A]) | 'via_a' (work done THROUGH an [A] tool e.g. write_new_file/run_project_test_script — logged for traceability, tagged via_A, NOT counted as a native fallback)."}, "project_path": {"type": "string"}, "agent_id": {"type": "string", "default": "", "description": "Stable agent identity; logs to that agent's active session."}}, "required": ["action_type", "tool_name", "project_path"]}, "returns": {'properties': {'audit_status': {'type': 'string'}, 'ca_guidance': {'properties': {'accepted_aliases': {'properties': {}, 'type': 'object'}, 'ca_next_action': {'type': 'string'}, 'call_pattern': {'type': 'string'}, 'error_name': {'type': 'string'}, 'known_gotchas': {'items': {'type': 'string'}, 'type': 'array'}, 'notes': {'items': {'type': 'string'}, 'type': 'array'}, 'payload_example': {'properties': {'action_type': {'type': 'string'}, 'agent_id': {'type': 'string'}, 'duration_ms': {'type': 'integer'}, 'failed_error': {'type': 'string'}, 'failed_payload': {'properties': {}, 'type': 'object'}, 'instead_of': {'type': 'string'}, 'native_command': {'type': 'string'}, 'project_path': {'type': 'string'}, 'reason': {'type': 'string'}, 'risk': {'type': 'string'}, 'scope': {'type': 'string'}, 'status': {'type': 'string'}, 'target': {'type': 'string'}, 'tool_name': {'type': 'string'}, 'transport': {'type': 'string'}}, 'required': ['action_type', 'tool_name', 'project_path', 'target', 'duration_ms', 'status', 'reason', 'instead_of', 'failed_payload', 'failed_error', 'native_command', 'scope', 'risk', 'transport', 'agent_id'], 'type': 'object'}, 'phase': {'type': 'string'}, 'phase_label': {'type': 'string'}, 'recommended_prompt_rule': {'type': 'string'}, 'required_fields': {'items': {'type': 'string'}, 'type': 'array'}, 'see_also': {'properties': {}, 'type': 'object'}, 'suggested_alternative_tool': {'properties': {}, 'type': 'object'}}, 'required': ['phase', 'phase_label', 'error_name', 'ca_next_action', 'call_pattern', 'payload_example', 'required_fields', 'accepted_aliases', 'notes', 'known_gotchas', 'recommended_prompt_rule', 'see_also', 'suggested_alternative_tool'], 'type': 'object', 'x-dual': True}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'cslt_classification': {'properties': {'ca_next_action': {'type': 'string'}, 'host_gate': {'type': 'string'}, 'is_allowed_native': {'type': 'boolean'}, 'is_forbidden_native': {'type': 'boolean'}, 'is_unclassified': {'type': 'boolean'}, 'is_via_a': {'type': 'boolean'}, 'native_policy': {'type': 'string'}, 'task_class': {'type': 'string'}}, 'required': ['task_class', 'native_policy', 'is_forbidden_native', 'is_allowed_native', 'is_via_a', 'is_unclassified', 'host_gate', 'ca_next_action'], 'type': 'object'}, 'error': {'type': 'string', 'x-dual': True}, 'error_name': {'type': 'string', 'x-dual': True}, 'fallback_count_so_far': {'type': 'integer'}, 'generation': {'type': 'string'}, 'logged': {'type': 'string'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'operation_attempts': {'type': 'integer'}, 'operation_id': {'type': 'string'}, 'payload_example': {'properties': {'action_type': {'type': 'string'}, 'agent_id': {'type': 'string'}, 'duration_ms': {'type': 'integer'}, 'failed_error': {'type': 'string'}, 'failed_payload': {'properties': {}, 'type': 'object'}, 'instead_of': {'type': 'string'}, 'native_command': {'type': 'string'}, 'project_path': {'type': 'string'}, 'reason': {'type': 'string'}, 'risk': {'type': 'string'}, 'scope': {'type': 'string'}, 'status': {'type': 'string'}, 'target': {'type': 'string'}, 'tool_name': {'type': 'string'}, 'transport': {'type': 'string'}}, 'required': ['action_type', 'tool_name', 'project_path', 'target', 'duration_ms', 'status', 'reason', 'instead_of', 'failed_payload', 'failed_error', 'native_command', 'scope', 'risk', 'transport', 'agent_id'], 'type': 'object', 'x-dual': True}, 'phase': {'type': 'string', 'x-dual': True}, 'policy_warning': {'type': 'string'}, 'preferred_via_a': {'items': {'type': 'string'}, 'type': 'array'}, 'retry_sequence': {'type': 'array', 'x-dual': True}, 'retryable': {'type': 'boolean'}, 'session_id': {'type': 'string'}, 'severity': {'type': 'string'}, 'transport': {'type': 'string'}, 'transport_warning': {'type': 'string'}, 'type': {'type': 'string'}, 'write_status_url': {'type': 'string'}}, 'required': ['ok', 'session_id', 'logged', 'fallback_count_so_far', 'transport', 'audit_status', 'cslt_classification', 'generation', 'operation_id', 'write_status_url', 'operation_attempts'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '01e8e1dbad9e52274251bc899227f9ecadef7bcdb92389e183191c296d0c3403', 'depth_D': 4}}}},
 
 	{"type": "function", "function": {"name": "create_pending_audit", "description": "Store a pending native fallback audit entry for later sync when the API is available. Does not store raw tokens, secrets, or file content.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "action_type": {"type": "string"}, "tool_name": {"type": "string"}, "instead_of": {"type": "string", "default": ""}, "failed_error": {"type": "string", "default": ""}, "target": {"type": "string", "default": ""}, "reason": {"type": "string", "default": ""}, "agent_id": {"type": "string", "default": "", "description": "Stable agent identity stored with this pending audit."}}, "required": ["project_path", "action_type", "tool_name"]}}},
 
@@ -3283,6 +4610,7 @@ V15_R8_SCHEMAS = [
 
     {"type": "function", "function": {"name": "council_tracker", "description": "READ/COLLECT council live logs. Runs the council tracker collector and returns the path to the council_live.txt snapshot (broker dispatches + full prompts, raw worker ARGV/output, council_events, latest replies). Call this FIRST when investigating council/broker/worker-dispatch/prompt/reply issues instead of hand-scraping .council. Auto-open is disabled (open_file is a no-op); archive behavior is kept (old snapshot zipped to archives/, fresh one written). save_output=false skips collection and just reads the current snapshot.",
 
+     "returns": {'properties': {'archive_created': {'type': 'string'}, 'archive_dir': {'type': 'string'}, 'bytes': {'type': 'integer'}, 'collected': {'type': 'boolean'}, 'excerpt': {'type': 'string'}, 'full_content_available': {'type': 'boolean'}, 'generation': {'type': 'string'}, 'hint': {'type': 'string'}, 'historical': {'type': 'boolean'}, 'line_count': {'type': 'integer'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'open_file': {'type': 'boolean'}, 'output_path': {'type': 'string'}}, 'required': ['ok', 'output_path', 'archive_dir', 'archive_created', 'bytes', 'line_count', 'collected', 'open_file', 'historical', 'hint', 'excerpt', 'full_content_available', 'generation'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '1de1b2ba0014b1e59221f61ce0faafd17db9d53b5f26101fae0dbfcdb2fd7c40', 'depth_D': 1}},
      "parameters": {"type": "object", "properties": {
 
          "open_file": {"type": "boolean", "default": False, "description": "Ignored no-op (kept for backward compat); the tool never auto-opens a desktop window."},

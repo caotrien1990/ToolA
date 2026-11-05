@@ -1,0 +1,55 @@
+{
+  "ok": false,
+  "error": "dst exists and overwrite=false: C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\a_copy.txt",
+  "error_name": "DST_EXISTS",
+  "ca_next_action": "resend with overwrite=true",
+  "type": "INTERNAL_ERROR",
+  "severity": "error",
+  "retryable": false,
+  "reason": "dst exists and overwrite=false: C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\a_copy.txt",
+  "phase": "runtime",
+  "payload_example": {
+    "src": "<Absolute path, or relative path resolved against project_path>",
+    "dst": "<Absolute path, or relative path resolved against project_path>",
+    "project_path": "",
+    "overwrite": true,
+    "backup_existing": true
+  },
+  "retry_sequence": [],
+  "ca_guidance": {
+    "phase": "T2",
+    "phase_label": "Mutate / Verify / Refresh",
+    "error_name": "DST_EXISTS",
+    "ca_next_action": "read_error",
+    "call_pattern": "$body = @{ ... } | ConvertTo-Json -Depth 20\nInvoke-RestMethod -Method Post -Uri \"http://localhost:8083/api/call/copy_file\" -ContentType \"application/json\" -Body $body",
+    "payload_example": {
+      "src": "<Absolute path, or relative path resolved against project_path>",
+      "dst": "<Absolute path, or relative path resolved against project_path>",
+      "project_path": "",
+      "overwrite": true,
+      "backup_existing": true
+    },
+    "required_fields": [
+      "src",
+      "dst"
+    ],
+    "accepted_aliases": {},
+    "notes": [
+      "Use PowerShell hashtable -> ConvertTo-Json; do not hand-write JSON for multiline content.",
+      "Use project_path for the project root. Prefer relative file_path/path inside that root.",
+      "For write_fix, write_fix_html, and write_new_file, use content_encoding='base64' when content has newlines, quotes, backslashes, HTML, JS, or large blocks.",
+      "Read schema with GET http://localhost:8083/api/tools if a field is unclear."
+    ],
+    "known_gotchas": [
+      "DST_EXISTS is a non-mutating safety guard",
+      "For a deliberate rerun, use a new destination or overwrite=true with backup_existing=true and verify sha256"
+    ],
+    "recommended_prompt_rule": "On DST_EXISTS, choose a new disposable destination or use overwrite=true with backup_existing=true once",
+    "see_also": {},
+    "suggested_alternative_tool": {}
+  },
+  "generation": "2ade6b9e99a1",
+  "operation_id": "12ea4ce145714eae",
+  "write_status_url": "/api/write_status?operation_id=12ea4ce145714eae",
+  "operation_attempts": 1
+}

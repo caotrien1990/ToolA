@@ -1,0 +1,224 @@
+{
+  "transaction_id": "txn-1793857341-a2a6f481",
+  "operations_count": 2,
+  "applied_count": 2,
+  "changed_files": [
+    "tx1.txt",
+    "a.txt"
+  ],
+  "apply_results": [
+    {
+      "ok": true,
+      "file": "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\tx1.txt",
+      "write_mode": "atomic_replace",
+      "lines_written": 1,
+      "encoding_check": {
+        "encoding_used": "base64",
+        "utf8_valid": true,
+        "mojibake_risk": false,
+        "mojibake_markers_present": false,
+        "mojibake_confirmed": false,
+        "vietnamese_diacritic_check": {
+          "has_vietnamese_diacritics": false,
+          "status": "not_detected"
+        },
+        "suspicious_sequences": [],
+        "bytes_written": 7
+      },
+      "encoding_used": "base64",
+      "bytes_written": 7,
+      "utf8_valid": true,
+      "mojibake_risk": false,
+      "vietnamese_diacritic_check": {
+        "has_vietnamese_diacritics": false,
+        "status": "not_detected"
+      },
+      "diff_preview": {
+        "changed_lines": 1,
+        "added": 1,
+        "removed": 0,
+        "preview_before": "",
+        "preview_after": "tx one",
+        "diff_unified": "--- /dev/null\n+++ tx1.txt (after)\n@@ -0,0 +1 @@\n+tx one\n",
+        "truncated": false,
+        "preview_hash": "0f162fa3f134efb1f19c2571350f3b7f9b49229479a5f5625bceb55e1488b47f"
+      },
+      "cache_synced": true,
+      "new_hash": "b92624fb63cfea1c531ec5063dd71b82f4be339deef3f5efde07958d9c60d6a6",
+      "ca_hint_commit": "git_stage available to stage changes for commit"
+    },
+    {
+      "ok": true,
+      "file": "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\a.txt",
+      "replaced_lines": "1-1",
+      "warnings": [],
+      "new_lines_count": 1,
+      "backup": "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\a.txt.bak",
+      "write_mode": "atomic_replace",
+      "range_id": "a.txt:1p1",
+      "encoding_check": {
+        "encoding_used": "base64",
+        "utf8_valid": true,
+        "mojibake_risk": false,
+        "mojibake_markers_present": false,
+        "mojibake_confirmed": false,
+        "vietnamese_diacritic_check": {
+          "has_vietnamese_diacritics": false,
+          "status": "not_detected"
+        },
+        "suspicious_sequences": [],
+        "bytes_written": 11
+      },
+      "encoding_used": "base64",
+      "bytes_written": 39,
+      "utf8_valid": true,
+      "mojibake_risk": false,
+      "vietnamese_diacritic_check": {
+        "has_vietnamese_diacritics": false,
+        "status": "not_detected"
+      },
+      "cache_sync_error": {
+        "type": "RuntimeError",
+        "message": "cache mtime still mismatched after retry: C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\a.txt"
+      },
+      "cache_synced": false,
+      "cache_sync_warning": "INDEX chua duoc cap nhat cho file nay. Goi cache_delta(project_path) hoac read_file_range(..., force_reseed=true) truoc khi doc/ghi tiep. KHONG goi refresh_project_map tren mot root lon nhu [A:P].",
+      "action_required": "cache_delta",
+      "ca_next_action": "cache_delta",
+      "fallback_sequence": [
+        "cache_delta",
+        "read_file_range"
+      ],
+      "new_hash": "2d79f302dd6c63859e53e11fd0b227e4e4bd7118a3b356ae1eba30eacaa970d4",
+      "new_mtime": 1793857341.5465522,
+      "sequential_chain_hint": "If patching the same file again this round, pass expected_hash=<this response's new_hash> to skip FILE_CHANGED re-check.",
+      "ca_hint_commit": "git_stage available to stage changes for commit"
+    }
+  ],
+  "validation": {
+    "project_path": "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch",
+    "ok": true,
+    "overall_status": "pass",
+    "files_checked": [
+      "tx1.txt",
+      "a.txt"
+    ],
+    "validate_file_results": [
+      {
+        "ok": true,
+        "lang": "none",
+        "file": "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\tx1.txt",
+        "checked": false,
+        "note": "No syntax checker for this file type - UTF-8 readability OK",
+        "ruff_fix_applicable": false,
+        "ruff_rules_matched": [],
+        "ruff_fix_hint": ""
+      },
+      {
+        "ok": true,
+        "lang": "none",
+        "file": "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\a.txt",
+        "checked": false,
+        "note": "No syntax checker for this file type - UTF-8 readability OK",
+        "ruff_fix_applicable": false,
+        "ruff_rules_matched": [],
+        "ruff_fix_hint": ""
+      }
+    ],
+    "validate_symbols_results": [],
+    "encoding_results": [
+      {
+        "ok": true,
+        "file": "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\tx1.txt",
+        "expected_encoding": "utf-8",
+        "language_hint": "",
+        "encoding_used": "utf-8",
+        "utf8_valid": true,
+        "mojibake_risk": false,
+        "mojibake_markers_present": false,
+        "mojibake_confirmed": false,
+        "vietnamese_diacritic_check": {
+          "has_vietnamese_diacritics": false,
+          "status": "not_detected"
+        },
+        "suspicious_sequences": [],
+        "encoding_detected": "utf-8",
+        "bom": false,
+        "bytes": 7,
+        "ca_next_action": "proceed_to_validate_file"
+      },
+      {
+        "ok": true,
+        "file": "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\a.txt",
+        "expected_encoding": "utf-8",
+        "language_hint": "",
+        "encoding_used": "utf-8",
+        "utf8_valid": true,
+        "mojibake_risk": false,
+        "mojibake_markers_present": false,
+        "mojibake_confirmed": false,
+        "vietnamese_diacritic_check": {
+          "has_vietnamese_diacritics": false,
+          "status": "not_detected"
+        },
+        "suspicious_sequences": [],
+        "encoding_detected": "utf-8",
+        "bom": false,
+        "bytes": 39,
+        "ca_next_action": "proceed_to_validate_file"
+      }
+    ],
+    "cache_delta_result": {
+      "ok": true,
+      "added": [
+        "d.txt",
+        "page2.html",
+        "tx1.txt"
+      ],
+      "modified": [
+        "a.txt",
+        "e.txt"
+      ],
+      "deleted": [],
+      "total_changed": 5,
+      "cache_updated_at": "2026-11-05T12:41:50"
+    },
+    "unsupported_tools": [
+      {
+        "tool": "validate_symbols",
+        "file_path": "tx1.txt",
+        "reason": "unsupported_file_type"
+      },
+      {
+        "tool": "validate_symbols",
+        "file_path": "a.txt",
+        "reason": "unsupported_file_type"
+      }
+    ],
+    "failed_checks": [],
+    "cache_delta_runs": 1,
+    "ca_next_action": "proceed_or_refresh_project_map_if_needed"
+  },
+  "backup": [
+    {
+      "ok": true,
+      "backup_path": "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\_orchestrator_backups\\p16b2_scratch_backup_20261105_124221_409727.zip",
+      "created_at": "2026-11-05T12:42:21",
+      "total_backups": 2,
+      "files_written": 1,
+      "files_skipped": 0,
+      "skipped_sample": [],
+      "backup_scope": "targeted",
+      "target_paths": [
+        "a.txt"
+      ]
+    }
+  ],
+  "structural_warnings": [],
+  "ok": true,
+  "schema_version": "v15.r18",
+  "generation": "2ade6b9e99a1",
+  "operation_id": "6fa1dd307c30ddf1",
+  "write_status_url": "/api/write_status?operation_id=6fa1dd307c30ddf1",
+  "operation_attempts": 1
+}

@@ -1,0 +1,304 @@
+{
+  "ok": true,
+  "result": {
+    "graph_status": "ok",
+    "graph_used": true,
+    "graph_degraded_reason": null,
+    "source": "symbol",
+    "files": [
+      "orchestrator/core/returns_shape.py",
+      "tests/test_a45_returns_shape.py"
+    ],
+    "symbols": [
+      {
+        "qualified_name": "returns_shape.canonical_schema_sha",
+        "kind": "function",
+        "file_path": "orchestrator/core/returns_shape.py",
+        "start_line": 67,
+        "confidence": 1.0,
+        "role": "target"
+      },
+      {
+        "qualified_name": "returns_shape.check_returns",
+        "kind": "function",
+        "file_path": "orchestrator/core/returns_shape.py",
+        "start_line": 344,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "returns_shape.compute_returns_coverage",
+        "kind": "function",
+        "file_path": "orchestrator/core/returns_shape.py",
+        "start_line": 438,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "returns_shape.schema_state",
+        "kind": "function",
+        "file_path": "orchestrator/core/returns_shape.py",
+        "start_line": 148,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestMergeGateRealArtifacts",
+        "kind": "class",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 770,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestMissingDepthDCheckReturns",
+        "kind": "class",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 881,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestSchemaStateAndCanonicalSha",
+        "kind": "class",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 234,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape._audited_block",
+        "kind": "function",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 43,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestCensus.test_depth_gate_tripped_audited_tool_is_depth_suspect",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 365,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestCensus.test_disabled_counts_once_even_when_depth_gate_trips",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 347,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestCensus.test_ten_covered_of_38_eligible",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 337,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestFBL1DeepDepth.test_deep_chain_1201_check_returns_skipped_depth",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 1126,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_additional_properties_false_flags_extra_key",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 194,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_anyof_with_a_matching_branch_passes",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 206,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_anyof_with_no_matching_branch_is_exactly_one_mismatch",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 216,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_bool_where_integer_expected_warns",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 182,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_deep_answer_vs_small_depth_d_is_skipped_depth",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 139,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_integer_where_number_expected_passes",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 189,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_mismatch_cap_is_five",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 170,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_node_budget_overflow_is_skipped_node_budget",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 133,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_raw_len_over_cap_is_skipped_too_large",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 128,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_same_answer_vs_deepest_variant_depth_d_passes",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 145,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_sha_mismatched_block_is_skipped_schema_invalid",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 121,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestLeafVerdictLogic.test_sim2_malformed_answer_warns_with_exact_mismatches",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 150,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestMergeGateRealArtifacts.test_baseline_entries_match_the_live_blocks",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 784,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestMergeGateRealArtifacts.test_each_authored_tool_resolves_audited",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 771,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestMergeGateRealArtifacts.test_the_other_28_set38_tools_are_not_audited",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 856,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestMissingDepthDCheckReturns.test_missing_depth_d_block_is_skipped_schema_invalid",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 882,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestSchemaStateAndCanonicalSha.test_anyof_with_three_branches_is_invalid",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 260,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestSchemaStateAndCanonicalSha.test_canonical_sha_changes_when_a_property_type_changes",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 286,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestSchemaStateAndCanonicalSha.test_canonical_sha_is_stable_across_key_ordering",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 271,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestSchemaStateAndCanonicalSha.test_correctly_built_block_is_audited",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 235,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestSchemaStateAndCanonicalSha.test_disallowed_keyword_is_invalid",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 253,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestSchemaStateAndCanonicalSha.test_missing_depth_d_is_invalid",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 245,
+        "confidence": null,
+        "role": "impact"
+      },
+      {
+        "qualified_name": "test_a45_returns_shape.TestSchemaStateAndCanonicalSha.test_status_not_audited_is_invalid",
+        "kind": "method",
+        "file_path": "tests/test_a45_returns_shape.py",
+        "start_line": 240,
+        "confidence": null,
+        "role": "impact"
+      }
+    ],
+    "truncated": false,
+    "truncation_reason": null,
+    "empty": false,
+    "budget": {
+      "max_files": 10,
+      "max_symbols": 50
+    },
+    "elapsed_ms": 16.0
+  },
+  "generation": "2ade6b9e99a1"
+}

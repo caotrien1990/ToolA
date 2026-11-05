@@ -1,0 +1,98 @@
+{
+  "ok": false,
+  "exit_code": 3,
+  "stdout": "p16b2 failing script\n",
+  "stdout_metadata": {
+    "original_chars": 21,
+    "returned_chars": 21,
+    "truncated": false,
+    "sha256": "5454bfbe9bb05b26ecb50b40c0087b3de466c89109e263a2068b93cc40ae1c98"
+  },
+  "stderr": "",
+  "stderr_metadata": {
+    "original_chars": 0,
+    "returned_chars": 0,
+    "truncated": false,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "duration_seconds": 0.058,
+  "script_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\.orchestrator_cache\\test_scripts\\p16b2-b_36f06e2b4a691d3a.py",
+  "script_hash": "36f06e2b4a691d3a",
+  "script_label": "p16b2-b",
+  "runtime_used": "python",
+  "timed_out": false,
+  "child_encoding": {
+    "PYTHONIOENCODING": "utf-8",
+    "PYTHONUTF8": "1",
+    "why": "python child stdout/stderr forced to UTF-8 to match this side's utf-8 decode; without it a non-cp1252 character raises UnicodeEncodeError in the script itself, not just mojibake",
+    "override": "set PYTHONIOENCODING in the [A] process env to beat this default"
+  },
+  "ca_next_action": "inspect_stderr_if_failed",
+  "test_gap": {
+    "status": "skipped",
+    "reason": "test_selection_unknown",
+    "payload": null
+  },
+  "error_name": "TOOL_ERROR",
+  "error": "Tool returned ok=false / non-zero exit",
+  "payload_example": {
+    "project_path": "D:/path/to/project",
+    "script_content": "<Source code of the script. Use content_encoding='base64' for multi-line / Unicod>",
+    "runtime": "node",
+    "timeout": 120,
+    "script_label": "",
+    "return_full_stdout": false,
+    "stdout_max_chars": 4000,
+    "stderr_max_chars": 2000,
+    "content_encoding": "plain",
+    "python_exe": "",
+    "required_python_modules": [],
+    "dry_run": false,
+    "confirm_destructive": -1,
+    "skip_backup": false
+  },
+  "retry_sequence": [],
+  "ca_guidance": {
+    "phase": "T2",
+    "phase_label": "Mutate / Verify / Refresh",
+    "error_name": "TOOL_ERROR",
+    "ca_next_action": "read_error",
+    "call_pattern": "$body = @{ ... } | ConvertTo-Json -Depth 20\nInvoke-RestMethod -Method Post -Uri \"http://localhost:8083/api/call/run_project_test_script\" -ContentType \"application/json\" -Body $body",
+    "payload_example": {
+      "project_path": "D:/path/to/project",
+      "script_content": "<Source code of the script. Use content_encoding='base64' for multi-line / Unicod>",
+      "runtime": "node",
+      "timeout": 120,
+      "script_label": "",
+      "return_full_stdout": false,
+      "stdout_max_chars": 4000,
+      "stderr_max_chars": 2000,
+      "content_encoding": "plain",
+      "python_exe": "",
+      "required_python_modules": [],
+      "dry_run": false,
+      "confirm_destructive": -1,
+      "skip_backup": false
+    },
+    "required_fields": [
+      "project_path",
+      "script_content"
+    ],
+    "accepted_aliases": {},
+    "notes": [
+      "Use PowerShell hashtable -> ConvertTo-Json; do not hand-write JSON for multiline content.",
+      "Use project_path for the project root. Prefer relative file_path/path inside that root.",
+      "For write_fix, write_fix_html, and write_new_file, use content_encoding='base64' when content has newlines, quotes, backslashes, HTML, JS, or large blocks.",
+      "Read schema with GET http://localhost:8083/api/tools if a field is unclear."
+    ],
+    "known_gotchas": [],
+    "recommended_prompt_rule": "",
+    "see_also": {},
+    "suggested_alternative_tool": {}
+  },
+  "phase": "runtime",
+  "generation": "2ade6b9e99a1",
+  "operation_id": "ce1ecf48a90054da",
+  "write_status_url": "/api/write_status?operation_id=ce1ecf48a90054da",
+  "operation_attempts": 1
+}
