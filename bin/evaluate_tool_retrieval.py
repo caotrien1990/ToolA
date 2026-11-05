@@ -18,6 +18,7 @@ import code_tools as ct  # noqa: E402
 import orchestrator_server  # noqa: E402,F401 -- register the effective server tools
 import tools_v15 as hints  # noqa: E402
 from orchestrator.core.tool_retrieval import _CORPUS_PATH, tokens  # noqa: E402
+from orchestrator.text_lines import split_lines  # noqa: E402
 
 
 def load_tasks(path, curated=False):
@@ -31,7 +32,7 @@ def load_tasks(path, curated=False):
             for index, task in enumerate(entry["samples"])
         ]
     else:
-        source_rows = [json.loads(line) for line in path.read_text(encoding="utf-8-sig").splitlines()
+        source_rows = [json.loads(line) for line in split_lines(path.read_text(encoding="utf-8-sig"))
                        if line.strip()]
     tasks = []
     seen = set()
@@ -94,7 +95,7 @@ async def evaluate(rows):
 
 def sample_hints(path):
     # Selection uses provenance only. A human supplies usefulness verdicts.
-    rows = [json.loads(line) for line in Path(path).read_text(encoding="utf-8-sig").splitlines()
+    rows = [json.loads(line) for line in split_lines(Path(path).read_text(encoding="utf-8-sig"))
             if line.strip()]
     eligible = [r for r in rows if r.get("audit_id") and isinstance(r.get("response"), dict)
                 and any(r["response"].get(k) for k in ct.AUTO_CHAIN_FIELDS)]

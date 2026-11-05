@@ -50,3 +50,16 @@ def test_pack_loads_samples_as_curated_not_audit():
     rows = module.load_tasks(retrieval._CORPUS_PATH, curated=True)
     assert len({tool for row in rows for tool in row["expected_tools"]}) == 34
     assert all(row["source_type"] == "curated" and "audit_id" not in row for row in rows)
+
+
+def test_unicode_separators_inside_jsonl_strings_are_not_record_boundaries(tmp_path):
+    module = evaluation_module()
+    path = tmp_path / "tasks.jsonl"
+    task = "read file\u0085range"
+    row = {"task": task, "expected_tools": ["read_file_range"],
+           "audit_id": "unicode-row", "label_source": "fixture"}
+    path.write_text(json.dumps(row, ensure_ascii=False) + "\n", encoding="utf-8")
+    assert module.load_tasks(path)[0]["task"] == task
+    hint = {"audit_id": "unicode-hint", "response": {"ca_hint": task}}
+    path.write_text(json.dumps(hint, ensure_ascii=False) + "\n", encoding="utf-8")
+    assert module.sample_hints(path)["samples"][0]["response"]["ca_hint"] == task
