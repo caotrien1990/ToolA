@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "status": "restart_queued",
+  "mechanism": "[A:S] start_orchestrator.bat (hidden helper)",
+  "always_bat": true,
+  "controller_fallback": false,
+  "helper_path": "D:\\ToolA\\orchestrator\\lifecycle\\via_bat_helper.py",
+  "helper_log": "D:\\ToolA\\.orchestrator_cache\\restart_helper.log",
+  "status_file": "D:\\ToolA\\.orchestrator_cache\\restart_status.json",
+  "delay_before_restart_seconds": 2,
+  "poll_health_after_seconds": 10,
+  "expected_health_url": "http://localhost:8083/health",
+  "ca_next_action": "poll_restart_status_file_via_read_file_range_then_verify_health_pid_changed"
+}

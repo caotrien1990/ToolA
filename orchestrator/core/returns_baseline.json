@@ -126,5 +126,29 @@
   "write_transaction": {
     "sha256": "3646a791f314d1787f61d10e2799fe19ac19682d3b57cb81c8b0e71d45cca882",
     "depth_D": 5
+  },
+  "git_status": {
+    "sha256": "c8dbf65b22c40028b291b45449485f8608b8261936076194cc05bf052ef539c6",
+    "depth_D": 3
+  },
+  "git_diff": {
+    "sha256": "7d2478f5e90e3b0050492e5f169bf9b11ecf5bf7be9e48f1eff6a40ef2a8eebf",
+    "depth_D": 2
+  },
+  "council_message": {
+    "sha256": "8039e5fad095ba42fe2a26275bdbc7fd65477b1045390944eda32d1dcf78ffa0",
+    "depth_D": 1
+  },
+  "council_message_async": {
+    "sha256": "b0207dadfbe40c222573577a76e4ac2bc9b9eed5052a16bcd5bc003b56291178",
+    "depth_D": 1
+  },
+  "council_worker_model": {
+    "sha256": "6f1ce921c61c4eede2edf93665d920c050663d877d6164ae06e1bc4fe21082f7",
+    "depth_D": 4
+  },
+  "restart_orchestrator_via_bat": {
+    "sha256": "1a282e7f51cb1808589e687ca76946c61fe5965fe42ee0d00d161d22691dea59",
+    "depth_D": 1
   }
 }

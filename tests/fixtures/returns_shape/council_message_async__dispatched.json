@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "dispatched": true,
+  "from": "muse",
+  "to": "codo",
+  "request_id": "run-3f6f0d54-0000-4000-8000-000000000000",
+  "dispatch_id": "run-3f6f0d54-0000-4000-8000-000000000000",
+  "note": "dispatched async; reply appears in .council/broker_filtered.jsonl - poll council_tracker for progress"
+}

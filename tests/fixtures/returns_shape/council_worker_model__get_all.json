@@ -1,0 +1,67 @@
+{
+  "ok": true,
+  "config": {},
+  "resolutions": {
+    "clau": {
+      "requested_provider": "claude",
+      "requested_model": "claude-opus-5",
+      "resolved_provider": "claude",
+      "resolved_model": "claude-opus-5",
+      "observed_provider": null,
+      "observed_model": null,
+      "resolution_status": "unverified",
+      "warnings": [],
+      "fallback_policy": "none",
+      "provider": "claude",
+      "model": "claude-opus-5"
+    },
+    "ope": {
+      "requested_provider": "openai-compatible",
+      "requested_model": "openai-compatible/grok-4.6-build",
+      "resolved_provider": "openai-compatible",
+      "resolved_model": "openai-compatible/grok-4.6-build",
+      "observed_provider": null,
+      "observed_model": null,
+      "resolution_status": "unverified",
+      "warnings": [],
+      "fallback_policy": "none",
+      "provider": "openai-compatible",
+      "model": "openai-compatible/grok-4.6-build"
+    },
+    "codo": {
+      "requested_provider": "codex",
+      "requested_model": "grok-4.6-build",
+      "resolved_provider": "codex",
+      "resolved_model": "grok-4.6-build",
+      "observed_provider": null,
+      "observed_model": null,
+      "resolution_status": "unverified",
+      "warnings": [],
+      "fallback_policy": "none",
+      "provider": "codex",
+      "model": "grok-4.6-build"
+    },
+    "gro": {
+      "requested_provider": "ltnai",
+      "requested_model": "grok-4.6-build",
+      "resolved_provider": "ltnai",
+      "resolved_model": "grok-4.6-build",
+      "observed_provider": null,
+      "observed_model": null,
+      "resolution_status": "unverified",
+      "warnings": [],
+      "fallback_policy": "none",
+      "provider": "ltnai",
+      "model": "grok-4.6-build"
+    }
+  },
+  "agents": [
+    "clau",
+    "ope",
+    "codo",
+    "gro"
+  ],
+  "task_epoch": 20,
+  "prompt_hash": "256dadaaf6046b655b5565670c40d82d947b919dd9e380aed76628bf371edc7c",
+  "generation": "988b01c0bf1c"
+}

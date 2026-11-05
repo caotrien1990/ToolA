@@ -12427,6 +12427,7 @@ async def git_commit(project_path=None, message=None, expected_staged_hash="", a
     return json.dumps(out, ensure_ascii=False)
 
 from orchestrator.core.registry import register_tool as _register_tool
+from orchestrator.core.server_schema_metadata import enrich as _with_server_metadata
 
 ct.PROTECTED_TOOL_NAMES.update({"git_stage", "git_unstage", "git_commit"})
 _GIT_TOOL_SPECS = [
@@ -12453,7 +12454,7 @@ for _gspec in _GIT_TOOL_SPECS:
     if _gspec[0] == "git_commit":
         _gspec[7]["message"]["maxLength"] = _git_tools.COMMIT_MESSAGE_MAX_CHARS
 for _n,_h,_p,_tok,_sess,_scope,_aliases,_props,_req in _GIT_TOOL_SPECS:
-    _register_tool(name=_n,handler=_h,phase=_p,tool_map=ct.TOOL_MAP,tool_schemas=ct.TOOL_SCHEMAS,tool_phases=ct.TOOL_PHASES,arg_aliases=_ARG_ALIASES,phase_labels=ct.PHASE_LABELS,aliases=_aliases,schema={"description":f"Governed Git operation: {_n} (argv-only, no shell).","parameters":{"type":"object","properties":_props,"required":_req}},requires_token=_tok,requires_session=_sess,mutation_scope=(None if _scope == "none" else _scope),token_required_set=_TOKEN_REQUIRED_TOOLS,mutating_set=_MUTATING_TOOLS,mutation_scope_map=getattr(ct,"_MUTATION_SCOPE_MAP",None))
+    _register_tool(name=_n,handler=_h,phase=_p,tool_map=ct.TOOL_MAP,tool_schemas=ct.TOOL_SCHEMAS,tool_phases=ct.TOOL_PHASES,arg_aliases=_ARG_ALIASES,phase_labels=ct.PHASE_LABELS,aliases=_aliases,schema=_with_server_metadata(_n, {"description":f"Governed Git operation: {_n} (argv-only, no shell).","parameters":{"type":"object","properties":_props,"required":_req}}),requires_token=_tok,requires_session=_sess,mutation_scope=(None if _scope == "none" else _scope),token_required_set=_TOKEN_REQUIRED_TOOLS,mutating_set=_MUTATING_TOOLS,mutation_scope_map=getattr(ct,"_MUTATION_SCOPE_MAP",None))
 import tools_v15 as _v15
 from orchestrator.core.registry_data import AUDIT_RECONCILIATION_SCHEMA
 
@@ -12772,7 +12773,7 @@ _register_tool(
     aliases={"from": "sender", "frm": "sender", "from_agent": "sender",
              "message": "text", "msg": "text", "recipient": "to", "to_agent": "to",
              "async": "async_dispatch", "non_blocking": "async_dispatch"},
-    schema={
+    schema=_with_server_metadata("council_message", {
         "description": "Send a message to another council worker (or the user) and get the reply. "
                        "[A] auto-handles dispatch + broker logging. Structured args only — never run shell/curl/JSON.",
         "parameters": {
@@ -12800,7 +12801,7 @@ _register_tool(
             },
             "required": ["to"],
         },
-    },
+    }),
 )
 
 
@@ -12893,7 +12894,7 @@ _register_tool(
     phase_labels=ct.PHASE_LABELS,
     aliases={"from": "sender", "frm": "sender", "from_agent": "sender",
              "message": "text", "msg": "text", "recipient": "to", "to_agent": "to"},
-    schema={
+    schema=_with_server_metadata("council_message_async", {
         "description": "Non-blocking council dispatch (HTTP twin of the MCP council_message_async): "
                        "validates worker+model, dispatches on the daemon loop, returns an ack immediately. "
                        "Reply lands in .council/broker_filtered.jsonl — poll council_tracker. "
@@ -12919,7 +12920,7 @@ _register_tool(
             },
             "required": ["to"],
         },
-    },
+    }),
 )
 
 # ── B4 (2026-08-08) council_status: deterministic dispatch-state resolver + durable record ──
@@ -13532,7 +13533,7 @@ _register_tool(
     arg_aliases=_ARG_ALIASES,
     phase_labels=ct.PHASE_LABELS,
     aliases={"worker": "agent", "id": "model", "model_id": "model"},
-    schema={
+    schema=_with_server_metadata("council_worker_model", {
         "description": f"Get/set/list a council worker's model ({'|'.join(_COUNCIL_AGENTS)}) WITHOUT "
                        "the dashboard UI / Playwright DOM. Validates against curated "
                        ".council/ID_MODELS/<PROVIDER>.txt; applies at the next dispatch. "
@@ -13550,7 +13551,7 @@ _register_tool(
             },
             "required": [],
         },
-    },
+    }),
 )
 
 
@@ -13802,7 +13803,7 @@ _register_tool(
     arg_aliases=_ARG_ALIASES,
     phase_labels=ct.PHASE_LABELS,
     aliases={"delay": "delay_seconds", "delay_sec": "delay_seconds"},
-    schema={
+    schema=_with_server_metadata("restart_orchestrator_via_bat", {
         "description": "Restart [A] via the canonical [A:S] script (start_orchestrator.bat): spawns a hidden "
                        "helper (CREATE_NO_WINDOW; no console focus-steal) that waits delay_seconds then runs [A:S], which kills the old pythonw and relaunches "
                        "[A] High-IL. Returns immediately with status=restart_queued; poll /health until ok, then "
@@ -13829,7 +13830,7 @@ _register_tool(
                 "then": {"required": ["force_drain_reason"], "properties": {"force_drain_reason": {"type": "string", "minLength": 1}}},
             }],
         },
-    },
+    }),
 )
 
 

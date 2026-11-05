@@ -1,0 +1,843 @@
+{
+  "git_status": {
+    "returns": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "x-dual": true
+        },
+        "git_root": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "detached": {
+          "type": "boolean"
+        },
+        "head": {
+          "type": "string"
+        },
+        "ahead": {
+          "type": "integer"
+        },
+        "behind": {
+          "type": "integer"
+        },
+        "state_hash": {
+          "type": "string"
+        },
+        "staged_hash": {
+          "type": "string"
+        },
+        "staged_hash_semantics": {
+          "type": "string"
+        },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "changed": {
+              "type": "integer"
+            },
+            "staged": {
+              "type": "integer"
+            },
+            "unstaged": {
+              "type": "integer"
+            },
+            "untracked": {
+              "type": "integer"
+            },
+            "conflicts": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "changed",
+            "staged",
+            "unstaged",
+            "untracked",
+            "conflicts"
+          ]
+        },
+        "clean": {
+          "type": "boolean"
+        },
+        "records_total": {
+          "type": "integer"
+        },
+        "records_truncated": {
+          "type": "boolean"
+        },
+        "records_grouped": {
+          "type": "boolean"
+        },
+        "display_records_total": {
+          "type": "integer"
+        },
+        "records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "record_type": {
+                "type": "string"
+              },
+              "xy": {
+                "type": "string"
+              },
+              "sub": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "aggregated": {
+                "type": "boolean"
+              },
+              "untracked_count": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "record_type",
+              "xy",
+              "path"
+            ]
+          }
+        },
+        "generation": {
+          "type": "string"
+        },
+        "error_name": {
+          "type": "string",
+          "x-dual": true
+        },
+        "error": {
+          "type": "string",
+          "x-dual": true
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "ca_next_action": {
+          "type": "string",
+          "x-dual": true
+        },
+        "payload_example": {
+          "type": "object",
+          "properties": {
+            "project_path": {
+              "type": "string"
+            },
+            "include_ignored": {
+              "type": "boolean"
+            },
+            "max_records": {
+              "type": "integer"
+            },
+            "compact_untracked": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "project_path",
+            "include_ignored",
+            "max_records",
+            "compact_untracked"
+          ],
+          "x-dual": true
+        },
+        "retry_sequence": {
+          "type": "array",
+          "x-dual": true
+        },
+        "ca_guidance": {
+          "type": "object",
+          "properties": {
+            "phase": {
+              "type": "string"
+            },
+            "phase_label": {
+              "type": "string"
+            },
+            "error_name": {
+              "type": "string"
+            },
+            "ca_next_action": {
+              "type": "string"
+            },
+            "call_pattern": {
+              "type": "string"
+            },
+            "payload_example": {
+              "type": "object",
+              "properties": {
+                "project_path": {
+                  "type": "string"
+                },
+                "include_ignored": {
+                  "type": "boolean"
+                },
+                "max_records": {
+                  "type": "integer"
+                },
+                "compact_untracked": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "project_path",
+                "include_ignored",
+                "max_records",
+                "compact_untracked"
+              ]
+            },
+            "required_fields": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "accepted_aliases": {
+              "type": "object",
+              "properties": {}
+            },
+            "notes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "known_gotchas": {
+              "type": "array"
+            },
+            "recommended_prompt_rule": {
+              "type": "string"
+            },
+            "see_also": {
+              "type": "object",
+              "properties": {}
+            },
+            "suggested_alternative_tool": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "required": [
+            "phase",
+            "phase_label",
+            "error_name",
+            "ca_next_action",
+            "call_pattern",
+            "payload_example",
+            "required_fields",
+            "accepted_aliases",
+            "notes",
+            "known_gotchas",
+            "recommended_prompt_rule",
+            "see_also",
+            "suggested_alternative_tool"
+          ],
+          "x-dual": true
+        },
+        "phase": {
+          "type": "string",
+          "x-dual": true
+        }
+      },
+      "required": [
+        "ok",
+        "generation"
+      ],
+      "x-audit": {
+        "status": "audited",
+        "schema_sha256": "c8dbf65b22c40028b291b45449485f8608b8261936076194cc05bf052ef539c6",
+        "depth_D": 3
+      }
+    },
+    "parameter_examples": {
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "include_ignored": false,
+      "max_records": 100,
+      "compact_untracked": true
+    }
+  },
+  "git_diff": {
+    "returns": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "x-dual": true
+        },
+        "scope": {
+          "type": "string"
+        },
+        "diff": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "total_chars": {
+          "type": "integer"
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "whitespace_errors": {
+          "type": "array"
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "ca_hint": {
+          "type": "string",
+          "x-dual": true
+        },
+        "ca_next_action": {
+          "type": "string",
+          "x-dual": true
+        },
+        "ca_next_tool": {
+          "type": "string",
+          "x-dual": true
+        },
+        "generation": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "scope",
+        "diff",
+        "truncated",
+        "total_chars",
+        "paths",
+        "whitespace_errors",
+        "exit_code",
+        "generation"
+      ],
+      "x-audit": {
+        "status": "audited",
+        "schema_sha256": "7d2478f5e90e3b0050492e5f169bf9b11ecf5bf7be9e48f1eff6a40ef2a8eebf",
+        "depth_D": 2
+      }
+    },
+    "parameter_examples": {
+      "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+      "scope": "worktree",
+      "paths": [
+        "orchestrator/core/registry_data.py"
+      ],
+      "context_lines": 3,
+      "max_chars": 50000,
+      "check_whitespace": false
+    }
+  },
+  "council_message": {
+    "returns": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "x-dual": true
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "dispatch_id": {
+          "type": "string"
+        },
+        "reply": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "error_name": {
+          "type": "string",
+          "x-dual": true
+        },
+        "agent": {
+          "type": "string"
+        },
+        "ca_next_action": {
+          "type": "string",
+          "x-dual": true
+        },
+        "provider": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "delivered": {
+          "type": "string"
+        },
+        "dispatched": {
+          "type": "boolean"
+        },
+        "artifact": {
+          "type": "string"
+        },
+        "allowed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "council_pack": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "x-audit": {
+        "status": "audited",
+        "schema_sha256": "8039e5fad095ba42fe2a26275bdbc7fd65477b1045390944eda32d1dcf78ffa0",
+        "depth_D": 1
+      }
+    },
+    "parameter_examples": {
+      "sender": "clau",
+      "to": "codo",
+      "text": "Review the attached source diff.",
+      "body_file": ".council/briefs/audit_brief.md",
+      "timeout_sec": 1800,
+      "provider": "codex",
+      "model": "grok-4.6-build",
+      "fallback_policy": "none",
+      "allowed_fallbacks": [],
+      "queue": true,
+      "no_queue": false,
+      "queue_wait_timeout_sec": 6000,
+      "async_dispatch": false,
+      "q_context": false,
+      "q_zones": "Z2",
+      "task_id": "schema-audit-20261105",
+      "objective_class": "audit",
+      "risk_level": "low",
+      "dev_level": "mid"
+    }
+  },
+  "council_message_async": {
+    "returns": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "x-dual": true
+        },
+        "dispatched": {
+          "type": "boolean"
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "dispatch_id": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "error_name": {
+          "type": "string",
+          "x-dual": true
+        },
+        "agent": {
+          "type": "string"
+        },
+        "ca_next_action": {
+          "type": "string",
+          "x-dual": true
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "x-audit": {
+        "status": "audited",
+        "schema_sha256": "b0207dadfbe40c222573577a76e4ac2bc9b9eed5052a16bcd5bc003b56291178",
+        "depth_D": 1
+      }
+    },
+    "parameter_examples": {
+      "sender": "clau",
+      "to": "codo",
+      "text": "Review the attached source diff.",
+      "body_file": ".council/briefs/audit_brief.md",
+      "timeout_sec": 1800,
+      "provider": "codex",
+      "model": "grok-4.6-build",
+      "fallback_policy": "none",
+      "allowed_fallbacks": [],
+      "queue_wait_timeout_sec": 6000,
+      "task_id": "schema-audit-20261105",
+      "objective_class": "audit",
+      "risk_level": "low",
+      "dev_level": "mid",
+      "request_id": "schema-audit-20261105-001"
+    }
+  },
+  "council_worker_model": {
+    "returns": {
+      "type": "object",
+      "required": [
+        "ok"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "agent": {
+          "type": "string"
+        },
+        "current": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            }
+          }
+        },
+        "set": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            }
+          }
+        },
+        "resolution": {
+          "type": "object",
+          "properties": {
+            "requested_provider": {
+              "type": "string"
+            },
+            "requested_model": {
+              "type": "string"
+            },
+            "resolved_provider": {
+              "type": "string"
+            },
+            "resolved_model": {
+              "type": "string"
+            },
+            "resolution_status": {
+              "type": "string"
+            },
+            "fallback_policy": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "observed_provider": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "observed_model": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "warnings": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "requested_provider": {
+          "type": "string"
+        },
+        "requested_model": {
+          "type": "string"
+        },
+        "resolved_provider": {
+          "type": "string"
+        },
+        "resolved_model": {
+          "type": "string"
+        },
+        "resolution_status": {
+          "type": "string"
+        },
+        "fallback_policy": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "observed_provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observed_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "valid": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "agents": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "allowed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "resolutions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "requested_provider": {
+                "type": "string"
+              },
+              "requested_model": {
+                "type": "string"
+              },
+              "resolved_provider": {
+                "type": "string"
+              },
+              "resolved_model": {
+                "type": "string"
+              },
+              "resolution_status": {
+                "type": "string"
+              },
+              "fallback_policy": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "observed_provider": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "observed_model": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "error_name": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "generation": {"type": "string"},
+        "prompt_hash": {"type": "string"},
+        "task_epoch": {"type": "integer"}
+      },
+      "x-audit": {
+        "status": "audited",
+        "schema_sha256": "6f1ce921c61c4eede2edf93665d920c050663d877d6164ae06e1bc4fe21082f7",
+        "depth_D": 4
+      }
+    },
+    "parameter_examples": {
+      "agent": "codo",
+      "model": "grok-4.6-build",
+      "provider": "codex",
+      "action": "get"
+    }
+  },
+  "restart_orchestrator_via_bat": {
+    "returns": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "x-dual": true
+        },
+        "status": {
+          "type": "string"
+        },
+        "status_file": {
+          "type": "string"
+        },
+        "delay_before_restart_seconds": {
+          "type": "integer"
+        },
+        "poll_health_after_seconds": {
+          "type": "integer"
+        },
+        "ca_next_action": {
+          "type": "string",
+          "x-dual": true
+        },
+        "error_name": {
+          "type": "string",
+          "x-dual": true
+        },
+        "detail": {
+          "type": "string"
+        },
+        "mechanism": {
+          "type": "string"
+        },
+        "always_bat": {
+          "type": "boolean"
+        },
+        "controller_fallback": {
+          "type": "boolean"
+        },
+        "helper_path": {
+          "type": "string"
+        },
+        "helper_log": {
+          "type": "string"
+        },
+        "expected_health_url": {
+          "type": "string"
+        },
+        "force_drain": {
+          "type": "object"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        },
+        "busy_state": {
+          "type": "object"
+        },
+        "blocking_guards": {
+          "type": "array"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "x-audit": {
+        "status": "audited",
+        "schema_sha256": "1a282e7f51cb1808589e687ca76946c61fe5965fe42ee0d00d161d22691dea59",
+        "depth_D": 1
+      }
+    },
+    "parameter_examples": {
+      "delay_seconds": 2,
+      "force_drain": false,
+      "force_drain_reason": "Operator approved draining the blocked work."
+    }
+  }
+}

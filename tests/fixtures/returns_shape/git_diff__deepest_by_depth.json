@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "scope": "worktree",
+  "diff": "diff --git a/orchestrator_server.py b/orchestrator_server.py\nindex dc1ece9..8f432c8 100644\n--- a/orchestrator_server.py\n+++ b/orchestrator_server.py\n@@ -943,6 +943,18 @@ def _persist_post_call_accounting(record: dict) -> None:\n     duration_ms = int(record.get(\"duration_ms\") or 0)\n     error_msg = str(record.get(\"error_msg\") or \"\")[:300]\n     try:\n+        # USAGE_LOG patch (spec 2187/mapping 2188): session fields travel\n+        # top-level on the record (see the enqueue site). Present-but-None\n+        # means \"dispatcher says no metadata\" and is passed through so\n+        # _log_usage stamps an explicit null; absent keys mean \"old\n+        # record\" and keep the old row shape unchanged.\n+        _usage_extra = {}\n+        if \"session_id\" in record:\n+            _usage_extra[\"session_id\"] = record.get(\"session_id\")\n+        if \"task_epoch\" in record:\n+            _usage_extra[\"task_epoch\"] = record.get(\"task_epoch\")\n+        if \"prompt_hash\" in record:\n+            _usage_extra[\"prompt_hash\"] = record.get(\"prompt_hash\")\n         usage_ok = ct._log_usage(\n             tool_name, body, status == \"ok\", duration_ms, error_msg,\n             delivered=bool(record.get(\"delivered\", True)),\n@@ -953,6 +965,7 @@ def _persist_post_call_accounting(record: dict) -> None:\n             returns_shape_errors=record.get(\"returns_shape_errors\") or [],\n             accounting_id=str(record.get(\"accounting_id\") or \"\"),\n             accounting_sequence=record.get(\"accounting_sequence\"),\n+            **_usage_extra,\n         )\n         if usage_ok is False:\n             raise RuntimeError(\"usage_jsonl_write_failed\")\n@@ -17324,6 +17337,15 @@ accepted_fields=sorted(accepted_fields),\n                 # record, which is the single container `_persist_post_call_accounting`\n                 # reads; do not re-derive agent_id from a nested compact again.\n                 \"agent_id\": _task_agent_id or \"\",\n+                # USAGE_LOG patch (spec 2187/mapping 2188): session fields\n+                # travel top-level on the record, following the A41 pattern\n+                # above (never re-derived from a nested compact). Values are\n+                # taken from _accounting_task_meta so the USAGE_LOG stamp\n+                # matches the durable-audit meta stamp; host_session_id is\n+                # mapped to the session_id key name here.\n+                \"session_id\": _accounting_task_meta.get(\"host_session_id\"),\n+                \"task_epoch\": _accounting_task_meta.get(\"task_epoch\"),\n+                \"prompt_hash\": _accounting_task_meta.get(\"prompt_hash\"),\n                 # P16: shape verdict rides channel 2 (accounting) only; None for\n                 # pre-window dispatches, and _persist drops Nones to empty.\n                 \"returns_shape_verdict\": _rs_verdict,\n",
+  "truncated": false,
+  "total_chars": 2787,
+  "paths": [
+    "orchestrator_server.py"
+  ],
+  "whitespace_errors": [],
+  "exit_code": 0,
+  "ca_hint": "worktree diff is non-empty - git_stage with explicit paths (never allow_all)",
+  "ca_next_action": "git_stage",
+  "ca_next_tool": "git_stage",
+  "generation": "2ade6b9e99a1"
+}
