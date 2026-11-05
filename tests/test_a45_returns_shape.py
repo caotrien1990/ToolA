@@ -711,7 +711,8 @@ class TestJournalMechanics:
 #     the total == 100 boundary pair the audit found untested.
 # ---------------------------------------------------------------------------
 
-_AUTHORED_10 = (
+_AUTHORED_32 = (
+    # Batch 1 (landed 04/11, commit e6afdf55): the 10 core-read tools.
     "read_file_range",
     "read_context_batch",
     "architecture_context_pack",
@@ -722,6 +723,33 @@ _AUTHORED_10 = (
     "list_structure",
     "query_index",
     "get_rule_core_text",
+    # Batch 2 (2026-11-05): the 22 tools whose schema entries live in
+    # registry_data.py / code_tools.py.  The remaining 6 SET-38 tools
+    # (council_message, council_message_async, council_worker_model,
+    # restart_orchestrator_via_bat, git_status, git_diff) are pinned by
+    # test_the_other_6_set38_tools_are_not_audited below.
+    "write_fix",
+    "write_new_file",
+    "write_fix_html",
+    "write_transaction",
+    "apply_after_dry_run",
+    "backup_project",
+    "delete_file",
+    "copy_file",
+    "run_project_command",
+    "run_project_test_script",
+    "convene_council",
+    "council_tracker",
+    "cbm_council_context",
+    "tool_decision_hint",
+    "cache_status",
+    "backup_status",
+    "open_session",
+    "validate_file",
+    "ruff_fix",
+    "log_native_event",
+    "run_ps1_script",
+    "audit_tool_matrix",
 )
 
 _FIXTURES_DIR = _REPO_ROOT / "tests" / "fixtures" / "returns_shape"
@@ -769,21 +797,21 @@ def _depth_from_definition(value) -> int:
 
 class TestMergeGateRealArtifacts:
     def test_each_authored_tool_resolves_audited(self):
-        for tool in _AUTHORED_10:
+        for tool in _AUTHORED_32:
             block = rs.resolve_returns(tool)
             assert block is not None, f"{tool}: no returns block resolved"
             assert rs.schema_state(block) == "audited", (
                 f"{tool}: schema_state is {rs.schema_state(block)!r}, "
                 "the merge gate requires 'audited'")
 
-    def test_baseline_has_exactly_the_ten_authored_tools(self):
+    def test_baseline_has_exactly_the_32_authored_tools(self):
         baseline = _baseline_entries()
-        assert sorted(baseline.keys()) == sorted(_AUTHORED_10)
-        assert len(baseline) == 10
+        assert sorted(baseline.keys()) == sorted(_AUTHORED_32)
+        assert len(baseline) == 32
 
     def test_baseline_entries_match_the_live_blocks(self):
         baseline = _baseline_entries()
-        for tool in _AUTHORED_10:
+        for tool in _AUTHORED_32:
             block = rs.resolve_returns(tool)
             assert baseline[tool]["sha256"] == rs.canonical_schema_sha(block), (
                 f"{tool}: baseline sha256 does not match the live block's "
@@ -794,17 +822,17 @@ class TestMergeGateRealArtifacts:
 
     def test_each_authored_tool_has_at_least_two_fixtures(self):
         total = 0
-        for tool in _AUTHORED_10:
+        for tool in _AUTHORED_32:
             files = _fixtures_for(tool)
             assert len(files) >= 2, (
                 f"{tool}: only {len(files)} fixture file(s), the merge gate "
                 "requires the fixture pair")
             total += len(files)
-        assert total == 25, f"expected the 25 committed fixtures, got {total}"
+        assert total == 69, f"expected the 69 committed fixtures, got {total}"
 
     def test_fixtures_pass_except_the_one_acp_node_budget_skip(self):
         node_budget_files = []
-        for tool in _AUTHORED_10:
+        for tool in _AUTHORED_32:
             for path in _fixtures_for(tool):
                 fixture = _load_json_file(path)
                 assert isinstance(fixture, dict), (
@@ -830,7 +858,7 @@ class TestMergeGateRealArtifacts:
             "exactly one fixture in the whole set may be node-budget-skipped")
 
     def test_fixture_top_level_keys_stay_within_declared_properties(self):
-        for tool in _AUTHORED_10:
+        for tool in _AUTHORED_32:
             block = rs.resolve_returns(tool)
             declared = set((block.get("properties") or {}).keys())
             assert declared, f"{tool}: live block declares no properties"
@@ -843,7 +871,7 @@ class TestMergeGateRealArtifacts:
 
     def test_fixture_max_depth_equals_baseline_depth_d(self):
         baseline = _baseline_entries()
-        for tool in _AUTHORED_10:
+        for tool in _AUTHORED_32:
             depths = [
                 rs.depth_of(_load_json_file(path))
                 for path in _fixtures_for(tool)
@@ -853,20 +881,26 @@ class TestMergeGateRealArtifacts:
                 f"{tool}: deepest fixture is depth {max(depths)} but "
                 f"baseline depth_D is {baseline[tool]['depth_D']}")
 
-    def test_the_other_28_set38_tools_are_not_audited(self):
-        others = [t for t in rs.RETURNS_SET_38 if t not in _AUTHORED_10]
-        assert len(others) == 28
+    def test_the_other_6_set38_tools_are_not_audited(self):
+        # The remaining 6 SET-38 tools (council_message,
+        # council_message_async, council_worker_model,
+        # restart_orchestrator_via_bat, git_status, git_diff) have their
+        # only schema entries in orchestrator_server.py, outside the
+        # batch-2 edit scope; they must still resolve as NOT audited.
+        others = [t for t in rs.RETURNS_SET_38 if t not in _AUTHORED_32]
+        assert len(others) == 6
         for tool in others:
             assert rs.schema_state(rs.resolve_returns(tool)) != "audited", (
-                f"{tool}: not in batch 1, must not resolve as audited")
+                f"{tool}: not in batches 1-2, must not resolve as audited")
 
     def test_census_on_empty_rows_is_the_exact_landed_partition(self):
         # The G3b-C1 N2 repair: C1's real-assembly census test asserted only
         # eligible == 38 plus the partition inequality, which the leaf's
-        # fail-open fallback dict would also satisfy.  With batch 1 landed
-        # the real census on empty rows is exactly this dict.
+        # fail-open fallback dict would also satisfy.  With batch 2 landed
+        # (32 of 38 authored; the last 6 schema entries live only in
+        # orchestrator_server.py) the real census is exactly this dict.
         assert rs.compute_returns_coverage(usage_rows=[]) == {
-            "covered": 10,
+            "covered": 32,
             "depth_suspect": 0,
             "disabled": 0,
             "eligible": 38,
@@ -1031,11 +1065,12 @@ class TestGateBoundariesAndIndependentDepth:
         # Real assembly (no schemas= override): 120 verdict rows for
         # read_file_range, 9 of them skipped/depth -- the section 4 worked
         # trace -- moves exactly that one authored tool covered ->
-        # depth_suspect under the partition precedence.
+        # depth_suspect under the partition precedence (32 authored tools
+        # after batch 2, so covered drops 32 -> 31).
         rows = _rows("read_file_range", "skipped/depth", 9)
         rows += _rows("read_file_range", "pass", 111)
         assert rs.compute_returns_coverage(usage_rows=rows) == {
-            "covered": 9,
+            "covered": 31,
             "depth_suspect": 1,
             "disabled": 0,
             "eligible": 38,
@@ -1059,13 +1094,13 @@ class TestGateBoundariesAndIndependentDepth:
 
     def test_independent_depth_matches_leaf_on_fixtures_and_edges(self):
         checked = 0
-        for tool in _AUTHORED_10:
+        for tool in _AUTHORED_32:
             for path in _fixtures_for(tool):
                 fixture = _load_json_file(path)
                 assert _depth_from_definition(fixture) == rs.depth_of(
                     fixture), path.name
                 checked += 1
-        assert checked == 25
+        assert checked == 69
         for edge in ({}, [], 0, "x", None, True):
             assert _depth_from_definition(edge) == rs.depth_of(edge), edge
 

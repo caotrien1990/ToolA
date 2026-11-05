@@ -1,0 +1,12 @@
+{
+  "cache_exists": true,
+  "index_exists": true,
+  "status": "ok",
+  "last_updated": 1793856637.3045218,
+  "last_updated_iso": "2026-11-05T12:30:37",
+  "cache_files": 1102,
+  "message": "Cache is initialized.",
+  "cache_age_hours": 0.08,
+  "ok": true,
+  "generation": "2ade6b9e99a1"
+}

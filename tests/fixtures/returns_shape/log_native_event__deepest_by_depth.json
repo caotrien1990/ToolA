@@ -1,0 +1,97 @@
+{
+  "ok": false,
+  "session_id": "untitled-session-11-05-00-43-muse-1f1d927f-6fb62c614c47",
+  "logged": "▶️ run_project_command (native) | 🔧 p16b2 step0 census helper | ⏱️ 120ms",
+  "fallback_count_so_far": 2,
+  "transport": "native",
+  "audit_status": "logged_and_rejected",
+  "cslt_classification": {
+    "task_class": "project_command",
+    "native_policy": "forbid",
+    "is_forbidden_native": true,
+    "is_allowed_native": false,
+    "is_via_a": false,
+    "is_unclassified": false,
+    "host_gate": "deny_native_forbid",
+    "ca_next_action": "stop_native_use_a_tool"
+  },
+  "policy_warning": "FORBIDDEN native for task_class=project_command; preferred_via_a=['run_project_command', 'run_node_script', 'run_ps1_script']; next=stop_native_use_a_tool",
+  "error": "FORBIDDEN native for task_class=project_command; preferred_via_a=['run_project_command', 'run_node_script', 'run_ps1_script']; next=stop_native_use_a_tool",
+  "error_name": "HOST_GATE_DENY",
+  "type": "POLICY_REJECT",
+  "severity": "error",
+  "retryable": false,
+  "ca_next_action": "stop_native_use_a_tool",
+  "preferred_via_a": [
+    "run_project_command",
+    "run_node_script",
+    "run_ps1_script"
+  ],
+  "transport_warning": "'run_project_command' is an [A] tool, not a native bypass. If the work was done THROUGH [A], either omit log_native_event (the tool self-audits) or pass transport='via_a' so the audit reads 'via_A' instead of 'native'. Only log transport='native' for a TRUE bypass (raw fs/spawn used because [A] was unavailable).",
+  "payload_example": {
+    "action_type": "<read|write|execute|validate|cache|backup|workflow>",
+    "tool_name": "<Name of the native tool/command used, e.g. 'Edit', 'Bash', 'Read'>",
+    "project_path": "D:/path/to/project",
+    "target": "",
+    "duration_ms": 0,
+    "status": "ok",
+    "reason": "",
+    "instead_of": "",
+    "failed_payload": {},
+    "failed_error": "",
+    "native_command": "",
+    "scope": "",
+    "risk": "",
+    "transport": "native",
+    "agent_id": ""
+  },
+  "retry_sequence": [],
+  "ca_guidance": {
+    "phase": "T3",
+    "phase_label": "Session / Audit / Auxiliary",
+    "error_name": "HOST_GATE_DENY",
+    "ca_next_action": "read_error",
+    "call_pattern": "$body = @{ ... } | ConvertTo-Json -Depth 20\nInvoke-RestMethod -Method Post -Uri \"http://localhost:8083/api/call/log_native_event\" -ContentType \"application/json\" -Body $body",
+    "payload_example": {
+      "action_type": "<read|write|execute|validate|cache|backup|workflow>",
+      "tool_name": "<Name of the native tool/command used, e.g. 'Edit', 'Bash', 'Read'>",
+      "project_path": "D:/path/to/project",
+      "target": "",
+      "duration_ms": 0,
+      "status": "ok",
+      "reason": "",
+      "instead_of": "",
+      "failed_payload": {},
+      "failed_error": "",
+      "native_command": "",
+      "scope": "",
+      "risk": "",
+      "transport": "native",
+      "agent_id": ""
+    },
+    "required_fields": [
+      "action_type",
+      "tool_name",
+      "project_path"
+    ],
+    "accepted_aliases": {},
+    "notes": [
+      "Use PowerShell hashtable -> ConvertTo-Json; do not hand-write JSON for multiline content.",
+      "Use project_path for the project root. Prefer relative file_path/path inside that root.",
+      "For write_fix, write_fix_html, and write_new_file, use content_encoding='base64' when content has newlines, quotes, backslashes, HTML, JS, or large blocks.",
+      "Read schema with GET http://localhost:8083/api/tools if a field is unclear."
+    ],
+    "known_gotchas": [
+      "Requires project_path in the current schema",
+      "Response includes fallback_count_so_far, session_id, and audit_status"
+    ],
+    "recommended_prompt_rule": "Log each native fallback inline; do not use for token refresh",
+    "see_also": {},
+    "suggested_alternative_tool": {}
+  },
+  "phase": "runtime",
+  "generation": "2ade6b9e99a1",
+  "operation_id": "6a41f646e3b3dd4a",
+  "write_status_url": "/api/write_status?operation_id=6a41f646e3b3dd4a",
+  "operation_attempts": 1
+}

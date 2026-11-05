@@ -5864,7 +5864,7 @@ async def acceptance_dashboard(project_path: str = "",
         "alias_contract_intact": True,
         "duplicate_key_count_max": 0,  # R43.2
         "purpose_eligible_gap_max": 0,  # P23
-        "doc_params_undescribed_max": 272,  # P23
+        "doc_params_undescribed_max": 0,  # P23; set 0 on 2026-11-05 (easy-items Item B phase 1): all 272 undescribed params backfilled at their defining homes; measured remainder is zero — no server/dirt-resident descriptions. Examples remainder (fields x32 builder-stamped from orchestrator/core/fields_param.py; council_message, council_message_async, council_worker_model, restart_orchestrator_via_bat, git_status, git_diff defined in orchestrator_server.py) is gated on the orchestrator_server.py decision.
         "doc_weak_description_count_max": 9,  # P23
         "error_system_names_unmapped_max": 39,  # P23
     }

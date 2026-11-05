@@ -1,0 +1,67 @@
+{
+  "ok": false,
+  "error": "File already exists: C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\a.txt. Use write_fix to modify existing files.",
+  "error_name": "FILE_ALREADY_EXISTS",
+  "overwrite_warning": true,
+  "target_exists": true,
+  "overwrite_risk": true,
+  "ca_next_action": "use_write_fix_or_choose_new_path",
+  "ca_next_tool": "write_fix",
+  "payload_example": {
+    "path": "relative/file.py",
+    "project_path": "D:/path/to/project",
+    "content_encoding": "plain",
+    "dry_run": false,
+    "overwrite": false,
+    "backup_override": false
+  },
+  "retry_sequence": [],
+  "ca_guidance": {
+    "phase": "T2",
+    "phase_label": "Mutate / Verify / Refresh",
+    "error_name": "FILE_ALREADY_EXISTS",
+    "ca_next_action": "read_error",
+    "call_pattern": "$body = @{ ... } | ConvertTo-Json -Depth 20\nInvoke-RestMethod -Method Post -Uri \"http://localhost:8083/api/call/write_new_file\" -ContentType \"application/json\" -Body $body",
+    "payload_example": {
+      "path": "relative/file.py",
+      "project_path": "D:/path/to/project",
+      "content_encoding": "plain",
+      "dry_run": false,
+      "overwrite": false,
+      "backup_override": false
+    },
+    "required_fields": [
+      "path"
+    ],
+    "accepted_aliases": {
+      "file_path": {
+        "maps_to": "path",
+        "status": "verified"
+      },
+      "content": {
+        "maps_to": "new_content",
+        "status": "verified"
+      }
+    },
+    "notes": [
+      "Use PowerShell hashtable -> ConvertTo-Json; do not hand-write JSON for multiline content.",
+      "Use project_path for the project root. Prefer relative file_path/path inside that root.",
+      "For write_fix, write_fix_html, and write_new_file, use content_encoding='base64' when content has newlines, quotes, backslashes, HTML, JS, or large blocks.",
+      "Read schema with GET http://localhost:8083/api/tools if a field is unclear."
+    ],
+    "known_gotchas": [
+      "Use dry_run=true first, then apply_after_dry_run with the returned dry_run_id",
+      "Fails if file already exists unless overwrite=True; prefer write_fix for updates"
+    ],
+    "recommended_prompt_rule": "Use dry_run=true first; review diff_preview; then apply_after_dry_run",
+    "see_also": {
+      "write_transaction": "Mixed batch (create new + edit existing) — set op.tool per entry"
+    },
+    "suggested_alternative_tool": {}
+  },
+  "phase": "runtime",
+  "generation": "2ade6b9e99a1",
+  "operation_id": "606079196961a793",
+  "write_status_url": "/api/write_status?operation_id=606079196961a793",
+  "operation_attempts": 1
+}

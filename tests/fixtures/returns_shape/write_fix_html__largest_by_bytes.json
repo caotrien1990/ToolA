@@ -1,0 +1,76 @@
+{
+  "ok": true,
+  "file": "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\page2.html",
+  "replaced_lines": "3-3",
+  "warnings": [],
+  "new_lines_count": 1,
+  "backup": "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\page2.html.bak",
+  "write_mode": "atomic_replace",
+  "range_id": "page2.html:3p1",
+  "encoding_check": {
+    "encoding_used": "base64",
+    "utf8_valid": true,
+    "mojibake_risk": false,
+    "mojibake_markers_present": false,
+    "mojibake_confirmed": false,
+    "vietnamese_diacritic_check": {
+      "has_vietnamese_diacritics": false,
+      "status": "not_detected"
+    },
+    "suspicious_sequences": [],
+    "bytes_written": 19
+  },
+  "encoding_used": "base64",
+  "bytes_written": 50,
+  "utf8_valid": true,
+  "mojibake_risk": false,
+  "vietnamese_diacritic_check": {
+    "has_vietnamese_diacritics": false,
+    "status": "not_detected"
+  },
+  "truncated": false,
+  "unclosed_tags": [],
+  "tag_errors": [],
+  "validation": {
+    "ok": true,
+    "lang": "html",
+    "file": "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\page2.html",
+    "note": "HTML OK: 0 script block(s) checked, full document balanced",
+    "unclosed_tags": [],
+    "tag_errors": [],
+    "truncated": false,
+    "ruff_fix_applicable": false,
+    "checked": true,
+    "ruff_rules_matched": [],
+    "ruff_fix_hint": ""
+  },
+  "syntax_ok": true,
+  "symbol_check": {
+    "ok": true
+  },
+  "symbols_changed": [],
+  "symbols_deleted": [],
+  "cache_synced": true,
+  "new_hash": "6b4bd0ea41378dbbe92a9622f3922f38a4878ba21826a6c31406f21f5d82fa70",
+  "new_mtime": 1793857329.686902,
+  "sequential_chain_hint": "If patching the same file again this round, pass expected_hash=<this response's new_hash> to skip FILE_CHANGED re-check.",
+  "ca_hint_commit": "git_stage available to stage changes for commit",
+  "html_tool": true,
+  "delimiter_check": "passed",
+  "diff": "--- page2.html (before)\n+++ page2.html (after)\n@@ -1,5 +1,5 @@\n <html>\n <body>\n-<p>p16b2</p>\n+<p>p16b2 EDITED</p>\n </body>\n </html>\n",
+  "diff_preview": {
+    "changed_lines": 2,
+    "added": 1,
+    "removed": 1,
+    "preview_before": "<html>\n<body>\n<p>p16b2</p>\n</body>\n</html>",
+    "preview_after": "<html>\n<body>\n<p>p16b2 EDITED</p>\n</body>\n</html>",
+    "diff_unified": "--- page2.html (before)\n+++ page2.html (after)\n@@ -1,5 +1,5 @@\n <html>\n <body>\n-<p>p16b2</p>\n+<p>p16b2 EDITED</p>\n </body>\n </html>\n",
+    "truncated": false,
+    "preview_hash": "daa6878c83f5e69025d5b17d359aa4878c99a6c9a56b4d1df00cc633a0d49469"
+  },
+  "changed_lines": 2,
+  "generation": "2ade6b9e99a1",
+  "operation_id": "7405f749303c36d3",
+  "write_status_url": "/api/write_status?operation_id=7405f749303c36d3",
+  "operation_attempts": 1
+}

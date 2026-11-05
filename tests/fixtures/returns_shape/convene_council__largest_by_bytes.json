@@ -1,0 +1,81 @@
+{
+  "ok": true,
+  "roster": [
+    {
+      "agent": "clauC",
+      "bridge_agent": "clau",
+      "role": "Judgement: final verification, limited patching, T4/MCP only when explicitly delegated",
+      "cli_channel": "claudeltnai --print --model claude-opus-5 -p \"<prompt>\"  [diagnostic only; dispatch via council_message; log .council\\log_clau.txt]"
+    },
+    {
+      "agent": "opeC",
+      "bridge_agent": "ope",
+      "role": "OpenCode worker; live pin grok-4.6-build; no suspended Qwen default",
+      "cli_channel": "opencode run \"<prompt>\" --model openai-compatible/grok-4.6-build --dangerously-skip-permissions  [diagnostic only; dispatch via council_message; log .council\\log_ope.txt]"
+    },
+    {
+      "agent": "codoC",
+      "bridge_agent": "codo",
+      "role": "High-end grok-4.6-build worker via CodexLTNAI for judgement, independent audit, high-difficulty development; never the default leader",
+      "cli_channel": "codexltnai exec \"<prompt>\" --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check  [diagnostic only; dispatch via council_message; log .council\\log_codo.txt]"
+    },
+    {
+      "agent": "groC",
+      "bridge_agent": "gro",
+      "role": "Grok CLI worker on live LTNAI grok-4.6-build; dispatch via council_message",
+      "cli_channel": "C:\\Users\\ADMIN\\.grok\\bin\\grok.exe -p \"<prompt>\" -m grok-4.6-build --yolo  [diagnostic only; dispatch via council_message; log .council\\log_gro.txt]"
+    }
+  ],
+  "config_source": "(fallback: council_config.json missing/invalid)",
+  "bridge_dir": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\.council",
+  "message_format": {
+    "request": "<<MSG id=N to=X status=NEW>>...<<END N>>",
+    "reply": "<<RES id=N from=X status=DONE>>...<<END N>>",
+    "files": [
+      "PROTOCOL.md",
+      "inbox_<bridge_agent>.md",
+      "outbox_<bridge_agent>.md",
+      "STATE.md",
+      "metrics_<bridge_agent>.json"
+    ]
+  },
+  "cli_identity_rule": "Desktop/current CA identities use names without C (Clau, Codo, Ope...); CLI council workers use leading-cap C-suffixed names.",
+  "addressing_rule": "Route messages by worker id. Do not require salutations; identity comes from the worker label and persona, not from a greeting.",
+  "verify_outbox_rule": "VERIFY ONLY / no-edits prohibits source/runtime changes, but appending the required RES block to the worker's own outbox is mandatory and is not considered a forbidden edit.",
+  "prompt_style_rule": "Worker prompts should be short Vietnamese with correct diacritics; avoid ambiguous 'Chao Anh' headers in agent-to-agent prompts.",
+  "leadership_rule": "The desktop/current CA that receives Anh's exact user-only trigger is the temporary council LEADER unless Anh explicitly delegates leadership.",
+  "leader_frugality_rule": "Temporary leader = reason + direct ONLY.",
+  "worker_prompt_route_rule": "BROKER-ONLY: every worker runs one-shot with NO context/session retention.",
+  "broker_only_rule": "Context mode has been REMOVED from [A]. All workers run BROKER one-shot only.",
+  "messaging_rule": "CA/worker messaging uses the [A] tool council_message via POST /api/call/council_message with {sender,to,text,timeout_sec?}.",
+  "broker_read_rule": "Workers read cross-agent responses from .council\\broker_filtered.jsonl.",
+  "parallelism_rule": "Leader MAY dispatch independent worker tasks in PARALLEL (workers run over HTTP /api/call - parallel-safe). Serialize ONLY tasks that WRITE the SAME project concurrently. Writes to [A] itself restricted to clauC or codoC ONLY.",
+  "io_language": "en",
+  "coordination_rule": "The user-triggered desktop CA is temporary leader. ROUTE RULE SOT = Anh chi dao. Never a cost chain. Benchmark 2026-07-25 table SUSPENDED. CodoC is a high-end worker, not default leader. ClauC is outside normal routing order and explicit exceptional T4/scoped work only. Always set+get; no silent substitution.",
+  "task_routing": {},
+  "guardrail_harness_rule": "",
+  "mission": "",
+  "messaging_to_enum": [
+    "ope",
+    "codo",
+    "clau",
+    "gro",
+    "user"
+  ],
+  "dispatch_rule": "[A] dispatches workers internally with subprocess argv (and stdin for codoC) to avoid shell quoting/Unicode corruption.",
+  "liveness_rule": "The /council dashboard detects working/idle by live OS process scan (psutil cmdline signature), NOT by any metrics flag. Do NOT write a status field; dispatch through council_message.",
+  "route_capabilities": {
+    "selection_rule": "ROUTE RULE SOT = Anh chi dao. Do not use a cost chain. Benchmark 2026-07-25 table SUSPENDED. ClauC is outside normal routing order.",
+    "clauC": "Judgement/final verification; ONLY worker allowed MCP for T4; HTTP /api/call otherwise",
+    "codoC": "HTTP /api/call ONLY; never MCP. Optional high-context worker when explicitly routed",
+    "opeC": "HTTP /api/call ONLY; never MCP. FREE worker - prefer for token-heavy scan/test/search",
+    "groC": "HTTP /api/call ONLY; never MCP - route any T4 to clauC"
+  },
+  "council_leader_skill": {
+    "name": "council_rule_leader",
+    "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\.council\\council_rule_leader.md",
+    "text": "",
+    "error": "missing",
+    "missing": true
+  }
+}

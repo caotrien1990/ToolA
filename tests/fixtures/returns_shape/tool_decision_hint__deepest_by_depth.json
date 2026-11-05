@@ -1,0 +1,37 @@
+{
+  "recommended_tier": "T4",
+  "recommended_tool": "server_lifecycle_status",
+  "recommended_skill": "16_server_lifecycle",
+  "recipe": {
+    "name": "restart_orchestrator",
+    "advisory_only": true,
+    "steps": [
+      {
+        "tool": "server_lifecycle_status",
+        "action": "Inspect the target port and confirm its owner."
+      },
+      {
+        "tool": "restart_orchestrator_via_bat",
+        "action": "Use the dedicated orchestrator restart after explicit restart authorization."
+      },
+      {
+        "tool": "server_lifecycle_status",
+        "action": "Reinspect after the scan-cache TTL; verify a new owner PID and application readiness. For orchestrator also verify a new /health generation."
+      }
+    ],
+    "execution_note": "This hint executes nothing. Stop/restart needs explicit authorization for the identified target; never infer a PID or launch command."
+  },
+  "suggestion": {
+    "tool": "server_lifecycle_status",
+    "tier": "T4",
+    "payload_example": {
+      "port": 0
+    },
+    "reason": "Recycling requires inspection, replacement and verification, not just termination."
+  },
+  "all_recommended_tools_live": true,
+  "verbosity_mode": "terse",
+  "ok": true,
+  "schema_version": "v15.r18",
+  "generation": "2ade6b9e99a1"
+}

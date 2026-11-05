@@ -1,0 +1,48 @@
+{
+  "ok": true,
+  "file": "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\a.txt",
+  "write_mode": "atomic_replace",
+  "lines_written": 3,
+  "encoding_check": {
+    "encoding_used": "base64",
+    "utf8_valid": true,
+    "mojibake_risk": false,
+    "mojibake_markers_present": false,
+    "mojibake_confirmed": false,
+    "vietnamese_diacritic_check": {
+      "has_vietnamese_diacritics": false,
+      "status": "not_detected"
+    },
+    "suspicious_sequences": [],
+    "bytes_written": 29
+  },
+  "encoding_used": "base64",
+  "bytes_written": 29,
+  "utf8_valid": true,
+  "mojibake_risk": false,
+  "vietnamese_diacritic_check": {
+    "has_vietnamese_diacritics": false,
+    "status": "not_detected"
+  },
+  "diff_preview": {
+    "changed_lines": 3,
+    "added": 3,
+    "removed": 0,
+    "preview_before": "",
+    "preview_after": "line one\nline two\nline three",
+    "diff_unified": "--- /dev/null\n+++ a.txt (after)\n@@ -0,0 +1,3 @@\n+line one\n+line two\n+line three\n",
+    "truncated": false,
+    "preview_hash": "425ef7b348981ecdf4b9df67e30dddef072f4eee39ff36c0faef2e7428435466"
+  },
+  "cache_synced": true,
+  "new_hash": "bce2aeea9e6fc31f09b164dbaf832b013ee75fbd323262cbee9d42b8b51077b1",
+  "read_token_sealed": false,
+  "read_token_seal_error": "ValueError",
+  "ca_next_action": "read_file_range(file_path=C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\a.txt, force_reseed=true) before the next write_fix",
+  "ca_hint_commit": "git_stage available to stage changes for commit",
+  "ca_next_tool": "read_file_range",
+  "generation": "2ade6b9e99a1",
+  "operation_id": "7fdde87bcdf6cb5b",
+  "write_status_url": "/api/write_status?operation_id=7fdde87bcdf6cb5b",
+  "operation_attempts": 1
+}

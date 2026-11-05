@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "src": "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\a.txt",
+  "dst": "C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_scratch\\a_copy.txt",
+  "bytes": 39,
+  "sha256": "2d79f302dd6c63859e53e11fd0b227e4e4bd7118a3b356ae1eba30eacaa970d4",
+  "hash_verified": true,
+  "dst_existed": false,
+  "backup": null,
+  "generation": "2ade6b9e99a1",
+  "operation_id": "1df379dd1db2a63f",
+  "write_status_url": "/api/write_status?operation_id=1df379dd1db2a63f",
+  "operation_attempts": 1
+}

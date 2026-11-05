@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "backup_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\_orchestrator_backups\\project-orchestrator_backup_20261105_120000_000000.zip",
+  "created_at": "2026-11-05 12:00:00",
+  "total_backups": 2,
+  "files_written": 1234,
+  "files_skipped": 56,
+  "skipped_sample": [
+    "venv312/Lib/site-packages/pip/__init__.py",
+    ".git/objects/pack/pack-000.idx"
+  ],
+  "backup_scope": "full",
+  "target_paths": []
+}

@@ -1,0 +1,22 @@
+{
+  "ok": true,
+  "session_id": "untitled-session-11-05-00-43-muse-1f1d927f-6fb62c614c47",
+  "logged": "🔗 toola-call (native) | 🔧 itemA fixture capture (returns_shape batch 2) | ⏱️ 0ms",
+  "fallback_count_so_far": 1,
+  "transport": "native",
+  "audit_status": "logged",
+  "cslt_classification": {
+    "task_class": "read_project_file",
+    "native_policy": "allow_readonly",
+    "is_forbidden_native": false,
+    "is_allowed_native": true,
+    "is_via_a": false,
+    "is_unclassified": false,
+    "host_gate": "allow_native_with_policy",
+    "ca_next_action": "continue"
+  },
+  "generation": "2ade6b9e99a1",
+  "operation_id": "9b795bc36aefc793",
+  "write_status_url": "/api/write_status?operation_id=9b795bc36aefc793",
+  "operation_attempts": 1
+}

@@ -1,0 +1,5 @@
+{
+  "ok": false,
+  "error": "project_path is required when file_path is relative",
+  "hint": "Provide project_path to ensure deletion stays within project scope"
+}

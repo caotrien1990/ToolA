@@ -1,0 +1,40 @@
+{
+  "ok": true,
+  "exit_code": 0,
+  "stdout": "p16b2 test script ok\n",
+  "stdout_metadata": {
+    "original_chars": 21,
+    "returned_chars": 21,
+    "truncated": false,
+    "sha256": "6433bea82f9211e9f746486f5709dd99dcb15bef79b3a12372e7fdfb768651d9"
+  },
+  "stderr": "",
+  "stderr_metadata": {
+    "original_chars": 0,
+    "returned_chars": 0,
+    "truncated": false,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "duration_seconds": 0.067,
+  "script_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\.orchestrator_cache\\test_scripts\\p16b2-a_f631803d576a3cad.py",
+  "script_hash": "f631803d576a3cad",
+  "script_label": "p16b2-a",
+  "runtime_used": "python",
+  "timed_out": false,
+  "child_encoding": {
+    "PYTHONIOENCODING": "utf-8",
+    "PYTHONUTF8": "1",
+    "why": "python child stdout/stderr forced to UTF-8 to match this side's utf-8 decode; without it a non-cp1252 character raises UnicodeEncodeError in the script itself, not just mojibake",
+    "override": "set PYTHONIOENCODING in the [A] process env to beat this default"
+  },
+  "ca_next_action": "evaluate_stdout_assertions",
+  "test_gap": {
+    "status": "skipped",
+    "reason": "test_selection_unknown",
+    "payload": null
+  },
+  "generation": "2ade6b9e99a1",
+  "operation_id": "3d433e0f268486ec",
+  "write_status_url": "/api/write_status?operation_id=3d433e0f268486ec",
+  "operation_attempts": 1
+}

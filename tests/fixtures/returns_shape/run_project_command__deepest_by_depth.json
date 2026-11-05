@@ -1,0 +1,41 @@
+{
+  "ok": true,
+  "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+  "command_received": "\"D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\venv312\\Scripts\\python.exe\" C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_step0.py",
+  "command": [
+    "cmd",
+    "/c",
+    "\"D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\venv312\\Scripts\\python.exe\" C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_step0.py"
+  ],
+  "command_executed": [
+    "cmd",
+    "/c",
+    "\"D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\venv312\\Scripts\\python.exe\" C:\\Users\\ADMIN\\AppData\\Local\\Temp\\p16b2_step0.py"
+  ],
+  "shell": "cmd",
+  "shell_mode_requested": "auto",
+  "shell_mode_resolved": "cmd",
+  "cwd": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+  "returncode": 0,
+  "exit_code": 0,
+  "duration_seconds": 0.447,
+  "stdout": "CENSUS {\"covered\": 10, \"depth_suspect\": 0, \"disabled\": 0, \"eligible\": 38}\nSTATE read_file_range audited\nSTATE read_context_batch audited\nSTATE architecture_context_pack audited\nSTATE search_code audited\nSTATE find_symbol audited\nSTATE cbm_get_architecture audited\nSTATE ocr_map audited\nSTATE list_structure audited\nSTATE query_index audited\nSTATE get_rule_core_text audited\nSTATE write_fix absent\nSTATE write_new_file absent\nSTATE write_fix_html absent\nSTATE write_transaction absent\nSTATE apply_after_dry_run absent\nSTATE backup_project absent\nSTATE delete_file absent\nSTATE copy_file absent\nSTATE run_project_command absent\nSTATE run_project_test_script absent\nSTATE council_message absent\nSTATE council_message_async absent\nSTATE council_worker_model absent\nSTATE convene_council absent\nSTATE council_tracker absent\nSTATE cbm_council_context absent\nSTATE tool_decision_hint absent\nSTATE cache_status absent\nSTATE restart_orchestrator_via_bat absent\nSTATE backup_status absent\nSTATE open_session absent\nSTATE validate_file absent\nSTATE ruff_fix absent\nSTATE log_native_event absent\nSTATE run_ps1_script absent\nSTATE git_status absent\nSTATE git_diff absent\nSTATE audit_tool_matrix absent\nSET38 38 ['read_file_range', 'read_context_batch', 'architecture_context_pack', 'search_code', 'find_symbol', 'cbm_get_architecture', 'ocr_map', 'list_structure', 'query_index', 'get_rule_core_text', 'write_fix', 'write_new_file', 'write_fix_html', 'write_transaction', 'apply_after_dry_run', 'backup_project', 'delete_file', 'copy_file', 'run_project_command', 'run_project_test_script', 'council_message', 'council_message_async', 'council_worker_model', 'convene_council', 'council_tracker', 'cbm_council_context', 'tool_decision_hint', 'cache_status', 'restart_orchestrator_via_bat', 'backup_status', 'open_session', 'validate_file', 'ruff_fix', 'log_native_event', 'run_ps1_script', 'git_status', 'git_diff', 'audit_tool_matrix']\n",
+  "stderr": "",
+  "timed_out": false,
+  "background": false,
+  "interactive": false,
+  "elevated": false,
+  "path_resolution_note": "project_path is used as cwd; command is not prepended with project_path",
+  "redirection_requested": false,
+  "spawned_pid": 37684,
+  "launch_verified": null,
+  "expected_port": null,
+  "expected_process_name": "",
+  "port_probe": null,
+  "process_probe": null,
+  "root_causes": [],
+  "generation": "2ade6b9e99a1",
+  "operation_id": "69a8756354bfab06",
+  "write_status_url": "/api/write_status?operation_id=69a8756354bfab06",
+  "operation_attempts": 1
+}

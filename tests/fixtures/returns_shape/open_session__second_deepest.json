@@ -1,0 +1,234 @@
+{
+  "ok": true,
+  "session_id": "untitled-session-11-05-00-43-muse-1f1d927f-6fb62c614c47",
+  "session_title": "Untitled Session 11/05 00:43",
+  "started_at": "2026-11-05T00:43:56",
+  "resumed": true,
+  "agent_id": "muse",
+  "project_name": "project-orchestrator",
+  "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA",
+  "requested_project_path": "D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/project-orchestrator",
+  "effective_project_path": "D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/project-orchestrator",
+  "relative_base_hint": "D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/project-orchestrator",
+  "project_path_confirmed": true,
+  "root_exists": true,
+  "path_resolution_note": "project_path confirmed",
+  "resolved_from": "",
+  "matrix_audit": {
+    "code_tools": 258,
+    "schema_tools": 258,
+    "skill_tools": 104,
+    "skill_folders": 35,
+    "inventory_tools": 258,
+    "inventory_active_count": 258,
+    "inventory_retired_count": 0,
+    "inventory_extra_count": 0,
+    "inventory_extra_endpoints_count": 0,
+    "inventory_extra_internal_count": 0,
+    "inventory_extra_planned_count": 0,
+    "inventory_extra_doc_only_count": 0,
+    "inventory_extra_unknown_count": 0,
+    "drift_count": 0,
+    "ok_count": 258,
+    "alias_drift_count": 0,
+    "alias_drift_severity": "none",
+    "contract_drift_count": 1,
+    "progressive_gap_count": 0,
+    "doc_description_present_count": 258,
+    "doc_description_weak_count": 9,
+    "doc_params_total": 1415,
+    "doc_params_described_count": 1143,
+    "doc_params_undescribed_count": 272,
+    "doc_param_examples_registry_count": 0,
+    "doc_param_examples_served_count": 258,
+    "doc_fields_absent_by_design_count": 4,
+    "purpose_eligible_count": 178,
+    "purpose_covered_count": 178,
+    "purpose_eligible_gap_count": 0,
+    "error_phase_map_entries": 65,
+    "error_system_names_total": 41,
+    "error_system_names_phase_mapped_count": 8,
+    "error_system_names_unmapped_count": 33,
+    "audit_scope": "daemon_runtime"
+  },
+  "matrix_drift_present": false,
+  "progressive_gap_count": 0,
+  "progressive_gaps_hint": "no progressive gaps",
+  "project_switch_context": {
+    "recent_projects_today": [
+      {
+        "project_path": "",
+        "last_session_id": "direct-muse-1793857004-e7e5c8f5",
+        "started_at": "2026-11-05T12:36:44",
+        "ended_at": null,
+        "status": "adopted",
+        "is_current": false
+      },
+      {
+        "project_path": "C:\\Users\\ADMIN\\AppData\\Local\\Temp",
+        "last_session_id": "untitled-session-11-05-12-26-muse-1f1d927f-bbab80999169",
+        "started_at": "2026-11-05T12:26:46",
+        "ended_at": null,
+        "status": "active",
+        "is_current": false
+      }
+    ],
+    "current_project_recent_files_5": [
+      "orchestrator_server.py",
+      "test_a45_returns_shape.py",
+      "response_contract.py",
+      "test_destructive_command_guard_case2008.py",
+      "registry_data.py"
+    ],
+    "current_project_recent_queries_5": [
+      {
+        "tool": "search_code",
+        "query": "("
+      },
+      {
+        "tool": "search_code",
+        "query": "async def|_dispatch|_InProcess|_is_local|TOOL_MAP|_auth"
+      },
+      {
+        "tool": "search_code",
+        "query": "error_name"
+      },
+      {
+        "tool": "find_symbol",
+        "query": "_shape_tool_response_text"
+      },
+      {
+        "tool": "search_code",
+        "query": "confirm_destructive_required"
+      }
+    ],
+    "current_project_active_workflow_hint": ""
+  },
+  "transport_policy": {
+    "platform": "windows",
+    "windows": {
+      "powershell_inline": "forbidden",
+      "node_inline": "forbidden",
+      "preferred_transport": "script_file",
+      "preferred_tool": "run_project_test_script",
+      "enforcement": {
+        "tool": "run_project_command",
+        "error_names": [
+          "POWERSHELL_INLINE_FORBIDDEN",
+          "NODE_INLINE_FORBIDDEN"
+        ],
+        "triggers_common": [
+          "length>800",
+          "multiline",
+          "quote_density>=10",
+          "non_ascii",
+          "regex_json_unc_combo",
+          "list_form_with_shell_metachars"
+        ],
+        "triggers_ps_only": [
+          "continuation_>>",
+          "here_string"
+        ]
+      },
+      "rationale": "Inline shells on Windows mangle non-ASCII (Vietnamese diacritics) via console code page, lose backslash escapes through cmd /c re-parsing, and break on continuation/here-string/heavy-quote payloads. The script-file path writes the body as a temp artifact (UTF-8 BOM for .ps1 / plain UTF-8 for .js) and invokes via -File / direct path so the interpreter reads source bytes unchanged.",
+      "path_as_argv_warning": "R55 ADDITIONAL RULE: NEVER pass non-ASCII paths (Vietnamese diacritics, UNC shares with national characters) as DIRECT shell argv even with permitted runtimes. The Windows console argv re-encoding still applies BEFORE the interpreter parses argv. Symptom: downstream tools receive mojibake bytes and filesystem probes return exists=false. Safe routes: (a) write path into the script file body (run_ps1_script / run_node_script — body is read as UTF-8/UTF-8-BOM, no argv transit); (b) pass path as a JSON request body field (HTTP transport stays UTF-8 end-to-end). The R54 input mojibake detector on sample_unc_paths_with_root_check will surface INPUT_MOJIBAKE_SUSPECTED if upstream argv corruption occurred.",
+      "one_shot_recipe_powershell": {
+        "tool": "run_project_test_script",
+        "args": {
+          "project_path": "<project_root>",
+          "runtime": "powershell",
+          "script_content": "<multiline PS body, UTF-8 safe>",
+          "script_label": "<short_audit_identifier>"
+        },
+        "behaviour": "[A] writes .orchestrator_cache/test_scripts/<hash>.ps1 with UTF-8 BOM (PS 5.1 compat) and runs `powershell -NoProfile -ExecutionPolicy Bypass -File <temp>`."
+      },
+      "one_shot_recipe_node": {
+        "tool": "run_project_test_script",
+        "args": {
+          "project_path": "<project_root>",
+          "runtime": "node",
+          "script_content": "<multiline JS body — JSON.stringify/UNC/regex safe>",
+          "script_label": "<short_audit_identifier>"
+        },
+        "behaviour": "[A] writes .orchestrator_cache/test_scripts/<hash>.js and runs `node <temp.js>` — JS string literals/regex/UNC bytes pass through unchanged."
+      }
+    },
+    "posix": {
+      "powershell_inline": "n/a",
+      "preferred_transport": "exec",
+      "preferred_tool": "run_project_command",
+      "shell_mode": "exec_or_posix"
+    },
+    "ca_next_action": "use_script_file_when_payload_is_non_trivial",
+    "schema_version": "v15.r56"
+  },
+  "cslt_policy": {
+    "north_star": {
+      "acronym": "CSLt",
+      "order": [
+        "Correctness",
+        "Save token",
+        "Less context",
+        "Time fee"
+      ],
+      "text": "Correctness > Save token > Less context > Time fee",
+      "note": "CSLt not CLSt; Save token before Less context"
+    },
+    "agent_transport_policy": "a_first_mcp_t4_ok",
+    "matrix": {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\.council\\CA_TOOL_POLICY_MATRIX.json",
+      "task_class_count": 23
+    },
+    "a_first": true,
+    "host_gate": {
+      "agent_id": "muse",
+      "is_hermes": false,
+      "scope": "project",
+      "decision": "allow_via_a",
+      "allowed": true,
+      "reason": "Inside project via [A]",
+      "native_policy": "forbid"
+    },
+    "metrics_contract": {
+      "bypass_event": "native action matched to native_policy=forbid",
+      "bypass_rate_formula": "forbidden_native_actions / all_classified_governed_actions",
+      "required_counters": [
+        "forbidden_native_count",
+        "allowed_native_count",
+        "via_a_count",
+        "unclassified_count",
+        "bypass_rate"
+      ],
+      "zero_denominator": "null",
+      "group_by": [
+        "agent_id",
+        "task_class",
+        "project_path",
+        "time_window"
+      ]
+    },
+    "rules": [
+      "Prefer [A] HTTP /api/call/* for project ops",
+      "Native only when Matrix native_policy allows + log_native_event",
+      "CLI C-suffix workers: transport_policy=http_only",
+      "Outside project: allow_readonly only"
+    ]
+  },
+  "requested_mode": "T1",
+  "effective_mode": "T1",
+  "mode_applied": false,
+  "mode_matches_persisted": true,
+  "mode_ignored_on_resume": false,
+  "requested_session_title": "p16b2-itemA-capture",
+  "effective_session_title": "Untitled Session 11/05 00:43",
+  "session_title_mismatch": true,
+  "resume_policy": "active_session_by_project_and_agent",
+  "ca_next_action": "rename_session_if_requested_title_is_intended",
+  "rename_session_payload": {
+    "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+    "new_title": "p16b2-itemA-capture",
+    "agent_id": "muse"
+  },
+  "ca_next_tool": "rename_session",
+  "generation": "2ade6b9e99a1"
+}

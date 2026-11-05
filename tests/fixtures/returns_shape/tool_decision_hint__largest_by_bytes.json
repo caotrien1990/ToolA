@@ -1,0 +1,54 @@
+{
+  "recommended_tier": "T1",
+  "recommended_tool": "read_file_range",
+  "recommended_skill": "00_skill_router",
+  "rationale": "Lexical rank over live TOOL_SCHEMAS (VN-aware)",
+  "confidence": 0.8,
+  "candidates": [
+    {
+      "tool": "read_file_range",
+      "tier": "T1",
+      "score": 13.0,
+      "description": "Adaptive pure read: range, function, class, section, or file summary. Small files auto-expand; large files remain bounded and return AST-aware next_ranges. On a",
+      "see_also": null
+    },
+    {
+      "tool": "read_context_batch",
+      "tier": "T1",
+      "score": 7.0,
+      "description": "Read multiple files or structural scopes in one pure T1 call under one total token budget. Use it once cbm has already said WHICH files matter (cbm_get_architec",
+      "see_also": null
+    },
+    {
+      "tool": "read_chunks",
+      "tier": "T1",
+      "score": 6.0,
+      "description": "T1 READ-ONLY: bounded chunk read by line or byte; never returns the whole file by default.",
+      "see_also": null
+    }
+  ],
+  "payload_example_per_tool": {
+    "read_file_range": {
+      "file_path": "<value>"
+    },
+    "read_context_batch": {
+      "project_path": "<value>",
+      "requests": "<value>"
+    }
+  },
+  "q_memory_refs": [],
+  "next_step": "Pick a candidate then GET /api/tools/<tool>/schema for the full schema.",
+  "suggestion": {
+    "tool": "read_file_range",
+    "tier": "T1",
+    "payload_example": {
+      "file_path": "<value>"
+    },
+    "reason": "Lexical rank over live TOOL_SCHEMAS (VN-aware)"
+  },
+  "ok": true,
+  "schema_version": "v15.r18",
+  "generation": "2ade6b9e99a1",
+  "concurrent_api_calls_observed": 2,
+  "contention_note": "2 /api/call requests were in flight around this one; the wall clock includes queueing, so a slow answer here is NOT evidence of a slow tool -- re-measure serially before tuning scope"
+}

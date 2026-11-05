@@ -1,0 +1,22 @@
+{
+  "ok": false,
+  "error": "tool admission queue 'write:c:/users/admin/appdata/local/temp' is full (1/16)",
+  "reason": "tool admission queue 'write:c:/users/admin/appdata/local/temp' is full (1/16)",
+  "error_name": "TOOL_QUEUE_FULL",
+  "tool_category": "write:c:/users/admin/appdata/local/temp",
+  "admission": {
+    "category": "write:c:/users/admin/appdata/local/temp",
+    "limit": 1,
+    "held": 1,
+    "waiters": 1,
+    "queue_capacity": 16,
+    "queue_rejected": 2,
+    "holder_op_id": "35fba5181b17449c9818f8dfca871f2f",
+    "held_for_sec": 425.428,
+    "oldest_wait_ms": 60083.583
+  },
+  "retryable": true,
+  "retry_after_seconds": 1,
+  "ca_next_action": "retry_after_tool_queue_capacity_frees",
+  "generation": "2ade6b9e99a1"
+}

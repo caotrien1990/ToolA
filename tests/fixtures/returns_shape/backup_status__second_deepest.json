@@ -1,0 +1,34 @@
+{
+  "ok": true,
+  "status": "available",
+  "total_backups": 1,
+  "latest": {
+    "created_at": "2026-09-27T15:25:50",
+    "backup_path": "C:\\Users\\ADMIN\\_orchestrator_backups\\.zcode_backup_20260927_152550_220049.zip",
+    "files_written": 1,
+    "files_skipped": 0,
+    "backup_scope": "targeted",
+    "target_paths": [
+      "skills/laya-assistant/SKILL.md"
+    ],
+    "skipped_sample": [],
+    "size_mb": 0.0,
+    "backup_age_hours": 933.16
+  },
+  "all_backups": [
+    {
+      "created_at": "2026-09-27T15:25:50",
+      "backup_path": "C:\\Users\\ADMIN\\_orchestrator_backups\\.zcode_backup_20260927_152550_220049.zip",
+      "files_written": 1,
+      "files_skipped": 0,
+      "backup_scope": "targeted",
+      "target_paths": [
+        "skills/laya-assistant/SKILL.md"
+      ],
+      "skipped_sample": [],
+      "size_mb": 0.0,
+      "backup_age_hours": 933.16
+    }
+  ],
+  "generation": "2ade6b9e99a1"
+}
