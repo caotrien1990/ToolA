@@ -1369,14 +1369,14 @@ for schema in TOOL_SCHEMAS:
         fn["x_phase"] = tool_phase(name)
         fn["x_phase_label"] = PHASE_LABELS.get(tool_phase(name), PHASE_LABELS["T3"])
     if name == "find_symbol":
-        props["project_path"] = {
+        props["project_path"] = {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', 
             "type": "string",
             "default": "",
             "description": "Project root (preferred); path remains a legacy alias",
         }
         params["required"] = ["name"]
     if name == "query_index":
-        props["query"] = {
+        props["query"] = {"example": 'registry', 
             "type": "string",
             "default": "",
             "description": "Optional text filter against indexed relative paths",
@@ -1385,16 +1385,16 @@ for schema in TOOL_SCHEMAS:
     # injected into the get_usage_stats schema anymore (tombstoned — explicit
     # use fails loud with GLOBAL_SCOPE_NOT_ENABLED).
     if fn.get("name") == "read_file_range":
-        props["project_path"] = {
+        props["project_path"] = {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', 
             "type": "string",
             "description": "Project root for relative file_path",
         }
-        props["max_lines"] = {
+        props["max_lines"] = {"example": 200, 
             "type": "integer",
             "default": MAX_READ_LINES,
             "description": "Maximum lines to return, capped by the backend.",
         }
-        props["force_reseed"] = {
+        props["force_reseed"] = {"example": False, 
             "type": "boolean",
             "default": False,
             "description": "Force read-token reseed even when the file changes during read; audited.",
@@ -1407,19 +1407,19 @@ for schema in TOOL_SCHEMAS:
     if name == "search_code":
         from orchestrator import search_regex_worker as _search_regex_worker
 
-        props["regex_deadline_seconds"] = {
+        props["regex_deadline_seconds"] = {"example": 8.0, 
             "type": "number",
             "default": _search_regex_worker.DEFAULT_DEADLINE_SECONDS,
             "minimum": _search_regex_worker.MIN_DEADLINE_SECONDS,
             "maximum": _search_regex_worker.MAX_DEADLINE_SECONDS,
             "description": "Hard end-to-end deadline for isolated regex preflight, snapshot staging, and matching.",
         }
-        props["max_context_lines"] = {
+        props["max_context_lines"] = {"example": 1, 
             "type": "integer",
             "default": MAX_SEARCH_CONTEXT_LINES,
             "description": "Context lines before and after each match, capped by the backend.",
         }
-        props["max_results"] = {
+        props["max_results"] = {"example": 50, 
             "type": "integer",
             "default": MAX_SEARCH_RESULTS,
             "description": "Maximum matches to return, capped by the backend.",
@@ -21802,7 +21802,7 @@ try:
         _fn = _schema.get("function", {})
         _params = (_fn.get("parameters") or {}).get("properties") or {}
         if _fn.get("name") == "write_transaction":
-            _params.setdefault("skip_verify", {"type": "boolean", "default": False,
+            _params.setdefault("skip_verify", {"example": False, "type": "boolean", "default": False,
                 "description": "Skip the post-write verify-or-REVERT pass. Default false: "
                 "every write is re-validated and, when validation fails, the batch is rolled "
                 "back from its backup and the outcome comes back in `batch_verify`. True "
@@ -21810,7 +21810,7 @@ try:
                 "set it only for a deliberately mid-refactor write whose transient syntax "
                 "error is expected -- then run validate_file yourself."})
         elif _fn.get("name") == "write_fix":
-            _params.setdefault("skip_symbol_check", {"type": "boolean", "default": False,
+            _params.setdefault("skip_symbol_check", {"example": False, "type": "boolean", "default": False,
                 "description": "Pass true ONLY for an INTENDED rename or removal of a top-level "
                 "symbol. By default write_fix re-parses the file after writing and, when a "
                 "top-level def/class has disappeared, answers SYMBOL_DRIFT_AUTO_REVERT and "
@@ -21819,7 +21819,7 @@ try:
                 "file (measured 27.5s of a 70.6s write on 9.9MB), the other legitimate reason "
                 "to set it."})
         elif _fn.get("name") == "apply_after_dry_run":
-            _params.setdefault("skip_verify", {"type": "boolean", "default": False,
+            _params.setdefault("skip_verify", {"example": False, "type": "boolean", "default": False,
                 "description": "Skip the post-write verify-or-REVERT pass on the write this "
                 "applies. Same contract as write_transaction.skip_verify: default false "
                 "re-validates and can roll back, true stamps `batch_verify_skipped`."})
@@ -22213,10 +22213,10 @@ try:
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "project_path": {"type": "string", "description": "Absolute project root."},
-                    "max_files": {"type": "integer", "description": "Optional module cap override; 0 or omitted keeps the config default GRAPH_CONTEXT_MAX_FILES=50."},
-                    "max_symbols": {"type": "integer", "description": "Optional symbol cap override; 0 or omitted keeps the config default GRAPH_CONTEXT_MAX_SYMBOLS=200."},
-                    "timeout_s": {"type": "number", "description": "Optional traversal timeout override in seconds; 0 or omitted keeps the config default GRAPH_CONTEXT_TIMEOUT_S=2.0."},
+                    "project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "description": "Absolute project root."},
+                    "max_files": {"example": 200, "type": "integer", "description": "Optional module cap override; 0 or omitted keeps the config default GRAPH_CONTEXT_MAX_FILES=50."},
+                    "max_symbols": {"example": 500, "type": "integer", "description": "Optional symbol cap override; 0 or omitted keeps the config default GRAPH_CONTEXT_MAX_SYMBOLS=200."},
+                    "timeout_s": {"example": 30, "type": "number", "description": "Optional traversal timeout override in seconds; 0 or omitted keeps the config default GRAPH_CONTEXT_TIMEOUT_S=2.0."},
                 },
                 "required": ["project_path"],
             },
@@ -22545,11 +22545,11 @@ try:
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "project_path": {"type": "string", "description": "Absolute project root."},
-                    "path": {"type": "string", "default": ".", "description": "Project-relative file or folder. Must stay inside project_path."},
-                    "apply": {"type": "boolean", "default": False, "description": "False previews the fix diff; true applies fixes."},
-                    "unsafe_fixes": {"type": "boolean", "default": False, "description": "Opt in to Ruff unsafe fixes."},
-                    "preserve_hash": {"type": "boolean", "default": False, "description": "Declare a hold/hash-pinned artifact. Refuses apply=true; preview remains allowed. All fixes including I001/F401 may break a pin."},
+                    "project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "description": "Absolute project root."},
+                    "path": {"example": 'tools_v15.py', "type": "string", "default": ".", "description": "Project-relative file or folder. Must stay inside project_path."},
+                    "apply": {"example": False, "type": "boolean", "default": False, "description": "False previews the fix diff; true applies fixes."},
+                    "unsafe_fixes": {"example": False, "type": "boolean", "default": False, "description": "Opt in to Ruff unsafe fixes."},
+                    "preserve_hash": {"example": False, "type": "boolean", "default": False, "description": "Declare a hold/hash-pinned artifact. Refuses apply=true; preview remains allowed. All fixes including I001/F401 may break a pin."},
                 },
                 "required": ["project_path"],
             },
@@ -22728,10 +22728,10 @@ try:
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "project_path": {"type": "string", "description": "Absolute project root."},
-                    "name": {"type": "string", "description": "Optional symbol name; omitted = file_path or changed-files mode."},
-                    "file_path": {"type": "string", "description": "Optional file path (relative to project root); when name is empty, returns all symbols in the file + direct callers. Takes precedence over changed-files mode."},
-                    "depth": {"type": "integer", "description": "Impact BFS depth for symbol mode (clamped to 5). Default: 2."},
+                    "project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "description": "Absolute project root."},
+                    "name": {"example": 'build_tool_schemas', "type": "string", "description": "Optional symbol name; omitted = file_path or changed-files mode."},
+                    "file_path": {"example": 'orchestrator\\core\\registry_data.py', "type": "string", "description": "Optional file path (relative to project root); when name is empty, returns all symbols in the file + direct callers. Takes precedence over changed-files mode."},
+                    "depth": {"example": 2, "type": "integer", "description": "Impact BFS depth for symbol mode (clamped to 5). Default: 2."},
                 },
                 "required": ["project_path"],
             },
@@ -22889,14 +22889,14 @@ try:
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "project_path": {"type": "string", "description": "Absolute repo root to map."},
-                    "from_ref": {"type": "string", "default": "", "description": "Git ref to diff from. Mutually exclusive with commit."},
-                    "to_ref": {"type": "string", "default": "", "description": "Git ref to diff to. Mutually exclusive with commit."},
-                    "commit": {"type": "string", "default": "", "description": "Single commit to map instead of a from/to range."},
-                    "exclude": {"type": "string", "default": "", "description": "Comma-separated gitignore-style patterns, handed to OCR itself."},
-                    "min_changed_lines": {"type": "integer", "default": 10, "description": "A file with fewer insertions+deletions than this is dropped as below_min_changed_lines and counted in excluded_summary. 0 keeps every file: a 6-line edit can be a real production change, so the threshold is declared and overridable rather than silent."},
-                    "include_excluded": {"type": "boolean", "default": False, "description": "True adds excluded_files[] with a path and reason per drop. False still reports excluded_summary counts, so no drop is invisible."},
-                    "timeout": {"type": "integer", "default": 120, "description": "Seconds for the OCR subprocess ONLY -- it does NOT bound the call. Lane admission, the git diff that feeds OCR and result assembly all sit outside it, so wall clock can exceed this number; size a client timeout off measured wall clock, never off this value. Kept under the MCP proxy ceiling."},
+                    "project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "description": "Absolute repo root to map."},
+                    "from_ref": {"example": 'HEAD~1', "type": "string", "default": "", "description": "Git ref to diff from. Mutually exclusive with commit."},
+                    "to_ref": {"example": 'HEAD', "type": "string", "default": "", "description": "Git ref to diff to. Mutually exclusive with commit."},
+                    "commit": {"example": 'b45522a2', "type": "string", "default": "", "description": "Single commit to map instead of a from/to range."},
+                    "exclude": {"example": 'tests/*', "type": "string", "default": "", "description": "Comma-separated gitignore-style patterns, handed to OCR itself."},
+                    "min_changed_lines": {"example": 10, "type": "integer", "default": 10, "description": "A file with fewer insertions+deletions than this is dropped as below_min_changed_lines and counted in excluded_summary. 0 keeps every file: a 6-line edit can be a real production change, so the threshold is declared and overridable rather than silent."},
+                    "include_excluded": {"example": False, "type": "boolean", "default": False, "description": "True adds excluded_files[] with a path and reason per drop. False still reports excluded_summary counts, so no drop is invisible."},
+                    "timeout": {"example": 120, "type": "integer", "default": 120, "description": "Seconds for the OCR subprocess ONLY -- it does NOT bound the call. Lane admission, the git diff that feeds OCR and result assembly all sit outside it, so wall clock can exceed this number; size a client timeout off measured wall clock, never off this value. Kept under the MCP proxy ceiling."},
                 },
                 "required": ["project_path"],
             },

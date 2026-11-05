@@ -123,19 +123,19 @@ BASE_TOOL_SCHEMAS = [
 
 				"properties": {
 
-					"path": {"type": "string", "default": "", "description": "Legacy alias for project_path"},
+					"path": {"example": 'orchestrator\\core', "type": "string", "default": "", "description": "Legacy alias for project_path"},
 
-					"project_path": {"type": "string", "default": "", "description": "Project root (preferred)"},
+					"project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "default": "", "description": "Project root (preferred)"},
 
-					"depth": {"type": "integer", "description": "Maximum depth (default 2)", "default": 2},
+					"depth": {"example": 2, "type": "integer", "description": "Maximum depth (default 2)", "default": 2},
 
-	 					"save_output": {"type": "boolean", "description": "Write the output to structure_output.txt (default false)", "default": False},
+	 					"save_output": {"example": False, "type": "boolean", "description": "Write the output to structure_output.txt (default false)", "default": False},
 
-	 						"compact": {"type": "boolean", "default": False, "description": "R43.1: hard cap depth=2 + summarize folders with >30 files. Saves tokens."},
+	 						"compact": {"example": True, "type": "boolean", "default": False, "description": "R43.1: hard cap depth=2 + summarize folders with >30 files. Saves tokens."},
 
-	 						"verbosity": {"type": "string", "enum": ["", "terse", "normal", "full"], "default": "", "description": "R43.1: terse implies compact=true."},
+	 						"verbosity": {"example": 'terse', "type": "string", "enum": ["", "terse", "normal", "full"], "default": "", "description": "R43.1: terse implies compact=true."},
 
-	 						"strict": {"type": "boolean", "default": False, "description": "R92: when false, missing path is a successful probe with exists=false; when true, missing path returns ok=false."},
+	 						"strict": {"example": False, "type": "boolean", "default": False, "description": "R92: when false, missing path is a successful probe with exists=false; when true, missing path returns ok=false."},
 
 				},
 
@@ -214,21 +214,21 @@ BASE_TOOL_SCHEMAS = [
 
 				"properties": {
 
-					"name": {"type": "string", "description": "Symbol name (function, class, variable). Aliases: query, symbol, symbol_name, q."},
+					"name": {"example": 'build_tool_schemas', "type": "string", "description": "Symbol name (function, class, variable). Aliases: query, symbol, symbol_name, q."},
 
-					"query": {"type": "string", "description": "Alias for name."},
+					"query": {"example": 'build_tool_schemas', "type": "string", "description": "Alias for name."},
 
-					"path": {"type": "string", "description": "Project folder path"},
+					"path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\orchestrator', "type": "string", "description": "Project folder path"},
 
-					"project_path": {"type": "string", "default": "", "description": "Preferred over 'path'"},
+					"project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "default": "", "description": "Preferred over 'path'"},
 
-					"context_lines": {"type": "integer", "default": 0, "description": "Number of context lines around each match"},
+					"context_lines": {"example": 2, "type": "integer", "default": 0, "description": "Number of context lines around each match"},
 
-					"include": {"type": "string", "enum": ["def", "callers", "usage", "all"], "default": "def"},
+					"include": {"description": "Which occurrences to return for the symbol: 'def' (definition only, default), 'callers', 'usage', or 'all'.", "example": 'def', "type": "string", "enum": ["def", "callers", "usage", "all"], "default": "def"},
 
-                "include_impact": {"type": "boolean", "default": False, "description": "CAN-053 opt-in: attach bounded CBM impact_scope (callers/dependents) for the resolved symbol"},
+                "include_impact": {"example": False, "type": "boolean", "default": False, "description": "CAN-053 opt-in: attach bounded CBM impact_scope (callers/dependents) for the resolved symbol"},
 
-					"name_encoding": {"type": "string", "enum": ["plain", "base64"], "default": "plain"},
+					"name_encoding": {"description": "Encoding of the name argument: 'plain' (default) or 'base64' when the symbol name carries characters that JSON transport would corrupt.", "example": 'plain', "type": "string", "enum": ["plain", "base64"], "default": "plain"},
 
 				},
 
@@ -555,25 +555,25 @@ BASE_TOOL_SCHEMAS = [
 			"parameters": {
 				"type": "object",
 				"properties": {
-					"file_path": {"type": "string", "description": "File path, absolute or relative to project_path."},
-					"project_path": {"type": "string", "description": "Absolute project root for relative file_path."},
-					"start_line": {"type": "integer", "description": "1-based range start or structural anchor. For scope=range must be >= 1.", "default": 1},
-					"end_line": {"type": "integer", "description": "Inclusive range end; for scope=range must be >= start_line when supplied. Equal bounds read one line; omit for default bounded reading. Reversed bounds return INVALID_RANGE without seeding a token; correct the bounds, not force_reseed."},
-					"max_lines": {"type": "integer", "default": 200, "description": "Maximum returned lines, backend-capped."},
-					"force_reseed": {"type": "boolean", "default": False, "description": "Force read-token reseed on unstable read; audited."},
-					"scope": {"type": "string", "enum": ["range", "function", "class", "section", "file_summary"], "default": "range"},
-					"symbol": {"type": "string", "default": "", "description": "Exact or qualified function/class selector."},
-					"section": {"type": "string", "default": "", "description": "Markdown heading or explicit section selector."},
-					"related_query": {"type": "string", "default": "", "description": "Relevance query used to rank next_ranges."},
-					"query": {"type": "string", "default": "", "description": "Alias for related_query."},
-					"token_budget": {"type": "integer", "default": 0, "description": "Content-token budget; 0 uses line bounds."},
-					"small_file_threshold": {"type": "integer", "default": 240, "description": "Auto-full line threshold."},
-					"include_next_ranges": {"type": "boolean", "default": True, "description": "Include ranked bounded follow-up ranges."},
-					"content_hash": {"type": "string", "default": "", "description": "Hash returned by a prior read for cache reuse/staleness signaling."},
-					"force_refresh": {"type": "boolean", "default": False, "description": "Bypass the in-memory content cache."},
+					"file_path": {"example": 'orchestrator\\core\\registry_data.py', "type": "string", "description": "File path, absolute or relative to project_path."},
+					"project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "description": "Absolute project root for relative file_path."},
+					"start_line": {"example": 100, "type": "integer", "description": "1-based range start or structural anchor. For scope=range must be >= 1.", "default": 1},
+					"end_line": {"example": 160, "type": "integer", "description": "Inclusive range end; for scope=range must be >= start_line when supplied. Equal bounds read one line; omit for default bounded reading. Reversed bounds return INVALID_RANGE without seeding a token; correct the bounds, not force_reseed."},
+					"max_lines": {"example": 200, "type": "integer", "default": 200, "description": "Maximum returned lines, backend-capped."},
+					"force_reseed": {"example": False, "type": "boolean", "default": False, "description": "Force read-token reseed on unstable read; audited."},
+					"scope": {"example": 'range', "type": "string", "enum": ["range", "function", "class", "section", "file_summary"], "default": "range"},
+					"symbol": {"example": 'build_tool_schemas', "type": "string", "default": "", "description": "Exact or qualified function/class selector."},
+					"section": {"example": '## Usage', "type": "string", "default": "", "description": "Markdown heading or explicit section selector."},
+					"related_query": {"example": 'where is build_tool_schemas called', "type": "string", "default": "", "description": "Relevance query used to rank next_ranges."},
+					"query": {"example": 'registry_data', "type": "string", "default": "", "description": "Alias for related_query."},
+					"token_budget": {"example": 4000, "type": "integer", "default": 0, "description": "Content-token budget; 0 uses line bounds."},
+					"small_file_threshold": {"example": 240, "type": "integer", "default": 240, "description": "Auto-full line threshold."},
+					"include_next_ranges": {"example": True, "type": "boolean", "default": True, "description": "Include ranked bounded follow-up ranges."},
+					"content_hash": {"example": '9f2c1ab4', "type": "string", "default": "", "description": "Hash returned by a prior read for cache reuse/staleness signaling."},
+					"force_refresh": {"example": False, "type": "boolean", "default": False, "description": "Bypass the in-memory content cache."},
 					# A34 P2c (2026-09-18): see the twin block in the search_code schema below
 					# for why a dispatcher-popped field still has to be declared here.
-					"pipeline": {"type": "array", "default": [], "items": {"type": "string", "enum": sorted(ACTIVE_CHAIN_STEPS.get("read_file_range", ()))}, "description": "OPT-IN follow-up READS to run inside this same call, at most %d; each answer lands under the response key `pipeline`. Every step is built from THIS call's own result -- the neighbour range it already computed, the symbol map of the file it just read -- so nothing runs unless you name it here and an unset pipeline costs nothing. An unknown name is echoed under pipeline.rejected next to the steps that did run, never raised." % MAX_STEPS_PER_CALL},
+					"pipeline": {"example": ['next_range'], "type": "array", "default": [], "items": {"type": "string", "enum": sorted(ACTIVE_CHAIN_STEPS.get("read_file_range", ()))}, "description": "OPT-IN follow-up READS to run inside this same call, at most %d; each answer lands under the response key `pipeline`. Every step is built from THIS call's own result -- the neighbour range it already computed, the symbol map of the file it just read -- so nothing runs unless you name it here and an unset pipeline costs nothing. An unknown name is echoed under pipeline.rejected next to the steps that did run, never raised." % MAX_STEPS_PER_CALL},
 				},
 				"required": ["file_path"],
 			},
@@ -1233,8 +1233,8 @@ BASE_TOOL_SCHEMAS = [
 			"parameters": {
 				"type": "object",
 				"properties": {
-					"project_path": {"type": "string", "description": "Absolute project root."},
-					"requests": {
+					"project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "description": "Absolute project root."},
+					"requests": {"example": [{'file_path': 'code_tools.py', 'start_line': 1360, 'end_line': 1420}], 
 						"type": "array",
 						"description": "Ordered structural read requests sharing the total token budget.",
 						"minItems": 1,
@@ -1256,10 +1256,10 @@ BASE_TOOL_SCHEMAS = [
 							"required": ["file_path"],
 						},
 					},
-					"token_budget": {"type": "integer", "default": 6000, "minimum": 64, "maximum": 12000, "description": "Shared maximum content-token budget."},
-					"max_items": {"type": "integer", "default": 20, "minimum": 1, "maximum": 20, "description": "Maximum request items processed."},
-					"small_file_threshold": {"type": "integer", "default": 240, "description": "Line threshold for automatic whole-file reads."},
-					"include_next_ranges": {"type": "boolean", "default": True, "description": "Include ranked bounded follow-up ranges."},
+					"token_budget": {"example": 6000, "type": "integer", "default": 6000, "minimum": 64, "maximum": 12000, "description": "Shared maximum content-token budget."},
+					"max_items": {"example": 20, "type": "integer", "default": 20, "minimum": 1, "maximum": 20, "description": "Maximum request items processed."},
+					"small_file_threshold": {"example": 240, "type": "integer", "default": 240, "description": "Line threshold for automatic whole-file reads."},
+					"include_next_ranges": {"example": True, "type": "boolean", "default": True, "description": "Include ranked bounded follow-up ranges."},
 				},
 				"required": ["project_path", "requests"],
 			},
@@ -1682,14 +1682,14 @@ BASE_TOOL_SCHEMAS = [
 			"parameters": {
 				"type": "object",
 				"properties": {
-					"project_path": {"type": "string", "description": "Absolute project root."},
-					"symbol": {"type": "string", "default": "", "description": "Symbol or qualified symbol seed."},
-					"file_path": {"type": "string", "default": "", "description": "Fallback file when graph has no symbol seed."},
-					"query": {"type": "string", "default": "", "description": "Alias/fallback graph seed."},
-					"depth": {"type": "integer", "default": 2, "minimum": 1, "maximum": 5},
-					"token_budget": {"type": "integer", "default": 6000, "minimum": 64, "maximum": 12000, "description": "Shared maximum content-token budget."},
-					"max_files": {"type": "integer", "default": 8, "minimum": 1, "maximum": 20, "description": "Maximum distinct files in the context pack."},
-					"max_ranges": {"type": "integer", "default": 20, "minimum": 1, "maximum": 20, "description": "Maximum structural ranges in the context pack."},
+					"project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "description": "Absolute project root."},
+					"symbol": {"example": 'build_tool_schemas', "type": "string", "default": "", "description": "Symbol or qualified symbol seed."},
+					"file_path": {"example": 'orchestrator\\core\\registry_data.py', "type": "string", "default": "", "description": "Fallback file when graph has no symbol seed."},
+					"query": {"example": 'tool schema assembly', "type": "string", "default": "", "description": "Alias/fallback graph seed."},
+					"depth": {"example": 2, "type": "integer", "default": 2, "minimum": 1, "maximum": 5},
+					"token_budget": {"example": 6000, "type": "integer", "default": 6000, "minimum": 64, "maximum": 12000, "description": "Shared maximum content-token budget."},
+					"max_files": {"example": 8, "type": "integer", "default": 8, "minimum": 1, "maximum": 20, "description": "Maximum distinct files in the context pack."},
+					"max_ranges": {"example": 20, "type": "integer", "default": 20, "minimum": 1, "maximum": 20, "description": "Maximum structural ranges in the context pack."},
 				},
 				"required": ["project_path"],
 			},
@@ -2292,31 +2292,31 @@ BASE_TOOL_SCHEMAS = [
 
 				"properties": {
 
-					"query": {"type": "string", "default": "", "description": "Text, regex, symbol, or index query depending on mode"},
+					"query": {"example": 'build_tool_schemas', "type": "string", "default": "", "description": "Text, regex, symbol, or index query depending on mode"},
 
-					"path": {"type": "string", "default": "", "description": "Legacy alias of project_path"},
+					"path": {"example": 'orchestrator\\core', "type": "string", "default": "", "description": "Legacy alias of project_path"},
 
-					"project_path": {"type": "string", "default": "", "description": "Project root to search"},
+					"project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "default": "", "description": "Project root to search"},
 
-					"file_pattern": {"type": "string", "description": "File glob filter. The RIGHT shape is the narrowest thing that still answers the question: one filename (kick_qsleep.py) or a subdirectory glob (orchestrator/tools/*). Default: * = every indexed file. D2: WIDENING THIS IS THE EXPENSIVE DIRECTION and the contract used to hide it -- the wall clock tracks the bytes the glob admits, so on an 838-file repo (same query, mode='text', warm) one exact filename answered in 0.36s while a language-wide *.py glob took 25.33s, ~70x. On a same-language repo a language-wide glob is not a narrowing at all, so it is never the fix for a SEARCH_TOO_BROAD or SEARCH_TIMEOUT answer. Pass the narrowest pattern that can still answer the question, and never widen it on a retry 'to be safe'. The non-regex modes are bounded at SEARCH_TEXT_DEADLINE_SECONDS (60.0s) and answer error_name=SEARCH_TIMEOUT past it; there is no deadline parameter on those lanes, because a bigger budget buys a bigger bill rather than an answer.", "default": "*"},
+					"file_pattern": {"example": '*.py', "type": "string", "description": "File glob filter. The RIGHT shape is the narrowest thing that still answers the question: one filename (kick_qsleep.py) or a subdirectory glob (orchestrator/tools/*). Default: * = every indexed file. D2: WIDENING THIS IS THE EXPENSIVE DIRECTION and the contract used to hide it -- the wall clock tracks the bytes the glob admits, so on an 838-file repo (same query, mode='text', warm) one exact filename answered in 0.36s while a language-wide *.py glob took 25.33s, ~70x. On a same-language repo a language-wide glob is not a narrowing at all, so it is never the fix for a SEARCH_TOO_BROAD or SEARCH_TIMEOUT answer. Pass the narrowest pattern that can still answer the question, and never widen it on a retry 'to be safe'. The non-regex modes are bounded at SEARCH_TEXT_DEADLINE_SECONDS (60.0s) and answer error_name=SEARCH_TIMEOUT past it; there is no deadline parameter on those lanes, because a bigger budget buys a bigger bill rather than an answer.", "default": "*"},
 
-					"mode": {"type": "string", "enum": ["text", "regex", "symbol", "callers", "definition_usage", "index", "dom_candidates", "smart"], "default": "text", "description": "Search mode or legacy-tool preset. The answer key follows the mode: symbol answers under results/count; callers under callers/callers_count and no results, since the definition list is exactly what it leaves out; definition_usage carries results, definition, callers and usages."},
+					"mode": {"example": 'smart', "type": "string", "enum": ["text", "regex", "symbol", "callers", "definition_usage", "index", "dom_candidates", "smart"], "default": "text", "description": "Search mode or legacy-tool preset. The answer key follows the mode: symbol answers under results/count; callers under callers/callers_count and no results, since the definition list is exactly what it leaves out; definition_usage carries results, definition, callers and usages."},
 
-					"query_encoding": {"type": "string", "enum": ["plain", "base64"], "default": "plain", "description": "Encoding of query before search."},
+					"query_encoding": {"example": 'plain', "type": "string", "enum": ["plain", "base64"], "default": "plain", "description": "Encoding of query before search."},
 
-					"flags": {"type": "string", "default": "i", "description": "Regex flags: i|m|s"},
+					"flags": {"example": 'i', "type": "string", "default": "i", "description": "Regex flags: i|m|s"},
 
-                "force": {"type": "boolean", "default": False, "description": "CAN-053 escape hatch, and explicitly NOT the remedy for SEARCH_TOO_BROAD: it only switches the guard off and pays the full-tree scan, so it answers slower, never better. The remedy is a narrower query or file_pattern. Set this only when a catch-all scan is genuinely the thing you want."},
+                "force": {"example": False, "type": "boolean", "default": False, "description": "CAN-053 escape hatch, and explicitly NOT the remedy for SEARCH_TOO_BROAD: it only switches the guard off and pays the full-tree scan, so it answers slower, never better. The remedy is a narrower query or file_pattern. Set this only when a catch-all scan is genuinely the thing you want."},
 
-					"max_context_lines": {"type": "integer", "default": 0, "description": "Context lines before and after each text/regex hit."},
+					"max_context_lines": {"example": 1, "type": "integer", "default": 0, "description": "Context lines before and after each text/regex hit."},
 
-					"max_results": {"type": "integer", "default": 20, "description": "Maximum returned hits, capped by backend defaults."},
+					"max_results": {"example": 50, "type": "integer", "default": 20, "description": "Maximum returned hits, capped by backend defaults."},
 
 					# B026 (2026-08-22): mode='text' now skips records above MAX_TEXT_RECORD_BYTES
 					# (2 MB). Same lesson as B-01 twelve days ago: a parameter the backend
 					# understands is still UNSUPPORTED_FIELD until the registry lists it, and an
 					# escape hatch nobody can reach is not an escape hatch. 0 = scan everything.
-					"max_file_bytes": {"type": "integer", "default": 2000000, "description": "mode='text' skips records larger than this (bytes). 0 = no cap, scan every record. Skipped files are reported in skipped_large_files."},
+					"max_file_bytes": {"example": 2000000, "type": "integer", "default": 2000000, "description": "mode='text' skips records larger than this (bytes). 0 = no cap, scan every record. Skipped files are reported in skipped_large_files."},
 					# A34 P2c (2026-09-18): the ACTIVE half of the auto-chain, opt-in per call.
 					# The dispatcher POPS this field before the handler ever sees it, so the
 					# tool signature does not need it -- but B-01 and B026 directly above are
@@ -2324,7 +2324,7 @@ BASE_TOOL_SCHEMAS = [
 					# can discover, and the dispatcher's own allowed_params comes from here.
 					# enum and the bound are derived from the leaf's table, never retyped, so
 					# this line cannot drift from what resolve_active_pipeline really accepts.
-					"pipeline": {"type": "array", "default": [], "items": {"type": "string", "enum": sorted(ACTIVE_CHAIN_STEPS.get("search_code", ()))}, "description": "OPT-IN follow-up READS to run inside this same call, at most %d; each answer lands under the response key `pipeline`. Every step is built from THIS call's own result, so nothing runs unless you name it here and an unset pipeline costs nothing. An unknown name is echoed under pipeline.rejected next to the steps that did run, never raised." % MAX_STEPS_PER_CALL},
+					"pipeline": {"example": ['top_hit'], "type": "array", "default": [], "items": {"type": "string", "enum": sorted(ACTIVE_CHAIN_STEPS.get("search_code", ()))}, "description": "OPT-IN follow-up READS to run inside this same call, at most %d; each answer lands under the response key `pipeline`. Every step is built from THIS call's own result, so nothing runs unless you name it here and an unset pipeline costs nothing. An unknown name is echoed under pipeline.rejected next to the steps that did run, never raised." % MAX_STEPS_PER_CALL},
 
 				},
 
@@ -2785,23 +2785,23 @@ BASE_TOOL_SCHEMAS = [
 
 				"properties": {
 
-					"file_path": {"type": "string", "description": "File path to edit"},
+					"file_path": {"example": 'orchestrator\\core\\registry_data.py', "type": "string", "description": "File path to edit"},
 
-					"start_line": {"type": "integer", "description": "Start line to replace (1-based)"},
+					"start_line": {"example": 5843, "type": "integer", "description": "Start line to replace (1-based)"},
 
-					"end_line": {"type": "integer", "description": "End line to replace (inclusive)"},
+					"end_line": {"example": 5843, "type": "integer", "description": "End line to replace (inclusive)"},
 
-					"new_content": {"type": "string", "description": "New content to insert for that range"},
+					"new_content": {"example": '        "doc_params_undescribed_max": 0,  # P23', "type": "string", "description": "New content to insert for that range"},
 
-					"project_path": {"type": "string", "description": "Project root (optional, for logging)"},
+					"project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "description": "Project root (optional, for logging)"},
 
-					"dry_run": {"type": "boolean", "default": False, "description": "True = preview diff + validate, DO NOT write the file. REQUIRED for HTML preview."},
+					"dry_run": {"example": True, "type": "boolean", "default": False, "description": "True = preview diff + validate, DO NOT write the file. REQUIRED for HTML preview."},
 
-					"content_encoding": {"type": "string", "default": "none", "description": "'none' (default) or 'base64' if new_content is base64-encoded. RECOMMENDED: use 'base64' (UTF-8) whenever new_content is multiline or contains backslashes (Windows paths, regex escapes), double quotes, or non-ASCII/Vietnamese, or when the caller is Windows PowerShell - plain JSON transport can corrupt these."},
+					"content_encoding": {"example": 'base64', "type": "string", "default": "none", "description": "'none' (default) or 'base64' if new_content is base64-encoded. RECOMMENDED: use 'base64' (UTF-8) whenever new_content is multiline or contains backslashes (Windows paths, regex escapes), double quotes, or non-ASCII/Vietnamese, or when the caller is Windows PowerShell - plain JSON transport can corrupt these."},
 
-					"expected_hash": {"type": "string", "default": "", "description": "Optional raw-byte SHA256 from the previous successful write_fix.new_hash for sequential writes to the same file. For normal read_file_range -> write_fix, OMIT this field and use the seeded read token. NEVER pass read_file_range.content_hash: it hashes normalized text and differs for CRLF/BOM files. An explicit mismatch is rejected; force_reseed does not override it."},
+					"expected_hash": {"example": 'a1b2c3d4', "type": "string", "default": "", "description": "Optional raw-byte SHA256 from the previous successful write_fix.new_hash for sequential writes to the same file. For normal read_file_range -> write_fix, OMIT this field and use the seeded read token. NEVER pass read_file_range.content_hash: it hashes normalized text and differs for CRLF/BOM files. An explicit mismatch is rejected; force_reseed does not override it."},
 
-					"backup_override": {"type": "boolean", "default": False, "description": "Skip the pre-write project backup gate after explicit user approval. Use only for tiny/temp/derived files."},
+					"backup_override": {"example": False, "type": "boolean", "default": False, "description": "Skip the pre-write project backup gate after explicit user approval. Use only for tiny/temp/derived files."},
 
 				},
 
@@ -3426,14 +3426,14 @@ BASE_TOOL_SCHEMAS = [
 				"type": "object",
 
 				"properties": {
-					"path": {"type": "string", "description": "Relative path of the new file"},
-					"new_content": {"type": "string", "description": "New file content"},
-					"content": {"type": "string", "description": "Legacy alias for new_content"},
-					"project_path": {"type": "string", "description": "Project root"},
-					"content_encoding": {"type": "string", "default": "plain", "description": "'plain' (default) or 'base64' (UTF-8). RECOMMENDED: use 'base64' whenever new_content is multiline or contains backslashes (Windows paths, regex escapes), double quotes, or non-ASCII/Vietnamese, or when the caller is Windows PowerShell - plain JSON transport can corrupt these."},
-					"dry_run": {"type": "boolean", "default": False, "description": "Preview only"},
-					"overwrite": {"type": "boolean", "default": False, "description": "Allow overwrite"},
-					"backup_override": {"type": "boolean", "default": False, "description": "Dispatcher-only backup bypass approval; removed before handler binding."},
+					"path": {"example": 'docs\\NEW_NOTE.md', "type": "string", "description": "Relative path of the new file"},
+					"new_content": {"example": '# Note\n', "type": "string", "description": "New file content"},
+					"content": {"example": '# Note\n', "type": "string", "description": "Legacy alias for new_content"},
+					"project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "description": "Project root"},
+					"content_encoding": {"example": 'plain', "type": "string", "default": "plain", "description": "'plain' (default) or 'base64' (UTF-8). RECOMMENDED: use 'base64' whenever new_content is multiline or contains backslashes (Windows paths, regex escapes), double quotes, or non-ASCII/Vietnamese, or when the caller is Windows PowerShell - plain JSON transport can corrupt these."},
+					"dry_run": {"example": False, "type": "boolean", "default": False, "description": "Preview only"},
+					"overwrite": {"example": False, "type": "boolean", "default": False, "description": "Allow overwrite"},
+					"backup_override": {"example": False, "type": "boolean", "default": False, "description": "Dispatcher-only backup bypass approval; removed before handler binding."},
 				},
 
 				"required": ["path"],
@@ -4061,7 +4061,7 @@ BASE_TOOL_SCHEMAS = [
 
 				"properties": {
 
-					"project_path": {"type": "string", "description": "Project folder path to inspect"},
+					"project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "description": "Project folder path to inspect"},
 
 				},
 
@@ -4204,10 +4204,10 @@ BASE_TOOL_SCHEMAS = [
 				"type": "object",
 
 				"properties": {
-					"file_path": {"type": "string", "description": "File path to delete"},
-					"project_path": {"type": "string", "default": "", "description": "Project root"},
-					"ephemeral": {"type": "boolean", "default": False, "description": "Temp cleanup mode"},
-					"backup_override": {"type": "boolean", "default": False, "description": "Dispatcher-only backup bypass approval; removed before handler binding."},
+					"file_path": {"example": 'docs\\stale_note.md', "type": "string", "description": "File path to delete"},
+					"project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "default": "", "description": "Project root"},
+					"ephemeral": {"example": False, "type": "boolean", "default": False, "description": "Temp cleanup mode"},
+					"backup_override": {"example": False, "type": "boolean", "default": False, "description": "Dispatcher-only backup bypass approval; removed before handler binding."},
 				},
 
 				"required": ["file_path"],
@@ -4261,9 +4261,9 @@ EXTRA_TOOL_SCHEMAS = [
 
 {"type": "function", "function": {"name": "get_task_checkpoint", "description": "Return the current compact active-task checkpoint for host reinsertion after tool batches or compaction. When include_owner_status=true, add safe diagnostic state for the server-owned owner claim without returning capabilities or hashes.", "parameters": {"type": "object", "properties": {"session_id": {"type": "string", "description": "Stable host conversation/session id"}, "include_owner_status": {"type": "boolean", "default": False, "description": "Include safe owner claim state, checkpoint freshness, and liveness limits; never returns opaque capabilities or hashes."}}, "required": ["session_id"]}}},
 
-{"type": "function", "function": {"name": "get_rule_core_text", "description": "Return the rendered CORE_RULE text plus runtime path metadata and a content hash. HTTP bootstrap is canonical; pass a stable agent_id so per-agent cache does not collide.", "parameters": {"type": "object", "properties": {"agent_id": {"type": "string", "default": "", "description": "Your own stable agent id. agents_registry.json is SOT and manage_agent(action='list') prints the live ids; never copy an id list into this description -- measured 2026-09-20 it listed 7 ids of which 3 (comc, ope, cozo) were not registry ids at all while 6 live ids were missing, and no drift check reads a description."}, "force": {"type": "boolean", "default": False, "description": "Force re-read when explicitly upgrading or verifying rules; otherwise omit."}}}, "returns": {'properties': {'agent_id': {'type': 'string'}, 'already_fetched': {'type': 'boolean'}, 'app_root': {'type': 'string'}, 'bootstrap_epoch': {'type': 'integer'}, 'bytes': {'type': 'integer'}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'core_rule_path': {'type': 'string'}, 'ctx_id': {'type': 'string'}, 'error': {'type': 'string'}, 'error_name': {'type': 'string'}, 'hint': {'type': 'string'}, 'mtime_ns': {'type': 'integer'}, 'ok': {'type': 'boolean'}, 'orchestrator_dir': {'type': 'string'}, 'phase': {'type': 'string'}, 'reason': {'type': 'string'}, 'retryable': {'type': 'boolean'}, 'severity': {'type': 'string'}, 'sha256': {'type': 'string'}, 'start_script': {'type': 'string'}, 'text': {'type': 'string'}, 'text_omitted': {'type': 'boolean'}, 'text_omitted_reason': {'type': 'string'}, 'tool_purposes': {'type': 'object'}, 'tool_purposes_error': {'type': 'string'}, 'tool_purposes_note': {'type': 'string'}, 'type': {'type': 'string'}}, 'required': ['ok'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '0f28d8648ac8524a132109789aa73403e5a49180922d6725e70d7a95b40a1478', 'depth_D': 2}}}},
+{"type": "function", "function": {"name": "get_rule_core_text", "description": "Return the rendered CORE_RULE text plus runtime path metadata and a content hash. HTTP bootstrap is canonical; pass a stable agent_id so per-agent cache does not collide.", "parameters": {"type": "object", "properties": {"agent_id": {"example": 'muse1', "type": "string", "default": "", "description": "Your own stable agent id. agents_registry.json is SOT and manage_agent(action='list') prints the live ids; never copy an id list into this description -- measured 2026-09-20 it listed 7 ids of which 3 (comc, ope, cozo) were not registry ids at all while 6 live ids were missing, and no drift check reads a description."}, "force": {"example": False, "type": "boolean", "default": False, "description": "Force re-read when explicitly upgrading or verifying rules; otherwise omit."}}}, "returns": {'properties': {'agent_id': {'type': 'string'}, 'already_fetched': {'type': 'boolean'}, 'app_root': {'type': 'string'}, 'bootstrap_epoch': {'type': 'integer'}, 'bytes': {'type': 'integer'}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'core_rule_path': {'type': 'string'}, 'ctx_id': {'type': 'string'}, 'error': {'type': 'string'}, 'error_name': {'type': 'string'}, 'hint': {'type': 'string'}, 'mtime_ns': {'type': 'integer'}, 'ok': {'type': 'boolean'}, 'orchestrator_dir': {'type': 'string'}, 'phase': {'type': 'string'}, 'reason': {'type': 'string'}, 'retryable': {'type': 'boolean'}, 'severity': {'type': 'string'}, 'sha256': {'type': 'string'}, 'start_script': {'type': 'string'}, 'text': {'type': 'string'}, 'text_omitted': {'type': 'boolean'}, 'text_omitted_reason': {'type': 'string'}, 'tool_purposes': {'type': 'object'}, 'tool_purposes_error': {'type': 'string'}, 'tool_purposes_note': {'type': 'string'}, 'type': {'type': 'string'}}, 'required': ['ok'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '0f28d8648ac8524a132109789aa73403e5a49180922d6725e70d7a95b40a1478', 'depth_D': 2}}}},
 
-    {"type": "function", "function": {"name": "audit_tool_matrix", "description": "V15 R13 / R22 / E-04 — Cross-check TOOL_MAP / TOOL_SCHEMAS / TOOL_PHASES against skill SKILL.md trigger.tool, SKILLS.md router, harness *.md, and .ToolA_Skill/references/tool_surface_current.md. Returns drift list + summary + matrix_log_path. Auto-invoked by prepare_ca_session and open_session. R22 verbosity ∈ {full|terse|ref}: terse caps drift/alias_drift arrays at 3 + drops coverage/inventory_classification (~1500 tokens saved). Drift safety: auto-force full when drift_count>0 or progressive_gap_count>0. E-04: persist defaults False — a read call is pure read; pass persist=True to append the record to matrix_log.jsonl (auto-invocations from prepare_ca_session/open_session keep persist=True).", "parameters": {"type": "object", "properties": {"project_path": {"type": "string", "default": ""}, "include_coverage": {"type": "boolean", "default": False, "description": "Include per-tool coverage map (heavier response)"}, "verbosity": {"type": "string", "enum": ["full", "terse", "ref"], "default": "full", "description": "R22: terse caps arrays + drops coverage; ref drops all arrays."}, "persist": {"type": "boolean", "default": False, "description": "E-04: when True, append the audit record to .orchestrator_cache/matrix_log.jsonl. Default False makes this tool a pure read."}}, "required": []}, "returns": {'properties': {'alias_drift': {'type': 'array'}, 'alias_drift_truncated_at': {'type': 'integer'}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'concurrent_api_calls_observed': {'type': 'integer'}, 'contention_note': {'type': 'string'}, 'contract_drift': {'items': {'properties': {'detail': {'type': 'string'}, 'field': {'type': 'string'}, 'severity': {'type': 'string'}, 'skill': {'type': 'string'}, 'type': {'type': 'string'}, 'value': {'type': 'string'}}, 'required': ['type', 'skill', 'field', 'value', 'severity', 'detail'], 'type': 'object'}, 'type': 'array'}, 'coverage_detail': {'properties': {'returns_coverage': {'properties': {'covered': {'type': 'integer'}, 'depth_suspect': {'type': 'integer'}, 'disabled': {'type': 'integer'}, 'eligible': {'type': 'integer'}}, 'required': ['covered', 'depth_suspect', 'disabled', 'eligible'], 'type': 'object'}}, 'required': ['returns_coverage'], 'type': 'object'}, 'drift': {'type': 'array'}, 'drift_truncated_at': {'type': 'integer'}, 'generated_at': {'type': 'string'}, 'generation': {'type': 'string'}, 'inventory_classification': {'properties': {'active_in_code': {'items': {'type': 'string'}, 'type': 'array'}, 'extras_doc_only': {'type': 'array'}, 'extras_endpoints': {'type': 'array'}, 'extras_internal': {'type': 'array'}, 'extras_or_endpoints': {'type': 'array'}, 'extras_planned': {'type': 'array'}, 'extras_unknown': {'type': 'array'}, 'retired_referenced': {'type': 'array'}}, 'required': ['active_in_code', 'retired_referenced', 'extras_or_endpoints', 'extras_endpoints', 'extras_internal', 'extras_planned', 'extras_doc_only', 'extras_unknown'], 'type': 'object'}, 'matrix_log_path': {'type': 'string'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'persisted': {'type': 'boolean'}, 'progressive_gaps': {'type': 'array'}, 'router_topics_count': {'type': 'integer'}, 'scope': {'type': 'string'}, 'scope_note': {'type': 'string'}, 'summary': {'properties': {'alias_drift_count': {'type': 'integer'}, 'alias_drift_severity': {'type': 'string'}, 'code_tools': {'type': 'integer'}, 'contract_drift_count': {'type': 'integer'}, 'doc_description_present_count': {'type': 'integer'}, 'doc_description_weak_count': {'type': 'integer'}, 'doc_fields_absent_by_design_count': {'type': 'integer'}, 'doc_param_examples_registry_count': {'type': 'integer'}, 'doc_param_examples_served_count': {'type': 'integer'}, 'doc_params_described_count': {'type': 'integer'}, 'doc_params_total': {'type': 'integer'}, 'doc_params_undescribed_count': {'type': 'integer'}, 'drift_count': {'type': 'integer'}, 'error_phase_map_entries': {'type': 'integer'}, 'error_system_names_phase_mapped_count': {'type': 'integer'}, 'error_system_names_total': {'type': 'integer'}, 'error_system_names_unmapped_count': {'type': 'integer'}, 'inventory_active_count': {'type': 'integer'}, 'inventory_extra_count': {'type': 'integer'}, 'inventory_extra_doc_only_count': {'type': 'integer'}, 'inventory_extra_endpoints_count': {'type': 'integer'}, 'inventory_extra_internal_count': {'type': 'integer'}, 'inventory_extra_planned_count': {'type': 'integer'}, 'inventory_extra_unknown_count': {'type': 'integer'}, 'inventory_retired_count': {'type': 'integer'}, 'inventory_tools': {'type': 'integer'}, 'ok_count': {'type': 'integer'}, 'progressive_gap_count': {'type': 'integer'}, 'purpose_covered_count': {'type': 'integer'}, 'purpose_eligible_count': {'type': 'integer'}, 'purpose_eligible_gap_count': {'type': 'integer'}, 'schema_tools': {'type': 'integer'}, 'skill_folders': {'type': 'integer'}, 'skill_tools': {'type': 'integer'}}, 'required': ['code_tools', 'schema_tools', 'skill_tools', 'skill_folders', 'inventory_tools', 'inventory_active_count', 'inventory_retired_count', 'inventory_extra_count', 'inventory_extra_endpoints_count', 'inventory_extra_internal_count', 'inventory_extra_planned_count', 'inventory_extra_doc_only_count', 'inventory_extra_unknown_count', 'drift_count', 'ok_count', 'alias_drift_count', 'alias_drift_severity', 'contract_drift_count', 'progressive_gap_count', 'doc_description_present_count', 'doc_description_weak_count', 'doc_params_total', 'doc_params_described_count', 'doc_params_undescribed_count', 'doc_param_examples_registry_count', 'doc_param_examples_served_count', 'doc_fields_absent_by_design_count', 'purpose_eligible_count', 'purpose_covered_count', 'purpose_eligible_gap_count', 'error_phase_map_entries', 'error_system_names_total', 'error_system_names_phase_mapped_count', 'error_system_names_unmapped_count'], 'type': 'object'}, 'verbosity_mode': {'type': 'string'}}, 'required': ['ok', 'contention_note'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': 'c865dc59356c79896c450440de38a43e7cf0724d9e1d96b80fa23f6ed6aa8496', 'depth_D': 3}}}},
+    {"type": "function", "function": {"name": "audit_tool_matrix", "description": "V15 R13 / R22 / E-04 — Cross-check TOOL_MAP / TOOL_SCHEMAS / TOOL_PHASES against skill SKILL.md trigger.tool, SKILLS.md router, harness *.md, and .ToolA_Skill/references/tool_surface_current.md. Returns drift list + summary + matrix_log_path. Auto-invoked by prepare_ca_session and open_session. R22 verbosity ∈ {full|terse|ref}: terse caps drift/alias_drift arrays at 3 + drops coverage/inventory_classification (~1500 tokens saved). Drift safety: auto-force full when drift_count>0 or progressive_gap_count>0. E-04: persist defaults False — a read call is pure read; pass persist=True to append the record to matrix_log.jsonl (auto-invocations from prepare_ca_session/open_session keep persist=True).", "parameters": {"type": "object", "properties": {"project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "default": ""}, "include_coverage": {"example": True, "type": "boolean", "default": False, "description": "Include per-tool coverage map (heavier response)"}, "verbosity": {"example": 'terse', "type": "string", "enum": ["full", "terse", "ref"], "default": "full", "description": "R22: terse caps arrays + drops coverage; ref drops all arrays."}, "persist": {"example": False, "type": "boolean", "default": False, "description": "E-04: when True, append the audit record to .orchestrator_cache/matrix_log.jsonl. Default False makes this tool a pure read."}}, "required": []}, "returns": {'properties': {'alias_drift': {'type': 'array'}, 'alias_drift_truncated_at': {'type': 'integer'}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'concurrent_api_calls_observed': {'type': 'integer'}, 'contention_note': {'type': 'string'}, 'contract_drift': {'items': {'properties': {'detail': {'type': 'string'}, 'field': {'type': 'string'}, 'severity': {'type': 'string'}, 'skill': {'type': 'string'}, 'type': {'type': 'string'}, 'value': {'type': 'string'}}, 'required': ['type', 'skill', 'field', 'value', 'severity', 'detail'], 'type': 'object'}, 'type': 'array'}, 'coverage_detail': {'properties': {'returns_coverage': {'properties': {'covered': {'type': 'integer'}, 'depth_suspect': {'type': 'integer'}, 'disabled': {'type': 'integer'}, 'eligible': {'type': 'integer'}}, 'required': ['covered', 'depth_suspect', 'disabled', 'eligible'], 'type': 'object'}}, 'required': ['returns_coverage'], 'type': 'object'}, 'drift': {'type': 'array'}, 'drift_truncated_at': {'type': 'integer'}, 'generated_at': {'type': 'string'}, 'generation': {'type': 'string'}, 'inventory_classification': {'properties': {'active_in_code': {'items': {'type': 'string'}, 'type': 'array'}, 'extras_doc_only': {'type': 'array'}, 'extras_endpoints': {'type': 'array'}, 'extras_internal': {'type': 'array'}, 'extras_or_endpoints': {'type': 'array'}, 'extras_planned': {'type': 'array'}, 'extras_unknown': {'type': 'array'}, 'retired_referenced': {'type': 'array'}}, 'required': ['active_in_code', 'retired_referenced', 'extras_or_endpoints', 'extras_endpoints', 'extras_internal', 'extras_planned', 'extras_doc_only', 'extras_unknown'], 'type': 'object'}, 'matrix_log_path': {'type': 'string'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'persisted': {'type': 'boolean'}, 'progressive_gaps': {'type': 'array'}, 'router_topics_count': {'type': 'integer'}, 'scope': {'type': 'string'}, 'scope_note': {'type': 'string'}, 'summary': {'properties': {'alias_drift_count': {'type': 'integer'}, 'alias_drift_severity': {'type': 'string'}, 'code_tools': {'type': 'integer'}, 'contract_drift_count': {'type': 'integer'}, 'doc_description_present_count': {'type': 'integer'}, 'doc_description_weak_count': {'type': 'integer'}, 'doc_fields_absent_by_design_count': {'type': 'integer'}, 'doc_param_examples_registry_count': {'type': 'integer'}, 'doc_param_examples_served_count': {'type': 'integer'}, 'doc_params_described_count': {'type': 'integer'}, 'doc_params_total': {'type': 'integer'}, 'doc_params_undescribed_count': {'type': 'integer'}, 'drift_count': {'type': 'integer'}, 'error_phase_map_entries': {'type': 'integer'}, 'error_system_names_phase_mapped_count': {'type': 'integer'}, 'error_system_names_total': {'type': 'integer'}, 'error_system_names_unmapped_count': {'type': 'integer'}, 'inventory_active_count': {'type': 'integer'}, 'inventory_extra_count': {'type': 'integer'}, 'inventory_extra_doc_only_count': {'type': 'integer'}, 'inventory_extra_endpoints_count': {'type': 'integer'}, 'inventory_extra_internal_count': {'type': 'integer'}, 'inventory_extra_planned_count': {'type': 'integer'}, 'inventory_extra_unknown_count': {'type': 'integer'}, 'inventory_retired_count': {'type': 'integer'}, 'inventory_tools': {'type': 'integer'}, 'ok_count': {'type': 'integer'}, 'progressive_gap_count': {'type': 'integer'}, 'purpose_covered_count': {'type': 'integer'}, 'purpose_eligible_count': {'type': 'integer'}, 'purpose_eligible_gap_count': {'type': 'integer'}, 'schema_tools': {'type': 'integer'}, 'skill_folders': {'type': 'integer'}, 'skill_tools': {'type': 'integer'}}, 'required': ['code_tools', 'schema_tools', 'skill_tools', 'skill_folders', 'inventory_tools', 'inventory_active_count', 'inventory_retired_count', 'inventory_extra_count', 'inventory_extra_endpoints_count', 'inventory_extra_internal_count', 'inventory_extra_planned_count', 'inventory_extra_doc_only_count', 'inventory_extra_unknown_count', 'drift_count', 'ok_count', 'alias_drift_count', 'alias_drift_severity', 'contract_drift_count', 'progressive_gap_count', 'doc_description_present_count', 'doc_description_weak_count', 'doc_params_total', 'doc_params_described_count', 'doc_params_undescribed_count', 'doc_param_examples_registry_count', 'doc_param_examples_served_count', 'doc_fields_absent_by_design_count', 'purpose_eligible_count', 'purpose_covered_count', 'purpose_eligible_gap_count', 'error_phase_map_entries', 'error_system_names_total', 'error_system_names_phase_mapped_count', 'error_system_names_unmapped_count'], 'type': 'object'}, 'verbosity_mode': {'type': 'string'}}, 'required': ['ok', 'contention_note'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': 'c865dc59356c79896c450440de38a43e7cf0724d9e1d96b80fa23f6ed6aa8496', 'depth_D': 3}}}},
 
     {"type": "function", "function": {"name": "prepare_ca_session", "description": "Canonical one-call startup: prepare project context, open/resume the agent session, generate or reuse a caller-side owner_claim_id, then run bootstrap_session. The response exposes owner_claim_id and owner_capability so the host can persist them for begin_task/retry.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "mode": {"type": "string", "default": "T1"}, "idea": {"type": "string", "default": ""}, "agent_id": {"type": "string", "default": "", "description": "Stable calling agent identity; transport header and environment fallback may supply it"}, "host_session_id": {"type": "string", "default": "", "description": "Stable host conversation/session id required to run bootstrap_session and return bootstrap_ref"}, "owner_claim_id": {"type": "string", "default": "", "description": "Caller-generated stable claim id; helper generates one before bootstrap when omitted and returns it for retry reuse"}}, "required": ["project_path"]}}},
 
@@ -4281,7 +4281,7 @@ EXTRA_TOOL_SCHEMAS = [
 
     {"type": "function", "function": {"name": "suggest_missing_capabilities", "description": "Suggest optional parser libraries without installing them.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string", "default": ""}}}}},
 
-    {"type": "function", "function": {"name": "backup_status", "description": "Read Orchestrator backup manifest status.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}}, "required": ["project_path"]}, "returns": {'properties': {'all_backups': {'items': {'properties': {'backup_age_hours': {'type': 'number'}, 'backup_path': {'type': 'string'}, 'backup_scope': {'type': 'string'}, 'created_at': {'type': 'string'}, 'files_skipped': {'type': 'integer'}, 'files_written': {'type': 'integer'}, 'size_mb': {'type': 'number'}, 'skipped_sample': {'items': {'type': 'string'}, 'type': 'array'}, 'target_paths': {'items': {'type': 'string'}, 'type': 'array'}}, 'required': ['created_at', 'backup_path', 'files_written', 'files_skipped', 'backup_scope', 'target_paths', 'skipped_sample', 'size_mb', 'backup_age_hours'], 'type': 'object'}, 'type': 'array'}, 'generation': {'type': 'string'}, 'latest': {'properties': {'backup_age_hours': {'type': 'number'}, 'backup_path': {'type': 'string'}, 'backup_scope': {'type': 'string'}, 'created_at': {'type': 'string'}, 'files_skipped': {'type': 'integer'}, 'files_written': {'type': 'integer'}, 'size_mb': {'type': 'number'}, 'skipped_sample': {'items': {'type': 'string'}, 'type': 'array'}, 'target_paths': {'items': {'type': 'string'}, 'type': 'array'}}, 'required': ['created_at', 'backup_path', 'files_written', 'files_skipped', 'backup_scope', 'target_paths', 'skipped_sample', 'size_mb', 'backup_age_hours'], 'type': 'object'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'status': {'type': 'string'}, 'total_backups': {'type': 'integer'}}, 'required': ['ok', 'status', 'total_backups', 'latest', 'all_backups', 'generation'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '491ad60ff5504f99051030934b3bfc75aed492b1a9112e58ed1bdaf91bcb0d12', 'depth_D': 4}}}},
+    {"type": "function", "function": {"name": "backup_status", "description": "Read Orchestrator backup manifest status.", "parameters": {"type": "object", "properties": {"project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string"}}, "required": ["project_path"]}, "returns": {'properties': {'all_backups': {'items': {'properties': {'backup_age_hours': {'type': 'number'}, 'backup_path': {'type': 'string'}, 'backup_scope': {'type': 'string'}, 'created_at': {'type': 'string'}, 'files_skipped': {'type': 'integer'}, 'files_written': {'type': 'integer'}, 'size_mb': {'type': 'number'}, 'skipped_sample': {'items': {'type': 'string'}, 'type': 'array'}, 'target_paths': {'items': {'type': 'string'}, 'type': 'array'}}, 'required': ['created_at', 'backup_path', 'files_written', 'files_skipped', 'backup_scope', 'target_paths', 'skipped_sample', 'size_mb', 'backup_age_hours'], 'type': 'object'}, 'type': 'array'}, 'generation': {'type': 'string'}, 'latest': {'properties': {'backup_age_hours': {'type': 'number'}, 'backup_path': {'type': 'string'}, 'backup_scope': {'type': 'string'}, 'created_at': {'type': 'string'}, 'files_skipped': {'type': 'integer'}, 'files_written': {'type': 'integer'}, 'size_mb': {'type': 'number'}, 'skipped_sample': {'items': {'type': 'string'}, 'type': 'array'}, 'target_paths': {'items': {'type': 'string'}, 'type': 'array'}}, 'required': ['created_at', 'backup_path', 'files_written', 'files_skipped', 'backup_scope', 'target_paths', 'skipped_sample', 'size_mb', 'backup_age_hours'], 'type': 'object'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'status': {'type': 'string'}, 'total_backups': {'type': 'integer'}}, 'required': ['ok', 'status', 'total_backups', 'latest', 'all_backups', 'generation'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '491ad60ff5504f99051030934b3bfc75aed492b1a9112e58ed1bdaf91bcb0d12', 'depth_D': 4}}}},
 
     {"type": "function", "function": {"name": "resolve_project_path", "description": "Resolve any Windows file/folder path into project_path plus file_path/folder_path metadata without guessing.", "parameters": {"type": "object", "properties": {"input_path": {"type": "string"}, "preferred_root": {"type": "string", "default": ""}, "mode": {"type": "string", "default": "auto", "enum": ["file", "folder", "auto"]}}, "required": ["input_path"]}}},
 
@@ -4291,7 +4291,7 @@ EXTRA_TOOL_SCHEMAS = [
 
     {"type": "function", "function": {"name": "optional_tool_probe", "description": "Check whether optional helper tools or endpoints are available without mutating state or fetching raw tokens.", "parameters": {"type": "object", "properties": {"tools": {"type": "array", "items": {"type": "string"}, "description": "Tool names or /api endpoint paths to probe."}}, "required": ["tools"]}}},
 
-	{"type": "function", "function": {"name": "backup_project", "description": "Create timestamped zip backup and manifest. The 600-second timeout matches the handler default.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "backup_dir": {"type": "string"}, "force": {"type": "boolean", "default": False, "description": "Overwrite a backup from the same day"}, "keep_last_n": {"type": "integer", "default": 2, "description": "Maximum backups to keep"}, "timeout": {"type": "integer", "default": 600, "description": "Maximum archive time in seconds; matches handler default"}, "target_paths": {"type": "array", "items": {"type": "string"}, "description": "Optional project-relative archive targets"}}, "required": ["project_path"]}, "returns": {'properties': {'backup_path': {'type': 'string'}, 'backup_scope': {'type': 'string'}, 'created_at': {'type': 'string'}, 'files_skipped': {'type': 'integer'}, 'files_written': {'type': 'integer'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'reason': {'type': 'string'}, 'skipped': {'type': 'boolean'}, 'skipped_sample': {'items': {'type': 'string'}, 'type': 'array'}, 'target_paths': {'type': 'array'}, 'total_backups': {'type': 'integer'}}, 'required': ['ok', 'backup_path', 'created_at'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': 'ac898615fe10a95f8515063b0608cf31b8a6c7e9e2d08eb8026586e75c4543af', 'depth_D': 2}}}},
+	{"type": "function", "function": {"name": "backup_project", "description": "Create timestamped zip backup and manifest. The 600-second timeout matches the handler default.", "parameters": {"type": "object", "properties": {"project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string"}, "backup_dir": {"example": 'D:\\backups\\toola', "type": "string"}, "force": {"example": False, "type": "boolean", "default": False, "description": "Overwrite a backup from the same day"}, "keep_last_n": {"example": 2, "type": "integer", "default": 2, "description": "Maximum backups to keep"}, "timeout": {"example": 600, "type": "integer", "default": 600, "description": "Maximum archive time in seconds; matches handler default"}, "target_paths": {"example": ['orchestrator\\core\\registry_data.py'], "type": "array", "items": {"type": "string"}, "description": "Optional project-relative archive targets"}}, "required": ["project_path"]}, "returns": {'properties': {'backup_path': {'type': 'string'}, 'backup_scope': {'type': 'string'}, 'created_at': {'type': 'string'}, 'files_skipped': {'type': 'integer'}, 'files_written': {'type': 'integer'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'reason': {'type': 'string'}, 'skipped': {'type': 'boolean'}, 'skipped_sample': {'items': {'type': 'string'}, 'type': 'array'}, 'target_paths': {'type': 'array'}, 'total_backups': {'type': 'integer'}}, 'required': ['ok', 'backup_path', 'created_at'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': 'ac898615fe10a95f8515063b0608cf31b8a6c7e9e2d08eb8026586e75c4543af', 'depth_D': 2}}}},
 
 	{"type": "function", "function": {"name": "cache_delta", "description": "Compare filesystem against INDEX for added/modified/deleted files.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}}, "required": ["project_path"]}}},
 
@@ -4307,49 +4307,49 @@ EXTRA_TOOL_SCHEMAS = [
 
             "properties": {
 
-                "project_path": {"type": "string"},
+                "project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string"},
 
-                "command": {},
+                "command": {"example": 'git status --porcelain', },
 
-                "timeout": {"type": "integer", "default": 60, "description": "Max run time in SECONDS (not ms). Use this, or timeout_ms for milliseconds."},
+                "timeout": {"example": 60, "type": "integer", "default": 60, "description": "Max run time in SECONDS (not ms). Use this, or timeout_ms for milliseconds."},
 
-                "timeout_ms": {"type": "integer", "default": 0, "description": "R66: optional max run time in MILLISECONDS; converted to seconds and overrides `timeout` when > 0. Provided so CA's T4-style timeout_ms habit no longer 400s."},
+                "timeout_ms": {"example": 0, "type": "integer", "default": 0, "description": "R66: optional max run time in MILLISECONDS; converted to seconds and overrides `timeout` when > 0. Provided so CA's T4-style timeout_ms habit no longer 400s."},
 
-                "shell_mode": {"type": "string", "enum": ["auto", "cmd", "powershell", "exec", "posix"], "default": "auto", "description": "Windows auto selects PowerShell -File only for a standalone .ps1 path; commands that merely target a .ps1 file stay normal shell commands."},
+                "shell_mode": {"example": 'auto', "type": "string", "enum": ["auto", "cmd", "powershell", "exec", "posix"], "default": "auto", "description": "Windows auto selects PowerShell -File only for a standalone .ps1 path; commands that merely target a .ps1 file stay normal shell commands."},
 
-                "command_encoding": {"type": "string", "enum": ["plain", "base64"], "default": "plain"},
+                "command_encoding": {"description": "How the command string is transported: 'plain' (default) or 'base64' (UTF-8) when the command contains quotes, backslashes, or non-ASCII that plain JSON would corrupt.", "example": 'plain', "type": "string", "enum": ["plain", "base64"], "default": "plain"},
 
-                "expected_port": {"type": "integer", "default": 0, "description": "Optional port expected to be reachable after launch, e.g. CDP 9223"},
+                "expected_port": {"example": 0, "type": "integer", "default": 0, "description": "Optional port expected to be reachable after launch, e.g. CDP 9223"},
 
-                "expected_process_name": {"type": "string", "default": "", "description": "Optional process name or cmdline substring expected after launch"},
+                "expected_process_name": {"example": 'node.exe', "type": "string", "default": "", "description": "Optional process name or cmdline substring expected after launch"},
 
-                "verify_after_launch_ms": {"type": "integer", "default": 0, "description": "Optional delay before launch verification"},
+                "verify_after_launch_ms": {"example": 0, "type": "integer", "default": 0, "description": "Optional delay before launch verification"},
 
-                "readiness_protocol": {"type": "string", "enum": ["", "http", "tcp", "cdp", "process"], "default": "", "description": "CAN-053 readiness DSL: explicit protocol for launch verification; empty = infer (health_url->http, port 9222/9223->cdp, port->tcp)"},
+                "readiness_protocol": {"example": 'http', "type": "string", "enum": ["", "http", "tcp", "cdp", "process"], "default": "", "description": "CAN-053 readiness DSL: explicit protocol for launch verification; empty = infer (health_url->http, port 9222/9223->cdp, port->tcp)"},
 
-                "health_url": {"type": "string", "default": "", "description": "CAN-053: HTTP readiness probe URL (e.g. http://127.0.0.1:8082/health). Probe success verifies launch even when the wrapper already exited (ok_with_warning)."},
+                "health_url": {"example": 'http://127.0.0.1:8082/health', "type": "string", "default": "", "description": "CAN-053: HTTP readiness probe URL (e.g. http://127.0.0.1:8082/health). Probe success verifies launch even when the wrapper already exited (ok_with_warning)."},
 
-                "expect_status": {"type": "integer", "default": 200, "description": "Expected HTTP status for health_url probe"},
+                "expect_status": {"example": 200, "type": "integer", "default": 200, "description": "Expected HTTP status for health_url probe"},
 
-                "keep_alive": {"type": "boolean", "default": False, "description": "Spawn GUI/long-running process in background and do not communicate/auto-kill it"},
+                "keep_alive": {"example": False, "type": "boolean", "default": False, "description": "Spawn GUI/long-running process in background and do not communicate/auto-kill it"},
 
-                "background": {"type": "boolean", "default": False, "description": "Alias for keep_alive; spawn detached/background and return spawned_pid"},
+                "background": {"example": False, "type": "boolean", "default": False, "description": "Alias for keep_alive; spawn detached/background and return spawned_pid"},
 
-                "interactive": {"type": "boolean", "default": False, "description": "Windows keep_alive launches with a visible console/user-session process instead of DETACHED_PROCESS"},
+                "interactive": {"example": False, "type": "boolean", "default": False, "description": "Windows keep_alive launches with a visible console/user-session process instead of DETACHED_PROCESS"},
 
-                "elevated": {"type": "boolean", "default": False, "description": "Windows only: request ShellExecuteW runas launch; no stdout/stderr capture or PID guarantee. Not needed for admin work: a normal child already inherits the High IL of [A]"},
+                "elevated": {"example": False, "type": "boolean", "default": False, "description": "Windows only: request ShellExecuteW runas launch; no stdout/stderr capture or PID guarantee. Not needed for admin work: a normal child already inherits the High IL of [A]"},
 
-                "include_command": {"type": "boolean", "default": True, "description": "R43 P0 #4: when False, suppresses command_received/command/command_executed echo in response; replaced by command_hash_sha256 + command_preview (50 chars). Saves ~500-2000 bytes/call for long node -e / base64 scripts."},
+                "include_command": {"example": True, "type": "boolean", "default": True, "description": "R43 P0 #4: when False, suppresses command_received/command/command_executed echo in response; replaced by command_hash_sha256 + command_preview (50 chars). Saves ~500-2000 bytes/call for long node -e / base64 scripts."},
 
-                "stdout_max_chars": {"type": "integer", "default": 0, "description": "R43 P0 #4: explicit truncation cap for stdout (0 = use default 12000)."},
+                "stdout_max_chars": {"example": 8000, "type": "integer", "default": 0, "description": "R43 P0 #4: explicit truncation cap for stdout (0 = use default 12000)."},
 
-                "stderr_max_chars": {"type": "integer", "default": 0, "description": "R43 P0 #4: explicit truncation cap for stderr (0 = use default 12000)."},
+                "stderr_max_chars": {"example": 2000, "type": "integer", "default": 0, "description": "R43 P0 #4: explicit truncation cap for stderr (0 = use default 12000)."},
 
-                "dry_run": {"type": "boolean", "default": False, "description": "CASE-2008: static no-execute preview of the destructive-statement scan. Nothing runs."},
+                "dry_run": {"example": False, "type": "boolean", "default": False, "description": "CASE-2008: static no-execute preview of the destructive-statement scan. Nothing runs."},
 
-                "confirm_destructive": {"type": "integer", "default": -1, "description": "CASE-2008: acknowledged destructive-statement count. A command containing rd/del/Remove-Item/rm -rf/fs.rmSync/shutil.rmtree etc. refuses to run until this EQUALS the scanner count (returned as confirm_destructive_required). A count rather than a boolean, so editing the command invalidates a stale acknowledgement."},
+                "confirm_destructive": {"example": -1, "type": "integer", "default": -1, "description": "CASE-2008: acknowledged destructive-statement count. A command containing rd/del/Remove-Item/rm -rf/fs.rmSync/shutil.rmtree etc. refuses to run until this EQUALS the scanner count (returned as confirm_destructive_required). A count rather than a boolean, so editing the command invalidates a stale acknowledgement."},
 
-                "skip_backup": {"type": "boolean", "default": False, "description": "CASE-2008: skip the automatic pre-run project backup for a destructive command. Only for genuinely disposable targets (e.g. inside .orchestrator_cache)."},
+                "skip_backup": {"example": False, "type": "boolean", "default": False, "description": "CASE-2008: skip the automatic pre-run project backup for a destructive command. Only for genuinely disposable targets (e.g. inside .orchestrator_cache)."},
 
             },
 
@@ -4506,7 +4506,7 @@ EXTRA_TOOL_SCHEMAS = [
             },
     }},
 
-	{"type": "function", "function": {"name": "kill_process", "description": "Terminate process by pid or process_name. Protected T2 cleanup tool for runtime/test environments.", "parameters": {"type": "object", "properties": {"pid": {"type": "integer", "default": 0}, "process_name": {"type": "string", "default": ""}, "force": {"type": "boolean", "default": True}}}}},
+	{"type": "function", "function": {"name": "kill_process", "description": "Terminate process by pid or process_name. Protected T2 cleanup tool for runtime/test environments.", "parameters": {"type": "object", "properties": {"pid": {"description": "OS process id to terminate. Use this or process_name; default 0 means no pid target was given.", "type": "integer", "default": 0}, "process_name": {"description": "Process name (e.g. 'electron.exe') to terminate when the pid is not known; empty string means no name target was given.", "type": "string", "default": ""}, "force": {"type": "boolean", "default": True}}}}},
 
 	{"type": "function", "function": {"name": "run_test_profile", "description": "Run known bounded test profile.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "profile": {"type": "string", "default": "unittest"}, "timeout": {"type": "integer", "default": 120}}, "required": ["project_path"]}}},
 
@@ -4516,13 +4516,13 @@ EXTRA_TOOL_SCHEMAS = [
 
 	{"type": "function", "function": {"name": "get_project_summary", "description": "Quick INDEX overview: groups, hotspots, and entry points. Use this instead of reading INDEX.json manually.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}}, "required": ["project_path"]}}},
 
-	{"type": "function", "function": {"name": "query_index", "description": "Filter files from INDEX by group, complexity, LOC, fnmatch pattern, and optional text query (query MAY be empty). V15 R11: auto_refresh=true (default) silently refreshes INDEX inline when drift detected; response sets auto_refreshed=true so CA knows. Set auto_refresh=false to receive STALE_INDEX error instead. file_pattern uses fnmatch against both the file name and the full relative path (e.g. '*.py', '*service*', '*autocutter*', 'src/*.ts'). CAN-051 mutation_scope=derived_index: auto_refresh rewrites INDEX.json (derived state, not source).", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "query": {"type": "string", "default": "", "description": "Optional text query to filter files. Aliases: pattern, regex, q."}, "group": {"type": "string"}, "min_complexity": {"type": "integer"}, "min_loc": {"type": "integer"}, "file_pattern": {"type": "string", "description": "fnmatch pattern matched against basename or full relative path"}, "max_results": {"type": "integer", "default": 50}, "auto_refresh": {"type": "boolean", "default": True, "description": "When true and INDEX is stale, refresh inline then query."}}, "required": ["project_path"]}, "returns": {'properties': {'auto_refreshed': {'type': 'boolean'}, 'ca_hint': {'type': 'string', 'x-dual': True}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'ca_next_tool': {'type': 'string', 'x-dual': True}, 'category': {'type': 'string'}, 'content_files_scanned': {'type': 'integer'}, 'drift': {'type': 'object'}, 'error': {'type': 'string'}, 'error_name': {'type': 'string'}, 'files': {'items': {'properties': {'complexity': {'type': 'integer'}, 'group': {'anyOf': [{'type': 'string'}, {'type': 'null'}]}, 'loc': {'type': 'integer'}, 'matched_symbols': {'items': {'type': 'string'}, 'type': 'array'}, 'matched_via': {'items': {'type': 'string'}, 'type': 'array'}, 'path': {'type': 'string'}}, 'required': ['path', 'group', 'loc', 'complexity'], 'type': 'object'}, 'type': 'array'}, 'hint': {'type': 'string'}, 'matched': {'type': 'integer'}, 'note': {'type': 'string'}, 'ok': {'type': 'boolean'}, 'query_scope': {'items': {'type': 'string'}, 'type': 'array'}, 'returned': {'type': 'integer'}, 'snapshot_id': {'anyOf': [{'type': 'string'}, {'type': 'null'}]}, 'total_files': {'type': 'integer'}, 'truncated': {'type': 'boolean'}}, 'required': ['ok', 'snapshot_id'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': 'ef3a776280b701d6af04782a04838ce5089b336173d51b8b8bf9bc773a1b7c41', 'depth_D': 4}}}},
+	{"type": "function", "function": {"name": "query_index", "description": "Filter files from INDEX by group, complexity, LOC, fnmatch pattern, and optional text query (query MAY be empty). V15 R11: auto_refresh=true (default) silently refreshes INDEX inline when drift detected; response sets auto_refreshed=true so CA knows. Set auto_refresh=false to receive STALE_INDEX error instead. file_pattern uses fnmatch against both the file name and the full relative path (e.g. '*.py', '*service*', '*autocutter*', 'src/*.ts'). CAN-051 mutation_scope=derived_index: auto_refresh rewrites INDEX.json (derived state, not source).", "parameters": {"type": "object", "properties": {"project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string"}, "query": {"example": 'registry', "type": "string", "default": "", "description": "Optional text query to filter files. Aliases: pattern, regex, q."}, "group": {"example": 'source', "type": "string"}, "min_complexity": {"example": 2, "type": "integer"}, "min_loc": {"example": 50, "type": "integer"}, "file_pattern": {"example": '*.py', "type": "string", "description": "fnmatch pattern matched against basename or full relative path"}, "max_results": {"example": 50, "type": "integer", "default": 50}, "auto_refresh": {"example": True, "type": "boolean", "default": True, "description": "When true and INDEX is stale, refresh inline then query."}}, "required": ["project_path"]}, "returns": {'properties': {'auto_refreshed': {'type': 'boolean'}, 'ca_hint': {'type': 'string', 'x-dual': True}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'ca_next_tool': {'type': 'string', 'x-dual': True}, 'category': {'type': 'string'}, 'content_files_scanned': {'type': 'integer'}, 'drift': {'type': 'object'}, 'error': {'type': 'string'}, 'error_name': {'type': 'string'}, 'files': {'items': {'properties': {'complexity': {'type': 'integer'}, 'group': {'anyOf': [{'type': 'string'}, {'type': 'null'}]}, 'loc': {'type': 'integer'}, 'matched_symbols': {'items': {'type': 'string'}, 'type': 'array'}, 'matched_via': {'items': {'type': 'string'}, 'type': 'array'}, 'path': {'type': 'string'}}, 'required': ['path', 'group', 'loc', 'complexity'], 'type': 'object'}, 'type': 'array'}, 'hint': {'type': 'string'}, 'matched': {'type': 'integer'}, 'note': {'type': 'string'}, 'ok': {'type': 'boolean'}, 'query_scope': {'items': {'type': 'string'}, 'type': 'array'}, 'returned': {'type': 'integer'}, 'snapshot_id': {'anyOf': [{'type': 'string'}, {'type': 'null'}]}, 'total_files': {'type': 'integer'}, 'truncated': {'type': 'boolean'}}, 'required': ['ok', 'snapshot_id'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': 'ef3a776280b701d6af04782a04838ce5089b336173d51b8b8bf9bc773a1b7c41', 'depth_D': 4}}}},
 
 	{"type": "function", "function": {"name": "get_usage_stats", "description": "Read APP_SESSION_LOG.jsonl and SQLite session events for ONE project (project-scoped only). Commit E (S3-CONTRACT-01): project-scoped by default; project_path is required for scope='project'. scope='all' (cross-project global) is DEFERRED until orchestrator-token auth + audit lands and returns GLOBAL_SCOPE_NOT_ENABLED. E-01: include_global_usage and include_http_log are tombstoned escape hatches — they leaked process-global root/UI/HTTP data into project scope and now fail loud with GLOBAL_SCOPE_NOT_ENABLED on explicit use; they are no longer advertised in this schema.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string", "description": "Absolute project root path. Canonicalized before filtering; required for scope='project'."}, "scope": {"type": "string", "enum": ["project", "all"], "default": "project", "description": "'project' (default) scopes results to project_path. 'all' is deferred (GLOBAL_SCOPE_NOT_ENABLED) until auth+audit lands."}, "last_n": {"type": "integer", "default": 200}}, "required": ["project_path"]}}},
 
 	{"type": "function", "function": {"name": "get_folder_size", "description": "Count files and total folder size recursively without blocking the API loop. Safe defaults skip generated/cache trees; include_skipped=true scans them.", "parameters": {"type": "object", "properties": {"folder_path": {"type": "string"}, "include_skipped": {"type": "boolean", "default": False, "description": "When true, include .git, virtual environments, node_modules and cache trees."}}, "required": ["folder_path"]}}},
 
-	{"type": "function", "function": {"name": "validate_file", "description": "Check syntax/validity of a file after write_fix/write_new_file. Python: py_compile. JS: node --check. TS/JSX/TSX/Vue: esbuild syntax check (never a type check). Call immediately after a write to catch errors early.", "parameters": {"type": "object", "properties": {"file_path": {"type": "string"}, "lang": {"type": "string", "description": "auto|python|js|ts|esbuild|html|vue|json|css|toml (common aliases accepted; ts routes to the esbuild syntax check)", "default": "auto"}, "project_path": {"type": "string", "description": "Project root to resolve relative file_path", "default": ""}}, "required": ["file_path"]}, "returns": {'properties': {'checked': {'type': 'boolean'}, 'file': {'type': 'string'}, 'generation': {'type': 'string'}, 'lang': {'type': 'string'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'ruff_fix_applicable': {'type': 'boolean'}, 'ruff_fix_hint': {'type': 'string'}, 'ruff_rules_matched': {'type': 'array'}}, 'required': ['ok', 'lang', 'file', 'checked', 'ruff_fix_applicable', 'ruff_rules_matched', 'ruff_fix_hint', 'generation'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '1240aa10ab26ad5f52cb1f75f02aa183154b03bf7e5e7bff08169fe35b89d0f0', 'depth_D': 2}}}},
+	{"type": "function", "function": {"name": "validate_file", "description": "Check syntax/validity of a file after write_fix/write_new_file. Python: py_compile. JS: node --check. TS/JSX/TSX/Vue: esbuild syntax check (never a type check). Call immediately after a write to catch errors early.", "parameters": {"type": "object", "properties": {"file_path": {"example": 'orchestrator\\core\\registry_data.py', "type": "string"}, "lang": {"example": 'auto', "type": "string", "description": "auto|python|js|ts|esbuild|html|vue|json|css|toml (common aliases accepted; ts routes to the esbuild syntax check)", "default": "auto"}, "project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "description": "Project root to resolve relative file_path", "default": ""}}, "required": ["file_path"]}, "returns": {'properties': {'checked': {'type': 'boolean'}, 'file': {'type': 'string'}, 'generation': {'type': 'string'}, 'lang': {'type': 'string'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'ruff_fix_applicable': {'type': 'boolean'}, 'ruff_fix_hint': {'type': 'string'}, 'ruff_rules_matched': {'type': 'array'}}, 'required': ['ok', 'lang', 'file', 'checked', 'ruff_fix_applicable', 'ruff_rules_matched', 'ruff_fix_hint', 'generation'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '1240aa10ab26ad5f52cb1f75f02aa183154b03bf7e5e7bff08169fe35b89d0f0', 'depth_D': 2}}}},
 
 	{"type": "function", "function": {"name": "validate_symbols", "description": "Post-write integration check: syntax plus function/class comparison against INDEX. Detects accidentally deleted functions. Use after write_fix on .py/.js/.ts files.", "parameters": {"type": "object", "properties": {"file_path": {"type": "string"}, "project_path": {"type": "string", "default": ""}}, "required": ["file_path"]}}},
 
@@ -4530,9 +4530,9 @@ EXTRA_TOOL_SCHEMAS = [
 
 	{"type": "function", "function": {"name": "post_write_batch_verify", "description": "Run standard non-mutating post-write checks for a batch: validate_file per file, optional validate_symbols, optional validate_encoding, and one cache_delta.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "changed_files": {"type": "array", "items": {"type": "string"}}, "run_validate_symbols": {"type": "boolean", "default": True}, "run_cache_delta": {"type": "boolean", "default": True}, "run_validate_encoding": {"type": "boolean", "default": True}}, "required": ["project_path", "changed_files"]}}},
 
-    {"type": "function", "function": {"name": "write_fix_html", "description": "Edit a code range in an .html file. Automatically runs dry_run and checks closing delimiters (<script> <style> <body> <html>) before writing. Use force=True to bypass. When Python validation fails with a Ruff safe-fixable diagnostic, the response includes ruff_fix_applicable and ruff_fix_hint suggesting ruff_fix(path=<file>, apply=false) for CA-controlled preview; it never auto-fixes.", "parameters": {"type": "object", "properties": {"file_path": {"type": "string"}, "start_line": {"type": "integer"}, "end_line": {"type": "integer"}, "new_content": {"type": "string"}, "project_path": {"type": "string", "default": ""}, "content_encoding": {"type": "string", "default": "none"}, "force": {"type": "boolean", "default": False}, "backup_override": {"type": "boolean", "default": False, "description": "Skip the pre-write project backup gate after explicit user approval. Use only for tiny/temp/derived files."}}, "required": ["file_path", "start_line", "end_line", "new_content"]}, "returns": {'properties': {'backup': {'type': 'string'}, 'bytes_written': {'type': 'integer'}, 'ca_guidance': {'properties': {'accepted_aliases': {'properties': {'content': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}, 'end': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}, 'line_end': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}, 'line_start': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}, 'path': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}, 'replacement': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}, 'start': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}}, 'required': ['path', 'content', 'start', 'end', 'line_start', 'line_end', 'replacement'], 'type': 'object'}, 'ca_next_action': {'type': 'string'}, 'call_pattern': {'type': 'string'}, 'error_name': {'type': 'string'}, 'known_gotchas': {'items': {'type': 'string'}, 'type': 'array'}, 'notes': {'items': {'type': 'string'}, 'type': 'array'}, 'payload_example': {'properties': {'backup_override': {'type': 'boolean'}, 'content_encoding': {'type': 'string'}, 'end_line': {'type': 'integer'}, 'file_path': {'type': 'string'}, 'force': {'type': 'boolean'}, 'new_content': {'type': 'string'}, 'project_path': {'type': 'string'}, 'start_line': {'type': 'integer'}}, 'required': ['file_path', 'start_line', 'end_line', 'new_content', 'project_path', 'content_encoding', 'force', 'backup_override'], 'type': 'object'}, 'phase': {'type': 'string'}, 'phase_label': {'type': 'string'}, 'recommended_prompt_rule': {'type': 'string'}, 'required_fields': {'items': {'type': 'string'}, 'type': 'array'}, 'see_also': {'properties': {}, 'type': 'object'}, 'suggested_alternative_tool': {'properties': {}, 'type': 'object'}}, 'required': ['phase', 'phase_label', 'error_name', 'ca_next_action', 'call_pattern', 'payload_example', 'required_fields', 'accepted_aliases', 'notes', 'known_gotchas', 'recommended_prompt_rule', 'see_also', 'suggested_alternative_tool'], 'type': 'object', 'x-dual': True}, 'ca_hint_commit': {'type': 'string'}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'cache_synced': {'type': 'boolean'}, 'changed_lines': {'type': 'integer'}, 'delimiter_check': {'type': 'string'}, 'diff': {'type': 'string'}, 'diff_preview': {'properties': {'added': {'type': 'integer'}, 'changed_lines': {'type': 'integer'}, 'diff_unified': {'type': 'string'}, 'preview_after': {'type': 'string'}, 'preview_before': {'type': 'string'}, 'preview_hash': {'type': 'string'}, 'removed': {'type': 'integer'}, 'truncated': {'type': 'boolean'}}, 'required': ['changed_lines', 'added', 'removed', 'preview_before', 'preview_after', 'diff_unified', 'truncated', 'preview_hash'], 'type': 'object'}, 'encoding_check': {'properties': {'bytes_written': {'type': 'integer'}, 'encoding_used': {'type': 'string'}, 'mojibake_confirmed': {'type': 'boolean'}, 'mojibake_markers_present': {'type': 'boolean'}, 'mojibake_risk': {'type': 'boolean'}, 'suspicious_sequences': {'type': 'array'}, 'utf8_valid': {'type': 'boolean'}, 'vietnamese_diacritic_check': {'properties': {'has_vietnamese_diacritics': {'type': 'boolean'}, 'status': {'type': 'string'}}, 'required': ['has_vietnamese_diacritics', 'status'], 'type': 'object'}}, 'required': ['encoding_used', 'utf8_valid', 'mojibake_risk', 'mojibake_markers_present', 'mojibake_confirmed', 'vietnamese_diacritic_check', 'suspicious_sequences', 'bytes_written'], 'type': 'object'}, 'encoding_used': {'type': 'string'}, 'error': {'type': 'string', 'x-dual': True}, 'error_name': {'type': 'string', 'x-dual': True}, 'file': {'type': 'string'}, 'generation': {'type': 'string'}, 'html_tool': {'type': 'boolean'}, 'mojibake_risk': {'type': 'boolean'}, 'new_hash': {'type': 'string'}, 'new_lines_count': {'type': 'integer'}, 'new_mtime': {'type': 'number'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'operation_attempts': {'type': 'integer'}, 'operation_id': {'type': 'string'}, 'payload_example': {'properties': {'backup_override': {'type': 'boolean'}, 'content_encoding': {'type': 'string'}, 'end_line': {'type': 'integer'}, 'file_path': {'type': 'string'}, 'force': {'type': 'boolean'}, 'new_content': {'type': 'string'}, 'project_path': {'type': 'string'}, 'start_line': {'type': 'integer'}}, 'required': ['file_path', 'start_line', 'end_line', 'new_content', 'project_path', 'content_encoding', 'force', 'backup_override'], 'type': 'object', 'x-dual': True}, 'phase': {'type': 'string', 'x-dual': True}, 'range_id': {'type': 'string'}, 'replaced_lines': {'type': 'string'}, 'retry_sequence': {'type': 'array', 'x-dual': True}, 'sequential_chain_hint': {'type': 'string'}, 'symbol_check': {'properties': {'ok': {'type': 'boolean'}}, 'required': ['ok'], 'type': 'object'}, 'symbols_changed': {'type': 'array'}, 'symbols_deleted': {'type': 'array'}, 'syntax_ok': {'type': 'boolean'}, 'tag_errors': {'type': 'array'}, 'truncated': {'type': 'boolean'}, 'unclosed_tags': {'type': 'array'}, 'utf8_valid': {'type': 'boolean'}, 'validation': {'properties': {'checked': {'type': 'boolean'}, 'file': {'type': 'string'}, 'lang': {'type': 'string'}, 'note': {'type': 'string'}, 'ok': {'type': 'boolean'}, 'ruff_fix_applicable': {'type': 'boolean'}, 'ruff_fix_hint': {'type': 'string'}, 'ruff_rules_matched': {'type': 'array'}, 'tag_errors': {'type': 'array'}, 'truncated': {'type': 'boolean'}, 'unclosed_tags': {'type': 'array'}}, 'required': ['ok', 'lang', 'file', 'note', 'unclosed_tags', 'tag_errors', 'truncated', 'ruff_fix_applicable', 'checked', 'ruff_rules_matched', 'ruff_fix_hint'], 'type': 'object'}, 'vietnamese_diacritic_check': {'properties': {'has_vietnamese_diacritics': {'type': 'boolean'}, 'status': {'type': 'string'}}, 'required': ['has_vietnamese_diacritics', 'status'], 'type': 'object'}, 'warnings': {'type': 'array'}, 'write_mode': {'type': 'string'}, 'write_status_url': {'type': 'string'}}, 'required': ['ok', 'generation', 'operation_id', 'write_status_url', 'operation_attempts'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': 'ff2d3b02a8d182594bc7c486dbf6ec682cfb11108edc74da6455862c1dbf869d', 'depth_D': 4}}}},
+    {"type": "function", "function": {"name": "write_fix_html", "description": "Edit a code range in an .html file. Automatically runs dry_run and checks closing delimiters (<script> <style> <body> <html>) before writing. Use force=True to bypass. When Python validation fails with a Ruff safe-fixable diagnostic, the response includes ruff_fix_applicable and ruff_fix_hint suggesting ruff_fix(path=<file>, apply=false) for CA-controlled preview; it never auto-fixes.", "parameters": {"type": "object", "properties": {"file_path": {"example": 'ui\\index.html', "type": "string"}, "start_line": {"example": 10, "type": "integer"}, "end_line": {"example": 12, "type": "integer"}, "new_content": {"example": '<div>updated</div>', "type": "string"}, "project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "default": ""}, "content_encoding": {"example": 'none', "type": "string", "default": "none"}, "force": {"example": False, "type": "boolean", "default": False}, "backup_override": {"example": False, "type": "boolean", "default": False, "description": "Skip the pre-write project backup gate after explicit user approval. Use only for tiny/temp/derived files."}}, "required": ["file_path", "start_line", "end_line", "new_content"]}, "returns": {'properties': {'backup': {'type': 'string'}, 'bytes_written': {'type': 'integer'}, 'ca_guidance': {'properties': {'accepted_aliases': {'properties': {'content': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}, 'end': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}, 'line_end': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}, 'line_start': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}, 'path': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}, 'replacement': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}, 'start': {'properties': {'maps_to': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['maps_to', 'status'], 'type': 'object'}}, 'required': ['path', 'content', 'start', 'end', 'line_start', 'line_end', 'replacement'], 'type': 'object'}, 'ca_next_action': {'type': 'string'}, 'call_pattern': {'type': 'string'}, 'error_name': {'type': 'string'}, 'known_gotchas': {'items': {'type': 'string'}, 'type': 'array'}, 'notes': {'items': {'type': 'string'}, 'type': 'array'}, 'payload_example': {'properties': {'backup_override': {'type': 'boolean'}, 'content_encoding': {'type': 'string'}, 'end_line': {'type': 'integer'}, 'file_path': {'type': 'string'}, 'force': {'type': 'boolean'}, 'new_content': {'type': 'string'}, 'project_path': {'type': 'string'}, 'start_line': {'type': 'integer'}}, 'required': ['file_path', 'start_line', 'end_line', 'new_content', 'project_path', 'content_encoding', 'force', 'backup_override'], 'type': 'object'}, 'phase': {'type': 'string'}, 'phase_label': {'type': 'string'}, 'recommended_prompt_rule': {'type': 'string'}, 'required_fields': {'items': {'type': 'string'}, 'type': 'array'}, 'see_also': {'properties': {}, 'type': 'object'}, 'suggested_alternative_tool': {'properties': {}, 'type': 'object'}}, 'required': ['phase', 'phase_label', 'error_name', 'ca_next_action', 'call_pattern', 'payload_example', 'required_fields', 'accepted_aliases', 'notes', 'known_gotchas', 'recommended_prompt_rule', 'see_also', 'suggested_alternative_tool'], 'type': 'object', 'x-dual': True}, 'ca_hint_commit': {'type': 'string'}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'cache_synced': {'type': 'boolean'}, 'changed_lines': {'type': 'integer'}, 'delimiter_check': {'type': 'string'}, 'diff': {'type': 'string'}, 'diff_preview': {'properties': {'added': {'type': 'integer'}, 'changed_lines': {'type': 'integer'}, 'diff_unified': {'type': 'string'}, 'preview_after': {'type': 'string'}, 'preview_before': {'type': 'string'}, 'preview_hash': {'type': 'string'}, 'removed': {'type': 'integer'}, 'truncated': {'type': 'boolean'}}, 'required': ['changed_lines', 'added', 'removed', 'preview_before', 'preview_after', 'diff_unified', 'truncated', 'preview_hash'], 'type': 'object'}, 'encoding_check': {'properties': {'bytes_written': {'type': 'integer'}, 'encoding_used': {'type': 'string'}, 'mojibake_confirmed': {'type': 'boolean'}, 'mojibake_markers_present': {'type': 'boolean'}, 'mojibake_risk': {'type': 'boolean'}, 'suspicious_sequences': {'type': 'array'}, 'utf8_valid': {'type': 'boolean'}, 'vietnamese_diacritic_check': {'properties': {'has_vietnamese_diacritics': {'type': 'boolean'}, 'status': {'type': 'string'}}, 'required': ['has_vietnamese_diacritics', 'status'], 'type': 'object'}}, 'required': ['encoding_used', 'utf8_valid', 'mojibake_risk', 'mojibake_markers_present', 'mojibake_confirmed', 'vietnamese_diacritic_check', 'suspicious_sequences', 'bytes_written'], 'type': 'object'}, 'encoding_used': {'type': 'string'}, 'error': {'type': 'string', 'x-dual': True}, 'error_name': {'type': 'string', 'x-dual': True}, 'file': {'type': 'string'}, 'generation': {'type': 'string'}, 'html_tool': {'type': 'boolean'}, 'mojibake_risk': {'type': 'boolean'}, 'new_hash': {'type': 'string'}, 'new_lines_count': {'type': 'integer'}, 'new_mtime': {'type': 'number'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'operation_attempts': {'type': 'integer'}, 'operation_id': {'type': 'string'}, 'payload_example': {'properties': {'backup_override': {'type': 'boolean'}, 'content_encoding': {'type': 'string'}, 'end_line': {'type': 'integer'}, 'file_path': {'type': 'string'}, 'force': {'type': 'boolean'}, 'new_content': {'type': 'string'}, 'project_path': {'type': 'string'}, 'start_line': {'type': 'integer'}}, 'required': ['file_path', 'start_line', 'end_line', 'new_content', 'project_path', 'content_encoding', 'force', 'backup_override'], 'type': 'object', 'x-dual': True}, 'phase': {'type': 'string', 'x-dual': True}, 'range_id': {'type': 'string'}, 'replaced_lines': {'type': 'string'}, 'retry_sequence': {'type': 'array', 'x-dual': True}, 'sequential_chain_hint': {'type': 'string'}, 'symbol_check': {'properties': {'ok': {'type': 'boolean'}}, 'required': ['ok'], 'type': 'object'}, 'symbols_changed': {'type': 'array'}, 'symbols_deleted': {'type': 'array'}, 'syntax_ok': {'type': 'boolean'}, 'tag_errors': {'type': 'array'}, 'truncated': {'type': 'boolean'}, 'unclosed_tags': {'type': 'array'}, 'utf8_valid': {'type': 'boolean'}, 'validation': {'properties': {'checked': {'type': 'boolean'}, 'file': {'type': 'string'}, 'lang': {'type': 'string'}, 'note': {'type': 'string'}, 'ok': {'type': 'boolean'}, 'ruff_fix_applicable': {'type': 'boolean'}, 'ruff_fix_hint': {'type': 'string'}, 'ruff_rules_matched': {'type': 'array'}, 'tag_errors': {'type': 'array'}, 'truncated': {'type': 'boolean'}, 'unclosed_tags': {'type': 'array'}}, 'required': ['ok', 'lang', 'file', 'note', 'unclosed_tags', 'tag_errors', 'truncated', 'ruff_fix_applicable', 'checked', 'ruff_rules_matched', 'ruff_fix_hint'], 'type': 'object'}, 'vietnamese_diacritic_check': {'properties': {'has_vietnamese_diacritics': {'type': 'boolean'}, 'status': {'type': 'string'}}, 'required': ['has_vietnamese_diacritics', 'status'], 'type': 'object'}, 'warnings': {'type': 'array'}, 'write_mode': {'type': 'string'}, 'write_status_url': {'type': 'string'}}, 'required': ['ok', 'generation', 'operation_id', 'write_status_url', 'operation_attempts'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': 'ff2d3b02a8d182594bc7c486dbf6ec682cfb11108edc74da6455862c1dbf869d', 'depth_D': 4}}}},
 
-{"type": "function", "function": {"name": "apply_after_dry_run", "description": "Apply an exact previously previewed dry-run payload by dry_run_id. Rejects stale target files and expired previews.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "dry_run_id": {"type": "string"}, "confirm_hash": {"type": "string", "default": ""}, "confirm_warnings": {"type": "boolean", "default": False}, "backup_override": {"type": "boolean", "default": False, "description": "Dispatcher-only backup bypass approval; removed before handler binding."}}, "required": ["project_path", "dry_run_id"]}, "returns": {'properties': {'admission': {'properties': {'category': {'type': 'string'}, 'held': {'type': 'integer'}, 'held_for_sec': {'type': 'number'}, 'holder_op_id': {'type': 'string'}, 'limit': {'type': 'integer'}, 'oldest_wait_ms': {'type': 'number'}, 'queue_capacity': {'type': 'integer'}, 'queue_rejected': {'type': 'integer'}, 'waiters': {'type': 'integer'}}, 'required': ['category', 'limit', 'held', 'waiters', 'queue_capacity', 'queue_rejected', 'holder_op_id', 'held_for_sec', 'oldest_wait_ms'], 'type': 'object'}, 'ca_guidance': {'properties': {'accepted_aliases': {'properties': {}, 'type': 'object'}, 'ca_next_action': {'type': 'string'}, 'call_pattern': {'type': 'string'}, 'error_name': {'type': 'string'}, 'known_gotchas': {'type': 'array'}, 'notes': {'items': {'type': 'string'}, 'type': 'array'}, 'payload_example': {'properties': {'backup_override': {'type': 'boolean'}, 'confirm_hash': {'type': 'string'}, 'confirm_warnings': {'type': 'boolean'}, 'dry_run_id': {'type': 'string'}, 'project_path': {'type': 'string'}, 'skip_verify': {'type': 'boolean'}}, 'required': ['project_path', 'dry_run_id', 'confirm_hash', 'confirm_warnings', 'backup_override', 'skip_verify'], 'type': 'object'}, 'phase': {'type': 'string'}, 'phase_label': {'type': 'string'}, 'recommended_prompt_rule': {'type': 'string'}, 'required_fields': {'items': {'type': 'string'}, 'type': 'array'}, 'see_also': {'properties': {}, 'type': 'object'}, 'suggested_alternative_tool': {'properties': {}, 'type': 'object'}}, 'required': ['phase', 'phase_label', 'error_name', 'ca_next_action', 'call_pattern', 'payload_example', 'required_fields', 'accepted_aliases', 'notes', 'known_gotchas', 'recommended_prompt_rule', 'see_also', 'suggested_alternative_tool'], 'type': 'object', 'x-dual': True}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'error': {'type': 'string', 'x-dual': True}, 'error_name': {'type': 'string', 'x-dual': True}, 'generation': {'type': 'string'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'operation_attempts': {'type': 'integer'}, 'operation_id': {'type': 'string'}, 'payload_example': {'properties': {'backup_override': {'type': 'boolean'}, 'confirm_hash': {'type': 'string'}, 'confirm_warnings': {'type': 'boolean'}, 'dry_run_id': {'type': 'string'}, 'project_path': {'type': 'string'}, 'skip_verify': {'type': 'boolean'}}, 'required': ['project_path', 'dry_run_id', 'confirm_hash', 'confirm_warnings', 'backup_override', 'skip_verify'], 'type': 'object', 'x-dual': True}, 'phase': {'type': 'string', 'x-dual': True}, 'reason': {'type': 'string'}, 'retry_after_seconds': {'type': 'integer'}, 'retry_sequence': {'type': 'array', 'x-dual': True}, 'retryable': {'type': 'boolean'}, 'severity': {'type': 'string'}, 'tool_category': {'type': 'string'}, 'type': {'type': 'string'}, 'write_status_url': {'type': 'string'}}, 'required': ['ok', 'error', 'reason', 'error_name', 'retryable', 'ca_next_action', 'generation'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '9194a748c3123c58d7d979a6a0093ebecd513c8385b22221de32d131001859ce', 'depth_D': 3}}}},
+{"type": "function", "function": {"name": "apply_after_dry_run", "description": "Apply an exact previously previewed dry-run payload by dry_run_id. Rejects stale target files and expired previews.", "parameters": {"type": "object", "properties": {"project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string"}, "dry_run_id": {"example": 'dry_20261105_001', "type": "string"}, "confirm_hash": {"example": 'a1b2c3d4', "type": "string", "default": ""}, "confirm_warnings": {"example": False, "type": "boolean", "default": False}, "backup_override": {"example": False, "type": "boolean", "default": False, "description": "Dispatcher-only backup bypass approval; removed before handler binding."}}, "required": ["project_path", "dry_run_id"]}, "returns": {'properties': {'admission': {'properties': {'category': {'type': 'string'}, 'held': {'type': 'integer'}, 'held_for_sec': {'type': 'number'}, 'holder_op_id': {'type': 'string'}, 'limit': {'type': 'integer'}, 'oldest_wait_ms': {'type': 'number'}, 'queue_capacity': {'type': 'integer'}, 'queue_rejected': {'type': 'integer'}, 'waiters': {'type': 'integer'}}, 'required': ['category', 'limit', 'held', 'waiters', 'queue_capacity', 'queue_rejected', 'holder_op_id', 'held_for_sec', 'oldest_wait_ms'], 'type': 'object'}, 'ca_guidance': {'properties': {'accepted_aliases': {'properties': {}, 'type': 'object'}, 'ca_next_action': {'type': 'string'}, 'call_pattern': {'type': 'string'}, 'error_name': {'type': 'string'}, 'known_gotchas': {'type': 'array'}, 'notes': {'items': {'type': 'string'}, 'type': 'array'}, 'payload_example': {'properties': {'backup_override': {'type': 'boolean'}, 'confirm_hash': {'type': 'string'}, 'confirm_warnings': {'type': 'boolean'}, 'dry_run_id': {'type': 'string'}, 'project_path': {'type': 'string'}, 'skip_verify': {'type': 'boolean'}}, 'required': ['project_path', 'dry_run_id', 'confirm_hash', 'confirm_warnings', 'backup_override', 'skip_verify'], 'type': 'object'}, 'phase': {'type': 'string'}, 'phase_label': {'type': 'string'}, 'recommended_prompt_rule': {'type': 'string'}, 'required_fields': {'items': {'type': 'string'}, 'type': 'array'}, 'see_also': {'properties': {}, 'type': 'object'}, 'suggested_alternative_tool': {'properties': {}, 'type': 'object'}}, 'required': ['phase', 'phase_label', 'error_name', 'ca_next_action', 'call_pattern', 'payload_example', 'required_fields', 'accepted_aliases', 'notes', 'known_gotchas', 'recommended_prompt_rule', 'see_also', 'suggested_alternative_tool'], 'type': 'object', 'x-dual': True}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'error': {'type': 'string', 'x-dual': True}, 'error_name': {'type': 'string', 'x-dual': True}, 'generation': {'type': 'string'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'operation_attempts': {'type': 'integer'}, 'operation_id': {'type': 'string'}, 'payload_example': {'properties': {'backup_override': {'type': 'boolean'}, 'confirm_hash': {'type': 'string'}, 'confirm_warnings': {'type': 'boolean'}, 'dry_run_id': {'type': 'string'}, 'project_path': {'type': 'string'}, 'skip_verify': {'type': 'boolean'}}, 'required': ['project_path', 'dry_run_id', 'confirm_hash', 'confirm_warnings', 'backup_override', 'skip_verify'], 'type': 'object', 'x-dual': True}, 'phase': {'type': 'string', 'x-dual': True}, 'reason': {'type': 'string'}, 'retry_after_seconds': {'type': 'integer'}, 'retry_sequence': {'type': 'array', 'x-dual': True}, 'retryable': {'type': 'boolean'}, 'severity': {'type': 'string'}, 'tool_category': {'type': 'string'}, 'type': {'type': 'string'}, 'write_status_url': {'type': 'string'}}, 'required': ['ok', 'error', 'reason', 'error_name', 'retryable', 'ca_next_action', 'generation'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '9194a748c3123c58d7d979a6a0093ebecd513c8385b22221de32d131001859ce', 'depth_D': 3}}}},
 
 ]
 
@@ -4540,7 +4540,7 @@ EXTRA_TOOL_SCHEMAS = [
 
 EXTRA_TOOL_SCHEMAS_R43 = [
 
-		{"type": "function", "function": {"name": "open_session", "description": "Open or resume the active session for a project and optional agent identity. Resume preserves title and mode by default; call rename_session to apply a different title. Opt-in force_new_session closes then creates atomically and refuses pending writes, drafts or audits; apply_requested_title renames in place without changing mode. Flags are mutually exclusive and require agent_id. Distinct non-empty agent_id values may hold concurrent active sessions on one project. R22 verbosity ∈ {full|terse|ref}; drift auto-forces full.", "parameters": {"type": "object", "properties": {"session_title": {"type": "string", "default": "", "description": "Session title (if empty -> 'Untitled Session {time}')"}, "project_path": {"type": "string", "default": ".", "description": "Project root (default '.')"}, "mode": {"type": "string", "enum": ["T1", "T2"], "default": "T1", "description": "Workflow TIER, never an execution verb. ONLY T1 or T2 are valid values. Aliases are accepted and folded: T1_FIX / T1_EXISTING_APP -> T1 (work inside an app that already exists), T2_BUILD / T2_NEW_APP -> T2 (build a new one). 'execute', 'write' and 'fix' are INVALID_MODE. Resume ignores mode; change an open session via set_workflow_mode."}, "verbosity": {"type": "string", "enum": ["full", "terse", "ref"], "default": "full", "description": "R22: terse compresses metadata; drift auto-forces full."}, "agent_id": {"type": "string", "default": "", "description": "Stable agent identity used to isolate concurrent active sessions"}, "force_new_session": {"type": "boolean", "default": False, "description": "Explicitly close the active session before creating a new one; returns closed_session_id. Refuses pending work. Cannot combine with apply_requested_title."}, "apply_requested_title": {"type": "boolean", "default": False, "description": "Explicitly apply a non-empty requested title on resume. Preserves session_id, mode and events; returns old_title, new_title and renamed."}}}, "returns": {'properties': {'agent_id': {'type': 'string'}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'ca_next_tool': {'type': 'string', 'x-dual': True}, 'concurrent_api_calls_observed': {'type': 'integer'}, 'contention_note': {'type': 'string'}, 'cslt_policy': {'properties': {'a_first': {'type': 'boolean'}, 'agent_transport_policy': {'type': 'string'}, 'host_gate': {'properties': {'agent_id': {'type': 'string'}, 'allowed': {'type': 'boolean'}, 'decision': {'type': 'string'}, 'is_hermes': {'type': 'boolean'}, 'native_policy': {'type': 'string'}, 'reason': {'type': 'string'}, 'scope': {'type': 'string'}}, 'required': ['agent_id', 'is_hermes', 'scope', 'decision', 'allowed', 'reason', 'native_policy'], 'type': 'object'}, 'matrix': {'properties': {'path': {'type': 'string'}, 'task_class_count': {'type': 'integer'}}, 'required': ['path', 'task_class_count'], 'type': 'object'}, 'metrics_contract': {'properties': {'bypass_event': {'type': 'string'}, 'bypass_rate_formula': {'type': 'string'}, 'group_by': {'items': {'type': 'string'}, 'type': 'array'}, 'required_counters': {'items': {'type': 'string'}, 'type': 'array'}, 'zero_denominator': {'type': 'string'}}, 'required': ['bypass_event', 'bypass_rate_formula', 'required_counters', 'zero_denominator', 'group_by'], 'type': 'object'}, 'north_star': {'properties': {'acronym': {'type': 'string'}, 'note': {'type': 'string'}, 'order': {'items': {'type': 'string'}, 'type': 'array'}, 'text': {'type': 'string'}}, 'required': ['acronym', 'order', 'text', 'note'], 'type': 'object'}, 'rules': {'items': {'type': 'string'}, 'type': 'array'}}, 'required': ['north_star', 'agent_transport_policy', 'matrix', 'a_first', 'host_gate', 'metrics_contract', 'rules'], 'type': 'object'}, 'effective_mode': {'type': 'string'}, 'effective_project_path': {'type': 'string'}, 'effective_session_title': {'type': 'string'}, 'generation': {'type': 'string'}, 'matrix_audit': {'properties': {'alias_drift_count': {'type': 'integer'}, 'alias_drift_severity': {'type': 'string'}, 'audit_scope': {'type': 'string'}, 'code_tools': {'type': 'integer'}, 'contract_drift_count': {'type': 'integer'}, 'doc_description_present_count': {'type': 'integer'}, 'doc_description_weak_count': {'type': 'integer'}, 'doc_fields_absent_by_design_count': {'type': 'integer'}, 'doc_param_examples_registry_count': {'type': 'integer'}, 'doc_param_examples_served_count': {'type': 'integer'}, 'doc_params_described_count': {'type': 'integer'}, 'doc_params_total': {'type': 'integer'}, 'doc_params_undescribed_count': {'type': 'integer'}, 'drift_count': {'type': 'integer'}, 'error_phase_map_entries': {'type': 'integer'}, 'error_system_names_phase_mapped_count': {'type': 'integer'}, 'error_system_names_total': {'type': 'integer'}, 'error_system_names_unmapped_count': {'type': 'integer'}, 'inventory_active_count': {'type': 'integer'}, 'inventory_extra_count': {'type': 'integer'}, 'inventory_extra_doc_only_count': {'type': 'integer'}, 'inventory_extra_endpoints_count': {'type': 'integer'}, 'inventory_extra_internal_count': {'type': 'integer'}, 'inventory_extra_planned_count': {'type': 'integer'}, 'inventory_extra_unknown_count': {'type': 'integer'}, 'inventory_retired_count': {'type': 'integer'}, 'inventory_tools': {'type': 'integer'}, 'ok_count': {'type': 'integer'}, 'progressive_gap_count': {'type': 'integer'}, 'purpose_covered_count': {'type': 'integer'}, 'purpose_eligible_count': {'type': 'integer'}, 'purpose_eligible_gap_count': {'type': 'integer'}, 'schema_tools': {'type': 'integer'}, 'skill_folders': {'type': 'integer'}, 'skill_tools': {'type': 'integer'}}, 'required': ['code_tools', 'schema_tools', 'skill_tools', 'skill_folders', 'inventory_tools', 'inventory_active_count', 'inventory_retired_count', 'inventory_extra_count', 'inventory_extra_endpoints_count', 'inventory_extra_internal_count', 'inventory_extra_planned_count', 'inventory_extra_doc_only_count', 'inventory_extra_unknown_count', 'drift_count', 'ok_count', 'alias_drift_count', 'alias_drift_severity', 'contract_drift_count', 'progressive_gap_count', 'doc_description_present_count', 'doc_description_weak_count', 'doc_params_total', 'doc_params_described_count', 'doc_params_undescribed_count', 'doc_param_examples_registry_count', 'doc_param_examples_served_count', 'doc_fields_absent_by_design_count', 'purpose_eligible_count', 'purpose_covered_count', 'purpose_eligible_gap_count', 'error_phase_map_entries', 'error_system_names_total', 'error_system_names_phase_mapped_count', 'error_system_names_unmapped_count', 'audit_scope'], 'type': 'object'}, 'matrix_drift_present': {'type': 'boolean'}, 'mode_applied': {'type': 'boolean'}, 'mode_ignored_on_resume': {'type': 'boolean'}, 'mode_matches_persisted': {'type': 'boolean'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'path_resolution_note': {'type': 'string'}, 'progressive_gap_count': {'type': 'integer'}, 'progressive_gaps_hint': {'type': 'string'}, 'project_name': {'type': 'string'}, 'project_path': {'type': 'string'}, 'project_path_confirmed': {'type': 'boolean'}, 'project_switch_context': {'properties': {'current_project_active_workflow_hint': {'type': 'string'}, 'current_project_recent_files_5': {'items': {'type': 'string'}, 'type': 'array'}, 'current_project_recent_queries_5': {'items': {'properties': {'query': {'type': 'string'}, 'tool': {'type': 'string'}}, 'required': ['tool', 'query'], 'type': 'object'}, 'type': 'array'}, 'recent_projects_today': {'items': {'properties': {'ended_at': {'type': 'null'}, 'is_current': {'type': 'boolean'}, 'last_session_id': {'type': 'string'}, 'project_path': {'type': 'string'}, 'started_at': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['project_path', 'last_session_id', 'started_at', 'ended_at', 'status', 'is_current'], 'type': 'object'}, 'type': 'array'}}, 'required': ['recent_projects_today', 'current_project_recent_files_5', 'current_project_recent_queries_5', 'current_project_active_workflow_hint'], 'type': 'object'}, 'relative_base_hint': {'type': 'string'}, 'rename_session_payload': {'properties': {'agent_id': {'type': 'string'}, 'new_title': {'type': 'string'}, 'project_path': {'type': 'string'}}, 'required': ['project_path', 'new_title', 'agent_id'], 'type': 'object'}, 'requested_mode': {'type': 'string'}, 'requested_project_path': {'type': 'string'}, 'requested_session_title': {'type': 'string'}, 'resolved_from': {'type': 'string'}, 'resume_policy': {'type': 'string'}, 'resumed': {'type': 'boolean'}, 'root_exists': {'type': 'boolean'}, 'session_id': {'type': 'string'}, 'session_title': {'type': 'string'}, 'session_title_mismatch': {'type': 'boolean'}, 'started_at': {'type': 'string'}, 'transport_policy': {'properties': {'ca_next_action': {'type': 'string'}, 'platform': {'type': 'string'}, 'posix': {'properties': {'powershell_inline': {'type': 'string'}, 'preferred_tool': {'type': 'string'}, 'preferred_transport': {'type': 'string'}, 'shell_mode': {'type': 'string'}}, 'required': ['powershell_inline', 'preferred_transport', 'preferred_tool', 'shell_mode'], 'type': 'object'}, 'schema_version': {'type': 'string'}, 'windows': {'properties': {'enforcement': {'properties': {'error_names': {'items': {'type': 'string'}, 'type': 'array'}, 'tool': {'type': 'string'}, 'triggers_common': {'items': {'type': 'string'}, 'type': 'array'}, 'triggers_ps_only': {'items': {'type': 'string'}, 'type': 'array'}}, 'required': ['tool', 'error_names', 'triggers_common', 'triggers_ps_only'], 'type': 'object'}, 'node_inline': {'type': 'string'}, 'one_shot_recipe_node': {'properties': {'args': {'properties': {'project_path': {'type': 'string'}, 'runtime': {'type': 'string'}, 'script_content': {'type': 'string'}, 'script_label': {'type': 'string'}}, 'required': ['project_path', 'runtime', 'script_content', 'script_label'], 'type': 'object'}, 'behaviour': {'type': 'string'}, 'tool': {'type': 'string'}}, 'required': ['tool', 'args', 'behaviour'], 'type': 'object'}, 'one_shot_recipe_powershell': {'properties': {'args': {'properties': {'project_path': {'type': 'string'}, 'runtime': {'type': 'string'}, 'script_content': {'type': 'string'}, 'script_label': {'type': 'string'}}, 'required': ['project_path', 'runtime', 'script_content', 'script_label'], 'type': 'object'}, 'behaviour': {'type': 'string'}, 'tool': {'type': 'string'}}, 'required': ['tool', 'args', 'behaviour'], 'type': 'object'}, 'path_as_argv_warning': {'type': 'string'}, 'powershell_inline': {'type': 'string'}, 'preferred_tool': {'type': 'string'}, 'preferred_transport': {'type': 'string'}, 'rationale': {'type': 'string'}}, 'required': ['powershell_inline', 'node_inline', 'preferred_transport', 'preferred_tool', 'enforcement', 'rationale', 'path_as_argv_warning', 'one_shot_recipe_powershell', 'one_shot_recipe_node'], 'type': 'object'}}, 'required': ['platform', 'windows', 'posix', 'ca_next_action', 'schema_version'], 'type': 'object'}}, 'required': ['ok', 'session_id', 'session_title', 'started_at', 'resumed', 'agent_id', 'project_name', 'project_path', 'requested_project_path', 'effective_project_path', 'relative_base_hint', 'project_path_confirmed', 'root_exists', 'path_resolution_note', 'resolved_from', 'matrix_audit', 'matrix_drift_present', 'progressive_gap_count', 'progressive_gaps_hint', 'project_switch_context', 'transport_policy', 'cslt_policy', 'requested_mode', 'effective_mode', 'mode_applied', 'mode_matches_persisted', 'mode_ignored_on_resume', 'requested_session_title', 'effective_session_title', 'session_title_mismatch', 'resume_policy', 'ca_next_action', 'rename_session_payload', 'ca_next_tool', 'generation'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '03cd75210f9888da30669f241903760cf6061ffe7ef00f7381c2e3783ec100ca', 'depth_D': 5}}}},
+		{"type": "function", "function": {"name": "open_session", "description": "Open or resume the active session for a project and optional agent identity. Resume preserves title and mode by default; call rename_session to apply a different title. Opt-in force_new_session closes then creates atomically and refuses pending writes, drafts or audits; apply_requested_title renames in place without changing mode. Flags are mutually exclusive and require agent_id. Distinct non-empty agent_id values may hold concurrent active sessions on one project. R22 verbosity ∈ {full|terse|ref}; drift auto-forces full.", "parameters": {"type": "object", "properties": {"session_title": {"example": 'doc backfill', "type": "string", "default": "", "description": "Session title (if empty -> 'Untitled Session {time}')"}, "project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "default": ".", "description": "Project root (default '.')"}, "mode": {"example": 'T1', "type": "string", "enum": ["T1", "T2"], "default": "T1", "description": "Workflow TIER, never an execution verb. ONLY T1 or T2 are valid values. Aliases are accepted and folded: T1_FIX / T1_EXISTING_APP -> T1 (work inside an app that already exists), T2_BUILD / T2_NEW_APP -> T2 (build a new one). 'execute', 'write' and 'fix' are INVALID_MODE. Resume ignores mode; change an open session via set_workflow_mode."}, "verbosity": {"example": 'full', "type": "string", "enum": ["full", "terse", "ref"], "default": "full", "description": "R22: terse compresses metadata; drift auto-forces full."}, "agent_id": {"example": 'muse1', "type": "string", "default": "", "description": "Stable agent identity used to isolate concurrent active sessions"}, "force_new_session": {"example": False, "type": "boolean", "default": False, "description": "Explicitly close the active session before creating a new one; returns closed_session_id. Refuses pending work. Cannot combine with apply_requested_title."}, "apply_requested_title": {"example": False, "type": "boolean", "default": False, "description": "Explicitly apply a non-empty requested title on resume. Preserves session_id, mode and events; returns old_title, new_title and renamed."}}}, "returns": {'properties': {'agent_id': {'type': 'string'}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'ca_next_tool': {'type': 'string', 'x-dual': True}, 'concurrent_api_calls_observed': {'type': 'integer'}, 'contention_note': {'type': 'string'}, 'cslt_policy': {'properties': {'a_first': {'type': 'boolean'}, 'agent_transport_policy': {'type': 'string'}, 'host_gate': {'properties': {'agent_id': {'type': 'string'}, 'allowed': {'type': 'boolean'}, 'decision': {'type': 'string'}, 'is_hermes': {'type': 'boolean'}, 'native_policy': {'type': 'string'}, 'reason': {'type': 'string'}, 'scope': {'type': 'string'}}, 'required': ['agent_id', 'is_hermes', 'scope', 'decision', 'allowed', 'reason', 'native_policy'], 'type': 'object'}, 'matrix': {'properties': {'path': {'type': 'string'}, 'task_class_count': {'type': 'integer'}}, 'required': ['path', 'task_class_count'], 'type': 'object'}, 'metrics_contract': {'properties': {'bypass_event': {'type': 'string'}, 'bypass_rate_formula': {'type': 'string'}, 'group_by': {'items': {'type': 'string'}, 'type': 'array'}, 'required_counters': {'items': {'type': 'string'}, 'type': 'array'}, 'zero_denominator': {'type': 'string'}}, 'required': ['bypass_event', 'bypass_rate_formula', 'required_counters', 'zero_denominator', 'group_by'], 'type': 'object'}, 'north_star': {'properties': {'acronym': {'type': 'string'}, 'note': {'type': 'string'}, 'order': {'items': {'type': 'string'}, 'type': 'array'}, 'text': {'type': 'string'}}, 'required': ['acronym', 'order', 'text', 'note'], 'type': 'object'}, 'rules': {'items': {'type': 'string'}, 'type': 'array'}}, 'required': ['north_star', 'agent_transport_policy', 'matrix', 'a_first', 'host_gate', 'metrics_contract', 'rules'], 'type': 'object'}, 'effective_mode': {'type': 'string'}, 'effective_project_path': {'type': 'string'}, 'effective_session_title': {'type': 'string'}, 'generation': {'type': 'string'}, 'matrix_audit': {'properties': {'alias_drift_count': {'type': 'integer'}, 'alias_drift_severity': {'type': 'string'}, 'audit_scope': {'type': 'string'}, 'code_tools': {'type': 'integer'}, 'contract_drift_count': {'type': 'integer'}, 'doc_description_present_count': {'type': 'integer'}, 'doc_description_weak_count': {'type': 'integer'}, 'doc_fields_absent_by_design_count': {'type': 'integer'}, 'doc_param_examples_registry_count': {'type': 'integer'}, 'doc_param_examples_served_count': {'type': 'integer'}, 'doc_params_described_count': {'type': 'integer'}, 'doc_params_total': {'type': 'integer'}, 'doc_params_undescribed_count': {'type': 'integer'}, 'drift_count': {'type': 'integer'}, 'error_phase_map_entries': {'type': 'integer'}, 'error_system_names_phase_mapped_count': {'type': 'integer'}, 'error_system_names_total': {'type': 'integer'}, 'error_system_names_unmapped_count': {'type': 'integer'}, 'inventory_active_count': {'type': 'integer'}, 'inventory_extra_count': {'type': 'integer'}, 'inventory_extra_doc_only_count': {'type': 'integer'}, 'inventory_extra_endpoints_count': {'type': 'integer'}, 'inventory_extra_internal_count': {'type': 'integer'}, 'inventory_extra_planned_count': {'type': 'integer'}, 'inventory_extra_unknown_count': {'type': 'integer'}, 'inventory_retired_count': {'type': 'integer'}, 'inventory_tools': {'type': 'integer'}, 'ok_count': {'type': 'integer'}, 'progressive_gap_count': {'type': 'integer'}, 'purpose_covered_count': {'type': 'integer'}, 'purpose_eligible_count': {'type': 'integer'}, 'purpose_eligible_gap_count': {'type': 'integer'}, 'schema_tools': {'type': 'integer'}, 'skill_folders': {'type': 'integer'}, 'skill_tools': {'type': 'integer'}}, 'required': ['code_tools', 'schema_tools', 'skill_tools', 'skill_folders', 'inventory_tools', 'inventory_active_count', 'inventory_retired_count', 'inventory_extra_count', 'inventory_extra_endpoints_count', 'inventory_extra_internal_count', 'inventory_extra_planned_count', 'inventory_extra_doc_only_count', 'inventory_extra_unknown_count', 'drift_count', 'ok_count', 'alias_drift_count', 'alias_drift_severity', 'contract_drift_count', 'progressive_gap_count', 'doc_description_present_count', 'doc_description_weak_count', 'doc_params_total', 'doc_params_described_count', 'doc_params_undescribed_count', 'doc_param_examples_registry_count', 'doc_param_examples_served_count', 'doc_fields_absent_by_design_count', 'purpose_eligible_count', 'purpose_covered_count', 'purpose_eligible_gap_count', 'error_phase_map_entries', 'error_system_names_total', 'error_system_names_phase_mapped_count', 'error_system_names_unmapped_count', 'audit_scope'], 'type': 'object'}, 'matrix_drift_present': {'type': 'boolean'}, 'mode_applied': {'type': 'boolean'}, 'mode_ignored_on_resume': {'type': 'boolean'}, 'mode_matches_persisted': {'type': 'boolean'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'path_resolution_note': {'type': 'string'}, 'progressive_gap_count': {'type': 'integer'}, 'progressive_gaps_hint': {'type': 'string'}, 'project_name': {'type': 'string'}, 'project_path': {'type': 'string'}, 'project_path_confirmed': {'type': 'boolean'}, 'project_switch_context': {'properties': {'current_project_active_workflow_hint': {'type': 'string'}, 'current_project_recent_files_5': {'items': {'type': 'string'}, 'type': 'array'}, 'current_project_recent_queries_5': {'items': {'properties': {'query': {'type': 'string'}, 'tool': {'type': 'string'}}, 'required': ['tool', 'query'], 'type': 'object'}, 'type': 'array'}, 'recent_projects_today': {'items': {'properties': {'ended_at': {'type': 'null'}, 'is_current': {'type': 'boolean'}, 'last_session_id': {'type': 'string'}, 'project_path': {'type': 'string'}, 'started_at': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['project_path', 'last_session_id', 'started_at', 'ended_at', 'status', 'is_current'], 'type': 'object'}, 'type': 'array'}}, 'required': ['recent_projects_today', 'current_project_recent_files_5', 'current_project_recent_queries_5', 'current_project_active_workflow_hint'], 'type': 'object'}, 'relative_base_hint': {'type': 'string'}, 'rename_session_payload': {'properties': {'agent_id': {'type': 'string'}, 'new_title': {'type': 'string'}, 'project_path': {'type': 'string'}}, 'required': ['project_path', 'new_title', 'agent_id'], 'type': 'object'}, 'requested_mode': {'type': 'string'}, 'requested_project_path': {'type': 'string'}, 'requested_session_title': {'type': 'string'}, 'resolved_from': {'type': 'string'}, 'resume_policy': {'type': 'string'}, 'resumed': {'type': 'boolean'}, 'root_exists': {'type': 'boolean'}, 'session_id': {'type': 'string'}, 'session_title': {'type': 'string'}, 'session_title_mismatch': {'type': 'boolean'}, 'started_at': {'type': 'string'}, 'transport_policy': {'properties': {'ca_next_action': {'type': 'string'}, 'platform': {'type': 'string'}, 'posix': {'properties': {'powershell_inline': {'type': 'string'}, 'preferred_tool': {'type': 'string'}, 'preferred_transport': {'type': 'string'}, 'shell_mode': {'type': 'string'}}, 'required': ['powershell_inline', 'preferred_transport', 'preferred_tool', 'shell_mode'], 'type': 'object'}, 'schema_version': {'type': 'string'}, 'windows': {'properties': {'enforcement': {'properties': {'error_names': {'items': {'type': 'string'}, 'type': 'array'}, 'tool': {'type': 'string'}, 'triggers_common': {'items': {'type': 'string'}, 'type': 'array'}, 'triggers_ps_only': {'items': {'type': 'string'}, 'type': 'array'}}, 'required': ['tool', 'error_names', 'triggers_common', 'triggers_ps_only'], 'type': 'object'}, 'node_inline': {'type': 'string'}, 'one_shot_recipe_node': {'properties': {'args': {'properties': {'project_path': {'type': 'string'}, 'runtime': {'type': 'string'}, 'script_content': {'type': 'string'}, 'script_label': {'type': 'string'}}, 'required': ['project_path', 'runtime', 'script_content', 'script_label'], 'type': 'object'}, 'behaviour': {'type': 'string'}, 'tool': {'type': 'string'}}, 'required': ['tool', 'args', 'behaviour'], 'type': 'object'}, 'one_shot_recipe_powershell': {'properties': {'args': {'properties': {'project_path': {'type': 'string'}, 'runtime': {'type': 'string'}, 'script_content': {'type': 'string'}, 'script_label': {'type': 'string'}}, 'required': ['project_path', 'runtime', 'script_content', 'script_label'], 'type': 'object'}, 'behaviour': {'type': 'string'}, 'tool': {'type': 'string'}}, 'required': ['tool', 'args', 'behaviour'], 'type': 'object'}, 'path_as_argv_warning': {'type': 'string'}, 'powershell_inline': {'type': 'string'}, 'preferred_tool': {'type': 'string'}, 'preferred_transport': {'type': 'string'}, 'rationale': {'type': 'string'}}, 'required': ['powershell_inline', 'node_inline', 'preferred_transport', 'preferred_tool', 'enforcement', 'rationale', 'path_as_argv_warning', 'one_shot_recipe_powershell', 'one_shot_recipe_node'], 'type': 'object'}}, 'required': ['platform', 'windows', 'posix', 'ca_next_action', 'schema_version'], 'type': 'object'}}, 'required': ['ok', 'session_id', 'session_title', 'started_at', 'resumed', 'agent_id', 'project_name', 'project_path', 'requested_project_path', 'effective_project_path', 'relative_base_hint', 'project_path_confirmed', 'root_exists', 'path_resolution_note', 'resolved_from', 'matrix_audit', 'matrix_drift_present', 'progressive_gap_count', 'progressive_gaps_hint', 'project_switch_context', 'transport_policy', 'cslt_policy', 'requested_mode', 'effective_mode', 'mode_applied', 'mode_matches_persisted', 'mode_ignored_on_resume', 'requested_session_title', 'effective_session_title', 'session_title_mismatch', 'resume_policy', 'ca_next_action', 'rename_session_payload', 'ca_next_tool', 'generation'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '03cd75210f9888da30669f241903760cf6061ffe7ef00f7381c2e3783ec100ca', 'depth_D': 5}}}},
 
 	{"type": "function", "function": {"name": "close_session", "description": "Close the active session after log_native(native=[...]) has been called. V15 R64-D: now accepts either project_path (primary session lookup) OR session_id (direct lookup for sub-sessions like [Ac]/[Ad] opened mid-workflow). At least one of the two MUST be provided.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string", "default": "", "description": "Project root of the session to close. Use for the primary [Ab] session."}, "session_id": {"type": "string", "default": "", "description": "V15 R64-D: direct session_id lookup. Use when you opened multiple sessions (e.g. [Ac], [Ad] sub-sessions) and need to close a specific one without re-deriving its project_path. Pulled from open_session's response."}, "agent_id": {"type": "string", "default": "", "description": "Stable agent identity; scopes active-session selection when non-empty."}}}}},
 
@@ -4550,7 +4550,7 @@ EXTRA_TOOL_SCHEMAS_R43 = [
 
 	{"type": "function", "function": {"name": "log_native", "description": "At the end of each CA session: mark the session complete and record the list of native fallbacks. Use native=[] when no native tool was used. Each item: {tool, instead_of, reason}.", "parameters": {"type": "object", "properties": {"native": {"type": "array", "items": {"type": "object"}, "default": [], "description": "Array [{tool, instead_of, reason}]. Pass [] when no native tool was used."}}}}},
 
-	{"type": "function", "function": {"name": "log_native_event", "description": "Record one native action in the session immediately when native is used instead of an [A] Rule C tool. Call inline right after the action.", "parameters": {"type": "object", "properties": {"action_type": {"type": "string", "description": "read|write|execute|validate|cache|backup|workflow"}, "tool_name": {"type": "string", "description": "Name of the native tool/command used, e.g. 'Edit', 'Bash', 'Read'"}, "target": {"type": "string", "default": ""}, "duration_ms": {"type": "integer", "default": 0}, "status": {"type": "string", "default": "ok", "description": "ok|error|warn"}, "reason": {"type": "string", "default": ""}, "instead_of": {"type": "string", "default": ""}, "failed_payload": {"type": "object", "default": {}}, "failed_error": {"type": "string", "default": ""}, "native_command": {"type": "string", "default": ""}, "scope": {"type": "string", "default": ""}, "risk": {"type": "string", "default": ""}, "transport": {"type": "string", "default": "native", "description": "R81: 'native' (true bypass of [A]) | 'via_a' (work done THROUGH an [A] tool e.g. write_new_file/run_project_test_script — logged for traceability, tagged via_A, NOT counted as a native fallback)."}, "project_path": {"type": "string"}, "agent_id": {"type": "string", "default": "", "description": "Stable agent identity; logs to that agent's active session."}}, "required": ["action_type", "tool_name", "project_path"]}, "returns": {'properties': {'audit_status': {'type': 'string'}, 'ca_guidance': {'properties': {'accepted_aliases': {'properties': {}, 'type': 'object'}, 'ca_next_action': {'type': 'string'}, 'call_pattern': {'type': 'string'}, 'error_name': {'type': 'string'}, 'known_gotchas': {'items': {'type': 'string'}, 'type': 'array'}, 'notes': {'items': {'type': 'string'}, 'type': 'array'}, 'payload_example': {'properties': {'action_type': {'type': 'string'}, 'agent_id': {'type': 'string'}, 'duration_ms': {'type': 'integer'}, 'failed_error': {'type': 'string'}, 'failed_payload': {'properties': {}, 'type': 'object'}, 'instead_of': {'type': 'string'}, 'native_command': {'type': 'string'}, 'project_path': {'type': 'string'}, 'reason': {'type': 'string'}, 'risk': {'type': 'string'}, 'scope': {'type': 'string'}, 'status': {'type': 'string'}, 'target': {'type': 'string'}, 'tool_name': {'type': 'string'}, 'transport': {'type': 'string'}}, 'required': ['action_type', 'tool_name', 'project_path', 'target', 'duration_ms', 'status', 'reason', 'instead_of', 'failed_payload', 'failed_error', 'native_command', 'scope', 'risk', 'transport', 'agent_id'], 'type': 'object'}, 'phase': {'type': 'string'}, 'phase_label': {'type': 'string'}, 'recommended_prompt_rule': {'type': 'string'}, 'required_fields': {'items': {'type': 'string'}, 'type': 'array'}, 'see_also': {'properties': {}, 'type': 'object'}, 'suggested_alternative_tool': {'properties': {}, 'type': 'object'}}, 'required': ['phase', 'phase_label', 'error_name', 'ca_next_action', 'call_pattern', 'payload_example', 'required_fields', 'accepted_aliases', 'notes', 'known_gotchas', 'recommended_prompt_rule', 'see_also', 'suggested_alternative_tool'], 'type': 'object', 'x-dual': True}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'cslt_classification': {'properties': {'ca_next_action': {'type': 'string'}, 'host_gate': {'type': 'string'}, 'is_allowed_native': {'type': 'boolean'}, 'is_forbidden_native': {'type': 'boolean'}, 'is_unclassified': {'type': 'boolean'}, 'is_via_a': {'type': 'boolean'}, 'native_policy': {'type': 'string'}, 'task_class': {'type': 'string'}}, 'required': ['task_class', 'native_policy', 'is_forbidden_native', 'is_allowed_native', 'is_via_a', 'is_unclassified', 'host_gate', 'ca_next_action'], 'type': 'object'}, 'error': {'type': 'string', 'x-dual': True}, 'error_name': {'type': 'string', 'x-dual': True}, 'fallback_count_so_far': {'type': 'integer'}, 'generation': {'type': 'string'}, 'logged': {'type': 'string'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'operation_attempts': {'type': 'integer'}, 'operation_id': {'type': 'string'}, 'payload_example': {'properties': {'action_type': {'type': 'string'}, 'agent_id': {'type': 'string'}, 'duration_ms': {'type': 'integer'}, 'failed_error': {'type': 'string'}, 'failed_payload': {'properties': {}, 'type': 'object'}, 'instead_of': {'type': 'string'}, 'native_command': {'type': 'string'}, 'project_path': {'type': 'string'}, 'reason': {'type': 'string'}, 'risk': {'type': 'string'}, 'scope': {'type': 'string'}, 'status': {'type': 'string'}, 'target': {'type': 'string'}, 'tool_name': {'type': 'string'}, 'transport': {'type': 'string'}}, 'required': ['action_type', 'tool_name', 'project_path', 'target', 'duration_ms', 'status', 'reason', 'instead_of', 'failed_payload', 'failed_error', 'native_command', 'scope', 'risk', 'transport', 'agent_id'], 'type': 'object', 'x-dual': True}, 'phase': {'type': 'string', 'x-dual': True}, 'policy_warning': {'type': 'string'}, 'preferred_via_a': {'items': {'type': 'string'}, 'type': 'array'}, 'retry_sequence': {'type': 'array', 'x-dual': True}, 'retryable': {'type': 'boolean'}, 'session_id': {'type': 'string'}, 'severity': {'type': 'string'}, 'transport': {'type': 'string'}, 'transport_warning': {'type': 'string'}, 'type': {'type': 'string'}, 'write_status_url': {'type': 'string'}}, 'required': ['ok', 'session_id', 'logged', 'fallback_count_so_far', 'transport', 'audit_status', 'cslt_classification', 'generation', 'operation_id', 'write_status_url', 'operation_attempts'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '01e8e1dbad9e52274251bc899227f9ecadef7bcdb92389e183191c296d0c3403', 'depth_D': 4}}}},
+	{"type": "function", "function": {"name": "log_native_event", "description": "Record one native action in the session immediately when native is used instead of an [A] Rule C tool. Call inline right after the action.", "parameters": {"type": "object", "properties": {"action_type": {"example": 'read', "type": "string", "description": "read|write|execute|validate|cache|backup|workflow"}, "tool_name": {"example": 'read_file_range', "type": "string", "description": "Name of the native tool/command used, e.g. 'Edit', 'Bash', 'Read'"}, "target": {"example": 'orchestrator\\core\\registry_data.py', "type": "string", "default": ""}, "duration_ms": {"example": 1200, "type": "integer", "default": 0}, "status": {"example": 'ok', "type": "string", "default": "ok", "description": "ok|error|warn"}, "reason": {"example": 'native read used for a small bounded range', "type": "string", "default": ""}, "instead_of": {"example": 'read_file_range', "type": "string", "default": ""}, "failed_payload": {"example": {'tool': 'read_file_range', 'file_path': 'missing.py'}, "type": "object", "default": {}}, "failed_error": {"example": 'ENOENT: no such file or directory', "type": "string", "default": ""}, "native_command": {"example": 'Get-Content registry_data.py | Select-Object -First 20', "type": "string", "default": ""}, "scope": {"example": 'project', "type": "string", "default": ""}, "risk": {"example": 'low', "type": "string", "default": ""}, "transport": {"example": 'native', "type": "string", "default": "native", "description": "R81: 'native' (true bypass of [A]) | 'via_a' (work done THROUGH an [A] tool e.g. write_new_file/run_project_test_script — logged for traceability, tagged via_A, NOT counted as a native fallback)."}, "project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string"}, "agent_id": {"example": 'muse1', "type": "string", "default": "", "description": "Stable agent identity; logs to that agent's active session."}}, "required": ["action_type", "tool_name", "project_path"]}, "returns": {'properties': {'audit_status': {'type': 'string'}, 'ca_guidance': {'properties': {'accepted_aliases': {'properties': {}, 'type': 'object'}, 'ca_next_action': {'type': 'string'}, 'call_pattern': {'type': 'string'}, 'error_name': {'type': 'string'}, 'known_gotchas': {'items': {'type': 'string'}, 'type': 'array'}, 'notes': {'items': {'type': 'string'}, 'type': 'array'}, 'payload_example': {'properties': {'action_type': {'type': 'string'}, 'agent_id': {'type': 'string'}, 'duration_ms': {'type': 'integer'}, 'failed_error': {'type': 'string'}, 'failed_payload': {'properties': {}, 'type': 'object'}, 'instead_of': {'type': 'string'}, 'native_command': {'type': 'string'}, 'project_path': {'type': 'string'}, 'reason': {'type': 'string'}, 'risk': {'type': 'string'}, 'scope': {'type': 'string'}, 'status': {'type': 'string'}, 'target': {'type': 'string'}, 'tool_name': {'type': 'string'}, 'transport': {'type': 'string'}}, 'required': ['action_type', 'tool_name', 'project_path', 'target', 'duration_ms', 'status', 'reason', 'instead_of', 'failed_payload', 'failed_error', 'native_command', 'scope', 'risk', 'transport', 'agent_id'], 'type': 'object'}, 'phase': {'type': 'string'}, 'phase_label': {'type': 'string'}, 'recommended_prompt_rule': {'type': 'string'}, 'required_fields': {'items': {'type': 'string'}, 'type': 'array'}, 'see_also': {'properties': {}, 'type': 'object'}, 'suggested_alternative_tool': {'properties': {}, 'type': 'object'}}, 'required': ['phase', 'phase_label', 'error_name', 'ca_next_action', 'call_pattern', 'payload_example', 'required_fields', 'accepted_aliases', 'notes', 'known_gotchas', 'recommended_prompt_rule', 'see_also', 'suggested_alternative_tool'], 'type': 'object', 'x-dual': True}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'cslt_classification': {'properties': {'ca_next_action': {'type': 'string'}, 'host_gate': {'type': 'string'}, 'is_allowed_native': {'type': 'boolean'}, 'is_forbidden_native': {'type': 'boolean'}, 'is_unclassified': {'type': 'boolean'}, 'is_via_a': {'type': 'boolean'}, 'native_policy': {'type': 'string'}, 'task_class': {'type': 'string'}}, 'required': ['task_class', 'native_policy', 'is_forbidden_native', 'is_allowed_native', 'is_via_a', 'is_unclassified', 'host_gate', 'ca_next_action'], 'type': 'object'}, 'error': {'type': 'string', 'x-dual': True}, 'error_name': {'type': 'string', 'x-dual': True}, 'fallback_count_so_far': {'type': 'integer'}, 'generation': {'type': 'string'}, 'logged': {'type': 'string'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'operation_attempts': {'type': 'integer'}, 'operation_id': {'type': 'string'}, 'payload_example': {'properties': {'action_type': {'type': 'string'}, 'agent_id': {'type': 'string'}, 'duration_ms': {'type': 'integer'}, 'failed_error': {'type': 'string'}, 'failed_payload': {'properties': {}, 'type': 'object'}, 'instead_of': {'type': 'string'}, 'native_command': {'type': 'string'}, 'project_path': {'type': 'string'}, 'reason': {'type': 'string'}, 'risk': {'type': 'string'}, 'scope': {'type': 'string'}, 'status': {'type': 'string'}, 'target': {'type': 'string'}, 'tool_name': {'type': 'string'}, 'transport': {'type': 'string'}}, 'required': ['action_type', 'tool_name', 'project_path', 'target', 'duration_ms', 'status', 'reason', 'instead_of', 'failed_payload', 'failed_error', 'native_command', 'scope', 'risk', 'transport', 'agent_id'], 'type': 'object', 'x-dual': True}, 'phase': {'type': 'string', 'x-dual': True}, 'policy_warning': {'type': 'string'}, 'preferred_via_a': {'items': {'type': 'string'}, 'type': 'array'}, 'retry_sequence': {'type': 'array', 'x-dual': True}, 'retryable': {'type': 'boolean'}, 'session_id': {'type': 'string'}, 'severity': {'type': 'string'}, 'transport': {'type': 'string'}, 'transport_warning': {'type': 'string'}, 'type': {'type': 'string'}, 'write_status_url': {'type': 'string'}}, 'required': ['ok', 'session_id', 'logged', 'fallback_count_so_far', 'transport', 'audit_status', 'cslt_classification', 'generation', 'operation_id', 'write_status_url', 'operation_attempts'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '01e8e1dbad9e52274251bc899227f9ecadef7bcdb92389e183191c296d0c3403', 'depth_D': 4}}}},
 
 	{"type": "function", "function": {"name": "create_pending_audit", "description": "Store a pending native fallback audit entry for later sync when the API is available. Does not store raw tokens, secrets, or file content.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "action_type": {"type": "string"}, "tool_name": {"type": "string"}, "instead_of": {"type": "string", "default": ""}, "failed_error": {"type": "string", "default": ""}, "target": {"type": "string", "default": ""}, "reason": {"type": "string", "default": ""}, "agent_id": {"type": "string", "default": "", "description": "Stable agent identity stored with this pending audit."}}, "required": ["project_path", "action_type", "tool_name"]}}},
 
@@ -4574,7 +4574,7 @@ V15_R8_SCHEMAS = [
 
          "project_path": {"type": "string", "description": "Absolute project root", "default": ""},
 
-         "checks": {"type": "array", "items": {"type": "string", "enum": ["file", "symbols", "encoding"]}, "default": ["file"]},
+         "checks": {"description": "Which sub-validators the unified dispatcher runs: any of 'file', 'symbols', 'encoding'. Default ['file'] runs only the file validator.", "type": "array", "items": {"type": "string", "enum": ["file", "symbols", "encoding"]}, "default": ["file"]},
 
          "lang": {"type": "string", "default": "auto"},
 
@@ -4592,7 +4592,7 @@ V15_R8_SCHEMAS = [
 
          "mode": {"type": "string", "enum": ["status", "generate", "refresh", "delta"], "default": "status"},
 
-         "backup_override": {"type": "boolean", "default": False},
+         "backup_override": {"description": "When true, allow the project-map operation to proceed even where a fresh backup would normally be required first; default false keeps the backup guard.", "type": "boolean", "default": False},
 
          "force": {"type": "boolean", "default": False},
 
@@ -4604,7 +4604,7 @@ V15_R8_SCHEMAS = [
 
          "project_path": {"type": "string"},
 
-         "aspect": {"type": "string", "enum": ["cache", "workflow", "recommendation", "session", "all"], "default": "all"},
+         "aspect": {"description": "Which state slice to aggregate: 'cache', 'workflow', 'recommendation', 'session', or 'all' (default) for every slice in one response.", "type": "string", "enum": ["cache", "workflow", "recommendation", "session", "all"], "default": "all"},
 
      }, "required": ["project_path"]}}},
 
@@ -4613,13 +4613,13 @@ V15_R8_SCHEMAS = [
      "returns": {'properties': {'archive_created': {'type': 'string'}, 'archive_dir': {'type': 'string'}, 'bytes': {'type': 'integer'}, 'collected': {'type': 'boolean'}, 'excerpt': {'type': 'string'}, 'full_content_available': {'type': 'boolean'}, 'generation': {'type': 'string'}, 'hint': {'type': 'string'}, 'historical': {'type': 'boolean'}, 'line_count': {'type': 'integer'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'open_file': {'type': 'boolean'}, 'output_path': {'type': 'string'}}, 'required': ['ok', 'output_path', 'archive_dir', 'archive_created', 'bytes', 'line_count', 'collected', 'open_file', 'historical', 'hint', 'excerpt', 'full_content_available', 'generation'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '1de1b2ba0014b1e59221f61ce0faafd17db9d53b5f26101fae0dbfcdb2fd7c40', 'depth_D': 1}},
      "parameters": {"type": "object", "properties": {
 
-         "open_file": {"type": "boolean", "default": False, "description": "Ignored no-op (kept for backward compat); the tool never auto-opens a desktop window."},
+         "open_file": {"example": False, "type": "boolean", "default": False, "description": "Ignored no-op (kept for backward compat); the tool never auto-opens a desktop window."},
 
-         "tail_lines": {"type": "integer", "default": 80, "description": "How many trailing lines to include in the `excerpt` response field."},
+         "tail_lines": {"example": 80, "type": "integer", "default": 80, "description": "How many trailing lines to include in the `excerpt` response field."},
 
-         "return_full": {"type": "boolean", "default": False, "description": "When true, return the entire snapshot in `content` instead of a tail `excerpt`."},
+         "return_full": {"example": False, "type": "boolean", "default": False, "description": "When true, return the entire snapshot in `content` instead of a tail `excerpt`."},
 
-         "save_output": {"type": "boolean", "default": True, "description": "true = fresh collection (archive old + write new). false = read current snapshot only."},
+         "save_output": {"example": True, "type": "boolean", "default": True, "description": "true = fresh collection (archive old + write new). false = read current snapshot only."},
 
      }}}},
 
@@ -4629,21 +4629,21 @@ V15_R8_SCHEMAS = [
      }, "required": ["dispatch_id"]}}},
 
     {"type": "function", "function": {"name": "council_route_scorecard", "description": "T1 measurement scorecard for council harness+model routes. Groups evidence by objective/risk/dev and keeps numeric capacity unknown until enough homogeneous samples.",
-     "parameters": {"type": "object", "properties": {"project_path": {"type": "string", "default": ""}, "min_samples": {"type": "integer", "default": 5}, "limit": {"type": "integer", "default": 0}, "write_artifacts": {"type": "boolean", "default": True}}}}},
+     "parameters": {"type": "object", "properties": {"project_path": {"type": "string", "default": ""}, "min_samples": {"description": "Minimum homogeneous samples a route group needs before the scorecard reports numeric capacity for it; groups below this stay 'unknown'. Default 5.", "type": "integer", "default": 5}, "limit": {"type": "integer", "default": 0}, "write_artifacts": {"description": "When true (default), persist the scorecard artifacts to disk; false returns the scorecard in the response only.", "type": "boolean", "default": True}}}}},
 
     {"type": "function", "function": {"name": "mission_create", "description": "P3b-2 T3: create a durable mission and idempotent tasks in .orchestrator_cache/missions.db. Each task must include output_artifact_path.",
 
      "parameters": {"type": "object", "properties": {
 
-         "title": {"type": "string"},
+         "title": {"description": "Human-readable mission title recorded in missions.db for the new mission.", "type": "string"},
 
          "tasks_json": {"type": "string", "description": "JSON array of task objects; each requires output_artifact_path"},
 
          "task_ledger_json": {"type": "string", "default": "{}", "description": "Optional mission ledger metadata JSON"},
 
-         "room_path": {"type": "string", "default": ""},
+         "room_path": {"description": "Optional council room path associated with the mission, used as the coordination channel for its tasks; empty means no room is bound.", "type": "string", "default": ""},
 
-         "created_by": {"type": "string", "default": ""},
+         "created_by": {"description": "Agent or user id recorded as the mission's creator in missions.db; empty leaves the creator unset.", "type": "string", "default": ""},
 
      }, "required": ["title", "tasks_json"]}}},
 
@@ -4651,7 +4651,7 @@ V15_R8_SCHEMAS = [
 
      "parameters": {"type": "object", "properties": {
 
-         "mission_id": {"type": "integer"},
+         "mission_id": {"description": "Mission id (from mission_create) whose next dependency-ready pending task should be returned.", "type": "integer"},
 
      }, "required": ["mission_id"]}}},
 
@@ -4659,7 +4659,7 @@ V15_R8_SCHEMAS = [
 
      "parameters": {"type": "object", "properties": {
 
-         "task_id": {"type": "integer"},
+         "task_id": {"description": "Mission task id (from mission_create/mission_next) to dispatch to its assigned worker.", "type": "integer"},
 
      }, "required": ["task_id"]}}},
 
@@ -4667,15 +4667,15 @@ V15_R8_SCHEMAS = [
 
      "parameters": {"type": "object", "properties": {
 
-         "task_id": {"type": "integer"},
+         "task_id": {"description": "Mission task id this heartbeat or final report belongs to; validated against the task's attempt token.", "type": "integer"},
 
          "attempt_token": {"type": "string", "description": "Contains mission_attempt=<task_id>:<attempt>"},
 
-         "res_path": {"type": "string", "default": ""},
+         "res_path": {"description": "Path of the result artifact produced by the task; the artifact-first gate checks this file before accepting a final report.", "type": "string", "default": ""},
 
-         "summary": {"type": "string", "default": ""},
+         "summary": {"description": "Free-text summary of the task outcome carried in the report and stored in the mission ledger.", "type": "string", "default": ""},
 
-         "kind": {"type": "string", "enum": ["final", "heartbeat"], "default": "final"},
+         "kind": {"description": "Report kind: 'final' (task outcome, default) or 'heartbeat' (progress signal that keeps the attempt alive without closing the task).", "type": "string", "enum": ["final", "heartbeat"], "default": "final"},
 
      }, "required": ["task_id"]}}},
 
@@ -4683,9 +4683,9 @@ V15_R8_SCHEMAS = [
 
      "parameters": {"type": "object", "properties": {
 
-         "mission_id": {"type": "integer"},
+         "mission_id": {"description": "Mission id whose compact status (or full ledger with verbosity='full') should be returned.", "type": "integer"},
 
-         "verbosity": {"type": "string", "enum": ["summary", "full"], "default": "summary"},
+         "verbosity": {"description": "'summary' (default) for compact status, or 'full' to also include the last 50 progress_ledger entries.", "type": "string", "enum": ["summary", "full"], "default": "summary"},
 
      }, "required": ["mission_id"]}}},
 
@@ -4693,9 +4693,9 @@ V15_R8_SCHEMAS = [
 
      "parameters": {"type": "object", "properties": {
 
-         "task_id": {"type": "integer"},
+         "task_id": {"description": "Human-gated mission task id awaiting the approve/reject decision.", "type": "integer"},
 
-         "decision": {"type": "string", "enum": ["approve", "reject"]},
+         "decision": {"description": "Gate decision: 'approve' moves the task to pending, 'reject' marks it skipped; either is appended to the human_gate ledger.", "type": "string", "enum": ["approve", "reject"]},
 
          "reason": {"type": "string", "default": ""},
 
@@ -4705,12 +4705,12 @@ V15_R8_SCHEMAS = [
 
      "parameters": {"type": "object", "properties": {}, "required": []}}},
 
-{"type": "function", "function": {"name": "classify_ca_action", "description": "T1 READ: classify tool/action against .council/CA_TOOL_POLICY_MATRIX.json (CSLt A-first). Returns task_class, native_policy, forbidden/allowed/via_a flags, hermes host_gate.", "parameters": {"type": "object", "properties": {"tool_name": {"type": "string"}, "action_type": {"type": "string"}, "transport": {"type": "string", "enum": ["native", "via_a"], "default": "native"}, "scope": {"type": "string"}, "target": {"type": "string"}, "project_path": {"type": "string"}, "agent_id": {"type": "string"}}}}},
+{"type": "function", "function": {"name": "classify_ca_action", "description": "T1 READ: classify tool/action against .council/CA_TOOL_POLICY_MATRIX.json (CSLt A-first). Returns task_class, native_policy, forbidden/allowed/via_a flags, hermes host_gate.", "parameters": {"type": "object", "properties": {"tool_name": {"type": "string"}, "action_type": {"type": "string"}, "transport": {"description": "Channel the classified action would use: 'native' (default, direct host tool) or 'via_a' (through ToolA); the policy matrix scores the two differently.", "type": "string", "enum": ["native", "via_a"], "default": "native"}, "scope": {"type": "string"}, "target": {"type": "string"}, "project_path": {"type": "string"}, "agent_id": {"description": "Agent identity the classification is evaluated for; agent-specific policy rows (e.g. CLI C-suffix http-only) depend on it.", "type": "string"}}}}},
 
-{"type": "function", "function": {"name": "ca_policy_metrics", "description": "T3 READ: aggregate Matrix bypass counters from sessions.db (forbidden_native/allowed_native/via_a/unclassified/bypass_rate).", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "session_id": {"type": "string"}, "agent_id": {"type": "string"}, "time_window_hours": {"type": "number", "default": 24.0}}}}},
+{"type": "function", "function": {"name": "ca_policy_metrics", "description": "T3 READ: aggregate Matrix bypass counters from sessions.db (forbidden_native/allowed_native/via_a/unclassified/bypass_rate).", "parameters": {"type": "object", "properties": {"project_path": {"type": "string"}, "session_id": {"type": "string"}, "agent_id": {"description": "Restrict the bypass-counter aggregation to this agent id; omit to aggregate across all agents in sessions.db.", "type": "string"}, "time_window_hours": {"description": "Look-back window in hours for the sessions.db counters. Default 24.0.", "type": "number", "default": 24.0}}}}},
 
 # AUDIT-KEEP(hermes): historical tool name and "hermes" default -- see ca_policy_matrix.hermes_host_gate.
-{"type": "function", "function": {"name": "hermes_host_gate_check", "description": "T1 READ: Hermes/peer host gate for project vs outside-project native ops (CSLt axis 3).", "parameters": {"type": "object", "properties": {"agent_id": {"type": "string", "default": "hermes"}, "project_path": {"type": "string"}, "target": {"type": "string"}, "scope": {"type": "string"}, "tool_name": {"type": "string"}, "action_type": {"type": "string"}, "transport": {"type": "string", "enum": ["native", "via_a"], "default": "native"}}}}},
+{"type": "function", "function": {"name": "hermes_host_gate_check", "description": "T1 READ: Hermes/peer host gate for project vs outside-project native ops (CSLt axis 3).", "parameters": {"type": "object", "properties": {"agent_id": {"description": "Peer agent identity being gate-checked (default 'hermes').", "type": "string", "default": "hermes"}, "project_path": {"type": "string"}, "target": {"type": "string"}, "scope": {"type": "string"}, "tool_name": {"type": "string"}, "action_type": {"type": "string"}, "transport": {"description": "Channel the checked operation would use: 'native' (default) or 'via_a'; outside-project native ops are what the host gate restricts.", "type": "string", "enum": ["native", "via_a"], "default": "native"}}}}},
 
 {"type": "function", "function": {"name": "normalize_ca_registration", "description": "T3 WRITE: normalize agents_registry.json — mode=A default + transport_policy (http_only for CLI C-suffix, a_first_mcp_t4_ok for desktop). dry_run default true.", "parameters": {"type": "object", "properties": {"dry_run": {"type": "boolean", "default": True}}}}},
 
@@ -5347,7 +5347,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('council_config_diff', 'T1 READ-ONLY: report drift between the SOT .council/council_config.json and derived rule docs (CORE_RULE.txt + .council/*.md). convene_council + runtime maps read the SOT live; this checks the human docs. Never writes.', {
 
-            "project_path": {"type": "string"},
+            "project_path": {"description": "Project root whose .council/council_config.json is compared against the derived rule docs; defaults to the active project when empty.", "type": "string"},
 
         }, []),
 
@@ -5380,7 +5380,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
     ('record_error_resolution', 'T3 protected audit write: append an explicit state transition for one exact error event. Requires transport-only X-Session-Id, X-Agent-Id, X-Task-Epoch, X-Prompt-Hash, and X-Task-Capability matching the server-issued root/delegation checkpoint for that exact session+agent. Transport fields are intentionally excluded from this payload schema. target_session_id must equal the validated host session or the exact error event must carry matching host_session_id correlation. Missing/invalid ownership returns SESSION_OWNERSHIP_REQUIRED; stale epoch/hash returns STALE_TASK_EPOCH; neither writes. No privileged bearer-token bypass is provided.', {
             "target_session_id": {"type": "string", "description": "Session that owns the exact error event. This is a domain target, not host transport identity."},
             "resolves_event_id": {"type": "integer", "description": "Exact source error event id returned by get_session_events."},
-            "resolution_kind": {"type": "string", "enum": ["recovered", "expected_failure", "reopened"]},
+            "resolution_kind": {"description": "State transition to append for the error event: 'recovered', 'expected_failure', or 'reopened'.", "type": "string", "enum": ["recovered", "expected_failure", "reopened"]},
             "error_owner": {"type": "string", "default": "", "description": "Optional owner override; otherwise inherited from the source error."},
             "evidence": {"type": ["object", "array", "string", "number", "boolean", "null"], "description": "Optional JSON evidence for this transition."},
             "correlation_type": {"type": "string", "default": "", "description": "Optional correlation type override."},
@@ -5391,7 +5391,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "project_path": {"type": "string", "description": "Project root for the session gate. W7 2026-08-19 (F020): declared required because the write gate enforces it and no other field can resolve it."},
 
-            "run_sync_rule": {"type": "boolean", "default": True},
+            "run_sync_rule": {"description": "When true (default), after propagating council_config.json to the derived docs also run manage_agent(sync_rule, all) so every agent's rule body is rewritten from the new SOT.", "type": "boolean", "default": True},
 
         }, ["project_path"]),
 
@@ -5464,63 +5464,63 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('import_graph', 'V15 R8 B.1: scan import/require edges across project.', {
 
-            "project_path": {"type": "string"},
+            "project_path": {"description": "Project root to scan for import/require edges.", "type": "string"},
 
-            "file_pattern": {"type": "string", "default": "*.py,*.js,*.ts"},
+            "file_pattern": {"description": "Comma-separated file globs included in the import scan. Default '*.py,*.js,*.ts'.", "type": "string", "default": "*.py,*.js,*.ts"},
 
-            "max_files": {"type": "integer", "default": 500},
+            "max_files": {"description": "Maximum number of files scanned for import edges. Default 500.", "type": "integer", "default": 500},
 
         }, ["project_path"]),
 
     ('ast_query', 'V15 R8 B.1: Python AST preset patterns: async_function, class_inheriting, try_bare_except, function_returning_dict.', {
 
-            "pattern": {"type": "string", "enum": ["async_function", "class_inheriting", "try_bare_except", "function_returning_dict"]}, "project_path": {"type": "string"},
+            "pattern": {"description": "AST preset to match: 'async_function', 'class_inheriting', 'try_bare_except', or 'function_returning_dict'.", "type": "string", "enum": ["async_function", "class_inheriting", "try_bare_except", "function_returning_dict"]}, "project_path": {"description": "Project root whose Python files are AST-scanned for the preset pattern.", "type": "string"},
 
-            "file_pattern": {"type": "string", "default": "*.py"},
+            "file_pattern": {"description": "File glob for files included in the AST scan. Default '*.py'.", "type": "string", "default": "*.py"},
 
-            "max_results": {"type": "integer", "default": 50},
+            "max_results": {"description": "Maximum number of AST matches returned. Default 50.", "type": "integer", "default": 50},
 
         }, ["pattern", "project_path"]),
 
     ('git_blame_symbol', "V15 R8 B.1: git log -L for symbol's definition lines.", {
 
-            "symbol": {"type": "string"}, "project_path": {"type": "string"},
+            "symbol": {"description": "Symbol whose definition lines are traced through git log -L.", "type": "string"}, "project_path": {"description": "Project root of the git repository the symbol history is read from.", "type": "string"},
 
-            "file_pattern": {"type": "string", "default": "*.py"},
+            "file_pattern": {"description": "File glob narrowing which files are searched for the symbol's definition. Default '*.py'.", "type": "string", "default": "*.py"},
 
         }, ["symbol", "project_path"]),
 
     ('write_transaction', "V15 R8 B.2 (+R43 P1 #3-B): atomic multi-file write batch with rollback. R43 ops can be tool='write_fix' (line range, default), 'write_new_file' (create), or 'replace_between_anchors' (anchor-based patch). Each operation MUST use file_path, not path. R43 structural_check=true (default) runs brace/paren/bracket delta count on dry_run preview → STRUCTURAL_IMBALANCE if range likely incomplete. Each write_fix op also supports expected_hash to skip FILE_CHANGED guardrail in sequential chain.", {
 
-			"operations": {"type": "array", "description": "Non-empty list of operation objects. Default op is write_fix: {file_path,start_line,end_line,new_content,content_encoding}. For creates: {tool:'write_new_file',file_path,new_content,content_encoding,overwrite}. For anchors: {tool:'replace_between_anchors',file_path,start_anchor,end_anchor,new_content}. P4: set op content_encoding='base64' (UTF-8) when new_content is multiline or has backslashes (Windows paths, regex), double quotes, or non-ASCII - plain JSON transport can corrupt these.", "items": {"type": "object", "required": ["file_path"], "properties": {"tool": {"type": "string", "enum": ["write_fix", "write_new_file", "replace_between_anchors"], "default": "write_fix"}, "file_path": {"type": "string"}, "start_line": {"type": "integer", "default": 1}, "end_line": {"type": "integer", "default": 1}, "start_anchor": {"type": "string"}, "end_anchor": {"type": "string"}, "new_content": {"type": "string"}, "content_encoding": {"type": "string", "default": "none", "description": "'none' or 'base64' (UTF-8); recommended for multiline/backslash/quote/non-ASCII new_content"}, "overwrite": {"type": "boolean", "default": False}, "expected_hash": {"type": "string", "default": ""}}}},
+			"operations": {"example": [{'tool': 'write_fix', 'file_path': 'tools_v15.py', 'start_line': 5843, 'end_line': 5843, 'new_content': '        "doc_params_undescribed_max": 0,  # P23'}], "type": "array", "description": "Non-empty list of operation objects. Default op is write_fix: {file_path,start_line,end_line,new_content,content_encoding}. For creates: {tool:'write_new_file',file_path,new_content,content_encoding,overwrite}. For anchors: {tool:'replace_between_anchors',file_path,start_anchor,end_anchor,new_content}. P4: set op content_encoding='base64' (UTF-8) when new_content is multiline or has backslashes (Windows paths, regex), double quotes, or non-ASCII - plain JSON transport can corrupt these.", "items": {"type": "object", "required": ["file_path"], "properties": {"tool": {"type": "string", "enum": ["write_fix", "write_new_file", "replace_between_anchors"], "default": "write_fix"}, "file_path": {"type": "string"}, "start_line": {"type": "integer", "default": 1}, "end_line": {"type": "integer", "default": 1}, "start_anchor": {"type": "string"}, "end_anchor": {"type": "string"}, "new_content": {"type": "string"}, "content_encoding": {"type": "string", "default": "none", "description": "'none' or 'base64' (UTF-8); recommended for multiline/backslash/quote/non-ASCII new_content"}, "overwrite": {"type": "boolean", "default": False}, "expected_hash": {"type": "string", "default": ""}}}},
 
-            "project_path": {"type": "string"}, "backup": {"type": "boolean", "default": True},
+            "project_path": {"description": "Project root the batch's operations are gated and written under; enforced by the write gate.", "example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string"}, "backup": {"description": "When true (default), take a project backup before applying the batch so a failed verify can roll back.", "example": True, "type": "boolean", "default": True},
 
-            "structural_check": {"type": "boolean", "default": True, "description": "R43 P1 #3-B: detect range-incomplete patterns via brace/paren delta on dry_run preview."},
+            "structural_check": {"example": True, "type": "boolean", "default": True, "description": "R43 P1 #3-B: detect range-incomplete patterns via brace/paren delta on dry_run preview."},
 
         }, ["operations", "project_path"]),  # W7: project_path is enforced by the write gate; declaring it keeps schema == runtime.
 
     ('replace_between_anchors', 'V15 R43 P1 #3-B T2: anchor-based file patch. Resolves text anchors (start_anchor/end_anchor as substring or regex) to line numbers, then delegates to write_fix. Eliminates line-number brittleness for long functions. Token required. end_anchor_inclusive=false (default) preserves the end_anchor line.', {
 
-            "file_path": {"type": "string"},
+            "file_path": {"description": "File to patch, relative to project_path; the anchor range inside it is replaced.", "type": "string"},
 
             "start_anchor": {"type": "string", "description": "Substring (or regex if start_anchor_is_regex=true) on the first line of the range. First match wins."},
 
             "end_anchor": {"type": "string", "description": "Substring on the line after the last line to replace (or last line if end_anchor_inclusive=true)."},
 
-            "new_content": {"type": "string"},
+            "new_content": {"description": "Replacement text written between the resolved start and end anchors.", "type": "string"},
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root file_path is resolved against; empty resolves from the active session's project.", "type": "string", "default": ""},
 
-            "dry_run": {"type": "boolean", "default": False},
+            "dry_run": {"description": "When true, resolve the anchors and preview the patch without writing; default false applies it.", "type": "boolean", "default": False},
 
-            "content_encoding": {"type": "string", "default": "none"},
+            "content_encoding": {"description": "'none' (default) for plain text, or 'base64' (UTF-8) when new_content is multiline or carries backslashes, quotes, or non-ASCII.", "type": "string", "default": "none"},
 
             "end_anchor_inclusive": {"type": "boolean", "default": False, "description": "If true, end_anchor line is replaced too."},
 
-            "start_anchor_is_regex": {"type": "boolean", "default": False},
+            "start_anchor_is_regex": {"description": "When true, start_anchor is matched as a regular expression instead of a literal substring; default false.", "type": "boolean", "default": False},
 
-            "end_anchor_is_regex": {"type": "boolean", "default": False},
+            "end_anchor_is_regex": {"description": "When true, end_anchor is matched as a regular expression instead of a literal substring; default false.", "type": "boolean", "default": False},
 
         }, ["file_path", "start_anchor", "end_anchor", "new_content"]),
 
@@ -5536,11 +5536,11 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('tool_decision_hint', 'V15 R8 B.2 / R22: returns recommended tier+tool+skill for task description. R22 verbosity ∈ {full|terse|ref} — terse drops rationale + tools_validation + payload_example schemas (saves ~550 tokens).', {
 
-            "task_description": {"type": "string"},
+            "task_description": {"description": "The task to route: a plain-language description of what the caller wants to do; the hint ranks tools/tiers/skills against it.", "example": 'read a file range in a large repo', "type": "string"},
 
-            "scope_hint": {"type": "string"}, "risk_hint": {"type": "string"},
+            "scope_hint": {"description": "Optional scope hint (e.g. read vs write, target area) that biases the tool recommendation.", "example": 'read', "type": "string"}, "risk_hint": {"description": "Optional risk hint (e.g. destructive, runtime, external) that biases the recommendation toward safer tiers/tools.", "example": 'none', "type": "string"},
 
-            "verbosity": {"type": "string", "enum": ["full", "terse", "ref"], "default": "full", "description": "R22: terse drops reasoning blocks; full = back-compat."},
+            "verbosity": {"example": 'terse', "type": "string", "enum": ["full", "terse", "ref"], "default": "full", "description": "R22: terse drops reasoning blocks; full = back-compat."},
 
         }, ["task_description"]),
 
@@ -5558,7 +5558,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('mcp_surface_diff', 'R90 T1: compare [A] backend tool surfaces (TOOL_MAP, TOOL_SCHEMAS, /api/tools) and optionally caller-provided MCP host tool names. Use after [A] upgrades to detect stale MCP/client surfaces.', {
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root used to resolve the [A] install whose backend surfaces are compared; empty defaults to this install.", "type": "string", "default": ""},
 
             "client_tool_names": {"type": "array", "default": [], "description": "Optional tool names observed by the current MCP client/agent; enables client-vs-backend diff."},
 
@@ -5568,17 +5568,17 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('convene_council', 'Call this when activating the council (trigger: bat hoi dong Tr). Before any council coordination/dispatch, load leader-council-skill even when continuing an existing plan without the exact trigger. Payload hint: pass only {project_path:"<absolute project root>"}; do not pass leader/topic/task. Returns roster + per-agent CLI channels + bridge protocol + council_leader_skill; the calling agent becomes leader.', {
 
-            "project_path": {"type": "string", "default": "", "description": "Optional absolute current project root for traceability. This is the only accepted input field."},
+            "project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "default": "", "description": "Optional absolute current project root for traceability. This is the only accepted input field."},
 
         }, []),
 
     ('open_browser_page', 'V15 R8 B.3 / R44 T4a: launch Chromium, return page_id. R44: optional project_path pins page state so downstream T4 mutating tools resolve active session via page_id.', {
 
-            "url": {"type": "string"}, "viewport_w": {"type": "integer", "default": 1280},
+            "url": {"description": "URL the new Chromium page navigates to on launch.", "type": "string"}, "viewport_w": {"description": "Browser viewport width in pixels. Default 1280.", "type": "integer", "default": 1280},
 
-            "viewport_h": {"type": "integer", "default": 800},
+            "viewport_h": {"description": "Browser viewport height in pixels. Default 800.", "type": "integer", "default": 800},
 
-            "headless": {"type": "boolean", "default": True},
+            "headless": {"description": "When true (default), launch Chromium headless; false opens a visible browser window.", "type": "boolean", "default": True},
 
             "wait_for": {"type": "string", "default": "load", "description": "Navigation wait state: load | domcontentloaded | networkidle | commit. Polling/SPA apps should use domcontentloaded (networkidle may never settle). Alias: wait_until."},
 
@@ -5592,35 +5592,35 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('read_page', 'T4a: text content of selector (max 5KB).', {
 
-            "page_id": {"type": "string"}, "selector": {"type": "string", "default": "body"},
+            "page_id": {"description": "Browser page id returned by open_browser_page; the page whose text content is read.", "type": "string"}, "selector": {"description": "CSS selector whose element text is read. Default 'body' reads the whole page (capped at max_chars).", "type": "string", "default": "body"},
 
-            "max_chars": {"type": "integer", "default": 5000},
+            "max_chars": {"description": "Maximum characters of element text returned (tool caps at 5KB). Default 5000.", "type": "integer", "default": 5000},
 
         }, ["page_id"]),
 
     ('query_selector', 'T4a: existence + visibility + bbox.', {
 
-            "page_id": {"type": "string"}, "selector": {"type": "string"},
+            "page_id": {"description": "Browser page id returned by open_browser_page; the page queried for the selector.", "type": "string"}, "selector": {"description": "CSS selector to test for existence, visibility, and bounding box on the page.", "type": "string"},
 
         }, ["page_id", "selector"]),
 
     ('click', 'T4b: click selector (EXECUTE-gated).', {
 
-            "page_id": {"type": "string"}, "selector": {"type": "string"},
+            "page_id": {"description": "Browser page id returned by open_browser_page; the click is dispatched on this page.", "type": "string"}, "selector": {"description": "CSS selector of the element to click on the page.", "type": "string"},
 
         }, ["page_id", "selector"]),
 
     ('fill', 'T4b: fill input (EXECUTE-gated).', {
 
-            "page_id": {"type": "string"}, "selector": {"type": "string"},
+            "page_id": {"description": "Browser page id returned by open_browser_page; the input is filled on this page.", "type": "string"}, "selector": {"description": "CSS selector of the input element to fill.", "type": "string"},
 
-            "value": {"type": "string"},
+            "value": {"description": "Text value written into the selected input element.", "type": "string"},
 
         }, ["page_id", "selector", "value"]),
 
     ('evaluate_js', 'T4b: evaluate JS expression in page (EXECUTE-gated). V15 R16.3: timeout_ms protects against infinite loops; errors surface stack line/column when available.', {
 
-            "page_id": {"type": "string"}, "expression": {"type": "string"},
+            "page_id": {"description": "Browser page id returned by open_browser_page; the expression is evaluated in this page's context.", "type": "string"}, "expression": {"description": "JavaScript expression to evaluate in the page; its result is returned.", "type": "string"},
 
             "timeout_ms": {"type": "integer", "default": 8000, "description": "R16.3: max ms before EVAL_TIMEOUT (default 8000)"},
 
@@ -5628,71 +5628,71 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('read_console_errors', 'T4a: console messages (default level=error).', {
 
-            "page_id": {"type": "string"}, "level": {"type": "string", "default": "error"},
+            "page_id": {"description": "Browser page id returned by open_browser_page; the page whose console messages are read.", "type": "string"}, "level": {"description": "Console message level to return, e.g. 'error' (default), 'warning', or 'log'.", "type": "string", "default": "error"},
 
         }, ["page_id"]),
 
     ('read_network_errors', 'T4a: failed/4xx/5xx requests.', {
 
-            "page_id": {"type": "string"},
+            "page_id": {"description": "Browser page id returned by open_browser_page; the page whose failed/4xx/5xx requests are listed.", "type": "string"},
 
         }, ["page_id"]),
 
     ('screenshot_page', 'T4a: PNG screenshot to .orchestrator_cache/screenshots/.', {
 
-            "page_id": {"type": "string"}, "full_page": {"type": "boolean", "default": False},
+            "page_id": {"description": "Browser page id returned by open_browser_page; the page captured as PNG.", "type": "string"}, "full_page": {"description": "When true, capture the full scrollable page; default false captures the viewport only.", "type": "boolean", "default": False},
 
-            "save_path": {"type": "string", "default": ""},
+            "save_path": {"description": "Optional explicit PNG output path; empty saves under .orchestrator_cache/screenshots/.", "type": "string", "default": ""},
 
         }, ["page_id"]),
 
     ('wait_for_selector', 'T4a: wait for visibility (timeout_ms).', {
 
-            "page_id": {"type": "string"}, "selector": {"type": "string"},
+            "page_id": {"description": "Browser page id returned by open_browser_page; the page waited on.", "type": "string"}, "selector": {"description": "CSS selector awaited on the page.", "type": "string"},
 
-            "timeout_ms": {"type": "integer", "default": 5000},
+            "timeout_ms": {"description": "Maximum wait for the selector to reach state_str, in milliseconds. Default 5000.", "type": "integer", "default": 5000},
 
-            "state_str": {"type": "string", "default": "visible"},
+            "state_str": {"description": "Playwright wait state: 'visible' (default), 'attached', 'detached', or 'hidden'.", "type": "string", "default": "visible"},
 
         }, ["page_id", "selector"]),
 
     ('compare_dom_snapshot', 'T4a: unified diff of selector text between two pages.', {
 
-            "page_id_a": {"type": "string"}, "page_id_b": {"type": "string"},
+            "page_id_a": {"description": "First browser page (by page_id) whose selector text is snapshotted for the diff.", "type": "string"}, "page_id_b": {"description": "Second browser page (by page_id) whose selector text is diffed against page_id_a.", "type": "string"},
 
-            "selector": {"type": "string", "default": "body"},
+            "selector": {"description": "CSS selector whose text is compared on both pages. Default 'body'.", "type": "string", "default": "body"},
 
         }, ["page_id_a", "page_id_b"]),
 
     ("server_lifecycle_status", "T4 read-only: shared cached psutil port-owner scan. listening may be true, false or null (unknown); owner details may be absent/null. can_kill and requires_admin are username-based estimates, not permission probes. Includes family, laddr and scan/cache evidence when available.", {
 
-            "port": {"type": "integer"},
+            "port": {"description": "TCP port whose owning process / listening state is reported from the shared cached scan.", "type": "integer"},
 
         }, ["port"]),
 
     ("port_owner_inspect", "T4 read-only: inspect which process owns a port, returning listening state, pid, and process name. Success returns port, listening (boolean or null when unknown), pid (integer or null), process_name (string or null), plus response metadata. It is output-light, reusing the server_lifecycle_status scan/cache, not a separate cheaper scan. Errors pass through.", {
 
-            "port": {"type": "integer"},
+            "port": {"description": "TCP port to inspect for its owning process (listening state, pid, process name).", "type": "integer"},
 
         }, ["port"]),
 
     ('detect_stale_server', 'T4c: inspect localhost:<port> ownership and optional bundle version drift. This contract accepts port and expected_bundle_version only; use static_asset_cache_check or bundle_version_check for URL probes.', {
 
-            "port": {"type": "integer"},
+            "port": {"description": "Localhost port whose server ownership and bundle drift are inspected.", "type": "integer"},
 
-            "expected_bundle_version": {"type": "string", "default": ""},
+            "expected_bundle_version": {"description": "Bundle version the running server is expected to serve; a mismatch with the served bundle marks the server stale. Empty skips the version check.", "type": "string", "default": ""},
 
         }, ["port"]),
 
     ('static_asset_cache_check', 'T4c: HEAD + 2 GET hash compare.', {
 
-            "url": {"type": "string"},
+            "url": {"description": "Static asset URL probed with HEAD + two GET hash comparisons to detect cache staleness.", "type": "string"},
 
         }, ["url"]),
 
     ('bundle_version_check', 'T4c: extract a build/version marker from HTML. marker_regex must contain at least one capturing group around the version value; the default supports name="version" content="..." and ?v=... patterns.', {
 
-            "html_url": {"type": "string"},
+            "html_url": {"description": "HTML page URL from which the build/version marker is extracted.", "type": "string"},
 
             "marker_regex": {"type": "string", "default": r'(?:name="version" content="([^"]+)"|\?v=([^"&\s]+))', "description": "Regex with at least one capture group; the first non-empty capture is returned."},
 
@@ -5700,7 +5700,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('restart_server_via_bat_hint', 'T4c: restart-command hint for a NON-[A] project server launched from its .bat; nothing is executed. [A] itself restarts only via restart_orchestrator_via_bat.', {
 
-            "bat_path": {"type": "string"}, "port": {"type": "integer", "default": 0},
+            "bat_path": {"description": "Path of the non-[A] project server's launcher .bat; the hint is built for this launcher and nothing is executed.", "type": "string"}, "port": {"description": "Port the project server listens on, used in the restart hint's verify step; 0 omits the port check.", "type": "integer", "default": 0},
 
         }, ["bat_path"]),
 
@@ -5714,9 +5714,9 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('check_window_visibility', 'V15 R15 P2.9 T4d: pre-action visibility check for desktop automation. Returns {visible, rect, minimized, off_screen, suggestion ∈ restore|focus|cdp_fallback|ok}. Call before desktop_click/fill to detect hidden/minimized/off-screen windows. Accepts hwnd OR title_pattern.', {
 
-            "hwnd": {"type": "integer", "default": 0},
+            "hwnd": {"description": "Window handle to check for visibility/minimized/off-screen state; 0 resolves the window by title_pattern instead.", "type": "integer", "default": 0},
 
-            "title_pattern": {"type": "string", "default": ""},
+            "title_pattern": {"description": "Title substring used to find the window when hwnd is 0; empty relies on hwnd alone.", "type": "string", "default": ""},
 
             "match_mode": {"type": "string", "default": "contains_case_insensitive", "description": "exact|contains|regex|case_insensitive|contains_case_insensitive"},
 
@@ -5726,7 +5726,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "target_id": {"type": "string", "default": "", "description": "Target id from list_cdp_targets response. Required if websocket_url not provided."},
 
-            "cdp_port": {"type": "integer", "default": 9223},
+            "cdp_port": {"description": "Chrome DevTools Protocol port of the already-running target to attach to. Default 9223.", "type": "integer", "default": 9223},
 
             "websocket_url": {"type": "string", "default": "", "description": "Optional: direct ws://... endpoint (skips target_id lookup). Use /json/version response for browser-level URL on Electron. Required if target_id not provided."},
 
@@ -5746,7 +5746,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "project_path": {"type": "string", "default": "", "description": "Project root (used when launcher_path empty)"},
 
-            "cdp_port": {"type": "integer", "default": 9223},
+            "cdp_port": {"description": "CDP port injected into the Electron launch via --remote-debugging-port and then attached to. Default 9223.", "type": "integer", "default": 9223},
 
             "verify_after_ms": {"type": "integer", "default": 6000, "description": "Wait time before verifying CDP port"},
 
@@ -5766,7 +5766,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('extract_log_section', 'V15 R16.7 A.5 T1: find DOM section by title text → traverse to closest area_class ancestor → extract textarea/pre/.log-body content. Smart pick: prefers [data-log] attr, then id matching *logArea*, then longest content. Returns content + is_empty + alternative_bodies for re-pick. R16.7: max_chars + tail (default head) for log compaction.', {
 
-            "page_id": {"type": "string"},
+            "page_id": {"description": "Browser page id whose DOM is searched for the log section.", "type": "string"},
 
             "section_title": {"type": "string", "description": "Exact or substring match for title element text"},
 
@@ -5788,13 +5788,13 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('fill_value', 'V15 R16.2 A.6 T2: transport-safe DOM fill. encoding=plain uses Playwright .fill(); encoding=base64 decodes in browser via atob+TextDecoder, preserving UNC paths/UTF-8/multi-line WITHOUT JSON backslash strip. Always dispatches input+change events. R16.2: verify=true (default) auto reads back, returns matches_intent + verify_drift.', {
 
-            "page_id": {"type": "string"},
+            "page_id": {"description": "Browser page id returned by open_browser_page; the DOM fill happens on this page.", "type": "string"},
 
-            "selector": {"type": "string"},
+            "selector": {"description": "CSS selector of the element whose value is set.", "type": "string"},
 
             "value": {"type": "string", "description": "Plain text OR base64 of UTF-8 bytes"},
 
-            "encoding": {"type": "string", "enum": ["plain", "base64"], "default": "plain"},
+            "encoding": {"description": "'plain' (default) fills via Playwright .fill(); 'base64' decodes the value in-browser so UNC paths, UTF-8, and multi-line text survive transport.", "type": "string", "enum": ["plain", "base64"], "default": "plain"},
 
             "verify": {"type": "boolean", "default": True, "description": "R16.2: post-write read-back verify. matches_intent in response."},
 
@@ -5802,11 +5802,11 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('read_value', 'V15 R16.3 T1: symmetric counterpart to fill_value. Reads element.value (or textContent fallback) without evaluate_js boilerplate. encoding=base64 wraps content for transport-safe UNC/UTF-8/multi-line round-trip.', {
 
-            "page_id": {"type": "string"},
+            "page_id": {"description": "Browser page id returned by open_browser_page; the element value is read from this page.", "type": "string"},
 
-            "selector": {"type": "string"},
+            "selector": {"description": "CSS selector of the element whose value (or textContent fallback) is read.", "type": "string"},
 
-            "encoding": {"type": "string", "enum": ["plain", "base64"], "default": "plain"},
+            "encoding": {"description": "'plain' (default) returns the raw value; 'base64' wraps it for transport-safe UNC/UTF-8/multi-line round-trip.", "type": "string", "enum": ["plain", "base64"], "default": "plain"},
 
             "max_chars": {"type": "integer", "default": 100000, "description": "Truncate cap; truncated=true in response if exceeded"},
 
@@ -5814,13 +5814,13 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('read_all_logs', 'V15 R16.4 T1: batch read multiple log panels in one call (default: System Error Log + User Error & Help + Agent Task Log + AI Log Analysis). Each panel uses smart pick like extract_log_section. R16.6: include_view_panels=true also pulls <textarea id^=view-> JSON tabs. Saves N round-trips.', {
 
-            "page_id": {"type": "string"},
+            "page_id": {"description": "Browser page id whose log panels are batch-read.", "type": "string"},
 
             "panels": {"type": "array", "default": [], "description": "List of panel titles to read; empty = default 4 Rawcut panels"},
 
-            "area_class": {"type": "string", "default": "log-area"},
+            "area_class": {"description": "CSS class marking each log panel's container area. Default 'log-area'.", "type": "string", "default": "log-area"},
 
-            "encoding": {"type": "string", "enum": ["plain", "base64"], "default": "plain"},
+            "encoding": {"description": "'plain' (default) or 'base64' for transport-safe return of log text with special characters.", "type": "string", "enum": ["plain", "base64"], "default": "plain"},
 
             "max_chars": {"type": "integer", "default": 30000, "description": "Per-panel cap"},
 
@@ -5842,39 +5842,39 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('run_script', 'V15 R16.4 T4b: escape-free JS executor. Read JS expression from `script_path` (.js file) OR `script_inline`, evaluate in browser page, return result. Bypasses shell/JSON quote-escape pain. File contents must be a single JS expression (wrap multi-statement in IIFE). EXECUTE-gated.', {
 
-            "page_id": {"type": "string"},
+            "page_id": {"description": "Browser page id in which the script file/inline expression is evaluated.", "type": "string"},
 
             "script_path": {"type": "string", "default": "", "description": "Absolute path to .js file. Takes precedence over script_inline."},
 
             "script_inline": {"type": "string", "default": "", "description": "Inline JS source if no file"},
 
-            "timeout_ms": {"type": "integer", "default": 10000},
+            "timeout_ms": {"description": "Maximum execution time for the script in the page, in milliseconds. Default 10000.", "type": "integer", "default": 10000},
 
         }, ["page_id"]),
 
     ('manage_agent', "R86 T3: central multi-agent config manager. actions: register (upsert agent into agents_registry.json), unregister, list, get, set_mode, sync_rule (rewrite global-rule body for target id or 'all', persona line preserved), sync_mcp (rewrite project-orchestrator MCP block; formats json/vscode/toml), sync_skill (native: copy canonical .ToolA_Skill/skills/<skill_name> folder to each target agent skill_dir when skill_format=folder -- native copy is verified for any agent whose registry row has a real skill_dir, so read agents_registry.json rather than an id list; adapter: skill_format=agents_md_ref/rule_file_append writes a managed skill reference into rule_file for agents that have a rule_file but no skill_dir -- adapter writes only when target is an explicit id + dry_run=false, else reports adapter_needed; agents with neither report not_verified -- never not_supported), sync_hook (install + register the native read/write enforcement gates: copies the repo SOT gates + adapter into the agent's hooks_dir, writes hook-agent.json, merge-registers entries into hook_file -- idempotent, unrelated hooks preserved, .bak_sync_hook backup -- then runs a live probe returning read_deny/read_allow/write_deny/outside_deny/memory_allow -- the allow leg is the agent own auto-memory tree, the one native write the Matrix permits; agents with hook_format=none skip with coverage=none; trust_step names any manual step Anh must run). backup .bak_ma; validates SKILL.md + canonical source. Auto-backup + validate + rollback on failure. dry_run=true previews.", {
 
-            "action": {"type": "string", "enum": ["register", "unregister", "list", "get", "set_mode", "sync_rule", "sync_mcp", "sync_skill", "sync_hook"]},
+            "action": {"description": "Registry operation: 'register', 'unregister', 'list', 'get', 'set_mode', 'sync_rule', 'sync_mcp', 'sync_skill', or 'sync_hook'.", "type": "string", "enum": ["register", "unregister", "list", "get", "set_mode", "sync_rule", "sync_mcp", "sync_skill", "sync_hook"]},
 
             "agent_id": {"type": "string", "default": "", "description": "the agent for register/unregister/get/set_mode; those four ignore target. agents_registry.json is SOT for valid ids."},
 
             "target": {"type": "string", "default": "all", "description": "sync_rule/sync_mcp/sync_skill/sync_hook ONLY: one agent id or 'all'. register/unregister/get/set_mode ignore target and read agent_id."},
 
-            "persona": {"type": "string", "default": ""},
+            "persona": {"description": "Persona line written for the agent on register/sync_rule; preserved across rule rewrites. Empty leaves the existing persona unchanged.", "type": "string", "default": ""},
 
-            "rule_file": {"type": "string", "default": ""},
+            "rule_file": {"description": "Path of the agent's rule file targeted by sync_rule; empty resolves the default rule file for the agent id.", "type": "string", "default": ""},
 
-            "rule_format": {"type": "string", "enum": ["markdown", "json_field"], "default": "markdown"},
+            "rule_format": {"description": "How the rule body is stored in rule_file: 'markdown' (default) writes the body directly, 'json_field' embeds it in a JSON field.", "type": "string", "enum": ["markdown", "json_field"], "default": "markdown"},
 
-            "rule_template": {"type": "string", "default": "slim"},
+            "rule_template": {"description": "Rule template used when generating a rule file: 'slim' (default) or a named full template.", "type": "string", "default": "slim"},
 
-            "mcp_file": {"type": "string", "default": ""},
+            "mcp_file": {"description": "Path of the MCP client config file targeted by sync_mcp; empty resolves the agent's default config location.", "type": "string", "default": ""},
 
-            "mcp_format": {"type": "string", "enum": ["json", "vscode", "toml"], "default": "json"},
+            "mcp_format": {"description": "MCP config file format: 'json' (default), 'vscode', or 'toml' — decides how the project-orchestrator entry is serialized by sync_mcp.", "type": "string", "enum": ["json", "vscode", "toml"], "default": "json"},
 
-            "mcp_key": {"type": "string", "default": "project-orchestrator"},
+            "mcp_key": {"description": "Server key under which project-orchestrator is registered in the MCP config. Default 'project-orchestrator'.", "type": "string", "default": "project-orchestrator"},
 
-            "dry_run": {"type": "boolean", "default": False},
+            "dry_run": {"description": "When true, preview the registry/config change without writing it; default false applies it.", "type": "boolean", "default": False},
 
             "skill_name": {"type": "string", "default": "", "description": "skill folder name under .ToolA_Skill/skills for sync_skill"},
 
@@ -5908,31 +5908,31 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('describe_page', 'V15 R16.6 T1: DOM structure map — lists all titled sections + view-* panels in 1 call. R18: auto_artifact for oversize results.', {
 
-            "page_id": {"type": "string"},
+            "page_id": {"description": "Browser page id whose DOM structure (titled sections + view-* panels) is mapped.", "type": "string"},
 
-            "area_class": {"type": "string", "default": "log-area"},
+            "area_class": {"description": "CSS class grouping the page areas listed in the structure map. Default 'log-area'.", "type": "string", "default": "log-area"},
 
             "view_id_pattern": {"type": "string", "default": "^view-", "description": "Regex for view panel id matching"},
 
             "auto_artifact": {"type": "boolean", "default": False, "description": "R18: when response > max_bytes, auto-write to artifact file"},
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Optional project root used to resolve session/artifact context for oversize results; empty resolves from the page's pinned session.", "type": "string", "default": ""},
 
-            "round_id": {"type": "string", "default": ""},
+            "round_id": {"description": "Optional round identifier; when set, oversize structure maps are stored as artifacts under this round. Empty disables round-scoped artifacts.", "type": "string", "default": ""},
 
-            "auto_artifact_max_bytes": {"type": "integer", "default": 4096},
+            "auto_artifact_max_bytes": {"description": "Size ceiling in bytes before the structure map is spilled to an artifact instead of returned inline. Default 4096.", "type": "integer", "default": 4096},
 
         }, ["page_id"]),
 
     ('cleanup_test_session', 'V15 R16.6 T2 (+R43 P0 #6A): 1-call test wrap-up. Close CDP page (if page_id), taskkill listed processes (default electron.exe + chrome.exe), close active session. Token required. R43: idle_guard_signals=[{kind,...}] refuses cleanup while target busy → CLEANUP_BLOCKED_TARGET_BUSY. Bypass with idle_guard_force=true.', {
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root of the test session to wrap up (page close, process kill, session close). Empty resolves the active session's project.", "type": "string", "default": ""},
 
             "page_id": {"type": "string", "default": "", "description": "Optional CDP page_id to close before kill"},
 
             "processes": {"type": "array", "default": [], "description": "Process names to taskkill; default ['electron.exe','chrome.exe']"},
 
-            "close_session_after": {"type": "boolean", "default": True},
+            "close_session_after": {"description": "When true (default), close the active ToolA session after closing the page and killing test processes.", "type": "boolean", "default": True},
 
             "idle_guard_signals": {"type": "array", "default": [], "description": "R43 P0 #6A: signals[] array same shape as assert_target_idle. If provided and outcome != idle, cleanup is refused (CLEANUP_BLOCKED_TARGET_BUSY). Empty array = skip guard (legacy behavior)."},
 
@@ -5944,15 +5944,15 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('click_selector', 'V15 R16.9 T4: alias of click() that snapshots target element state BEFORE + AFTER click — returns enabled/disabled, visible, bg/color, className, value_length deltas in 1 call. Replaces CA pattern of (dom_state_diff → click → dom_state_diff). Pass before_after_state=false for pure click.', {
 
-            "page_id": {"type": "string"},
+            "page_id": {"description": "Browser page id returned by open_browser_page; the snapshotted click happens on this page.", "type": "string"},
 
-            "selector": {"type": "string"},
+            "selector": {"description": "CSS selector of the element clicked, with its state snapshotted before and after.", "type": "string"},
 
             "before_after_state": {"type": "boolean", "default": True, "description": "Snapshot element state pre/post click"},
 
             "state_fields": {"type": "array", "default": [], "description": "Default: disabled|visible|bg|color|className|value_length. Add 'text_preview' for first 100 text chars."},
 
-            "timeout_ms": {"type": "integer", "default": 5000},
+            "timeout_ms": {"description": "Maximum time to wait for the selector to be actionable before clicking, in milliseconds. Default 5000.", "type": "integer", "default": 5000},
 
         }, ["page_id", "selector"]),
 
@@ -5968,9 +5968,9 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('checkpoint_loop_dom_state', 'V15 R16.9 / R16.10 T4: poll DOM element state server-side and report changes from a baseline snapshot. R16.10: accepts `baseline_id` (from prior dom_state_diff, TTL 10min) OR `baseline_fields` (inline state dict) — fixes baseline-timing pitfall when CA clicked before calling loop. If both empty, fresh-baseline at t=0 (R16.9 legacy). Returns baseline, baseline_source, final_state, changed, polls, elapsed_sec.', {
 
-            "page_id": {"type": "string"},
+            "page_id": {"description": "Browser page id whose element state is polled against the baseline snapshot.", "type": "string"},
 
-            "selector": {"type": "string"},
+            "selector": {"description": "CSS selector of the element whose DOM state is polled for changes.", "type": "string"},
 
             "interval_sec": {"type": "number", "default": 15.0, "description": "Poll cadence in seconds (min 0.5)"},
 
@@ -5988,9 +5988,9 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('ensure_single_electron_instance', "V15 R16.9 T4: pre-launch hygiene — kill any existing electron.exe + free CDP port BEFORE launching a fresh instance. Prevents 'stale Electron from previous round' confusion. Returns existing_pids, killed, port_was_busy, port_free_after. Pair with launch_electron_with_cdp.", {
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root used to resolve which Electron instance/port belongs to this project before killing stale ones; empty resolves from the active session.", "type": "string", "default": ""},
 
-            "cdp_port": {"type": "integer", "default": 9223},
+            "cdp_port": {"description": "CDP port that must be freed before the fresh Electron launch. Default 9223.", "type": "integer", "default": 9223},
 
             "kill_existing": {"type": "boolean", "default": True, "description": "False = inspect only, no kill"},
 
@@ -5998,19 +5998,19 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('click_and_checkpoint_loop', 'V15 R16.10 T4: atomic click + checkpoint loop. Snapshots watch_selector state BEFORE click (correct baseline timing), clicks click_selector_str, polls watch_selector until state changes OR timeout. Eliminates baseline-after-click pitfall. watch_selector defaults to click_selector_str.', {
 
-            "page_id": {"type": "string"},
+            "page_id": {"description": "Browser page id on which the atomic click + checkpoint poll runs.", "type": "string"},
 
             "click_selector_str": {"type": "string", "description": "Element to click (e.g. '#btnStep1')"},
 
             "watch_selector": {"type": "string", "default": "", "description": "Element whose state to observe (defaults to click_selector_str)"},
 
-            "interval_sec": {"type": "number", "default": 15.0},
+            "interval_sec": {"description": "Polling interval in seconds between watch_selector state checks. Default 15.0.", "type": "number", "default": 15.0},
 
-            "timeout_sec": {"type": "number", "default": 90.0},
+            "timeout_sec": {"description": "Overall deadline in seconds for a watched state change after the click. Default 90.0.", "type": "number", "default": 90.0},
 
             "fields": {"type": "array", "default": [], "description": "Default: disabled|visible|bg|color|className|value_length"},
 
-            "stop_on_change": {"type": "boolean", "default": True},
+            "stop_on_change": {"description": "When true (default), stop polling at the first watched-state change; false polls until timeout and reports every change.", "type": "boolean", "default": True},
 
             "pre_click_settle_ms": {"type": "integer", "default": 200, "description": "Delay between baseline snapshot and click (lets baseline render commit)"},
 
@@ -6018,7 +6018,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('ui_state_summary', 'V15 R16.10 T1: structured TEXT-only state summary per UI region. NOT a screenshot (saves ~99% tokens vs base64 image). Returns visibility/disabled/text_preview/value_preview/classes/has_error_class/bg/rect per region. Default regions (empty list) = all [data-region] + section[id].', {
 
-            "page_id": {"type": "string"},
+            "page_id": {"description": "Browser page id whose UI regions are summarized as text.", "type": "string"},
 
             "regions": {"type": "array", "default": [], "description": "List of {label, selector}; empty = auto-discover via [data-region] + section[id]"},
 
@@ -6036,13 +6036,13 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('architecture_audit_compact', 'V15 R20 T1: 4-layer (KtrB/KtrSK/KtrSH/KtrI) compact audit digest. Combines matrix audit + alias drift + progressive gaps + inventory classification into ~30-line digest. ~500 tokens vs ~5000 for raw audit_tool_matrix.', {
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root the compact 4-layer audit digest is computed for; empty defaults to the ToolA install.", "type": "string", "default": ""},
 
         }, []),
 
     ('acceptance_dashboard', 'V15 R29 T1: SINGLE-CALL acceptance dashboard. Aggregates matrix + alias_contract_test + (optional) inspect_project_usage probe + schema weak/mismatch checks into one ~500-token digest with pass/fail vs R28/R29 targets. Use instead of 10 separate audit calls. probe_path optional: triggers Rawcut/app scan probe in same response.', {
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root the acceptance dashboard aggregates gates for; empty defaults to the ToolA install.", "type": "string", "default": ""},
 
             "probe_path": {"type": "string", "default": "", "description": "Optional: run inspect_project_usage on this app/project path for Rawcut-style scan health check"},
 
@@ -6050,7 +6050,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('folder_exists', 'V15 R27 T1: minimal folder existence + type probe.', {
 
-            "path": {"type": "string"},
+            "path": {"description": "Folder path probed for existence and type (file vs directory).", "type": "string"},
 
         }, ["path"]),
 
@@ -6070,13 +6070,13 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "project_path": {"type": "string", "default": "", "description": "Optional project root for session/backup binding. Declared so the session gate can see it (avoids PROJECT_PATH_REQUIRED vs stripped-field catch-22)."},
 
-            "recursive": {"type": "boolean", "default": True},
+            "recursive": {"description": "When true (default), create missing parent folders along each path; false fails a path whose parent is missing.", "type": "boolean", "default": True},
 
         }, ["paths"]),
 
     ('folder_stats', "V15 R27 T1 (R64-C): folder stats (file_count, dir_count, total_bytes, latest_mtime, top_extensions). recursive=false by default (matches `dir`). R64-C: response now includes `subdirs_present_hint` when non-recursive AND file_count=0 AND dir_count>0, so CA doesn't mistake 'subdir-only folder' for 'empty folder' (live drift hit on getlink_output during rawcut_getfootage_sheet_v0 step 25).", {
 
-            "path": {"type": "string"},
+            "path": {"description": "Folder whose file/dir counts, total bytes, latest mtime, and top extensions are reported.", "type": "string"},
 
             "recursive": {"type": "boolean", "default": False, "description": "When true, walk all subdirectories via rglob. When false, only top-level entries (matches `dir`)."},
 
@@ -6088,13 +6088,13 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('folder_diff', 'V15 R27 T1: compare top-level contents of 2 folders. compare_by ∈ name|name+size|name+sha (sha=slow opt-in).', {
 
-            "path_a": {"type": "string"},
+            "path_a": {"description": "First folder in the top-level content comparison.", "type": "string"},
 
-            "path_b": {"type": "string"},
+            "path_b": {"description": "Second folder compared against path_a.", "type": "string"},
 
-            "ignore_patterns": {"type": "array", "default": []},
+            "ignore_patterns": {"description": "Glob patterns excluded from the folder comparison (names matching any pattern are skipped on both sides).", "type": "array", "default": []},
 
-            "compare_by": {"type": "string", "enum": ["name", "name+size", "name+sha"], "default": "name"},
+            "compare_by": {"description": "Comparison key: 'name' (default), 'name+size', or 'name+sha' (sha hashes contents, slower opt-in).", "type": "string", "enum": ["name", "name+size", "name+sha"], "default": "name"},
 
         }, ["path_a", "path_b"]),
 
@@ -6102,13 +6102,13 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "title_pattern": {"type": "string", "default": "", "description": "Regex against dialog title; combined with auto_try_common_titles"},
 
-            "folder_path": {"type": "string"},
+            "folder_path": {"description": "Folder path typed/pasted into the native folder dialog and confirmed.", "type": "string"},
 
-            "timeout_ms": {"type": "integer", "default": 5000},
+            "timeout_ms": {"description": "Overall timeout in milliseconds for finding and filling the dialog. Default 5000.", "type": "integer", "default": 5000},
 
-            "wait_for_dialog_ms": {"type": "integer", "default": 3000},
+            "wait_for_dialog_ms": {"description": "Time in milliseconds to wait for the folder dialog to appear before giving up. Default 3000.", "type": "integer", "default": 3000},
 
-            "auto_try_common_titles": {"type": "boolean", "default": True},
+            "auto_try_common_titles": {"description": "When true (default), also match dialogs by common folder-picker titles when the owner/title filters find nothing.", "type": "boolean", "default": True},
 
             "electron_fallback_hint": {"type": "object", "default": {}, "description": "{page_id, suggested_handler} — fallback recipe when dialog absent"},
 
@@ -6138,27 +6138,27 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "launched_after_ts": {"type": "string", "default": "", "description": "ISO timestamp filter"},
 
-            "include_child_controls": {"type": "boolean", "default": True},
+            "include_child_controls": {"description": "When true (default), include each dialog candidate's child controls (buttons, edit fields) in the snapshot metadata.", "type": "boolean", "default": True},
 
         }, []),
 
     ('cancel_native_dialog', 'V15 R27 T4: close any open native dialog by clicking Cancel/Close button. Fallback to WM_CLOSE.', {
 
-            "title_pattern": {"type": "string"},
+            "title_pattern": {"description": "Title substring/regex identifying the native dialog to close.", "type": "string"},
 
-        "button_pattern": {"type": "string", "default": "Cancel|Huy|Close|Dong"},
+        "button_pattern": {"description": "Button label pattern clicked to dismiss the dialog. Default 'Cancel|Huy|Close|Dong'; falls back to WM_CLOSE when no button matches.", "type": "string", "default": "Cancel|Huy|Close|Dong"},
 
         }, ["title_pattern"]),
 
     ('workflow_list', 'V15 R35 T1: list `.md` workflows from project (`<project>/.orchestrator_cache/workflows/`) and global (`<[A]>/.ToolA_Skill/workflows/`). Merge by name — project overrides global. Returns name, title, step_count, status (active/idle/complete), source, path.', {
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root whose project-level workflows are merged over the global ones; empty lists global workflows only.", "type": "string", "default": ""},
 
         }, []),
 
     ('workflow_start', 'V15 R35 / R37 Y1 T3: start workflow by name. Creates state file (current_step=1), returns step 1 body. State is GLOBAL (R37) — project_path optional.', {
 
-            "name": {"type": "string"},
+            "name": {"description": "Workflow name (its .md file stem) to start; creates the state file at step 1.", "type": "string"},
 
             "project_path": {"type": "string", "default": "", "description": "Optional (R37: state is global)"},
 
@@ -6166,25 +6166,25 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('workflow_get_current', 'V15 R35 / R37 Y1 T1: read current step body (idempotent). project_path optional.', {
 
-            "name": {"type": "string"},
+            "name": {"description": "Workflow name whose current step body is read.", "type": "string"},
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root used to resolve the workflow; optional because workflow state is global (R37).", "type": "string", "default": ""},
 
         }, ["name"]),
 
     ('workflow_submit_step', "V15 R35 / R37 / R42 T3 / R77 / R92: submit step (done|fail). done→advance; fail→pause. R42: also accepts step_range=[start, end] for batch advance (status='done' only). R92: accepts next_step=<declared step number> for branch workflows without workflow_goto_step. On STEP_MISMATCH returns delta + suggestion + alternative_tool=workflow_goto_step. If step has [completion_signal: ...], auto-call assert_target_idle. R77: if step has [require_artifact: ...], you MUST pass artifacts={key: abs_path}; engine verifies the file exists on disk (existence/size/json-items/freshness) and returns ARTIFACT_GATE_FAILED if not — fabricated 'done' is rejected. Gated steps cannot be batch-advanced (ARTIFACT_GATE_REQUIRES_SEQUENTIAL).", {
 
-            "name": {"type": "string"},
+            "name": {"description": "Workflow name whose current step is submitted.", "type": "string"},
 
             "step": {"type": "integer", "default": 0, "description": "Single-step mode: must match current_step"},
 
             "step_range": {"type": "array", "default": [], "description": "R42 batch mode: [start, end]. start MUST equal current_step. status must be 'done'. R77: rejected if any step in range has required artifacts."},
 
-            "status": {"type": "string", "enum": ["done", "fail"], "default": "done"},
+            "status": {"description": "Step outcome: 'done' (default) advances to the next step, 'fail' pauses the workflow.", "type": "string", "enum": ["done", "fail"], "default": "done"},
 
-            "evidence": {"type": "string", "default": ""},
+            "evidence": {"description": "Evidence text recorded with the step submission (what was done / how it was verified).", "type": "string", "default": ""},
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root used to resolve the workflow; optional because workflow state is global (R37).", "type": "string", "default": ""},
 
             "artifacts": {"type": "object", "default": {}, "description": "R77: {artifact_key: absolute_path} map for steps with [require_artifact: key=...]. Engine checks each path on disk before accepting done. Required only for gated steps."},
 
@@ -6194,79 +6194,79 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('workflow_retry_step', 'V15 R35 / R37 Y1 T3: retry current step after fail/pause.', {
 
-            "name": {"type": "string"},
+            "name": {"description": "Workflow name whose failed/paused current step is retried.", "type": "string"},
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root used to resolve the workflow; optional because workflow state is global (R37).", "type": "string", "default": ""},
 
         }, ["name"]),
 
     ('workflow_skip_step', 'V15 R35 / R37 Y1 T3: skip current step, advance to next.', {
 
-            "name": {"type": "string"},
+            "name": {"description": "Workflow name whose current step is skipped.", "type": "string"},
 
-            "reason": {"type": "string", "default": ""},
+            "reason": {"description": "Why the step is being skipped; recorded in the workflow state.", "type": "string", "default": ""},
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root used to resolve the workflow; optional because workflow state is global (R37).", "type": "string", "default": ""},
 
         }, ["name"]),
 
     ('workflow_reset', 'V15 R35 / R37 Y1 T3: reset workflow state back to step 1. Archives old state.', {
 
-            "name": {"type": "string"},
+            "name": {"description": "Workflow name whose state is reset back to step 1 (old state is archived).", "type": "string"},
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root used to resolve the workflow; optional because workflow state is global (R37).", "type": "string", "default": ""},
 
         }, ["name"]),
 
     ('workflow_status', 'V15 R35 / R37 Y1 T1: full workflow state (current_step, step statuses, timestamps, evidence).', {
 
-            "name": {"type": "string"},
+            "name": {"description": "Workflow name whose full state (current step, step statuses, timestamps, evidence) is returned.", "type": "string"},
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root used to resolve the workflow; optional because workflow state is global (R37).", "type": "string", "default": ""},
 
         }, ["name"]),
 
     ('workflow_create_from_ui', 'V15 R35 / R37 Y1 T3: save MD body. [A] does NOT transform. R37: workflows are GLOBAL only — written to `<[A]>/.ToolA_Skill/workflows/<slug>.md` (scope param ignored, project_path ignored).', {
 
-            "name": {"type": "string"},
+            "name": {"description": "Workflow name (slug) the MD body is saved under in the global workflows directory.", "type": "string"},
 
-            "body_md": {"type": "string"},
+            "body_md": {"description": "Raw Markdown workflow definition saved verbatim; [A] does not transform it.", "type": "string"},
 
             "scope": {"type": "string", "enum": ["global"], "default": "global", "description": "R37: forced to 'global'"},
 
             "project_path": {"type": "string", "default": "", "description": "R37: ignored"},
 
-            "overwrite": {"type": "boolean", "default": False},
+            "overwrite": {"description": "When true, replace an existing workflow file with the same name; default false refuses to overwrite.", "type": "boolean", "default": False},
 
         }, ["name", "body_md"]),
 
     ('workflow_save_md', 'V15 R36 / R37 Y1 T3: agent-friendly alias of workflow_create_from_ui. Always saves to GLOBAL workflows dir.', {
 
-            "name": {"type": "string"},
+            "name": {"description": "Workflow name (slug) the MD body is saved under in the global workflows directory.", "type": "string"},
 
-            "body_md": {"type": "string"},
+            "body_md": {"description": "Raw Markdown workflow definition saved verbatim.", "type": "string"},
 
-            "scope": {"type": "string", "enum": ["global"], "default": "global"},
+            "scope": {"description": "Save scope; only 'global' (default) exists — workflows are global-only since R37, so this is accepted for compatibility.", "type": "string", "enum": ["global"], "default": "global"},
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Ignored for storage (workflows are global-only since R37); accepted so project-scoped callers do not fail validation.", "type": "string", "default": ""},
 
-            "overwrite": {"type": "boolean", "default": False},
+            "overwrite": {"description": "When true, replace an existing workflow file with the same name; default false refuses to overwrite.", "type": "boolean", "default": False},
 
         }, ["name", "body_md"]),
 
     ('workflow_read_md', 'V15 R36 T1: read raw MD body for a workflow (project-first, global fallback). Used by agent edit-then-save flow and UI editor `?load=<slug>`.', {
 
-            "name": {"type": "string"},
+            "name": {"description": "Workflow name whose raw MD body is read (project copy first, global fallback).", "type": "string"},
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root checked first for a project-level copy of the workflow MD; empty reads the global copy only.", "type": "string", "default": ""},
 
         }, ["name"]),
 
     ('workflow_draft_create', 'V15 R36 T3: push agent-authored draft MD into in-memory store, return token. UI editor opens `/ui/workflow_editor?draft=<token>` to populate. Drafts auto-expire (default 1h, max 24h).', {
 
-            "name": {"type": "string"},
+            "name": {"description": "Workflow name the draft MD is stored under in the in-memory draft store.", "type": "string"},
 
-            "body_md": {"type": "string"},
+            "body_md": {"description": "Draft Markdown body pushed to the in-memory store for the UI editor to pull by token.", "type": "string"},
 
             "ttl_sec": {"type": "integer", "default": 3600, "description": "Time-to-live in seconds (60..86400)"},
 
@@ -6274,33 +6274,33 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('workflow_draft_get', 'V15 R36 T1: UI editor pulls draft by token (called when URL has `?draft=<token>`).', {
 
-            "token": {"type": "string"},
+            "token": {"description": "Draft token returned by workflow_draft_create; the UI editor pulls the draft with it.", "type": "string"},
 
         }, ["token"]),
 
     ('workflow_activate', 'V15 R36 / R37 Y1 T3: User activates workflow GLOBALLY. project_path optional (state is global). [A] starts injecting workflow hints.', {
 
-            "name": {"type": "string"},
+            "name": {"description": "Workflow name to activate globally so [A] starts injecting its step hints.", "type": "string"},
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root used to resolve the workflow; optional because activation state is global (R37).", "type": "string", "default": ""},
 
         }, ["name"]),
 
     ('workflow_deactivate', 'V15 R36 / R37 Y1 T3: stop workflow mode (UI Stop or CA). Global state cleared, MD preserved.', {
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root used to resolve the active workflow; optional because workflow state is global — deactivation clears the global state and preserves the MD.", "type": "string", "default": ""},
 
         }, []),
 
     ('workflow_active_get', 'V15 R36 / R37 Y1 T1: read active workflow state (global). UI polls this every 5s; CA hint stream uses this.', {
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root used to resolve the active workflow; optional because the active state is global.", "type": "string", "default": ""},
 
         }, []),
 
     ('classify_get_footage_outcome', 'V15 R34 T1: post-action classifier. Reads log + folder_stats, classifies outcome ∈ {success, folder_picker_fail, source_unc_fail, copy_runtime_fail, unknown}. Returns evidence + ca_next_action.', {
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root whose log and target folder are read to classify the get-footage outcome; empty resolves from the active session.", "type": "string", "default": ""},
 
             "since_ts": {"type": "string", "default": "", "description": "ISO timestamp to slice log from"},
 
@@ -6312,11 +6312,11 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('verify_active_electron_source', 'V15 R41 T1: verify which file Electron CDP target is actually loaded from. Reads document.URL + window.location.href via evaluate_js, decodes file:/// to a local path. If expected_path is passed, returns matches_expected. Use case: prevent editing Source/ui/index.html when the app loaded a dist/ or public/ mirror. Returns all_loaded_resources (top 10 script/link href) for inspection.', {
 
-            "page_id": {"type": "string"},
+            "page_id": {"description": "CDP page id (from cdp_attach_target / launch_electron_with_cdp) whose loaded source file is verified.", "type": "string"},
 
-            "expected_path": {"type": "string", "default": ""},
+            "expected_path": {"description": "Expected local file path the Electron target should have loaded; when given, the result reports matches_expected. Empty only reports the actual path.", "type": "string", "default": ""},
 
-            "cdp_port": {"type": "integer", "default": 9223},
+            "cdp_port": {"description": "CDP port of the Electron target being verified. Default 9223.", "type": "integer", "default": 9223},
 
         }, ["page_id"]),
 
@@ -6338,45 +6338,45 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('run_project_test_script', 'V15 R43 P1 #5 T2: script-file transport for node|python|powershell|sh. Python selects the first interpreter satisfying required_python_modules; otherwise returns INTERPRETER_CAPABILITY_MISSING without installing packages. Results include runtime_used, script metadata, and stdout_metadata/stderr_metadata with full-stream hashes and truncation state. Execution failures use SCRIPT_EXEC_FAILED; unsafe inline callers should route here instead of retrying COMMAND_TRANSPORT_UNSAFE or SCRIPT_RUNTIME_REQUIRED. CASE-2008 destructive guard (all runtimes): a body containing a delete/move/truncate/overwrite statement refuses to run until confirm_destructive equals the scanned count, takes a project backup first, and returns untruncated output; dry_run=true previews without executing. A PowerShell -Include paired with -LiteralPath is REFUSED outright (DESTRUCTIVE_SCRIPT_FOOTGUN) because PowerShell silently discards the filter and removes the whole target.', {
 
-            "project_path": {"type": "string"},
+            "project_path": {"description": "Project root the test script runs in; also used to resolve the interpreter and required modules.", "example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string"},
 
-            "script_content": {"type": "string", "description": "Source code of the script. Use content_encoding='base64' for multi-line / Unicode / backslash-heavy scripts."},
+            "script_content": {"example": "import subprocess,sys; sys.exit(subprocess.call([sys.executable,'-m','pytest','tests/test_a44_matrix_coverage.py','-q']))", "type": "string", "description": "Source code of the script. Use content_encoding='base64' for multi-line / Unicode / backslash-heavy scripts."},
 
-            "runtime": {"type": "string", "enum": ["node", "python", "powershell", "sh"], "default": "node", "description": "A35: 'python' children get PYTHONIOENCODING=utf-8 + PYTHONUTF8=1 (setdefault, so an [A]-level env var still wins) and report it back as child_encoding -- the same guarantee the 'powershell' branch gets from its UTF-8 BOM + chcp 65001 prelude. Before that, a non-cp1252 character raised UnicodeEncodeError inside the script."},
+            "runtime": {"example": 'python', "type": "string", "enum": ["node", "python", "powershell", "sh"], "default": "node", "description": "A35: 'python' children get PYTHONIOENCODING=utf-8 + PYTHONUTF8=1 (setdefault, so an [A]-level env var still wins) and report it back as child_encoding -- the same guarantee the 'powershell' branch gets from its UTF-8 BOM + chcp 65001 prelude. Before that, a non-cp1252 character raised UnicodeEncodeError inside the script."},
 
-            "timeout": {"type": "integer", "default": 120, "description": "Seconds for the CHILD process -- it does NOT bound the call. Admission, script staging and result assembly all sit outside it, so wall clock can exceed this number: measured 2026-09-22, a declared 90 answered after 231.7s. Size a client timeout off measured wall clock, never off this value. A35 gap#3: over MCP stdio the TRANSPORT dies at ~180-195s, so a timeout above ~170 loses the result even though the child keeps running -- call POST http://localhost:8083/api/call/run_project_test_script over HTTP for longer runs, or use a detached supervisor (0.1s launcher + Popen + timestamped status file to poll). A request above 170 echoes transport_ceiling_note in the result."},
+            "timeout": {"example": 120, "type": "integer", "default": 120, "description": "Seconds for the CHILD process -- it does NOT bound the call. Admission, script staging and result assembly all sit outside it, so wall clock can exceed this number: measured 2026-09-22, a declared 90 answered after 231.7s. Size a client timeout off measured wall clock, never off this value. A35 gap#3: over MCP stdio the TRANSPORT dies at ~180-195s, so a timeout above ~170 loses the result even though the child keeps running -- call POST http://localhost:8083/api/call/run_project_test_script over HTTP for longer runs, or use a detached supervisor (0.1s launcher + Popen + timestamped status file to poll). A request above 170 echoes transport_ceiling_note in the result."},
 
-            "script_label": {"type": "string", "default": "", "description": "Human-readable label included in filename (alphanumeric+dash+underscore only)."},
+            "script_label": {"example": 'a44 gate', "type": "string", "default": "", "description": "Human-readable label included in filename (alphanumeric+dash+underscore only)."},
 
-            "return_full_stdout": {"type": "boolean", "default": False, "description": "When True, return entire stdout (overrides stdout_max_chars)."},
+            "return_full_stdout": {"example": False, "type": "boolean", "default": False, "description": "When True, return entire stdout (overrides stdout_max_chars)."},
 
-            "stdout_max_chars": {"type": "integer", "default": 4000},
+            "stdout_max_chars": {"description": "Maximum stdout characters returned from the test script. Default 4000.", "example": 4000, "type": "integer", "default": 4000},
 
-            "stderr_max_chars": {"type": "integer", "default": 2000},
+            "stderr_max_chars": {"description": "Maximum stderr characters returned from the test script. Default 2000.", "example": 2000, "type": "integer", "default": 2000},
 
-            "content_encoding": {"type": "string", "enum": ["plain", "base64"], "default": "plain"},
+            "content_encoding": {"description": "'plain' (default) or 'base64' (UTF-8) transport for the script content, for sources with quotes/backslashes/non-ASCII.", "example": 'plain', "type": "string", "enum": ["plain", "base64"], "default": "plain"},
 
-            "python_exe": {"type": "string", "default": "", "description": "Optional Python executable. Candidate order: explicit, ORCHESTRATOR_PYTHON_EXE, project venv312/.venv/venv, sys.executable, PATH."},
+            "python_exe": {"example": 'venv312\\Scripts\\python.exe', "type": "string", "default": "", "description": "Optional Python executable. Candidate order: explicit, ORCHESTRATOR_PYTHON_EXE, project venv312/.venv/venv, sys.executable, PATH."},
 
-            "required_python_modules": {"type": "array", "items": {"type": "string"}, "default": [], "description": "Importable modules required from the selected Python interpreter. No packages are installed automatically."},
+            "required_python_modules": {"example": ['pytest'], "type": "array", "items": {"type": "string"}, "default": [], "description": "Importable modules required from the selected Python interpreter. No packages are installed automatically."},
 
-            "executed_test_files": {"type": "array", "items": {"type": "string"}, "description": "GAP-01/H2 (CBM_ENRICH_TEST=1): caller-DECLARED test files this script executed, project-relative paths. Honest source only -- the daemon never scrapes stdout. Declaring it emits executed_test_files in the result and unlocks the cached test_gap advisory keyed by script_hash."},
+            "executed_test_files": {"example": ['tests/test_a44_matrix_coverage.py'], "type": "array", "items": {"type": "string"}, "description": "GAP-01/H2 (CBM_ENRICH_TEST=1): caller-DECLARED test files this script executed, project-relative paths. Honest source only -- the daemon never scrapes stdout. Declaring it emits executed_test_files in the result and unlocks the cached test_gap advisory keyed by script_hash."},
 
-            "dry_run": {"type": "boolean", "default": False, "description": "CASE-2008: static no-execute preview of the destructive-statement scan. Nothing is written and nothing runs."},
+            "dry_run": {"example": False, "type": "boolean", "default": False, "description": "CASE-2008: static no-execute preview of the destructive-statement scan. Nothing is written and nothing runs."},
 
-            "confirm_destructive": {"type": "integer", "default": -1, "description": "CASE-2008: acknowledged destructive-statement count. A body containing Remove-Item/rm/del/Clear-Content/Move-Item/fs.rm/rmtree etc. refuses to run until this EQUALS the scanner count (returned as confirm_destructive_required). A count rather than a boolean, so editing the script invalidates a stale acknowledgement."},
+            "confirm_destructive": {"example": -1, "type": "integer", "default": -1, "description": "CASE-2008: acknowledged destructive-statement count. A body containing Remove-Item/rm/del/Clear-Content/Move-Item/fs.rm/rmtree etc. refuses to run until this EQUALS the scanner count (returned as confirm_destructive_required). A count rather than a boolean, so editing the script invalidates a stale acknowledgement."},
 
-            "skip_backup": {"type": "boolean", "default": False, "description": "CASE-2008: skip the automatic pre-run project backup for a destructive script. Only for genuinely disposable targets (e.g. inside .orchestrator_cache)."},
+            "skip_backup": {"example": False, "type": "boolean", "default": False, "description": "CASE-2008: skip the automatic pre-run project backup for a destructive script. Only for genuinely disposable targets (e.g. inside .orchestrator_cache)."},
 
         }, ["project_path", "script_content"]),
 
     ('check_server_path', 'V15 R42 / R45 T1: probe path accessibility — UNC share, HTTP(s) HEAD, local file/folder. Mode auto-detects by prefix. Returns reachable + latency_ms + status_code (if HTTP) + is_file/is_dir (if filesystem) + size/permission. R45: Unicode-safe for UNC (Python Path.exists preserves Vietnamese diacritics) — prefer this over PowerShell Test-Path which loses non-ASCII via console code page.', {
 
-            "path": {"type": "string"},
+            "path": {"description": "Path to probe: a UNC share, an HTTP(s) URL, or a local file/folder path.", "type": "string"},
 
-            "mode": {"type": "string", "enum": ["auto", "unc", "http", "https", "local"], "default": "auto"},
+            "mode": {"description": "Probe mode: 'auto' (default, detected from the path prefix), 'unc', 'http', 'https', or 'local'.", "type": "string", "enum": ["auto", "unc", "http", "https", "local"], "default": "auto"},
 
-            "timeout_sec": {"type": "integer", "default": 5},
+            "timeout_sec": {"description": "Probe timeout in seconds for network paths. Default 5.", "type": "integer", "default": 5},
 
             "verify_tls": {"type": "boolean", "default": True, "description": "Verify TLS certificate and hostname on HTTPS probes. Set false only on isolated corp networks with out-of-band trust — produces tls_verified:false + security_warning."},
 
@@ -6388,9 +6388,9 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "max_chars": {"type": "integer", "default": 200000, "description": "Truncate response body to this many chars (default 200KB)"},
 
-            "format": {"type": "string", "enum": ["text", "json"], "default": "text"},
+            "format": {"description": "Response format: 'text' (default) returns the raw decoded body, 'json' parses the body as JSON.", "type": "string", "enum": ["text", "json"], "default": "text"},
 
-            "timeout_seconds": {"type": "integer", "default": 15},
+            "timeout_seconds": {"description": "HTTP request timeout in seconds. Default 15.", "type": "integer", "default": 15},
 
             "verify_tls": {"type": "boolean", "default": True, "description": "Verify TLS certificate and hostname. Set false only on isolated corp networks — produces tls_verified:false + security_warning."},
 
@@ -6402,7 +6402,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "max_rows": {"type": "integer", "default": 5000, "description": "Cap parsed rows for safety"},
 
-            "timeout_seconds": {"type": "integer", "default": 15},
+            "timeout_seconds": {"description": "Timeout in seconds for fetching the Google Sheets CSV export. Default 15.", "type": "integer", "default": 15},
 
             "unc_pattern": {"type": "string", "default": "\\\\\\\\[^\\\\]+\\\\[^\\\\]+", "description": "Regex for UNC paths (default `\\\\server\\share` prefix)"},
 
@@ -6448,47 +6448,47 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('run_ps1_script', 'V15 R50 T2 narrow wrapper for PowerShell script-file execution. Hides runtime=powershell selection. Writes UTF-8 BOM .ps1 + OutputEncoding prelude + UTF-8 subprocess decode → Vietnamese diacritics survive end-to-end. Use INSTEAD of inline `powershell -Command` (blocked by R46 guard POWERSHELL_INLINE_FORBIDDEN). CASE-2008 destructive guard: Remove-Item (and aliases rm/del/ri/rd/rmdir/erase), Clear-Content, Move-Item, Copy-Item -Force and .NET deletes require confirm_destructive to match the scanned count, trigger a pre-run backup, and disable output truncation; -Include with -LiteralPath is refused (PowerShell ignores the filter and deletes everything). Runs as a child of the elevated [A] daemon (High IL; a CA shell is Medium), so admin steps (schtasks /change, HKLM, services, firewall) run here instead of being handed to Anh; elevation is capability, not authority, so the MUTATE/DESTRUCTIVE gates still bind.', {
 
-            "project_path": {"type": "string"},
+            "project_path": {"description": "Project root the PowerShell script runs under; used for session resolution and the working directory.", "example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string"},
 
-            "script_content": {"type": "string", "description": "Full PS body (multiline OK, UTF-8 safe)"},
+            "script_content": {"example": 'Get-Date', "type": "string", "description": "Full PS body (multiline OK, UTF-8 safe)"},
 
-            "timeout": {"type": "integer", "default": 120},
+            "timeout": {"description": "Script wall-clock timeout in seconds. Default 120.", "example": 120, "type": "integer", "default": 120},
 
-            "script_label": {"type": "string", "default": "", "description": "Short audit identifier for cache filename"},
+            "script_label": {"example": 'clock check', "type": "string", "default": "", "description": "Short audit identifier for cache filename"},
 
-            "return_full_stdout": {"type": "boolean", "default": False},
+            "return_full_stdout": {"description": "When true, return the script's full stdout instead of the capped excerpt; default false caps at stdout_max_chars.", "example": False, "type": "boolean", "default": False},
 
-            "stdout_max_chars": {"type": "integer", "default": 4000},
+            "stdout_max_chars": {"description": "Maximum stdout characters returned when return_full_stdout is false. Default 4000.", "example": 4000, "type": "integer", "default": 4000},
 
-            "stderr_max_chars": {"type": "integer", "default": 2000},
+            "stderr_max_chars": {"description": "Maximum stderr characters returned. Default 2000.", "example": 2000, "type": "integer", "default": 2000},
 
-            "content_encoding": {"type": "string", "enum": ["plain", "base64"], "default": "plain"},
+            "content_encoding": {"description": "'plain' (default) or 'base64' (UTF-8) transport for script_content, for scripts with quotes/backslashes/Vietnamese text.", "example": 'plain', "type": "string", "enum": ["plain", "base64"], "default": "plain"},
 
-            "dry_run": {"type": "boolean", "default": False, "description": "CASE-2008: static no-execute preview of the destructive-statement scan. Nothing is written and nothing runs."},
+            "dry_run": {"example": False, "type": "boolean", "default": False, "description": "CASE-2008: static no-execute preview of the destructive-statement scan. Nothing is written and nothing runs."},
 
-            "confirm_destructive": {"type": "integer", "default": -1, "description": "CASE-2008: acknowledged destructive-statement count. A body containing Remove-Item/rm/del/Clear-Content/Move-Item/fs.rm/rmtree etc. refuses to run until this EQUALS the scanner count (returned as confirm_destructive_required). A count rather than a boolean, so editing the script invalidates a stale acknowledgement."},
+            "confirm_destructive": {"example": -1, "type": "integer", "default": -1, "description": "CASE-2008: acknowledged destructive-statement count. A body containing Remove-Item/rm/del/Clear-Content/Move-Item/fs.rm/rmtree etc. refuses to run until this EQUALS the scanner count (returned as confirm_destructive_required). A count rather than a boolean, so editing the script invalidates a stale acknowledgement."},
 
-            "skip_backup": {"type": "boolean", "default": False, "description": "CASE-2008: skip the automatic pre-run project backup for a destructive script. Only for genuinely disposable targets (e.g. inside .orchestrator_cache)."},
+            "skip_backup": {"example": False, "type": "boolean", "default": False, "description": "CASE-2008: skip the automatic pre-run project backup for a destructive script. Only for genuinely disposable targets (e.g. inside .orchestrator_cache)."},
 
         }, ["project_path", "script_content"]),
 
     ('run_node_script', 'V15 R50 T2 narrow wrapper for Node.js script-file execution. Hides runtime=node selection. Writes .js artifact + invokes `node <temp.js>` → JS source bytes (JSON.stringify, regex literals, UNC paths) pass through unchanged. Use INSTEAD of inline `node -e` (blocked by R49 guard NODE_INLINE_FORBIDDEN). CASE-2008 destructive guard: fs.rm/unlink/rmdir/truncate and rimraf require confirm_destructive to match the scanned count, trigger a pre-run backup, and disable output truncation.', {
 
-            "project_path": {"type": "string"},
+            "project_path": {"description": "Project root the Node.js script runs under; used for session resolution and the working directory.", "type": "string"},
 
             "script_content": {"type": "string", "description": "Full JS body (multiline OK)"},
 
-            "timeout": {"type": "integer", "default": 120},
+            "timeout": {"description": "Script wall-clock timeout in seconds. Default 120.", "type": "integer", "default": 120},
 
             "script_label": {"type": "string", "default": "", "description": "Short audit identifier for cache filename"},
 
-            "return_full_stdout": {"type": "boolean", "default": False},
+            "return_full_stdout": {"description": "When true, return the script's full stdout instead of the capped excerpt; default false caps at stdout_max_chars.", "type": "boolean", "default": False},
 
-            "stdout_max_chars": {"type": "integer", "default": 4000},
+            "stdout_max_chars": {"description": "Maximum stdout characters returned when return_full_stdout is false. Default 4000.", "type": "integer", "default": 4000},
 
-            "stderr_max_chars": {"type": "integer", "default": 2000},
+            "stderr_max_chars": {"description": "Maximum stderr characters returned. Default 2000.", "type": "integer", "default": 2000},
 
-            "content_encoding": {"type": "string", "enum": ["plain", "base64"], "default": "plain"},
+            "content_encoding": {"description": "'plain' (default) or 'base64' (UTF-8) transport for the JS source, so JSON.stringify/regex literals/UNC paths pass through unchanged.", "type": "string", "enum": ["plain", "base64"], "default": "plain"},
 
             "dry_run": {"type": "boolean", "default": False, "description": "CASE-2008: static no-execute preview of the destructive-statement scan. Nothing is written and nothing runs."},
 
@@ -6514,13 +6514,13 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('workflow_goto_step', 'V15 R42 T3: jump current_step to arbitrary target (forward + backward, no cycle limit). Logs jump_history in state. Clears paused flag on jump. Use case: workflow V1 step 34 needs replay from step 10 for V2.', {
 
-            "name": {"type": "string"},
+            "name": {"description": "Workflow name whose current_step is jumped to the target step.", "type": "string"},
 
             "target_step": {"type": "integer", "description": "Step number to jump to (must exist in workflow MD)"},
 
             "reason": {"type": "string", "default": "", "description": "Audit trail — why jumping"},
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root used to resolve the workflow; optional because workflow state is global (R37).", "type": "string", "default": ""},
 
         }, ["name", "target_step"]),
 
@@ -6534,23 +6534,23 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "check_interval_sec": {"type": "integer", "default": 30, "description": "Pause between probes"},
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root used to resolve the idle signals' context (folders/processes); empty resolves from the active session.", "type": "string", "default": ""},
 
         }, ["signals"]),
 
     ('parse_log_section', 'V15 R42 T1: extract_log_section + base64 decode + nested JSON parse. For each line tries to decode *_b64 fields and parse double-encoded JSON. Returns structured entries (last 50) + summary counts + top_categories.', {
 
-            "page_id": {"type": "string"},
+            "page_id": {"description": "Browser page id whose log section is extracted, base64-decoded, and JSON-parsed.", "type": "string"},
 
-            "section_title": {"type": "string"},
+            "section_title": {"description": "Title text of the log section to locate in the page DOM.", "type": "string"},
 
-            "max_chars": {"type": "integer", "default": 50000},
+            "max_chars": {"description": "Maximum characters of section content read before parsing. Default 50000.", "type": "integer", "default": 50000},
 
-            "tail": {"type": "boolean", "default": True},
+            "tail": {"description": "When true (default), keep the LAST entries of the section (most recent log lines); false keeps the first.", "type": "boolean", "default": True},
 
-            "decode_base64": {"type": "boolean", "default": True},
+            "decode_base64": {"description": "When true (default), decode *_b64 fields found in the section into structured values.", "type": "boolean", "default": True},
 
-            "parse_nested_json": {"type": "boolean", "default": True},
+            "parse_nested_json": {"description": "When true (default), parse double-encoded JSON strings inside entries into objects.", "type": "boolean", "default": True},
 
         }, ["page_id", "section_title"]),
 
@@ -6560,7 +6560,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "window_seconds": {"type": "integer", "default": 3, "description": "Stability observation window for *_stable signals"},
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root used to resolve the checked signals (folders/processes); empty resolves from the active session.", "type": "string", "default": ""},
 
             # R44 backward-compat aliases for legacy workflow markdown
 
@@ -6576,11 +6576,11 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('click_and_handle_folder_dialog', 'V15 R31 T4: GENERIC atomic click → folder picker → paste path → verify. Baseline visible windows, click DOM selector via CDP, poll for NEW dialog (owner_pid/launched_after filter), fill via fill_folder_dialog. Use for any Electron/web app with native folder picker after a UI click. Token-protected. Returns aggregated phases + picker_route.', {
 
-            "page_id": {"type": "string"},
+            "page_id": {"description": "Browser page id where the selector is clicked to trigger the folder picker.", "type": "string"},
 
             "click_selector": {"type": "string", "description": "DOM selector to click (e.g. '#btnStep3')"},
 
-            "folder_path": {"type": "string"},
+            "folder_path": {"description": "Folder path filled into the picker dialog once it appears.", "type": "string"},
 
             "owner_pid": {"type": "integer", "default": 0, "description": "If known, dialog filter PID; else derived from owner_title"},
 
@@ -6588,9 +6588,9 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "wait_for_dialog_ms": {"type": "integer", "default": 5000, "description": "Poll budget after click for NEW dialog"},
 
-            "timeout_ms": {"type": "integer", "default": 8000},
+            "timeout_ms": {"description": "Overall timeout in milliseconds for the dialog to appear and be filled. Default 8000.", "type": "integer", "default": 8000},
 
-            "try_modern_picker": {"type": "boolean", "default": True},
+            "try_modern_picker": {"description": "When true (default), also handle the modern (IFileDialog) picker variant, not only the legacy dialog.", "type": "boolean", "default": True},
 
             "verify_target_exists": {"type": "boolean", "default": True, "description": "Pre-flight folder_exists check"},
 
@@ -6598,23 +6598,23 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('inspect_project_usage', 'V15 R27 T1: workflow-level project profile beyond inspect_project_runtime. Returns primary_ui_fields, primary_buttons (with event_handler_hint), runtime_functions, dangerous_controls, recommended_workflow_hint. Reuse after open_session.', {
 
-            "project_path": {"type": "string"},
+            "project_path": {"description": "Project root whose UI surface (fields, buttons, runtime functions, dangerous controls) is profiled.", "type": "string"},
 
         }, ["project_path"]),
 
     ('invoke_app_function', "V15 R27 T4: structured invoke of a top-level page function. Wraps evaluate_js with arg serialization + optional poll on window[poll_until_global]. Use case: invoke_app_function(page_id, 'runGetFootageToTarget', ['D:/target'], poll_until_global='__codexRawcutCopyDone').", {
 
-            "page_id": {"type": "string"},
+            "page_id": {"description": "Browser page id in which the top-level page function is invoked.", "type": "string"},
 
-            "function_name": {"type": "string"},
+            "function_name": {"description": "Name of the top-level page function (window member) to invoke.", "type": "string"},
 
-            "args": {"type": "array", "default": []},
+            "args": {"description": "JSON argument list serialized and passed to the page function, in order.", "type": "array", "default": []},
 
-            "poll_until_global": {"type": "string", "default": ""},
+            "poll_until_global": {"description": "Name of a window global to poll after invocation; the call returns when it becomes truthy. Empty disables polling.", "type": "string", "default": ""},
 
-            "poll_interval_ms": {"type": "integer", "default": 500},
+            "poll_interval_ms": {"description": "Interval in milliseconds between poll_until_global checks. Default 500.", "type": "integer", "default": 500},
 
-            "timeout_ms": {"type": "integer", "default": 30000},
+            "timeout_ms": {"description": "Maximum time in milliseconds to wait for the function/poll to complete. Default 30000.", "type": "integer", "default": 30000},
 
         }, ["page_id", "function_name"]),
 
@@ -6636,7 +6636,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('save_log_snapshot', 'V15 R17 P1 T2: write log content to <project>/.orchestrator_cache/artifacts/<round_id>/<slug>.txt and return {path, sha256, length, lines, head_200, tail_200}. Final report cites artifact ref INSTEAD of pasting full log → ~40-50% S/L saving per round. Two input modes: (a) section_title (reuses extract_log_section logic) OR (b) selector (direct read).', {
 
-            "page_id": {"type": "string"},
+            "page_id": {"description": "Browser page id whose log content is snapshotted to an artifact file.", "type": "string"},
 
             "section_title": {"type": "string", "default": "", "description": "Mode A — uses extract_log_section logic to locate body"},
 
@@ -6658,7 +6658,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('desktop_window_list', 'V15 R8 B.5 T4d: enumerate visible top-level windows.', {
 
-            "title_filter": {"type": "string", "default": ""},
+            "title_filter": {"description": "Case-insensitive title substring filter for the enumerated windows; empty lists all visible top-level windows.", "type": "string", "default": ""},
 
         }, []),
 
@@ -6666,9 +6666,9 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "project_path": {"type": "string", "default": "", "description": "V15 R57: optional project root for session binding (mutating tool). Schema declares this so passing it never raises UNSUPPORTED_FIELD. When empty, runtime falls back to find_project_root(file_path) → page_id resolution; if all fail, raises PROJECT_PATH_REQUIRED (single source of truth)."},
 
-            "hwnd": {"type": "integer", "default": 0},
+            "hwnd": {"description": "Window handle to focus; 0 resolves the window by title_pattern instead.", "type": "integer", "default": 0},
 
-            "title_pattern": {"type": "string", "default": ""},
+            "title_pattern": {"description": "Title substring used to match the window to focus when hwnd is 0 (also a fallback match check when hwnd is given).", "type": "string", "default": ""},
 
             "match_mode": {"type": "string", "default": "contains_case_insensitive", "description": "exact|contains|regex|case_insensitive|contains_case_insensitive"},
 
@@ -6688,13 +6688,13 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "hwnd": {"type": "integer", "default": 0, "description": "Optional for CDP path; required for Win32 fallback unless title_pattern set"},
 
-            "x": {"type": "integer"},
+            "x": {"description": "Screen X coordinate of the click, in virtual-desktop pixels.", "type": "integer"},
 
-            "y": {"type": "integer"},
+            "y": {"description": "Screen Y coordinate of the click, in virtual-desktop pixels.", "type": "integer"},
 
-            "cdp_port": {"type": "integer", "default": 9223},
+            "cdp_port": {"description": "CDP port of the Electron target the click is routed through first. Default 9223.", "type": "integer", "default": 9223},
 
-            "title_pattern": {"type": "string", "default": ""},
+            "title_pattern": {"description": "Title substring of the target window, used to verify the click lands on the intended app; empty skips the title check.", "type": "string", "default": ""},
 
             "match_mode": {"type": "string", "default": "contains_case_insensitive", "description": "exact|contains|regex|case_insensitive|contains_case_insensitive"},
 
@@ -6730,9 +6730,9 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('desktop_screenshot', 'T4d: capture a desktop screenshot of all monitors, one monitor, or one window. Default captures ALL monitors (virtual desktop); monitor=N (1-based) captures one monitor; hwnd>0 captures a window. Result includes monitors[] (bounds+primary).', {
 
-            "hwnd": {"type": "integer", "default": 0},
+            "hwnd": {"description": "Window handle to capture; 0 (default) captures monitors instead of a single window.", "type": "integer", "default": 0},
 
-            "save_path": {"type": "string", "default": ""},
+            "save_path": {"description": "Explicit PNG output path; empty saves to the default screenshot location and returns its path.", "type": "string", "default": ""},
 
             "monitor": {"type": "integer", "default": 0, "description": "1-based monitor index (see monitors[] in result); 0 = all monitors / virtual desktop."},
 
@@ -6744,9 +6744,9 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "text": {"type": "string", "description": "Required text to paste/type into the target desktop window."},
 
-            "hwnd": {"type": "integer", "default": 0},
+            "hwnd": {"description": "Window handle to focus and paste text into; 0 resolves the window by title_pattern instead.", "type": "integer", "default": 0},
 
-            "title_pattern": {"type": "string", "default": ""},
+            "title_pattern": {"description": "Title substring used to find the target window when hwnd is 0.", "type": "string", "default": ""},
 
             "match_mode": {"type": "string", "default": "contains_case_insensitive", "description": "exact|contains|regex|case_insensitive|contains_case_insensitive"},
 
@@ -6754,15 +6754,15 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "method": {"type": "string", "default": "clipboard", "description": "Text delivery method. Default clipboard is reliable for Unicode/Electron inputs."},
 
-            "pre_focus_delay_ms": {"type": "integer", "default": 250},
+            "pre_focus_delay_ms": {"description": "Delay in milliseconds after focusing the window before pasting, so the target app settles. Default 250.", "type": "integer", "default": 250},
 
-            "require_focus": {"type": "boolean", "default": True},
+            "require_focus": {"description": "When true (default), abort instead of pasting when the target window cannot be verified as focused.", "type": "boolean", "default": True},
 
-            "click_focus": {"type": "boolean", "default": False},
+            "click_focus": {"description": "When true, click at click_x/click_y inside the window to set the text caret before pasting; default false pastes at the current caret.", "type": "boolean", "default": False},
 
-            "click_x": {"type": "integer", "default": 0},
+            "click_x": {"description": "X offset (window-relative pixels) of the focus click used when click_focus is true; 0 means no explicit point.", "type": "integer", "default": 0},
 
-            "click_y": {"type": "integer", "default": 0},
+            "click_y": {"description": "Y offset (window-relative pixels) of the focus click used when click_focus is true; 0 means no explicit point.", "type": "integer", "default": 0},
 
             "project_path": {"type": "string", "description": "Project root for the session gate. W7 2026-08-19 (F020): this is a mutating tool with no file_path/page_id/session_id, so the gate cannot derive a project and a payload built from `required` always answered 400 PROJECT_PATH_REQUIRED."},
 
@@ -6770,9 +6770,9 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('electron_devtools_log', "⚠️ DEPRECATED R41: enumerate Electron CDP targets — do not use; use list_cdp_targets instead. Use `list_cdp_targets` for CDP target enumeration, `read_console_errors` for console messages, or `evaluate_js` for log inspection. This tool will be removed in R42+. Reason: confusing name (it's enumeration not log read), overlaps with list_cdp_targets. Migration: replace `electron_devtools_log(cdp_port=9223)` with `list_cdp_targets(cdp_port=9223)`.", {
 
-            "cdp_port": {"type": "integer", "default": 9223},
+            "cdp_port": {"description": "CDP port of the Electron target whose targets were enumerated by this deprecated tool. Default 9223.", "type": "integer", "default": 9223},
 
-            "max_messages": {"type": "integer", "default": 50},
+            "max_messages": {"description": "Maximum log/target entries returned. Default 50.", "type": "integer", "default": 50},
 
         }, []),
 
@@ -6788,7 +6788,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "name_pattern": {"type": "string", "default": "", "description": "Case-insensitive substring matched against process name or full cmdline. Required if root_pid not provided; not regex."},
 
-            "max_depth": {"type": "integer", "default": 3},
+            "max_depth": {"description": "Maximum depth of the process tree walked from the root process. Default 3.", "type": "integer", "default": 3},
 
         }, []),
 
@@ -6798,37 +6798,37 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "project_path": {"type": "string", "default": "", "description": "Optional project root (used for CWD resolution)"},
 
-            "timeout_sec": {"type": "integer", "default": 300},
+            "timeout_sec": {"description": "Wall-clock timeout in seconds for the Node Playwright test run. Default 300.", "type": "integer", "default": 300},
 
         }, ["test_script_path"]),
 
     ('record_ui_flow', 'T4 test: Playwright tracing stub. Use output_path for the intended trace path.', {
 
-            "page_id": {"type": "string"}, "output_path": {"type": "string", "default": ""},
+            "page_id": {"description": "Browser page id whose UI flow is traced.", "type": "string"}, "output_path": {"description": "Intended trace output path for the recorded flow; empty uses the default trace location.", "type": "string", "default": ""},
 
         }, ["page_id"]),
 
     ('assert_text_visible', 'T4 test: wait for text visible.', {
 
-            "page_id": {"type": "string"}, "text": {"type": "string"},
+            "page_id": {"description": "Browser page id on which the text visibility is asserted.", "type": "string"}, "text": {"description": "Text that must become visible on the page.", "type": "string"},
 
-            "timeout_ms": {"type": "integer", "default": 2000},
+            "timeout_ms": {"description": "Maximum wait in milliseconds for the text to appear. Default 2000.", "type": "integer", "default": 2000},
 
         }, ["page_id", "text"]),
 
     ('assert_button_click_changes_state', 'T4 test: before/after diff.', {
 
-            "page_id": {"type": "string"}, "button_selector": {"type": "string"},
+            "page_id": {"description": "Browser page id on which the button click state-change is asserted.", "type": "string"}, "button_selector": {"description": "CSS selector of the button clicked for the assertion.", "type": "string"},
 
-            "observed_selector": {"type": "string"},
+            "observed_selector": {"description": "CSS selector of the element whose state is diffed before/after the button click.", "type": "string"},
 
-            "timeout_ms": {"type": "integer", "default": 3000},
+            "timeout_ms": {"description": "Maximum wait in milliseconds for the observed state to change after the click. Default 3000.", "type": "integer", "default": 3000},
 
         }, ["page_id", "button_selector", "observed_selector"]),
 
     ('assert_console_no_error', 'T4 test: assert console.error count == 0.', {
 
-            "page_id": {"type": "string"},
+            "page_id": {"description": "Browser page id whose console.error count is asserted to be zero.", "type": "string"},
 
         }, ["page_id"]),
 
@@ -6842,9 +6842,9 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('get_skill_state', 'V15 R8 B.7 / R22: skills available in .ToolA_Skill/. R22 verbosity supports full, terse, and ref. terse strips per-entry path metadata across 23 entries (path/path_absolute/size_bytes/read_file_range_payload* fields). Keeps only `name`. Saves about 2800 tokens per call.', {
 
-            "session_id": {"type": "string", "default": ""},
+            "session_id": {"description": "Session id used to resolve which project's .ToolA_Skill/ state is reported; empty resolves the active session.", "type": "string", "default": ""},
 
-            "project_path": {"type": "string", "default": ""},
+            "project_path": {"description": "Project root whose .ToolA_Skill/ skills are listed; empty resolves from the session.", "type": "string", "default": ""},
 
             "verbosity": {"type": "string", "enum": ["full", "terse", "ref"], "default": "full", "description": "R22: terse → name-only per entry; pass 'full' if you need read_file_range_payload."},
 
@@ -6858,7 +6858,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('get_validation_queue', 'V15 R8 B.7: pending dry_run_ids.', {
 
-            "project_path": {"type": "string"},
+            "project_path": {"description": "Project root whose pending dry_run validation queue is listed.", "type": "string"},
 
         }, ["project_path"]),
 
@@ -6880,15 +6880,15 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('copy_file', 'R81 T2 (protected): copy ONE file src→dst (absolute or relative via project_path) with audit — backs up existing dst, copies, verifies sha256. If dst exists and overwrite=false, return DST_EXISTS and do not mutate. Safe rerun is a new destination, or overwrite=true with backup_existing=true. project_path resolves relative src/dst. For repo→LIVE use cep_deploy.', {
 
-            "src": {"type": "string", "description": "Absolute path, or relative path resolved against project_path"},
+            "src": {"example": 'docs\\a.md', "type": "string", "description": "Absolute path, or relative path resolved against project_path"},
 
-            "dst": {"type": "string", "description": "Absolute path, or relative path resolved against project_path"},
+            "dst": {"example": 'docs\\a_copy.md', "type": "string", "description": "Absolute path, or relative path resolved against project_path"},
 
-            "project_path": {"type": "string", "default": "", "description": "Project root; resolves relative src/dst when set"},
+            "project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "default": "", "description": "Project root; resolves relative src/dst when set"},
 
-            "overwrite": {"type": "boolean", "default": True},
+            "overwrite": {"description": "When true (default), an existing destination is backed up and replaced; false returns DST_EXISTS and does not mutate when the destination exists.", "example": True, "type": "boolean", "default": True},
 
-            "backup_existing": {"type": "boolean", "default": True, "description": "Back up dst to dst.bak_<ts> before overwriting"},
+            "backup_existing": {"example": True, "type": "boolean", "default": True, "description": "Back up dst to dst.bak_<ts> before overwriting"},
 
         }, ["src", "dst"]),
 
