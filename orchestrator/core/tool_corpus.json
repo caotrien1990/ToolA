@@ -1,0 +1,566 @@
+{
+  "_meta": {
+    "purpose": "BM25 retrieval corpus for the 34 CURATED_CORE_TOOLS: one entry per tool carrying its registry name, purpose, full registry description, trigger phrases and sample request sentences, so a BM25 index built over this file can rank the right tool for a natural-language request.",
+    "consumer": "BM25 index build for tool retrieval (ToolA upgrade table item #5, code half implemented separately). This file is data only; no runtime code reads it yet.",
+    "created": "2026-11-05",
+    "source_repo": "project-orchestrator @ HEAD e6afdf5513dacec06aa78066a96d9fa419ce388a",
+    "curated_list_source": "orchestrator/core/registry_data.py:5680-5703 (CURATED_CORE_TOOLS, 34 tools)",
+    "entry_schema": {
+      "name": "Tool name exactly as registered; repeats the entry key.",
+      "purpose": "One-sentence purpose: first sentence of the registry description, whitespace-collapsed, capped at 140 chars — the same derivation code_tools.py bootstrap_tool_purposes()/_purpose_sentence applies for the bootstrap purpose map (code_tools.py:2679-2698 and 2701-2738).",
+      "description": "The tool's full registry description, copied verbatim from its schema definition (see 'source').",
+      "triggers": "2-4 short trigger phrases: terse keyword-style phrasings that should retrieve this tool.",
+      "samples": "2-3 full sample request sentences as a user or agent would phrase them; mixed English and Vietnamese, at least one of each per tool.",
+      "source": "file:line of the description in the repo: registry_data.py schema entries / V15 schema specs, code_tools.py register_tool schema dicts, or orchestrator_server.py register_tool schema dicts."
+    },
+    "language_note": "Samples and triggers mix English and Vietnamese because requests arrive in both languages; purposes and descriptions keep the registry's original English text.",
+    "rendering_notes": "Two descriptions are f-strings in source and were rendered to static text: council_worker_model (orchestrator_server.py:13545) — the interpolated council-worker roster is rendered as the words 'live council roster'; restart_orchestrator_via_bat (orchestrator_server.py:13815) — the interpolated _RESTART_HUNG_SEMAPHORE_SEC constant (orchestrator_server.py:13566, value 15.0) is rendered as '15'. Every other description is a byte-verbatim string constant from its schema definition."
+  },
+  "read_file_range": {
+    "name": "read_file_range",
+    "purpose": "Adaptive pure read: range, function, class, section, or file summary.",
+    "description": "Adaptive pure read: range, function, class, section, or file summary. Small files auto-expand; large files remain bounded and return AST-aware next_ranges. On a LARGE or unfamiliar repo do NOT bulk-read to understand it - ask the index first (cbm_graph_status for freshness, cbm_get_architecture for the module graph + entrypoints, cbm_dsm for coupling, cbm_trace_path between two files, find_symbol or search_code mode=symbol for the exact line), then read ONE bounded range. That is the CSLt order: structure from the graph, then the smallest read that answers the question. This is also the ONLY call that seeds the write_fix read_token, so read the exact region before editing it and use force_reseed=true after FILE_CHANGED_OUTSIDE_ORCHESTRATOR; its content_hash is a raw-bytes digest and must NEVER be passed as write_fix.expected_hash.",
+    "triggers": [
+      "read lines of a file",
+      "đọc đoạn code theo dòng",
+      "read one function in a file",
+      "xem nội dung file tại một khoảng dòng"
+    ],
+    "samples": [
+      "Read lines 120-180 of orchestrator/core/registry_data.py so I can see the schema entry before editing it.",
+      "Đọc giúp tôi hàm bootstrap_tool_purposes trong code_tools.py để kiểm tra cách nó rút gọn purpose.",
+      "Show me just the class definition section of registry.py, not the whole file."
+    ],
+    "source": "orchestrator/core/registry_data.py:554"
+  },
+  "read_context_batch": {
+    "name": "read_context_batch",
+    "purpose": "Read multiple files or structural scopes in one pure T1 call under one total token budget.",
+    "description": "Read multiple files or structural scopes in one pure T1 call under one total token budget. Use it once cbm has already said WHICH files matter (cbm_get_architecture, cbm_dsm, cbm_trace_path, ocr_map, find_symbol): N targeted scopes in one budgeted call costs far less context than N separate read_file_range calls. It is a PURE read and does NOT seed the write_fix read_token - seed that with read_file_range on the exact region you are about to edit.",
+    "triggers": [
+      "read several files at once",
+      "đọc nhiều file cùng lúc",
+      "batch read under one budget",
+      "gom ngữ cảnh nhiều file trong một lần gọi"
+    ],
+    "samples": [
+      "Read the architecture, registry and errors modules in one batch under a single token budget.",
+      "Đọc cùng lúc ba file liên quan tới council dispatch để tôi đối chiếu luồng gửi tin."
+    ],
+    "source": "orchestrator/core/registry_data.py:1232"
+  },
+  "architecture_context_pack": {
+    "name": "architecture_context_pack",
+    "purpose": "Graph-first readonly context pack that selects exact files/functions then reads them under one budget.",
+    "description": "Graph-first readonly context pack that selects exact files/functions then reads them under one budget. Never auto-reindexes.",
+    "triggers": [
+      "context pack for a feature",
+      "gói ngữ cảnh kiến trúc",
+      "graph-first read of the files behind a topic",
+      "tổng hợp đúng file và hàm theo graph"
+    ],
+    "samples": [
+      "Build a graph-first context pack for the restart flow and read the exact files and functions behind it.",
+      "Lập gói ngữ cảnh cho tính năng backup: chọn đúng file và hàm rồi đọc trong một ngân sách duy nhất."
+    ],
+    "source": "orchestrator/core/registry_data.py:1681"
+  },
+  "search_code": {
+    "name": "search_code",
+    "purpose": "Unified code/search entrypoint.",
+    "description": "Unified code/search entrypoint. mode defaults to text; supported modes: text|regex|symbol|callers|definition_usage|index|dom_candidates|smart. Legacy tool names route here as HTTP aliases (find_callers / find_definition_and_usage / regex_search / read_chunks are DEPRECATED - come here instead). query_encoding = plain|base64. Pick by SEMANTICS, not habit: search_code answers WHERE a string or symbol sits, while the cbm_* family answers HOW the repo is shaped - cbm_get_architecture for the module graph and entrypoints, cbm_dsm for coupling, cbm_evolution for churn, cbm_trace_path between two files, cbm_dead_code for unreachable callables. It indexes CODE only, so file_pattern=\"*.txt\"/\"*.md\"/\"*.log\" answering 0 hits is a measurement trap, not proof the text is absent - drop the pattern or read the file. It resolves by absolute project_path and never by cwd, so use it whenever a native grep says 'no such file' on a path that certainly exists. mode=callers DOES see instance receivers (self.fn() / obj.fn()), which is exactly why it is the cross-check to run before believing a cbm_dead_code 'no callers' verdict: the cbm graph resolves a call edge only through an imported module/alias, so an empty cbm callers list means 'no RESOLVED reference', never 'unused'.",
+    "triggers": [
+      "find where a string appears",
+      "tìm đoạn code chứa chuỗi này",
+      "search callers of a function",
+      "tra cứu regex trong toàn repo"
+    ],
+    "samples": [
+      "Search the codebase for every caller of register_tool, including instance receivers like self.register_tool().",
+      "Tìm trong repo xem chuỗi 'STALE_INDEX' xuất hiện ở những file nào.",
+      "Run a regex search for every place that reads INDEX.json."
+    ],
+    "source": "orchestrator/core/registry_data.py:2287"
+  },
+  "find_symbol": {
+    "name": "find_symbol",
+    "purpose": "Find where a function/class/variable is defined in the codebase.",
+    "description": "Find where a function/class/variable is defined in the codebase. Returns file:line so you know what range to read next. V15 R8 A.1: include=def|callers|usage|all. V15 R12: name_encoding=plain|base64 for Unicode symbol names via central transport helper.",
+    "triggers": [
+      "where is this function defined",
+      "hàm này định nghĩa ở đâu",
+      "locate a class definition",
+      "tìm định nghĩa symbol cho file:dòng"
+    ],
+    "samples": [
+      "Find where the class RegistryDriftError is defined and give me the file and line.",
+      "Tìm định nghĩa của hàm build_tool_schemas trong repo, cho tôi file:dòng để đọc tiếp."
+    ],
+    "source": "orchestrator/core/registry_data.py:209"
+  },
+  "cbm_get_architecture": {
+    "name": "cbm_get_architecture",
+    "purpose": "T2 derived-index-aware architecture overview.",
+    "description": "T2 derived-index-aware architecture overview. May incrementally update graph.db before returning bounded module/dependency data.",
+    "triggers": [
+      "architecture overview",
+      "tổng quan kiến trúc module",
+      "module graph and entrypoints",
+      "sơ đồ phụ thuộc giữa các module"
+    ],
+    "samples": [
+      "Give me the module-level architecture overview of this repo: the dependency graph and the entrypoints.",
+      "Cho tôi xem tổng quan kiến trúc: các module chính và quan hệ phụ thuộc của chúng."
+    ],
+    "source": "code_tools.py:20221"
+  },
+  "ocr_map": {
+    "name": "ocr_map",
+    "purpose": "Navigation map of a change, cbm_graph-shaped: which files a diff actually lives in, sorted by changed-line count, with every dropped file c…",
+    "description": "Navigation map of a change, cbm_graph-shaped: which files a diff actually lives in, sorted by changed-line count, with every dropped file counted by reason. Same zero-LLM subprocess as ocr_review. Read-only, 0 tokens, no session. Call it BEFORE reading a diff: it names the few files that carry the change, so the follow-up read is one bounded range instead of a git_diff dump - then cbm_what_if / cbm_dsm on those same files gives blast radius before any edit. git_stage and git_commit already attach ocr_review by default, so this is pre-commit navigation, not a duplicate review.",
+    "triggers": [
+      "map of a diff",
+      "bản đồ thay đổi của diff",
+      "which files carry this change",
+      "file nào chứa thay đổi, sắp theo số dòng sửa"
+    ],
+    "samples": [
+      "Map this diff before I read it: which files actually carry the change, sorted by changed-line count?",
+      "Lập bản đồ diff hiện tại để biết vài file nào chứa phần lớn thay đổi trước khi tôi đọc chi tiết."
+    ],
+    "source": "code_tools.py:20627"
+  },
+  "list_structure": {
+    "name": "list_structure",
+    "purpose": "Return the project folder tree without reading file contents.",
+    "description": "Return the project folder tree without reading file contents. Pass 'project_path' (preferred) or 'path' (legacy alias).",
+    "triggers": [
+      "folder tree",
+      "cây thư mục project",
+      "list project structure",
+      "liệt kê cấu trúc thư mục không đọc nội dung"
+    ],
+    "samples": [
+      "Show me the folder tree of the project-orchestrator repo without reading any file contents.",
+      "Liệt kê cây thư mục của project để tôi biết code nằm ở đâu."
+    ],
+    "source": "orchestrator/core/registry_data.py:118"
+  },
+  "query_index": {
+    "name": "query_index",
+    "purpose": "Filter files from INDEX by group, complexity, LOC, fnmatch pattern, and optional text query (query MAY be empty).",
+    "description": "Filter files from INDEX by group, complexity, LOC, fnmatch pattern, and optional text query (query MAY be empty). V15 R11: auto_refresh=true (default) silently refreshes INDEX inline when drift detected; response sets auto_refreshed=true so CA knows. Set auto_refresh=false to receive STALE_INDEX error instead. file_pattern uses fnmatch against both the file name and the full relative path (e.g. '*.py', '*service*', '*autocutter*', 'src/*.ts'). CAN-051 mutation_scope=derived_index: auto_refresh rewrites INDEX.json (derived state, not source).",
+    "triggers": [
+      "filter files from the index",
+      "lọc file trong INDEX theo pattern",
+      "largest files by LOC",
+      "tìm file theo complexity và số dòng"
+    ],
+    "samples": [
+      "Filter the project index for every '*.py' file so I can rank them by line count and find the complexity hotspots.",
+      "Lọc trong INDEX các file khớp '*service*' và cho tôi biết độ phức tạp của từng file."
+    ],
+    "source": "orchestrator/core/registry_data.py:3192"
+  },
+  "get_rule_core_text": {
+    "name": "get_rule_core_text",
+    "purpose": "Return the rendered CORE_RULE text plus runtime path metadata and a content hash.",
+    "description": "Return the rendered CORE_RULE text plus runtime path metadata and a content hash. HTTP bootstrap is canonical; pass a stable agent_id so per-agent cache does not collide.",
+    "triggers": [
+      "fetch the core rule",
+      "lấy CORE_RULE để bootstrap",
+      "rule core text for a new agent",
+      "nạp luật lõi kèm content hash"
+    ],
+    "samples": [
+      "Fetch the rendered CORE_RULE text for agent muse1 as its session bootstrap.",
+      "Lấy bản CORE_RULE hiện hành kèm content hash để agent mới khởi động đúng luật."
+    ],
+    "source": "orchestrator/core/registry_data.py:3080"
+  },
+  "write_fix": {
+    "name": "write_fix",
+    "purpose": "Edit a code range in a file by replacing it by line numbers.",
+    "description": "Edit a code range in a file by replacing it by line numbers. NO size limit on new_content - send the whole block in one call, and set content_encoding='base64' (UTF-8) whenever new_content is multiline or contains backslashes (Windows paths, regex escapes), double quotes, or non-ASCII/Vietnamese, or when the caller is Windows PowerShell; plain JSON transport can corrupt those. The file's existing line ending (CRLF vs LF) is auto-preserved, so editing a .bat/.ps1 keeps CRLF - no manual newline handling needed. On validation failure the backend opens a draft: response carries draft_id + failed_parts (line-accurate, with excerpts); fix ONLY the failed range via write_draft_patch until clean - the backend then ships automatically. Automatically creates a .bak backup and syncs the cache after the write. Requires INDEX.json to exist first (run generate_project_map). If the file changed outside Orchestrator, returns a conflict. When Python validation fails with a Ruff safe-fixable diagnostic, the response includes ruff_fix_applicable and ruff_fix_hint suggesting ruff_fix(path=<file>, apply=false) for CA-controlled preview; it never auto-fixes. ONE region per call and the shape is FLAT (file_path,start_line,end_line,new_content) - there is no edits[] array, so several regions in the SAME file need several calls and they MUST go BOTTOM-UP: an earlier top region renumbers every line beneath it. expected_hash is a PREVIOUS write_fix.new_hash, never a read_file_range.content_hash (that one is a raw-bytes digest and seeds no edit authority). On a large repo, run cbm_what_if / cbm_dsm on the target first so the edit set is chosen from the call graph instead of guessed, and a client timeout is NOT a failed write - poll /api/write_status?operation_id=... until commit_state is terminal instead of resending.",
+    "triggers": [
+      "edit lines in a file",
+      "sửa một đoạn code theo số dòng",
+      "replace a line range",
+      "vá một khoảng dòng trong file"
+    ],
+    "samples": [
+      "Replace lines 40-55 of registry.py with the corrected validation block I drafted.",
+      "Sửa đoạn dòng 120-135 trong file code_tools.py: thay điều kiện timeout bằng bản mới này.",
+      "Apply this one-region edit to the bottom of the file first so the line numbers above it stay valid."
+    ],
+    "source": "orchestrator/core/registry_data.py:2780"
+  },
+  "write_new_file": {
+    "name": "write_new_file",
+    "purpose": "Create a new file with the provided content.",
+    "description": "Create a new file with the provided content. NO size limit — send the whole file in one call (base64 for multiline). On validation failure the backend opens a draft (draft_id + failed_parts with line-accurate errors); fix only the failed range via write_draft_patch until clean, then it ships automatically. Supports dry_run preview, strict UTF-8 base64, diff_preview, and apply_after_dry_run. Rejects existing files unless overwrite=True. When Python validation fails with a Ruff safe-fixable diagnostic, the response includes ruff_fix_applicable and ruff_fix_hint suggesting ruff_fix(path=<file>, apply=false) for CA-controlled preview; it never auto-fixes.",
+    "triggers": [
+      "create a new file",
+      "tạo file mới với nội dung này",
+      "write a whole file from scratch",
+      "ghi file mới, chưa tồn tại"
+    ],
+    "samples": [
+      "Create orchestrator/core/tool_corpus.json with this JSON content as a brand-new file.",
+      "Tạo file báo cáo mới tại docs/audit-2026.md với toàn bộ nội dung tôi vừa soạn."
+    ],
+    "source": "orchestrator/core/registry_data.py:2824"
+  },
+  "write_fix_html": {
+    "name": "write_fix_html",
+    "purpose": "Edit a code range in an .html file.",
+    "description": "Edit a code range in an .html file. Automatically runs dry_run and checks closing delimiters (<script> <style> <body> <html>) before writing. Use force=True to bypass. When Python validation fails with a Ruff safe-fixable diagnostic, the response includes ruff_fix_applicable and ruff_fix_hint suggesting ruff_fix(path=<file>, apply=false) for CA-controlled preview; it never auto-fixes.",
+    "triggers": [
+      "edit an html file",
+      "sửa file HTML",
+      "patch a script block inside a page",
+      "chỉnh đoạn trong trang html, kiểm tra thẻ đóng"
+    ],
+    "samples": [
+      "Edit the script block in traffic.html to fix the rendering of the session column.",
+      "Sửa đoạn style trong file room.html, kiểm tra đủ thẻ đóng trước khi ghi."
+    ],
+    "source": "orchestrator/core/registry_data.py:3206"
+  },
+  "write_transaction": {
+    "name": "write_transaction",
+    "purpose": "V15 R8 B.2 (+R43 P1 #3-B): atomic multi-file write batch with rollback.",
+    "description": "V15 R8 B.2 (+R43 P1 #3-B): atomic multi-file write batch with rollback. R43 ops can be tool='write_fix' (line range, default), 'write_new_file' (create), or 'replace_between_anchors' (anchor-based patch). Each operation MUST use file_path, not path. R43 structural_check=true (default) runs brace/paren/bracket delta count on dry_run preview → STRUCTURAL_IMBALANCE if range likely incomplete. Each write_fix op also supports expected_hash to skip FILE_CHANGED guardrail in sequential chain.",
+    "triggers": [
+      "atomic multi-file write",
+      "ghi nhiều file nguyên tử",
+      "batch write with rollback",
+      "áp nhiều sửa đổi cùng lúc, lỗi thì rollback toàn bộ"
+    ],
+    "samples": [
+      "Apply these three coordinated edits across registry_data.py, code_tools.py and the test file as one atomic transaction with rollback.",
+      "Ghi đồng thời bản vá vào hai file code và một file test; file nào lỗi thì rollback cả lô."
+    ],
+    "source": "orchestrator/core/registry_data.py:4165"
+  },
+  "apply_after_dry_run": {
+    "name": "apply_after_dry_run",
+    "purpose": "Apply an exact previously previewed dry-run payload by dry_run_id.",
+    "description": "Apply an exact previously previewed dry-run payload by dry_run_id. Rejects stale target files and expired previews.",
+    "triggers": [
+      "apply the dry run",
+      "áp bản preview đã duyệt",
+      "commit the previewed write by dry_run_id",
+      "thi hành đúng payload đã dry-run"
+    ],
+    "samples": [
+      "The dry-run preview looks right — apply that exact payload now using its dry_run_id.",
+      "Áp dụng đúng bản ghi đã preview với dry_run_id này, đừng sửa thêm gì."
+    ],
+    "source": "orchestrator/core/registry_data.py:3208"
+  },
+  "backup_project": {
+    "name": "backup_project",
+    "purpose": "Create timestamped zip backup and manifest.",
+    "description": "Create timestamped zip backup and manifest. The 600-second timeout matches the handler default.",
+    "triggers": [
+      "backup the project",
+      "sao lưu project thành zip",
+      "zip backup with manifest",
+      "tạo bản backup trước khi sửa lớn"
+    ],
+    "samples": [
+      "Create a timestamped zip backup of the whole project with its manifest before we start the refactor.",
+      "Sao lưu project thành file zip có dấu thời gian để có đường lui trước đợt sửa lớn."
+    ],
+    "source": "orchestrator/core/registry_data.py:3110"
+  },
+  "delete_file": {
+    "name": "delete_file",
+    "purpose": "Delete one file at the requested path.",
+    "description": "Delete one file at the requested path. Caution: permanent. R83: ephemeral=true cleans a temp/derived file (C:/temp, %TEMP%, *.bak_*, .orchestrator_cache) in ONE call with no project_path/backup_override (gates skipped only for temp-rooted absolute paths).",
+    "triggers": [
+      "delete one file",
+      "xóa đúng một file này",
+      "remove a stale temp file",
+      "dọn file rác cụ thể theo đường dẫn"
+    ],
+    "samples": [
+      "Delete the stale scratch file _realtest_write_new.txt from the project root.",
+      "Xóa file tạm itemc_extract.py trong thư mục Temp giúp tôi."
+    ],
+    "source": "orchestrator/core/registry_data.py:3043"
+  },
+  "copy_file": {
+    "name": "copy_file",
+    "purpose": "R81 T2 (protected): copy ONE file src→dst (absolute or relative via project_path) with audit — backs up existing dst, copies, verifies sha2…",
+    "description": "R81 T2 (protected): copy ONE file src→dst (absolute or relative via project_path) with audit — backs up existing dst, copies, verifies sha256. If dst exists and overwrite=false, return DST_EXISTS and do not mutate. Safe rerun is a new destination, or overwrite=true with backup_existing=true. project_path resolves relative src/dst. For repo→LIVE use cep_deploy.",
+    "triggers": [
+      "copy a file",
+      "sao chép file sang đường dẫn mới",
+      "duplicate a file with sha256 check",
+      "copy một file, đích tồn tại thì dừng"
+    ],
+    "samples": [
+      "Copy registry_data.py to a dated backup name in the same folder and verify the sha256 matches.",
+      "Sao chép file cấu hình sang đường dẫn mới; nếu đích đã tồn tại thì báo lỗi chứ đừng ghi đè."
+    ],
+    "source": "orchestrator/core/registry_data.py:5553"
+  },
+  "run_project_command": {
+    "name": "run_project_command",
+    "purpose": "Run bounded command in project cwd.",
+    "description": "Run bounded command in project cwd. V15 R14: shell wrapper plus optional background/keep_alive launch verification via expected_port / expected_process_name. JSON transport is a separate layer: encode backslashes before placing command in an outer JSON string. On Windows, shell operators and findstr/dir file reads are fragile; prefer direct search/read tools or script-file transport. Auto routes only a standalone script.ps1 to PowerShell -File; a command such as findstr text script.ps1 remains a normal command. CAN-053 readiness DSL: health_url + expect_status (+ readiness_protocol=http|tcp|cdp|process) verify service readiness over HTTP; CDP_UNREACHABLE is returned ONLY for cdp, dead TCP ports return PORT_UNREACHABLE, failed health probes return HEALTH_PROBE_FAILED; launcher-exited-but-health-ok returns ok_with_warning=true. CASE-2008 destructive guard: a command containing a delete/move/truncate/overwrite statement in ANY runtime (cmd rd/del, PowerShell Remove-Item, node fs.rmSync, python shutil.rmtree, sh rm -rf, git clean) refuses to run until confirm_destructive equals the scanned count, takes a project backup first, and returns untruncated output; dry_run=true previews without executing. A PowerShell -Include paired with -LiteralPath is REFUSED outright (DESTRUCTIVE_SCRIPT_FOOTGUN) because PowerShell silently discards the filter and removes the whole target.",
+    "triggers": [
+      "run a command in the project",
+      "chạy lệnh trong thư mục project",
+      "run git log via command",
+      "chạy lệnh kiểm tra port và tiến trình"
+    ],
+    "samples": [
+      "Run git log --oneline -5 in the project directory and show me the output.",
+      "Chạy lệnh kiểm tra tiến trình nào đang giữ port 8083 ngay trong thư mục project."
+    ],
+    "source": "orchestrator/core/registry_data.py:3118"
+  },
+  "run_project_test_script": {
+    "name": "run_project_test_script",
+    "purpose": "V15 R43 P1 #5 T2: script-file transport for node|python|powershell|sh.",
+    "description": "V15 R43 P1 #5 T2: script-file transport for node|python|powershell|sh. Python selects the first interpreter satisfying required_python_modules; otherwise returns INTERPRETER_CAPABILITY_MISSING without installing packages. Results include runtime_used, script metadata, and stdout_metadata/stderr_metadata with full-stream hashes and truncation state. Execution failures use SCRIPT_EXEC_FAILED; unsafe inline callers should route here instead of retrying COMMAND_TRANSPORT_UNSAFE or SCRIPT_RUNTIME_REQUIRED. CASE-2008 destructive guard (all runtimes): a body containing a delete/move/truncate/overwrite statement refuses to run until confirm_destructive equals the scanned count, takes a project backup first, and returns untruncated output; dry_run=true previews without executing. A PowerShell -Include paired with -LiteralPath is REFUSED outright (DESTRUCTIVE_SCRIPT_FOOTGUN) because PowerShell silently discards the filter and removes the whole target.",
+    "triggers": [
+      "run a test script file",
+      "chạy script từ file có sẵn",
+      "execute this python script file",
+      "chạy file script PowerShell đã ghi"
+    ],
+    "samples": [
+      "Run the script file verify_corpus.py with the repo venv python and return the result with the stream hashes.",
+      "Chạy file script kiểm thử tôi đã ghi sẵn bằng PowerShell và trả kết quả thực thi."
+    ],
+    "source": "orchestrator/core/registry_data.py:5011"
+  },
+  "council_message": {
+    "name": "council_message",
+    "purpose": "Send a message to another council worker (or the user) and get the reply.",
+    "description": "Send a message to another council worker (or the user) and get the reply. [A] auto-handles dispatch + broker logging. Structured args only — never run shell/curl/JSON.",
+    "triggers": [
+      "send a council message and wait",
+      "gửi tin cho worker hội đồng và chờ reply",
+      "ask a worker a question synchronously",
+      "nhắn muse2 và chờ trả lời"
+    ],
+    "samples": [
+      "Send this audit brief to Codo through the council and wait for his reply.",
+      "Gửi tin cho muse2 hỏi trạng thái hook rồi chờ câu trả lời đồng bộ."
+    ],
+    "source": "orchestrator_server.py:12785"
+  },
+  "council_message_async": {
+    "name": "council_message_async",
+    "purpose": "Non-blocking council dispatch (HTTP twin of the MCP council_message_async): validates worker+model, dispatches on the daemon loop, returns…",
+    "description": "Non-blocking council dispatch (HTTP twin of the MCP council_message_async): validates worker+model, dispatches on the daemon loop, returns an ack immediately. Reply lands in .council/broker_filtered.jsonl — poll council_tracker. Prefer this for multi-worker fan-out; council_message is the sync path.",
+    "triggers": [
+      "dispatch without blocking",
+      "gửi tin hội đồng không chờ",
+      "fan-out to several workers in parallel",
+      "phát brief song song cho nhiều worker"
+    ],
+    "samples": [
+      "Dispatch the same review task to three workers in parallel without blocking — I will poll the replies later.",
+      "Gửi async brief này cho hai worker cùng lúc rồi trả ack ngay; tôi xem reply sau bằng council_tracker."
+    ],
+    "source": "orchestrator_server.py:12906"
+  },
+  "council_worker_model": {
+    "name": "council_worker_model",
+    "purpose": "Get/set/list a council worker's model (live council roster) WITHOUT the dashboard UI / Playwright DOM.",
+    "description": "Get/set/list a council worker's model (live council roster) WITHOUT the dashboard UI / Playwright DOM. Validates against curated .council/ID_MODELS/<PROVIDER>.txt; applies at the next dispatch. ROUTE RULE SOT = the user's live directive (Anh). Benchmark 2026-07-25 table SUSPENDED. Set, then verify with action='get' before council_message. Do not change provider/model to work around path/read/write failures; stage worker files under [A]\\.council\\tmp_* instead. Load leader-council-skill for full council routing rules.",
+    "triggers": [
+      "set a worker's model",
+      "đổi model cho worker hội đồng",
+      "check which model a worker uses",
+      "xem provider và model hiện tại của worker"
+    ],
+    "samples": [
+      "Set this worker's council model to the one that was named, then verify with action get before any dispatch.",
+      "Kiểm tra muse2 đang được gán provider và model nào trong hội đồng."
+    ],
+    "source": "orchestrator_server.py:13545"
+  },
+  "convene_council": {
+    "name": "convene_council",
+    "purpose": "Call this when activating the council (trigger: bat hoi dong Tr).",
+    "description": "Call this when activating the council (trigger: bat hoi dong Tr). Before any council coordination/dispatch, load leader-council-skill even when continuing an existing plan without the exact trigger. Payload hint: pass only {project_path:\"<absolute project root>\"}; do not pass leader/topic/task. Returns roster + per-agent CLI channels + bridge protocol + council_leader_skill; the calling agent becomes leader.",
+    "triggers": [
+      "convene the council",
+      "bật hội đồng tr",
+      "activate council mode",
+      "khởi động hội đồng và nhận roster"
+    ],
+    "samples": [
+      "Convene the council for this project — give me the roster, the per-agent CLI channels and the leader protocol.",
+      "Bật hội đồng tr cho project này và trả về danh sách worker cùng giao thức leader."
+    ],
+    "source": "orchestrator/core/registry_data.py:4241"
+  },
+  "council_tracker": {
+    "name": "council_tracker",
+    "purpose": "READ/COLLECT council live logs.",
+    "description": "READ/COLLECT council live logs. Runs the council tracker collector and returns the path to the council_live.txt snapshot (broker dispatches + full prompts, raw worker ARGV/output, council_events, latest replies). Call this FIRST when investigating council/broker/worker-dispatch/prompt/reply issues instead of hand-scraping .council. Auto-open is disabled (open_file is a no-op); archive behavior is kept (old snapshot zipped to archives/, fresh one written). save_output=false skips collection and just reads the current snapshot.",
+    "triggers": [
+      "council live log",
+      "xem log hội đồng trực tiếp",
+      "check worker replies and dispatches",
+      "kiểm tra dispatch nào chưa có reply"
+    ],
+    "samples": [
+      "Collect the council live snapshot so I can see the latest worker replies and dispatch states.",
+      "Mở snapshot council_live.txt mới nhất để kiểm tra worker nào chưa trả lời dispatch."
+    ],
+    "source": "orchestrator/core/registry_data.py:3284"
+  },
+  "cbm_council_context": {
+    "name": "cbm_council_context",
+    "purpose": "T1 read-only: bounded advisory graph context pack for council dispatch (Step 21).",
+    "description": "T1 read-only: bounded advisory graph context pack for council dispatch (Step 21). Leader embeds the block in worker prompts explicitly — never auto-injected, fail-open, never blocks dispatch. name= -> symbol + inbound blast radius; file_path= (name empty) -> all symbols in file + direct callers; omit both -> changed-files pack (detect_changes + direct callers). Bounds COUNCIL_CONTEXT_MAX_FILES=10 / COUNCIL_CONTEXT_MAX_SYMBOLS=50; truncated + truncation_reason list every cap hit.",
+    "triggers": [
+      "graph context for a dispatch",
+      "ngữ cảnh graph gắn vào brief hội đồng",
+      "blast radius of a symbol for the council",
+      "gói ngữ cảnh hội đồng theo symbol hoặc file"
+    ],
+    "samples": [
+      "Build the council graph context pack for the symbol register_tool, including its inbound blast radius, to embed in the worker prompt.",
+      "Lập gói ngữ cảnh graph cho file orchestrator_server.py để leader gắn vào brief gửi worker."
+    ],
+    "source": "code_tools.py:20466"
+  },
+  "tool_decision_hint": {
+    "name": "tool_decision_hint",
+    "purpose": "V15 R8 B.2 / R22: returns recommended tier+tool+skill for task description.",
+    "description": "V15 R8 B.2 / R22: returns recommended tier+tool+skill for task description. R22 verbosity ∈ {full|terse|ref} — terse drops rationale + tools_validation + payload_example schemas (saves ~550 tokens).",
+    "triggers": [
+      "which tool should I use",
+      "nên dùng tool nào cho việc này",
+      "recommend a tool tier and skill",
+      "gợi ý tool phù hợp với mô tả task"
+    ],
+    "samples": [
+      "For the task 'audit the ruff findings before fixing anything', which tier, tool and skill do you recommend?",
+      "Tôi cần kiểm tra độ tươi của graph trước khi sửa code — gợi ý tool phù hợp nhất cho việc đó."
+    ],
+    "source": "orchestrator/core/registry_data.py:4209"
+  },
+  "cache_status": {
+    "name": "cache_status",
+    "purpose": "Check the project cache status and the latest INDEX.json update time.",
+    "description": "Check the project cache status and the latest INDEX.json update time.",
+    "triggers": [
+      "cache status",
+      "trạng thái cache của project",
+      "when was INDEX.json last updated",
+      "kiểm tra cache và INDEX"
+    ],
+    "samples": [
+      "Check the project cache status and tell me when INDEX.json was last updated.",
+      "Xem trạng thái cache của project: INDEX.json cập nhật lần cuối lúc nào?"
+    ],
+    "source": "orchestrator/core/registry_data.py:3015"
+  },
+  "restart_orchestrator_via_bat": {
+    "name": "restart_orchestrator_via_bat",
+    "purpose": "Restart [A] via the canonical [A:S] script (start_orchestrator.bat): spawns a hidden helper (CREATE_NO_WINDOW; no console focus-steal) that…",
+    "description": "Restart [A] via the canonical [A:S] script (start_orchestrator.bat): spawns a hidden helper (CREATE_NO_WINDOW; no console focus-steal) that waits delay_seconds then runs [A:S], which kills the old pythonw and relaunches [A] High-IL. Returns immediately with status=restart_queued; poll /health until ok, then verify generation/PID changed. USAGE: for a normal restart call with NO arguments (or just delay_seconds) — the tool auto-targets the current generation; you do NOT pass expected_generation/controller_url/request_id (those are internal). STALE leftovers and HUNG in-process work (executor oldest_active_age or semaphore held_for_sec>=15s) do NOT block [A:S] — the bat kills the process. force_drain+force_drain_reason overrides remaining LIVE (fresh) work and still queues [A:S]. This is the only CA restart path for [A]; restart_orchestrator_via_task is kept for Anh-requested admin/UIPI recovery only. CSLt 2026-07-16: tier T4->T2 (process-lifecycle mutation with built-in safety guards: process discovery, port-owner filter, wait loop).",
+    "triggers": [
+      "restart ToolA",
+      "khởi động lại orchestrator bằng bat",
+      "restart via the canonical bat script",
+      "restart [A] rồi poll health"
+    ],
+    "samples": [
+      "Restart ToolA through the canonical bat script with the default delay; I will poll /health for a new generation and PID.",
+      "Khởi động lại orchestrator bằng start_orchestrator.bat, không truyền tham số nội bộ nào."
+    ],
+    "source": "orchestrator_server.py:13815"
+  },
+  "backup_status": {
+    "name": "backup_status",
+    "purpose": "Read Orchestrator backup manifest status.",
+    "description": "Read Orchestrator backup manifest status.",
+    "triggers": [
+      "backup status",
+      "trạng thái backup",
+      "read the backup manifest status",
+      "bản backup gần nhất là khi nào"
+    ],
+    "samples": [
+      "Read the Orchestrator backup manifest status and tell me the latest backup on record.",
+      "Kiểm tra trạng thái backup: bản sao lưu gần nhất của project là khi nào?"
+    ],
+    "source": "orchestrator/core/registry_data.py:3100"
+  },
+  "open_session": {
+    "name": "open_session",
+    "purpose": "Open or resume the active session for a project and optional agent identity.",
+    "description": "Open or resume the active session for a project and optional agent identity. Resume preserves title and mode by default; call rename_session to apply a different title. Opt-in force_new_session closes then creates atomically and refuses pending writes, drafts or audits; apply_requested_title renames in place without changing mode. Flags are mutually exclusive and require agent_id. Distinct non-empty agent_id values may hold concurrent active sessions on one project. R22 verbosity ∈ {full|terse|ref}; drift auto-forces full.",
+    "triggers": [
+      "open a session",
+      "mở session làm việc cho project",
+      "resume the active session",
+      "mở phiên trước đợt ghi file"
+    ],
+    "samples": [
+      "Open or resume the active session for this project under my agent identity before the write batch starts.",
+      "Mở session cho project với tiêu đề này để bắt đầu đợt sửa code."
+    ],
+    "source": "orchestrator/core/registry_data.py:3216"
+  },
+  "validate_file": {
+    "name": "validate_file",
+    "purpose": "Check syntax/validity of a file after write_fix/write_new_file.",
+    "description": "Check syntax/validity of a file after write_fix/write_new_file. Python: py_compile. JS: node --check. TS/JSX/TSX/Vue: esbuild syntax check (never a type check). Call immediately after a write to catch errors early.",
+    "triggers": [
+      "validate a file",
+      "kiểm tra cú pháp file vừa ghi",
+      "syntax check after a write",
+      "check file có hợp lệ không"
+    ],
+    "samples": [
+      "Validate registry_data.py right after that edit to catch any syntax error early.",
+      "Kiểm tra cú pháp file tool_corpus.json vừa tạo xem có hợp lệ không."
+    ],
+    "source": "orchestrator/core/registry_data.py:3198"
+  },
+  "ruff_fix": {
+    "name": "ruff_fix",
+    "purpose": "T2 Ruff auto-fix.",
+    "description": "T2 Ruff auto-fix. Defaults to preview: returns Ruff unified diff and does not edit. Set apply=true to apply safe fixes; unsafe_fixes is opt-in.",
+    "triggers": [
+      "ruff auto-fix preview",
+      "xem trước bản sửa ruff dạng diff",
+      "apply ruff safe fixes",
+      "sửa lint bằng ruff sau khi audit"
+    ],
+    "samples": [
+      "Preview the Ruff fixes for code_tools.py as a unified diff — do not apply anything yet.",
+      "Áp dụng các bản sửa ruff an toàn cho file này, chỉ sau khi từng finding đã được audit."
+    ],
+    "source": "code_tools.py:20422"
+  },
+  "log_native_event": {
+    "name": "log_native_event",
+    "purpose": "Record one native action in the session immediately when native is used instead of an [A] Rule C tool.",
+    "description": "Record one native action in the session immediately when native is used instead of an [A] Rule C tool. Call inline right after the action.",
+    "triggers": [
+      "log a native action",
+      "ghi log hành động native vào session",
+      "record a native event for audit",
+      "ghi nhận việc vừa dùng tool native"
+    ],
+    "samples": [
+      "Record in the session that I just used a native shell read instead of a ToolA tool, with the reason.",
+      "Ghi vào session sự kiện native tôi vừa thực hiện để audit truy vết được."
+    ],
+    "source": "orchestrator/core/registry_data.py:3226"
+  }
+}
