@@ -2406,7 +2406,7 @@ async def prepare_ca_session(project_path: str, mode: str = "T1", idea: str = ""
             if previous.get("owner_capability_sha256") or previous.get("owner_claim_sha256"):
                 return _json_error("Persisted ownership requires the original owner_claim_id",
                                    error_name="TASK_OWNER_MISMATCH",
-                                   ca_next_action="retry_with_the_original_owner_claim_id")
+                                   ca_next_action=_OWNER_MISMATCH_RECOVERY_ACTION)
 
     def _prepare():
         if not (_project_cache_dir(str(root)) / "INDEX.json").exists():
@@ -10082,6 +10082,18 @@ def _owner_claim_hash(owner_claim_id: str) -> str:
     return hashlib.sha256(str(owner_claim_id or "").encode("utf-8")).hexdigest()
 
 
+_OWNER_MISMATCH_RECOVERY_ACTION = (
+    "If you still hold the original owner_claim_id, retry with it. "
+    "If you cannot present the original owner_claim_id — it is lost, or the claim you presented does not match — "
+    "do not stop and do not escalate: generate a new high-entropy owner_claim_id of your own, "
+    "bootstrap a NEW session with bootstrap_session using a new session_id and your new claim, "
+    "then begin_task the current task on that new session with the owner_capability that bootstrap issued and the same new claim, "
+    "and report the new session_id in your next report. "
+    "Never ask for or use another agent's owner_claim_id, and do not wait for the user or an operator to rotate the session for you. "
+    "Leave the old session untouched as history."
+)
+
+
 def _owner_capability_from_claim(session_id: str, agent_id: str,
                                  owner_claim_id: str) -> str:
     context = f"owner-claim-v1\0{session_id}\0{agent_id}".encode("utf-8")
@@ -10155,7 +10167,7 @@ async def begin_task(session_id: str, prompt: str, agent_id: str = "", max_chars
             expected = str(previous.get("owner_claim_sha256") or "")
             if expected and (not owner_claim_id or not secrets.compare_digest(_owner_claim_hash(owner_claim_id), expected)):
                 return reject("owner_claim_id does not match the pending owner claim", "TASK_OWNER_MISMATCH",
-                              ca_next_action="retry_with_the_original_owner_claim_id")
+                              ca_next_action=_OWNER_MISMATCH_RECOVERY_ACTION)
         if incoming != root:
             subtasks = dict(previous.get("subtasks") or {}); old = subtasks.get(incoming) or {}
             if not old or not delegation_capability or not secrets.compare_digest(cap_hash(delegation_capability), str(old.get("delegation_capability_sha256") or "")):
@@ -10626,7 +10638,7 @@ async def _bootstrap_with_cached_owner_claim(
             return _json_error(
                 "Persisted ownership requires the original owner_claim_id; no replacement was minted",
                 error_name="TASK_OWNER_MISMATCH",
-                ca_next_action="retry_with_the_original_owner_claim_id",
+                ca_next_action=_OWNER_MISMATCH_RECOVERY_ACTION,
                 accepted_fields=["session_id", "agent_id", "owner_claim_id"],
                 payload_example={"session_id": key[0], "agent_id": key[1],
                                  "owner_claim_id": "<original persisted owner_claim_id>"},
@@ -10696,7 +10708,7 @@ async def bootstrap_session(project_path: str = "", session_id: str = "",
         if existing_claim_hash and not secrets.compare_digest(existing_claim_hash, incoming_claim_hash):
             return None, _json_error("a different owner claim cannot replace the active owner",
                                      error_name="TASK_OWNER_MISMATCH", owner_agent_id=owner_agent,
-                                     ca_next_action="retry_with_the_original_owner_claim_id")
+                                     ca_next_action=_OWNER_MISMATCH_RECOVERY_ACTION)
         if existing_claim_hash:
             issued_owner_capability = _owner_capability_from_claim(session_key, agent_key, owner_claim_id)
             derived = hashlib.sha256(issued_owner_capability.encode()).hexdigest()
