@@ -566,7 +566,7 @@ BASE_TOOL_SCHEMAS = [
 					"section": {"example": '## Usage', "type": "string", "default": "", "description": "Markdown heading or explicit section selector."},
 					"related_query": {"example": 'where is build_tool_schemas called', "type": "string", "default": "", "description": "Relevance query used to rank next_ranges."},
 					"query": {"example": 'registry_data', "type": "string", "default": "", "description": "Alias for related_query."},
-					"token_budget": {"example": 4000, "type": "integer", "default": 0, "description": "Content-token budget; 0 uses line bounds."},
+					"token_budget": {"example": 4000, "type": "integer", "default": 0, "description": "Content-token budget for this call. When > 0, the budget replaces the default line caps: lines are delivered until the estimated token count reaches the budget, subject to an absolute cap of 12000 (an explicit max_lines still applies). Responses too large for the envelope spill to result_ref. 0 (default) uses line bounds."},
 					"small_file_threshold": {"example": 240, "type": "integer", "default": 240, "description": "Auto-full line threshold."},
 					"include_next_ranges": {"example": True, "type": "boolean", "default": True, "description": "Include ranked bounded follow-up ranges."},
 					"content_hash": {"example": '9f2c1ab4', "type": "string", "default": "", "description": "Hash returned by a prior read for cache reuse/staleness signaling."},

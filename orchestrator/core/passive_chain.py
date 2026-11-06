@@ -203,7 +203,7 @@ PASSIVE_CHAINS = (
     PassiveChain(
         "read_file_range", "truncated",
         lambda p: bool(p.get("truncated")),
-        "range truncated: next_ranges lists what was not returned",
+        "range truncated: next_ranges lists what was not returned; or pass token_budget (up to 12000) to read a larger span in one call",
         # Imperative on purpose: the resolver drops a self-referential answer unless the
         # literal really says call/use/run, so a bare "read_file_range" here would resolve to
         # nothing and the CA would get no ca_next_tool at all.
