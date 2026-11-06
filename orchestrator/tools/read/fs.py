@@ -284,7 +284,7 @@ async def read_file_range(
         section: str = "", related_query: str = "", query: str = "",
         token_budget: int = 0, small_file_threshold: int = 240,
         include_next_ranges: bool = True, content_hash: str = "",
-        force_refresh: bool = False) -> str:
+        force_refresh: bool = False, ranges=None, pipeline=None) -> str:
     """Backward-compatible entrypoint for adaptive structural reads."""
     from .context import read_file_range as adaptive_read_file_range
 
@@ -295,4 +295,4 @@ async def read_file_range(
         section=section, related_query=related_query, query=query,
         token_budget=token_budget, small_file_threshold=small_file_threshold,
         include_next_ranges=include_next_ranges, content_hash=content_hash,
-        force_refresh=force_refresh)
+        force_refresh=force_refresh, ranges=ranges, pipeline=pipeline)

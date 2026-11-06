@@ -2589,19 +2589,43 @@ def _anti_drift_bound_payload(payload: dict, max_bytes: int | None = None) -> di
     return shaped
 
 
-_RESULT_REF_MAX_ENTRIES = max(16, int(os.environ.get("ORCHESTRATOR_RESULT_REF_CACHE_MAX", "64")))
+_RESULT_REF_MAX_ENTRIES = max(16, int(os.environ.get("ORCHESTRATOR_RESULT_REF_CACHE_MAX", "256")))
+# B8 total-byte cap for the ref store: 8 MB (8 * 1024 * 1024 = 8388608 stored
+# payload bytes). This is a soft cap on the store total, never a per-item
+# limit: a single response larger than the cap is still stored, alone.
+_RESULT_REF_MAX_BYTES = max(1024, int(os.environ.get("ORCHESTRATOR_RESULT_REF_CACHE_MAX_BYTES", "8388608")))
+
+
+def _result_ref_size(raw_text: str) -> int:
+    """Byte size of one stored ref payload (the exact bytes chunk reads serve)."""
+    return len(raw_text.encode("utf-8", errors="replace"))
 
 
 def _result_ref_store(ref: str, raw_text: str) -> None:
     """FixA2407 P2-2: keep the bounded-result cache readable AND bounded.
 
     _RESULT_REF_CACHE used to grow without limit and was never read back. It is now
-    served by GET /api/result/{ref}; dicts keep insertion order, so evicting the first
-    key drops the oldest ref first.
+    served by GET /api/result/{ref}.
+
+    B8 (read-limits S2): the store holds at most _RESULT_REF_MAX_ENTRIES
+    (256) entries and at most _RESULT_REF_MAX_BYTES (8 MB = 8388608 bytes)
+    of stored payload in total. Eviction is access-LRU: dicts keep
+    insertion order, storing an entry or reading it back via
+    GET /api/result/{ref} moves it to the newest position, and eviction
+    drops the least-recently-used (first) entry first. A single response
+    larger than the total-byte cap is still stored, alone (every other
+    entry is evicted for it); storing is never refused.
     """
+    if ref in _RESULT_REF_CACHE:
+        del _RESULT_REF_CACHE[ref]
     _RESULT_REF_CACHE[ref] = raw_text
-    while len(_RESULT_REF_CACHE) > _RESULT_REF_MAX_ENTRIES:
-        _RESULT_REF_CACHE.pop(next(iter(_RESULT_REF_CACHE)), None)
+    total_bytes = sum(_result_ref_size(value) for value in _RESULT_REF_CACHE.values())
+    while len(_RESULT_REF_CACHE) > 1 and (
+        len(_RESULT_REF_CACHE) > _RESULT_REF_MAX_ENTRIES
+        or total_bytes > _RESULT_REF_MAX_BYTES
+    ):
+        oldest = next(iter(_RESULT_REF_CACHE))
+        total_bytes -= _result_ref_size(_RESULT_REF_CACHE.pop(oldest))
 
 
 # ─── FixA2407 P1-1: write ledger ─────────────────────────────────────────────
@@ -3474,6 +3498,27 @@ def _shape_tool_response_text(tool_name: str, raw: str, max_bytes: int | None = 
         source = json.loads(raw_text)
     except Exception:
         source = {"ok": True, "raw": raw_text}
+    # B8: bound the excerpt by its JSON-escaped byte length on the wire.
+    # The encoder used below is json.dumps(..., ensure_ascii=False), which
+    # escapes only '"' and '\\' (2 bytes each), the short control escapes
+    # \n \r \t \b \f (2 bytes each) and other control characters as
+    # \uXXXX (6 bytes), and leaves every other character as raw UTF-8.
+    # Cutting by characters keeps the cut on a UTF-8 character boundary,
+    # so the escaped excerpt is at most budget - 700 bytes.
+    _excerpt_limit = max(256, budget - 700)
+    _excerpt_escaped = 0
+    _excerpt_end = 0
+    for _ch in raw_text:
+        if _ch in '"\\' or _ch in "\n\r\t\b\f":
+            _ch_cost = 2
+        elif ord(_ch) < 0x20:
+            _ch_cost = 6
+        else:
+            _ch_cost = len(_ch.encode("utf-8"))
+        if _excerpt_escaped + _ch_cost > _excerpt_limit:
+            break
+        _excerpt_escaped += _ch_cost
+        _excerpt_end += 1
     shaped = {
         "ok": bool(source.get("ok", not source.get("error"))) if isinstance(source, dict) else True,
         "error": source.get("error") if isinstance(source, dict) else None,
@@ -3484,8 +3529,14 @@ def _shape_tool_response_text(tool_name: str, raw: str, max_bytes: int | None = 
         # FixA2407 P2-2: the ref is only useful with a documented way to read it back.
         "result_ref_url": f"/api/result/{ref}",
         "read_hint": (f"GET /api/result/{ref}?offset=<byte>&max_bytes=<n> returns the full "
-                      "untruncated response in ordered chunks; follow next_offset until null."),
-        "excerpt": raw_text[: max(256, budget - 700)],
+                      "untruncated response in ordered chunks; follow the server-returned "
+                      "next_offset until null, never stride offset+=max_bytes; verify "
+                      "content_sha256 of the assembled bytes before use; if the returned "
+                      "offset Y is smaller than the offset X you requested (start moved "
+                      "back to a UTF-8 character boundary), place the chunk at Y and skip "
+                      "its first X-Y bytes if you already hold bytes up to X, to avoid "
+                      "duplicating Y..X."),
+        "excerpt": raw_text[:_excerpt_end],
         "ca_next_action": "read_bounded_result_by_ref_if_more_context_is_required",
     }
     return json.dumps({k: v for k, v in shaped.items() if v is not None}, ensure_ascii=False)
@@ -19104,6 +19155,17 @@ async def handle_result_ref(request):
     read _RESULT_REF_CACHE - it was a write-only cache, so the documented recovery path
     did not exist and a CA had to re-run the tool with narrower filters. Byte-offset
     paging keeps each read bounded.
+
+    B8 (read-limits S2): chunk boundaries are aligned to UTF-8 character
+    boundaries -- the chunk end moves back to the last complete character
+    at or before offset + max_bytes, so next_offset is that aligned offset,
+    and a requested offset that lands inside a multi-byte character moves
+    back to that character's first byte (the response ``offset`` is the
+    offset actually used). Every chunk response carries
+    ``content_sha256``, the hex sha256 of the full stored payload bytes
+    (the exact bytes being chunked), so a client can verify the
+    reassembled bytes before use. A successful read also refreshes the
+    entry's position in the access-LRU ref store.
     """
     cors = _cors(request.headers.get('Origin'))
     ref = (request.match_info.get("ref") or "").strip()
@@ -19118,13 +19180,16 @@ async def handle_result_ref(request):
             "severity": "ERROR",
             "retryable": False,
             "reason": "ref was evicted, never existed, or expired when the server restarted",
-            "hint": ("Refs live in memory only and expire on every server restart or oldest-first "
-                     f"eviction (capacity={_RESULT_REF_MAX_ENTRIES}); re-run the tool for a fresh ref."),
+            "hint": ("Refs live in memory only and expire on every server restart or "
+                     f"least-recently-used eviction (capacity={_RESULT_REF_MAX_ENTRIES}); re-run the tool for a fresh ref."),
             "cached_refs": len(_RESULT_REF_CACHE),
             "ca_next_action": "rerun_tool_with_narrower_filters",
             "generation": SERVER_GENERATION,
         }, status=404, headers=cors)
+    # Access-LRU: a GET refreshes the entry's position in the ref store.
+    _RESULT_REF_CACHE[ref] = _RESULT_REF_CACHE.pop(ref)
     data = raw.encode("utf-8", errors="replace")
+    content_sha256 = hashlib.sha256(data).hexdigest()
     try:
         offset = max(0, int(request.query.get("offset", "0")))
     except ValueError:
@@ -19134,12 +19199,24 @@ async def handle_result_ref(request):
     except ValueError:
         max_bytes = _RESULT_BUDGET_BYTES
     max_bytes = max(1024, min(max_bytes, 2_000_000))
-    chunk = data[offset:offset + max_bytes]
-    next_offset = offset + len(chunk)
+    # B8: a requested offset inside a multi-byte character moves back to
+    # that character's first byte (a UTF-8 continuation byte is 10xxxxxx).
+    if 0 < offset < len(data):
+        while offset > 0 and (data[offset] & 0xC0) == 0x80:
+            offset -= 1
+    # B8: the chunk end moves back to the last complete character boundary
+    # at or before offset + max_bytes, so no character is split.
+    end = min(offset + max_bytes, len(data))
+    if end < len(data):
+        while end > offset and (data[end] & 0xC0) == 0x80:
+            end -= 1
+    chunk = data[offset:end]
+    next_offset = end
     more = next_offset < len(data)
     return web.json_response({
         "ok": True,
         "result_ref": ref,
+        "content_sha256": content_sha256,
         "total_bytes": len(data),
         "offset": offset,
         "returned_bytes": len(chunk),

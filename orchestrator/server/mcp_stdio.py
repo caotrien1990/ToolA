@@ -1623,7 +1623,8 @@ def run_mcp_stdio() -> None:
                             small_file_threshold: int = 240,
                             include_next_ranges: bool = True,
                             content_hash: str = "",
-                            force_refresh: bool = False) -> str:
+                            force_refresh: bool = False,
+                            ranges: list = None) -> str:
             """Read one bounded line range or structural scope from a file."""
             return _mcp_proxy_call("read_file_range", {
                 "file_path": file_path, "start_line": start_line,
@@ -1635,6 +1636,7 @@ def run_mcp_stdio() -> None:
                 "small_file_threshold": small_file_threshold,
                 "include_next_ranges": include_next_ranges,
                 "content_hash": content_hash, "force_refresh": force_refresh,
+                "ranges": ranges,
             })
 
         @_mcp.tool

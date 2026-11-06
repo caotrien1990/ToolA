@@ -14,7 +14,106 @@ from . import adaptive
 SMALL_FILE_THRESHOLD = 240
 BATCH_MAX_ITEMS = 20
 BATCH_MAX_TOKENS = 12000
+READ_TOKEN_BUDGET_CAP = 12000
+RANGES_MAX_RANGES = 16
 
+
+def _ranges_enabled() -> bool:
+    """S4 kill-switch predicate (PLAN section 3.2, B9): ranges[] is OFF
+    iff the env value, trimmed and lower-cased, is "0" or "false"; unset,
+    empty, or any other value means ON. Read on every call."""
+    return (os.environ.get("ORCHESTRATOR_READ_RANGES_ENABLED") or "").strip().lower() not in {"0", "false"}
+
+
+def _is_int_value(value) -> bool:
+    """JSON int test for range bounds: bool is NOT an int here."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _ranges_whole_call_error(ranges, *, start_line, end_line, requested_max,
+                             scope, symbol, section, pipeline):
+    """Ordered whole-call gates for ranges mode (PLAN section 3.2).
+
+    Returns the single error_name for the FIRST violated gate, in the
+    pinned order (1) RANGES_DISABLED, (2) RANGES_INVALID_TYPE,
+    (3) RANGES_WITH_LEGACY_PARAMS, (4) RANGES_SCOPE_UNSUPPORTED_V1,
+    (5) RANGES_PIPELINE_UNSUPPORTED_V1, (6) RANGES_EMPTY,
+    (7) RANGES_TOO_MANY -- or None when every gate passes. All gates run
+    BEFORE any per-element validation. `pipeline` reaches this handler
+    only on the in-process tool-call path: the live dispatcher pops it
+    before handler binding (it is dispatcher-consumed there), so on that
+    path this gate simply never sees a value.
+    """
+    if not _ranges_enabled():
+        return "RANGES_DISABLED"
+    if not isinstance(ranges, list):
+        return "RANGES_INVALID_TYPE"
+    try:
+        start_value = int(start_line or 1)
+    except (TypeError, ValueError):
+        start_value = 1
+    if (end_line is not None or start_value != 1
+            or requested_max != fo.MAX_READ_LINES):
+        return "RANGES_WITH_LEGACY_PARAMS"
+    if (scope or "range").lower() != "range" or (symbol or "") != "" or (section or "") != "":
+        return "RANGES_SCOPE_UNSUPPORTED_V1"
+    if pipeline:
+        return "RANGES_PIPELINE_UNSUPPORTED_V1"
+    if len(ranges) == 0:
+        return "RANGES_EMPTY"
+    if len(ranges) > RANGES_MAX_RANGES:
+        return "RANGES_TOO_MANY"
+    return None
+
+
+def _normalize_ranges(raw_ranges, total_lines):
+    """NORMALIZE (PLAN section 3.2): validate each element, clamp to EOF,
+    sort by start_line, merge overlapping OR adjacent ranges.
+
+    Returns (normalized, range_errors): normalized is a list of
+    {"start", "end", "clamped"} dicts; range_errors entries carry the
+    RAW caller values (null/null when a key is absent or the element is
+    not an object).
+    """
+    range_errors: list[dict] = []
+    valid: list[dict] = []
+    for index, element in enumerate(raw_ranges):
+        if not isinstance(element, dict):
+            range_errors.append({"index": index, "start": None, "end": None,
+                                 "error": "INVALID_RANGE"})
+            continue
+        raw_start = element.get("start_line")
+        raw_end = element.get("end_line")
+        if not _is_int_value(raw_start) or not _is_int_value(raw_end):
+            range_errors.append({"index": index, "start": raw_start,
+                                 "end": raw_end, "error": "INVALID_RANGE"})
+            continue
+        if raw_start < 1:
+            range_errors.append({"index": index, "start": raw_start,
+                                 "end": raw_end, "error": "INVALID_RANGE"})
+            continue
+        if raw_end < raw_start:
+            range_errors.append({"index": index, "start": raw_start,
+                                 "end": raw_end, "error": "EMPTY_RANGE"})
+            continue
+        if raw_start > total_lines:
+            range_errors.append({"index": index, "start": raw_start,
+                                 "end": raw_end, "error": "PAST_EOF"})
+            continue
+        clamped = raw_end > total_lines
+        valid.append({"start": raw_start,
+                      "end": total_lines if clamped else raw_end,
+                      "clamped": clamped})
+    valid.sort(key=lambda item: item["start"])
+    normalized: list[dict] = []
+    for item in valid:
+        if normalized and item["start"] <= normalized[-1]["end"] + 1:
+            prev = normalized[-1]
+            prev["end"] = max(prev["end"], item["end"])
+            prev["clamped"] = bool(prev["clamped"] or item["clamped"])
+        else:
+            normalized.append(dict(item))
+    return normalized, range_errors
 
 def _language(path: Path) -> str:
     return {".py": "python", ".js": "js", ".mjs": "js", ".cjs": "js",
@@ -39,7 +138,7 @@ async def read_file_range(
         section: str = "", related_query: str = "", query: str = "",
         token_budget: int = 0, small_file_threshold: int = SMALL_FILE_THRESHOLD,
         include_next_ranges: bool = True, content_hash: str = "",
-        force_refresh: bool = False) -> str:
+        force_refresh: bool = False, ranges=None, pipeline=None) -> str:
     """Read a line range or structural scope without mutating derived project state."""
     from .fs import _missing_file_response, _seed_read_token_detailed
 
@@ -110,13 +209,50 @@ async def read_file_range(
     except (TypeError, ValueError):
         threshold = SMALL_FILE_THRESHOLD
     related = related_query or query
+    if ranges is not None:
+        # S4 whole-call gates (PLAN section 3.2): exactly one error_name,
+        # in the pinned order, before any per-element validation and
+        # before the executor lane / document load.
+        gate_error = _ranges_whole_call_error(
+            ranges, start_line=start_line, end_line=end_line,
+            requested_max=requested_max, scope=scope, symbol=symbol,
+            section=section, pipeline=pipeline)
+        if gate_error is not None:
+            gate_messages = {
+                "RANGES_DISABLED": "ranges[] is disabled by ORCHESTRATOR_READ_RANGES_ENABLED.",
+                "RANGES_INVALID_TYPE": "ranges must be an array of {start_line, end_line} objects.",
+                "RANGES_WITH_LEGACY_PARAMS": "ranges[] cannot be combined with legacy start_line/end_line/max_lines values.",
+                "RANGES_SCOPE_UNSUPPORTED_V1": "ranges[] v1 supports only scope=range without symbol/section.",
+                "RANGES_PIPELINE_UNSUPPORTED_V1": "ranges[] v1 cannot be combined with pipeline.",
+                "RANGES_EMPTY": "ranges[] must contain at least one range.",
+                "RANGES_TOO_MANY": f"ranges[] accepts at most {RANGES_MAX_RANGES} ranges per call.",
+            }
+            return fo.json_error(
+                gate_messages[gate_error], error_name=gate_error,
+                type="INVALID_RANGES", severity="ERROR", retryable=False,
+                hint="Fix the ranges[] call shape per the error_name and retry.",
+                ca_next_action="fix_ranges_call")
 
     def _read() -> dict:
         doc, cache_meta = adaptive.get_document(
             fp, project_path, content_hash=content_hash, force_refresh=force_refresh)
-        selection = adaptive.resolve_selection(
-            doc, scope=scope, start_line=start_line, end_line=end_line,
-            symbol=symbol, section=section, related_query=related)
+        # S4 ranges mode (PLAN section 3.2): the ordered whole-call gates
+        # run BEFORE get_document in the outer handler (they need no file
+        # content); per-element validate/normalize runs HERE because it
+        # needs total_lines, still before the seed step below.
+        ranges_mode = ranges is not None
+        normalized_ranges: list[dict] = []
+        range_errors: list[dict] = []
+        if ranges_mode:
+            normalized_ranges, range_errors = _normalize_ranges(
+                ranges, len(doc.lines))
+            selection = {"ok": True, "scope": "range", "name": None,
+                         "start_line": 1, "end_line": len(doc.lines),
+                         "source": "line_range"}
+        else:
+            selection = adaptive.resolve_selection(
+                doc, scope=scope, start_line=start_line, end_line=end_line,
+                symbol=symbol, section=section, related_query=related)
         if not selection.get("ok"):
             selection.update({
                 "file": str(fp), "project_path": str(Path(project_path).resolve())
@@ -131,7 +267,13 @@ async def read_file_range(
         stat_after = fp.stat()
         reseeded = False
         reseed_detail: dict = {}
-        if doc.stable or force_reseed:
+        # S4 seed gate (B5): ranges mode seeds iff at least one normalized
+        # range will be delivered (a partially delivered range counts).
+        # An explicit force_reseed still runs the legacy seed step even
+        # when every range failed validation, so a seed failure there
+        # answers RESEED_FAILED for the whole call [CR-R2-4].
+        _seed_wanted = (bool(normalized_ranges) or bool(force_reseed)) if ranges_mode else True
+        if _seed_wanted and (doc.stable or force_reseed):
             if force_reseed:
                 import logging
                 logging.getLogger("[A]").warning(
@@ -212,7 +354,137 @@ async def read_file_range(
             }
 
         requested_scope = (scope or "range").lower()
-        if requested_scope == "file_summary":
+        if ranges_mode:
+            # S4 ranges delivery (PLAN section 3.2): SINGLE-BLOCK result,
+            # one unnumbered marker line before each delivered range with
+            # NORMALIZED coordinates; content lines keep the legacy
+            # "N: " numbering. Markers are framing: they are NOT charged
+            # to the token fit, but their bytes count in the envelope
+            # like every other output byte. Every range is sliced from
+            # the ONE get_document above. Without a declared token_budget
+            # each range is fitted in legacy line mode (the legacy
+            # effective_max cap per range); with one, a single call-wide
+            # budget capped at READ_TOKEN_BUDGET_CAP is shared in order:
+            # a range the budget cuts mid-way is delivered partially, and
+            # later ranges are skipped. The budget half of this mode is
+            # gated by the same S5 kill-switch predicate as the
+            # single-read path; with the flag OFF a ranges call never
+            # reaches this branch (whole-call gate (1) answers
+            # RANGES_DISABLED first), so the condition is defence in
+            # depth, not a second behaviour.
+            budget_mode = requested_budget > 0 and _ranges_enabled()
+            budget_effective = (min(requested_budget, READ_TOKEN_BUDGET_CAP)
+                                if budget_mode else 0)
+            remaining = budget_effective
+            delivered: list[dict] = []
+            skipped_ranges: list[dict] = []
+            blocks: list[str] = []
+            total_shown = len(normalized_ranges)
+            any_line_cut = False
+            for position, item in enumerate(normalized_ranges):
+                start, end = item["start"], item["end"]
+                available = doc.lines[start - 1:end]
+                if budget_mode:
+                    if remaining <= 0:
+                        skipped_ranges.append({
+                            "start": start, "end": end,
+                            "reason": "token_budget"})
+                        continue
+                    selected, used = adaptive.fit_numbered_lines(
+                        available, start, max_lines=len(available),
+                        token_budget=remaining)
+                    range_line_cut = bool(
+                        selected and selected[0] != available[0])
+                    remaining -= used
+                else:
+                    selected, used = adaptive.fit_numbered_lines(
+                        available, start, max_lines=effective_max,
+                        token_budget=0)
+                    range_line_cut = False
+                if not selected:
+                    skipped_ranges.append({
+                        "start": start, "end": end,
+                        "reason": "token_budget"})
+                    continue
+                any_line_cut = any_line_cut or range_line_cut
+                shown_end = start + len(selected) - 1
+                range_truncated = shown_end < end or range_line_cut
+                meta = {"start": start, "end": end,
+                        "shown_lines": len(selected),
+                        "estimated_tokens": used}
+                if item["clamped"]:
+                    meta["clamped"] = True
+                if range_truncated:
+                    meta["truncated"] = True
+                delivered.append({**meta, "_shown_end": shown_end})
+                marker = (f"--- RANGE {len(delivered)}/{total_shown}: "
+                          f"L{start}-L{end} ---")
+                blocks.append(marker + "\n" + adaptive.numbered_text(selected, start))
+            result_text = "\n".join(blocks)
+            used_tokens = sum(entry["estimated_tokens"] for entry in delivered)
+            if delivered:
+                min_start = min(entry["start"] for entry in delivered)
+                max_end = max(entry["end"] for entry in delivered)
+                envelope = {"ok": True, "scope": "range", "name": None,
+                            "start_line": min_start, "end_line": max_end,
+                            "source": "line_range"}
+                shown_value: str | None = f"{min_start}-{max_end}"
+                range_ref_value: str | None = (
+                    f"{_relative(fp, project_path)}@{doc.content_hash[:12]}"
+                    f":L{min_start}-L{max_end}")
+                last_end = max(entry["_shown_end"] for entry in delivered)
+            else:
+                envelope = {"ok": True, "scope": "range", "name": None,
+                            "start_line": None, "end_line": None,
+                            "source": "line_range"}
+                shown_value = None
+                range_ref_value = None
+                last_end = None
+            next_ranges = adaptive.rank_next_ranges(
+                doc, envelope, related_query=related, limit=12,
+                shown_end=last_end) if include_next_ranges and delivered else []
+            ranges_meta = [
+                {key: value for key, value in entry.items()
+                 if not key.startswith("_")}
+                for entry in delivered]
+            response = {
+                "ok": True, "result": result_text, "file": str(fp),
+                "project_path": str(Path(project_path).resolve())
+                if project_path else None, "file_group": None,
+                "lang": _language(fp), "total_lines": total,
+                "shown": shown_value,
+                "range_id": (f"{fp.name}:{shown_value}p{total_shown}"
+                             if shown_value else f"{fp.name}:ranges0"),
+                "bounded": True, "max_lines": effective_max,
+                "max_lines_cap": fo.MAX_READ_LINES_HARD_CAP,
+                "max_lines_default": fo.MAX_READ_LINES,
+                "scope_requested": (scope or "range").lower(),
+                "scope_resolved": "range",
+                "selection": envelope if delivered else None, "content_hash": doc.content_hash,
+                "range_ref": range_ref_value,
+                "cache_hit": cache_meta["cache_hit"],
+                "cache_waited": cache_meta["cache_waited"],
+                "estimated_tokens": used_tokens,
+                "token_budget": requested_budget or None,
+                "token_estimator": "utf8_bytes/4",
+                "auto_full_file": False,
+                "small_file_threshold": threshold,
+                "truncated": bool(
+                    range_errors or skipped_ranges
+                    or any(entry.get("truncated") for entry in ranges_meta)),
+                "next_ranges": next_ranges,
+                "read_token_seeded": reseeded,
+                "derived_state_touched": False,
+                "ranges": ranges_meta,
+                "range_errors": range_errors,
+                "skipped_ranges": skipped_ranges,
+            }
+            if budget_mode:
+                response["budget_mode"] = True
+                response["token_budget_effective"] = budget_effective
+            if any_line_cut:
+                response["line_cut"] = True
+        elif (scope or "range").lower() == "file_summary":
             summary_budget = requested_budget or 4000
             max_items = max(5, min(40, summary_budget // 60))
             summary = adaptive.file_summary(doc, max_items=max_items)
@@ -250,20 +522,72 @@ async def read_file_range(
                 requested_scope == "range" and
                 (end_line is not None or int(start_line or 1) != 1 or
                  requested_max != fo.MAX_READ_LINES))
-            auto_full = bool(
-                requested_scope == "range" and not explicit_legacy and
-                total <= threshold and total <= fo.MAX_READ_LINES_HARD_CAP)
-            line_cap = total if auto_full else effective_max
             available = doc.lines[max(0, scope_start - 1):max(0, scope_end)]
+            # S3 budget mode (PLAN section 3.1): a caller-declared
+            # token_budget > 0 makes the token budget -- capped at
+            # READ_TOKEN_BUDGET_CAP -- the only content-axis ceiling. The
+            # 800-line hard cap and the 200-line default do NOT apply and
+            # auto-full does NOT apply; the fit runs INSIDE the legacy
+            # selection, which is never rewritten (the selection echo,
+            # truncated and next_ranges below keep the legacy mechanisms
+            # on the original selection). An explicit max_lines still
+            # clamps the lines DELIVERED inside the fit: "explicit" is
+            # judged exactly like explicit_legacy above, by requested_max
+            # differing from the MAX_READ_LINES default -- max_lines=0 was
+            # already coerced to that default by the requested_max line,
+            # so 0 / absent / default all mean no line clamp, while a
+            # negative max_lines delivers exactly 1 line (the legacy
+            # max(1, ...) coercion). The file_summary branch above is NOT
+            # budget mode and keeps its own requested_budget semantics.
+            # S5 kill-switch (PLAN sections 3.2 / 4 S5, B9): with
+            # ORCHESTRATOR_READ_RANGES_ENABLED OFF, a declared token_budget
+            # falls back to exact legacy semantics via the else branch
+            # below (the fit stops early inside the 800-line cap, auto-full
+            # follows legacy, and no budget_mode / token_budget_effective /
+            # line_cut keys appear), so the flag is part of the mode
+            # decision itself -- not a second, duplicated fit path.
+            budget_mode = requested_budget > 0 and _ranges_enabled()
+            if budget_mode:
+                budget_effective = min(requested_budget, READ_TOKEN_BUDGET_CAP)
+                auto_full = False
+                if requested_max < 0:
+                    line_cap = 1
+                elif requested_max != fo.MAX_READ_LINES:
+                    line_cap = requested_max
+                else:
+                    line_cap = len(available)
+                fit_budget = budget_effective
+            else:
+                budget_effective = 0
+                auto_full = bool(
+                    requested_scope == "range" and not explicit_legacy and
+                    total <= threshold and total <= fo.MAX_READ_LINES_HARD_CAP)
+                line_cap = total if auto_full else effective_max
+                fit_budget = requested_budget
             selected, used_tokens = adaptive.fit_numbered_lines(
                 available, scope_start, max_lines=line_cap,
-                token_budget=requested_budget)
+                token_budget=fit_budget)
+            # fit_numbered_lines only ever alters a line in its single-line
+            # cut branch, where the cut line is the sole selected element
+            # and a strict prefix of the source line; every other selected
+            # element is the source line verbatim. A first selected line
+            # differing from the source line is therefore exactly the cut
+            # signal [OB-08] -- no fit signature change is needed.
+            # S5 kill-switch (PLAN sections 3.2 / 4 S5): the cut
+            # declaration is a budget-mode signal. With the flag OFF the
+            # call is pure legacy -- a cut line was delivered silently
+            # there and truncated stayed line-based -- so the signal
+            # exists only in budget mode (the budget_mode decision above
+            # already carries the flag).
+            line_cut = bool(
+                budget_mode and selected and available
+                and selected[0] != available[0])
             shown_start = scope_start
             shown_end = scope_start + len(selected) - 1
             if not selected:
                 shown_end = scope_start - 1
             result_text = adaptive.numbered_text(selected, scope_start)
-            truncated = shown_end < scope_end
+            truncated = shown_end < scope_end or line_cut
             next_ranges = adaptive.rank_next_ranges(
                 doc, selection, related_query=related, limit=12,
                 shown_end=shown_end) if include_next_ranges else []
@@ -290,7 +614,12 @@ async def read_file_range(
                 "truncated": truncated, "next_ranges": next_ranges,
                 "read_token_seeded": reseeded, "derived_state_touched": False,
             }
-            if total == 0:
+            if budget_mode:
+                response["budget_mode"] = True
+                response["token_budget_effective"] = budget_effective
+            if line_cut:
+                response["line_cut"] = True
+            if total == 0 and not ranges_mode:
                 # A genuinely empty file is a valid read, not an inverted range.
                 # Its token still protects the observed empty file from stale writes.
                 response.update({

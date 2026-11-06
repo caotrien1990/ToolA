@@ -30,6 +30,8 @@ has to be re-decided rather than quietly persisting.
 """
 
 import ast
+import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -42,6 +44,7 @@ from orchestrator.core.passive_chain import (
     PASSIVE_CHAINS,
     apply_passive_chain,
 )
+from orchestrator.tools.read import adaptive
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -83,6 +86,23 @@ _PROBE_SHAPES = {
     "cbm_test_gap": {
         "ok", "result", "generation", "operation_id", "write_status_url", "operation_attempts",
     },
+}
+
+# S6 (read-limits campaign, PLAN section 4 step S6): the two new read modes
+# add keys ONLY inside their own mode, so the legacy set above stays exact
+# and each mode gets its own pinned set. Both unions were measured
+# in-process through code_tools.read_file_range on a 300-line tmp fixture
+# (2026-11-06, sprint S6): budget mode (token_budget=100, no single-line
+# cut) returned the legacy set plus exactly {budget_mode,
+# token_budget_effective} and nothing missing; ranges mode (two disjoint
+# delivered ranges, no token_budget declared) returned the legacy set plus
+# exactly {ranges, range_errors, skipped_ranges} and nothing missing. The
+# tests in section 5 at the end of this file re-derive both sets per run.
+_BUDGET_MODE_KEYS = _PROBE_SHAPES["read_file_range"] | {
+    "budget_mode", "token_budget_effective",
+}
+_RANGES_MODE_KEYS = _PROBE_SHAPES["read_file_range"] | {
+    "ranges", "range_errors", "skipped_ranges",
 }
 
 # The one nested level the probe expanded. cbm_graph_status carries its whole answer under
@@ -539,4 +559,77 @@ def test_ca_hint_is_registered_and_its_trigger_now_names_the_table():
         "the registry row does not mention the passive table, so nothing documents it"
     assert "ca_next_action" not in ct.AUTO_CHAIN_FIELDS, \
         "ca_next_action must stay free-form prose; the callable half is ca_next_tool"
+
+
+# ------------------------------------------- 5. read shape: the new modes (S6)
+#
+# Helpers + tests pinning the exact handler key sets of the two read-limits
+# modes whose keys are pinned as _BUDGET_MODE_KEYS / _RANGES_MODE_KEYS next
+# to _PROBE_SHAPES above. The pattern is the S1/S3/S4 one: run the handler
+# in-process through the real tool-call surface (code_tools.read_file_range)
+# on a tmp fixture -- never the live daemon -- with the read-token upsert
+# seam forced to succeed, the kill-switch env unset, and the content cache
+# cleared, so the measured shape is the handler's own.
+
+def _clear_read_cache_a34() -> None:
+    with adaptive._CACHE_COND:
+        adaptive._CACHE_BY_PATH.clear()
+        adaptive._CACHE_BY_HASH.clear()
+        adaptive._INFLIGHT.clear()
+        adaptive._CACHE_BYTES = 0
+
+
+@pytest.fixture()
+def _read_shape_seed(monkeypatch):
+    monkeypatch.setattr(
+        ct, "_read_token_upsert", lambda *a, **k: True, raising=False)
+    monkeypatch.delenv("ORCHESTRATOR_READ_RANGES_ENABLED", raising=False)
+    _clear_read_cache_a34()
+    yield
+    _clear_read_cache_a34()
+
+
+def _read_shape(tmp_path, **kwargs):
+    lines = [f"line {i:04d} alpha" for i in range(1, 301)]
+    (tmp_path / "big.txt").write_bytes(
+        ("\n".join(lines) + "\n").encode("utf-8"))
+    raw = asyncio.run(ct.read_file_range(
+        "big.txt", project_path=str(tmp_path), **kwargs))
+    return json.loads(raw)
+
+
+def test_read_shape_legacy_call_matches_the_pinned_probe_shape(
+        tmp_path, _read_shape_seed):
+    # The deliberate S6 counterpart to the new-mode pins below: a legacy
+    # call (no token_budget, no ranges) still returns EXACTLY the set
+    # _PROBE_SHAPES recorded -- the new keys do not leak into it.
+    body = _read_shape(tmp_path)
+    assert body["ok"] is True
+    assert set(body) == _PROBE_SHAPES["read_file_range"]
+
+
+def test_read_shape_budget_mode_adds_exactly_the_budget_keys(
+        tmp_path, _read_shape_seed):
+    # token_budget > 0 and no single line is cut on this fixture, so no
+    # line_cut key: the set is the legacy set plus exactly the budget pair.
+    body = _read_shape(tmp_path, token_budget=100)
+    assert body["ok"] is True
+    assert body["budget_mode"] is True
+    assert body["token_budget_effective"] == 100
+    assert "line_cut" not in body
+    assert set(body) == _BUDGET_MODE_KEYS
+
+
+def test_read_shape_ranges_mode_adds_exactly_the_ranges_keys(
+        tmp_path, _read_shape_seed):
+    # ranges intersecting two delivered regions and no token_budget
+    # declared, so neither budget key may appear in this mode's set.
+    body = _read_shape(
+        tmp_path, ranges=[{"start_line": 10, "end_line": 20},
+                          {"start_line": 50, "end_line": 60}])
+    assert body["ok"] is True
+    assert [(r["start"], r["end"]) for r in body["ranges"]] == [(10, 20), (50, 60)]
+    assert body["range_errors"] == []
+    assert body["skipped_ranges"] == []
+    assert set(body) == _RANGES_MODE_KEYS
 ""

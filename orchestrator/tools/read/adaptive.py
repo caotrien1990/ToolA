@@ -167,8 +167,21 @@ def fit_numbered_lines(lines: list[str], start_line: int, *,
         if token_budget > 0 and selected and used + cost > token_budget:
             break
         if token_budget > 0 and not selected and cost > token_budget:
-            selected.append(line[:max(1, token_budget * 4)])
-            used = estimate_tokens(f"{start_line}: {selected[0]}")
+            # Single-line cut [PLAN S3 / OB-08]: the cut length is measured
+            # in UTF-8 bytes AFTER the numbered prefix, so the numbered
+            # cost of the cut line -- ceil((prefix_bytes + cut_bytes + 1)
+            # / 4), the +1 being the trailing newline the estimator counts
+            # for every other line -- never exceeds the budget. The cut
+            # line stays the only element of ``selected`` and differs from
+            # the source line, which is how the handler detects the cut
+            # (see the line_cut derivation in context.py).
+            prefix_bytes = len(
+                f"{start_line + offset}: ".encode("utf-8", errors="replace"))
+            max_cut_bytes = max(0, int(token_budget) * 4 - prefix_bytes - 1)
+            cut_bytes = line.encode("utf-8", errors="replace")[:max_cut_bytes]
+            cut_text = cut_bytes.decode("utf-8", errors="ignore")
+            selected.append(cut_text)
+            used = estimate_tokens(f"{start_line + offset}: {cut_text}\n")
             break
         selected.append(line)
         used += cost

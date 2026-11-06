@@ -4074,7 +4074,18 @@ class TestApiNormalization(unittest.IsolatedAsyncioTestCase):
         self.assertIn('workflow_status_registry', code_tools.TOOL_MAP)
 
     def test_can044_read_hard_cap_value(self):
-        self.assertEqual(code_tools.MAX_READ_LINES_HARD_CAP, 800)
+        # CAN-044 (S1 read-limits): pin the copy the read path actually
+        # uses: orchestrator/fileops/common.py MAX_READ_LINES_HARD_CAP,
+        # consumed by orchestrator/tools/read/context.py (effective_max /
+        # max_lines_cap). The old assert pinned only the code_tools
+        # duplicate, so changing common.py (the real cap) to 900 kept this
+        # test green (PLAN section 1 A10 / section 4 S1).
+        from orchestrator.fileops import common as fo_common
+
+        self.assertEqual(fo_common.MAX_READ_LINES_HARD_CAP, 800)
+        # The duplicate in code_tools must not drift from the real one.
+        self.assertEqual(code_tools.MAX_READ_LINES_HARD_CAP,
+                         fo_common.MAX_READ_LINES_HARD_CAP)
 
 
 class TestCouncilLifecycle(unittest.IsolatedAsyncioTestCase):
