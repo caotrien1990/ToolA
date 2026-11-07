@@ -77,6 +77,15 @@ from orchestrator.council.snapshots import (
 )
 from orchestrator.fileops.xroot import classify_write_target, output_targets, write_targets
 from orchestrator.lifecycle.request_orchestrator_restart import controller_health
+from orchestrator.lifecycle.listener_supervisor import (
+    ListenerSupervisor,
+    derive_listener_addresses,
+    health_listener_snapshot,
+    install_loop_exception_handler,
+    make_supervisor_died_callback,
+    parse_recovery_mode,
+    set_active_supervisor,
+)
 from orchestrator.lifecycle.restart_protocol import (
     DEFAULT_CONTROL_URL,
     BusySnapshotPublisher,
@@ -14896,6 +14905,9 @@ async def handle_health(request):
     payload["tool_compatibility_unknown_total"] = {
         f"{t}|{f}": c for (t, f), c in sorted(_COMPAT_UNKNOWN_TOTAL.items())
     }
+    # Listener recovery (plan 4.8): additive-only observability object;
+    # no existing key is changed by its presence.
+    payload["listener"] = health_listener_snapshot()
     extra_headers = None if ready else {"Retry-After": "1"}
     return web.json_response(
         _apply_health_view(payload, request),
@@ -20010,12 +20022,58 @@ async def _run_server():
     _boot_step("runner.setup.start")
     await runner.setup()
     _boot_step("runner.setup.done")
-    site = web.TCPSite(runner, 'localhost', PORT)
+    # Listener recovery (plan IPV4_LISTENER_RECOVERY 4.1/4.9): the single
+    # 'localhost' TCPSite is split into per-family sites derived from the
+    # same boot resolution. The loop exception handler is registered
+    # BEFORE any site starts; each family is registered with the
+    # supervisor as its boot outcome is known; the supervisor task is
+    # created after the sites start and before boot recovery (below).
+    # Detection and logging are always on; the kill-switch
+    # ORCHESTRATOR_LISTENER_RECOVERY (on|detect) gates only recovery.
+    _listener_mode = parse_recovery_mode()
+    _listener_addresses, _listener_extra = derive_listener_addresses(PORT)
+    logger.info(
+        "Listener families from 'localhost' resolution: %s "
+        "(extra addresses ignored: %d) recovery=%s",
+        [(key, addr) for key, addr, _fam in _listener_addresses],
+        _listener_extra,
+        _listener_mode,
+    )
+    _listener_supervisor = ListenerSupervisor(
+        runner=runner,
+        port=PORT,
+        families=[],
+        mode=_listener_mode,
+        ready_check=lambda: SERVER_READY,
+        stopping_check=lambda: SERVER_STOPPING,
+    )
+    install_loop_exception_handler(
+        asyncio.get_running_loop(), _listener_supervisor)
+    set_active_supervisor(_listener_supervisor)
     SERVER_READY = False
     SERVER_STOPPING = False
     SERVER_STARTUP_PHASE = "boot_write_sweep"
     _boot_step("site.start.start")
-    await site.start()
+    for _lkey, _laddr, _lfam in _listener_addresses:
+        _lsite = web.TCPSite(runner, _laddr, PORT)
+        _lentry = {
+            "key": _lkey, "address": _laddr, "address_family": _lfam,
+            "site": _lsite, "boot": "bound",
+        }
+        try:
+            await _lsite.start()
+        except Exception as _lexc:
+            # Plan 4.1: a family whose bind fails enters the supervisor
+            # machinery in suspect; the daemon still boots on the
+            # remaining family.
+            _lentry["site"] = None
+            _lentry["boot"] = "bind_failed"
+            logger.error(
+                "Listener bind failed family=%s address=%s error=%r; "
+                "family handed to the listener supervisor",
+                _lkey, _laddr, _lexc,
+            )
+        _listener_supervisor.register_family(_lentry)
     _boot_step("site.start.done")
     # BROKER-RETRY-AFTER-SUCCESS (F2): ensure the dedup cache dir exists at startup
     # (the cache write helper also mkdirs lazily; this is the documented mkdir-once).
@@ -20023,6 +20081,13 @@ async def _run_server():
         _council_completed_tasks_dir().mkdir(parents=True, exist_ok=True)
     except Exception:
         pass
+    # Listener recovery (plan 4.9): the supervisor task starts AFTER the
+    # sites and BEFORE boot recovery, so accept failures during the boot
+    # sweep are captured as suspicion (deaths confirm only after arming).
+    _listener_supervisor_task = asyncio.create_task(
+        _listener_supervisor.run(), name="listener-supervisor")
+    _listener_supervisor_task.add_done_callback(
+        make_supervisor_died_callback())
     _boot_step("boot_recovery.start")
     await _run_boot_recovery()
     _boot_step("boot_recovery.done")
@@ -20054,6 +20119,7 @@ async def _run_server():
             "council_monitor": _council_monitor_task,
             "mission_reaper": _reaper_task,
             "session_retention": _session_retention_task,
+            "listener_supervisor": _listener_supervisor_task,
         }, timeout=max(0.0, float(os.environ.get("ORCH_BACKGROUND_DRAIN_TIMEOUT", "5"))))
         if not all(row.get("done") for row in background.values()):
             logger.error("background task shutdown incomplete: %s", background)
