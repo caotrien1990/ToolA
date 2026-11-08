@@ -86,6 +86,10 @@ from orchestrator.lifecycle.listener_supervisor import (
     parse_recovery_mode,
     set_active_supervisor,
 )
+from orchestrator.lifecycle.proactor_accept_fix import (
+    install_proactor_fix,
+    proactor_fix_status,
+)
 from orchestrator.lifecycle.restart_protocol import (
     DEFAULT_CONTROL_URL,
     BusySnapshotPublisher,
@@ -14908,6 +14912,11 @@ async def handle_health(request):
     # Listener recovery (plan 4.8): additive-only observability object;
     # no existing key is changed by its presence.
     payload["listener"] = health_listener_snapshot()
+    # gh-93821 root fix (plan 4.3.2): swallowed-reset counter and fix
+    # state, additive inside the listener object only.
+    payload["listener"].update(proactor_fix_status())
+    payload["listener"]["loop_class"] = type(
+        asyncio.get_running_loop()).__name__
     extra_headers = None if ready else {"Retry-After": "1"}
     return web.json_response(
         _apply_health_view(payload, request),
@@ -20190,4 +20199,5 @@ if __name__ == "__main__":
                         _mcp_accounting_report.get("pending"),
                     )
     else:
+        install_proactor_fix()
         asyncio.run(_run_server())
