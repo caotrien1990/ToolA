@@ -968,6 +968,7 @@ _R49_PHASE_MAP = {
     "INVALID_RANGE_STATUS": "schema",
     "STEP_MISMATCH": "schema",
     "SCHEMA_VIOLATION": "schema",
+    "STALE_TOOL_DEFINITION": "schema",
     # F13 2026-09-27: a corrupt request body is the CALLER's payload to repair, so it
     # routes with the other schema violations. Unregistered it fell to the "runtime"
     # default in _phase_for_error_name, which tells a CA the daemon misbehaved and
@@ -2762,7 +2763,17 @@ def bootstrap_push_tools() -> frozenset:
         _BOOTSTRAP_PUSH_TOOLS_CACHE[stamp] = cached
     return cached
 
-async def get_rule_core_text(agent_id: str = "", force: bool = False) -> str:
+async def _purposes_for_hint(task_hint: str, purposes: dict) -> dict:
+    import tools_v15 as hints
+    from orchestrator.core.registry_data import CURATED_CORE_TOOLS
+
+    legacy = json.loads(await hints._legacy_decision_hint(task_hint, use_memory=False))
+    ranked = hints._rank_hint(task_hint, legacy, eligible=purposes.keys())
+    names = dict.fromkeys([row["tool"] for row in ranked] + list(CURATED_CORE_TOOLS))
+    return {name: purposes[name] for name in names if name in purposes}
+
+
+async def get_rule_core_text(agent_id: str = "", force: bool = False, task_hint: str = "") -> str:
     """R102-B once-guard: full CORE_RULE on first fetch per agent/TTL; repeated calls return a
     tiny already_fetched stub (saves ~9KB/repeat). force=true or a distinct agent_id re-fetches.
     Cache is per-process; each agent's MCP server process keeps its own (= per-agent guard)."""
@@ -2773,7 +2784,10 @@ async def get_rule_core_text(agent_id: str = "", force: bool = False) -> str:
         now = time.time()
         seen_at, seen_sha = _RULE_CORE_FETCH_CACHE.get(key, (0.0, ""))
         if not force and seen_sha == sha and (now - seen_at) < _RULE_CORE_FETCH_TTL_SECONDS:
+            selected = ({"tool_purposes": await _purposes_for_hint(task_hint, bootstrap_tool_purposes())}
+                        if task_hint and task_hint.strip() else {})
             return json.dumps({
+                **selected,
                 "ok": True,
                 "already_fetched": True,
                 "sha256": sha,
@@ -2818,6 +2832,8 @@ async def get_rule_core_text(agent_id: str = "", force: bool = False) -> str:
             payload["ctx_id"] = ctx
             payload["bootstrap_epoch"] = open_bootstrap_epoch(ctx)
             purposes = bootstrap_tool_purposes()
+            if task_hint and task_hint.strip():
+                purposes = await _purposes_for_hint(task_hint, purposes)
             if purposes:
                 payload["tool_purposes"] = purposes
                 payload["tool_purposes_note"] = (
@@ -20777,6 +20793,28 @@ try:
                 'q_memory_refs': {
                     'type': 'array'
                 },
+                'ranked_tools': {
+                    'items': {
+                        'properties': {
+                            'score': {
+                                'type': 'number'
+                            },
+                            'tool': {
+                                'type': 'string'
+                            },
+                            'why': {
+                                'type': 'string'
+                            }
+                        },
+                        'required': [
+                            'tool',
+                            'score',
+                            'why'
+                        ],
+                        'type': 'object'
+                    },
+                    'type': 'array'
+                },
                 'rationale': {
                     'type': 'string'
                 },
@@ -20876,7 +20914,7 @@ try:
             'type': 'object',
             'x-audit': {
                 'status': 'audited',
-                'schema_sha256': '5e7c03c662fee4de37e339a912cf788ca777b2732d54b27b43ee014d3e6b7f4d',
+            'schema_sha256': 'c269e43996c64c39472c25c8f9f18361dfff77d502a8f03b7ed63aa5ce0967dc',
                 'depth_D': 4
             }
         },

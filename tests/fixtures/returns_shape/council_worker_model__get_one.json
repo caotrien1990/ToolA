@@ -1,0 +1,33 @@
+{
+  "ok": true,
+  "agent": "codo",
+  "current": {},
+  "resolution": {
+    "requested_provider": "codex",
+    "requested_model": "grok-4.6-build",
+    "resolved_provider": "codex",
+    "resolved_model": "grok-4.6-build",
+    "observed_provider": null,
+    "observed_model": null,
+    "resolution_status": "unverified",
+    "warnings": [],
+    "fallback_policy": "none",
+    "provider": "codex",
+    "model": "grok-4.6-build"
+  },
+  "requested_provider": "codex",
+  "requested_model": "grok-4.6-build",
+  "resolved_provider": "codex",
+  "resolved_model": "grok-4.6-build",
+  "observed_provider": null,
+  "observed_model": null,
+  "resolution_status": "unverified",
+  "warnings": [],
+  "fallback_policy": "none",
+  "provider": "codex",
+  "model": "grok-4.6-build",
+  "valid": [
+    "grok-4.6-build",
+    "gpt-5.6-sol"
+  ]
+}

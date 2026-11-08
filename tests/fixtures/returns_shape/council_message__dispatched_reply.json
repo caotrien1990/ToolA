@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "from": "probe",
+  "to": "user",
+  "reply": "fixture reply",
+  "error": "",
+  "provider": "fixture-provider",
+  "model": "fixture-model",
+  "error_name": ""
+}

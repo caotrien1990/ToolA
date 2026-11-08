@@ -97,8 +97,8 @@ class TestNoEnvelopeKeysDemanded:
 
     def test_census_shape_unchanged(self):
         states = [rs.schema_state(rs.resolve_returns(t)) for t in rs.RETURNS_SET_38]
-        assert states.count("audited") == 32
-        assert states.count("absent") == 6
+        assert states.count("audited") == 38
+        assert states.count("absent") == 0
 
 
 class TestHandlerShapedAnswersPass:

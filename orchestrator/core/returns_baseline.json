@@ -104,7 +104,7 @@
     "depth_D": 3
   },
   "tool_decision_hint": {
-    "sha256": "5e7c03c662fee4de37e339a912cf788ca777b2732d54b27b43ee014d3e6b7f4d",
+    "sha256": "c269e43996c64c39472c25c8f9f18361dfff77d502a8f03b7ed63aa5ce0967dc",
     "depth_D": 4
   },
   "validate_file": {
@@ -126,5 +126,29 @@
   "write_transaction": {
     "sha256": "ef05abc15675cb94190907b56f8dd40e0a072a3cc115fafd02a7bb3a35302f1b",
     "depth_D": 5
+  },
+  "git_status": {
+    "sha256": "2084edf8f8a1d23c0b3e3ba8dd75995b0cf59b485cd84cb8ab5b694f136500f4",
+    "depth_D": 3
+  },
+  "git_diff": {
+    "sha256": "d23e8f968f6358ecaabd2ba261a39bb03f73fd7337056f4392bc214ed0e72037",
+    "depth_D": 2
+  },
+  "council_message": {
+    "sha256": "8039e5fad095ba42fe2a26275bdbc7fd65477b1045390944eda32d1dcf78ffa0",
+    "depth_D": 1
+  },
+  "council_message_async": {
+    "sha256": "b0207dadfbe40c222573577a76e4ac2bc9b9eed5052a16bcd5bc003b56291178",
+    "depth_D": 1
+  },
+  "council_worker_model": {
+    "sha256": "ee3e52008d87deeff48dd6b4c4c1ab941a5b96aa678f38002fc76e88c33c83a5",
+    "depth_D": 4
+  },
+  "restart_orchestrator_via_bat": {
+    "sha256": "1a282e7f51cb1808589e687ca76946c61fe5965fe42ee0d00d161d22691dea59",
+    "depth_D": 1
   }
 }

@@ -1,0 +1,6 @@
+{
+  "ok": false,
+  "error_name": "WORKER_MODEL_NOT_SET",
+  "agent": "codo",
+  "ca_next_action": "council_worker_model set+get before dispatch"
+}

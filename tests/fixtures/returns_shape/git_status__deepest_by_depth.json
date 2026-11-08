@@ -1,0 +1,178 @@
+{
+  "ok": true,
+  "git_root": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
+  "branch": "main",
+  "detached": false,
+  "head": "e6afdf5513dacec06aa78066a96d9fa419ce388a",
+  "ahead": 12,
+  "behind": 0,
+  "state_hash": "a48b7cb8e075086cb3aefca20295815ea09aa00dc249111b3b104ec8363bd801",
+  "staged_hash": "88411af1252575e0a6e00d1e06938e4c174b5609953fa89769113e55afa72ed9",
+  "staged_hash_semantics": "digest of the WHOLE index (git ls-files --stage), NOT the diff vs HEAD: a commit leaves the index byte-identical, so an unchanged staged_hash does NOT prove a commit is still pending. Use head + counts.staged to tell pending from already-committed.",
+  "counts": {
+    "changed": 32,
+    "staged": 0,
+    "unstaged": 19,
+    "untracked": 13,
+    "conflicts": 0
+  },
+  "clean": false,
+  "records_total": 32,
+  "records_truncated": false,
+  "records_grouped": true,
+  "display_records_total": 25,
+  "records": [
+    {
+      "record_type": "1",
+      "xy": ".M",
+      "sub": "N...",
+      "path": ".council/context_registry.json"
+    },
+    {
+      "record_type": "1",
+      "xy": ".M",
+      "sub": "N...",
+      "path": ".council/session_meta.json"
+    },
+    {
+      "record_type": "1",
+      "xy": ".M",
+      "sub": "N...",
+      "path": "PROJECT_CONTEXT.md"
+    },
+    {
+      "record_type": "1",
+      "xy": ".M",
+      "sub": "N...",
+      "path": "PROJECT_MAP.md"
+    },
+    {
+      "record_type": "1",
+      "xy": ".D",
+      "sub": "N...",
+      "path": "_a34_full_suite.status"
+    },
+    {
+      "record_type": "1",
+      "xy": ".D",
+      "sub": "N...",
+      "path": "_a37_regB2.status"
+    },
+    {
+      "record_type": "1",
+      "xy": ".D",
+      "sub": "N...",
+      "path": "_a38_full_suite.status"
+    },
+    {
+      "record_type": "1",
+      "xy": ".D",
+      "sub": "N...",
+      "path": "_a41_full_suite.status"
+    },
+    {
+      "record_type": "1",
+      "xy": ".D",
+      "sub": "N...",
+      "path": "_a42_full_suite.status"
+    },
+    {
+      "record_type": "1",
+      "xy": ".D",
+      "sub": "N...",
+      "path": "_realtest_write_new.txt"
+    },
+    {
+      "record_type": "1",
+      "xy": ".M",
+      "sub": "N...",
+      "path": "agents_registry.json"
+    },
+    {
+      "record_type": "1",
+      "xy": ".M",
+      "sub": "N...",
+      "path": "docs/PLAN_TOOLA_1210_FINAL.md"
+    },
+    {
+      "record_type": "1",
+      "xy": ".M",
+      "sub": "N...",
+      "path": "install_restart_control_task.ps1"
+    },
+    {
+      "record_type": "1",
+      "xy": ".M",
+      "sub": "N...",
+      "path": "orchestrator/PROJECT_CONTEXT.md"
+    },
+    {
+      "record_type": "1",
+      "xy": ".M",
+      "sub": "N...",
+      "path": "orchestrator/PROJECT_MAP.md"
+    },
+    {
+      "record_type": "1",
+      "xy": ".M",
+      "sub": "N...",
+      "path": "orchestrator/session/logs.py"
+    },
+    {
+      "record_type": "1",
+      "xy": ".M",
+      "sub": "N...",
+      "path": "orchestrator_server.py"
+    },
+    {
+      "record_type": "1",
+      "xy": ".M",
+      "sub": "N...",
+      "path": "tests/PROJECT_CONTEXT.md"
+    },
+    {
+      "record_type": "1",
+      "xy": ".M",
+      "sub": "N...",
+      "path": "tests/PROJECT_MAP.md"
+    },
+    {
+      "record_type": "?",
+      "xy": "??",
+      "path": ".ToolA_Skill/",
+      "aggregated": true,
+      "untracked_count": 1
+    },
+    {
+      "record_type": "?",
+      "xy": "??",
+      "path": "docs/",
+      "aggregated": true,
+      "untracked_count": 7
+    },
+    {
+      "record_type": "?",
+      "xy": "??",
+      "path": "muse_tunnel.bat"
+    },
+    {
+      "record_type": "?",
+      "xy": "??",
+      "path": "orchestrator/",
+      "aggregated": true,
+      "untracked_count": 1
+    },
+    {
+      "record_type": "?",
+      "xy": "??",
+      "path": "test-usagelog-patch-20261105/",
+      "aggregated": true,
+      "untracked_count": 2
+    },
+    {
+      "record_type": "?",
+      "xy": "??",
+      "path": "toola_shell.bat"
+    }
+  ]
+}
