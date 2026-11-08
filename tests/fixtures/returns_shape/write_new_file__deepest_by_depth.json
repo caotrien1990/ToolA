@@ -59,9 +59,5 @@
     },
     "suggested_alternative_tool": {}
   },
-  "phase": "runtime",
-  "generation": "2ade6b9e99a1",
-  "operation_id": "606079196961a793",
-  "write_status_url": "/api/write_status?operation_id=606079196961a793",
-  "operation_attempts": 1
+  "phase": "runtime"
 }

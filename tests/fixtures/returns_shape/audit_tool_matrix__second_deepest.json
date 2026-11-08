@@ -58,8 +58,5 @@
   "ca_next_action": "review_contract_drift",
   "drift_truncated_at": 3,
   "alias_drift_truncated_at": 3,
-  "verbosity_mode": "terse",
-  "generation": "2ade6b9e99a1",
-  "concurrent_api_calls_observed": 5,
-  "contention_note": "5 /api/call requests were in flight around this one; the wall clock includes queueing, so a slow answer here is NOT evidence of a slow tool -- re-measure serially before tuning scope"
+  "verbosity_mode": "terse"
 }

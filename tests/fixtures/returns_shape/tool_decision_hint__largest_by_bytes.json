@@ -47,8 +47,5 @@
     "reason": "Lexical rank over live TOOL_SCHEMAS (VN-aware)"
   },
   "ok": true,
-  "schema_version": "v15.r18",
-  "generation": "2ade6b9e99a1",
-  "concurrent_api_calls_observed": 2,
-  "contention_note": "2 /api/call requests were in flight around this one; the wall clock includes queueing, so a slow answer here is NOT evidence of a slow tool -- re-measure serially before tuning scope"
+  "schema_version": "v15.r18"
 }

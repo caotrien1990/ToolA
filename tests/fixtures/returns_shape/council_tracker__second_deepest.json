@@ -10,6 +10,5 @@
   "historical": true,
   "hint": "Historical council snapshot at D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\.council\\Live_council\\council_live.txt. Use the bounded excerpt by default; set diagnostic_full_prompts=true only for explicit prompt debugging.",
   "excerpt": "  hook: SessionStart Completed\n\n-- LIVE RAW GRO (last 2) [live_raw_gro_grok-4.6-build.log] --\n  [ARGV] ['C:\\\\Users\\\\ADMIN\\\\.grok\\\\bin\\\\grok.exe', '-p', 'BROKER TASK: Broker one-shot: no previous context. Do not rely on chat history.\\\\nYou are GroC, equal peer worker for ToolQ Sprint4/6 Round 1.\\\n  --- LIVE OUTPUT (raw stdout+stderr, unfiltered) ---",
-  "full_content_available": true,
-  "generation": "2ade6b9e99a1"
+  "full_content_available": true
 }

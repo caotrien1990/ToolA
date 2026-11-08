@@ -47,9 +47,5 @@
     "recommended_prompt_rule": "On DST_EXISTS, choose a new disposable destination or use overwrite=true with backup_existing=true once",
     "see_also": {},
     "suggested_alternative_tool": {}
-  },
-  "generation": "2ade6b9e99a1",
-  "operation_id": "12ea4ce145714eae",
-  "write_status_url": "/api/write_status?operation_id=12ea4ce145714eae",
-  "operation_attempts": 1
+  }
 }

@@ -418,8 +418,5 @@
       "max_symbols": 50
     },
     "elapsed_ms": 4140.0
-  },
-  "generation": "2ade6b9e99a1",
-  "concurrent_api_calls_observed": 4,
-  "contention_note": "4 /api/call requests were in flight around this one; the wall clock includes queueing, so a slow answer here is NOT evidence of a slow tool -- re-measure serially before tuning scope"
+  }
 }

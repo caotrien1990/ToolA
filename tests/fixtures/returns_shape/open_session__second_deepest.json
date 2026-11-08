@@ -229,6 +229,5 @@
     "new_title": "p16b2-itemA-capture",
     "agent_id": "muse"
   },
-  "ca_next_tool": "rename_session",
-  "generation": "2ade6b9e99a1"
+  "ca_next_tool": "rename_session"
 }

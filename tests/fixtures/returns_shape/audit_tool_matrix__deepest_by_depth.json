@@ -116,8 +116,5 @@
   "router_topics_count": 40,
   "matrix_log_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\.orchestrator_cache\\matrix_log.jsonl",
   "persisted": false,
-  "ca_next_action": "review_contract_drift",
-  "generation": "2ade6b9e99a1",
-  "concurrent_api_calls_observed": 4,
-  "contention_note": "4 /api/call requests were in flight around this one; the wall clock includes queueing, so a slow answer here is NOT evidence of a slow tool -- re-measure serially before tuning scope"
+  "ca_next_action": "review_contract_drift"
 }

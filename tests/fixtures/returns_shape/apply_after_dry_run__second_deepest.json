@@ -17,6 +17,5 @@
   },
   "retryable": true,
   "retry_after_seconds": 1,
-  "ca_next_action": "retry_after_tool_queue_capacity_frees",
-  "generation": "2ade6b9e99a1"
+  "ca_next_action": "retry_after_tool_queue_capacity_frees"
 }

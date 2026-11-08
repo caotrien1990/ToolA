@@ -33,9 +33,5 @@
   "expected_process_name": "",
   "port_probe": null,
   "process_probe": null,
-  "root_causes": [],
-  "generation": "2ade6b9e99a1",
-  "operation_id": "69a8756354bfab06",
-  "write_status_url": "/api/write_status?operation_id=69a8756354bfab06",
-  "operation_attempts": 1
+  "root_causes": []
 }

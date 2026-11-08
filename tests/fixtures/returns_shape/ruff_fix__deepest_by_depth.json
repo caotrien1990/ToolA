@@ -25,9 +25,5 @@
         }
       ]
     }
-  },
-  "generation": "2ade6b9e99a1",
-  "operation_id": "424f3276483987f7",
-  "write_status_url": "/api/write_status?operation_id=424f3276483987f7",
-  "operation_attempts": 1
+  }
 }

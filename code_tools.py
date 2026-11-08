@@ -20137,21 +20137,12 @@ try:
                     'type': 'string',
                     'x-dual': True
                 },
-                'generation': {
-                    'type': 'string'
-                },
                 'hash_verified': {
                     'type': 'boolean'
                 },
                 'ok': {
                     'type': 'boolean',
                     'x-dual': True
-                },
-                'operation_attempts': {
-                    'type': 'integer'
-                },
-                'operation_id': {
-                    'type': 'string'
                 },
                 'payload_example': {
                     'properties': {
@@ -20206,22 +20197,15 @@ try:
                 },
                 'type': {
                     'type': 'string'
-                },
-                'write_status_url': {
-                    'type': 'string'
                 }
             },
             'required': [
-                'ok',
-                'generation',
-                'operation_id',
-                'write_status_url',
-                'operation_attempts'
+                'ok'
             ],
             'type': 'object',
             'x-audit': {
                 'status': 'audited',
-                'schema_sha256': '18eb1dfd6355dc806d85189c9d5458533eb0083685ea38dc7f6d0f115fa5f723',
+                'schema_sha256': 'cc79c65045f819916b32b451d1af03bfb6912eda7745e35b0d20870376d1eb83',
                 'depth_D': 3
             }
         },
@@ -20397,18 +20381,9 @@ try:
                 'exit_code': {
                     'type': 'integer'
                 },
-                'generation': {
-                    'type': 'string'
-                },
                 'ok': {
                     'type': 'boolean',
                     'x-dual': True
-                },
-                'operation_attempts': {
-                    'type': 'integer'
-                },
-                'operation_id': {
-                    'type': 'string'
                 },
                 'payload_example': {
                     'properties': {
@@ -20567,9 +20542,6 @@ try:
                 },
                 'timed_out': {
                     'type': 'boolean'
-                },
-                'write_status_url': {
-                    'type': 'string'
                 }
             },
             'required': [
@@ -20587,16 +20559,12 @@ try:
                 'timed_out',
                 'child_encoding',
                 'ca_next_action',
-                'test_gap',
-                'generation',
-                'operation_id',
-                'write_status_url',
-                'operation_attempts'
+                'test_gap'
             ],
             'type': 'object',
             'x-audit': {
                 'status': 'audited',
-                'schema_sha256': '97863f0b4431381f75751273ef7243b34eb157803a9a6d3c3cb437eb22b7799b',
+                'schema_sha256': '458400da95ff22136cb2e6008b9c08c4ebb4458f17ef7d67bb29a033f90a516c',
                 'depth_D': 4
             }
         },
@@ -20612,18 +20580,9 @@ try:
                 'exit_code': {
                     'type': 'integer'
                 },
-                'generation': {
-                    'type': 'string'
-                },
                 'ok': {
                     'type': 'boolean',
                     'x-dual': True
-                },
-                'operation_attempts': {
-                    'type': 'integer'
-                },
-                'operation_id': {
-                    'type': 'string'
                 },
                 'runtime_used': {
                     'type': 'string'
@@ -20710,9 +20669,6 @@ try:
                 },
                 'timed_out': {
                     'type': 'boolean'
-                },
-                'write_status_url': {
-                    'type': 'string'
                 }
             },
             'required': [
@@ -20729,16 +20685,12 @@ try:
                 'runtime_used',
                 'timed_out',
                 'ca_next_action',
-                'test_gap',
-                'generation',
-                'operation_id',
-                'write_status_url',
-                'operation_attempts'
+                'test_gap'
             ],
             'type': 'object',
             'x-audit': {
                 'status': 'audited',
-                'schema_sha256': '4f2f7714d76ce0dfe093f30738537253a86fa1934abee887eef37266e3e1da72',
+                'schema_sha256': '8e3403d39d63606fc53c475ef8cdaa0cf80b700ceac6e225d3425b22ce5f7b77',
                 'depth_D': 2
             }
         },
@@ -20777,17 +20729,8 @@ try:
                     },
                     'type': 'array'
                 },
-                'concurrent_api_calls_observed': {
-                    'type': 'integer'
-                },
                 'confidence': {
                     'type': 'number'
-                },
-                'contention_note': {
-                    'type': 'string'
-                },
-                'generation': {
-                    'type': 'string'
                 },
                 'next_step': {
                     'type': 'string'
@@ -20928,13 +20871,12 @@ try:
                 'recommended_skill',
                 'suggestion',
                 'ok',
-                'schema_version',
-                'generation'
+                'schema_version'
             ],
             'type': 'object',
             'x-audit': {
                 'status': 'audited',
-                'schema_sha256': 'b4375a13cd8dfaf2575ed5cb561e3b55572ed5ca2a256ab1426aa67751a2d236',
+                'schema_sha256': '5e7c03c662fee4de37e339a912cf788ca777b2732d54b27b43ee014d3e6b7f4d',
                 'depth_D': 4
             }
         },
@@ -21474,21 +21416,12 @@ try:
                     'type': 'string',
                     'x-dual': True
                 },
-                'generation': {
-                    'type': 'string'
-                },
                 'index': {
                     'type': 'integer'
                 },
                 'ok': {
                     'type': 'boolean',
                     'x-dual': True
-                },
-                'operation_attempts': {
-                    'type': 'integer'
-                },
-                'operation_id': {
-                    'type': 'string'
                 },
                 'operations_count': {
                     'type': 'integer'
@@ -21766,23 +21699,16 @@ try:
                         'ca_next_action'
                     ],
                     'type': 'object'
-                },
-                'write_status_url': {
-                    'type': 'string'
                 }
             },
             'required': [
                 'ok',
-                'schema_version',
-                'generation',
-                'operation_id',
-                'write_status_url',
-                'operation_attempts'
+                'schema_version'
             ],
             'type': 'object',
             'x-audit': {
                 'status': 'audited',
-                'schema_sha256': '3646a791f314d1787f61d10e2799fe19ac19682d3b57cb81c8b0e71d45cca882',
+                'schema_sha256': 'ef05abc15675cb94190907b56f8dd40e0a072a3cc115fafd02a7bb3a35302f1b',
                 'depth_D': 5
             }
         },
@@ -22425,18 +22351,9 @@ try:
             "description": "T2 Ruff auto-fix. Defaults to preview: returns Ruff unified diff and does not edit. Set apply=true to apply safe fixes; unsafe_fixes is opt-in.",
             "returns": {
                 'properties': {
-                    'generation': {
-                        'type': 'string'
-                    },
                     'ok': {
                         'type': 'boolean',
                         'x-dual': True
-                    },
-                    'operation_attempts': {
-                        'type': 'integer'
-                    },
-                    'operation_id': {
-                        'type': 'string'
                     },
                     'result': {
                         'properties': {
@@ -22534,23 +22451,16 @@ try:
                             'select'
                         ],
                         'type': 'object'
-                    },
-                    'write_status_url': {
-                        'type': 'string'
                     }
                 },
                 'required': [
                     'ok',
-                    'result',
-                    'generation',
-                    'operation_id',
-                    'write_status_url',
-                    'operation_attempts'
+                    'result'
                 ],
                 'type': 'object',
                 'x-audit': {
                     'status': 'audited',
-                    'schema_sha256': '2f736223ac4105e238c6633b9c242e985f8a230692c37ddb73f55c2c1f91e01e',
+                    'schema_sha256': '80666f311673dcc6beb8eeb036b3833b1ef3cfd6fee91a1fc5249475f29b45ab',
                     'depth_D': 5
                 }
             },
@@ -22600,15 +22510,6 @@ try:
             "description": "T1 read-only: bounded advisory graph context pack for council dispatch (Step 21). Leader embeds the block in worker prompts explicitly — never auto-injected, fail-open, never blocks dispatch. name= -> symbol + inbound blast radius; file_path= (name empty) -> all symbols in file + direct callers; omit both -> changed-files pack (detect_changes + direct callers). Bounds COUNCIL_CONTEXT_MAX_FILES=10 / COUNCIL_CONTEXT_MAX_SYMBOLS=50; truncated + truncation_reason list every cap hit.",
             "returns": {
                 'properties': {
-                    'concurrent_api_calls_observed': {
-                        'type': 'integer'
-                    },
-                    'contention_note': {
-                        'type': 'string'
-                    },
-                    'generation': {
-                        'type': 'string'
-                    },
                     'ok': {
                         'type': 'boolean',
                         'x-dual': True
@@ -22727,13 +22628,12 @@ try:
                 },
                 'required': [
                     'ok',
-                    'result',
-                    'generation'
+                    'result'
                 ],
                 'type': 'object',
                 'x-audit': {
                     'status': 'audited',
-                    'schema_sha256': '0927e7150d11e1a9d5c92d4aa3902b137c82805f5e99d6fe6f95c9d9db742b7f',
+                    'schema_sha256': 'f4afd23ef8d3088a619243351d120ed55971ac8c357ffc1c79e0889f36ac2944',
                     'depth_D': 4
                 }
             },

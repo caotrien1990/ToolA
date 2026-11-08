@@ -90,9 +90,5 @@
     "see_also": {},
     "suggested_alternative_tool": {}
   },
-  "phase": "runtime",
-  "generation": "2ade6b9e99a1",
-  "operation_id": "ce1ecf48a90054da",
-  "write_status_url": "/api/write_status?operation_id=ce1ecf48a90054da",
-  "operation_attempts": 1
+  "phase": "runtime"
 }

@@ -98,9 +98,5 @@
   "suggested_alternative_tool": {
     "tool": "write_transaction",
     "reason": "(low-confidence see_also hint) Multi-hunk same file (sort ops bottom-up to avoid line shift)"
-  },
-  "generation": "2ade6b9e99a1",
-  "operation_id": "6b1b5f595d5819a1",
-  "write_status_url": "/api/write_status?operation_id=6b1b5f595d5819a1",
-  "operation_attempts": 1
+  }
 }

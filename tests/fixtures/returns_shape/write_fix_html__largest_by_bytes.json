@@ -68,9 +68,5 @@
     "truncated": false,
     "preview_hash": "daa6878c83f5e69025d5b17d359aa4878c99a6c9a56b4d1df00cc633a0d49469"
   },
-  "changed_lines": 2,
-  "generation": "2ade6b9e99a1",
-  "operation_id": "7405f749303c36d3",
-  "write_status_url": "/api/write_status?operation_id=7405f749303c36d3",
-  "operation_attempts": 1
+  "changed_lines": 2
 }

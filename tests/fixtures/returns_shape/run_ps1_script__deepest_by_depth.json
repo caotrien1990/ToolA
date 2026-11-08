@@ -26,9 +26,5 @@
     "status": "skipped",
     "reason": "test_selection_unknown",
     "payload": null
-  },
-  "generation": "2ade6b9e99a1",
-  "operation_id": "1241f4b0ac3d6b10",
-  "write_status_url": "/api/write_status?operation_id=1241f4b0ac3d6b10",
-  "operation_attempts": 1
+  }
 }

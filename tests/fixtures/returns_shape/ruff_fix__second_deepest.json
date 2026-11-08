@@ -14,9 +14,5 @@
     "changed": true,
     "config": "project",
     "select": "F401,F841,E711,E712,E731,E401,E402,F541,ASYNC210,ASYNC220,ASYNC221,ASYNC222,ASYNC250,ASYNC251,I001,RUF100"
-  },
-  "generation": "2ade6b9e99a1",
-  "operation_id": "4cc0e36affeaa1d4",
-  "write_status_url": "/api/write_status?operation_id=4cc0e36affeaa1d4",
-  "operation_attempts": 1
+  }
 }

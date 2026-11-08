@@ -32,6 +32,5 @@
   "all_recommended_tools_live": true,
   "verbosity_mode": "terse",
   "ok": true,
-  "schema_version": "v15.r18",
-  "generation": "2ade6b9e99a1"
+  "schema_version": "v15.r18"
 }

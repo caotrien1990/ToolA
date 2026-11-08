@@ -20,7 +20,7 @@ Covered:
     budget 1 -> cut 0 bytes / est 1; 2 -> cut 4 / est 2; 3 -> cut 8 /
     est 3) [RV4-01];
   * the section 3.1 SOT case in-process on the real code_tools.py at
-    the project root (23,483 lines at the pin): max_lines=3000 +
+    the project root (23,383 lines at the pin): max_lines=3000 +
     token_budget=100000 -> selection 1-3000 intact, shown 1-907,
     estimated_tokens 11,987;
   * file_summary keeps its own budget semantics (no budget_mode keys);
@@ -305,7 +305,7 @@ def test_file_summary_branch_is_not_budget_mode(tmp_path):
 
 def test_sot_case_code_tools_at_cap():
     # Section 3.1 SOT case, in-process on the real file at the project
-    # root (23,483 lines, clean at the pin): the end_line pins the
+    # root (23,383 lines, clean at the pin): the end_line pins the
     # selection at 1-3000 exactly as section 3.1 states it; the CAP fit
     # then delivers shown 1-907 with estimated_tokens 11,987.
     root = Path(__file__).resolve().parents[1]
@@ -315,7 +315,7 @@ def test_sot_case_code_tools_at_cap():
         start_line=1, end_line=3000, max_lines=3000, token_budget=100_000))
     body = json.loads(raw)
     assert body["ok"] is True
-    assert body["total_lines"] == 23_483
+    assert body["total_lines"] == 23_383
     assert body["selection"]["start_line"] == 1
     assert body["selection"]["end_line"] == 3000
     assert body["budget_mode"] is True

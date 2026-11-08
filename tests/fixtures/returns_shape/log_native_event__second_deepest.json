@@ -14,9 +14,5 @@
     "is_unclassified": false,
     "host_gate": "allow_native_with_policy",
     "ca_next_action": "continue"
-  },
-  "generation": "2ade6b9e99a1",
-  "operation_id": "9b795bc36aefc793",
-  "write_status_url": "/api/write_status?operation_id=9b795bc36aefc793",
-  "operation_attempts": 1
+  }
 }
