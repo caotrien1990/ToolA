@@ -74,13 +74,15 @@ def render(tool, payload, mode, fields, registered, status=200):
         return payload
     repeated = _repeat.get()
     hint = hint_for(payload, registered, repeated)
+    failed = status >= 400 or payload.get("ok") is False or bool(payload.get("error"))
     if mode not in ("2", "dual"):
         # Respect explicit legacy fields= projections. Soft repeat warnings are
         # advisory only and never turn a successful call into a failed one.
-        if repeated or not projected and any(hint.values()):
+        # A failed call keeps the standing single-text error contract (#27):
+        # its text ships once, under `error`, with no structured hint attached.
+        if not failed and (repeated or not projected and any(hint.values())):
             return {**payload, ("structured_hint" if "hint" in payload else "hint"): hint}
         return payload
-    failed = status >= 400 or payload.get("ok") is False or bool(payload.get("error"))
     summary = payload.get("summary")
     if not isinstance(summary, str) or not summary:
         if failed:
