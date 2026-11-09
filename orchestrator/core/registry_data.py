@@ -646,7 +646,14 @@ BASE_TOOL_SCHEMAS = [
 						'type': 'string'
 					},
 					'project_path': {
-						'type': 'string'
+						'anyOf': [
+							{
+								'type': 'null'
+							},
+							{
+								'type': 'string'
+							}
+						]
 					},
 					'file_group': {
 						'type': 'null'
@@ -658,7 +665,14 @@ BASE_TOOL_SCHEMAS = [
 						'type': 'integer'
 					},
 					'shown': {
-						'type': 'string'
+						'anyOf': [
+							{
+								'type': 'null'
+							},
+							{
+								'type': 'string'
+							}
+						]
 					},
 					'range_id': {
 						'type': 'string'
@@ -682,46 +696,74 @@ BASE_TOOL_SCHEMAS = [
 						'type': 'string'
 					},
 					'selection': {
-						'type': 'object',
-						'properties': {
-							'ok': {
-								'type': 'boolean'
+						'anyOf': [
+							{
+								'type': 'null'
 							},
-							'scope': {
-								'type': 'string'
-							},
-							'name': {
-								'anyOf': [
-									{
-										'type': 'null'
+							{
+								'type': 'object',
+								'properties': {
+									'ok': {
+										'type': 'boolean'
 									},
-									{
+									'scope': {
+										'type': 'string'
+									},
+									'name': {
+										'anyOf': [
+											{
+												'type': 'null'
+											},
+											{
+												'type': 'string'
+											}
+										]
+									},
+									'start_line': {
+										'anyOf': [
+											{
+												'type': 'null'
+											},
+											{
+												'type': 'integer'
+											}
+										]
+									},
+									'end_line': {
+										'anyOf': [
+											{
+												'type': 'null'
+											},
+											{
+												'type': 'integer'
+											}
+										]
+									},
+									'source': {
+										'type': 'string'
+									},
+									'qualified_name': {
+										'type': 'string'
+									},
+									'kind': {
 										'type': 'string'
 									}
-								]
-							},
-							'start_line': {
-								'type': 'integer'
-							},
-							'end_line': {
-								'type': 'integer'
-							},
-							'source': {
-								'type': 'string'
-							},
-							'qualified_name': {
-								'type': 'string'
-							},
-							'kind': {
-								'type': 'string'
+								}
 							}
-						}
+						]
 					},
 					'content_hash': {
 						'type': 'string'
 					},
 					'range_ref': {
-						'type': 'string'
+						'anyOf': [
+							{
+								'type': 'null'
+							},
+							{
+								'type': 'string'
+							}
+						]
 					},
 					'cache_hit': {
 						'type': 'boolean'
@@ -733,7 +775,14 @@ BASE_TOOL_SCHEMAS = [
 						'type': 'integer'
 					},
 					'token_budget': {
-						'type': 'null'
+						'anyOf': [
+							{
+								'type': 'integer'
+							},
+							{
+								'type': 'null'
+							}
+						]
 					},
 					'token_estimator': {
 						'type': 'string'
@@ -1220,7 +1269,7 @@ BASE_TOOL_SCHEMAS = [
 				],
 				'x-audit': {
 					'status': 'audited',
-					'schema_sha256': '2494cecbd8a55ee1879588d8005fde9625960bd21c1f46d5158dc76805d86791',
+					'schema_sha256': '1efe790518fac87cc45e32a930bfe5e2e103826933c9a48adbdc23a924e37d21',
 					'depth_D': 4
 				}
 			},
