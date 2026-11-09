@@ -956,6 +956,18 @@ def _persist_post_call_accounting(record: dict) -> None:
     duration_ms = int(record.get("duration_ms") or 0)
     error_msg = str(record.get("error_msg") or "")[:300]
     try:
+        # USAGE_LOG patch (spec 2187/mapping 2188): session fields travel
+        # top-level on the record (see the enqueue site). Present-but-None
+        # means "dispatcher says no metadata" and is passed through so
+        # _log_usage stamps an explicit null; absent keys mean "old
+        # record" and keep the old row shape unchanged.
+        _usage_extra = {}
+        if "session_id" in record:
+            _usage_extra["session_id"] = record.get("session_id")
+        if "task_epoch" in record:
+            _usage_extra["task_epoch"] = record.get("task_epoch")
+        if "prompt_hash" in record:
+            _usage_extra["prompt_hash"] = record.get("prompt_hash")
         usage_ok = ct._log_usage(
             tool_name, body, status == "ok", duration_ms, error_msg,
             delivered=bool(record.get("delivered", True)),
@@ -966,6 +978,7 @@ def _persist_post_call_accounting(record: dict) -> None:
             returns_shape_errors=record.get("returns_shape_errors") or [],
             accounting_id=str(record.get("accounting_id") or ""),
             accounting_sequence=record.get("accounting_sequence"),
+            **_usage_extra,
         )
         if usage_ok is False:
             raise RuntimeError("usage_jsonl_write_failed")
@@ -17414,6 +17427,15 @@ accepted_fields=sorted(accepted_fields),
                 # record, which is the single container `_persist_post_call_accounting`
                 # reads; do not re-derive agent_id from a nested compact again.
                 "agent_id": _task_agent_id or "",
+                # USAGE_LOG patch (spec 2187/mapping 2188): session fields
+                # travel top-level on the record, following the A41 pattern
+                # above (never re-derived from a nested compact). Values are
+                # taken from _accounting_task_meta so the USAGE_LOG stamp
+                # matches the durable-audit meta stamp; host_session_id is
+                # mapped to the session_id key name here.
+                "session_id": _accounting_task_meta.get("host_session_id"),
+                "task_epoch": _accounting_task_meta.get("task_epoch"),
+                "prompt_hash": _accounting_task_meta.get("prompt_hash"),
                 # P16: shape verdict rides channel 2 (accounting) only; None for
                 # pre-window dispatches, and _persist drops Nones to empty.
                 "returns_shape_verdict": _rs_verdict,
@@ -18212,7 +18234,7 @@ async def _dispatch_wire_response(request, transport):
             contract.render(name, None, mode, fields, ct.AUTO_CHAIN_FIELDS)
             return response
         payload = json.loads(response.body)
-        if name == "get_usage_stats" and isinstance(payload, dict) and not fields:
+        if name == "get_usage_stats" and isinstance(payload, dict) and not fields and payload.get("ok") is True:
             payload = {**payload, "response_contract_usage": contract.usage_snapshot()}
         view = contract.render(name, payload, mode, fields, ct.AUTO_CHAIN_FIELDS, response.status)
         if view is not payload or name == "get_usage_stats":

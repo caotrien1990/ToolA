@@ -464,11 +464,19 @@ def _log_to_file(log_path: Path, entry: dict, max_entries: int = 500) -> bool:
         return False
 
 
+# Sentinel distinguishing "caller did not pass this field" (old callers:
+# keep the old row shape) from "caller passed None" (patched dispatcher
+# path: stamp an explicit null so absence is visible, never fabricated).
+_LOG_USAGE_MISSING = object()
+
+
 def _log_usage(tool: str, params: dict, ok: bool, ms: int, error: str = "", *,
                delivered: bool = True, client_gone: bool = False,
                error_name: str = "", agent_id: str = "",
                returns_shape_verdict: str = "", returns_shape_errors=None,
-               accounting_id: str = "", accounting_sequence=None) -> bool:
+               accounting_id: str = "", accounting_sequence=None,
+               session_id=_LOG_USAGE_MISSING, task_epoch=_LOG_USAGE_MISSING,
+               prompt_hash=_LOG_USAGE_MISSING) -> bool:
     """Ghi vao USAGE_LOG cua Orchestrator (meta-log ve chinh Orchestrator).
 
     D6: the row used to be {ts, tool, ok, ms, project} where `project` was only a
@@ -502,6 +510,12 @@ def _log_usage(tool: str, params: dict, ok: bool, ms: int, error: str = "", *,
     any caller that does carry a plain `agent_id`; the explicit argument wins.
     P16: the returns_shape verdict keys follow the same A41-style discipline --
     they arrive only from `_persist_post_call_accounting`, for window-reaching dispatches.
+    USAGE_LOG patch (spec 2187/mapping 2188): `session_id`, `task_epoch`
+    and `prompt_hash` arrive as explicit keyword arguments from
+    `_persist_post_call_accounting` (mapped from the dispatcher's
+    `host_session_id` value). An explicitly passed None stamps a JSON
+    null (metadata absent); an omitted argument keeps the old behaviour
+    (session_id from `params` only, no task_epoch/prompt_hash keys).
     """
     project_hint = params.get("project_path", params.get("file_path", ""))
     entry = {
@@ -524,6 +538,19 @@ def _log_usage(tool: str, params: dict, ok: bool, ms: int, error: str = "", *,
         _val = params.get(_attr)
         if _val:
             entry[_attr] = str(_val)[:80]
+    # USAGE_LOG patch (spec 2187/mapping 2188): explicit dispatcher fields
+    # win over the params loop above. A passed None stamps an explicit
+    # null (metadata absent, not fabricated); a missing argument (the
+    # sentinel) leaves the old params-loop behaviour untouched.
+    if session_id is not _LOG_USAGE_MISSING:
+        entry["session_id"] = str(session_id)[:80] if session_id else None
+    if task_epoch is not _LOG_USAGE_MISSING:
+        if isinstance(task_epoch, (int, float)):
+            entry["task_epoch"] = task_epoch
+        else:
+            entry["task_epoch"] = str(task_epoch)[:80] if task_epoch else None
+    if prompt_hash is not _LOG_USAGE_MISSING:
+        entry["prompt_hash"] = str(prompt_hash)[:80] if prompt_hash else None
     if client_gone:
         entry["client_gone"] = True
         entry["undelivered_reason"] = "client_transport_gone"
