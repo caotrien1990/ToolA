@@ -180,7 +180,12 @@ ALLOWLIST = {
 }
 
 _EXCLUDED_TOP_DIRS = frozenset(
-    {"tests", "scripts", "harness", "docs", "examples", "hooks", ".council"}
+    {"tests", "scripts", "harness", "docs", "examples", "hooks", ".council",
+     # experiments/: offline upgrade-pilot scripts (CLOSING_PACKAGE_20261109
+     # F-3) -- batch_pilot.py is an in-process read dispatcher and
+     # measure_batch.py replays captured payloads in-process; neither
+     # spawns a process (both files read in full at classification time).
+     "experiments"}
 )
 
 
