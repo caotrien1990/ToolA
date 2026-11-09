@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import base64
+import collections
 import contextvars
 import gc
 import hashlib
@@ -599,13 +600,21 @@ class SessionWriter:
                 if remaining <= 0 or self._stop.is_set():
                     break
                 self._queue.not_empty.wait(remaining)
+            positions = {id(item): index for index, item in enumerate(self._queue.queue)}
+            queues = {}
+            for item in self._queue.queue:
+                queues.setdefault(item.principal, collections.deque()).append(item)
             batch = []
             served = {}
-            while self._queue.queue and len(batch) < self.batch_max:
-                heads = {}
-                for item in self._queue.queue:
-                    heads.setdefault(item.principal, item)
-                eligible = list(heads.values())
+            while len(batch) < self.batch_max:
+                heads = {p: q[0] for p, q in queues.items() if q}
+                if not heads:
+                    break
+                # Eligible order must match the old scan exactly: the old
+                # loop rebuilt heads from the CURRENT queue on every pick,
+                # so rank ties break by the head's current queue position
+                # (its original index -- removals preserve relative order).
+                eligible = sorted(heads.values(), key=lambda item: positions[id(item)])
                 if len(heads) > 1:
                     eligible = [item for item in eligible if served.get(item.principal, 0) < 32]
                     if not eligible:
@@ -619,9 +628,13 @@ class SessionWriter:
                     return (0 if aged else 1, served.get(item.principal, 0),
                             item.enqueued_at if aged else priority, item.enqueued_at)
                 chosen = min(eligible, key=rank)
-                self._queue.queue.remove(chosen)
+                queues[chosen.principal].popleft()
                 batch.append(chosen)
                 served[chosen.principal] = served.get(chosen.principal, 0) + 1
+            if batch:
+                chosen_ids = {id(item) for item in batch}
+                self._queue.queue = collections.deque(
+                    item for item in self._queue.queue if id(item) not in chosen_ids)
             self._queue.not_full.notify_all()
             return batch
 
