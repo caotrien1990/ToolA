@@ -27,10 +27,11 @@ Run:  ./venv312/Scripts/python.exe -m pytest tests/test_policy_keyword_boundary_
 """
 
 import unittest
+from pathlib import Path
 
 from orchestrator.core.ca_policy_matrix import classify_action
 
-A_ROOT = r"D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator"
+A_ROOT = str(Path(__file__).resolve().parents[1])
 # A user project that does not exist on disk. It is a project only because it is
 # DECLARED as project_path: since the 2026-09-23 scope matcher, an undeclared path
 # under no project marker is outside_project (as %TEMP% is), so a call that means

@@ -38,10 +38,11 @@ Run: ./venv312/Scripts/python.exe -m pytest tests/test_policy_action_vocabulary_
 """
 
 import unittest
+from pathlib import Path
 
 from orchestrator.core.ca_policy_matrix import classify_action
 
-A_ROOT = r"D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator"
+A_ROOT = str(Path(__file__).resolve().parents[1])
 USER_PROJ = r"D:\userproj"
 
 

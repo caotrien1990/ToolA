@@ -18,6 +18,7 @@ import json
 import tempfile
 import unittest
 
+import code_tools
 from code_tools import (
     _wf_resolve_current_step,
     _wf_step_response,
@@ -146,13 +147,37 @@ class TestPublicEndpointsAgreeOnUnstarted(unittest.TestCase):
         state_file = _wf_state_path(self.project_path, self.WORKFLOW_NAME)
         if state_file.exists():
             state_file.unlink()
+        # Hermetic workflow DEFINITION: both endpoints gate on _wf_find_md
+        # over the global __file__-anchored dir (code_tools._wf_dirs), whose
+        # fixture MD was deleted as trash in a5afa84 and survives only as
+        # untracked residue in the live tree. Build the definition in our
+        # own temp dir and point _wf_dirs at it for the test's duration
+        # instead of depending on that residue.
+        self._wf_tmp = tempfile.TemporaryDirectory(prefix="e01_wfdef_")
+        fixture = Path(self._wf_tmp.name) / (self.WORKFLOW_NAME + ".md")
+        fixture.write_text(
+            "# MCP-175 Tool Workflow Fixture\n"
+            "\n"
+            "## Step 1\n"
+            "\n"
+            "Fixture step one.\n"
+            "\n"
+            "## Step 2\n"
+            "\n"
+            "Fixture step two.\n",
+            encoding="utf-8")
+        self._orig_wf_dirs = code_tools._wf_dirs
+        code_tools._wf_dirs = (
+            lambda project_path="": [(Path(self._wf_tmp.name), "global")])
 
     def tearDown(self) -> None:
         try:
+            code_tools._wf_dirs = self._orig_wf_dirs
             state_file = _wf_state_path(self.project_path, self.WORKFLOW_NAME)
             if state_file.exists():
                 state_file.unlink()
         finally:
+            self._wf_tmp.cleanup()
             self._tmp.cleanup()
 
     def test_get_current_returns_unstarted_step_zero_not_error(self) -> None:
