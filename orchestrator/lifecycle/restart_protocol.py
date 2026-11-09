@@ -15,6 +15,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Mapping
+from .console_warp import child_creationflags, child_startupinfo
 
 
 MAX_BODY_BYTES = 4096
@@ -423,13 +424,13 @@ def _restrict_secret(path: Path) -> tuple[bool, str | None]:
             )
             environment = dict(os.environ)
             environment["RESTART_SECRET_PATH"] = str(path)
+            run_kwargs = {"capture_output": True, "text": True, "timeout": 10, "check": False, "env": environment}
+            if os.name == "nt":
+                run_kwargs["creationflags"] = child_creationflags()
+                run_kwargs["startupinfo"] = child_startupinfo()
             result = subprocess.run(
                 ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=False,
-                env=environment,
+                **run_kwargs,
             )
             if result.returncode != 0 or result.stdout.strip() != "ACL_OK":
                 return False, "secret DACL set or verification failed"

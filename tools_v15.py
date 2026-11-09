@@ -622,7 +622,7 @@ async def git_blame_symbol(symbol: str, project_path: str,
                    f"-L{line},+10:{file_rel}", "--max-count=5", "--no-patch",
                    "--format=%h%x09%an%x09%ad%x09%s", "--date=short"]
             # P8: match git tools standard 60s budget (orchestrator/git_tools.py::_run default timeout=60); 20s was the only outlier (Pattern A).
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             if r.returncode != 0:
                 return {"ok": False, "error": r.stderr.strip()[:300]}
             lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
@@ -4282,7 +4282,7 @@ async def cleanup_test_session(project_path: str = "",
     for proc_name in processes:
         try:
             r = _sp.run(["taskkill", "/F", "/IM", proc_name, "/T"],
-                        capture_output=True, text=True, timeout=10)
+                        capture_output=True, text=True, timeout=10, creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0))
             if r.returncode == 0 or "not found" in (r.stderr or "").lower() or "not running" in (r.stdout or "").lower():
                 result["processes_killed"].append(proc_name)
             else:
@@ -4597,7 +4597,7 @@ async def ensure_single_electron_instance(project_path: str = "",
     # 1. Find existing electron.exe PIDs
     try:
         r = _sp.run(["tasklist", "/FI", "IMAGENAME eq electron.exe", "/FO", "CSV", "/NH"],
-                    capture_output=True, text=True, timeout=8)
+                    capture_output=True, text=True, timeout=8, creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0))
         for line in (r.stdout or "").splitlines():
             parts = [p.strip().strip('"') for p in line.split(",")]
             if len(parts) >= 2 and parts[0].lower() == "electron.exe":
@@ -4622,7 +4622,7 @@ async def ensure_single_electron_instance(project_path: str = "",
     if kill_existing and (result["existing_pids"] or result["port_was_busy"]):
         try:
             kr = _sp.run(["taskkill", "/F", "/IM", "electron.exe", "/T"],
-                         capture_output=True, text=True, timeout=10)
+                         capture_output=True, text=True, timeout=10, creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0))
             result["killed"] = kr.returncode in (0, 128)  # 128 = not found, also fine
             result["taskkill_rc"] = kr.returncode
             result["taskkill_stdout"] = (kr.stdout or "")[:200]
@@ -7485,7 +7485,7 @@ async def restart_orchestrator_via_task(delay_seconds: int = 2) -> str:
     # Step 1: verify task exists (cheap, doesn't kill anything)
     try:
         q = _sp.run(["schtasks", "/query", "/tn", task_name],
-                    capture_output=True, text=True, timeout=10)
+                    capture_output=True, text=True, timeout=10, creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0))
         if q.returncode != 0:
             return _json.dumps({
                 "ok": False,
@@ -9321,7 +9321,7 @@ async def run_playwright_test(test_script_path: str, project_path: str = "",
     try:
         r = subprocess.run(
             ["node", str(fp)], capture_output=True, text=True,
-            timeout=timeout_sec, cwd=project_path or fp.parent,
+            timeout=timeout_sec, cwd=project_path or fp.parent, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         return _ok({
             "script": str(fp),

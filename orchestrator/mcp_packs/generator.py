@@ -633,7 +633,7 @@ def action_test_pack(
     if not server.exists():
         return _err("PACK_NOT_FOUND", f"missing {server}", hint="run generate dry_run=false first")
     py = python_exe or str(DEFAULT_PYTHON)
-    r1 = subprocess.run([py, "-m", "py_compile", str(server)], capture_output=True, text=True)
+    r1 = subprocess.run([py, "-m", "py_compile", str(server)], capture_output=True, text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     if r1.returncode != 0:
         return _err("PY_COMPILE_FAILED", r1.stderr or r1.stdout, server=str(server))
     code = (
@@ -651,7 +651,7 @@ def action_test_pack(
         "    out['probe']={'static_only': True, 'tool_count': len(getattr(mod,'TOOL_NAMES',[]))}\n"
         "print(json.dumps(out))\n"
     )
-    r2 = subprocess.run([py, "-c", code], capture_output=True, text=True, timeout=60)
+    r2 = subprocess.run([py, "-c", code], capture_output=True, text=True, timeout=60, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     if r2.returncode != 0:
         return _err("TEST_IMPORT_FAILED", r2.stderr or r2.stdout, server=str(server))
     probe = None

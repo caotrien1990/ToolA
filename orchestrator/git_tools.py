@@ -12,7 +12,7 @@ class GitToolError(RuntimeError):
 def _run(root, args, timeout=60, check=True):
     env=os.environ.copy(); env.update({'GIT_TERMINAL_PROMPT':'0','GCM_INTERACTIVE':'Never','LC_ALL':'C','LANG':'C'})
     try:
-        p=subprocess.run(['git','-C',str(root),*args],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8',errors='replace',timeout=max(1,min(int(timeout),300)),env=env,shell=False)
+        p=subprocess.run(['git','-C',str(root),*args],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8',errors='replace',timeout=max(1,min(int(timeout),300)),env=env,shell=False,creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except FileNotFoundError as e: raise GitToolError('GIT_NOT_INSTALLED','git executable not found') from e
     except subprocess.TimeoutExpired as e: raise GitToolError('GIT_TIMEOUT',f'git command timed out after {timeout}s') from e
     out={'exit_code':p.returncode,'stdout':p.stdout,'stderr':p.stderr}
@@ -287,7 +287,7 @@ def _run_bytes(root,args,timeout=60,input=None):
     # stdin+input together, so pass stdin only in the no-input case: DEVNULL keeps an
     # interactive git prompt from hanging the executor lane, and input implies PIPE.
     kw={"stdin":subprocess.DEVNULL} if input is None else {}
-    return subprocess.run(['git','-C',str(root),*args],input=input,**kw,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=max(1,min(int(timeout),300)),env=env,shell=False)
+    return subprocess.run(['git','-C',str(root),*args],input=input,**kw,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=max(1,min(int(timeout),300)),env=env,shell=False,creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 def _head_blob_is_uniform_crlf(root,spec):
     """True when HEAD holds this path as a text blob whose every \\n is preceded by \\r.

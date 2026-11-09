@@ -11761,7 +11761,7 @@ async def handle_council_pick_folder(request):
         result = await asyncio.to_thread(
             subprocess.run,
             ['powershell', '-STA', '-Command', ps_cmd],
-            capture_output=True, text=True, timeout=60,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), capture_output=True, text=True, timeout=60,
         )
         path = (result.stdout or '').strip()
         if result.returncode == 0 and path:

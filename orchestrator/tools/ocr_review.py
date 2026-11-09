@@ -227,7 +227,7 @@ async def _ocr_run(args, root: str, timeout: int) -> dict:
         completed = await asyncio.to_thread(
             subprocess.run, command, cwd=root, capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=timeout, check=False,
-            env=child_env,
+            env=child_env, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except subprocess.TimeoutExpired:
         # D3: a deadline hit is a CALLER-PARAMETER problem (timeout too small for

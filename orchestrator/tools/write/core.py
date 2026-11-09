@@ -294,6 +294,7 @@ async def _pre_write_syntax_check(fp: Path, content: str) -> dict:
             stderr=ct.subprocess.PIPE,
             text=True,
             timeout=5,
+            creationflags=ct.NOWINDOW_FLAGS,
             )
             if proc.returncode != 0:
                 return _syntax_error(
