@@ -49,9 +49,10 @@ REPO = Path(__file__).resolve().parents[1]
 
 # The PRODUCTION tree only. tests/ and docs/ are excluded on purpose: a fixture or a doc
 # example may legitimately spell a key no tool emits, and a gate that counted those would be
-# measuring itself. scripts/ and examples/ are excluded for the same reason.
+# measuring itself. scripts/ and examples/ are excluded for the same reason. The gitignored
+# .tmp scratch root (detached worktrees, throwaway venvs) is not production either.
 _SKIP_DIRS = frozenset({
-    ".git", "venv312", "venv_ocr", "node_modules", ".orchestrator_cache", "__pycache__",
+    ".git", ".tmp", "venv312", "venv_ocr", "node_modules", ".orchestrator_cache", "__pycache__",
     "_iso_campaign", ".council", "tests", "docs", "examples", "scripts",
 })
 

@@ -45,10 +45,11 @@ from orchestrator.core.params import csv_param
 
 REPO = Path(__file__).resolve().parents[1]
 
-# Not [A]'s production surface: virtualenvs, caches, vendored + runtime trees, and the
+# Not [A]'s production surface: virtualenvs, caches, vendored + runtime trees, the
+# gitignored .tmp scratch root (detached worktrees, throwaway venvs), and the
 # test/doc trees that legitimately demonstrate the broken shape (this file included).
 _SKIP_DIRS = {
-    ".git", "venv312", "venv_ocr", "node_modules", ".orchestrator_cache",
+    ".git", ".tmp", "venv312", "venv_ocr", "node_modules", ".orchestrator_cache",
     "__pycache__", "_iso_campaign", ".council", "tests", "docs", "examples",
 }
 

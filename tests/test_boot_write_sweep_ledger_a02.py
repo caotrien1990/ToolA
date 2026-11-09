@@ -106,15 +106,26 @@ class TestBootWriteSweepLedgerA02(unittest.TestCase):
         root.mkdir()
         target, bak = _make_restorable_bak(root, name="thing.py")
 
-        # legacy index path: pass the root explicitly (bypasses the ledger)
-        index_scan = _boot_sweep_scan([str(root)])
-        index_pending = {str(fp) for fp, _b in index_scan.get("pending", [])}
+        # Pin discovery to this test's own root, the pattern the seed tests
+        # in this file use: _boot_sweep_project_roots always unions in the
+        # session roots and the code's own repo root, and xroot history is
+        # host state -- neither is this test's input. A genuinely pending
+        # .bak in the host tree must not leak into the equivalence claim,
+        # which is about the two discovery paths over the SAME universe.
+        with mock.patch.object(
+            write_core, "_boot_sweep_project_roots", return_value=[root],
+        ), mock.patch.object(
+            write_core, "_boot_sweep_xroot_files", return_value=[],
+        ):
+            # legacy index path: pass the root explicitly (bypasses the ledger)
+            index_scan = _boot_sweep_scan([str(root)])
+            index_pending = {str(fp) for fp, _b in index_scan.get("pending", [])}
 
-        with _LedgerSandbox(self.cache) as sb:
-            write_core._record_write_backup(target, bak)
-            sb.mk.write_text("seeded", encoding="utf-8")
-            ledger_scan = _boot_sweep_scan(None)
-        ledger_pending = {str(fp) for fp, _b in ledger_scan.get("pending", [])}
+            with _LedgerSandbox(self.cache) as sb:
+                write_core._record_write_backup(target, bak)
+                sb.mk.write_text("seeded", encoding="utf-8")
+                ledger_scan = _boot_sweep_scan(None)
+            ledger_pending = {str(fp) for fp, _b in ledger_scan.get("pending", [])}
 
         self.assertIn(str(target), index_pending, msg=index_scan)
         self.assertEqual(
