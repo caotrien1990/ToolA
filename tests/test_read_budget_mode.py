@@ -305,9 +305,13 @@ def test_file_summary_branch_is_not_budget_mode(tmp_path):
 
 def test_sot_case_code_tools_at_cap():
     # Section 3.1 SOT case, in-process on the real file at the project
-    # root (23,421 lines, clean at the pin): the end_line pins the
+    # root (23,516 lines, clean at the pin): the end_line pins the
     # selection at 1-3000 exactly as section 3.1 states it; the CAP fit
-    # then delivers shown 1-907 with estimated_tokens 11,987.
+    # then delivers shown 1-908 with estimated_tokens 11,992.
+    # Re-pinned 2026-11-09 (CLOSING_PACKAGE_20261109 F-1/F-2): the Stage-2
+    # M3 commit e7c4721 grew the file +95 lines (numstat +96/-1, every hunk
+    # below line 7280) and its mid-file `import logging` was relocated to
+    # the top import block; all four values re-measured with this read.
     root = Path(__file__).resolve().parents[1]
     assert (root / "code_tools.py").exists()
     raw = asyncio.run(code_tools.read_file_range(
@@ -315,11 +319,11 @@ def test_sot_case_code_tools_at_cap():
         start_line=1, end_line=3000, max_lines=3000, token_budget=100_000))
     body = json.loads(raw)
     assert body["ok"] is True
-    assert body["total_lines"] == 23_421
+    assert body["total_lines"] == 23_516
     assert body["selection"]["start_line"] == 1
     assert body["selection"]["end_line"] == 3000
     assert body["budget_mode"] is True
     assert body["token_budget_effective"] == 12_000
-    assert body["shown"] == "1-907"
-    assert body["estimated_tokens"] == 11_987
+    assert body["shown"] == "1-908"
+    assert body["estimated_tokens"] == 11_992
     assert body["truncated"] is True

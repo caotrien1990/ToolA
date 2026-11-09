@@ -12,6 +12,7 @@ import fnmatch
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import secrets
@@ -7292,7 +7293,6 @@ TaskCheckpointStorageError = _session_store_module.TaskCheckpointStorageError
 # propagates to the rotating server log). A window still open when the
 # daemon restarts closes unflushed except its first-event line.
 # --------------------------------------------------------------------------- #
-import logging
 
 _CONTENTION_ERROR_NAMES = frozenset({
     "SESSION_STORE_CONTENTION",
