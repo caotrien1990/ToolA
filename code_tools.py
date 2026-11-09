@@ -20657,25 +20657,12 @@ try:
             },
             'required': [
                 'ok',
-                'exit_code',
-                'stdout',
-                'stdout_metadata',
-                'stderr',
-                'stderr_metadata',
-                'duration_seconds',
-                'script_path',
-                'script_hash',
-                'script_label',
-                'runtime_used',
-                'timed_out',
-                'child_encoding',
-                'ca_next_action',
-                'test_gap'
+                'ca_next_action'
             ],
             'type': 'object',
             'x-audit': {
                 'status': 'audited',
-                'schema_sha256': '458400da95ff22136cb2e6008b9c08c4ebb4458f17ef7d67bb29a033f90a516c',
+                'schema_sha256': 'db90645113b11ecf196e5f3e46560c6002882144d2a7445b8d812e86c06bafeb',
                 'depth_D': 4
             }
         },
@@ -20784,24 +20771,12 @@ try:
             },
             'required': [
                 'ok',
-                'exit_code',
-                'stdout',
-                'stdout_metadata',
-                'stderr',
-                'stderr_metadata',
-                'duration_seconds',
-                'script_path',
-                'script_hash',
-                'script_label',
-                'runtime_used',
-                'timed_out',
-                'ca_next_action',
-                'test_gap'
+                'ca_next_action'
             ],
             'type': 'object',
             'x-audit': {
                 'status': 'audited',
-                'schema_sha256': '8e3403d39d63606fc53c475ef8cdaa0cf80b700ceac6e225d3425b22ce5f7b77',
+                'schema_sha256': '102bc6b30dc9a5cbc89b50ad75bc91999bc62dd64083929df4bb169f732dac82',
                 'depth_D': 2
             }
         },
@@ -20879,10 +20854,7 @@ try:
                             'type': 'object'
                         }
                     },
-                    'required': [
-                        'read_file_range',
-                        'read_context_batch'
-                    ],
+                    'required': [],
                     'type': 'object'
                 },
                 'q_memory_refs': {
@@ -21001,7 +20973,6 @@ try:
             'required': [
                 'recommended_tier',
                 'recommended_tool',
-                'recommended_skill',
                 'suggestion',
                 'ok',
                 'schema_version'
@@ -21009,7 +20980,7 @@ try:
             'type': 'object',
             'x-audit': {
                 'status': 'audited',
-            'schema_sha256': 'c269e43996c64c39472c25c8f9f18361dfff77d502a8f03b7ed63aa5ce0967dc',
+            'schema_sha256': 'bd2b3afbc5268d8af2f7d6b0ad07bc2a1fc1f3121c998d517202f63750b41abc',
                 'depth_D': 4
             }
         },
@@ -21605,25 +21576,198 @@ try:
                     'type': 'string'
                 },
                 'validation': {
-                    'properties': {
-                        'ca_next_action': {
-                            'type': 'string'
-                        },
-                        'cache_delta_result': {
+                    'anyOf': [
+                        {
                             'properties': {
-                                'added': {
+                                'ca_next_action': {
+                                    'type': 'string'
+                                },
+                                'cache_delta_result': {
+                                    'properties': {
+                                        'added': {
+                                            'items': {
+                                                'type': 'string'
+                                            },
+                                            'type': 'array'
+                                        },
+                                        'cache_updated_at': {
+                                            'type': 'string'
+                                        },
+                                        'deleted': {
+                                            'type': 'array'
+                                        },
+                                        'modified': {
+                                            'items': {
+                                                'type': 'string'
+                                            },
+                                            'type': 'array'
+                                        },
+                                        'ok': {
+                                            'type': 'boolean'
+                                        },
+                                        'total_changed': {
+                                            'type': 'integer'
+                                        }
+                                    },
+                                    'required': [
+                                        'ok',
+                                        'added',
+                                        'modified',
+                                        'deleted',
+                                        'total_changed',
+                                        'cache_updated_at'
+                                    ],
+                                    'type': 'object'
+                                },
+                                'cache_delta_runs': {
+                                    'type': 'integer'
+                                },
+                                'encoding_results': {
                                     'items': {
-                                        'type': 'string'
+                                        'anyOf': [
+                                            {
+                                                'properties': {
+                                                    'bom': {
+                                                        'type': 'boolean'
+                                                    },
+                                                    'bytes': {
+                                                        'type': 'integer'
+                                                    },
+                                                    'ca_next_action': {
+                                                        'type': 'string'
+                                                    },
+                                                    'encoding_detected': {
+                                                        'type': 'string'
+                                                    },
+                                                    'encoding_used': {
+                                                        'type': 'string'
+                                                    },
+                                                    'expected_encoding': {
+                                                        'type': 'string'
+                                                    },
+                                                    'file': {
+                                                        'type': 'string'
+                                                    },
+                                                    'language_hint': {
+                                                        'type': 'string'
+                                                    },
+                                                    'mojibake_confirmed': {
+                                                        'type': 'boolean'
+                                                    },
+                                                    'mojibake_markers_present': {
+                                                        'type': 'boolean'
+                                                    },
+                                                    'mojibake_risk': {
+                                                        'type': 'boolean'
+                                                    },
+                                                    'ok': {
+                                                        'type': 'boolean'
+                                                    },
+                                                    'suspicious_sequences': {
+                                                        'type': 'array'
+                                                    },
+                                                    'utf8_valid': {
+                                                        'type': 'boolean'
+                                                    },
+                                                    'vietnamese_diacritic_check': {
+                                                        'properties': {
+                                                            'has_vietnamese_diacritics': {
+                                                                'type': 'boolean'
+                                                            },
+                                                            'status': {
+                                                                'type': 'string'
+                                                            }
+                                                        },
+                                                        'required': [
+                                                            'has_vietnamese_diacritics',
+                                                            'status'
+                                                        ],
+                                                        'type': 'object'
+                                                    }
+                                                },
+                                                'required': [
+                                                    'ok',
+                                                    'file',
+                                                    'expected_encoding',
+                                                    'language_hint',
+                                                    'encoding_used',
+                                                    'utf8_valid',
+                                                    'mojibake_risk',
+                                                    'mojibake_markers_present',
+                                                    'mojibake_confirmed',
+                                                    'vietnamese_diacritic_check',
+                                                    'suspicious_sequences',
+                                                    'encoding_detected',
+                                                    'bom',
+                                                    'bytes',
+                                                    'ca_next_action'
+                                                ],
+                                                'type': 'object'
+                                            },
+                                            {
+                                                'additionalProperties': False,
+                                                'properties': {
+                                                    'bom': {
+                                                        'type': 'boolean'
+                                                    },
+                                                    'ca_next_action': {
+                                                        'type': 'string'
+                                                    },
+                                                    'encoding_detected': {
+                                                        'type': 'string'
+                                                    },
+                                                    'error': {
+                                                        'type': 'string'
+                                                    },
+                                                    'expected_encoding': {
+                                                        'type': 'string'
+                                                    },
+                                                    'file': {
+                                                        'type': 'string'
+                                                    },
+                                                    'language_hint': {
+                                                        'type': 'string'
+                                                    },
+                                                    'mojibake_risk': {
+                                                        'type': 'boolean'
+                                                    },
+                                                    'ok': {
+                                                        'type': 'boolean'
+                                                    },
+                                                    'suspicious_sequences': {
+                                                        'type': 'array'
+                                                    },
+                                                    'utf8_valid': {
+                                                        'type': 'boolean'
+                                                    },
+                                                    'vietnamese_diacritic_check': {
+                                                        'type': 'object'
+                                                    }
+                                                },
+                                                'required': [
+                                                    'ok',
+                                                    'file',
+                                                    'expected_encoding',
+                                                    'language_hint',
+                                                    'ca_next_action',
+                                                    'encoding_detected',
+                                                    'utf8_valid',
+                                                    'bom',
+                                                    'mojibake_risk',
+                                                    'vietnamese_diacritic_check',
+                                                    'suspicious_sequences',
+                                                    'error'
+                                                ],
+                                                'type': 'object'
+                                            }
+                                        ]
                                     },
                                     'type': 'array'
                                 },
-                                'cache_updated_at': {
-                                    'type': 'string'
-                                },
-                                'deleted': {
+                                'failed_checks': {
                                     'type': 'array'
                                 },
-                                'modified': {
+                                'files_checked': {
                                     'items': {
                                         'type': 'string'
                                     },
@@ -21632,207 +21776,118 @@ try:
                                 'ok': {
                                     'type': 'boolean'
                                 },
-                                'total_changed': {
-                                    'type': 'integer'
-                                }
-                            },
-                            'required': [
-                                'ok',
-                                'added',
-                                'modified',
-                                'deleted',
-                                'total_changed',
-                                'cache_updated_at'
-                            ],
-                            'type': 'object'
-                        },
-                        'cache_delta_runs': {
-                            'type': 'integer'
-                        },
-                        'encoding_results': {
-                            'items': {
-                                'properties': {
-                                    'bom': {
-                                        'type': 'boolean'
-                                    },
-                                    'bytes': {
-                                        'type': 'integer'
-                                    },
-                                    'ca_next_action': {
-                                        'type': 'string'
-                                    },
-                                    'encoding_detected': {
-                                        'type': 'string'
-                                    },
-                                    'encoding_used': {
-                                        'type': 'string'
-                                    },
-                                    'expected_encoding': {
-                                        'type': 'string'
-                                    },
-                                    'file': {
-                                        'type': 'string'
-                                    },
-                                    'language_hint': {
-                                        'type': 'string'
-                                    },
-                                    'mojibake_confirmed': {
-                                        'type': 'boolean'
-                                    },
-                                    'mojibake_markers_present': {
-                                        'type': 'boolean'
-                                    },
-                                    'mojibake_risk': {
-                                        'type': 'boolean'
-                                    },
-                                    'ok': {
-                                        'type': 'boolean'
-                                    },
-                                    'suspicious_sequences': {
-                                        'type': 'array'
-                                    },
-                                    'utf8_valid': {
-                                        'type': 'boolean'
-                                    },
-                                    'vietnamese_diacritic_check': {
+                                'overall_status': {
+                                    'type': 'string'
+                                },
+                                'project_path': {
+                                    'type': 'string'
+                                },
+                                'unsupported_tools': {
+                                    'items': {
                                         'properties': {
-                                            'has_vietnamese_diacritics': {
-                                                'type': 'boolean'
+                                            'file_path': {
+                                                'type': 'string'
                                             },
-                                            'status': {
+                                            'reason': {
+                                                'type': 'string'
+                                            },
+                                            'tool': {
                                                 'type': 'string'
                                             }
                                         },
                                         'required': [
-                                            'has_vietnamese_diacritics',
-                                            'status'
+                                            'tool',
+                                            'file_path',
+                                            'reason'
                                         ],
                                         'type': 'object'
-                                    }
+                                    },
+                                    'type': 'array'
                                 },
-                                'required': [
-                                    'ok',
-                                    'file',
-                                    'expected_encoding',
-                                    'language_hint',
-                                    'encoding_used',
-                                    'utf8_valid',
-                                    'mojibake_risk',
-                                    'mojibake_markers_present',
-                                    'mojibake_confirmed',
-                                    'vietnamese_diacritic_check',
-                                    'suspicious_sequences',
-                                    'encoding_detected',
-                                    'bom',
-                                    'bytes',
-                                    'ca_next_action'
-                                ],
-                                'type': 'object'
-                            },
-                            'type': 'array'
-                        },
-                        'failed_checks': {
-                            'type': 'array'
-                        },
-                        'files_checked': {
-                            'items': {
-                                'type': 'string'
-                            },
-                            'type': 'array'
-                        },
-                        'ok': {
-                            'type': 'boolean'
-                        },
-                        'overall_status': {
-                            'type': 'string'
-                        },
-                        'project_path': {
-                            'type': 'string'
-                        },
-                        'unsupported_tools': {
-                            'items': {
-                                'properties': {
-                                    'file_path': {
-                                        'type': 'string'
+                                'validate_file_results': {
+                                    'items': {
+                                        'properties': {
+                                            'checked': {
+                                                'type': 'boolean'
+                                            },
+                                            'file': {
+                                                'type': 'string'
+                                            },
+                                            'lang': {
+                                                'type': 'string'
+                                            },
+                                            'note': {
+                                                'type': 'string'
+                                            },
+                                            'ok': {
+                                                'type': 'boolean'
+                                            },
+                                            'ruff_fix_applicable': {
+                                                'type': 'boolean'
+                                            },
+                                            'ruff_fix_hint': {
+                                                'type': 'string'
+                                            },
+                                            'ruff_rules_matched': {
+                                                'type': 'array'
+                                            }
+                                        },
+                                        'required': [
+                                            'ok',
+                                            'lang',
+                                            'file',
+                                            'checked',
+                                            'ruff_fix_applicable',
+                                            'ruff_rules_matched',
+                                            'ruff_fix_hint'
+                                        ],
+                                        'type': 'object'
                                     },
-                                    'reason': {
-                                        'type': 'string'
-                                    },
-                                    'tool': {
-                                        'type': 'string'
-                                    }
+                                    'type': 'array'
                                 },
-                                'required': [
-                                    'tool',
-                                    'file_path',
-                                    'reason'
-                                ],
-                                'type': 'object'
+                                'validate_symbols_results': {
+                                    'type': 'array'
+                                }
                             },
-                            'type': 'array'
+                            'required': [
+                                'project_path',
+                                'ok',
+                                'overall_status',
+                                'files_checked',
+                                'validate_file_results',
+                                'validate_symbols_results',
+                                'encoding_results',
+                                'cache_delta_result',
+                                'unsupported_tools',
+                                'failed_checks',
+                                'cache_delta_runs',
+                                'ca_next_action'
+                            ],
+                            'type': 'object'
                         },
-                        'validate_file_results': {
-                            'items': {
-                                'properties': {
-                                    'checked': {
-                                        'type': 'boolean'
-                                    },
-                                    'file': {
-                                        'type': 'string'
-                                    },
-                                    'lang': {
-                                        'type': 'string'
-                                    },
-                                    'note': {
-                                        'type': 'string'
-                                    },
-                                    'ok': {
-                                        'type': 'boolean'
-                                    },
-                                    'ruff_fix_applicable': {
-                                        'type': 'boolean'
-                                    },
-                                    'ruff_fix_hint': {
-                                        'type': 'string'
-                                    },
-                                    'ruff_rules_matched': {
-                                        'type': 'array'
-                                    }
+                        {
+                            'additionalProperties': False,
+                            'properties': {
+                                'groups': {
+                                    'items': {},
+                                    'type': 'array'
                                 },
-                                'required': [
-                                    'ok',
-                                    'lang',
-                                    'file',
-                                    'checked',
-                                    'note',
-                                    'ruff_fix_applicable',
-                                    'ruff_rules_matched',
-                                    'ruff_fix_hint'
-                                ],
-                                'type': 'object'
+                                'ok': {
+                                    'type': 'boolean'
+                                },
+                                'overall_status': {
+                                    'type': 'string'
+                                }
                             },
-                            'type': 'array'
-                        },
-                        'validate_symbols_results': {
-                            'type': 'array'
+                            'required': [
+                                'ok',
+                                'overall_status',
+                                'groups'
+                            ],
+                            'type': 'object'
                         }
-                    },
-                    'required': [
-                        'project_path',
-                        'ok',
-                        'overall_status',
-                        'files_checked',
-                        'validate_file_results',
-                        'validate_symbols_results',
-                        'encoding_results',
-                        'cache_delta_result',
-                        'unsupported_tools',
-                        'failed_checks',
-                        'cache_delta_runs',
-                        'ca_next_action'
-                    ],
-                    'type': 'object'
-                }
+                    ]
+                },
             },
             'required': [
                 'ok',
@@ -21841,7 +21896,7 @@ try:
             'type': 'object',
             'x-audit': {
                 'status': 'audited',
-                'schema_sha256': 'ef05abc15675cb94190907b56f8dd40e0a072a3cc115fafd02a7bb3a35302f1b',
+                'schema_sha256': '89b08b7ad7a2bce15fbe8dc672a9828bbd12b518a7bcc1d5551503d51b56af46',
                 'depth_D': 5
             }
         },
@@ -22587,13 +22642,12 @@ try:
                     }
                 },
                 'required': [
-                    'ok',
-                    'result'
+                    'ok'
                 ],
                 'type': 'object',
                 'x-audit': {
                     'status': 'audited',
-                    'schema_sha256': '80666f311673dcc6beb8eeb036b3833b1ef3cfd6fee91a1fc5249475f29b45ab',
+                    'schema_sha256': '784a375851f748919dd246ac5450dfb97e494df970d021826a137626d159e49e',
                     'depth_D': 5
                 }
             },
@@ -22760,13 +22814,12 @@ try:
                     }
                 },
                 'required': [
-                    'ok',
-                    'result'
+                    'ok'
                 ],
                 'type': 'object',
                 'x-audit': {
                     'status': 'audited',
-                    'schema_sha256': 'f4afd23ef8d3088a619243351d120ed55971ac8c357ffc1c79e0889f36ac2944',
+                    'schema_sha256': 'ddbab4709a208b7c2d7bf3ea0b1ae5307073379f11bcfe5a15d7b8d941983918',
                     'depth_D': 4
                 }
             },
