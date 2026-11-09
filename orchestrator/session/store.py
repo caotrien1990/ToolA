@@ -1579,7 +1579,15 @@ def prune_sessions_older_than(
     Undated sessions and pre-existing orphans are retained unless opted in.
     No VACUUM or live-database maintenance is implied by importing this module.
     """
-    window = _session_retention_days() if days is None else max(0, int(days))
+    if days is not None and int(days) <= 0:
+        # E2 (checkpoint-contention Stage 2): a non-positive explicit window
+        # would mint cutoff=now and cascade-delete EVERY dated session. The
+        # env path maps <=0 to the default (see _session_retention_days); the
+        # parameter path refuses instead -- never prune everything.
+        raise ValueError(
+            f"prune_sessions_older_than: days must be a positive int or None, got {days!r}"
+        )
+    window = _session_retention_days() if days is None else int(days)
     cutoff_iso, cutoff_epoch = _retention_cutoffs(window)
     limit = min(2000, max(1, int(chunk_size)))
     children = (("events", "session_id"), ("pending_audits", "session_id"),

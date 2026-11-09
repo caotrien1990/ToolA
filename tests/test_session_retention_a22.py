@@ -460,3 +460,68 @@ def test_returns_per_table_stats(temp_db):
         assert key in result, f"missing stat key {key!r}: {result}"
     assert result["sessions"] == 1
     assert result["events"] == 1
+
+
+# --------------------------------------------------------------------------- #
+# E2 (checkpoint-contention Stage 2): a non-positive explicit window must be
+# REFUSED, never resolved to cutoff=now. The env path already maps <=0 to the
+# default (_session_retention_days); the parameter path used to clamp to 0 and
+# cascade-delete every dated session.
+# --------------------------------------------------------------------------- #
+def _seed_dated_universe(conn) -> None:
+    _seed_session(conn, "old-sess", _iso(40))
+    _seed_session(conn, "fresh-sess", _iso(0))
+    conn.execute(
+        "INSERT INTO events(session_id, tool_name, created_at) VALUES ('old-sess', 'read', ?)",
+        (_iso(40),),
+    )
+    conn.commit()
+
+
+def test_prune_days_zero_is_refused_and_deletes_nothing(temp_db):
+    conn = _raw()
+    try:
+        _seed_dated_universe(conn)
+        before_sessions = _count(conn, "sessions")
+        before_events = _count(conn, "events")
+    finally:
+        conn.close()
+    with pytest.raises(ValueError):
+        store.prune_sessions_older_than(days=0)
+    conn = _raw()
+    try:
+        assert _count(conn, "sessions") == before_sessions
+        assert _count(conn, "events") == before_events
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("bad_days", [-3, 0.5])
+def test_prune_nonpositive_window_is_refused(temp_db, bad_days):
+    conn = _raw()
+    try:
+        _seed_dated_universe(conn)
+    finally:
+        conn.close()
+    with pytest.raises(ValueError):
+        store.prune_sessions_older_than(days=bad_days)
+    conn = _raw()
+    try:
+        assert _count(conn, "sessions") == 2
+    finally:
+        conn.close()
+
+
+def test_prune_positive_window_still_prunes(temp_db):
+    conn = _raw()
+    try:
+        _seed_dated_universe(conn)
+    finally:
+        conn.close()
+    result = store.prune_sessions_older_than(days=30)
+    assert result["sessions"] == 1
+    conn = _raw()
+    try:
+        assert _count(conn, "sessions") == 1  # only fresh-sess remains
+    finally:
+        conn.close()
