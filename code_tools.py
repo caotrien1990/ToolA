@@ -7278,8 +7278,93 @@ def _checkpoint_error_fields(exc):
 
 
 TaskCheckpointStorageError = _session_store_module.TaskCheckpointStorageError
+# --------------------------------------------------------------------------- #
+# M3 (checkpoint-contention Stage 2): durable, attributed contention record.
+# The four contention error names are minted only into client responses, so
+# cross-agent blocking episodes used to leave no countable server-side
+# record (USAGE_LOG is capped at 1,000 rows with a whole-file rewrite per
+# row). Counting sits at post-call accounting -- the single point where the
+# final error name and the agent attribution already exist -- so every
+# dispatched call is counted exactly once, including the close_session
+# bypass mint. Aggregation is in memory; durable output is bounded: one
+# first-event line per key per 60 s window plus one exact-count summary
+# line at window expiry, on the orchestrator.contention logger (which
+# propagates to the rotating server log). A window still open when the
+# daemon restarts closes unflushed except its first-event line.
+# --------------------------------------------------------------------------- #
+import logging
+
+_CONTENTION_ERROR_NAMES = frozenset({
+    "SESSION_STORE_CONTENTION",
+    "SESSION_STORE_COMMIT_PENDING",
+    "TASK_CHECKPOINT_CONTENTION",
+    "TASK_CHECKPOINT_COMMIT_PENDING",
+})
+_CONTENTION_WINDOW_SECONDS = 60.0
+_CONTENTION_MAX_KEYS = 256
+_contention_logger = logging.getLogger("orchestrator.contention")
+_contention_lock = threading.Lock()
+_contention_buckets: dict = {}
+_contention_last_sweep = 0.0
 
 
+def _contention_wall_iso(epoch_seconds):
+    return datetime.fromtimestamp(epoch_seconds).isoformat(timespec="seconds")
+
+
+def _emit_contention_line(kind, key, count, window_start_wall, window_end_wall):
+    error_name, tool, agent = key
+    _contention_logger.warning(
+        "SESSION_CONTENTION_RECORD kind=%s error_name=%s tool=%s agent_id=%s "
+        "count=%s window_start=%s window_end=%s",
+        kind, error_name[:80], tool[:80], agent[:80], count,
+        window_start_wall, window_end_wall)
+
+
+def _note_contention_usage(tool, params, error_name, agent_id, now=None):
+    global _contention_last_sweep
+    now_mono = time.monotonic() if now is None else now
+    lines = []
+    with _contention_lock:
+        if _contention_buckets and now_mono - _contention_last_sweep >= 1.0:
+            _contention_last_sweep = now_mono
+            wall_end = _contention_wall_iso(time.time())
+            for key, bucket in list(_contention_buckets.items()):
+                if now_mono - bucket["first_mono"] >= _CONTENTION_WINDOW_SECONDS:
+                    lines.append(("summary", key, bucket["count"],
+                                  bucket["window_start_wall"], wall_end))
+                    del _contention_buckets[key]
+        if error_name in _CONTENTION_ERROR_NAMES:
+            agent = str(agent_id or "").strip()
+            if not agent and isinstance(params, dict):
+                agent = str(params.get("agent_id") or "").strip()
+            if not agent and isinstance(params, dict):
+                agent = str(params.get("session_id") or "").strip()
+            if not agent:
+                agent = "system"
+            key = (str(error_name), str(tool or ""), agent)
+            if key not in _contention_buckets and len(_contention_buckets) >= _CONTENTION_MAX_KEYS:
+                key = (str(error_name), "__overflow__", "__overflow__")
+            bucket = _contention_buckets.get(key)
+            if bucket is None:
+                wall_start = _contention_wall_iso(time.time())
+                _contention_buckets[key] = {
+                    "count": 1, "first_mono": now_mono, "last_mono": now_mono,
+                    "window_start_wall": wall_start,
+                }
+                lines.append(("first", key, 1, wall_start, wall_start))
+            else:
+                bucket["count"] += 1
+                bucket["last_mono"] = now_mono
+    for kind, key, count, wall_start, wall_end in lines:
+        _emit_contention_line(kind, key, count, wall_start, wall_end)
+
+
+def _reset_contention_aggregator():
+    global _contention_last_sweep
+    with _contention_lock:
+        _contention_buckets.clear()
+        _contention_last_sweep = 0.0
 # These five wrappers ARE the live definitions of the session-log helpers -- they delegate to
 # _session_logs_module. Importing the same five names at the top of this file is therefore dead by
 # construction: these defs shadow them as soon as the module finishes loading. A38-B removed that
@@ -7301,7 +7386,17 @@ def _log_to_file(*args, **kwargs):
 
 
 def _log_usage(*args, **kwargs):
-    return _session_logs_module._log_usage(*args, **kwargs)
+    result = _session_logs_module._log_usage(*args, **kwargs)
+    try:
+        _note_contention_usage(
+            args[0] if args else kwargs.get("tool", ""),
+            args[1] if len(args) > 1 else kwargs.get("params") or {},
+            str(kwargs.get("error_name") or ""),
+            str(kwargs.get("agent_id") or ""),
+        )
+    except Exception:
+        pass
+    return result
 
 
 def _log_app_session(*args, **kwargs):
