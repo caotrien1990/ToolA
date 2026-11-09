@@ -6533,8 +6533,13 @@ async def run_project_command(
                 if _is_win:
                     if interactive:
                         creationflags |= getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
-                    else:
-                        creationflags |= getattr(subprocess, "DETACHED_PROCESS", 0)
+                    # Non-interactive keep_alive gets NO further flag here:
+                    # DETACHED_PROCESS must not be OR'd into the same
+                    # creationflags as CREATE_NO_WINDOW -- the combination
+                    # leaves this hop with no console at all, so the console
+                    # app the intermediary shell launches allocates a fresh
+                    # VISIBLE console (2026-11-09 pick-folder flash; census
+                    # antagonism rule in tests/test_no_window_spawn_census.py).
             child_env = _runner_environment(git_command=_command_targets_git(command))
             proc = subprocess.Popen(
                 launch_args, cwd=str(root), stdin=stdin_target,
@@ -6585,7 +6590,7 @@ async def run_project_command(
                     "background": bool(background),
                     "interactive": bool(interactive),
                     "elevated": False,
-                    "detached": bool(_is_win and not interactive),
+                    "detached": bool(_is_win and (creationflags & getattr(subprocess, "DETACHED_PROCESS", 0))),
                     "path_resolution_note": path_resolution_note,
                 }
                 payload = _apply_redirection_gate(payload)

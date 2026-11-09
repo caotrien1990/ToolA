@@ -96,6 +96,21 @@ TRACE SEMANTICS
     assigning a different form does not remove a form assigned on another
     branch.  Conditional assignments count on the paths where they execute.
 
+FLAG ANTAGONISM (2026-11-09 pick-folder flash)
+    A recognised creationflags form is NEGATED when a DETACHED_PROCESS
+    form traces to the same invocation's creationflags value (the same
+    variable trace, or the same ``creationflags`` entry of a splatted
+    dict).  DETACHED_PROCESS wins console allocation at the spawned
+    hop, so the intermediary is born with no console at all and the
+    console application it launches allocates a fresh VISIBLE console:
+    the hidden-window form is present in the source yet does not hold
+    at runtime.  A negated site classifies UNFLAGGED.  DETACHED_PROCESS
+    on its own -- no recognised form on the same value -- is untouched
+    by this rule and stays governed by the allowlist (the deliberate
+    restart-helper exception).  The runtime half of this guard is
+    test_background_spawn_flags_carry_no_detached at the bottom of
+    this file.
+
 EXPLICITNESS LINES (campaign plan rule 9)
     (i)  Rule (iii) applies at bound-callable invocations exactly as at
          direct calls.
@@ -256,6 +271,19 @@ def expr_has_flag_form(expr: ast.AST) -> bool:
     return False
 
 
+def expr_has_detached_form(expr: ast.AST) -> bool:
+    for node in _walk_pruned(expr):
+        if isinstance(node, ast.Name) and node.id == "DETACHED_PROCESS":
+            return True
+        if isinstance(node, ast.Attribute) \
+                and node.attr == "DETACHED_PROCESS":
+            return True
+        if isinstance(node, ast.Constant) \
+                and node.value == "DETACHED_PROCESS":
+            return True
+    return False
+
+
 def expr_has_startupinfo_form(expr: ast.AST) -> bool:
     for node in _walk_pruned(expr):
         if isinstance(node, ast.Call):
@@ -270,6 +298,8 @@ def expr_has_startupinfo_form(expr: ast.AST) -> bool:
 def expr_recognised(expr: ast.AST, mech: str) -> bool:
     if mech == "cf":
         return expr_has_flag_form(expr)
+    if mech == "det":
+        return expr_has_detached_form(expr)
     return expr_has_startupinfo_form(expr)
 
 
@@ -793,36 +823,56 @@ class FileAnalysis:
                     return True
         return False
 
+    def _splat_traced_key(self, trace: FuncTrace, expr, mech, key,
+                          inv_nid) -> bool:
+        dicts: list[ast.Dict] = []
+        if isinstance(expr, ast.Dict):
+            dicts = [expr]
+        elif isinstance(expr, (ast.IfExp, ast.BoolOp)):
+            dicts = [n for n in _walk_pruned(expr) if isinstance(n, ast.Dict)]
+        for d in dicts:
+            for k, v in zip(d.keys, d.values):
+                if isinstance(k, ast.Constant) and k.value == key:
+                    if self._value_traced(trace, v, mech, inv_nid):
+                        return True
+        if isinstance(expr, ast.Name):
+            if self._dict_reaches(trace, expr.id, key, mech, inv_nid):
+                return True
+        return False
+
     def _splat_traced(self, trace: FuncTrace, expr, inv_nid) -> bool:
         for mech, key in (("cf", "creationflags"), ("si", "startupinfo")):
-            dicts: list[ast.Dict] = []
-            if isinstance(expr, ast.Dict):
-                dicts = [expr]
-            elif isinstance(expr, (ast.IfExp, ast.BoolOp)):
-                dicts = [n for n in _walk_pruned(expr) if isinstance(n, ast.Dict)]
-            for d in dicts:
-                for k, v in zip(d.keys, d.values):
-                    if isinstance(k, ast.Constant) and k.value == key:
-                        if self._value_traced(trace, v, mech, inv_nid):
-                            return True
-            if isinstance(expr, ast.Name):
-                if self._dict_reaches(trace, expr.id, key, mech, inv_nid):
-                    return True
+            if self._splat_traced_key(trace, expr, mech, key, inv_nid):
+                return True
         return False
 
     def _classify_call(self, call: ast.Call, func_node) -> str:
         trace = self.trace_for(func_node)
         inv_nid = trace.statement_of(call, self.parent)
         flagged = False
+        negated = False
         for kw in call.keywords:
             if kw.arg == "creationflags":
-                flagged = flagged or self._value_traced(
-                    trace, kw.value, "cf", inv_nid)
+                if self._value_traced(trace, kw.value, "cf", inv_nid):
+                    flagged = True
+                    # Flag antagonism: a DETACHED_PROCESS form tracing to
+                    # the same creationflags value negates the
+                    # hidden-window form (module docstring, FLAG
+                    # ANTAGONISM).
+                    if self._value_traced(trace, kw.value, "det", inv_nid):
+                        negated = True
             elif kw.arg == "startupinfo":
                 flagged = flagged or self._value_traced(
                     trace, kw.value, "si", inv_nid)
             elif kw.arg is None:  # **splat
-                flagged = flagged or self._splat_traced(trace, kw.value, inv_nid)
+                if self._splat_traced(trace, kw.value, inv_nid):
+                    flagged = True
+                    if self._splat_traced_key(
+                            trace, kw.value, "det", "creationflags",
+                            inv_nid):
+                        negated = True
+        if negated:
+            return "UNFLAGGED"
         return "FLAGGED" if flagged else "UNFLAGGED"
 
     # -- enumeration -----------------------------------------------------------
@@ -963,3 +1013,41 @@ def test_no_unflagged_spawn_sites():
     assert not unflagged, (
         f"{len(unflagged)} unflagged, non-allowlisted spawn site(s):\n"
         + listing)
+
+def test_background_spawn_flags_carry_no_detached(tmp_path):
+    """Runtime layer of the antagonism guard (2026-11-09 pick-folder flash).
+
+    The static census traces flag forms through assignments; flag
+    arithmetic done by other means would still slip past it.  This test
+    drives the real runner instead: a background (keep_alive)
+    non-interactive spawn must reach Popen with CREATE_NO_WINDOW and
+    CREATE_NEW_PROCESS_GROUP set and DETACHED_PROCESS clear, and the
+    payload must not report the spawn as detached.
+    """
+    import asyncio
+    import subprocess as sp
+    import sys
+    from unittest import mock
+
+    import code_tools
+
+    class _FakeProc:
+        pid = 987654
+        returncode = None
+
+        def poll(self):
+            return None
+
+    fake = _FakeProc()
+    with mock.patch.object(code_tools.subprocess, "Popen",
+                           return_value=fake) as popen:
+        payload = json.loads(asyncio.run(code_tools.run_project_command(
+            str(tmp_path), "echo pf-flash-guard", shell_mode="cmd",
+            background=True)))
+    assert payload["ok"], payload
+    if sys.platform == "win32":
+        flags = popen.call_args.kwargs["creationflags"]
+        assert flags & sp.CREATE_NO_WINDOW
+        assert flags & sp.CREATE_NEW_PROCESS_GROUP
+        assert not flags & getattr(sp, "DETACHED_PROCESS", 0)
+    assert payload["detached"] is False
