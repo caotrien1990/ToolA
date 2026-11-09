@@ -1,6 +1,9 @@
 """Protocol controls for the CF-07 hardening round; never use the live DB."""
 import asyncio
 import json
+import logging
+import os
+import re
 import sqlite3
 import threading
 import time
@@ -93,5 +96,106 @@ def test_wal_checkpoint_runs_after_commit_when_time_threshold_expires(tmp_path):
         assert writer._process_batch(conn, [item])
         assert item.future.result() == 9
         assert statements.index("COMMIT") < statements.index("PRAGMA wal_checkpoint(PASSIVE)")
+    finally:
+        conn.close()
+
+
+# --------------------------------------------------------------------------- #
+# E1 (checkpoint-contention Stage 2): the PASSIVE checkpoint result row must
+# be READ. A reader-pinned WAL (busy=1) must surface as ONE latched warning,
+# and recovery must surface too -- pre-fix the row was discarded, so a pinned
+# WAL was indistinguishable from a drained one.
+# --------------------------------------------------------------------------- #
+def _insert_session_item(sid):
+    def fn(conn):
+        conn.execute(
+            "INSERT INTO sessions(session_id, session_title, project_path, started_at) "
+            "VALUES (?, 't', 'D:/proj', '2026-01-01T00:00:00')",
+            (sid,),
+        )
+        return 9
+    return store._WriteItem(f"insert {sid}", fn, True, 750)
+
+
+def _checkpoint_warnings(caplog, needle):
+    return [r for r in caplog.records if needle in r.getMessage()]
+
+
+def test_wal_checkpoint_busy_is_latched_and_logged(tmp_path, caplog, monkeypatch):
+    db_file = tmp_path / "wal_busy.db"
+    monkeypatch.setattr(store, "_SESSIONS_DB", db_file)
+    store._SESSION_DB_INITIALIZED_PATHS.discard(
+        os.path.normcase(os.path.abspath(str(db_file)))
+    )
+    store._init_session_db()
+    writer = store.SessionWriter(db_file, auto_start=False)
+    conn = writer._open_connection()
+    reader = sqlite3.connect(str(db_file))
+    try:
+        item = _insert_session_item("s1")
+        assert writer._process_batch(conn, [item])
+        assert item.future.result() == 9
+        # Pin the WAL: the reader holds a read snapshot at the current frames.
+        reader.execute("BEGIN")
+        reader.execute("SELECT count(*) FROM sessions").fetchone()
+        # Commit more frames beyond the reader's snapshot.
+        item = _insert_session_item("s2")
+        assert writer._process_batch(conn, [item])
+        assert item.future.result() == 9
+        writer._last_checkpoint_at -= 31  # force the 30 s gate due
+        with caplog.at_level(logging.WARNING, logger="orchestrator.session.store"):
+            item = _insert_session_item("s3")
+            assert writer._process_batch(conn, [item])
+        warnings = _checkpoint_warnings(caplog, "wal_checkpoint incomplete")
+        assert len(warnings) == 1, caplog.text
+        # A reader pin shows up in the frame counts, not the busy flag:
+        # measured live, the pinned PASSIVE row is (0, 6, 3) -- busy=0 with
+        # checkpointed < log. Assert the warning carries that evidence.
+        m = re.search(r"log=(\d+) checkpointed=(\d+)", warnings[0].getMessage())
+        assert m, warnings[0].getMessage()
+        assert int(m.group(2)) < int(m.group(1)), warnings[0].getMessage()
+        assert writer._checkpoint_busy_latched is True
+        # Still pinned: another due attempt must NOT warn again (latch holds).
+        writer._last_checkpoint_at -= 31
+        with caplog.at_level(logging.WARNING, logger="orchestrator.session.store"):
+            item = _insert_session_item("s4")
+            assert writer._process_batch(conn, [item])
+        warnings = _checkpoint_warnings(caplog, "wal_checkpoint incomplete")
+        assert len(warnings) == 1, caplog.text
+        # Release the reader: the next due checkpoint completes -> recovery.
+        reader.execute("COMMIT")
+        writer._last_checkpoint_at -= 31
+        with caplog.at_level(logging.WARNING, logger="orchestrator.session.store"):
+            item = _insert_session_item("s5")
+            assert writer._process_batch(conn, [item])
+        recovered = _checkpoint_warnings(caplog, "wal_checkpoint recovered")
+        assert len(recovered) == 1, caplog.text
+        assert writer._checkpoint_busy_latched is False
+    finally:
+        reader.close()
+        conn.close()
+
+
+def test_wal_checkpoint_attempt_spacing_and_timestamp_semantics(tmp_path):
+    # Regression pin (PA-1): the timestamp keeps ATTEMPT semantics in every
+    # branch -- a busy attempt must not be discounted (a now-25.0 backoff
+    # would leave _last_checkpoint_at in the past and re-arm the size gate),
+    # and an immediate second batch makes no new attempt (no per-batch storm).
+    writer = store.SessionWriter(tmp_path / "wal_spacing.db", auto_start=False)
+    conn = writer._open_connection()
+    statements = []
+    conn.set_trace_callback(statements.append)
+    try:
+        writer._last_checkpoint_at -= 31
+        before = time.monotonic()
+        item = store._WriteItem("spacing 1", lambda conn: 9, True, 750)
+        assert writer._process_batch(conn, [item])
+        attempts = [s for s in statements if "wal_checkpoint(PASSIVE)" in s]
+        assert len(attempts) == 1
+        assert writer._last_checkpoint_at >= before
+        item = store._WriteItem("spacing 2", lambda conn: 9, True, 750)
+        assert writer._process_batch(conn, [item])
+        attempts = [s for s in statements if "wal_checkpoint(PASSIVE)" in s]
+        assert len(attempts) == 1
     finally:
         conn.close()

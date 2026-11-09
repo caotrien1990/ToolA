@@ -242,6 +242,7 @@ class SessionWriter:
         self._drain_conn: sqlite3.Connection | None = None
         self._restart_count = 0
         self._last_checkpoint_at = time.monotonic()
+        self._checkpoint_busy_latched = False
         self._current_item = None
         self._stall_count = 0
         self._wedge_count = 0
@@ -810,9 +811,27 @@ class SessionWriter:
         if legacy_due or now - self._last_checkpoint_at >= 30.0 or size_due:
             self._last_checkpoint_at = now
             try:
-                conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+                row = conn.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchone()
             except sqlite3.Error:
                 logger.exception("SessionWriter passive WAL checkpoint failed")
+            else:
+                busy = row[0] if row and len(row) > 0 else 1
+                log_frames = row[1] if row and len(row) > 1 else -1
+                checkpointed = row[2] if row and len(row) > 2 else -1
+                # Completeness is judged from the frame counts, not the busy
+                # flag alone: a reader-pinned WAL returns busy=0 with
+                # checkpointed < log (measured live: row (0, 6, 3) under a
+                # held read snapshot). Incomplete = busy set OR frames left.
+                complete = busy == 0 and checkpointed >= log_frames
+                if complete:
+                    if self._checkpoint_busy_latched:
+                        self._checkpoint_busy_latched = False
+                        logger.warning("SessionWriter wal_checkpoint recovered: PASSIVE checkpoint completing again")
+                elif not self._checkpoint_busy_latched:
+                    self._checkpoint_busy_latched = True
+                    logger.warning(
+                        "SessionWriter wal_checkpoint incomplete: busy=%s log=%s checkpointed=%s wal_bytes=%s",
+                        busy, log_frames, checkpointed, wal_bytes)
         return True
 
     def _drain_loop(self) -> None:
