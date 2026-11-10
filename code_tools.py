@@ -58,6 +58,7 @@ from orchestrator.skip_rules import (
     name_matches_ignore,
 )
 from orchestrator.text_lines import split_lf, split_lines
+from orchestrator.lifecycle.console_warp import CREATE_NEW_PROCESS_GROUP, child_creationflags
 from rule_core import get_rule_core, get_rule_core_metadata
 
 # ─── Shared constants ─────────────────────────────────────────────────────────
@@ -6585,12 +6586,16 @@ async def run_project_command(
             #     creationflags below.
             start_new_session = (os.name != "nt")
             if _is_win:
-                creationflags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-                # Hide console window: pythonw has no console, so without
-                # CREATE_NO_WINDOW Windows spawns a visible console per call.
-                # Skip only for interactive keep_alive (user wants the console).
-                if not (keep_alive and interactive):
-                    creationflags |= getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                if keep_alive and interactive:
+                    # EXEMPT (design §3C2): the deliberate visible console.
+                    # This branch keeps its open-coded composition exactly;
+                    # routing it through child_creationflags() would break
+                    # it in both console states (present: the helper strips
+                    # CREATE_NEW_CONSOLE; absent: it would OR
+                    # CREATE_NO_WINDOW beside CREATE_NEW_CONSOLE).
+                    creationflags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                else:
+                    creationflags = child_creationflags(extra=CREATE_NEW_PROCESS_GROUP)
             if keep_alive:
                 stdin_target = subprocess.DEVNULL
                 stdout_target = subprocess.DEVNULL

@@ -90,6 +90,13 @@ from orchestrator.lifecycle.proactor_accept_fix import (
     install_proactor_fix,
     proactor_fix_status,
 )
+from orchestrator.lifecycle.console_warp import (
+    CREATE_NEW_PROCESS_GROUP,
+    child_creationflags,
+    child_startupinfo,
+    ensure_hidden_console,
+    has_console,
+)
 from orchestrator.lifecycle.restart_protocol import (
     DEFAULT_CONTROL_URL,
     BusySnapshotPublisher,
@@ -9707,10 +9714,8 @@ def _council_run_agent(agent: str, prompt: str, timeout_sec: int = 6000,
     creationflags = 0
     startupinfo = None
     if os.name == "nt":
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = 0
+        creationflags = child_creationflags(extra=CREATE_NEW_PROCESS_GROUP)
+        startupinfo = child_startupinfo()
     # ── Resolve provider session continuity for context mode ──────────────────
     context_mode = mode == "context" and _council_supports_mode(agent, "context")
     resume_id = ""
@@ -20359,5 +20364,9 @@ if __name__ == "__main__":
                         _mcp_accounting_report.get("pending"),
                     )
     else:
+        _entry_console = has_console()
+        _keystone_ok = ensure_hidden_console(attach_parent=False)
+        _keystone_branch = "failed" if not _keystone_ok else ("realloc" if _entry_console else "alloc")
+        logger.info("CONSOLE_WARP keystone branch=" + _keystone_branch)
         install_proactor_fix()
         asyncio.run(_run_server())

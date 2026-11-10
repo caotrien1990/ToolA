@@ -30,7 +30,7 @@ def has_console() -> bool:
         return False
 
 
-def ensure_hidden_console() -> bool:
+def ensure_hidden_console(attach_parent: bool = True) -> bool:
     if os.name != "nt":
         return False
     try:
@@ -38,14 +38,27 @@ def ensure_hidden_console() -> bool:
 
         kernel32 = ctypes.windll.kernel32
         user32 = ctypes.windll.user32
-        if not kernel32.GetConsoleWindow():
-            attached = kernel32.AttachConsole(ATTACH_PARENT_PROCESS)
-            if not attached and not kernel32.AllocConsole():
+        if attach_parent:
+            if not kernel32.GetConsoleWindow():
+                attached = kernel32.AttachConsole(ATTACH_PARENT_PROCESS)
+                if not attached and not kernel32.AllocConsole():
+                    return False
+            hwnd = kernel32.GetConsoleWindow()
+            if hwnd:
+                user32.ShowWindow(hwnd, SW_HIDE)
+                return True
+        else:
+            # Sole ownership: detach leaves the inherited console exactly
+            # as found (never hidden/closed by us), then allocate our own.
+            if kernel32.GetConsoleWindow():
+                if not kernel32.FreeConsole():
+                    return False
+            if not kernel32.AllocConsole():
                 return False
-        hwnd = kernel32.GetConsoleWindow()
-        if hwnd:
-            user32.ShowWindow(hwnd, SW_HIDE)
-            return True
+            hwnd = kernel32.GetConsoleWindow()
+            if hwnd:
+                user32.ShowWindow(hwnd, SW_HIDE)
+                return True
     except Exception:
         return False
     return False
