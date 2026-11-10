@@ -7712,15 +7712,16 @@ async def restart_orchestrator_via_task(delay_seconds: int = 2) -> str:
     except Exception as exc:
         return _json.dumps({"ok": False, "error_name": "HELPER_WRITE_FAILED", "detail": str(exc)}, ensure_ascii=False)
 
-    # Step 3: spawn helper DETACHED so it survives our death
+    # Step 3: spawn helper with its own windowless console so it survives
+    # our death (survival is carried by BREAKAWAY + NEW_PROCESS_GROUP)
     try:
-        DETACHED_PROCESS = 0x00000008
+        CREATE_NO_WINDOW = getattr(_sp, "CREATE_NO_WINDOW", 0)
         CREATE_NEW_PROCESS_GROUP = 0x00000200
         CREATE_BREAKAWAY_FROM_JOB = 0x01000000
         # Popen with these flags + close_fds so the child has no inherited handles to us
         _sp.Popen(
             ["cmd", "/c", str(helper_path)],
-            creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB,
+            creationflags=CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB,
             stdin=_sp.DEVNULL,
             stdout=_sp.DEVNULL,
             stderr=_sp.DEVNULL,

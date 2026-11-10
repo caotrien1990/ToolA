@@ -147,7 +147,8 @@ class TestWatchdogDecisionLoop(unittest.TestCase):
             saved = json.loads(Path(state_path).read_text(encoding="utf-8"))
         self.assertEqual(rc, 1)
         run.assert_called_once_with(["schtasks", "/run", "/tn", watchdog_a.RESTART_TASK],
-                                    capture_output=True, text=True, timeout=30)
+                                    capture_output=True, text=True, timeout=30,
+                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         self.assertEqual(saved["down_samples"], 0)
         self.assertTrue(saved["last_restart_at"] > 0)
         self.assertEqual(saved["last_classification"], "down")

@@ -180,17 +180,9 @@ FLAG_NAMES = frozenset({"CREATE_NO_WINDOW", "NOWINDOW_FLAGS"})
 # (file, qualname, reason) and a site matches an entry iff file, qualname
 # and the run-family member named in the reason all agree (see header).
 ALLOWLIST = {
-    ("tools_v15.py", "restart_orchestrator_via_task"): {
-        "reason": "DETACHED Popen (:7514, deliberate exception)",
-        "member": "Popen",
-    },
     ("tools_v15.py", "restart_orchestrator_via_bat"): {
         "reason": "warp Popen (:7906, deliberate STARTUPINFO design)",
         "member": "Popen",
-    },
-    ("watchdog_a.py", "_fire"): {
-        "reason": "schtasks spawn (:334, user-excluded)",
-        "member": "run",
     },
 }
 
@@ -1000,7 +992,7 @@ def test_allowlist_rot_control():
     assert not rotten, (
         "allowlist entries matching no live enumerated site: "
         + "; ".join(rotten))
-    assert len(ALLOWLIST) == 3
+    assert len(ALLOWLIST) == 1
 
 
 def test_no_unflagged_spawn_sites():
