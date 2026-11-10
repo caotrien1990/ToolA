@@ -1015,6 +1015,8 @@ def test_background_spawn_flags_carry_no_detached(tmp_path):
     non-interactive spawn must reach Popen with CREATE_NO_WINDOW and
     CREATE_NEW_PROCESS_GROUP set and DETACHED_PROCESS clear, and the
     payload must not report the spawn as detached.
+    The console state is pinned both ways (has_console mocked) so the
+    result does not depend on whether the runner owns a console.
     """
     import asyncio
     import subprocess as sp
@@ -1022,6 +1024,7 @@ def test_background_spawn_flags_carry_no_detached(tmp_path):
     from unittest import mock
 
     import code_tools
+    from orchestrator.lifecycle import console_warp
 
     class _FakeProc:
         pid = 987654
@@ -1030,16 +1033,32 @@ def test_background_spawn_flags_carry_no_detached(tmp_path):
         def poll(self):
             return None
 
-    fake = _FakeProc()
-    with mock.patch.object(code_tools.subprocess, "Popen",
-                           return_value=fake) as popen:
-        payload = json.loads(asyncio.run(code_tools.run_project_command(
-            str(tmp_path), "echo pf-flash-guard", shell_mode="cmd",
-            background=True)))
+    def _drive(has_console):
+        fake = _FakeProc()
+        with mock.patch.object(console_warp, "has_console",
+                               return_value=has_console), \
+                mock.patch.object(code_tools.subprocess, "Popen",
+                                  return_value=fake) as popen:
+            payload = json.loads(asyncio.run(code_tools.run_project_command(
+                str(tmp_path), "echo pf-flash-guard", shell_mode="cmd",
+                background=True)))
+        flags = None
+        if sys.platform == "win32":
+            flags = popen.call_args.kwargs["creationflags"]
+        return payload, flags
+
+    payload, flags = _drive(False)
     assert payload["ok"], payload
     if sys.platform == "win32":
-        flags = popen.call_args.kwargs["creationflags"]
         assert flags & sp.CREATE_NO_WINDOW
         assert flags & sp.CREATE_NEW_PROCESS_GROUP
+        assert not flags & getattr(sp, "DETACHED_PROCESS", 0)
+    assert payload["detached"] is False
+
+    payload, flags = _drive(True)
+    assert payload["ok"], payload
+    if sys.platform == "win32":
+        assert flags == sp.CREATE_NEW_PROCESS_GROUP
+        assert not flags & sp.CREATE_NO_WINDOW
         assert not flags & getattr(sp, "DETACHED_PROCESS", 0)
     assert payload["detached"] is False
