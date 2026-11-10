@@ -247,7 +247,8 @@ _IDENTITY_TOOLS = {"open_session", "close_session", "rename_session",
                    "log_native_event", "create_pending_audit",
                    "sync_pending_audit", "get_session_events", "begin_task",
                    "owner_heartbeat", "bootstrap_session",
-                   "prepare_ca_session", "get_rule_core_text"}
+                   "prepare_ca_session", "get_rule_core_text",
+                   "t4_host_status"}
 _NO_EFFECT_TOOLS = {"hermes_host_gate_check", "classify_ca_action"}
 
 
@@ -1151,7 +1152,8 @@ def test_tpart_universe_size_matches_step0():
     # Step-0 audit_tool_matrix count, re-asserted on the runtime map
     # (import-time enumeration undercounts: registration completes only
     # after orchestrator_server is imported).
-    assert len(code_tools.TOOL_MAP) == 258
+    # Phase 2 Sprint 2: +2 for close_browser_page and t4_host_status.
+    assert len(code_tools.TOOL_MAP) == 260
 
 
 def test_tpart_agent_id_partition():

@@ -56,6 +56,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import subprocess
 import time
 import uuid
@@ -2490,6 +2491,20 @@ async def progressive_matrix_check(project_path: str = "",
 _BROWSER_PAGES: dict = {}  # {page_id: {"page": Page, "context": Context,
                             #            "browser": Browser, "console": list,
                             #            "network_errors": list, "created_at": ts}}
+
+# Sprint 2 (plan 3.1): ONE unified page-id grammar for both mint
+# families, with a random component so ids are not guessable:
+# pg-<epoch_ms>-<n>-<rand6> / cdp-<epoch_ms>-<n>-<rand6>. Every parser
+# of page ids accepts exactly this grammar (this module's _get_page,
+# the dispatcher's W7 gate, and the registry schema pattern).
+_PAGE_ID_RE = re.compile(r"(?:pg|cdp)-[A-Za-z0-9][A-Za-z0-9_-]*")
+_PAGE_ID_GRAMMAR = ("a live pg-<epoch_ms>-<n>-<rand6> or "
+                    "cdp-<epoch_ms>-<n>-<rand6> ID")
+
+
+def _mint_page_id(prefix: str) -> str:
+    return (f"{prefix}-{int(time.time() * 1000)}-{len(_BROWSER_PAGES)}"
+            f"-{secrets.token_hex(3)}")
 
 
 def _playwright_available() -> bool:
@@ -6246,9 +6261,82 @@ async def fill_value(page_id: str, selector: str, value: str,
                     ca_next_action="check_base64_encoding_node_buffer_then_retry_or_fallback_plain_and_report")
 
 
+async def _bind_attach_page_by_expectation(browser, exp_title, exp_url,
+                                           call_start_monotonic):
+    """Sprint 2 (plan 5.2(c)): unique-live-match page binding for
+    cdp_attach_target calls that declare an expectation. Enumerates
+    EVERY page in EVERY context of the connected browser and matches
+    the caller's expectation only (title / URL substrings,
+    case-insensitive) against the live pages -- never the /json/list
+    snapshot fields (stale by construction). Returns
+    (page, context, err_str, diag); err_str is None exactly when
+    exactly one live page matched. Enumeration budget, wall-clock on a
+    monotonic clock: budget_remaining = 90 s attach deadline - elapsed
+    since call start (connect debits the budget) - 10 s reserve;
+    per-page sub-deadline is min(2 s, remaining budget); a page that
+    throws or stalls is skipped as non-matching and named in
+    skipped_pages by enumeration index (ctx<i>.page<j>); when the
+    budget is already spent, every page is skipped and the match
+    count is zero."""
+    _pages = []
+    for _ci, _ctx in enumerate(browser.contexts):
+        for _pi, _pg in enumerate(_ctx.pages):
+            _pages.append((f"ctx{_ci}.page{_pi}", _ctx, _pg))
+    _budget = 90.0 - (time.monotonic() - call_start_monotonic) - 10.0
+    _skipped = []
+    _matches = []
+    if _budget <= 0:
+        _skipped = [_idx for _idx, _c, _p in _pages]
+    else:
+        _enum_start = time.monotonic()
+        for _idx, _ctx, _pg in _pages:
+            _remaining = _budget - (time.monotonic() - _enum_start)
+            if _remaining <= 0:
+                _skipped.append(_idx)
+                continue
+            try:
+                _title = await asyncio.wait_for(
+                    _pg.title(), timeout=max(0.05, min(2.0, _remaining)))
+            except Exception:
+                _skipped.append(_idx)
+                continue
+            try:
+                _url = _pg.url or ""
+            except Exception:
+                _url = ""
+            _t_ok = (exp_title.lower() in (_title or "").lower()) if exp_title else True
+            _u_ok = (exp_url.lower() in _url.lower()) if exp_url else True
+            if _t_ok and _u_ok:
+                _matches.append({"index": _idx, "title": _title or "",
+                                 "url": _url, "context": _ctx, "page": _pg})
+    _diag = {"skipped_pages": _skipped,
+             "connect_elapsed_ms": int(
+                 (time.monotonic() - call_start_monotonic) * 1000)}
+    if not _matches:
+        return None, None, _err(
+            "cdp_attach_target: no live page matches the declared expectation",
+            error_name="CDP_TARGET_MISMATCH",
+            skipped_pages=_skipped,
+            connect_elapsed_ms=_diag["connect_elapsed_ms"],
+            ca_next_action="fix_expectation_or_target_then_retry"), _diag
+    if len(_matches) > 1:
+        return None, None, _err(
+            "cdp_attach_target: expectation matches more than one live page",
+            error_name="CDP_TARGET_AMBIGUOUS",
+            candidates=[{"index": m["index"], "title": m["title"],
+                         "url": m["url"]} for m in _matches],
+            skipped_pages=_skipped,
+            ca_next_action="narrow_expectation_then_retry"), _diag
+    _m = _matches[0]
+    return _m["page"], _m["context"], None, _diag
+
+
 async def cdp_attach_target(target_id: str = "", cdp_port: int = 9223,
                               websocket_url: str = "",
-                              project_path: str = "") -> str:
+                              project_path: str = "",
+                              expected_title_substr: str = "",
+                              expected_url_substr: str = "",
+                              allow_browser_level_fallback: bool = False) -> str:
     """V15 R15 P2.6 — Attach Playwright to an existing CDP target (e.g. Electron
     renderer process already exposing remote-debugging-port).
 
@@ -6263,6 +6351,10 @@ async def cdp_attach_target(target_id: str = "", cdp_port: int = 9223,
     The attach is stateful for the lifetime of the orchestrator process.
     Use desktop_*  tools as fallback when CDP unavailable.
     """
+    _call_start = time.monotonic()
+    _exp_title = (expected_title_substr or "").strip()
+    _exp_url = (expected_url_substr or "").strip()
+    _expectation_declared = bool(_exp_title or _exp_url)
     if not _playwright_available():
         return _missing_dep("playwright",
                             "pip install playwright && playwright install chromium")
@@ -6282,11 +6374,10 @@ async def cdp_attach_target(target_id: str = "", cdp_port: int = 9223,
     ws_url = websocket_url or ""
     target_meta = {}
     if not ws_url:
-        import json as _json
-        import urllib.request as _ur
         try:
-            with _ur.urlopen(f"http://localhost:{cdp_port}/json/list", timeout=3) as resp:
-                targets = _json.loads(resp.read().decode("utf-8"))
+            targets = await asyncio.to_thread(
+                _fetch_json_sync,
+                f"http://localhost:{cdp_port}/json/list", 3)
         except Exception as exc:
             return _err(f"Cannot list CDP targets on port {cdp_port}: {exc}",
                         error_name="CDP_UNREACHABLE", cdp_port=cdp_port,
@@ -6299,6 +6390,14 @@ async def cdp_attach_target(target_id: str = "", cdp_port: int = 9223,
                         ca_next_action="check_desktop_window_list_to_distinguish_runtime_absent_vs_inaccessible")
         match = next((t for t in targets if t.get("id") == target_id), None)
         if not match:
+            if _expectation_declared:
+                # Plan 5.2(b): presence-only pre-connect step; absence is a
+                # mismatch, and no title/URL comparison happens here.
+                return _err(f"target_id '{target_id}' not in CDP target list on port {cdp_port}",
+                            error_name="CDP_TARGET_MISMATCH",
+                            reason="target_not_listed",
+                            available_target_ids=[t.get("id") for t in targets[:10]],
+                            ca_next_action="call_list_cdp_targets_then_retry")
             return _err(f"target_id '{target_id}' not in CDP target list on port {cdp_port}",
                         error_name="CDP_TARGET_NOT_FOUND",
                         available_target_ids=[t.get("id") for t in targets[:10]])
@@ -6341,10 +6440,12 @@ async def cdp_attach_target(target_id: str = "", cdp_port: int = 9223,
                 "createBrowserContext" in err_text and "Not allowed" in err_text
             )
             if is_electron_reject and _attempt == 0:
-                # Re-fetch browser-level WS from /json/version
+                # Re-fetch browser-level WS from /json/version (D-S2:
+                # the fetch runs off the loop, keeping its 3 s timeout)
                 try:
-                    with _ur2.urlopen(f"http://localhost:{cdp_port}/json/version", timeout=3) as resp:
-                        ver = _json2.loads(resp.read().decode("utf-8"))
+                    ver = await asyncio.to_thread(
+                        _fetch_json_sync,
+                        f"http://localhost:{cdp_port}/json/version", 3)
                     fallback_ws = ver.get("webSocketDebuggerUrl") or ""
                     if fallback_ws and fallback_ws != ws_url:
                         ws_url = fallback_ws
@@ -6384,14 +6485,28 @@ async def cdp_attach_target(target_id: str = "", cdp_port: int = 9223,
                     attempted_urls=attempted_urls)
 
     try:
-        contexts = browser.contexts
-        if contexts and contexts[0].pages:
-            page = contexts[0].pages[0]
-            context = contexts[0]
+        if _expectation_declared:
+            # Plan 5.2(c): unique-live-match binding; contexts[0].pages[0]
+            # and the fresh-page branch are never used on this path.
+            page, context, _attach_err, _attach_diag = \
+                await _bind_attach_page_by_expectation(
+                    browser, _exp_title, _exp_url, _call_start)
+            if _attach_err is not None:
+                try:
+                    await pw.stop()
+                except Exception:
+                    pass
+                return _attach_err
         else:
-            context = await browser.new_context()
-            page = await context.new_page()
-        attach_id = f"cdp-{int(time.time() * 1000)}-{len(_BROWSER_PAGES)}"
+            _attach_diag = {}
+            contexts = browser.contexts
+            if contexts and contexts[0].pages:
+                page = contexts[0].pages[0]
+                context = contexts[0]
+            else:
+                context = await browser.new_context()
+                page = await context.new_page()
+        attach_id = _mint_page_id("cdp")
         console_log: list = []
         network_errors: list = []
         page.on("console", lambda msg: console_log.append({
@@ -6412,6 +6527,14 @@ async def cdp_attach_target(target_id: str = "", cdp_port: int = 9223,
             "websocket_url": ws_url,
             "cdp_port": cdp_port,
             "attach_via": attach_via,
+            # Sprint 2 (plan 3.2) entry stamps; owner/generation/epoch are
+            # stamped dispatcher-side by the bridge (plan 3.3).
+            "kind": "attached",
+            "target_fingerprint": {"target_id": target_id,
+                                   "title": target_meta.get("title", ""),
+                                   "url": target_meta.get("url", "")},
+            "last_used_at": time.time(),
+            "suspect": None,
             # V15 R44 — pin originating project_path for session-guard resolution.
             "project_path": project_path or "",
         }
@@ -6427,6 +6550,7 @@ async def cdp_attach_target(target_id: str = "", cdp_port: int = 9223,
             "websocket_url": ws_url,
             "attempted_urls": attempted_urls,
             "attach_via": attach_via,
+            "skipped_pages": _attach_diag.get("skipped_pages", []),
             "title": title or target_meta.get("title", ""),
             "url": page.url or target_meta.get("url", ""),
             "type": target_meta.get("type", "page"),
@@ -6485,7 +6609,7 @@ async def open_browser_page(url: str, viewport_w: int = 1280, viewport_h: int = 
         browser = await pw.chromium.launch(headless=headless)
         context = await browser.new_context(viewport={"width": viewport_w, "height": viewport_h})
         page = await context.new_page()
-        page_id = f"pg-{int(time.time() * 1000)}-{len(_BROWSER_PAGES)}"
+        page_id = _mint_page_id("pg")
         console_log: list = []
         network_errors: list = []
         page.on("console", lambda msg: console_log.append({
@@ -6506,6 +6630,12 @@ async def open_browser_page(url: str, viewport_w: int = 1280, viewport_h: int = 
             "page": page, "context": context, "browser": browser, "pw": pw,
             "console": console_log, "network_errors": network_errors,
             "created_at": time.time(),
+            # Sprint 2 (plan 3.2) entry stamps; owner/generation/epoch are
+            # stamped dispatcher-side by the bridge (plan 3.3).
+            "kind": "launched",
+            "target_fingerprint": {},
+            "last_used_at": time.time(),
+            "suspect": None,
             # V15 R44 — pin originating project_path for session-guard resolution.
             "project_path": project_path or "",
         }
@@ -6530,9 +6660,9 @@ async def open_browser_page(url: str, viewport_w: int = 1280, viewport_h: int = 
 
 
 async def _get_page(page_id: str):
-    if not isinstance(page_id, str) or not re.fullmatch(r"pg-[A-Za-z0-9][A-Za-z0-9_-]*", page_id):
+    if not isinstance(page_id, str) or not _PAGE_ID_RE.fullmatch(page_id):
         return None, _err(
-            f"invalid page_id: {page_id!r}; expected a live pg-... ID",
+            f"invalid page_id: {page_id!r}; expected {_PAGE_ID_GRAMMAR}",
             error_name="PAGE_ID_INVALID",
             ca_next_action="use_page_id_from_open_browser_page_or_cdp_attach_target",
         )
@@ -6750,6 +6880,49 @@ async def _close_browser_page(page_id: str) -> None:
         await state["pw"].stop()
     except Exception:
         pass
+
+
+async def close_browser_page(page_id: str) -> str:
+    """Phase 2 Sprint 2 (plan 3.5): explicit page close -- FRESH
+    implementation (Stage-1 decision D-S6). The dead private helper
+    above is never called from here: it closes unconditionally, which
+    would close the user's own app on an attached entry. This handler
+    branches on the entry kind (plan 3.4 / 5.5): a launched page is
+    closed (context + browser + Playwright stop); an attached page is
+    DETACHED ONLY (Playwright stop -- the user's app is never closed).
+    Owner enforcement is dispatcher-side at the bridge seam (plan
+    3.3): a bridged call by a different owner answers PAGE_NOT_FOUND
+    before this handler runs."""
+    state, err = await _get_page(page_id)
+    if err:
+        return err
+    _BROWSER_PAGES.pop(page_id, None)
+    kind = state.get("kind") or (
+        "attached" if state.get("attach_mode") == "cdp" else "launched")
+    if kind == "attached":
+        _pw = state.get("pw")
+        if _pw is not None:
+            try:
+                await _pw.stop()
+            except Exception:
+                pass
+        return _ok({"page_id": page_id, "kind": "attached",
+                    "detached": True, "closed": False})
+    for _key in ("context", "browser"):
+        _obj = state.get(_key)
+        if _obj is not None:
+            try:
+                await _obj.close()
+            except Exception:
+                pass
+    _pw = state.get("pw")
+    if _pw is not None:
+        try:
+            await _pw.stop()
+        except Exception:
+            pass
+    return _ok({"page_id": page_id, "kind": "launched",
+                "detached": False, "closed": True})
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -7277,6 +7450,19 @@ async def check_window_visibility(hwnd: int = 0, title_pattern: str = "",
 _DEFAULT_CDP_PORT = 9223
 
 
+def _fetch_json_sync(url: str, timeout: float = 3):
+    """Synchronous CDP HTTP GET -> parsed JSON (D-S2 offload unit).
+
+    Blocking network IO: call ONLY from a worker thread via
+    asyncio.to_thread -- never directly on an event loop. Each call
+    keeps its own timeout (3 s at every bridged call site).
+    """
+    import urllib.request as _ur
+
+    with _ur.urlopen(url, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
 def _match_text(value: str, pattern: str, match_mode: str = "contains_case_insensitive") -> bool:
     import re
     value = value or ""
@@ -7305,15 +7491,14 @@ async def _cdp_pick_target(port: int, prefer_title_substr: str = "",
                            wait_timeout_ms: int = 5000):
     """Returns (target_dict or None, error_str or None)."""
     import time as _time
-    import urllib.request as _ur
 
     first_candidate = None
     last_error = ""
     deadline = _time.time() + (max(wait_timeout_ms, 0) / 1000.0 if wait_for_navigation else 0)
     while True:
         try:
-            with _ur.urlopen(f"http://127.0.0.1:{port}/json", timeout=3) as resp:
-                targets = json.loads(resp.read())
+            targets = await asyncio.to_thread(
+                _fetch_json_sync, f"http://127.0.0.1:{port}/json", 3)
         except Exception as exc:
             return None, f"CDP unreachable on port {port}: {exc}"
         pages = [t for t in targets if t.get("type") == "page"]
@@ -7343,11 +7528,10 @@ async def _cdp_pick_target(port: int, prefer_title_substr: str = "",
 
 async def list_cdp_targets(cdp_port: int = _DEFAULT_CDP_PORT) -> str:
     """T4 read-only: list Chromium DevTools Protocol targets through [A]."""
-    import urllib.request as _ur
-
     try:
-        with _ur.urlopen(f"http://127.0.0.1:{int(cdp_port)}/json/list", timeout=3) as resp:
-            targets = json.loads(resp.read())
+        targets = await asyncio.to_thread(
+            _fetch_json_sync,
+            f"http://127.0.0.1:{int(cdp_port)}/json/list", 3)
         compact = []
         for target in targets:
             compact.append({
@@ -7385,11 +7569,10 @@ async def _cdp_dispatch(port: int, target_id: str, method: str, params: dict):
     import struct as _st
     import urllib.parse as _up
 
-    # find ws URL for target
-    import urllib.request as _ur
+    # find ws URL for target (D-S2: the /json fetch runs off the loop)
     try:
-        with _ur.urlopen(f"http://127.0.0.1:{port}/json", timeout=3) as r:
-            tgts = json.loads(r.read())
+        tgts = await asyncio.to_thread(
+            _fetch_json_sync, f"http://127.0.0.1:{port}/json", 3)
     except Exception as exc:
         return None, f"CDP /json fetch failed: {exc}"
     tgt = next((t for t in tgts if t.get("id") == target_id), None)

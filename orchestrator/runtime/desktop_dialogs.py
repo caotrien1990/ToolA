@@ -15,7 +15,8 @@ async def fill_folder_dialog(title_pattern: str = "", folder_path: str = "",
                                exclude_titles: list | None = None,
                                launched_after_ts: str = "",
                                dry_run: bool = False,
-                               try_modern_picker: bool = True) -> str:
+                                try_modern_picker: bool = True,
+                                expected_hwnd: int = 0) -> str:
     """V15 R27.1 / R31 T4: control Windows native Select Folder dialog with rich
     owner/PID filtering, ambiguity detection, modern picker fallback, dry-run.
 
@@ -302,6 +303,33 @@ async def fill_folder_dialog(title_pattern: str = "", folder_path: str = "",
             "rejected_windows": rejected[:5],
             "ca_next_action": "rerun_without_dry_run_when_satisfied",
         }, ensure_ascii=False)
+    # T4-over-HTTP 5.2(g) bound re-check (bridge-set expected_hwnd only):
+    # immediately before the first mutating step, re-enumerate with this
+    # handler's own predicate conjoined with the dialog-class test (and,
+    # on the owner_pid form, the ownership test). Unless the candidate
+    # set is still exactly the bound hwnd, refuse -- nothing is typed.
+    if expected_hwnd:
+        _recheck_hwnds = []
+        for (_rp, _rreq) in patterns:
+            for (_rh, _rt, _rm, _rpat, _rrej) in _collect_candidates(
+                    _rp, require_dialog_class=_rreq):
+                if _rrej or _rh in _recheck_hwnds:
+                    continue
+                _rcls = _rm.get("class") or ""
+                if not (_rcls == "#32770" or "dialog" in _rcls.lower()):
+                    continue
+                if owner_pid and not (_rm.get("owner") or 0):
+                    continue
+                _recheck_hwnds.append(_rh)
+        if _recheck_hwnds != [expected_hwnd] or target_hwnd != expected_hwnd:
+            return json.dumps({
+                "ok": False,
+                "error_name": "DIALOG_TARGET_AMBIGUOUS",
+                "reason": "dialog_target_changed",
+                "expected_hwnd": expected_hwnd,
+                "candidates": _recheck_hwnds[:10],
+                "ca_next_action": "enumerate_windows_and_pin_a_real_dialog_then_retry",
+            }, ensure_ascii=False)
 
     # Found! Now locate edit + button inside.
     edit_hwnd = 0

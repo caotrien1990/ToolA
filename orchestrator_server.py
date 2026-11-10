@@ -16628,7 +16628,76 @@ accepted_fields=sorted(accepted_fields),
                     _budget_s = _cc_b.budget_for(tool_name)
                 except Exception:
                     _budget_s = None
-                if _budget_s:
+                # T4 bridge seam (Phase 2 Sprint 1, D-S1): a bridged tool
+                # dispatched with transport="api" executes on the daemon's
+                # T4 loop through the bridge instead of awaiting directly
+                # here. MCP dispatch (transport="mcp") and every
+                # non-bridged tool keep the direct paths below unchanged.
+                # The branch intercepts BOTH invoke arms (budgeted and
+                # unbudgeted); cache, budget, gates and envelopes around
+                # it are untouched.
+                _t4_raw = None
+                _t4_guard = None
+                if transport == "api":
+                    try:
+                        from orchestrator import t4_bridge as _t4_seam
+                        _t4_applies = tool_name in _t4_seam.BRIDGED_TOOLS
+                        if not _t4_applies:
+                            # Section 2 HTTP guard: a non-routed page
+                            # consumer over HTTP is answered by the guard
+                            # (its handler never runs against bridge
+                            # state); cleanup_test_session is carved out
+                            # by name inside the guard itself.
+                            _t4_guard = _t4_seam.guard_non_routed_http_call(
+                                tool_name, body, generation=SERVER_GENERATION)
+                    except Exception:
+                        # Rider F-2 (Sprint 1 G3b): an import failure of
+                        # the bridge module is "bridge down" (plan
+                        # section 6 row 8) -- never a silent fallback to
+                        # direct server-loop execution. The boot step
+                        # imports this module first, so a broken module
+                        # already fails loudly at startup; a per-call
+                        # failure here answers T4_HOST_UNAVAILABLE for
+                        # any tool that cannot be proven non-bridged,
+                        # which -- with the module unimportable -- is
+                        # every tool.
+                        logger.exception(
+                            "T4 bridge import failed for %s", tool_name)
+                        _t4_seam = None
+                        _t4_applies = False
+                        _t4_raw = json.dumps({
+                            "ok": False,
+                            "error_name": "T4_HOST_UNAVAILABLE",
+                            "error": "T4_HOST_UNAVAILABLE",
+                            "generation": SERVER_GENERATION,
+                            "retryable": True,
+                            "ca_next_action":
+                                "retry_after_bridge_recovers",
+                        }, ensure_ascii=False)
+                    if _t4_applies:
+                        try:
+                            _t4_raw = await _t4_seam.submit_bridged(
+                                tool_name, fn, body,
+                                agent_id=_task_agent_id,
+                                transport=transport,
+                                generation=SERVER_GENERATION)
+                        except Exception:
+                            logger.exception(
+                                "T4 bridge submit failed for %s", tool_name)
+                            _t4_raw = json.dumps({
+                                "ok": False,
+                                "error_name": "T4_HOST_UNAVAILABLE",
+                                "error": "T4_HOST_UNAVAILABLE",
+                                "generation": SERVER_GENERATION,
+                                "retryable": True,
+                                "ca_next_action":
+                                    "retry_after_bridge_recovers",
+                            }, ensure_ascii=False)
+                    elif _t4_guard is not None:
+                        _t4_raw = json.dumps(_t4_guard, ensure_ascii=False)
+                if _t4_raw is not None:
+                    raw = _t4_raw
+                elif _budget_s:
                     _b0 = time.time()
                     try:
                         raw = await asyncio.wait_for(fn(**body), timeout=_budget_s)
@@ -17607,7 +17676,7 @@ def _bound_tool_result(payload: dict, max_bytes: int = 4_000) -> dict:
 
 def _discoverable_tool_count() -> int:
     """P0-0: size of the HTTP discovery catalog: TOOL_MAP minus the tools the
-    discovery view hides (tier T4 + deprecated)."""
+    discovery view hides (tier T4 outside the section-4 v1 set + deprecated)."""
     return sum(
         1 for _name in ct.TOOL_MAP
         if not _tool_hidden_from_http_discovery(_name, ct.TOOL_PHASES.get(_name, ""))
@@ -17632,9 +17701,22 @@ def _tool_hidden_from_http_discovery(name: str, tool_tier: str) -> bool:
       - deprecated tools (module _DEPRECATED_TOOLS): advertised nowhere.
     A tool promoted to T4 or newly deprecated is hidden automatically. Dispatch
     is untouched: hidden tools stay callable by name.
+
+    T4-over-HTTP v1 exception (filed plan section 4): the v1 discovery set
+    (orchestrator.t4_bridge.DISCOVERY_TOOLS -- the 24 bridged surface tools
+    plus t4_host_status) IS advertised over HTTP, because the bridge makes
+    exactly those runnable over HTTP. Every other T4 tool stays hidden. If
+    the bridge module cannot be imported, the exception does not apply and
+    the pre-v1 hiding stands (conservative: advertise nothing new).
     """
     if name in _DEPRECATED_TOOLS:
         return True
+    try:
+        from orchestrator import t4_bridge as _t4_disc
+        if name in _t4_disc.DISCOVERY_TOOLS:
+            return False
+    except Exception:
+        pass
     return (tool_tier or "").strip().upper() == "T4"
 
 
@@ -17699,9 +17781,15 @@ def _tool_names_payload(tier: str = "", name_contains: str = "", category: str =
         curated = [t for t in tools if t["name"] in _curated_set]
         curated_default = bool(curated)
         returned = curated if curated else tools[:max(1, _TOOL_CATALOG_DEFAULT_LIMIT)]
-    # P0-0: how many tools the HTTP discovery view hides (tier T4 + deprecated).
-    # 0 when include_hidden=True (the full callable catalog was requested).
-    _hidden_count = len(ct.TOOL_MAP) - total
+    # R-fix-2: how many tools the HTTP discovery view hides, computed
+    # UNFILTERED -- the hidden predicate over the whole registry. Deriving
+    # it from `total` (the post-filter count) misreported under ANY
+    # tier/name/category filter. 0 when include_hidden=True (the full
+    # callable catalog was requested, so this response hides nothing).
+    _hidden_count = 0 if include_hidden else sum(
+        1 for _hn in ct.TOOL_MAP
+        if _tool_hidden_from_http_discovery(
+            _hn, ct.TOOL_PHASES.get(_hn, "")))
     payload = {
         "ok": True,
         "count": len(returned),
@@ -17966,7 +18054,7 @@ def _mcp_daemon_t4_names():
         "ORCHESTRATOR_BASE_URL", f"http://127.0.0.1:{PORT}").rstrip("/")
     try:
         import urllib.request as _tur
-        with _tur.urlopen(f"{base}/api/tools/names?tier=T4&fields=ok,tools,count",
+        with _tur.urlopen(f"{base}/api/tools/names?tier=T4&include_hidden=1&fields=ok,tools,count",
                           timeout=_MCP_T4_TIER_TIMEOUT) as _tresp:
             _tparsed = json.loads(_tresp.read().decode("utf-8", "replace"))
         fetched = {str(entry.get("name"))
@@ -20090,6 +20178,12 @@ async def _run_server():
     # ten minutes ON TOP of the silence window, which is why a dead dispatch looked
     # indistinguishable from a slow one.
     _council_monitor_task = asyncio.create_task(_council_runtime_monitor())
+    # T4 bridge (Phase 2 Sprint 1, D-S4): create the daemon's T4 loop at
+    # boot on its own thread and arm its watchdog, riding this startup
+    # pattern. The bridge is inert for non-bridged tools.
+    from orchestrator import t4_bridge as _t4_bridge_mod
+    _t4_bridge_mod.get_bridge().start()
+    _boot_step("t4_bridge.start.done")
     _boot_step("create_app.start")
     app = create_app()
     _boot_step("create_app.done")

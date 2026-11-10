@@ -60,6 +60,8 @@ T1_TOOLS = [
 
     "mission_next", "mission_status", "leader_bootstrap",
 
+    "t4_host_status",
+
 ]
 
 T2_TOOLS = [
@@ -4697,6 +4699,8 @@ BASE_TOOL_MAP_SPECS = (
 
     ('audit_tool_matrix', 'audit_tool_matrix'),
 
+    ('t4_host_status', 't4_host_status'),
+
     ('prepare_ca_session', 'prepare_ca_session'),
 
     ('next_recommended_action', 'next_recommended_action'),
@@ -4888,6 +4892,8 @@ V15_NEW_TOOL_SPECS = (
     ('wait_for_selector', '_v15.wait_for_selector'),
 
     ('compare_dom_snapshot', '_v15.compare_dom_snapshot'),
+
+    ('close_browser_page', '_v15.close_browser_page'),
 
     ('server_lifecycle_status', '_v15.server_lifecycle_status'),
 
@@ -5143,7 +5149,7 @@ V15_TIERS = {
 
         "screenshot_page": "T4", "wait_for_selector": "T4",
 
-        "compare_dom_snapshot": "T4",
+        "compare_dom_snapshot": "T4", "close_browser_page": "T4",
 
         # T4c
 
@@ -5627,6 +5633,18 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["page_id_a", "page_id_b"]),
 
+    ('close_browser_page', 'Phase 2 Sprint 2 (plan 3.5) T4: explicit close of one page minted by open_browser_page/cdp_attach_target. Launched pages are closed; attached pages are DETACHED ONLY (the user app is never closed). Owner-checked at the bridge seam for HTTP calls.', {
+
+            "page_id": {"description": "Browser page id returned by open_browser_page or cdp_attach_target; the page to close/detach.", "type": "string"},
+
+        }, ["page_id"]),
+
+    ('t4_host_status', 'Phase 2 Sprint 2 (plan 2/4) T1 read: T4-over-HTTP host status — daemon session id, console lock state, T4 loop alive + epoch, driver-lock holder, open pages (own pages in full; other owners as counts only), quarantine records, daemon generation. Not bridged: a plain daemon read.', {
+
+            "agent_id": {"description": "Caller identity injected by the dispatcher (header > body > env); scopes the page listing to the caller's own pages. Do not pass another agent's id.", "type": "string", "default": ""},
+
+        }, []),
+
     ("server_lifecycle_status", "T4 read-only: shared cached psutil port-owner scan. listening may be true, false or null (unknown); owner details may be absent/null. can_kill and requires_admin are username-based estimates, not permission probes. Includes family, laddr and scan/cache evidence when available.", {
 
             "port": {"description": "TCP port whose owning process / listening state is reported from the shared cached scan.", "type": "integer"},
@@ -5695,6 +5713,12 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "project_path": {"type": "string", "default": "", "description": "R44: originating project root — pinned to page state so fill_value/click/evaluate_js can resolve active session by page_id without re-passing project_path."},
 
+            "expected_title_substr": {"type": "string", "default": "", "description": "Sprint 2 (plan 5.2(b)/(c)): caller-declared expectation for bridged attach — REQUIRED (with expected_url_substr, at least one non-empty) for calls over HTTP; verified exactly once post-connect against live pages (unique live match)."},
+
+            "expected_url_substr": {"type": "string", "default": "", "description": "Sprint 2 (plan 5.2(b)/(c)): caller-declared expectation for bridged attach — see expected_title_substr."},
+
+            "allow_browser_level_fallback": {"type": "boolean", "default": False, "description": "Sprint 2 (plan 5.2(f)): opt in to the browser-level attach fallback; refused by default for bridged calls (CDP_ATTACH_FALLBACK_REFUSED)."},
+
         }, ["target_id"]),
 
     ('inspect_project_runtime', 'V15 R16 A.3 T1: pre-flight introspection. Detects launcher_type (electron-bat|electron-npm-script|node|python|unknown), launcher_path, has_remote_debugging_in_launcher, npm_scripts, recent_logs, dependency highlights. Call BEFORE launching to decide which recipe to use.', {
@@ -5717,7 +5741,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('dom_state_diff', 'V15 R16 A.4 T1: snapshot DOM element state (disabled/bg/color/className/visible/text) and compare across time. page_id must be a live pg-... ID. Two modes: no baseline_id returns a snapshot_id cached 10 minutes; baseline_id compares against that snapshot and must be recreated after restart or page replacement.', {
 
-            "page_id": {"type": "string", "pattern": "^pg-[A-Za-z0-9][A-Za-z0-9_-]*$", "description": "Only the pg-... page_id returned by cdp_attach_target/open_browser_page/launch_electron_with_cdp"},
+            "page_id": {"type": "string", "pattern": "^(pg|cdp)-[A-Za-z0-9][A-Za-z0-9_-]*$", "description": "Only the pg-.../cdp-... page_id returned by cdp_attach_target/open_browser_page/launch_electron_with_cdp"},
 
             "selector": {"type": "string", "description": "CSS selector for the element to snapshot"},
 
@@ -6089,6 +6113,8 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "try_modern_picker": {"type": "boolean", "default": True, "description": "R31: keyboard fallback (Ctrl+L → paste → Enter) for IFileDialog with no Edit child"},
 
+            "expected_hwnd": {"type": "integer", "default": 0, "description": "Bridge-set only (T4-over-HTTP 5.2(g)): hwnd bound by the bridge census; the handler re-checks it before acting. Caller-supplied values are discarded by the bridge."},
+
         }, ["folder_path"]),
 
     ('folder_dialog_snapshot', 'V15 R31 T1: read-only discovery of open folder/file dialog candidates. Use BEFORE fill_folder_dialog to verify CA will target the right window. Returns dialog candidates with full metadata (pid, process_name, class, parent_hwnd, owner_hwnd, child Edit/Button counts) + classifies as classic_win32_with_edit | modern_ifiledialog_no_edit. Pair with owner_pid filter.', {
@@ -6110,6 +6136,8 @@ V15_R8_NEW_SCHEMA_SPECS = (
             "title_pattern": {"description": "Title substring/regex identifying the native dialog to close.", "type": "string"},
 
         "button_pattern": {"description": "Button label pattern clicked to dismiss the dialog. Default 'Cancel|Huy|Close|Dong'; falls back to WM_CLOSE when no button matches.", "type": "string", "default": "Cancel|Huy|Close|Dong"},
+
+            "expected_hwnd": {"type": "integer", "default": 0, "description": "Bridge-set only (T4-over-HTTP 5.2(g)): hwnd bound by the bridge census; the handler re-checks it before acting. Caller-supplied values are discarded by the bridge."},
 
         }, ["title_pattern"]),
 

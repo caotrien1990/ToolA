@@ -149,7 +149,8 @@ async def cancel_native_dialog(title_pattern: str = "",
                                button_pattern: str = "Cancel|Huy|Close|Dong",
                                  owner_pid: int = 0,
                                  parent_hwnd: int = 0,
-                                 exclude_titles: list | None = None) -> str:
+                                  exclude_titles: list | None = None,
+                                  expected_hwnd: int = 0) -> str:
     """V15 R27 / R32 T4: close native dialog by clicking Cancel/Close button.
 
     R32 parity with fill_folder_dialog: adds owner_pid, parent_hwnd, exclude_titles
@@ -202,6 +203,49 @@ async def cancel_native_dialog(title_pattern: str = "",
         matched_title = title
         return False
 
+    # T4-over-HTTP 5.2(g): collecting variant of _enum_proc (same filters,
+    # but gathers EVERY match instead of stopping at the first). Used only
+    # by the bound re-check below; the shipped first-match proc above is
+    # unchanged for unbound calls.
+    def _collect_all() -> list:
+        found = []
+
+        def _proc(hwnd, _):
+            if not win32gui.IsWindowVisible(hwnd):
+                return True
+            title = win32gui.GetWindowText(hwnd) or ""
+            if not title:
+                return True
+            if title_pattern and not _re_c.search(
+                    title_pattern, title, _re_c.IGNORECASE):
+                return True
+            try:
+                _, pid = win32process.GetWindowThreadProcessId(hwnd)
+            except Exception:
+                pid = 0
+            if owner_pid and pid != owner_pid:
+                return True
+            if parent_hwnd:
+                try:
+                    pp = win32gui.GetParent(hwnd) or 0
+                    oo = win32gui.GetWindow(hwnd, 4) or 0
+                except Exception:
+                    pp = oo = 0
+                if pp != parent_hwnd and oo != parent_hwnd:
+                    return True
+            t_low = title.lower()
+            for ex in _exclude:
+                if ex and ex in t_low:
+                    return True
+            found.append(hwnd)
+            return True
+
+        try:
+            win32gui.EnumWindows(_proc, None)
+        except Exception:
+            pass
+        return found
+
     try:
         win32gui.EnumWindows(_enum_proc, None)
     except Exception:
@@ -214,6 +258,35 @@ async def cancel_native_dialog(title_pattern: str = "",
                             "parent_hwnd": parent_hwnd,
                             "rejected_windows": rejected[:5],
                             "ca_next_action": "verify_owner_filter_or_use_folder_dialog_snapshot"})
+
+    # T4-over-HTTP 5.2(g) bound re-check (bridge-set expected_hwnd only):
+    # immediately before the first mutating step, re-enumerate with this
+    # handler's own predicate (collecting variant) conjoined with the
+    # dialog-class test (and, on the owner_pid form, the ownership test).
+    # Unless the candidate set is still exactly the bound hwnd, refuse --
+    # nothing is clicked and nothing is closed.
+    if expected_hwnd:
+        _recheck_hwnds = []
+        for _rh in _collect_all():
+            try:
+                _rcls = win32gui.GetClassName(_rh) or ""
+                _rowner = win32gui.GetWindow(_rh, 4) or 0
+            except Exception:
+                continue
+            if not (_rcls == "#32770" or "dialog" in _rcls.lower()):
+                continue
+            if owner_pid and not _rowner:
+                continue
+            _recheck_hwnds.append(_rh)
+        if _recheck_hwnds != [expected_hwnd] or target_hwnd != expected_hwnd:
+            return json.dumps({
+                "ok": False,
+                "error_name": "DIALOG_TARGET_AMBIGUOUS",
+                "reason": "dialog_target_changed",
+                "expected_hwnd": expected_hwnd,
+                "candidates": _recheck_hwnds[:10],
+                "ca_next_action": "enumerate_windows_and_pin_a_real_dialog_then_retry",
+            }, ensure_ascii=False)
 
     button_hwnd = 0
     button_label = ""

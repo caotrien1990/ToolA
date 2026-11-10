@@ -2034,6 +2034,72 @@ async def update_file_cache(file_path: str, project_path: str) -> str:
     except Exception as exc:
         return json.dumps({"error": str(exc)})
 
+# ─── T4-over-HTTP host status (Phase 2 Sprint 2) ─────────────────────────────
+
+def _t4_process_session_id():
+    """Windows session id of this process, or None off-Windows."""
+    try:
+        import ctypes
+        _sid = ctypes.c_ulong(0)
+        if ctypes.windll.kernel32.ProcessIdToSessionId(
+                os.getpid(), ctypes.byref(_sid)):
+            return int(_sid.value)
+    except Exception:
+        pass
+    return None
+
+
+def _t4_console_state():
+    """Console lock state via logonui presence (plan section 2):
+    logonui.exe present in the console session means locked."""
+    state = {"explorer_present": None, "logonui_present": None,
+             "console_locked": None}
+    try:
+        import psutil
+        _names = set()
+        for _proc in psutil.process_iter(["name"]):
+            try:
+                _n = (_proc.info.get("name") or "").lower()
+            except Exception:
+                continue
+            if _n in ("explorer.exe", "logonui.exe"):
+                _names.add(_n)
+        state["explorer_present"] = "explorer.exe" in _names
+        state["logonui_present"] = "logonui.exe" in _names
+        state["console_locked"] = state["logonui_present"]
+    except Exception:
+        pass
+    return state
+
+
+async def t4_host_status(agent_id: str = "") -> str:
+    """Phase 2 Sprint 2 (plan sections 2/4): T4-over-HTTP host status.
+    T1 read, advertised but NOT bridged -- a plain daemon read of live
+    bridge state. Page listing redaction (plan section 2): the
+    caller's OWN pages in full; other owners' pages as a count only.
+    Surfaces the bridge's quarantine records, including
+    quarantine_stale decisions (plan section 3.4)."""
+    result = {"ok": True, "tool": "t4_host_status"}
+    try:
+        from orchestrator.t4_bridge import get_bridge
+        _snap = get_bridge().status_snapshot(agent_id)
+        result["loop_alive"] = _snap.get("loop_alive")
+        result["loop_epoch"] = _snap.get("loop_epoch")
+        result["holder"] = _snap.get("holder")
+        result["pages"] = _snap.get("pages", [])
+        result["other_owners_page_count"] = _snap.get(
+            "other_owners_page_count", 0)
+        result["quarantine_records"] = _snap.get("quarantine_records", [])
+    except Exception as exc:
+        result["loop_alive"] = False
+        result["bridge_error"] = str(exc)
+    result["daemon_session_id"] = _t4_process_session_id()
+    result.update(_t4_console_state())
+    _srv = sys.modules.get("orchestrator_server")
+    result["generation"] = (
+        getattr(_srv, "SERVER_GENERATION", "") if _srv is not None else "")
+    return json.dumps(result, ensure_ascii=False)
+
 # ─── Tool 13: cache_status ───────────────────────────────────────────────────────
 
 async def cache_status(project_path: str) -> str:
@@ -8567,7 +8633,8 @@ async def fill_folder_dialog(title_pattern: str = "", folder_path: str = "",
                              exclude_titles: list | None = None,
                              launched_after_ts: str = "",
                              dry_run: bool = False,
-                             try_modern_picker: bool = True) -> str:
+                             try_modern_picker: bool = True,
+                             expected_hwnd: int = 0) -> str:
     return await _runtime_fill_folder_dialog(
         title_pattern=title_pattern,
         folder_path=folder_path,
@@ -8582,6 +8649,7 @@ async def fill_folder_dialog(title_pattern: str = "", folder_path: str = "",
         launched_after_ts=launched_after_ts,
         dry_run=dry_run,
         try_modern_picker=try_modern_picker,
+        expected_hwnd=expected_hwnd,
     )
 
 
@@ -8603,13 +8671,15 @@ async def cancel_native_dialog(title_pattern: str = "",
                                button_pattern: str = "Cancel|Huy|Close|Dong",
                                owner_pid: int = 0,
                                parent_hwnd: int = 0,
-                               exclude_titles: list | None = None) -> str:
+                               exclude_titles: list | None = None,
+                               expected_hwnd: int = 0) -> str:
     return await _runtime_cancel_native_dialog(
         title_pattern=title_pattern,
         button_pattern=button_pattern,
         owner_pid=owner_pid,
         parent_hwnd=parent_hwnd,
         exclude_titles=exclude_titles,
+        expected_hwnd=expected_hwnd,
     )
 
 
