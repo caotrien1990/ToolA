@@ -70,7 +70,9 @@ _SEARCH_MODE_ALIASES = {
     "idx": "index", "project_index": "index", "dom": "dom_candidates", "dom_candidate": "dom_candidates",
     "fuzzy": "smart", "or": "smart",
 }
-_SEARCH_CODE_MODES = ["text", "regex", "symbol", "callers", "definition_usage", "index", "dom_candidates", "smart"]
+# dom_candidates is deliberately absent from the public mode list: it stays
+# an internal dispatch target of the query_dom_candidates alias only.
+_SEARCH_CODE_MODES = ["text", "regex", "symbol", "callers", "definition_usage", "index", "smart"]
 _SEARCH_SINGLEFLIGHT_LOCK = threading.Lock()
 _SEARCH_SINGLEFLIGHT: dict[tuple, concurrent.futures.Future[dict]] = {}
 # P15: per-root reconcile epoch, stamped when a stale-drift reconcile is
@@ -1673,7 +1675,7 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
     if mode == "dom_candidates":
         page_id = aliases.get("page_id") or aliases.get("page") or ""
         if not page_id:
-            return json.dumps({"ok": False, "error": "Missing page_id", "error_name": "MISSING_REQUIRED_FIELD", "accepted_fields": ["page_id", "filter", "max_items", "mode"]}, ensure_ascii=False)
+            return json.dumps({"ok": False, "error": "Missing page_id", "error_name": "MISSING_REQUIRED_FIELD", "accepted_fields": ["page_id", "filter", "max_items", "mode"], "missing_fields": ["page_id"], "corrected_payload": {"page_id": None}, "fill_instruction": "Fill each null field in corrected_payload with a live value before resending (for example, a page_id from a currently open page); resending a null returns the same MISSING_REQUIRED_FIELD error."}, ensure_ascii=False)
         from tools_v15 import query_dom_candidates
         return await query_dom_candidates(page_id=page_id, filter=aliases.get("filter") or query or "all", max_items=aliases.get("max_items", aliases.get("limit", aliases.get("max_results", max_results))), auto_artifact=aliases.get("auto_artifact", False), project_path=project_path, round_id=aliases.get("round_id", ""), auto_artifact_max_bytes=aliases.get("auto_artifact_max_bytes", 4096))
 

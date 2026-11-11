@@ -3949,6 +3949,70 @@ def _apply_alias_mode_default_post_s4(
     ]
 
 
+def _search_code_dom_gate(tool_name: str, body: dict) -> dict | None:
+    """Pre-S4 gate for direct ``search_code`` calls (search_code page_id fix).
+
+    DOM candidate queries have exactly one supported route: the
+    ``query_dom_candidates`` tool, called with a live ``page_id``.
+    ``search_code`` itself does not accept ``page_id``, so a direct
+    ``search_code(mode='dom_candidates')`` call could never succeed: without
+    ``page_id`` it answered MISSING_REQUIRED_FIELD for a field its own schema
+    rejects, and with one it answered UNSUPPORTED_FIELD. This gate runs
+    BEFORE the S4 unsupported-field check and returns a redirect payload
+    (or ``None`` to let the call through unchanged):
+
+      * a non-string, non-None ``mode`` -> a clean SCHEMA_VIOLATION dict
+        (the in-function ``mode.lower()`` used to crash on it);
+      * a string ``mode`` that resolves -- after lower/strip and the
+        ``_SEARCH_MODE_ALIASES`` map -- to ``dom_candidates`` -> a
+        REDIRECT_TO_ALIAS dict naming ``query_dom_candidates``.
+
+    The gate fires only for direct ``search_code`` calls: the
+    ``query_dom_candidates`` alias is dispatched under its own tool name, so
+    it never trips here, and its internal ``dom_candidates`` dispatch target
+    stays reachable. REDIRECT_TO_ALIAS is deliberately NOT registered in
+    ``_DETERMINISTIC_TOOLBODY_ERRORS`` and the duplicate guard is not
+    consulted: a repeated identical call returns the redirect every time.
+    """
+    if tool_name != "search_code":
+        return None
+    if not isinstance(body, dict):
+        return None
+    mode = body.get("mode")
+    if mode is None:
+        return None
+    _accepted_modes = ["text", "regex", "symbol", "callers", "definition_usage", "index", "smart"]
+    if not isinstance(mode, str):
+        return {
+            "ok": False,
+            "error": "mode must be a string",
+            "error_name": "SCHEMA_VIOLATION",
+            "type": "SCHEMA_VIOLATION",
+            "retryable": False,
+            "accepted_modes": _accepted_modes,
+            "ca_next_action": "resend_with_string_mode",
+        }
+    raw_mode = mode.lower().strip()
+    if not raw_mode:
+        return None
+    try:
+        from orchestrator.tools.search import _SEARCH_MODE_ALIASES as _mode_aliases
+    except Exception:
+        _mode_aliases = {"dom": "dom_candidates", "dom_candidate": "dom_candidates"}
+    if _mode_aliases.get(raw_mode, raw_mode) != "dom_candidates":
+        return None
+    return {
+        "ok": False,
+        "error": "search_code no longer serves mode='dom_candidates' \u2014 DOM candidate queries have exactly one route: the query_dom_candidates tool, called with a live page_id.",
+        "error_name": "REDIRECT_TO_ALIAS",
+        "type": "SCHEMA_VIOLATION",
+        "retryable": False,
+        "correct_tool": "query_dom_candidates",
+        "ca_next_action": "call_query_dom_candidates_with_live_page_id",
+        "accepted_modes": _accepted_modes,
+    }
+
+
 def _normalize_body(tool_name: str, body: dict) -> tuple[dict, list]:
     """Apply alias renames + project_path defaults. Returns (normalized_body, applied_changes).
 
@@ -4921,7 +4985,7 @@ def _missing_required_error(tool_name: str, body: dict, required_fields: list[st
     example = _payload_example_for_tool(tool_name, {"parameters": {"required": required, "properties": {}}})
     if not example:
         example = _PAYLOAD_EXAMPLES.get(tool_name, {})
-    return {
+    payload = {
         "ok": False,
         "error": f"Missing required field(s) for '{tool_name}': {', '.join(missing)}",
         "error_name": "MISSING_REQUIRED_FIELD",
@@ -4937,6 +5001,39 @@ def _missing_required_error(tool_name: str, body: dict, required_fields: list[st
         "write_performed": False,
         "applied": False,
     }
+    if "page_id" in missing:
+        # LR-3 (page_id-accepting tools): hand back a corrected_payload whose
+        # missing fields are present with value None -- never a placeholder
+        # string -- plus the instruction to fill each null with a live value.
+        # The payload_example's missing-field values are nulled the same way.
+        example = dict(example)
+        for _field in missing:
+            example[_field] = None
+        payload["payload_example"] = example
+        # The body reaching this gate has been mutated post-S4: the
+        # dispatcher injected the internal "mode" default (and may have
+        # re-attached a validated "calling_context"), neither of which the
+        # alias's public schema accepts. Echoing the raw body would hand
+        # back a corrected_payload that itself earns UNSUPPORTED_FIELD, so
+        # filter it to the same public accepted set S4 uses -- registry
+        # properties UNION _ARG_ALIASES source keys -- and drop keys
+        # starting with "_". If that set is empty (unregistered tool),
+        # fall back to the unfiltered copy rather than dropping fields.
+        _public_props = ((_schema_for_tool(tool_name).get("parameters") or {}).get("properties") or {})
+        _accepted = set(_public_props) | set(_ARG_ALIASES.get(tool_name, {}))
+        if _accepted:
+            corrected = {
+                _key: _value
+                for _key, _value in dict(body or {}).items()
+                if _key in _accepted and not str(_key).startswith("_")
+            }
+        else:
+            corrected = dict(body or {})
+        for _field in missing:
+            corrected[_field] = None
+        payload["corrected_payload"] = corrected
+        payload["fill_instruction"] = "Fill each null field in corrected_payload with a live value before resending (for example, a page_id from a currently open page); resending a null returns the same MISSING_REQUIRED_FIELD error."
+    return payload
 
 
 def _missing_required_detail(tool_name: str, err_text: str, body: dict | None) -> dict:
@@ -15899,6 +15996,9 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
     # the same lesson twice: a field absent from the registry is a field no CA can discover.
     # Consumed at the response funnel below, where the requested steps actually run.
     _active_pipeline = body.pop("pipeline", None)
+    _dom_gate = _search_code_dom_gate(tool_name, body)
+    if _dom_gate is not None:
+        return web.json_response({**_dom_gate, **_task_meta}, status=400, headers=cors)
     # S4: registry properties are the public contract; signatures are internal.
     _registry_params = _schema_for_tool(tool_name).get("parameters") or {}
     _registry_props = _registry_params.get("properties") or {}
