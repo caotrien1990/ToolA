@@ -4772,6 +4772,9 @@ def _ca_next_action(error_name: str, tool_name: str) -> str:
         "FILE_ACCESS_DENIED": "check_file_permissions_or_run_with_access_to_project",
         "OCR_TIMEOUT": "raise_timeout_or_narrow_scope_then_retry",
         "INVALID_JSON_BODY": "fix_json_escaping_then_resend_body",
+        "INVALID_GIT_PATHSPEC": "retry_with_relative_paths_inside_the_project_repo",
+        "GIT_PATH_OUTSIDE_ROOT": "retry_with_paths_that_stay_inside_the_project_repo",
+        "PATHSPEC_NOT_FOUND": "git_status",
     }.get(error_name, "read_error")
 
 
@@ -5209,6 +5212,25 @@ _PAYLOAD_EXAMPLE_OVERRIDES: dict[str, dict] = {
         "project_path": "D:/path/to/project",
         "message": "<commit message>",
         "expected_staged_hash": "<git_status.staged_hash>",
+    },
+    "git_diff": {
+        "project_path": "D:/path/to/project",
+        "scope": "worktree",
+        "paths": ["docs/example.md"],
+        "context_lines": 3,
+        "max_chars": 50000,
+        "check_whitespace": False,
+    },
+    "git_stage": {
+        "project_path": "D:/path/to/project",
+        "paths": ["docs/example.md"],
+        "allow_all": False,
+        "ocr": True,
+    },
+    "git_unstage": {
+        "project_path": "D:/path/to/project",
+        "paths": ["docs/example.md"],
+        "allow_all": False,
     },
 }
 
@@ -12610,12 +12632,12 @@ from orchestrator.core.server_schema_metadata import enrich as _with_server_meta
 
 ct.PROTECTED_TOOL_NAMES.update({"git_stage", "git_unstage", "git_commit"})
 _GIT_TOOL_SPECS = [
-("git_status",git_status,"T1",False,False,"none",{}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"include_ignored":{"type":"boolean","description":"Include ignored records","default":False},"max_records":{"type":"integer","description":"Cap displayed records (default 100; 0=all displayed rows). Counts/state_hash/staged_hash always cover all files. For every individual path use compact_untracked=false,max_records=0.","default":100},"compact_untracked":{"type":"boolean","description":"Group untracked descendants by top-level directory with untracked_count; presentation only, no ignore rules or file changes. Set false for individual paths.","default":True}},["project_path"]),
+("git_status",git_status,"T1",False,False,"none",{}, {"project_path":{"type":"string","description":"Absolute Git repository root — git_status takes no file path; to check one file use read_file_range or run_ps1_script"},"include_ignored":{"type":"boolean","description":"Include ignored records","default":False},"max_records":{"type":"integer","description":"Cap displayed records (default 100; 0=all displayed rows). Counts/state_hash/staged_hash always cover all files. For every individual path use compact_untracked=false,max_records=0.","default":100},"compact_untracked":{"type":"boolean","description":"Group untracked descendants by top-level directory with untracked_count; presentation only, no ignore rules or file changes. Set false for individual paths.","default":True}},["project_path"]),
 ("git_stale_check",git_stale_check,"T1",False,False,"none",{}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"max_commit_age_hours":{"type":"number","description":"Old HEAD threshold in hours","default":168},"expected_state_hash":{"type":"string","description":"Prior git_status state_hash for drift detection"}},["project_path"]),
-("git_diff",git_diff,"T1",False,False,"none",{"files":"paths"}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"scope":{"type":"string","enum":["worktree","staged","both"],"description":"Diff scope","default":"worktree"},"paths":{"type":"array","items":{"type":"string"},"description":"Relative pathspec allowlist"},"context_lines":{"type":"integer","description":"Unified context lines","default":3},"max_chars":{"type":"integer","description":"Output cap","default":50000},"check_whitespace":{"type":"boolean","description":"Run git diff --check semantics","default":False}},["project_path"]),
-("git_log",git_log,"T1",False,False,"none",{}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"limit":{"type":"integer","description":"Maximum commits","default":20},"ref":{"type":"string","description":"Revision reference","default":"HEAD"}},["project_path"]),
-("git_stage",git_stage,"T2",True,True,"file_artifact",{"files":"paths"}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"paths":{"type":"array","items":{"type":"string"},"description":"Relative paths to stage"},"paths_file":{"type":"string","description":"UTF-8 newline-delimited relative paths; alternative to paths"},"allow_all":{"type":"boolean","description":"Explicitly stage all changes","default":False},"expected_state_hash":{"type":"string","description":"Optional pre-stage git_status state_hash"}},["project_path"]),
-("git_unstage",git_unstage,"T2",True,True,"file_artifact",{"files":"paths"}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"paths":{"type":"array","items":{"type":"string"},"description":"Relative paths to unstage"},"paths_file":{"type":"string","description":"UTF-8 newline-delimited relative paths; alternative to paths"},"allow_all":{"type":"boolean","description":"Explicitly unstage all","default":False},"expected_staged_hash":{"type":"string","description":"Optional prior staged_hash"}},["project_path"]),
+("git_diff",git_diff,"T1",False,False,"none",{"files":"paths"}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"scope":{"type":"string","enum":["worktree","staged","both"],"description":"Diff scope","default":"worktree"},"paths":{"type":"array","items":{"type":"string"},"description":"Relative pathspec allowlist — every path must be relative and inside the project repo; for a file outside the repo use read_file_range (content/hash) or run_ps1_script (metadata)"},"context_lines":{"type":"integer","description":"Unified context lines","default":3},"max_chars":{"type":"integer","description":"Output cap","default":50000},"check_whitespace":{"type":"boolean","description":"Run git diff --check semantics","default":False}},["project_path"]),
+("git_log",git_log,"T1",False,False,"none",{}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"limit":{"type":"integer","description":"Maximum commits","default":20},"ref":{"type":"string","description":"Revision reference — or a tracked file path, for that file's commit history","default":"HEAD"}},["project_path"]),
+("git_stage",git_stage,"T2",True,True,"file_artifact",{"files":"paths"}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"paths":{"type":"array","items":{"type":"string"},"description":"Relative paths to stage — every path must be relative and inside the project repo; for a file outside the repo use read_file_range (content/hash) or run_ps1_script (metadata)"},"paths_file":{"type":"string","description":"UTF-8 newline-delimited relative paths; alternative to paths"},"allow_all":{"type":"boolean","description":"Explicitly stage all changes","default":False},"expected_state_hash":{"type":"string","description":"Optional pre-stage git_status state_hash"}},["project_path"]),
+("git_unstage",git_unstage,"T2",True,True,"file_artifact",{"files":"paths"}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"paths":{"type":"array","items":{"type":"string"},"description":"Relative paths to unstage — every path must be relative and inside the project repo; for a file outside the repo use read_file_range (content/hash) or run_ps1_script (metadata)"},"paths_file":{"type":"string","description":"UTF-8 newline-delimited relative paths; alternative to paths"},"allow_all":{"type":"boolean","description":"Explicitly unstage all","default":False},"expected_staged_hash":{"type":"string","description":"Optional prior staged_hash"}},["project_path"]),
 ("git_commit",git_commit,"T2",True,True,"repository_history",{"msg":"message"}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"message":{"type":"string","description":"Commit message"},"expected_staged_hash":{"type":"string","description":"git_status staged_hash, or \"auto\" to accept whatever is staged right now. Enforced by the git layer, not the schema: omitting it answers EXPECTED_STAGED_HASH_REQUIRED and carries current_staged_hash, so the corrected retry needs no second call."},"allow_empty":{"type":"boolean","description":"Allow empty commit","default":False},"no_verify":{"type":"boolean","description":"Bypass hooks only when explicitly authorized","default":False},"allow_eol_churn":{"type":"boolean","description":"Skip the EOL_CHURN_STAGED gate: commit even when a staged path's line endings differ from its HEAD blob (raw `git diff --cached --numstat` != `--ignore-cr-at-eol` numstat). Default false, which refuses BEFORE committing and lists every churn path with both added/deleted counts. Pass true ONLY for an intentional EOL-renormalization commit.","default":False}},["project_path","message"]),
 ]
 # A31-1: `git_stage`/`git_commit` now really RUN the zero-LLM delegate review and

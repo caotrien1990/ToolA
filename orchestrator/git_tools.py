@@ -33,20 +33,115 @@ def resolve_root(project_path):
     return actual
 
 _SECRET_PATTERNS = ('.env', '.env.*', '*.pem', '*.p12', '*.pfx', '*.key', 'id_*', '*credentials*')
-def _pathspecs(root, paths):
-    result=[]
-    for raw in paths or []:
-        value=str(raw).replace('\\','/').strip()
-        if not value or chr(0) in value or value.startswith('-') or value.startswith(':') or any(ch in value for ch in '*?[') or Path(value).is_absolute(): raise GitToolError('INVALID_GIT_PATHSPEC',value)
-        low=value.lower()
-        if low=='.git' or low.startswith('.git/') or any(fnmatch.fnmatch(Path(low).name, pat) for pat in _SECRET_PATTERNS): raise GitToolError('PATHSPEC_DENYLISTED',value)
-        candidate=(root/value).resolve()
-        try: candidate.relative_to(root)
-        except ValueError: raise GitToolError('GIT_PATH_OUTSIDE_ROOT',value) from None
-        result.append(value)
-    return list(dict.fromkeys(result))
+def _absolute_branch_extras(root, value, tool):
+    """F2: situation extras for ONE step-5 (absolute-path) rejection.
 
-def _pathspecs_from_file(root, paths_file):
+    Costs at most one stat plus one rev-parse. Never called for a
+    denylisted spec, so a secret path is never stat'ed or probed here.
+    Branches: (a0) inside this repo, (a) inside another git top-level,
+    (b) exists outside any git repo, (c) does not exist (stat failed),
+    (d) situation undetermined (rev-parse errored unexpectedly, the
+    top-level does not contain the path, or _run itself raised).
+    """
+    resolved = Path(value).resolve()
+    try:
+        resolved.stat()
+    except OSError:
+        return {'ca_next_tool': 'git_status',
+                'ca_next_action': "the path does not exist — check which paths actually exist with git_status; if the file was expected from a ToolA write, use write_status to check whether the write landed"}
+    probe_dir = resolved if resolved.is_dir() else resolved.parent
+    try:
+        probe = _run(root, ['-C', str(probe_dir), 'rev-parse', '--show-toplevel'], check=False)
+    except GitToolError:
+        return {'ca_next_tool': 'write_status',
+                'ca_next_action': "could not determine the file's repo situation — use write_status to check for a matching ToolA write; for its content use read_file_range"}
+    if probe['exit_code'] == 0:
+        top = Path(probe['stdout'].strip()).resolve()
+        try:
+            rel = resolved.relative_to(top).as_posix()
+        except ValueError:
+            return {'ca_next_tool': 'write_status',
+                    'ca_next_action': "could not determine the file's repo situation — use write_status to check for a matching ToolA write; for its content use read_file_range"}
+        extras = {}
+        if tool is not None:
+            extras['ca_next_tool'] = tool
+        if os.path.normcase(str(top)) == os.path.normcase(str(Path(root).resolve())):
+            extras['ca_next_action'] = f"the path is inside this repo — re-call {tool} with the same project_path and paths=['{rel}']"
+        else:
+            extras['ca_next_action'] = f"the path is inside another git top-level ({top}) — re-call {tool} with project_path={top} and paths=['{rel}']"
+        return extras
+    if 'not a git repository' in (probe['stderr'] or '').lower():
+        return {'ca_next_tool': 'write_status',
+                'ca_next_action': "the file exists outside any git repo — use write_status to check whether a ToolA write landed there; for its content use read_file_range with project_path set to the file's own directory; for size/mtime metadata use run_ps1_script"}
+    return {'ca_next_tool': 'write_status',
+            'ca_next_action': "could not determine the file's repo situation — use write_status to check for a matching ToolA write; for its content use read_file_range"}
+
+
+def _pathspecs(root, paths, *, tool=None, check_exists=False):
+    result = []
+    for raw in paths or []:
+        value = str(raw).replace('\\', '/').strip()
+        low = value.lower(); absolute = Path(value).is_absolute()
+        # F1: the validation ORDER is the contract -- raise at the first
+        # offending spec, with the step's reason_code.
+        # 1. empty / NUL
+        if not value or chr(0) in value:
+            raise GitToolError('INVALID_GIT_PATHSPEC', f"invalid pathspec {value!r}: a pathspec must not be empty or contain NUL characters; git pathspecs must be relative to the project repo root", reason_code='empty_or_nul')
+        # 2. Windows drive-relative (deliberately before the denylist:
+        # 'C:.env' classifies here, not as a secret)
+        if len(value) >= 2 and value[0].isalpha() and value[1] == ':' and (len(value) == 2 or value[2] != '/'):
+            raise GitToolError('INVALID_GIT_PATHSPEC', f"invalid pathspec {value!r}: a Windows drive-relative path (drive letter not followed by '/') is not a valid git pathspec; git pathspecs must be relative to the project repo root", reason_code='drive_relative')
+        # 3. glob / magic / leading '-' or ':' (an absolute spelling that
+        # also trips this step answers absolute_path, with NO F2 branching)
+        if any(ch in value for ch in '*?[') or value.startswith(':(') or value.startswith('-') or value.startswith(':'):
+            if absolute:
+                reason = 'absolute_path'
+            elif any(ch in value for ch in '*?[') or value.startswith(':('):
+                reason = 'wildcard_or_magic'
+            else:
+                reason = 'leading_dash_or_colon'
+            if reason == 'wildcard_or_magic':
+                message = f"invalid pathspec {value!r}: wildcards and pathspec magic are not allowed; name one literal path relative to the project repo root"
+            elif reason == 'leading_dash_or_colon':
+                message = f"invalid pathspec {value!r}: a pathspec must not start with '-' or ':'; git pathspecs must be relative to the project repo root"
+            else:
+                message = f"invalid pathspec {value!r}: the path is absolute; git pathspecs must be relative to the project repo root"
+            raise GitToolError('INVALID_GIT_PATHSPEC', message, reason_code=reason)
+        # 4. denylist -- message stays the bare value, with NO extras, as
+        # before. The '.git' component rule applies only to absolute
+        # spellings; 'sub/.git/config' stays allowed through here.
+        if low == '.git' or low.startswith('.git/') or any(fnmatch.fnmatch(Path(low).name, pat) for pat in _SECRET_PATTERNS) or (absolute and '.git' in low.split('/')):
+            raise GitToolError('PATHSPEC_DENYLISTED', value)
+        # 5. absolute -- the only step that carries F2 branch extras
+        if absolute:
+            raise GitToolError('INVALID_GIT_PATHSPEC', f"invalid pathspec {value!r}: the path is absolute; git pathspecs must be relative to the project repo root", reason_code='absolute_path', **_absolute_branch_extras(root, value, tool))
+        # 6. the resolved target must stay inside the repo root
+        candidate = (root / value).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            raise GitToolError('GIT_PATH_OUTSIDE_ROOT', f"pathspec {value!r} resolves outside the project repo root; git pathspecs must stay inside the project repo", reason_code='escapes_root') from None
+        result.append(value)
+    result = list(dict.fromkeys(result))
+    if check_exists:
+        # F3/F4: state-aware existence, shared by diff/stage/unstage. A spec
+        # exists when it is on disk, tracked in the index (worktree-deleted
+        # files), or present in HEAD (staged deletions). ALL missing specs
+        # are collected into one raise.
+        missing = []
+        for spec in result:
+            if (root / spec).exists():
+                continue
+            if _run(root, ['ls-files', '--', spec], check=False)['stdout'].strip():
+                continue
+            if _run(root, ['cat-file', '-e', 'HEAD:' + spec], check=False)['exit_code'] == 0:
+                continue
+            missing.append(spec)
+        if missing:
+            raise GitToolError('PATHSPEC_NOT_FOUND', 'pathspec not found in worktree, index or HEAD: ' + ', '.join(missing), pathspecs=missing, ca_next_action='check which paths actually exist with git_status', ca_next_tool='git_status')
+    return result
+
+def _pathspecs_from_file(root, paths_file, *, tool=None, check_exists=False):
     if not paths_file:
         return []
     source=Path(paths_file).resolve()
@@ -61,7 +156,7 @@ def _pathspecs_from_file(root, paths_file):
     specs=[]
     for index, raw in enumerate(split_lines(text),1):  # U+2028/U+0085 are legal in a file name
         try:
-            specs.extend(_pathspecs(root,[raw]))
+            specs.extend(_pathspecs(root,[raw],tool=tool,check_exists=check_exists))
         except GitToolError as e:
             raise GitToolError(e.error_name,
                                f'paths_file entry {index} rejected: {raw!r}',
@@ -241,20 +336,12 @@ def stale_check(project_path, max_commit_age_hours=168, expected_state_hash=''):
     return {'ok':True,'stale':bool(stale),'reasons':stale,'operation_states':states,'commit_age_hours':age,'expected_state_changed':changed,'status':_state(s),'note':'ahead/behind uses local refs only; no fetch performed'}
 
 def diff(project_path, scope='worktree', paths=None, context_lines=3, max_chars=50000, check_whitespace=False):
-    root=resolve_root(project_path); specs=_pathspecs(root,paths); scope=str(scope).lower(); base=['--literal-pathspecs','diff','--no-ext-diff','--no-textconv','--no-color',f'--unified={max(0,min(int(context_lines),20))}']
-    # P7: fail loud on pathspecs that match nothing. With --literal-pathspecs git
-    # answers an empty diff (not an error) for a nonexistent path, which reads as
-    # "no changes". A spec counts as existing when it is on disk, is tracked in
-    # the index (covers worktree-deleted files with a pending deletion diff), or
-    # is present in HEAD (covers staged deletions).
-    if specs:
-        _missing=[]
-        for _spec in specs:
-            if (root/_spec).exists(): continue
-            if _run(root,['ls-files','--',_spec],check=False)['stdout'].strip(): continue
-            if _run(root,['cat-file','-e','HEAD:'+_spec],check=False)['exit_code']==0: continue
-            _missing.append(_spec)
-        if _missing: raise GitToolError('PATHSPEC_NOT_FOUND','pathspec not found in worktree, index or HEAD: '+', '.join(_missing),pathspecs=_missing)
+    root=resolve_root(project_path); specs=_pathspecs(root,paths or [],tool='git_diff',check_exists=True); scope=str(scope).lower(); base=['--literal-pathspecs','diff','--no-ext-diff','--no-textconv','--no-color',f'--unified={max(0,min(int(context_lines),20))}']
+    # P7/F3: fail loud on pathspecs that match nothing -- the state-aware
+    # existence check (on disk OR in the index OR in HEAD) now lives in
+    # _pathspecs under check_exists=True, shared with stage/unstage. With
+    # --literal-pathspecs git itself answers an empty diff (not an error)
+    # for a nonexistent path, which reads as "no changes".
     if scope not in ('worktree','staged','both'): raise GitToolError('INVALID_GIT_DIFF_SCOPE',scope)
     def get(staged=False, check=False):
         args=list(base)
@@ -347,7 +434,7 @@ def stage(project_path, paths=None, paths_file='', allow_all=False, expected_sta
     root=resolve_root(project_path); before=status(str(root))
     if expected_state_hash and expected_state_hash!=before['state_hash']: raise GitToolError('GIT_STATE_STALE','working tree changed',current_state_hash=before['state_hash'])
     if paths and paths_file: raise GitToolError('GIT_PATH_INPUT_CONFLICT','pass paths or paths_file, not both')
-    specs=_pathspecs_from_file(root,paths_file) if paths_file else _pathspecs(root,paths)
+    specs=_pathspecs_from_file(root,paths_file,tool='git_stage',check_exists=True) if paths_file else _pathspecs(root,paths,tool='git_stage',check_exists=True)
     if not specs and not allow_all: raise GitToolError('GIT_PATHS_REQUIRED','paths required unless allow_all=true')
 
     if allow_all: raise GitToolError('GIT_ALLOW_ALL_REFUSED','allow_all is disabled; pass explicit safe paths')
@@ -388,7 +475,7 @@ def unstage(project_path, paths=None, paths_file='', allow_all=False, expected_s
     root=resolve_root(project_path); before=status(str(root))
     if expected_staged_hash and expected_staged_hash!=before['staged_hash']: raise GitToolError('GIT_STATE_STALE','index changed',current_staged_hash=before['staged_hash'])
     if paths and paths_file: raise GitToolError('GIT_PATH_INPUT_CONFLICT','pass paths or paths_file, not both')
-    specs=_pathspecs_from_file(root,paths_file) if paths_file else _pathspecs(root,paths)
+    specs=_pathspecs_from_file(root,paths_file,tool='git_unstage',check_exists=True) if paths_file else _pathspecs(root,paths,tool='git_unstage',check_exists=True)
     if not specs and not allow_all: raise GitToolError('GIT_PATHS_REQUIRED','paths required unless allow_all=true')
 
     if allow_all: raise GitToolError('GIT_ALLOW_ALL_REFUSED','allow_all is disabled; pass explicit paths')
