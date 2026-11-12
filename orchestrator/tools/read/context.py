@@ -145,16 +145,48 @@ async def read_file_range(
     try:
         fp = fo.resolve_project_file(project_path, file_path)
     except Exception as exc:
+        # F-B1: classify the caught resolve error once, by message, with
+        # the write mapper's predicates (see _json_path_resolve_error in
+        # orchestrator/tools/write/core.py): lowercased message,
+        # outside/escapes before UNC, gated on ValueError. One shared
+        # computation consumed at both returns below. The default row
+        # passes NO name/type kwargs, so json_error's own INTERNAL_ERROR
+        # setdefaults apply; None is forbidden (json_error has no
+        # None-filtering).
+        _err_kwargs = {}
+        if isinstance(exc, ValueError):
+            _lower = str(exc).lower()
+            if "outside project" in _lower or "escapes project root" in _lower:
+                _err_kwargs = {
+                    "error_name": "PATH_OUTSIDE_PROJECT",
+                    "type": "PERMISSION_POLICY",
+                }
+            elif "unc" in _lower:
+                _err_kwargs = {
+                    "error_name": "UNC_PATH_UNSUPPORTED",
+                    "type": "INVALID_REQUEST",
+                }
+            else:
+                _err_kwargs = {
+                    "error_name": "PATH_RESOLVE_FAILED",
+                    "type": "INVALID_REQUEST",
+                }
         # Fallback: if path is relative and project_path exists, try join
         if project_path and not os.path.isabs(file_path):
             try:
                 fp = (Path(project_path).resolve() / file_path).resolve()
             except Exception:
-                return fo.json_error(str(exc),
-                                     hint="Use project_path with a relative file_path inside the project.")
+                return fo.json_error(
+                    str(exc),
+                    hint="Use project_path with a relative file_path inside the project.",
+                    **_err_kwargs,
+                )
         else:
-            return fo.json_error(str(exc),
-                                 hint="Use project_path with a relative file_path inside the project.")
+            return fo.json_error(
+                str(exc),
+                hint="Use project_path with a relative file_path inside the project.",
+                **_err_kwargs,
+            )
     if not fp.exists():
         # CAN-053 soft fix: force_reseed=true after a cache miss should not
         # keep serving the same stale FILE_NOT_FOUND. Clear the negative cache
