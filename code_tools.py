@@ -303,6 +303,7 @@ TOKEN_REQUIRED_TOOLS = {
     "delete_file",                    # irreversible file delete
     "clear_closed_sessions",          # irreversible delete of closed-session audit rows (PC1-CLEANUP: matches existing REST handler which already requires X-Orchestrator-Token)
     "kill_process",                   # kills processes
+    "cleanup_test_session",           # releases the caller's scoped test target
     "run_project_command",            # arbitrary shell exec
     "run_project_test_script",        # runs artifact code
     "run_ps1_script",                 # arbitrary PowerShell
@@ -338,7 +339,7 @@ _MUTATION_SCOPE_MAP = {
     "desktop_click": "runtime_ui", "desktop_send_text": "runtime_ui", "assert_button_click_changes_state": "runtime_ui",
     # process — spawns / kills processes
     "kill_process": "process", "launch_electron_with_cdp": "process",
-    "ensure_single_electron_instance": "process", "cleanup_test_session": "process",
+    "ensure_single_electron_instance": "process", "cleanup_test_session": "runtime_ui",
     "run_project_command": "process", "restart_orchestrator_via_task": "process",
     # campaign-1608 (A11-b): restart_orchestrator_via_bat was the ONLY entry in the
     # gate set (PROTECTED | TOKEN_REQUIRED) with no scope, so /api/tools
@@ -10988,7 +10989,7 @@ async def bootstrap_session(project_path: str = "", session_id: str = "",
         # T2 write
         {"name": "write_fix", "tier": "T2", "required": ["file_path", "start_line", "end_line", "new_content"],
          "aliases": ["path->file_path", "content->new_content", "start->start_line", "end->end_line"],
-         "notes": "REQUIRES token. For multi-hunk same file → use write_transaction (bottom-up sort)"},
+         "notes": "For multi-hunk same file → use write_transaction (bottom-up sort)"},
         {"name": "write_transaction", "tier": "T2", "required": ["operations"],
          "notes": "Atomic batch. R41 BUG FIX: same-file ops refresh cache between writes"},
         {"name": "write_new_file", "tier": "T2", "required": ["path", "new_content"]},
@@ -10996,17 +10997,18 @@ async def bootstrap_session(project_path: str = "", session_id: str = "",
         {"name": "open_browser_page", "tier": "T4", "required": ["url"],
          "aliases": ["wait_until->wait_for", "timeout->timeout_ms"],
          "notes": "wait_for: load|domcontentloaded|networkidle (default load); timeout_ms default 20000; polling apps -> domcontentloaded"},
-        {"name": "launch_electron_with_cdp", "tier": "T4", "required": ["executable_path"]},
+        {"name": "launch_electron_with_cdp", "tier": "T4", "required": [],
+         "notes": "Stateful MCP launch. HTTP uses list_cdp_targets on a running debugging port."},
         {"name": "list_cdp_targets", "tier": "T4", "required": [],
          "notes": "project_path harmless ignore. Use cdp_port (default 9223)"},
         {"name": "verify_active_electron_source", "tier": "T1", "required": ["page_id"],
          "notes": "R41: check which file Electron actually loaded (avoid editing wrong mirror)"},
         {"name": "fill_value", "tier": "T4", "required": ["page_id", "selector", "value"],
-         "notes": "Token-protected. encoding='base64' for Windows paths / Unicode"},
+         "notes": "encoding='base64' for Windows paths / Unicode"},
         {"name": "click_selector", "tier": "T4", "required": ["page_id", "selector"]},
         {"name": "fill_folder_dialog", "tier": "T4", "required": ["folder_path"],
          "aliases": ["path->folder_path"],
-         "notes": "Token-protected. Use folder_dialog_snapshot first. R42: auto_click_button_by_hwnd default True"},
+         "notes": "Inspect with folder_dialog_snapshot first. Pass parent_hwnd or owner_pid and title_pattern."},
         {"name": "click_and_handle_folder_dialog", "tier": "T4", "required": ["page_id", "click_selector", "folder_path"]},
         {"name": "wait_for_idle", "tier": "T1", "required": ["signals"],
          "notes": "R42: built-in polling — saves 60+ assert_target_idle calls"},

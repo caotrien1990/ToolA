@@ -27,15 +27,14 @@ async def fill_folder_dialog(title_pattern: str = "", folder_path: str = "",
     - `exclude_titles`: reject windows whose title contains any of these strings
     - `launched_after_ts`: only windows whose process was launched after this ISO timestamp
     - `dry_run`: return candidate list WITHOUT mutating (read-only discovery)
-    - `try_modern_picker`: fallback for IFileDialog/UIAutomation when no Edit control
-      (keyboard route: Ctrl+L → paste path → Enter)
+    - `try_modern_picker`: expose an address Edit with Ctrl+L, set and read back its path
 
     Flow:
-    1. Wait up to wait_for_dialog_ms for visible dialog matching filters
-    2. If multiple match → DIALOG_AMBIGUOUS with candidates (no auto-pick when global)
-    3. If single match → walk children for Edit + Select/OK button
-    4. SetWindowText + click → verify closed
-    5. If no Edit + try_modern_picker: keyboard route (focus → paste → Enter)
+    1. Wait up to wait_for_dialog_ms for a visible dialog matching the filters
+    2. Reject ambiguous targets
+    3. Locate a visible Edit and optional Select/OK button
+    4. Set the path and verify the Edit text before Enter or Select
+    5. Observe dialog closure; application selection requires separate verification
     6. On failure: rich diagnostic with visible_windows + rejected_windows
 
     Returns: {ok, hwnd_used, matched_title, candidates (when ambiguous),
@@ -259,14 +258,6 @@ async def fill_folder_dialog(title_pattern: str = "", folder_path: str = "",
         except Exception:
             pass
         fallback_recipe = ""
-        if isinstance(electron_fallback_hint, dict):
-            pid = electron_fallback_hint.get("page_id", "")
-            handler = electron_fallback_hint.get("suggested_handler", "")
-            if pid and handler:
-                fallback_recipe = (
-                    f"invoke_app_function(page_id='{pid}', "
-                    f"function_name='{handler}', args=['{folder_path}'])"
-                )
         return json.dumps({
             "ok": False,
             "error_name": "DIALOG_NOT_FOUND",
@@ -280,11 +271,7 @@ async def fill_folder_dialog(title_pattern: str = "", folder_path: str = "",
                 "exclude_titles": exclude_titles or [],
                 "launched_after_ts": launched_after_ts,
             },
-            "ca_next_action": (
-                "use_invoke_app_function_for_electron_custom_dialog"
-                if fallback_recipe else
-                "call_folder_dialog_snapshot_to_inspect_or_use_invoke_app_function"
-            ),
+            "ca_next_action": "call_folder_dialog_snapshot_to_inspect",
             "electron_fallback_recipe": fallback_recipe,
             "auto_try_common_titles": auto_try_common_titles,
             "wait_for_dialog_ms_elapsed": int(wait_for_dialog_ms),
@@ -342,7 +329,7 @@ async def fill_folder_dialog(title_pattern: str = "", folder_path: str = "",
         try:
             cls = win32gui.GetClassName(hwnd) or ""
             txt = win32gui.GetWindowText(hwnd) or ""
-            if "edit" in cls.lower() and not edit_hwnd:
+            if "edit" in cls.lower() and win32gui.IsWindowVisible(hwnd) and not edit_hwnd:
                 edit_hwnd = hwnd
             elif "button" in cls.lower() and BUTTON_RE.search(txt) and not button_hwnd:
                 button_hwnd = hwnd
@@ -364,6 +351,12 @@ async def fill_folder_dialog(title_pattern: str = "", folder_path: str = "",
         win32gui.EnumChildWindows(target_hwnd, _enum_child, None)
     except Exception:
         pass
+    from orchestrator.runtime.desktop_input import edit_text, send_chord
+
+    if not folder_path:
+        return json.dumps({"ok": False, "error_name": "MISSING_REQUIRED_FIELD", "field": "folder_path"})
+    # Windows reports UTF-16 code units; one extra character detects truncation.
+    read_capacity = len(folder_path.encode("utf-16-le")) // 2 + 2
     picker_route = "none"
     folder_path_set = False
     # V15 R32: Flow 1 fix — after SETTEXT or paste, MUST commit navigation via Enter
@@ -372,15 +365,14 @@ async def fill_folder_dialog(title_pattern: str = "", folder_path: str = "",
     if edit_hwnd:
         try:
             win32gui.SendMessage(edit_hwnd, win32con.WM_SETTEXT, 0, str(folder_path))
-            folder_path_set = True
+            folder_path_set = edit_text(edit_hwnd, read_capacity) == folder_path
+            if not folder_path_set:
+                raise ValueError("Edit control did not retain the requested path")
             picker_route = "classic_settext_enter_then_select"
             # R32: commit path via Enter on edit (navigates dialog to that folder)
             VK_RETURN = 0x0D
-            try:
-                win32api.PostMessage(edit_hwnd, win32con.WM_KEYDOWN, VK_RETURN, 0)
-                win32api.PostMessage(edit_hwnd, win32con.WM_KEYUP, VK_RETURN, 0)
-            except Exception:
-                pass
+            win32api.PostMessage(edit_hwnd, win32con.WM_KEYDOWN, VK_RETURN, 0)
+            win32api.PostMessage(edit_hwnd, win32con.WM_KEYUP, VK_RETURN, 0)
             _t.sleep(0.45)  # wait for navigation to complete
         except Exception as exc:
             return json.dumps({"ok": False,
@@ -388,63 +380,36 @@ async def fill_folder_dialog(title_pattern: str = "", folder_path: str = "",
                                 "error": str(exc),
                                 "hwnd_used": target_hwnd, "matched_title": matched_title})
     elif try_modern_picker:
-        # R31: modern IFileDialog/Vista-style picker has no exposed Edit child.
-        # Fallback: focus dialog → send Ctrl+L (address bar) → paste path → Enter.
+        # Ctrl+L exposes the address Edit in Explorer-style pickers.
         try:
-            # Focus + foreground
-            try:
-                win32gui.SetForegroundWindow(target_hwnd)
-            except Exception:
-                pass
-            _t.sleep(0.15)
-            # Copy folder_path to clipboard
-            try:
-                import ctypes
-                CF_UNICODETEXT = 13
-                user32 = ctypes.windll.user32
-                kernel32 = ctypes.windll.kernel32
-                user32.OpenClipboard(0)
-                user32.EmptyClipboard()
-                text = str(folder_path)
-                size = (len(text) + 1) * 2
-                hMem = kernel32.GlobalAlloc(0x0042, size)  # GMEM_MOVEABLE|GMEM_ZEROINIT
-                if hMem:
-                    pMem = kernel32.GlobalLock(hMem)
-                    if pMem:
-                        ctypes.memmove(pMem, ctypes.c_wchar_p(text), size)
-                        kernel32.GlobalUnlock(hMem)
-                        user32.SetClipboardData(CF_UNICODETEXT, hMem)
-                user32.CloseClipboard()
-            except Exception:
-                pass
-            # Send Ctrl+L to focus address bar / filename field
-            VK_CONTROL, VK_L, VK_V, VK_RETURN = 0x11, 0x4C, 0x56, 0x0D
-            KEYEVENTF_KEYUP = 0x0002
-            import ctypes as _ct
-            user32 = _ct.windll.user32
-            user32.keybd_event(VK_CONTROL, 0, 0, 0)
-            user32.keybd_event(VK_L, 0, 0, 0)
-            user32.keybd_event(VK_L, 0, KEYEVENTF_KEYUP, 0)
-            user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
+            win32gui.SetForegroundWindow(target_hwnd)
+            send_chord(target_hwnd, win32con.VK_CONTROL, ord("L"))
             _t.sleep(0.2)
-            # Ctrl+V to paste
-            user32.keybd_event(VK_CONTROL, 0, 0, 0)
-            user32.keybd_event(VK_V, 0, 0, 0)
-            user32.keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0)
-            user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
-            _t.sleep(0.2)
-            # Enter
-            user32.keybd_event(VK_RETURN, 0, 0, 0)
-            user32.keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, 0)
-            folder_path_set = True
-            picker_route = "modern_keyboard_ctrl_l_paste_enter"
-            _t.sleep(0.45)  # R32: wait for address bar navigation to commit
+            edits = []
+
+            def address_edit(child, _):
+                if (win32gui.GetClassName(child).lower() == "edit"
+                        and win32gui.IsWindowVisible(child)):
+                    edits.append(child)
+                return True
+
+            win32gui.EnumChildWindows(target_hwnd, address_edit, None)
+            if len(edits) != 1:
+                raise RuntimeError("Could not identify a single visible address Edit")
+            edit_hwnd = edits[0]
+            win32gui.SendMessage(edit_hwnd, win32con.WM_SETTEXT, 0, folder_path)
+            folder_path_set = edit_text(edit_hwnd, read_capacity) == folder_path
+            if not folder_path_set:
+                raise ValueError("Address Edit did not retain the requested folder")
+            send_chord(target_hwnd, win32con.VK_RETURN)
+            picker_route = "modern_address_edit_enter"
+            _t.sleep(0.45)
         except Exception as exc:
             return json.dumps({"ok": False,
                                 "error_name": "MODERN_PICKER_KEYBOARD_FAILED",
                                 "error": str(exc),
                                 "hwnd_used": target_hwnd, "matched_title": matched_title,
-                                "hint": "Modern picker fallback (Ctrl+L → paste → Enter) failed. App may use custom non-IFileDialog UI — use invoke_app_function for Electron apps."})
+                                "hint": "Inspect the pinned dialog controls with desktop_window_list before choosing the next action."})
     # 3. R32: ALWAYS click Select/OK button after navigation commit.
     # Previously modern route auto-set button_clicked=true, but address bar Enter
     # only NAVIGATES — it doesn't trigger "select folder". Need explicit button click.
@@ -477,7 +442,7 @@ async def fill_folder_dialog(title_pattern: str = "", folder_path: str = "",
         button_hwnd = button_hwnd_2
         button_label = button_label_2
     button_clicked = False
-    if button_hwnd:
+    if folder_path_set and button_hwnd and win32gui.IsWindow(target_hwnd) and win32gui.IsWindowVisible(target_hwnd):
         try:
             win32api.PostMessage(button_hwnd, win32con.BM_CLICK, 0, 0)
             button_clicked = True
@@ -502,24 +467,13 @@ async def fill_folder_dialog(title_pattern: str = "", folder_path: str = "",
                 dialog_closed = True
                 break
         except Exception:
-            dialog_closed = True
+            dialog_closed = False
             break
         _t.sleep(0.2)
     fallback_hint = ""
     fallback_recipe = ""
-    if not (folder_path_set and button_clicked):
-        fallback_hint = (
-            "Native dialog control partial. For Electron custom dialog, try invoke_app_function() "
-            "with the IPC handler directly (e.g. runGetFootageToTarget(target))."
-        )
-        if isinstance(electron_fallback_hint, dict):
-            pid = electron_fallback_hint.get("page_id", "")
-            handler = electron_fallback_hint.get("suggested_handler", "")
-            if pid and handler:
-                fallback_recipe = (
-                    f"invoke_app_function(page_id='{pid}', "
-                    f"function_name='{handler}', args=['{folder_path}'])"
-                )
+    if not folder_path_set:
+        fallback_hint = "Inspect the dialog controls with desktop_window_list before retrying."
     # V15 R34: compute explicit verdict so CA doesn't have to parse 4 fields
     verdict = "PARTIAL"
     nearby_error_modals: list = []
@@ -550,21 +504,9 @@ async def fill_folder_dialog(title_pattern: str = "", folder_path: str = "",
         folder_path_exists_post = bool(folder_path) and _os_fe.path.isdir(folder_path)
     except Exception:
         pass
-    # V15 R45 — verdict logic prioritises dialog_closed as the strongest signal
-    # of OS-level acceptance. folder_path_exists_post is advisory: it can give
-    # FALSE negatives for paths with Vietnamese diacritics or transient UNC
-    # latency, so it must NOT downgrade a successfully-closed dialog to
-    # DIALOG_PATH_INVALID. Only a CONCURRENT error modal (e.g. "The folder
-    # name is not valid.") is treated as authoritative invalid evidence.
-    if folder_path_set and button_clicked and dialog_closed:
-        if folder_path_exists_post:
-            verdict = "DIALOG_SELECTED_FOLDER_CONFIRMED"
-        else:
-            # Dialog closed via the Select/OK button but post-check could not
-            # confirm filesystem existence. Treat as success with caveat — CA
-            # can run folder_stats(path) over [A]'s Unicode-safe path to verify.
-            verdict = "DIALOG_CLOSED_POST_CHECK_INCONCLUSIVE"
-    elif folder_path_set and button_clicked and not dialog_closed and nearby_error_modals:
+    if folder_path_set and dialog_closed:
+        verdict = "DIALOG_CLOSED_PATH_ENTERED"
+    elif folder_path_set and button_clicked and nearby_error_modals:
         verdict = "DIALOG_PATH_INVALID"
     elif folder_path_set and button_clicked and not dialog_closed:
         verdict = "DIALOG_BUTTON_CLICK_NO_CLOSE"
@@ -575,29 +517,19 @@ async def fill_folder_dialog(title_pattern: str = "", folder_path: str = "",
     partial_recovery_options = None
     if verdict == "PARTIAL":
         partial_recovery_options = [
-            {"tool": "fill_folder_dialog",
-             "retry_with": {"auto_try_common_titles": True, "wait_for_dialog_ms": 5000,
-                              "title_pattern": matched_title or ""},
-             "use_case": "Retry with broader title match + longer wait"},
-            {"tool": "click_and_handle_folder_dialog",
-             "use_case": "Atomic click+fill macro — recommended if you have click_selector"},
-            {"tool": "invoke_app_function",
-             "function_name_hint": "pickFolder|setTargetFolder|onFolderChosen|chooseFolder",
-             "use_case": "App-side handler — bypass native picker entirely if app exposes JS function"},
-            {"tool": "desktop_click",
-             "args_hint": {"hwnd": button_hwnd or "<from button_hwnd_found>", "force_win32": True},
-             "use_case": "Force Win32 BM_CLICK on Select Folder button by hwnd"},
+            {"tool": "desktop_window_list", "args_hint": {"include_child_controls": True},
+             "use_case": "Inspect the current dialog and its controls"},
             {"tool": "cancel_native_dialog",
-             "use_case": "Give up + close dialog cleanly; retry whole flow"},
+             "args_hint": {"owner_pid": owner_pid, "parent_hwnd": parent_hwnd,
+                           "title_pattern": matched_title},
+             "use_case": "Dismiss the pinned dialog if the operation is abandoned"},
         ]
     return json.dumps({
-        # R45: ok stays true when dialog closed via button click, regardless of
-        # post-check (Vietnamese/UNC false-negatives no longer downgrade verdict).
-        "ok": (folder_path_set and button_clicked and dialog_closed),
-        "verdict": verdict,  # R34/R45: DIALOG_SELECTED_FOLDER_CONFIRMED | DIALOG_CLOSED_POST_CHECK_INCONCLUSIVE | DIALOG_PATH_INVALID | DIALOG_BUTTON_CLICK_NO_CLOSE | PARTIAL
+        "ok": bool(folder_path_set and dialog_closed),
+        "selection_verified": False,
+        "verdict": verdict,
         "verdict_enum": [
-            "DIALOG_SELECTED_FOLDER_CONFIRMED",
-            "DIALOG_CLOSED_POST_CHECK_INCONCLUSIVE",   # R45 — dialog OK, FS check failed (Vietnamese/UNC latency)
+            "DIALOG_CLOSED_PATH_ENTERED",
             "DIALOG_PATH_INVALID", "DIALOG_BUTTON_CLICK_NO_CLOSE",
             "DIALOG_NOT_FOUND", "DIALOG_AMBIGUOUS", "PARTIAL",
         ],

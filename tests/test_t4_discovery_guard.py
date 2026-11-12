@@ -30,7 +30,7 @@ EXPECTED_ROUTING = frozenset({
     "read_page", "query_selector", "click", "fill", "evaluate_js",
     "wait_for_selector", "read_console_errors", "read_network_errors",
     "screenshot_page", "compare_dom_snapshot", "describe_page",
-    "close_browser_page",
+    "close_browser_page", "cleanup_test_session", "query_dom_candidates",
     "desktop_window_list", "desktop_screenshot", "check_window_visibility",
     "desktop_click", "desktop_app_focus", "desktop_send_text",
     "desktop_window_state",
@@ -44,7 +44,7 @@ EXPECTED_DISCOVERY = frozenset({
     "read_page", "query_selector", "click", "fill", "evaluate_js",
     "wait_for_selector", "read_console_errors", "read_network_errors",
     "screenshot_page", "compare_dom_snapshot", "describe_page",
-    "close_browser_page",
+    "close_browser_page", "cleanup_test_session", "query_dom_candidates",
     "desktop_window_list", "desktop_screenshot", "check_window_visibility",
     "desktop_click", "desktop_app_focus", "desktop_send_text",
     "desktop_window_state",
@@ -57,15 +57,13 @@ ROUTED_UTILITIES = frozenset({
     "verify_active_electron_source",
 })
 EXPECTED_EXCLUSIONS = frozenset({
-    "query_dom_candidates", "cleanup_test_session",
     "click_and_handle_folder_dialog",
     "invoke_app_function", "click_selector", "checkpoint_loop_dom_state",
     "click_and_checkpoint_loop", "run_script", "record_ui_flow",
     "assert_text_visible", "assert_button_click_changes_state",
     "assert_console_no_error", "launch_electron_with_cdp",
 })
-PAGE_BOUND_GUARDED = EXPECTED_EXCLUSIONS - {
-    "cleanup_test_session", "launch_electron_with_cdp"}
+PAGE_BOUND_GUARDED = EXPECTED_EXCLUSIONS - {"launch_electron_with_cdp"}
 WELL_PG = "pg-1730000000000-0-abc123"
 WELL_CDP = "cdp-1730000000000-1-ff00aa"
 
@@ -75,25 +73,21 @@ WELL_CDP = "cdp-1730000000000-1-ff00aa"
 # ---------------------------------------------------------------------------
 
 class TestCensusGuard:
-    def test_routing_set_is_exactly_the_plans_32(self):
+    def test_routing_matches_supported_tools(self):
         assert BRIDGED_TOOLS == EXPECTED_ROUTING
-        assert len(BRIDGED_TOOLS) == 32
 
-    def test_discovery_set_is_exactly_the_plans_25(self):
+    def test_discovery_matches_supported_tools(self):
         assert DISCOVERY_TOOLS == EXPECTED_DISCOVERY
-        assert len(DISCOVERY_TOOLS) == 25
-        # 24 bridged surface tools + t4_host_status advertised-not-bridged.
         assert DISCOVERY_TOOLS - {"t4_host_status"} == \
             EXPECTED_ROUTING - ROUTED_UTILITIES
         assert "t4_host_status" not in BRIDGED_TOOLS
         assert "t4_host_status" in osrv.ct.TOOL_MAP
 
-    def test_exclusion_list_is_exactly_the_plans_13(self):
+    def test_every_excluded_consumer_is_guarded(self):
         assert NON_ROUTED_CONSUMERS == EXPECTED_EXCLUSIONS
-        assert len(NON_ROUTED_CONSUMERS) == 13
         assert BRIDGED_TOOLS & NON_ROUTED_CONSUMERS == frozenset()
-        assert GUARD_EXEMPT_TOOLS == frozenset({"cleanup_test_session"})
-        assert GUARDED_TOOLS == EXPECTED_EXCLUSIONS - {"cleanup_test_session"}
+        assert not GUARD_EXEMPT_TOOLS
+        assert GUARDED_TOOLS == EXPECTED_EXCLUSIONS
 
     def test_bridged_disjoint_from_cacheable_live(self):
         assert BRIDGED_TOOLS & call_cache.CACHEABLE_TOOLS == frozenset()
@@ -130,7 +124,7 @@ class TestCensusGuard:
                     consumers.add(node.name)
                     break
         # Sanity: the census actually found the known consumers.
-        assert {"read_page", "click_selector", "cleanup_test_session",
+        assert {"read_page", "click_selector", "close_browser_page",
                 "launch_electron_with_cdp", "cdp_attach_target"} <= consumers
         registered = consumers & set(osrv.ct.TOOL_MAP)
         assert registered, "census found no registered consumers"
@@ -140,6 +134,7 @@ class TestCensusGuard:
 
     def test_composition_edges_from_routed_tools_land_in_routing_or_exclusions(self):
         edges = {
+            "cleanup_test_session": "close_browser_page",
             "verify_active_electron_source": "evaluate_js",
             "desktop_send_text": "desktop_window_list",
         }
@@ -291,20 +286,19 @@ class TestRFix1:
 
 class TestGuardShapes:
     @pytest.mark.parametrize("tool", sorted(PAGE_BOUND_GUARDED))
-    def test_well_formed_pg_id_answers_page_not_found(self, tool):
+    def test_well_formed_pg_id_answers_not_routed(self, tool):
         out = guard_non_routed_http_call(
             tool, {"page_id": WELL_PG}, generation="genX")
         assert out["ok"] is False
-        assert out["error_name"] == "PAGE_NOT_FOUND"
+        assert out["error_name"] == "T4_NOT_ROUTED"
         assert out["tool"] == tool
-        assert out["page_id"] == WELL_PG
         assert out["generation"] == "genX"
-        assert out["ca_next_action"] == "reopen_page_or_reattach"
+        assert "query_selector" in out["ca_next_action"]
 
     @pytest.mark.parametrize("tool", sorted(PAGE_BOUND_GUARDED))
-    def test_well_formed_cdp_id_answers_page_not_found(self, tool):
+    def test_well_formed_cdp_id_answers_not_routed(self, tool):
         out = guard_non_routed_http_call(tool, {"page_id": WELL_CDP})
-        assert out["error_name"] == "PAGE_NOT_FOUND"
+        assert out["error_name"] == "T4_NOT_ROUTED"
 
     @pytest.mark.parametrize("tool", sorted(PAGE_BOUND_GUARDED))
     def test_malformed_id_answers_page_id_invalid(self, tool):
@@ -314,9 +308,9 @@ class TestGuardShapes:
             assert out["error_name"] == "PAGE_ID_INVALID", (tool, bad)
 
     @pytest.mark.parametrize("tool", sorted(PAGE_BOUND_GUARDED))
-    def test_no_page_id_is_not_guarded(self, tool):
-        assert guard_non_routed_http_call(tool, {}) is None
-        assert guard_non_routed_http_call(tool, {"page_id": None}) is None
+    def test_missing_id_cannot_bypass_transport_guard(self, tool):
+        for body in ({}, {"page_id": None}):
+            assert guard_non_routed_http_call(tool, body)["error_name"] == "T4_NOT_ROUTED"
 
     def test_launch_electron_answers_t4_not_routed_by_name(self):
         for body in ({}, {"launcher_path": "x"}, {"page_id": WELL_PG}):
@@ -342,9 +336,8 @@ class TestGuardCarveOutAndScope:
         {"page_id": "junk"}, {"page_id": ""},
         {"project_path": "D:/x", "page_id": WELL_PG},
     ])
-    def test_cleanup_test_session_is_never_guarded(self, body):
-        """By name: its pre-bridge response shape is preserved because the
-        handler still runs -- the guard returns None for every shape."""
+    def test_cleanup_is_routed_through_ownership_checks(self, body):
+        assert "cleanup_test_session" in BRIDGED_TOOLS
         assert guard_non_routed_http_call("cleanup_test_session", body) is None
 
     def test_routed_and_unrelated_tools_are_not_guarded(self):

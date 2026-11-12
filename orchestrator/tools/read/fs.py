@@ -198,21 +198,27 @@ def _missing_file_response(_fp: Path, file_path: str, project_path: str | None) 
     """CAN-053 (codo P1): FILE_NOT_FOUND with negative-path cache, fuzzy
     suggestions from INDEX, and a 3-miss circuit breaker — stop blind probing."""
     import time as _t
+    from orchestrator.session.store import _CALLER_AGENT_ID
+
     root_key = str(project_path or "").replace("\\", "/").rstrip("/").lower()
     rel_key = str(file_path).replace("\\", "/").lower()
+    scope = (_CALLER_AGENT_ID.get() or "", root_key)
+    cache_key = (*scope, rel_key)
     now = _t.time()
-    if len(_NEG_PATH_CACHE) > 4096:
-        _NEG_PATH_CACHE.clear()
-    ent = _NEG_PATH_CACHE.get((root_key, rel_key))
+    ent = _NEG_PATH_CACHE.get(cache_key)
     repeat = bool(ent and (now - ent["ts"]) < _NEG_TTL_S)
-    if ent:
+    if repeat:
         ent["hits"] += 1
         ent["ts"] = now
     else:
+        if len(_NEG_PATH_CACHE) >= 4096 and cache_key not in _NEG_PATH_CACHE:
+            _NEG_PATH_CACHE.pop(next(iter(_NEG_PATH_CACHE)))
         ent = {"ts": now, "hits": 1}
-        _NEG_PATH_CACHE[(root_key, rel_key)] = ent
-    streak = [t for t in _MISS_STREAK.get(root_key, []) if now - t < 30.0] + [now]
-    _MISS_STREAK[root_key] = streak[-10:]
+        _NEG_PATH_CACHE[cache_key] = ent
+    if len(_MISS_STREAK) >= 4096 and scope not in _MISS_STREAK:
+        _MISS_STREAK.pop(next(iter(_MISS_STREAK)))
+    streak = [t for t in _MISS_STREAK.get(scope, []) if now - t < 30.0] + [now]
+    _MISS_STREAK[scope] = streak[-10:]
     import os as _os
     # CASE-1909-B5: a markdown-escaped path (`a\_b.md`, pasted out of rendered
     # prose) survives the replace() above as SEPARATORS, so basename() degenerates

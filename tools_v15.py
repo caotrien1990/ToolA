@@ -792,7 +792,7 @@ async def replace_between_anchors(
     line numbers and delegates to write_fix. Eliminates line-number brittleness
     in long functions / files with shifting line counts.
 
-    Token-protected (write op). Requires INDEX.json (same as write_fix).
+    Requires an indexed project, as for write_fix.
     """
     return await _r43_replace_between_anchors(
         file_path=file_path,
@@ -1497,10 +1497,10 @@ _DECISION_RULES = [
      "why": "CAN-053 graph-first: CBM tools answer architecture/dependency/entrypoint/impact questions in one bounded call; raw find/search cannot."},
     # R20: click+watch combo — recommend atomic macro instead of separate calls
     {"re": r"\b(click).*\b(watch|poll|wait|monitor|state|change|toggle|transition)\b",
-     "tier": "T4", "tool": "click_and_checkpoint_loop",
-     "also": ("click_selector", "checkpoint_loop_dom_state"),
+     "tier": "T4", "tool": "click",
+     "also": ("dom_state_diff", "read_value"),
      "skill": "18_runtime_dom_T4",
-     "why": "R16.10 atomic macro: baseline pre-click + click + poll until state change. Saves 3+ round-trips vs manual sequence."},
+     "why": "Capture the initial state, click the target, then verify its resulting state."},
     # R20: log/error capture — recommend artifact mode for S/L (placed BEFORE generic DOM rules)
     {"re": r"\b(extract|read|get|capture|save|fetch|dump).*\b(log|error|system.?error|trace|stack)\b",
      "tier": "T4 + T2", "tool": "save_log_snapshot",
@@ -1515,10 +1515,10 @@ _DECISION_RULES = [
     # R16.8: Electron/CDP-specific rule comes FIRST (more specific than generic UI rule)
     # R43.3 H8: removed `rawcut` (project-specific) — generic terms (electron/cdp/9223/launch app) are sufficient
     {"re": r"\b(electron|cdp|remote.?debugging|9223|launch.*app|attach.*electron)\b",
-     "tier": "T4", "tool": "launch_electron_with_cdp",
+     "tier": "T4", "tool": "list_cdp_targets",
      "also": ("cdp_attach_target", "click", "fill_value", "read_value"),
      "skill": "22_electron_automation + 18_runtime_dom_T4",
-     "why": "Electron renderer rejects page-level WS; use browser-level WS fallback via launch_electron_with_cdp."},
+     "why": "List targets on the running debugging port, then attach by ID and expected title or URL."},
     {"re": r"\b(textarea|read.*log|extract.*log|view.?panel|button.*state|fill.*input|dom.*diff)\b",
      "tier": "T4", "tool": "read_all_logs",
      "also": ("read_value", "extract_log_section", "fill_value", "dom_state_diff"),
@@ -1526,7 +1526,7 @@ _DECISION_RULES = [
      "why": "R16+ DOM helpers replace evaluate_js boilerplate — saves 60-80% context."},
     {"re": r"\b(ui|dom|browser|render|click|button|css)\b",
      "tier": "T4", "tool": "open_browser_page",
-     "also": ("launch_electron_with_cdp", "click", "read_page", "query_selector"),
+     "also": ("list_cdp_targets", "click", "read_page", "query_selector"),
      "skill": "18_runtime_dom_T4",
      "why": "UI/runtime visible only at runtime. Prefer Electron-specific tools when target is Electron app."},
     {"re": r"\b(port|server|stale|cache|admin|restart|pid|host)\b",
@@ -1552,16 +1552,16 @@ _DECISION_RULES = [
     # R43.3 M7: missing coverage — folder dialog, workflow dispenser, invoke_app_function
     {"re": r"\b(folder.?dialog|file.?dialog|pick.?folder|browse.?folder|select.?folder|native.?dialog)\b",
      "tier": "T4", "tool": "fill_folder_dialog",
-     "also": ("folder_dialog_snapshot", "click_and_handle_folder_dialog", "cancel_native_dialog"),
+     "also": ("folder_dialog_snapshot", "cancel_native_dialog"),
      "skill": "18_runtime_dom_T4",
-     "why": "Native picker dialogs need owner_pid + dialog class filter. Snapshot first if ambiguous."},
+     "why": "Inspect the dialog, then pass parent_hwnd or both owner_pid and title_pattern."},
     {"re": r"\b(workflow|step.?\d|next.?step|advance.?step|workflow.?dispenser|step.?manifest)\b",
      "tier": "T1+T3", "tool": "workflow_list",
      "also": ("workflow_start", "workflow_get_current", "workflow_submit_step", "workflow_goto_step"),
      "skill": "26_workflow_ingestion",
      "why": "MD-driven workflow runner (R35+) is the canonical multi-step orchestrator."},
     {"re": r"\b(invoke.?app|call.?renderer|call.?electron.?api|app.?function|window\.app\.|executejs.?app)\b",
-     "tier": "T4", "tool": "invoke_app_function",
+     "tier": "T4", "tool": "evaluate_js",
      "skill": "22_electron_automation",
      "why": "Direct renderer-side function call when click doesn't open expected dialog (custom Electron UI)."},
     {"re": r"\b(refactor|across.*files|migrate|atomic|rollback|multi.?file|batch)\b",
@@ -2686,9 +2686,8 @@ async def inspect_project_runtime(project_path: str) -> str:
             install_dir = str(candidate_cwds[0])
             result["install_command"] = f'cd /d "{install_dir}" && npm install electron'
             result["install_note"] = (
-                "Electron not in node_modules. launch_electron_with_cdp will auto-inject "
-                "`--yes` to npx, but first-run will download ~150MB which may exceed background "
-                "verify_after_ms. Pre-install once to avoid CDP_UNREACHABLE."
+                "Electron is absent from node_modules. Install the application dependencies "
+                "before starting its launcher and listing its CDP targets."
             )
     # recent logs (top 5 by mtime)
     logs = []
@@ -2705,7 +2704,7 @@ async def inspect_project_runtime(project_path: str) -> str:
         if result["has_remote_debugging_in_launcher"]:
             result["ca_next_action"] = "launcher already has --remote-debugging-port; run launcher then cdp_attach_target"
         else:
-            result["ca_next_action"] = "call launch_electron_with_cdp(launcher_path) to inject port flag automatically"
+            result["ca_next_action"] = "enable_remote_debugging_in_launcher_then_list_cdp_targets"
     else:
         result["ca_next_action"] = "use run_project_command (and check_window_visibility for Win32 path)"
     return _ok(result)
@@ -3124,8 +3123,8 @@ async def inspect_project_usage(project_path: str) -> str:
         "scanned_js_count": len(scan_js),
         "recommended_workflow_hint": (
             "After fill_value/click sequence: if a button opens a native dialog, "
-            "prefer invoke_app_function(<handler_name>, [args]) over native picker "
-            "control when the handler exists in runtime_functions list (R28: includes file+line evidence). "
+            "inspect the handler in runtime_functions, then use evaluate_js with a live page_id "
+            "to invoke the verified application function when appropriate. "
             "For Electron IPC routes, use ipc_handlers[].invoke_via expression. "
             "For button → handler mapping, see event_bindings[]."
         ),
@@ -3238,7 +3237,7 @@ async def launch_electron_with_cdp(launcher_path: str = "", project_path: str = 
       4. After verify, fetch /json/version → call cdp_attach_target(websocket_url).
       5. Return {attach_id, page_id, cdp_port, target_title}.
 
-    Token required (mutating).
+    Stateful MCP launch. HTTP attaches to an application with remote debugging enabled.
     """
     import json as _json
     import re as _re
@@ -4207,34 +4206,21 @@ async def describe_page(page_id: str,
 async def cleanup_test_session(project_path: str = "",
                                  page_id: str = "",
                                  processes: list | None = None,
-                                 close_session_after: bool = True,
+                                 close_session_after: bool = False,
                                  idle_guard_signals: list | None = None,
                                  idle_guard_stable_seconds: int = 0,
                                  idle_guard_force: bool = False) -> str:
-    """V15 R16.6 — 1-call test wrap-up:
-      1. Close CDP page (if page_id given) — close browser session in _BROWSER_PAGES
-      2. taskkill listed processes (default: electron.exe + chrome.exe)
-      3. close_session for project_path (if close_session_after)
+    """Release a named page. Attached applications are detached only.
 
-    Token required. Returns per-step success.
-
-    R43 P0 #6A — idle guard:
-      Pass idle_guard_signals=[{kind,...}, ...] to refuse cleanup while target is
-      still busy (copy in progress, process CPU active). Returns CLEANUP_BLOCKED_TARGET_BUSY
-      without killing anything. Bypass with idle_guard_force=True (CA opts-in for
-      forced cleanup despite busy signals — must explain in reply).
-      idle_guard_stable_seconds: if >0, override per-signal stable_seconds.
+    Process names and project-wide session closure do not establish ownership.
     """
-    import subprocess as _sp
-    if processes is None:
-        processes = ["electron.exe", "chrome.exe"]
-    result: dict = {
-        "ok": True,
-        "page_closed": False,
-        "processes_killed": [],
-        "processes_failed": [],
-        "session_closed": False,
-    }
+    if processes or close_session_after:
+        return _err("Cleanup accepts an owned page_id only. Close a particular session by ID separately.",
+                    error_name="CLEANUP_SCOPE_UNSUPPORTED")
+    if not page_id:
+        return _err("A page_id is required for cleanup", error_name="MISSING_REQUIRED_FIELD")
+    result = {"page_closed": False, "processes_killed": [], "processes_failed": [],
+              "session_closed": False}
     # R43 P0 #6A: idle guard — refuse cleanup if target still busy
     if idle_guard_signals and not idle_guard_force:
         try:
@@ -4268,61 +4254,13 @@ async def cleanup_test_session(project_path: str = "",
                     },
                 )
         except Exception as _guard_exc:
-            result["idle_guard_error"] = str(_guard_exc)
-            result["idle_guard_skipped"] = True
+            return _err(str(_guard_exc), error_name="CLEANUP_GUARD_FAILED")
     if idle_guard_force and idle_guard_signals:
         result["idle_guard_forced"] = True
-    # 1. close page if provided
-    if page_id:
-        state = _BROWSER_PAGES.get(page_id)
-        if state:
-            try:
-                pw = state.get("pw")
-                browser = state.get("browser")
-                try:
-                    if browser:
-                        await browser.close()
-                except Exception:
-                    pass
-                try:
-                    if pw:
-                        await pw.stop()
-                except Exception:
-                    pass
-                _BROWSER_PAGES.pop(page_id, None)
-                result["page_closed"] = True
-            except Exception as exc:
-                result["page_close_error"] = str(exc)
-    # 2. taskkill processes
-    for proc_name in processes:
-        try:
-            r = _sp.run(["taskkill", "/F", "/IM", proc_name, "/T"],
-                        capture_output=True, text=True, timeout=10, creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0))
-            if r.returncode == 0 or "not found" in (r.stderr or "").lower() or "not running" in (r.stdout or "").lower():
-                result["processes_killed"].append(proc_name)
-            else:
-                result["processes_failed"].append({"name": proc_name, "rc": r.returncode, "stderr": (r.stderr or "")[:200]})
-        except Exception as exc:
-            result["processes_failed"].append({"name": proc_name, "error": str(exc)})
-    # 3. close session
-    if close_session_after and project_path:
-        try:
-            import json as _json
-
-            from code_tools import close_session as _close
-            raw = await _close(project_path=project_path)
-            try:
-                cs = _json.loads(raw)
-                result["session_closed"] = bool(cs.get("ok"))
-                result["session_close_response"] = {
-                    "session_id": cs.get("session_id"),
-                    "duration_minutes": cs.get("duration_minutes"),
-                    "error_name": cs.get("error_name"),
-                }
-            except Exception:
-                result["session_close_response_raw"] = raw[:300]
-        except Exception as exc:
-            result["session_close_error"] = str(exc)
+    closed = json.loads(await close_browser_page(page_id))
+    if not closed.get("ok"):
+        return json.dumps(closed)
+    result.update(page_id=page_id, page_closed=closed["closed"], detached=closed["detached"])
     return _ok(result)
 
 
@@ -4652,7 +4590,7 @@ async def ensure_single_electron_instance(project_path: str = "",
         result["port_free_after"] = not result["port_was_busy"]
     result["project_path"] = project_path
     result["cdp_port"] = cdp_port
-    result["next_step_hint"] = "Call launch_electron_with_cdp(project_path, cdp_port) now."
+    result["next_step_hint"] = "Start the application with remote debugging enabled, then list_cdp_targets."
     return _ok(result)
 
 
@@ -5202,11 +5140,11 @@ async def declare_mission(mission: str = "",
         ("read_skill", "read_skill(name=<top relevant skill>)"),
         ("ensure_single_electron_instance", "ensure_single_electron_instance(project_path, cdp_port=9223)"),
         ("inspect_project_runtime", "inspect_project_runtime(project_path)"),
-        ("launch_electron_with_cdp", "launch_electron_with_cdp(project_path, cdp_port=9223)"),
+        ("list_cdp_targets", "list_cdp_targets(cdp_port=9223)"),
         ("query_dom_candidates", "query_dom_candidates(page_id, filter='all')"),
         ("describe_page", "describe_page(page_id)"),
         ("fill_value", "fill_value(page_id, selector, value, encoding='base64')"),
-        ("click_and_checkpoint_loop", "click_and_checkpoint_loop(page_id, click_selector_str, watch_selector)"),
+        ("click", "click(page_id, selector), then verify with dom_state_diff"),
         ("save_log_snapshot", "save_log_snapshot(page_id, section_title, project_path, round_id)"),
     ]
     for tname, hint in sequence_template:
@@ -6384,7 +6322,7 @@ async def cdp_attach_target(target_id: str = "", cdp_port: int = 9223,
                         diagnostic_hint=(
                             "R28: distinguish runtime_absent vs ui_inaccessible. "
                             "Call desktop_window_list — if NO matching app window → runtime_absent "
-                            "(call launch_electron_with_cdp). If window exists → ui_inaccessible "
+                            "(start the app with its remote debugging port enabled). If window exists → ui_inaccessible "
                             "(wrong port or CDP flag missing)."
                         ),
                         ca_next_action="check_desktop_window_list_to_distinguish_runtime_absent_vs_inaccessible")
@@ -6538,6 +6476,7 @@ async def cdp_attach_target(target_id: str = "", cdp_port: int = 9223,
             # V15 R44 — pin originating project_path for session-guard resolution.
             "project_path": project_path or "",
         }
+        _watch_page_lifecycle(_BROWSER_PAGES[attach_id])
         title = ""
         try:
             title = await page.title()
@@ -6639,6 +6578,7 @@ async def open_browser_page(url: str, viewport_w: int = 1280, viewport_h: int = 
             # V15 R44 — pin originating project_path for session-guard resolution.
             "project_path": project_path or "",
         }
+        _watch_page_lifecycle(_BROWSER_PAGES[page_id])
         return _ok({"page_id": page_id, "url": page.url, "title": title})
     except Exception as exc:
         try:
@@ -6659,7 +6599,17 @@ async def open_browser_page(url: str, viewport_w: int = 1280, viewport_h: int = 
         return _err(f"open_browser_page failed: {exc}", error_name="BROWSER_LAUNCH_FAILED")
 
 
-async def _get_page(page_id: str):
+def _watch_page_lifecycle(state):
+    # Playwright emits these on the owning loop. Status reads only the resulting flag.
+    def unavailable(*_):
+        state["unavailable"] = True
+
+    state["page"].on("close", unavailable)
+    state["browser"].on("disconnected", unavailable)
+    state["unavailable"] = state["page"].is_closed() or not state["browser"].is_connected()
+
+
+async def _get_page(page_id: str, *, for_close=False):
     if not isinstance(page_id, str) or not _PAGE_ID_RE.fullmatch(page_id):
         return None, _err(
             f"invalid page_id: {page_id!r}; expected {_PAGE_ID_GRAMMAR}",
@@ -6667,7 +6617,7 @@ async def _get_page(page_id: str):
             ca_next_action="use_page_id_from_open_browser_page_or_cdp_attach_target",
         )
     state = _BROWSER_PAGES.get(page_id)
-    if not state:
+    if not state or (state.get("unavailable") and not for_close):
         return None, _err(f"page_id not found: {page_id}", error_name="PAGE_NOT_FOUND")
     return state, None
 
@@ -6893,36 +6843,32 @@ async def close_browser_page(page_id: str) -> str:
     Owner enforcement is dispatcher-side at the bridge seam (plan
     3.3): a bridged call by a different owner answers PAGE_NOT_FOUND
     before this handler runs."""
-    state, err = await _get_page(page_id)
+    state, err = await _get_page(page_id, for_close=True)
     if err:
         return err
-    _BROWSER_PAGES.pop(page_id, None)
     kind = state.get("kind") or (
         "attached" if state.get("attach_mode") == "cdp" else "launched")
-    if kind == "attached":
-        _pw = state.get("pw")
-        if _pw is not None:
-            try:
-                await _pw.stop()
-            except Exception:
-                pass
-        return _ok({"page_id": page_id, "kind": "attached",
-                    "detached": True, "closed": False})
-    for _key in ("context", "browser"):
-        _obj = state.get(_key)
-        if _obj is not None:
-            try:
-                await _obj.close()
-            except Exception:
-                pass
-    _pw = state.get("pw")
-    if _pw is not None:
+    steps = ("pw",) if kind == "attached" else ("context", "browser", "pw")
+    was_unavailable = bool(state.get("unavailable"))
+    owns_handle = state.get("pw") if kind == "attached" else state.get("browser") or state.get("context")
+    if owns_handle is None:
+        return _err("Page has no closeable resources", error_name="PAGE_STATE_INVALID",
+                    page_id=page_id)
+    released = state.setdefault("released_steps", set())
+    for key in steps:
+        obj = state.get(key)
+        if obj is None or key in released:
+            continue
         try:
-            await _pw.stop()
-        except Exception:
-            pass
-    return _ok({"page_id": page_id, "kind": "launched",
-                "detached": False, "closed": True})
+            await (obj.stop() if key == "pw" else obj.close())
+        except Exception as exc:
+            return _err(str(exc), error_name="PAGE_CLOSE_FAILED", page_id=page_id,
+                        failed_step=key, kind=kind)
+        released.add(key)  # a retry skips resources already released
+    _BROWSER_PAGES.pop(page_id, None)
+    return _ok({"page_id": page_id, "kind": kind,
+                "detached": kind == "attached", "closed": kind != "attached" and not was_unavailable,
+                "already_unavailable": was_unavailable})
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -7553,7 +7499,7 @@ async def list_cdp_targets(cdp_port: int = _DEFAULT_CDP_PORT) -> str:
                     diagnostic_hint=(
                         "R28: distinguish runtime_absent vs ui_inaccessible. "
                         "Call desktop_window_list — if NO matching app window → runtime_absent "
-                        "(call launch_electron_with_cdp). If window exists → ui_inaccessible "
+                        "(start the app with its remote debugging port enabled). If window exists → ui_inaccessible "
                         "(wrong port or CDP flag missing)."
                     ),
                     ca_next_action="check_desktop_window_list_to_distinguish_runtime_absent_vs_inaccessible")
@@ -8233,16 +8179,13 @@ async def desktop_app_focus(hwnd: int = 0, title_pattern: str = "",
       2. Otherwise resolve hwnd (by title_pattern via desktop_window_list) →
          AttachThreadInput + SetForegroundWindow
     """
-    cdp_attempted = True
+    cdp_attempted = not hwnd
     root_causes = []
-    # Try CDP first
-    target, err = await _cdp_pick_target(
-        cdp_port,
-        prefer_title_substr=title_pattern or "",
-        match_mode=match_mode,
-        expected_url=expected_url,
-        wait_for_navigation=wait_for_navigation,
-    )
+    target, err = None, ""
+    if cdp_attempted:
+        target, err = await _cdp_pick_target(
+            cdp_port, prefer_title_substr=title_pattern or "", match_mode=match_mode,
+            expected_url=expected_url, wait_for_navigation=wait_for_navigation)
     if target:
         result, derr = await _cdp_dispatch(cdp_port, target["id"], "Page.bringToFront", {})
         if result and not result.get("error"):
@@ -8257,11 +8200,11 @@ async def desktop_app_focus(hwnd: int = 0, title_pattern: str = "",
                 "match_mode": match_mode,
                 "bring_to_front_sent": True,
                 "dispatch_results": [{"method": "Page.bringToFront", "result": result}],
-                "focused": True,
+                "focused": None,
             })
         root_causes.append("CDP_BRING_TO_FRONT_FAILED")
         err = derr or json.dumps((result or {}).get("error", result), ensure_ascii=False)
-    else:
+    elif cdp_attempted:
         root_causes.append("CDP_UNREACHABLE" if err and "unreachable" in err.lower() else "CDP_TARGET_NOT_FOUND")
         # CDP available but bringToFront failed → fall through to Win32
     if not fallback_to_win32:
@@ -8289,6 +8232,7 @@ async def desktop_app_focus(hwnd: int = 0, title_pattern: str = "",
     target_hwnd = hwnd
     resolved_from = "hwnd" if hwnd else ""
     window_match_count = 0
+    matched_title = ""
     if not target_hwnd and title_pattern:
         raw = await desktop_window_list(title_filter=title_pattern)
         wins = [
@@ -8299,6 +8243,7 @@ async def desktop_app_focus(hwnd: int = 0, title_pattern: str = "",
         if wins:
             target_hwnd = wins[0]["hwnd"]
             resolved_from = "title_pattern"
+            matched_title = wins[0].get("title", "")
         else:
             return _err(
                 f"No desktop window matched title_pattern: {title_pattern}",
@@ -8314,20 +8259,28 @@ async def desktop_app_focus(hwnd: int = 0, title_pattern: str = "",
         return _err("hwnd or title_pattern required", error_name="MISSING_REQUIRED_FIELD")
 
     def _focus() -> dict:
+        nonlocal matched_title, window_match_count
         try:
-            # AttachThreadInput to bypass SetForegroundWindow restrictions
+            matched_title = win32gui.GetWindowText(target_hwnd) or matched_title
+            if hwnd:
+                window_match_count = int(bool(win32gui.IsWindow(target_hwnd)))
+            # Create the worker's message queue before AttachThreadInput.
+            win32gui.PeekMessage(None, 0, 0, 0)
             current_tid = win32api.GetCurrentThreadId()
             target_tid, _ = win32process.GetWindowThreadProcessId(target_hwnd)
-            attached = False
-            attach_attempted = bool(target_tid and target_tid != current_tid)
-            if target_tid and target_tid != current_tid:
-                try:
-                    win32process.AttachThreadInput(current_tid, target_tid, True)
-                    attached = True
-                except Exception:
-                    pass
+            foreground = win32gui.GetForegroundWindow()
+            fg_tid = win32process.GetWindowThreadProcessId(foreground)[0] if foreground else 0
+            threads = {target_tid, fg_tid} - {0, current_tid}
+            attached = []
+            attach_errors = []
             try:
-                # V15 R15 P2.5/7: pre-check + always restore if minimized OR off-screen.
+                for tid in threads:
+                    try:
+                        win32process.AttachThreadInput(current_tid, tid, True)
+                        attached.append(tid)
+                    except Exception as exc:
+                        attach_errors.append(str(exc))
+                # Restore minimized or off-screen windows before foregrounding them.
                 # Off-screen detection: Windows uses (-32000, -32000) for minimized apps
                 # or extremely negative coords for hidden windows.
                 rect_before_tuple = win32gui.GetWindowRect(target_hwnd)
@@ -8370,22 +8323,25 @@ async def desktop_app_focus(hwnd: int = 0, title_pattern: str = "",
                 else:
                     visibility_state = "visible"
                     uipi_warning = None
+                foreground = win32gui.GetForegroundWindow()
                 resp = {
-                    "ok": True,
+                    "ok": foreground == target_hwnd,
+                    "fg_hwnd": foreground,
+                    "error_name": "FOCUS_NOT_ACHIEVED" if foreground != target_hwnd else "",
                     "method": "win32_attach",
                     "hwnd": target_hwnd,
                     "resolved_from": resolved_from or "unknown",
                     "title_pattern": title_pattern,
-                    "matched_title": "",
+                    "matched_title": matched_title,
                     "match_mode": match_mode,
                     "window_match_count": window_match_count,
                     "attach_thread_input": {
-                        "attempted": attach_attempted,
-                        "attached": attached,
+                        "attempted": bool(threads), "errors": attach_errors,
+                        "attached": bool(attached),
                         "current_tid": current_tid,
                         "target_tid": target_tid,
                     },
-                    "focused": True,
+                    "focused": foreground == target_hwnd,
                     "rect_before": rect_before,
                     "rect_after": rect_after,
                     "visibility_state": visibility_state,
@@ -8396,8 +8352,8 @@ async def desktop_app_focus(hwnd: int = 0, title_pattern: str = "",
                     resp["uipi_warning"] = uipi_warning
                 return resp
             finally:
-                if attached:
-                    _safe_detach(current_tid, target_tid)
+                for tid in reversed(attached):
+                    _safe_detach(current_tid, tid)
         except Exception as exc:
             return {"ok": False, "error": str(exc), "error_name": "WIN32_API_ERROR"}
 
@@ -8413,7 +8369,7 @@ async def desktop_app_focus(hwnd: int = 0, title_pattern: str = "",
                 hwnd=target_hwnd,
                 resolved_from=resolved_from or "unknown",
                 title_pattern=title_pattern,
-                matched_title="",
+                matched_title=matched_title, focused=False, fg_hwnd=data.get("fg_hwnd"),
                 match_mode=match_mode,
                 window_match_count=window_match_count,
                 # R83: focus is BEST-EFFORT — Win32 SetForegroundWindow is blocked by UIPI for
@@ -8439,20 +8395,18 @@ async def desktop_send_text(text: str,
                             click_focus: bool = False,
                             click_x: int = 0,
                             click_y: int = 0,
-                            project_path: str = "") -> str:
-    """V15 R92 T4d: type/paste text into a desktop window (council file-bridge poke).
+                            project_path: str = "",
+                            paste_shortcut: str = "auto",
+                            clear_first: bool = False) -> str:
+    """Dispatch clipboard paste into the target foreground window.
 
-    Focuses the target window (Win32 AttachThreadInput + SetForegroundWindow, restores if
-    minimized), then delivers `text` via clipboard paste (Ctrl+V) — reliable for
-    Unicode/Vietnamese into Electron (Chromium) inputs that ignore WM_SETTEXT. Optionally
-    presses Enter (submit=True). Resolve target by hwnd OR title_pattern (first match).
-
-    Intended for SHORT single-line pokes (e.g. 'doc inbox_codo.md MSG moi nhat'); keep heavy
-    content in the .council bridge files, not in keystrokes. Focus is best-effort (UIPI);
-    response reports focused_foreground so caller can verify the paste landed.
+    The returned steps describe keyboard dispatch. Verify the resulting input in the app.
     """
     if not text:
         return _err("text is required", error_name="MISSING_REQUIRED_FIELD")
+    if method != "clipboard" or paste_shortcut not in {"auto", "shift_insert", "ctrl_v"}:
+        return _err("Unsupported paste method or shortcut", error_name="BAD_METHOD")
+    from orchestrator.runtime.desktop_input import send_chord
     if not _pywin32_available():
         return _err("desktop_send_text needs pywin32",
                     error_name="DESKTOP_INTERACTION_FAILED", remediation="pip install pywin32")
@@ -8492,11 +8446,11 @@ async def desktop_send_text(text: str,
 
     def _send() -> dict:
         try:
+            win32gui.PeekMessage(None, 0, 0, 0)
             current_tid = win32api.GetCurrentThreadId()
             target_tid, _ = win32process.GetWindowThreadProcessId(target_hwnd)
-            # Attach to BOTH target thread and the CURRENT foreground thread to defeat the
-            # Windows foreground-lock; an ALT key tap additionally unlocks SetForegroundWindow
-            # for our (background) calling thread.
+            matched_title = win32gui.GetWindowText(target_hwnd)
+            attach_errors = []
             fg0 = win32gui.GetForegroundWindow()
             fg0_tid = 0
             if fg0 and fg0 != target_hwnd:
@@ -8508,8 +8462,8 @@ async def desktop_send_text(text: str,
                     try:
                         win32process.AttachThreadInput(current_tid, _tid, True)
                         attached.append(_tid)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        attach_errors.append(str(exc))
             try:
                 if win32gui.IsIconic(target_hwnd):
                     win32gui.ShowWindow(target_hwnd, win32con.SW_RESTORE)
@@ -8552,30 +8506,33 @@ async def desktop_send_text(text: str,
                         win32api.mouse_event(0x0004, 0, 0, 0, 0)  # LEFTUP
                         _click_pt = [_cx, _cy]
                         _time.sleep(0.12)
-                    except Exception:
-                        _click_pt = "click_failed"
+                    except Exception as exc:
+                        return {"ok": False, "error_name": "FOCUS_CLICK_FAILED", "error": str(exc)}
                 steps = []
-                if method == "clipboard":
-                    _set_clipboard(text)
-                    _time.sleep(0.05)
-                    win32api.keybd_event(win32con.VK_CONTROL, 0, 0, 0)
-                    win32api.keybd_event(0x56, 0, 0, 0)            # 'V'
-                    win32api.keybd_event(0x56, 0, win32con.KEYEVENTF_KEYUP, 0)
-                    win32api.keybd_event(win32con.VK_CONTROL, 0, win32con.KEYEVENTF_KEYUP, 0)
+                if win32gui.GetForegroundWindow() != target_hwnd:
+                    return {"ok": False, "error_name": "FOCUS_NOT_ACHIEVED",
+                            "error": "Foreground changed before paste"}
+                _set_clipboard(text)
+                if clear_first:
+                    send_chord(target_hwnd, win32con.VK_CONTROL, ord("A"))
+                    steps.append("ctrl_a")
+                if paste_shortcut == "ctrl_v":
+                    send_chord(target_hwnd, win32con.VK_CONTROL, ord("V"))
                     steps.append("ctrl_v")
                 else:
-                    return {"ok": False, "error": f"unknown method: {method}",
-                            "error_name": "BAD_METHOD"}
+                    send_chord(target_hwnd, win32con.VK_SHIFT, win32con.VK_INSERT)
+                    steps.append("shift_insert")
                 if submit:
                     _time.sleep(0.10)
-                    win32api.keybd_event(win32con.VK_RETURN, 0, 0, 0)
-                    win32api.keybd_event(win32con.VK_RETURN, 0, win32con.KEYEVENTF_KEYUP, 0)
+                    send_chord(target_hwnd, win32con.VK_RETURN)
                     steps.append("enter")
                 return {
                     "ok": True,
                     "method": method,
                     "hwnd": target_hwnd,
                     "resolved_from": resolved_from or "unknown",
+                    "matched_title": matched_title,
+                    "delivery_verified": False, "attach_errors": attach_errors,
                     "focused_foreground": focused,
                     "fg_hwnd": fg,
                     "submit": submit,

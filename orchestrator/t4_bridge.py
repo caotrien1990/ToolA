@@ -26,11 +26,8 @@ import time
 from dataclasses import dataclass, field
 
 # --------------------------------------------------------------------------
-# Routing set (plan section 2 + section 4). Two sets are kept distinct in
-# the plan; this frozenset is the ROUTING set: the section 4 v1 surface
-# (24 tools, incl. the new close_browser_page; t4_host_status is
-# advertised but NOT bridged) plus the eight T1/T2 page-state utilities
-# named in section 2 that consume page state today.
+# HTTP tools executed on the dedicated T4 loop, including page cleanup
+# and DOM candidate enumeration. t4_host_status reads the bridge snapshot.
 # --------------------------------------------------------------------------
 BRIDGED_TOOLS = frozenset({
     # Class P -- page-stateful (section 4)
@@ -39,7 +36,7 @@ BRIDGED_TOOLS = frozenset({
     "wait_for_selector", "read_console_errors", "read_network_errors",
     "screenshot_page", "compare_dom_snapshot", "describe_page",
     # Class P-new
-    "close_browser_page",
+    "close_browser_page", "cleanup_test_session", "query_dom_candidates",
     # Class D -- desktop (section 4)
     "desktop_window_list", "desktop_screenshot", "check_window_visibility",
     "desktop_click", "desktop_app_focus", "desktop_send_text",
@@ -52,18 +49,14 @@ BRIDGED_TOOLS = frozenset({
     "verify_active_electron_source",
 })
 
-# Discovery set (plan section 4): the tools v1 newly advertises over HTTP
-# -- the 24-tool bridged surface above plus t4_host_status, which is
-# advertised but NOT bridged (a plain daemon read). The eight section-2
-# utilities are routed but gain no new discovery: they were already
-# callable and visible. _tool_hidden_from_http_discovery in
-# orchestrator_server.py stops hiding exactly this set.
+# HTTP discovery includes the supported T4 handlers and host status.
+# Existing page-state utilities retain their established discovery behavior.
 DISCOVERY_TOOLS = frozenset({
     "open_browser_page", "cdp_attach_target", "list_cdp_targets",
     "read_page", "query_selector", "click", "fill", "evaluate_js",
     "wait_for_selector", "read_console_errors", "read_network_errors",
     "screenshot_page", "compare_dom_snapshot", "describe_page",
-    "close_browser_page",
+    "close_browser_page", "cleanup_test_session", "query_dom_candidates",
     "desktop_window_list", "desktop_screenshot", "check_window_visibility",
     "desktop_click", "desktop_app_focus", "desktop_send_text",
     "desktop_window_state",
@@ -71,11 +64,8 @@ DISCOVERY_TOOLS = frozenset({
     "t4_host_status",
 })
 
-# Named exclusions (plan section 2): every direct page-state consumer that
-# is NOT routed -- 13 names. Over HTTP the seam guards these by name (see
-# guard_non_routed_http_call), except the one carve-out below.
+# Page-state consumers supported only by the stateful MCP host.
 NON_ROUTED_CONSUMERS = frozenset({
-    "query_dom_candidates", "cleanup_test_session",
     "click_and_handle_folder_dialog",
     "invoke_app_function", "click_selector", "checkpoint_loop_dom_state",
     "click_and_checkpoint_loop", "run_script", "record_ui_flow",
@@ -83,20 +73,17 @@ NON_ROUTED_CONSUMERS = frozenset({
     "assert_console_no_error", "launch_electron_with_cdp",
 })
 
-# The section 2 carve-out, by name: cleanup_test_session is NOT guarded --
-# its kill steps run regardless of its page step, so guarding it would
-# change its pre-existing exposure (filed in plan section 4 as unchanged
-# in v1). Its behaviour over HTTP stays byte-identical to today.
-GUARD_EXEMPT_TOOLS = frozenset({"cleanup_test_session"})
+# Every excluded page-state consumer is guarded on HTTP.
+GUARD_EXEMPT_TOOLS = frozenset()
 
-# Tools the HTTP guard answers for (the exclusions minus the carve-out).
+# The HTTP guard covers every excluded consumer.
 GUARDED_TOOLS = NON_ROUTED_CONSUMERS - GUARD_EXEMPT_TOOLS
 
 # Section 5.1: state-changing / page-bound input calls take the driver
 # lock. Everything else in BRIDGED_TOOLS is a lock-exempt read that still
 # runs on the T4 loop.
 DRIVER_LOCK_TOOLS = frozenset({
-    "open_browser_page", "cdp_attach_target", "close_browser_page",
+    "open_browser_page", "cdp_attach_target", "close_browser_page", "cleanup_test_session",
     "click", "fill", "fill_value", "evaluate_js",
     "desktop_click", "desktop_send_text", "desktop_window_state",
     "desktop_app_focus", "fill_folder_dialog", "cancel_native_dialog",
@@ -116,7 +103,7 @@ SUSPECT_CLEARING_READS = frozenset({"read_value", "describe_page"})
 # page_id_a + page_id_b). Resolution scans these argument names in this
 # order; per-entry checks run in argument order, first failure wins.
 PAGE_ID_ARG_KEYS = (
-    "page_id", "page_id_a", "page_id_b",
+    "page_id", "attach_id", "page_id_a", "page_id_b",
     "other_page_id", "source_page_id", "target_page_id",
 )
 
@@ -198,48 +185,18 @@ def is_well_formed_page_id(value):
 
 
 def guard_non_routed_http_call(tool_name, body, generation=""):
-    """Plan section 2 HTTP guard for non-routed consumers (seam, api only).
-
-    Returns the guard's error payload when the call must be answered
-    without running its handler against bridge state, else None (the call
-    proceeds exactly as today). Shapes (plan section 6 row 16):
-      - launch_electron_with_cdp -> T4_NOT_ROUTED {tool} (it would mint
-        server-loop state into the shared dict; it carries no page_id, so
-        the guard is by name, unconditional over HTTP);
-      - a page-bound non-routed consumer with a well-formed page id ->
-        PAGE_NOT_FOUND (exactly today's empty-dict behaviour);
-      - the same with a malformed id -> PAGE_ID_INVALID (the grammar
-        split _get_page and the W7 gate keep today).
-    cleanup_test_session is carved OUT by name (GUARD_EXEMPT_TOOLS): its
-    pre-existing behaviour stays byte-identical, so it returns None here
-    for every body shape. MCP transport is never guarded -- the seam only
-    consults this function when transport == "api" (SD-1), and proxied MCP
-    page-bound calls are outcome-equivalent either way (section 2).
-    """
-    if tool_name in GUARD_EXEMPT_TOOLS:
-        return None
-    if tool_name == "launch_electron_with_cdp":
-        return _error_payload(
-            "T4_NOT_ROUTED", tool=tool_name, generation=generation,
-            ca_next_action="launch_electron_is_mcp_only_in_v1")
+    """Return an actionable transport error before touching another loop's page state."""
     if tool_name not in NON_ROUTED_CONSUMERS:
         return None
-    if isinstance(body, dict):
-        for key in PAGE_ID_ARG_KEYS:
-            if key not in body or body.get(key) is None:
-                continue
-            value = body.get(key)
-            if is_well_formed_page_id(value):
-                return _error_payload(
-                    "PAGE_NOT_FOUND", tool=tool_name, page_id=value,
-                    generation=generation,
-                    ca_next_action="reopen_page_or_reattach")
-            return _error_payload(
-                "PAGE_ID_INVALID", tool=tool_name,
-                page_id=value if isinstance(value, str) else str(value),
-                ca_next_action=(
-                    "use_page_id_from_open_browser_page_or_cdp_attach_target"))
-    return None
+    for key in PAGE_ID_ARG_KEYS:
+        if isinstance(body, dict) and key in body and body[key] is not None:
+            if not is_well_formed_page_id(body[key]):
+                return _error_payload("PAGE_ID_INVALID", tool=tool_name, page_id=body[key])
+    action = ("start_app_with_remote_debugging_then_list_cdp_targets"
+              if tool_name == "launch_electron_with_cdp"
+              else "use_a_bridged_tool_such_as_describe_page_or_query_selector")
+    return _error_payload("T4_NOT_ROUTED", tool=tool_name, generation=generation,
+                          ca_next_action=action)
 
 
 def _as_raw(result):
@@ -373,14 +330,14 @@ def dialog_pin_error(tool_name, body):
     parent_hwnd = _as_int(body.get("parent_hwnd"))
     if not owner_pid and not parent_hwnd:
         return "missing_owner_pin"
-    if owner_pid and not str(body.get("title_pattern") or "").strip():
+    if owner_pid and not parent_hwnd and not str(body.get("title_pattern") or "").strip():
         return "missing_title_pattern"
     return None
 
 
 def _dialog_refusal(reason, candidates=None):
     actions = {
-        "missing_owner_pin": "pass_owner_pid_or_parent_hwnd_then_retry",
+        "missing_owner_pin": "pass_parent_hwnd_or_both_owner_pid_and_non_empty_title_pattern",
         "missing_title_pattern": "pass_non_empty_title_pattern_then_retry",
         "no_matching_dialog":
             "enumerate_windows_and_pin_a_real_dialog_then_retry",
@@ -455,6 +412,7 @@ class EntryRecord:
     in_flight: set = field(default_factory=set)
     created_at: float = field(default_factory=time.time)
     last_used_at: float = field(default_factory=time.time)
+    reaping: bool = False
 
 
 class T4Bridge:
@@ -615,20 +573,28 @@ class T4Bridge:
         skipped and re-evaluated at the next tick -- a page is never
         closed mid-call, including at the absolute TTL."""
         now = time.time() if now is None else now
+        pages = _live_pages_dict()
+        if pages is None:
+            return []
         with self._state_lock:
             candidates = [
                 entry for entry in self.entries.values()
                 if not entry.in_flight and (
-                    now - entry.last_used_at > self.idle_ttl_s
+                    entry.page_id not in pages or pages[entry.page_id].get("unavailable")
+                    or now - entry.last_used_at > self.idle_ttl_s
                     or now - entry.created_at > self.abs_ttl_s)]
         reaped = []
         for entry in candidates:
             with self._state_lock:
-                if entry.in_flight:
+                if entry.in_flight or entry.reaping or self.entries.get(entry.page_id) is not entry:
                     continue
-            await self._close_entry_state(entry)
-            self.remove_entry(entry.page_id)
-            reaped.append(entry.page_id)
+                entry.reaping = True
+            try:
+                if await self._close_entry_state(entry):
+                    self.remove_entry(entry.page_id)
+                    reaped.append(entry.page_id)
+            finally:
+                entry.reaping = False
         return reaped
 
     async def _close_entry_state(self, entry):
@@ -638,25 +604,14 @@ class T4Bridge:
         never closed (plan 3.4/5.5). D-S7: _DOM_SNAPSHOTS is keyed by
         snapshot_id, not page_id, so there are no per-page snapshots
         to clear here."""
-        pages = _live_pages_dict()
-        if pages is None:
-            return
-        state = pages.pop(entry.page_id, None)
-        if not state:
-            return
-        if entry.kind == "attached":
-            await _stop_pw(state)
-            return
-        for key in ("context", "browser"):
-            obj = state.get(key)
-            if obj is not None:
-                try:
-                    result = obj.close()
-                    if asyncio.iscoroutine(result) or hasattr(result, "__await__"):
-                        await result
-                except Exception:
-                    pass
-        await _stop_pw(state)
+        import tools_v15
+
+        state = tools_v15._BROWSER_PAGES.get(entry.page_id)
+        if state is None:
+            return True
+        state.setdefault("kind", entry.kind)
+        result = _parse_result(await tools_v15.close_browser_page(entry.page_id))
+        return bool(result and result.get("ok"))
 
     # -- quarantine fence (section 3.4, whole-unit effectuation) -----------
 
@@ -744,20 +699,26 @@ class T4Bridge:
         for page_id in page_ids:
             entry = self.get_entry(page_id)
             if entry is None:
-                continue  # unknown/legacy: the handler answers as today
+                if (page_id in (_live_pages_dict() or {})
+                        or tool_name in {"cleanup_test_session", "close_browser_page", "open_browser_page"}):
+                    return _error_payload("PAGE_NOT_FOUND", page_id=page_id)
+                continue
+            if entry.reaping:
+                return _error_payload("PAGE_NOT_FOUND", page_id=page_id)
             if entry.loop_epoch != self.loop_epoch:
                 return _error_payload(
                     "PAGE_NOT_FOUND", page_id=page_id,
                     reason="t4_host_loop_recycled",
                     generation=entry.generation,
                     ca_next_action="reopen_page_or_reattach")
-            if entry.owner_agent and agent_id \
-                    and entry.owner_agent != agent_id:
+            if ((entry.owner_agent and entry.owner_agent != agent_id)
+                    or (tool_name in {"cleanup_test_session", "close_browser_page", "open_browser_page"}
+                        and not entry.owner_agent)):
                 return _error_payload(
                     "PAGE_NOT_FOUND", page_id=page_id,
                     generation=entry.generation,
                     ca_next_action="reopen_page_or_reattach")
-            if mutating and entry.suspect:
+            if mutating and entry.suspect and tool_name not in {"cleanup_test_session", "close_browser_page"}:
                 return _error_payload(
                     "PAGE_SUSPECT", page_id=page_id,
                     reason=entry.suspect.get("reason", ""),
@@ -784,7 +745,14 @@ class T4Bridge:
                     entry = self.entries.get(page_id)
                     if entry is not None:
                         entry.suspect = None
+        if parsed.get("error_name") == "PAGE_NOT_FOUND":
+            pages = _live_pages_dict()
+            for page_id in page_ids:
+                if pages is not None and page_id not in pages:
+                    self.remove_entry(page_id)
         kind = MINT_TOOLS.get(tool_name)
+        if parsed.get("reused_cdp_attach"):
+            kind = "attached"
         if kind and parsed.get("ok") and parsed.get("page_id"):
             fingerprint = {}
             if kind == "attached":
@@ -795,7 +763,8 @@ class T4Bridge:
                 parsed["page_id"], owner_agent=agent_id,
                 generation=generation, kind=kind,
                 target_fingerprint=fingerprint)
-        if tool_name == "close_browser_page" and parsed.get("ok"):
+        if tool_name in {"close_browser_page", "cleanup_test_session"} and (
+                parsed.get("ok") or parsed.get("error_name") == "PAGE_NOT_FOUND"):
             for page_id in page_ids:
                 self.remove_entry(page_id)
 
@@ -822,11 +791,7 @@ class T4Bridge:
                         self._driver_lock.acquire(), timeout=self.grace_s)
                 except (asyncio.TimeoutError, TimeoutError):
                     with self._state_lock:
-                        holder = dict(self._holder) if self._holder else {}
-                    if holder:
-                        holder["held_ms"] = int(
-                            (time.time() - holder.get("acquired_at",
-                                                      time.time())) * 1000)
+                        holder = self._public_holder(agent_id)
                     return _as_raw(_error_payload(
                         "T4_BUSY", holder=holder, retryable=True,
                         retry_after_seconds=2,
@@ -838,6 +803,9 @@ class T4Bridge:
                     self._holder = {
                         "token": token, "agent": agent_id, "tool": tool_name,
                         "acquired_at": time.time(), "completing": False}
+            failure = self._preflight_entries(tool_name, page_ids, agent_id)
+            if failure:
+                return _as_raw(failure)
             if tool_name in CLASS_G_TOOLS:
                 loop = asyncio.get_running_loop()
                 result = await loop.run_in_executor(
@@ -1057,6 +1025,15 @@ class T4Bridge:
 
     # -- status --------------------------------------------------------------
 
+    def _public_holder(self, agent_id):
+        if not self._holder:
+            return None
+        holder = {k: self._holder[k] for k in ("tool", "completing") if k in self._holder}
+        if agent_id and agent_id == self._holder.get("agent"):
+            holder["agent"] = agent_id
+        holder["held_ms"] = int((time.time() - self._holder["acquired_at"]) * 1000)
+        return holder
+
     def status_snapshot(self, agent_id=""):
         """Bridge state for t4_host_status (Sprint 2 tool) and tests.
 
@@ -1065,8 +1042,12 @@ class T4Bridge:
         """
         with self._state_lock:
             own, others = [], 0
+            pages = _live_pages_dict() or {}
             for entry in self.entries.values():
-                if not entry.owner_agent or entry.owner_agent == agent_id:
+                state = pages.get(entry.page_id)
+                if state is None or state.get("unavailable") or entry.reaping:
+                    continue
+                if agent_id and entry.owner_agent == agent_id:
                     own.append({
                         "page_id": entry.page_id,
                         "owner_agent": entry.owner_agent,
@@ -1083,19 +1064,16 @@ class T4Bridge:
                     })
                 else:
                     others += 1
-            holder = None
-            if self._holder:
-                holder = dict(self._holder)
-                holder["held_ms"] = int(
-                    (time.time() - holder.get("acquired_at",
-                                              time.time())) * 1000)
+            holder = self._public_holder(agent_id)
             return {
                 "loop_alive": self.loop_alive(),
                 "loop_epoch": self.loop_epoch,
                 "holder": holder,
                 "pages": own,
                 "other_owners_page_count": others,
-                "quarantine_records": list(self.quarantine_records),
+                "quarantine_records": [
+                    {k: record[k] for k in ("state", "late_action_possible", "reason")
+                     if k in record} for record in self.quarantine_records],
             }
 
 
