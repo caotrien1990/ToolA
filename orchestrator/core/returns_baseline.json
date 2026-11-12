@@ -88,7 +88,7 @@
     "depth_D": 5
   },
   "run_project_command": {
-    "sha256": "90b16b019fc53266dba73207f71f1363d37fc9604d382a7587218b467f98683d",
+    "sha256": "84b01f98ee0bdf75b64431e6c1da98e43d76109fd8871a957501dceb93112218",
     "depth_D": 2
   },
   "run_project_test_script": {
@@ -104,7 +104,7 @@
     "depth_D": 3
   },
   "tool_decision_hint": {
-    "sha256": "bd2b3afbc5268d8af2f7d6b0ad07bc2a1fc1f3121c998d517202f63750b41abc",
+    "sha256": "1f35df58454d03811c10238dda5824c2d6752c4619890777d0baf336a683170b",
     "depth_D": 4
   },
   "validate_file": {
@@ -112,7 +112,7 @@
     "depth_D": 2
   },
   "write_fix": {
-    "sha256": "f5fb6939fd6ee116018c5f9b52b34bba6b1d4bec217805316ead8eb2f0878b54",
+    "sha256": "f97f8a6c91a804913ee8ef3f98c114bbe3a6c23f495ebb6d057af7f8b9c554ec",
     "depth_D": 4
   },
   "write_fix_html": {

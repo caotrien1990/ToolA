@@ -3107,10 +3107,6 @@ BASE_TOOL_SCHEMAS = [
 										'type': 'string'
 									}
 								},
-								'required': [
-									'tool',
-									'reason'
-								],
 								'type': 'object'
 							}
 						},
@@ -3446,7 +3442,7 @@ BASE_TOOL_SCHEMAS = [
 				'type': 'object',
 				'x-audit': {
 					'status': 'audited',
-					'schema_sha256': 'f5fb6939fd6ee116018c5f9b52b34bba6b1d4bec217805316ead8eb2f0878b54',
+					'schema_sha256': 'f97f8a6c91a804913ee8ef3f98c114bbe3a6c23f495ebb6d057af7f8b9c554ec',
 					'depth_D': 4
 				}
 			},
@@ -4398,7 +4394,14 @@ EXTRA_TOOL_SCHEMAS = [
                         'type': 'boolean'
                     },
                     'exit_code': {
-                        'type': 'integer'
+                        'anyOf': [
+                            {
+                                'type': 'integer'
+                            },
+                            {
+                                'type': 'null'
+                            }
+                        ]
                     },
                     'expected_port': {
                         'type': 'null'
@@ -4432,7 +4435,14 @@ EXTRA_TOOL_SCHEMAS = [
                         'type': 'boolean'
                     },
                     'returncode': {
-                        'type': 'integer'
+                        'anyOf': [
+                            {
+                                'type': 'integer'
+                            },
+                            {
+                                'type': 'null'
+                            }
+                        ]
                     },
                     'root_causes': {
                         'type': 'array'
@@ -4465,7 +4475,7 @@ EXTRA_TOOL_SCHEMAS = [
                 'type': 'object',
                 'x-audit': {
                     'status': 'audited',
-                    'schema_sha256': '90b16b019fc53266dba73207f71f1363d37fc9604d382a7587218b467f98683d',
+                    'schema_sha256': '84b01f98ee0bdf75b64431e6c1da98e43d76109fd8871a957501dceb93112218',
                     'depth_D': 2
                 }
             },

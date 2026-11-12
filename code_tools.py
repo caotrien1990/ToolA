@@ -21051,16 +21051,13 @@ try:
                 }
             },
             'required': [
-                'recommended_tier',
-                'recommended_tool',
-                'suggestion',
                 'ok',
                 'schema_version'
             ],
             'type': 'object',
             'x-audit': {
                 'status': 'audited',
-            'schema_sha256': 'bd2b3afbc5268d8af2f7d6b0ad07bc2a1fc1f3121c998d517202f63750b41abc',
+            'schema_sha256': '1f35df58454d03811c10238dda5824c2d6752c4619890777d0baf336a683170b',
                 'depth_D': 4
             }
         },
