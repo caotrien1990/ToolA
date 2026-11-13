@@ -22,12 +22,13 @@ The served HTTP schema and bridge preflight define the public HTTP contract. Pyt
 | `fill_folder_dialog` | `folder_path` | HTTP callers name the requested path. The runtime also refuses an empty path before setting the Edit control. |
 | `cleanup_test_session` | `page_id` | Release operates on the caller's identified page. |
 | `open_browser_page`, `desktop_send_text`, `save_log_snapshot` | `project_path` | Preserve the public project/session context contract for browser creation, desktop input and log output. |
+| `server_lifecycle_status` | `port` | The HTTP schema requires `port`. The handler defaults `port=0` for direct calls and returns `MISSING_REQUIRED_FIELD` when the port is missing or non-positive. |
 
 The public handler for `fill_folder_dialog` is `code_tools.TOOL_MAP["fill_folder_dialog"]`, the `code_tools.fill_folder_dialog` wrapper. It forwards to `orchestrator.runtime.desktop_dialogs.fill_folder_dialog`. Their parameter names and defaults are checked for equality. The wrapper and runtime both default `folder_path` to an empty string, so that default alone does not justify relaxing the HTTP requirement.
 
 `query_dom_candidates` is a dispatcher alias through `search_code(mode="dom_candidates")`. Schema parity is measured against its final `tools_v15.query_dom_candidates` handler. The existing bridge-through-registry test covers this forwarding path.
 
-The parity gate covers the union of `BRIDGED_TOOLS` and `DISCOVERY_TOOLS`, currently 35 tools. It checks exact parameter-set equality after removing transport-only `fields` projections and `definition_version`. Required arguments must equal the Python-required set plus the explicitly recorded exceptions above. It will fail if either side drifts.
+The parity gate covers the union of `BRIDGED_TOOLS` and `DISCOVERY_TOOLS` plus `server_lifecycle_status`, currently 36 tools. It checks exact parameter-set equality after removing transport-only `fields` projections and `definition_version`. Required arguments must equal the Python-required set plus the explicitly recorded exceptions above. It will fail if either side drifts.
 
 ## Return gap disposition
 
@@ -35,7 +36,7 @@ The parity gate covers the union of `BRIDGED_TOOLS` and `DISCOVERY_TOOLS`, curre
 |---|---|
 | G1 / P7 + NP3 | Four `see_also` edges and the task/error-specific alternatives now lead to HTTP-routable tools. The catalog, session kickstart and Electron documentation identify the applicable transport. Additional page-ID descriptions now point to HTTP page producers. A test exercises the actual `/api/tools` handler and CA guidance. |
 | G2 / NP4 | The external findings register states the distinction in both passages. `describe_page` directed HTTP callers into the blocked `query_dom_candidates` flow. `click_selector` belonged to the excluded macro flow. The final CDP count also distinguishes an unrouted launch tool from an attach tool lacking a running target in that measurement. |
-| G3 / NP5 | The deliberate HTTP requirements and handler authority are recorded above and checked across the T4 family. |
+| G3 / NP5 | The deliberate HTTP requirements and handler authority are recorded above and checked by the parity gate over the 35-tool union plus `server_lifecycle_status` (36 tools; see the scope sentence above). |
 | G4 / K6 | Failed `desktop_send_text` responses retain the resolved window title, including when the window disappears after title resolution. Mock tests cover focus refusal and Win32 failure. |
 | G5 / K10 | Deprecated-field and unsupported-field duplicate responses reuse the same message as the first error. Dispatcher tests compare the two responses and preserve original error identity and correction fields. |
 | G6 / L3 | The compatibility helper documents its `agent\|session\|task_epoch` test key and the live `session:agent` key. |

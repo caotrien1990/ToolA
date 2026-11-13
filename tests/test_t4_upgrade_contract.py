@@ -106,13 +106,14 @@ HTTP_REQUIRED = {
     "cleanup_test_session": {"page_id"},  # Cleanup needs an owned page.
     "desktop_click": {"x", "y"},  # A selector still dispatches coordinate events.
     "fill_folder_dialog": {"folder_path"},  # A caller must name the requested path.
+    "server_lifecycle_status": {"port"},
     "open_browser_page": {"project_path"},
     "desktop_send_text": {"project_path"},
     "save_log_snapshot": {"project_path"},
 }
 
 
-@pytest.mark.parametrize("name", sorted(t4_bridge.BRIDGED_TOOLS | t4_bridge.DISCOVERY_TOOLS))
+@pytest.mark.parametrize("name", sorted(t4_bridge.BRIDGED_TOOLS | t4_bridge.DISCOVERY_TOOLS | {"server_lifecycle_status"}))
 def test_registry_exposes_handler_parameters(name):
     from orchestrator.runtime import desktop_dialogs
 
