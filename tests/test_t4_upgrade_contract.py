@@ -20,15 +20,30 @@ def call(awaitable):
     return json.loads(asyncio.run(awaitable))
 
 
-@pytest.mark.parametrize("kwargs", [
-    {}, {"page_id": "pg-one", "processes": ["chrome.exe"]},
-    {"page_id": "pg-one", "close_session_after": True},
+@pytest.mark.parametrize("kwargs,expected_error", [
+    ({}, "MISSING_REQUIRED_FIELD"),
+    ({"page_id": "pg-one", "processes": ["chrome.exe"]}, "CLEANUP_SCOPE_UNSUPPORTED"),
+    ({"page_id": "pg-one", "close_session_after": True}, "CLEANUP_SCOPE_UNSUPPORTED"),
 ])
-def test_cleanup_refuses_unscoped_targets(monkeypatch, kwargs):
+def test_cleanup_refuses_unscoped_targets(monkeypatch, kwargs, expected_error):
     close = AsyncMock()
     monkeypatch.setattr(tools_v15, "close_browser_page", close)
-    assert not call(tools_v15.cleanup_test_session(**kwargs))["ok"]
+    result = call(tools_v15.cleanup_test_session(**kwargs))
+    assert not result["ok"] and result["error_name"] == expected_error
     close.assert_not_awaited()
+
+
+def test_idle_guard_allows_release_of_already_unavailable_page(monkeypatch):
+    guard = AsyncMock(return_value=json.dumps({"outcome": "idle"}))
+    pw = AsyncMock()
+    monkeypatch.setattr(code_tools, "assert_target_idle", guard)
+    monkeypatch.setattr(tools_v15, "_BROWSER_PAGES", {"cdp-one": {
+        "kind": "attached", "pw": pw, "unavailable": True}})
+    result = call(tools_v15.cleanup_test_session(page_id="cdp-one", idle_guard_signals=[{}]))
+    guard.assert_awaited_once()
+    pw.stop.assert_awaited_once()
+    assert result["ok"] and result["detached"] and result["already_unavailable"]
+    assert not result["page_closed"]
 
 
 def test_idle_guard_error_blocks_close(monkeypatch):
@@ -84,17 +99,70 @@ def test_lost_browser_is_hidden_until_reaped(monkeypatch):
         bridge.stop()
 
 
-@pytest.mark.parametrize("name,handler", [
-    ("cancel_native_dialog", code_tools.cancel_native_dialog),
-    ("desktop_window_list", tools_v15.desktop_window_list),
-    ("desktop_app_focus", tools_v15.desktop_app_focus),
-    ("desktop_send_text", tools_v15.desktop_send_text),
-])
-def test_registry_exposes_handler_parameters(name, handler):
-    schema = server._schema_for_tool(name)["parameters"]
-    assert inspect.signature(handler).parameters.keys() <= schema["properties"].keys()
-    if name in {"cancel_native_dialog", "desktop_app_focus"}:
-        assert "title_pattern" not in schema["required"]
+# The HTTP schema validates these before dispatch even though the Python
+# defaults support direct/internal calls. Keep the exceptions exact.
+HTTP_REQUIRED = {
+    "cdp_attach_target": {"target_id"},  # HTTP binds a listed target + title/URL.
+    "cleanup_test_session": {"page_id"},  # Cleanup needs an owned page.
+    "desktop_click": {"x", "y"},  # A selector still dispatches coordinate events.
+    "fill_folder_dialog": {"folder_path"},  # A caller must name the requested path.
+    "open_browser_page": {"project_path"},
+    "desktop_send_text": {"project_path"},
+    "save_log_snapshot": {"project_path"},
+}
+
+
+@pytest.mark.parametrize("name", sorted(t4_bridge.BRIDGED_TOOLS | t4_bridge.DISCOVERY_TOOLS))
+def test_registry_exposes_handler_parameters(name):
+    from orchestrator.runtime import desktop_dialogs
+
+    schema = server._enriched_tool_schema(name)["function"]["parameters"]
+    handler = code_tools.TOOL_MAP[name]
+    if name == "query_dom_candidates":
+        # search_code(mode="dom_candidates") forwards the public alias to this handler.
+        handler = tools_v15.query_dom_candidates
+    params = inspect.signature(handler).parameters
+    fields = {key for key, spec in schema["properties"].items()
+              if key != "definition_version" and not spec.get("x_r101_projection")}
+    assert fields == set(params)
+    required = {key for key, p in params.items() if p.default is inspect.Parameter.empty}
+    assert set(schema.get("required", [])) == required | HTTP_REQUIRED.get(name, set())
+    if name == "fill_folder_dialog":
+        # TOOL_MAP's code_tools wrapper is the public signature. It delegates
+        # these same arguments to the desktop_dialogs implementation.
+        runtime = inspect.signature(desktop_dialogs.fill_folder_dialog).parameters
+        assert {k: p.default for k, p in params.items()} == {k: p.default for k, p in runtime.items()}
+
+
+def test_http_catalog_and_guidance_recommend_routable_tools():
+    import re
+    from aiohttp.test_utils import make_mocked_request
+
+    response = asyncio.run(server.handle_tools(make_mocked_request("GET", "/api/tools")))
+    rows = [row["function"] for row in json.loads(response.text)]
+    assert {row["name"] for row in rows} >= t4_bridge.DISCOVERY_TOOLS
+    excluded = t4_bridge.NON_ROUTED_CONSUMERS
+    for rule in tools_v15._DECISION_RULES:
+        assert not (set(tools_v15._rule_names(rule)) & excluded), rule
+    for name, error in server._R40_ERROR_TO_ALTERNATIVE:
+        alternative = server._ca_guidance(name, error_name=error)["suggested_alternative_tool"]
+        assert alternative.get("tool") not in excluded, (name, error, alternative)
+    for row in rows:
+        name = row["name"]
+        guidance = server._ca_guidance(name)
+        for surface in (row, guidance):
+            assert not (set(surface.get("see_also", {})) & excluded), name
+        # Excluded tools can document their own MCP behavior. HTTP callers
+        # must be able to follow recommendations made by the supported tools.
+        if name in excluded:
+            continue
+        prose = [row["description"], *(p.get("description", "") for p in
+                 row["parameters"].get("properties", {}).values()),
+                 *row.get("see_also", {}).values(), *guidance["known_gotchas"], guidance["recommended_prompt_rule"]]
+        for line in prose:
+            for target in excluded:
+                if re.search(r"\b" + re.escape(target) + r"\b", line):
+                    assert "MCP" in line, (name, target, line)
 
 
 def test_keyup_when_foreground_moves_mid_chord(monkeypatch):
@@ -106,10 +174,10 @@ def test_keyup_when_foreground_moves_mid_chord(monkeypatch):
         VK_INSERT=45, KEYEVENTF_EXTENDEDKEY=1, KEYEVENTF_KEYUP=2))
     monkeypatch.setitem(sys.modules, "win32gui", SimpleNamespace(
         GetForegroundWindow=Mock(side_effect=[17, 99])))
-    monkeypatch.setattr(desktop_input.time, "sleep", lambda delay: None)
+    monkeypatch.setattr(desktop_input.time, "sleep", lambda delay: events.append(delay))
     with pytest.raises(RuntimeError, match="foreground"):
         desktop_input.send_chord(17, 16, 45)
-    assert events == [(16, 17, 0, 0), (16, 17, 2, 0)]
+    assert events == [(16, 17, 0, 0), 0.045, (16, 17, 2, 0), 0.045]
 
 
 def test_expired_failure_and_capacity_are_scoped(monkeypatch):
@@ -182,11 +250,35 @@ def test_text_dispatch_uses_scancodes_and_reports_unverified_delivery(desktop_wo
     clip.SetClipboardData.assert_called_once_with(13, "Tiếng Việt")
 
 
+def test_focus_failure_reports_title_selected_by_pattern(desktop_world, monkeypatch):
+    gui, _, _, _ = desktop_world
+    gui.GetForegroundWindow.return_value = 99
+    gui.GetWindowText = Mock(return_value="Editor — Target title")
+    monkeypatch.setattr(tools_v15, "_cdp_pick_target", AsyncMock(return_value=(None, "")))
+    monkeypatch.setattr(tools_v15, "desktop_window_list", AsyncMock(return_value=json.dumps({
+        "windows": [{"hwnd": 17, "title": "Editor — Target title"}]})))
+    result = call(tools_v15.desktop_app_focus(title_pattern="target"))
+    assert not result["ok"]
+    assert result["matched_title"] == "Editor — Target title"
+    assert result["window_match_count"] == 1
+
+
+def test_send_keeps_resolved_title_if_window_disappears(desktop_world, monkeypatch):
+    gui, _, _, _ = desktop_world
+    gui.GetWindowText = Mock(side_effect=OSError("window closed"))
+    monkeypatch.setattr(tools_v15, "desktop_window_list", AsyncMock(return_value=json.dumps({
+        "windows": [{"hwnd": 17, "title": "Editor — Target title"}]})))
+    result = call(tools_v15.desktop_send_text("abc", title_pattern="target"))
+    assert result["error_name"] == "WIN32_API_ERROR"
+    assert result["matched_title"] == "Editor — Target title"
+
+
 def test_text_dispatch_refuses_lost_foreground(desktop_world):
     gui, _, api, clip = desktop_world
     gui.GetForegroundWindow.return_value = 99
     result = call(tools_v15.desktop_send_text("abc", hwnd=17))
     assert result["error_name"] == "FOCUS_NOT_ACHIEVED"
+    assert result["matched_title"] == "Target title" and result["hwnd"] == 17
     api.keybd_event.assert_not_called()
     clip.SetClipboardData.assert_not_called()
 

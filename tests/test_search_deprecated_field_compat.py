@@ -273,6 +273,15 @@ class TestSearchDeprecatedFieldCompat(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp.status, 400)
         self.assertEqual(payload.get("error_name"), "UNSUPPORTED_FIELD")
         self.assertIn("totally_bogus_field", payload.get("unsupported_fields", []))
+        retry = await self._dispatch({
+            "query": "hello", "project_path": self.project_path, "totally_bogus_field": "value",
+        })
+        repeated = json.loads(retry.text)
+        self.assertEqual(retry.status, 409)
+        self.assertEqual(repeated["error_name"], "DUPLICATE_RETRY_BLOCKED")
+        self.assertEqual(repeated["original_error_name"], payload["error_name"])
+        self.assertEqual(repeated["error"], payload["error"])
+        self.assertEqual(repeated["corrected_payload"], payload["corrected_payload"])
 
     # -- 5. Duplicate retry does NOT multiply --
 
@@ -294,6 +303,8 @@ class TestSearchDeprecatedFieldCompat(unittest.IsolatedAsyncioTestCase):
         payload2 = json.loads(resp2.text)
         self.assertEqual(resp2.status, 409)
         self.assertEqual(payload2.get("error_name"), "DUPLICATE_RETRY_BLOCKED")
+        self.assertEqual(payload2["original_error_name"], payload1["error_name"])
+        self.assertEqual(payload2["error"], payload1["error"])
 
     # -- 6. Metrics distinguish categories --
 

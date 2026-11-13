@@ -2115,7 +2115,10 @@ _DETERMINISTIC_RETRY_CACHE = _DUPLICATE_FAILURE_STATE
 
 def _anti_drift_duplicate_failure(tool_name: str, body: dict, error_name: str,
                                   meta: dict | None = None) -> dict | None:
-    """Compatibility entry point for the anti-drift contract tests."""
+    """Compatibility entry point for the anti-drift contract tests.
+
+    Test keys join agent|session|task_epoch. Live _dedupe_identity uses session:agent without an epoch.
+    """
     meta = meta or {}
     identity = "|".join(str(meta.get(k) or "") for k in
                         ("agent_id", "session_id", "task_epoch"))
@@ -5349,7 +5352,7 @@ _TOOL_GOTCHAS: dict[str, list[str]] = {
     ],
     # V15 R16 — KtrSH enrichment from real Electron test gaps
     "cdp_attach_target": [
-        "Electron renderer rejects Target.createBrowserContext on page-level WS — V15 R16 auto-falls back to browser-level WS via /json/version; check attach_via field.",
+        "If Electron rejects a page-level WS, HTTP browser-level fallback requires allow_browser_level_fallback=true. Check attach_via in the result.",
         "Use list_cdp_targets, then attach with target_id and the expected URL or title.",
         "websocket_url from /json/version is browser-level (works for connect_over_cdp + new_context). webSocketDebuggerUrl per page is page-level (works for raw CDP only).",
     ],
@@ -5556,8 +5559,8 @@ _R40_ERROR_TO_ALTERNATIVE = {
         "reason": "Use snapshot to inspect candidates, then re-call with correct owner_pid/parent_hwnd.",
     },
     ("click_and_handle_folder_dialog", "NEW_DIALOG_NOT_FOUND"): {
-        "tool": "invoke_app_function",
-        "reason": "Click did not open native dialog (custom Electron UI?) — invoke handler directly.",
+        "tool": "evaluate_js",
+        "reason": "Inspect the custom picker on the owned page when no native dialog appears.",
     },
     ("desktop_click", "CDP_DISPATCH_FAILED"): {
         "tool": "desktop_click",
@@ -15903,22 +15906,21 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
             retryable=False,
         )
     except _DeprecatedFieldConflict as exc:
-        # CAP R3: ambiguous deprecated+canonical field conflict.
+        message = f"Ambiguous deprecated field '{exc.field}' for search_code: {exc.reason}"
         _dup = _duplicate_retry_guard(
             _dedupe_identity(_task_session_id, _task_agent_id),
             tool_name, body, "DEPRECATED_FIELD_CONFLICT")
         if _dup:
             return web.json_response({
                 "ok": False,
-                "error": "Identical deterministic failure already returned a correction",
                 **_dup,
+                "error": message,
                 "deprecated_field": exc.field,
                 "ca_next_action": "apply_previous_correction_or_stop_and_report",
                 **_task_meta,
             }, status=409, headers=cors)
         return _error_response(
-            tool_name,
-            f"Ambiguous deprecated field '{exc.field}' for search_code: {exc.reason}",
+            tool_name, message,
             400, cors, {},
             error_name="DEPRECATED_FIELD_CONFLICT",
             reason=str(exc),
@@ -16065,18 +16067,18 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
             "retry_with_alias_mapping" if alias_remediable
             else "remove_unsupported_field"
         )
+        message = f"Unsupported field(s) for '{tool_name}': {', '.join(unsupported)}"
         duplicate = _duplicate_retry_guard(
             _dedupe_identity(_task_session_id, _task_agent_id), tool_name, body, err_name)
         if duplicate:
             return web.json_response({
-                **duplicate, "error": f"Unsupported fields: {', '.join(unsupported)}",
+                **duplicate, "error": message,
                 "unsupported_fields": unsupported, "accepted_fields": sorted(accepted_fields),
                 "accepted_aliases": _alias_metadata(tool_name), "corrected_payload": corrected,
                 "ca_next_action": ca_next, **_task_meta,
             }, status=409, headers=cors)
         return _error_response(
-            tool_name,
-            f"Unsupported field(s) for '{tool_name}': {', '.join(unsupported)}",
+            tool_name, message,
             400,
             cors,
             body,

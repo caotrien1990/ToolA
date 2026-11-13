@@ -1439,7 +1439,7 @@ _DECISION_RULES = [
       "why": "Use schema-guided capture-group validation before retry."},
      {"re": r"\b(page.?id|baseline|dom.?state|stale.?baseline)\b",
       "tier": "T4", "tool": "dom_state_diff",
-      "also": ("checkpoint_loop_dom_state",),
+      "also": ("read_value",),
       "skill": "18_runtime_dom_T4",
       "why": "Require live pg-* page IDs and a fresh baseline after restart/page replacement."},
      {"re": r"\b(playwright|python.?fixture|node.?fixture|module.?not.?found)\b",
@@ -4260,7 +4260,8 @@ async def cleanup_test_session(project_path: str = "",
     closed = json.loads(await close_browser_page(page_id))
     if not closed.get("ok"):
         return json.dumps(closed)
-    result.update(page_id=page_id, page_closed=closed["closed"], detached=closed["detached"])
+    result.update(page_id=page_id, page_closed=closed["closed"], detached=closed["detached"],
+                  already_unavailable=closed["already_unavailable"])
     return _ok(result)
 
 
@@ -4535,8 +4536,8 @@ async def ensure_single_electron_instance(project_path: str = "",
 
     Returns: {existing_pids, killed, port_was_busy, port_free_after}.
 
-    Pair with launch_electron_with_cdp:
-      ensure_single_electron_instance(project_path=...) → launch_electron_with_cdp(...)
+    For HTTP, start the application with remote debugging enabled, then use
+    list_cdp_targets and cdp_attach_target with the chosen target and expected title or URL.
     """
     import socket as _socket
     import subprocess as _sp
@@ -8418,6 +8419,7 @@ async def desktop_send_text(text: str,
     import win32gui
     import win32process
 
+    matched_title = ""
     target_hwnd = hwnd
     resolved_from = "hwnd" if hwnd else ""
     if not target_hwnd and title_pattern:
@@ -8427,6 +8429,7 @@ async def desktop_send_text(text: str,
             if _match_text(w.get("title") or "", title_pattern, match_mode)
         ]
         if wins:
+            matched_title = wins[0].get("title") or ""
             target_hwnd = wins[0]["hwnd"]
             resolved_from = "title_pattern"
         else:
@@ -8445,11 +8448,12 @@ async def desktop_send_text(text: str,
             win32clipboard.CloseClipboard()
 
     def _send() -> dict:
+        nonlocal matched_title
         try:
+            matched_title = win32gui.GetWindowText(target_hwnd) or matched_title
             win32gui.PeekMessage(None, 0, 0, 0)
             current_tid = win32api.GetCurrentThreadId()
             target_tid, _ = win32process.GetWindowThreadProcessId(target_hwnd)
-            matched_title = win32gui.GetWindowText(target_hwnd)
             attach_errors = []
             fg0 = win32gui.GetForegroundWindow()
             fg0_tid = 0
@@ -8552,7 +8556,7 @@ async def desktop_send_text(text: str,
         return _ok(data)
     return _err(data.get("error", "send_text failed"),
                 error_name=data.get("error_name", "DESKTOP_INTERACTION_FAILED"),
-                hwnd=target_hwnd, resolved_from=resolved_from or "unknown",
+                hwnd=target_hwnd, resolved_from=resolved_from or "unknown", matched_title=matched_title,
                 non_fatal=True, ca_next_action="do_not_retry_focus")
 
 

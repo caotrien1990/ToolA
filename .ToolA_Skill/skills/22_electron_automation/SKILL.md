@@ -24,6 +24,8 @@ risk_level: medium
 
 # 22 — Electron Automation (V15 R16)
 
+Over HTTP, start the application with remote debugging enabled, call `list_cdp_targets`, then pass the chosen `target_id` and expected title or URL to `cdp_attach_target`. The launch recipes below use the stateful MCP host.
+
 ## "Is this Electron?" detection
 
 Use `inspect_project_runtime(project_path)`. Look at response fields:
@@ -85,7 +87,7 @@ Add these by overriding `launcher_path` to a customized command via `run_project
 | Page-level | ❌ Electron rejects `Target.createBrowserContext: Not allowed` | ✅ works for DOM/Input on that page only |
 | Browser-level | ✅ works | ✅ works |
 
-**Rule:** Cho Playwright (qua `cdp_attach_target`), LUÔN dùng browser-level WS từ `/json/version`. V15 R16 auto-falls back nếu CA tình cờ pass page-level URL.
+Over HTTP, enumerate the CDP targets and pass the selected target ID with an expected title or URL. Browser-level fallback is opt-in (`allow_browser_level_fallback=true`). The direct handler accepts a browser-level WebSocket URL from `/json/version`.
 
 ## Common Electron selector patterns
 
@@ -107,19 +109,13 @@ Array.from(document.querySelectorAll('button')).map(b => ({id: b.id, text: b.tex
 
 ## Cleanup pattern
 
+Pass the page ID returned to this caller. Cleanup closes a launched page or detaches from an attached application.
+
 ```jsonc
-// After test/round done:
-run_project_command({
-  "project_path": "<root>",
-  "command": "taskkill /F /IM electron.exe /T",
-  "shell_mode": "auto"
-})
+cleanup_test_session({"page_id": "<owned page_id>"})
 ```
 
-Hoặc nếu launch tracked PID:
-```jsonc
-kill_process({"pid": <launch_pid from launch_electron_with_cdp>})
-```
+Close a project session separately by its exact session ID. Process termination requires a separately authorized PID.
 
 ## CSP unsafe-eval handling
 
@@ -162,9 +158,8 @@ dom_state_diff({"page_id":"<id>", "selector":"#btnGetFootage",
 extract_log_section({"page_id":"<id>", "section_title":"System Error Log"})
 // → {ok, content:"<full log>", is_empty:false}
 
-// 8. Cleanup
-run_project_command({"project_path":"<rawcut>",
-                      "command":"taskkill /F /IM electron.exe /T"})
+// 8. Release this page or CDP attachment
+cleanup_test_session({"page_id":"<id>"})
 
 // 9. final report + session wrap-up
 ```

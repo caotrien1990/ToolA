@@ -5703,13 +5703,13 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, []),
 
-    ('cdp_attach_target', 'V15 R15 P2.6 / R44 T4a: attach Playwright to existing CDP target. V15 R16 A.1: auto-fallback to browser-level WS via /json/version when Electron rejects Target.createBrowserContext. Returns attach_id == page_id consumable by click/fill/evaluate_js/read_page/query_selector + attach_via field showing which path succeeded. Provide target_id (from list_cdp_targets) or websocket_url directly. R44: pass project_path so subsequent T4 mutating tools (fill_value/click) resolve the active session via page_id alone.', {
+    ('cdp_attach_target', 'V15 R15 P2.6 / R44 T4a: attach Playwright to existing CDP target. Browser-level WS fallback via /json/version is opt-in over HTTP (allow_browser_level_fallback=true). Returns attach_id == page_id consumable by click/fill/evaluate_js/read_page/query_selector + attach_via field showing which path succeeded. For HTTP, provide target_id from list_cdp_targets and an expected title or URL. R44: pass project_path so subsequent T4 mutating tools (fill_value/click) resolve the active session via page_id alone.', {
 
-            "target_id": {"type": "string", "default": "", "description": "Target id from list_cdp_targets response. Required if websocket_url not provided."},
+            "target_id": {"type": "string", "default": "", "description": "Target id from list_cdp_targets response. Required over HTTP, including when websocket_url is supplied."},
 
             "cdp_port": {"description": "Chrome DevTools Protocol port of the already-running target to attach to. Default 9223.", "type": "integer", "default": 9223},
 
-            "websocket_url": {"type": "string", "default": "", "description": "Optional: direct ws://... endpoint (skips target_id lookup). Use /json/version response for browser-level URL on Electron. Required if target_id not provided."},
+            "websocket_url": {"type": "string", "default": "", "description": "Optional direct ws:// endpoint. HTTP still requires target_id and the expected title or URL. The direct handler also supports a websocket_url-only attach."},
 
             "project_path": {"type": "string", "default": "", "description": "R44: originating project root — pinned to page state so fill_value/click/evaluate_js can resolve active session by page_id without re-passing project_path."},
 
@@ -5741,7 +5741,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('dom_state_diff', 'V15 R16 A.4 T1: snapshot DOM element state (disabled/bg/color/className/visible/text) and compare across time. page_id must be a live pg-... ID. Two modes: no baseline_id returns a snapshot_id cached 10 minutes; baseline_id compares against that snapshot and must be recreated after restart or page replacement.', {
 
-            "page_id": {"type": "string", "pattern": "^(pg|cdp)-[A-Za-z0-9][A-Za-z0-9_-]*$", "description": "Only the pg-.../cdp-... page_id returned by cdp_attach_target/open_browser_page/launch_electron_with_cdp"},
+            "page_id": {"type": "string", "pattern": "^(pg|cdp)-[A-Za-z0-9][A-Za-z0-9_-]*$", "description": "Only the pg-.../cdp-... page_id returned by cdp_attach_target or open_browser_page"},
 
             "selector": {"type": "string", "description": "CSS selector for the element to snapshot"},
 
@@ -5970,9 +5970,9 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["page_id", "selector"]),
 
-    ('ensure_single_electron_instance', "V15 R16.9 T4: pre-launch hygiene — kill any existing electron.exe + free CDP port BEFORE launching a fresh instance. Prevents 'stale Electron from previous round' confusion. Returns existing_pids, killed, port_was_busy, port_free_after. Pair with launch_electron_with_cdp.", {
+    ('ensure_single_electron_instance', "Inspect running Electron processes and CDP port usage. With kill_existing=true, terminates electron.exe processes by image name across the desktop. To attach over HTTP, start the app with remote debugging enabled, then use list_cdp_targets and cdp_attach_target.", {
 
-            "project_path": {"description": "Project root used to resolve which Electron instance/port belongs to this project before killing stale ones; empty resolves from the active session.", "type": "string", "default": ""},
+            "project_path": {"description": "Project context reported in the result. The process scan and kill are system-wide.", "type": "string", "default": ""},
 
             "cdp_port": {"description": "CDP port that must be freed before the fresh Electron launch. Default 9223.", "type": "integer", "default": 9223},
 
@@ -6302,7 +6302,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('verify_active_electron_source', 'V15 R41 T1: verify which file Electron CDP target is actually loaded from. Reads document.URL + window.location.href via evaluate_js, decodes file:/// to a local path. If expected_path is passed, returns matches_expected. Use case: prevent editing Source/ui/index.html when the app loaded a dist/ or public/ mirror. Returns all_loaded_resources (top 10 script/link href) for inspection.', {
 
-            "page_id": {"description": "CDP page id (from cdp_attach_target / launch_electron_with_cdp) whose loaded source file is verified.", "type": "string"},
+            "page_id": {"description": "CDP page id (from cdp_attach_target) whose loaded source file is verified.", "type": "string"},
 
             "expected_path": {"description": "Expected local file path the Electron target should have loaded; when given, the result reports matches_expected. Empty only reports the actual path.", "type": "string", "default": ""},
 

@@ -567,11 +567,11 @@ class T4Bridge:
                 pass
 
     async def reap_once(self, now=None):
-        """One reaper tick (runs on the T4 loop; period 60 s in
-        production): expire entries past the idle TTL (30 min) or the
-        absolute cap (4 h). An entry with a call in flight is always
-        skipped and re-evaluated at the next tick -- a page is never
-        closed mid-call, including at the absolute TTL."""
+        """Release missing, unavailable or expired pages on the T4 loop.
+
+        Skip in-flight and already-reaping entries. A failed release stays
+        registered for a later tick.
+        """
         now = time.time() if now is None else now
         pages = _live_pages_dict()
         if pages is None:
