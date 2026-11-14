@@ -7444,8 +7444,13 @@ async def _cdp_pick_target(port: int, prefer_title_substr: str = "",
     deadline = _time.time() + (max(wait_timeout_ms, 0) / 1000.0 if wait_for_navigation else 0)
     while True:
         try:
-            targets = await asyncio.to_thread(
-                _fetch_json_sync, f"http://127.0.0.1:{port}/json", 3)
+            from orchestrator.runtime.cdp_browser import browser_endpoint, browser_targets
+            endpoint = await asyncio.to_thread(browser_endpoint, port)
+            if endpoint:
+                targets = await browser_targets(endpoint)
+            else:
+                targets = await asyncio.to_thread(
+                    _fetch_json_sync, f"http://127.0.0.1:{port}/json", 3)
         except Exception as exc:
             return None, f"CDP unreachable on port {port}: {exc}"
         pages = [t for t in targets if t.get("type") == "page"]
@@ -7508,6 +7513,14 @@ async def list_cdp_targets(cdp_port: int = _DEFAULT_CDP_PORT) -> str:
 
 async def _cdp_dispatch(port: int, target_id: str, method: str, params: dict):
     """Open a single-call CDP session, send one method, close. Returns (response, error)."""
+    from orchestrator.runtime.cdp_browser import browser_endpoint, browser_dispatch
+    endpoint = await asyncio.to_thread(browser_endpoint, port)
+    if endpoint:
+        try:
+            response = await browser_dispatch(endpoint, target_id, method, params)
+            return response, response.get("error", {}).get("message")
+        except Exception as exc:
+            return None, f"Browser CDP dispatch failed: {type(exc).__name__}: {exc}"
     # Use websockets via stdlib? Python stdlib has no WS client; need raw socket impl
     # or external lib. Easiest: use a tiny WS handshake + frame writer/reader.
     import base64 as _b64
@@ -8401,20 +8414,20 @@ async def desktop_send_text(text: str,
                             clear_first: bool = False) -> str:
     """Dispatch clipboard paste into the target foreground window.
 
-    The returned steps describe keyboard dispatch. Verify the resulting input in the app.
+    Native Edit readback precedes submit; other controls report not_verified.
+    Text-only clipboard preservation aborts before replacing unsupported formats.
     """
     if not text:
         return _err("text is required", error_name="MISSING_REQUIRED_FIELD")
     if method != "clipboard" or paste_shortcut not in {"auto", "shift_insert", "ctrl_v"}:
         return _err("Unsupported paste method or shortcut", error_name="BAD_METHOD")
-    from orchestrator.runtime.desktop_input import send_chord
+    from orchestrator.runtime.desktop_text import paste_with_readback
     if not _pywin32_available():
         return _err("desktop_send_text needs pywin32",
                     error_name="DESKTOP_INTERACTION_FAILED", remediation="pip install pywin32")
     import time as _time
 
     import win32api
-    import win32clipboard
     import win32con
     import win32gui
     import win32process
@@ -8438,14 +8451,6 @@ async def desktop_send_text(text: str,
                         match_mode=match_mode)
     if not target_hwnd:
         return _err("hwnd or title_pattern required", error_name="MISSING_REQUIRED_FIELD")
-
-    def _set_clipboard(s: str) -> None:
-        win32clipboard.OpenClipboard()
-        try:
-            win32clipboard.EmptyClipboard()
-            win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, s)
-        finally:
-            win32clipboard.CloseClipboard()
 
     def _send() -> dict:
         nonlocal matched_title
@@ -8512,38 +8517,18 @@ async def desktop_send_text(text: str,
                         _time.sleep(0.12)
                     except Exception as exc:
                         return {"ok": False, "error_name": "FOCUS_CLICK_FAILED", "error": str(exc)}
-                steps = []
                 if win32gui.GetForegroundWindow() != target_hwnd:
                     return {"ok": False, "error_name": "FOCUS_NOT_ACHIEVED",
                             "error": "Foreground changed before paste"}
-                _set_clipboard(text)
-                if clear_first:
-                    send_chord(target_hwnd, win32con.VK_CONTROL, ord("A"))
-                    steps.append("ctrl_a")
-                if paste_shortcut == "ctrl_v":
-                    send_chord(target_hwnd, win32con.VK_CONTROL, ord("V"))
-                    steps.append("ctrl_v")
-                else:
-                    send_chord(target_hwnd, win32con.VK_SHIFT, win32con.VK_INSERT)
-                    steps.append("shift_insert")
-                if submit:
-                    _time.sleep(0.10)
-                    send_chord(target_hwnd, win32con.VK_RETURN)
-                    steps.append("enter")
-                return {
-                    "ok": True,
-                    "method": method,
-                    "hwnd": target_hwnd,
-                    "resolved_from": resolved_from or "unknown",
-                    "matched_title": matched_title,
-                    "delivery_verified": False, "attach_errors": attach_errors,
-                    "focused_foreground": focused,
-                    "fg_hwnd": fg,
-                    "submit": submit,
-                    "steps": steps,
-                    "text_len": len(text),
-                    "clicked": _click_pt,
-                }
+                outcome = paste_with_readback(
+                    target_hwnd, text, clear_first=clear_first,
+                    paste_shortcut=paste_shortcut, submit=submit)
+                outcome.update(method=method, hwnd=target_hwnd,
+                               resolved_from=resolved_from or "unknown",
+                               matched_title=matched_title, attach_errors=attach_errors,
+                               focused_foreground=focused, fg_hwnd=fg, submit=submit,
+                               text_len=len(text), clicked=_click_pt)
+                return outcome
             finally:
                 for _tid in attached:
                     try: win32process.AttachThreadInput(current_tid, _tid, False)
@@ -8552,12 +8537,13 @@ async def desktop_send_text(text: str,
             return {"ok": False, "error": str(exc), "error_name": "WIN32_API_ERROR"}
 
     data = await asyncio.to_thread(_send)
+    data.update(hwnd=target_hwnd, resolved_from=resolved_from or "unknown", matched_title=matched_title)
     if data.get("ok"):
         return _ok(data)
     return _err(data.get("error", "send_text failed"),
                 error_name=data.get("error_name", "DESKTOP_INTERACTION_FAILED"),
-                hwnd=target_hwnd, resolved_from=resolved_from or "unknown", matched_title=matched_title,
-                non_fatal=True, ca_next_action="do_not_retry_focus")
+                **{key: value for key, value in data.items() if key not in {"ok", "error", "error_name"}},
+                non_fatal=True, ca_next_action="inspect_target_before_retry")
 
 
 async def desktop_click(hwnd: int = 0, x: int = 0, y: int = 0,
@@ -8775,6 +8761,11 @@ async def desktop_click(hwnd: int = 0, x: int = 0, y: int = 0,
                     ],
                     "x": x, "y": y,
                     "clicked": True,
+                    "checks": {
+                        "route": "cdp_viewport",
+                        "bounds": {"status": "skipped", "reason": "viewport_geometry_not_proven"},
+                        "modal": {"status": "skipped", "reason": "viewport_to_screen_unavailable"},
+                    },
                 }
                 if dom_evidence is not None:
                     resp["dom_evidence_at_xy"] = dom_evidence
@@ -8842,7 +8833,13 @@ async def desktop_click(hwnd: int = 0, x: int = 0, y: int = 0,
                     cdp_attempted=cdp_attempted,
                     cdp_note=err or "no CDP target found")
 
+    checks = {}
     def _click() -> dict:
+        from orchestrator.runtime.desktop_verification import click_checks
+        checks.update(click_checks(target_hwnd, x, y))
+        if checks["bounds"]["status"] == "out_of_bounds":
+            return {"ok": False, "error_name": "CLICK_OUT_OF_BOUNDS",
+                    "error": "Client point maps outside the virtual desktop"}
         try:
             # Resolve actual child window under (x,y) — important for native windows
             try:
@@ -8927,7 +8924,15 @@ async def desktop_click(hwnd: int = 0, x: int = 0, y: int = 0,
                 except Exception:
                     pass
             try:
-                l_param = (y << 16) | (x & 0xFFFF)
+                dispatch_x, dispatch_y = x, y
+                if target != target_hwnd:
+                    # The public point belongs to the parent client area.
+                    # WM_LBUTTON* consumes the receiving child's client coordinates.
+                    screen_point = win32gui.ClientToScreen(target_hwnd, (x, y))
+                    dispatch_x, dispatch_y = win32gui.ScreenToClient(target, screen_point)
+                if not (-32768 <= dispatch_x <= 32767 and -32768 <= dispatch_y <= 32767):
+                    raise ValueError("Click point exceeds signed Win32 message coordinate range")
+                l_param = ((dispatch_y & 0xFFFF) << 16) | (dispatch_x & 0xFFFF)
                 # Send the canonical sequence
                 sequence = []
                 try:
@@ -9051,9 +9056,12 @@ async def desktop_click(hwnd: int = 0, x: int = 0, y: int = 0,
             return {"ok": False, "error": str(exc), "error_name": "WIN32_API_ERROR"}
 
     data = await asyncio.to_thread(_click)
+    data["checks"] = checks
     if data.get("ok"):
         return _ok(data)
-    return _err(data.get("error", "click failed"), error_name="DESKTOP_INTERACTION_FAILED",
+    return _err(data.get("error", "click failed"),
+                error_name="CLICK_OUT_OF_BOUNDS" if data.get("error_name") == "CLICK_OUT_OF_BOUNDS" else "DESKTOP_INTERACTION_FAILED",
+                checks=checks,
                 root_causes=[
                     item for item in [
                         *root_causes,
@@ -9090,7 +9098,8 @@ async def desktop_window_state(state: str,
     Bypasses click-on-titlebar drift. Clicking the maximize button at fixed
     coordinates is unreliable: DPI scaling, Electron frame theme, and OS
     chrome variations move the hit area. ShowWindow(hwnd, SW_*) is the
-    official Windows API for state changes and never misses.
+    Windows API for state changes. The response reports immediate and sampled
+    states for one second; observations do not identify the actor of later changes.
 
     States → Win32 SW constants:
       maximize → SW_MAXIMIZE (3)
@@ -9171,66 +9180,21 @@ async def desktop_window_state(state: str,
                     error_name="WRONG_ARGUMENTS")
 
     def _apply() -> dict:
+        from orchestrator.runtime.desktop_verification import observe_window_change
         try:
-            rect_before_tuple = win32gui.GetWindowRect(target_hwnd)
-            rect_before = {
-                "x": rect_before_tuple[0], "y": rect_before_tuple[1],
-                "w": rect_before_tuple[2] - rect_before_tuple[0],
-                "h": rect_before_tuple[3] - rect_before_tuple[1],
-            }
-            was_minimized = bool(win32gui.IsIconic(target_hwnd))
-            was_visible = bool(win32gui.IsWindowVisible(target_hwnd))
-            prev_state = (
-                "minimized" if was_minimized
-                else "hidden" if not was_visible
-                else "shown"
-            )
-            # SW_RESTORE on a NOT minimized window also un-maximizes — desired semantics.
-            win32gui.ShowWindow(target_hwnd, sw_const)
-            # For maximize, also bring to foreground so it becomes the active window.
-            if state == "maximize":
-                try:
-                    win32gui.SetForegroundWindow(target_hwnd)
-                except Exception:
-                    pass  # SetForegroundWindow can fail under UIPI; not critical
-            rect_after_tuple = win32gui.GetWindowRect(target_hwnd)
-            rect_after = {
-                "x": rect_after_tuple[0], "y": rect_after_tuple[1],
-                "w": rect_after_tuple[2] - rect_after_tuple[0],
-                "h": rect_after_tuple[3] - rect_after_tuple[1],
-            }
-            is_visible_after = bool(win32gui.IsWindowVisible(target_hwnd))
-            is_minimized_after = bool(win32gui.IsIconic(target_hwnd))
-            return {
-                "ok": True,
-                "method": "win32_show_window",
-                "state_requested": state,
-                "sw_const": sw_const,
-                "hwnd": target_hwnd,
-                "resolved_from": resolved_from or "unknown",
-                "title_pattern": title_pattern,
-                "match_mode": match_mode,
-                "window_match_count": window_match_count,
-                "rect_before": rect_before,
-                "rect_after": rect_after,
-                "rect_changed": rect_before != rect_after,
-                "was_minimized": was_minimized,
-                "was_visible": was_visible,
-                "prev_state": prev_state,
-                "is_visible_after": is_visible_after,
-                "is_minimized_after": is_minimized_after,
-            }
+            return observe_window_change(target_hwnd, state, sw_const)
         except Exception as exc:
             return {"ok": False, "error": str(exc), "error_name": "WIN32_API_ERROR"}
 
     data = await asyncio.to_thread(_apply)
+    data.update(hwnd=target_hwnd, state_requested=state, sw_const=sw_const,
+                resolved_from=resolved_from or "unknown", title_pattern=title_pattern,
+                match_mode=match_mode, window_match_count=window_match_count)
     if data.get("ok"):
         return _ok(data)
     return _err(data.get("error", "show_window failed"),
                 error_name=data.get("error_name", "DESKTOP_INTERACTION_FAILED"),
-                hwnd=target_hwnd,
-                state_requested=state,
-                resolved_from=resolved_from or "unknown")
+                **{key: value for key, value in data.items() if key not in {"ok", "error", "error_name"}})
 
 
 def _desktop_screenshot_capture(hwnd: int, save_path: str, monitor: int) -> str:
@@ -9241,6 +9205,11 @@ def _desktop_screenshot_capture(hwnd: int, save_path: str, monitor: int) -> str:
     (observed /health p95 ~46s during a single desktop_screenshot).
     """
     from PIL import ImageGrab
+    from orchestrator.runtime import console_guard
+    if console_guard.CAPTURE_GUARD.get():
+        denied = console_guard.refusal(console_guard.console_state())
+        if denied:
+            return json.dumps(denied, ensure_ascii=False)
     try:
         bbox = None
         mons = []
@@ -9269,21 +9238,29 @@ def _desktop_screenshot_capture(hwnd: int, save_path: str, monitor: int) -> str:
             m = mons[monitor - 1]
             bbox = (m["left"], m["top"], m["right"], m["bottom"])
             selected = monitor
+        try:
+            img = ImageGrab.grab(bbox=bbox, all_screens=True)
+        except TypeError:
+            img = ImageGrab.grab(bbox=bbox)
+        frame = {}
+        if console_guard.CAPTURE_GUARD.get():
+            frame = console_guard.frame_assessment(img)
+            denied = console_guard.refusal(
+                console_guard.console_state(),
+                "blank_frame" if frame["uniform_frame"] else "console_locked_during_capture")
+            if denied:
+                return json.dumps(dict(denied, **frame), ensure_ascii=False)
         if not save_path:
             cache_dir = Path(__file__).parent / ".orchestrator_cache" / "screenshots"
             cache_dir.mkdir(parents=True, exist_ok=True)
             ts = int(time.time() * 1000)
             save_path = str(cache_dir / f"desktop_{ts}.png")
-        try:
-            img = ImageGrab.grab(bbox=bbox, all_screens=True)
-        except TypeError:
-            img = ImageGrab.grab(bbox=bbox)
         img.save(save_path)
         captured = "window" if hwnd else (f"monitor_{selected}" if selected else "all_monitors_virtual")
         return _ok({"hwnd": hwnd, "monitor": selected, "monitor_count": len(mons),
                     "monitors": mons, "captured": captured,
                     "path": save_path, "size": img.size,
-                    "bytes": Path(save_path).stat().st_size})
+                    "bytes": Path(save_path).stat().st_size, **frame})
     except Exception as exc:
         return _err(str(exc), error_name="DESKTOP_SCREENSHOT_FAILED")
 

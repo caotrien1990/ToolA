@@ -1,0 +1,4102 @@
+{
+  "row": "P8-2/K30-repeat",
+  "samples": [
+    {
+      "time": 1794624371.5195718,
+      "elapsed": 0.0,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624371.7711136,
+      "elapsed": 0.25,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624372.021392,
+      "elapsed": 0.5,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624372.2721143,
+      "elapsed": 0.75,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624372.5223887,
+      "elapsed": 1.0,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624372.7728353,
+      "elapsed": 1.25,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624373.0232718,
+      "elapsed": 1.5,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624373.2735147,
+      "elapsed": 1.75,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624373.5237231,
+      "elapsed": 2.0,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624373.7739873,
+      "elapsed": 2.25,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624374.0242016,
+      "elapsed": 2.5,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624374.2747438,
+      "elapsed": 2.75,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624374.525146,
+      "elapsed": 3.0,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624374.7755935,
+      "elapsed": 3.25,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624375.025863,
+      "elapsed": 3.5,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624375.2764316,
+      "elapsed": 3.75,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624375.5268886,
+      "elapsed": 4.0,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624375.7773945,
+      "elapsed": 4.265000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624376.0278265,
+      "elapsed": 4.515000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624376.2784297,
+      "elapsed": 4.765000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624376.528928,
+      "elapsed": 5.015000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624376.7792141,
+      "elapsed": 5.265000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624377.0297348,
+      "elapsed": 5.515000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624377.280068,
+      "elapsed": 5.765000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624377.5303838,
+      "elapsed": 6.015000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624377.7809162,
+      "elapsed": 6.265000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624378.0312052,
+      "elapsed": 6.515000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624378.2814088,
+      "elapsed": 6.765000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624378.5317535,
+      "elapsed": 7.015000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624378.7823646,
+      "elapsed": 7.265000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624379.0327437,
+      "elapsed": 7.515000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624379.2830257,
+      "elapsed": 7.765000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624379.5335553,
+      "elapsed": 8.015000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624379.7839122,
+      "elapsed": 8.265000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624380.0345156,
+      "elapsed": 8.515000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624380.2849286,
+      "elapsed": 8.765000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624380.5355093,
+      "elapsed": 9.015000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624380.785872,
+      "elapsed": 9.265000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624381.0365179,
+      "elapsed": 9.515000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624381.286976,
+      "elapsed": 9.765000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624381.5374725,
+      "elapsed": 10.015000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624381.787747,
+      "elapsed": 10.265000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624382.0382617,
+      "elapsed": 10.515000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624382.2888312,
+      "elapsed": 10.765000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624382.5391307,
+      "elapsed": 11.015000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624382.7893393,
+      "elapsed": 11.265000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624383.0400093,
+      "elapsed": 11.515000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624383.2905717,
+      "elapsed": 11.765000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624383.5411108,
+      "elapsed": 12.015000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624383.7914314,
+      "elapsed": 12.265000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624384.0416174,
+      "elapsed": 12.515000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624384.2922359,
+      "elapsed": 12.765000000130385,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624384.542932,
+      "elapsed": 13.030999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624384.7934542,
+      "elapsed": 13.280999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624385.0442653,
+      "elapsed": 13.530999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624385.2946546,
+      "elapsed": 13.780999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624385.5450397,
+      "elapsed": 14.030999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624385.7951965,
+      "elapsed": 14.280999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446741859
+    },
+    {
+      "time": 1794624386.0455625,
+      "elapsed": 14.530999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446838718
+    },
+    {
+      "time": 1794624386.2960837,
+      "elapsed": 14.780999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446838750
+    },
+    {
+      "time": 1794624386.5465288,
+      "elapsed": 15.030999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446839234
+    },
+    {
+      "time": 1794624386.7972107,
+      "elapsed": 15.280999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446839250
+    },
+    {
+      "time": 1794624387.047693,
+      "elapsed": 15.530999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446839250
+    },
+    {
+      "time": 1794624387.297862,
+      "elapsed": 15.780999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446839250
+    },
+    {
+      "time": 1794624387.548078,
+      "elapsed": 16.030999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446840218
+    },
+    {
+      "time": 1794624387.7987318,
+      "elapsed": 16.280999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446840468
+    },
+    {
+      "time": 1794624388.04929,
+      "elapsed": 16.530999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446840687
+    },
+    {
+      "time": 1794624388.2998261,
+      "elapsed": 16.780999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446840968
+    },
+    {
+      "time": 1794624388.5500436,
+      "elapsed": 17.030999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446841203
+    },
+    {
+      "time": 1794624388.800169,
+      "elapsed": 17.280999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446841453
+    },
+    {
+      "time": 1794624389.0506177,
+      "elapsed": 17.530999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446841734
+    },
+    {
+      "time": 1794624389.3008518,
+      "elapsed": 17.780999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446841968
+    },
+    {
+      "time": 1794624389.5510767,
+      "elapsed": 18.030999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446842156
+    },
+    {
+      "time": 1794624389.8017132,
+      "elapsed": 18.280999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446842156
+    },
+    {
+      "time": 1794624390.052366,
+      "elapsed": 18.530999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446842671
+    },
+    {
+      "time": 1794624390.3025434,
+      "elapsed": 18.780999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446842671
+    },
+    {
+      "time": 1794624390.5531178,
+      "elapsed": 19.030999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446843234
+    },
+    {
+      "time": 1794624390.8034964,
+      "elapsed": 19.280999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446843359
+    },
+    {
+      "time": 1794624391.0538802,
+      "elapsed": 19.530999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446843734
+    },
+    {
+      "time": 1794624391.304366,
+      "elapsed": 19.780999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446843828
+    },
+    {
+      "time": 1794624391.5545087,
+      "elapsed": 20.030999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446843828
+    },
+    {
+      "time": 1794624391.8046646,
+      "elapsed": 20.280999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446843828
+    },
+    {
+      "time": 1794624392.0551908,
+      "elapsed": 20.530999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446843828
+    },
+    {
+      "time": 1794624392.3057902,
+      "elapsed": 20.780999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446843828
+    },
+    {
+      "time": 1794624392.5562782,
+      "elapsed": 21.030999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446843828
+    },
+    {
+      "time": 1794624392.8064427,
+      "elapsed": 21.280999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446843828
+    },
+    {
+      "time": 1794624393.0567987,
+      "elapsed": 21.530999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446843828
+    },
+    {
+      "time": 1794624393.3070412,
+      "elapsed": 21.780999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446843828
+    },
+    {
+      "time": 1794624393.5578392,
+      "elapsed": 22.030999999959022,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446843828
+    },
+    {
+      "time": 1794624393.808528,
+      "elapsed": 22.29700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446843828
+    },
+    {
+      "time": 1794624394.059209,
+      "elapsed": 22.54700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446843828
+    },
+    {
+      "time": 1794624394.310035,
+      "elapsed": 22.79700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446843828
+    },
+    {
+      "time": 1794624394.5603106,
+      "elapsed": 23.04700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446843828
+    },
+    {
+      "time": 1794624394.8109484,
+      "elapsed": 23.29700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446847468
+    },
+    {
+      "time": 1794624395.0611663,
+      "elapsed": 23.54700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446847609
+    },
+    {
+      "time": 1794624395.3115692,
+      "elapsed": 23.79700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446847859
+    },
+    {
+      "time": 1794624395.5620668,
+      "elapsed": 24.04700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446847859
+    },
+    {
+      "time": 1794624395.812594,
+      "elapsed": 24.29700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446847859
+    },
+    {
+      "time": 1794624396.0630918,
+      "elapsed": 24.54700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446847859
+    },
+    {
+      "time": 1794624396.3138268,
+      "elapsed": 24.79700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446847859
+    },
+    {
+      "time": 1794624396.5642111,
+      "elapsed": 25.04700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446847859
+    },
+    {
+      "time": 1794624396.8144598,
+      "elapsed": 25.29700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446847859
+    },
+    {
+      "time": 1794624397.0647225,
+      "elapsed": 25.54700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446847859
+    },
+    {
+      "time": 1794624397.314961,
+      "elapsed": 25.79700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446847859
+    },
+    {
+      "time": 1794624397.5655546,
+      "elapsed": 26.04700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446847859
+    },
+    {
+      "time": 1794624397.815719,
+      "elapsed": 26.29700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446847859
+    },
+    {
+      "time": 1794624398.0659158,
+      "elapsed": 26.54700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446847859
+    },
+    {
+      "time": 1794624398.3163805,
+      "elapsed": 26.79700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446847859
+    },
+    {
+      "time": 1794624398.5669847,
+      "elapsed": 27.04700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446847859
+    },
+    {
+      "time": 1794624398.8176374,
+      "elapsed": 27.29700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446847859
+    },
+    {
+      "time": 1794624399.0678663,
+      "elapsed": 27.54700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446847859
+    },
+    {
+      "time": 1794624399.31854,
+      "elapsed": 27.79700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446847859
+    },
+    {
+      "time": 1794624399.5687852,
+      "elapsed": 28.04700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446852250
+    },
+    {
+      "time": 1794624399.8190067,
+      "elapsed": 28.29700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446852500
+    },
+    {
+      "time": 1794624400.0696406,
+      "elapsed": 28.54700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446852718
+    },
+    {
+      "time": 1794624400.320225,
+      "elapsed": 28.79700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446853000
+    },
+    {
+      "time": 1794624400.5704644,
+      "elapsed": 29.04700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446853234
+    },
+    {
+      "time": 1794624400.8209176,
+      "elapsed": 29.29700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446853500
+    },
+    {
+      "time": 1794624401.0713766,
+      "elapsed": 29.54700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446853734
+    },
+    {
+      "time": 1794624401.321916,
+      "elapsed": 29.79700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446853890
+    },
+    {
+      "time": 1794624401.5721438,
+      "elapsed": 30.04700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446854250
+    },
+    {
+      "time": 1794624401.8227782,
+      "elapsed": 30.29700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446854406
+    },
+    {
+      "time": 1794624402.0733614,
+      "elapsed": 30.54700000002049,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446854671
+    },
+    {
+      "time": 1794624402.3238165,
+      "elapsed": 30.811999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446855000
+    },
+    {
+      "time": 1794624402.574255,
+      "elapsed": 31.061999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446855234
+    },
+    {
+      "time": 1794624402.824657,
+      "elapsed": 31.311999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446855500
+    },
+    {
+      "time": 1794624403.0752182,
+      "elapsed": 31.561999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446855750
+    },
+    {
+      "time": 1794624403.3254817,
+      "elapsed": 31.811999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446855859
+    },
+    {
+      "time": 1794624403.5756485,
+      "elapsed": 32.061999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446856250
+    },
+    {
+      "time": 1794624403.8260689,
+      "elapsed": 32.311999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446856421
+    },
+    {
+      "time": 1794624404.0767376,
+      "elapsed": 32.561999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446856750
+    },
+    {
+      "time": 1794624404.327072,
+      "elapsed": 32.811999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446857000
+    },
+    {
+      "time": 1794624404.5778415,
+      "elapsed": 33.061999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446857250
+    },
+    {
+      "time": 1794624404.8282704,
+      "elapsed": 33.311999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446857515
+    },
+    {
+      "time": 1794624405.078835,
+      "elapsed": 33.561999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446857750
+    },
+    {
+      "time": 1794624405.3291497,
+      "elapsed": 33.811999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446858000
+    },
+    {
+      "time": 1794624405.5796614,
+      "elapsed": 34.061999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446858265
+    },
+    {
+      "time": 1794624405.8302033,
+      "elapsed": 34.311999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 397210,
+      "foreground_title": "",
+      "last_input_tick": 1446858515
+    },
+    {
+      "time": 1794624406.0807636,
+      "elapsed": 34.561999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 397210,
+      "foreground_title": "",
+      "last_input_tick": 1446858750
+    },
+    {
+      "time": 1794624406.3309627,
+      "elapsed": 34.811999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 397210,
+      "foreground_title": "",
+      "last_input_tick": 1446858968
+    },
+    {
+      "time": 1794624406.5811062,
+      "elapsed": 35.061999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446859265
+    },
+    {
+      "time": 1794624406.8312674,
+      "elapsed": 35.311999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 181339870,
+      "foreground_title": "",
+      "last_input_tick": 1446859515
+    },
+    {
+      "time": 1794624407.081446,
+      "elapsed": 35.561999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 181339870,
+      "foreground_title": "",
+      "last_input_tick": 1446859765
+    },
+    {
+      "time": 1794624407.3317056,
+      "elapsed": 35.811999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 397210,
+      "foreground_title": "",
+      "last_input_tick": 1446860015
+    },
+    {
+      "time": 1794624407.5821235,
+      "elapsed": 36.061999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 397210,
+      "foreground_title": "",
+      "last_input_tick": 1446860265
+    },
+    {
+      "time": 1794624407.8322425,
+      "elapsed": 36.311999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 397210,
+      "foreground_title": "",
+      "last_input_tick": 1446860515
+    },
+    {
+      "time": 1794624408.0825918,
+      "elapsed": 36.561999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 72222312,
+      "foreground_title": "ChatGPT",
+      "last_input_tick": 1446860765
+    },
+    {
+      "time": 1794624408.33283,
+      "elapsed": 36.811999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 6954100,
+      "foreground_title": "",
+      "last_input_tick": 1446861015
+    },
+    {
+      "time": 1794624408.583321,
+      "elapsed": 37.061999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 6954100,
+      "foreground_title": "",
+      "last_input_tick": 1446861265
+    },
+    {
+      "time": 1794624408.8334737,
+      "elapsed": 37.311999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446861515
+    },
+    {
+      "time": 1794624409.0836935,
+      "elapsed": 37.561999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 62785426,
+      "foreground_title": "",
+      "last_input_tick": 1446861750
+    },
+    {
+      "time": 1794624409.334038,
+      "elapsed": 37.811999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 62785426,
+      "foreground_title": "",
+      "last_input_tick": 1446862015
+    },
+    {
+      "time": 1794624409.584349,
+      "elapsed": 38.061999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 62785426,
+      "foreground_title": "",
+      "last_input_tick": 1446862265
+    },
+    {
+      "time": 1794624409.8349125,
+      "elapsed": 38.311999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 62785426,
+      "foreground_title": "",
+      "last_input_tick": 1446862515
+    },
+    {
+      "time": 1794624410.085375,
+      "elapsed": 38.561999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 62785426,
+      "foreground_title": "",
+      "last_input_tick": 1446862765
+    },
+    {
+      "time": 1794624410.335894,
+      "elapsed": 38.811999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446862953
+    },
+    {
+      "time": 1794624410.5860822,
+      "elapsed": 39.061999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446863250
+    },
+    {
+      "time": 1794624410.8367794,
+      "elapsed": 39.311999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446863515
+    },
+    {
+      "time": 1794624411.0874484,
+      "elapsed": 39.561999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 65924,
+      "foreground_title": "",
+      "last_input_tick": 1446863718
+    },
+    {
+      "time": 1794624411.337836,
+      "elapsed": 39.811999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446864015
+    },
+    {
+      "time": 1794624411.5880852,
+      "elapsed": 40.061999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446864234
+    },
+    {
+      "time": 1794624411.8386717,
+      "elapsed": 40.311999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446864515
+    },
+    {
+      "time": 1794624412.088885,
+      "elapsed": 40.561999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446864750
+    },
+    {
+      "time": 1794624412.3391562,
+      "elapsed": 40.811999999918044,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446864875
+    },
+    {
+      "time": 1794624412.5897183,
+      "elapsed": 41.07799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446865265
+    },
+    {
+      "time": 1794624412.8403888,
+      "elapsed": 41.32799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446865453
+    },
+    {
+      "time": 1794624413.0906024,
+      "elapsed": 41.57799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446865593
+    },
+    {
+      "time": 1794624413.3412063,
+      "elapsed": 41.82799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446865593
+    },
+    {
+      "time": 1794624413.5915668,
+      "elapsed": 42.07799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446865593
+    },
+    {
+      "time": 1794624413.8419068,
+      "elapsed": 42.32799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446865593
+    },
+    {
+      "time": 1794624414.0924761,
+      "elapsed": 42.57799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446865593
+    },
+    {
+      "time": 1794624414.342685,
+      "elapsed": 42.82799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446865593
+    },
+    {
+      "time": 1794624414.593081,
+      "elapsed": 43.07799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446865593
+    },
+    {
+      "time": 1794624414.843464,
+      "elapsed": 43.32799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446865593
+    },
+    {
+      "time": 1794624415.0940597,
+      "elapsed": 43.57799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446865593
+    },
+    {
+      "time": 1794624415.344498,
+      "elapsed": 43.82799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446868031
+    },
+    {
+      "time": 1794624415.5950918,
+      "elapsed": 44.07799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446868140
+    },
+    {
+      "time": 1794624415.8457115,
+      "elapsed": 44.32799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446868140
+    },
+    {
+      "time": 1794624416.0962226,
+      "elapsed": 44.57799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446868140
+    },
+    {
+      "time": 1794624416.346759,
+      "elapsed": 44.82799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446869015
+    },
+    {
+      "time": 1794624416.5971146,
+      "elapsed": 45.07799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446869281
+    },
+    {
+      "time": 1794624416.8474014,
+      "elapsed": 45.32799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446869484
+    },
+    {
+      "time": 1794624417.0977516,
+      "elapsed": 45.57799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446869781
+    },
+    {
+      "time": 1794624417.3483655,
+      "elapsed": 45.82799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446870031
+    },
+    {
+      "time": 1794624417.5988333,
+      "elapsed": 46.07799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446870093
+    },
+    {
+      "time": 1794624417.849048,
+      "elapsed": 46.32799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446870484
+    },
+    {
+      "time": 1794624418.0996542,
+      "elapsed": 46.57799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446870765
+    },
+    {
+      "time": 1794624418.3501232,
+      "elapsed": 46.82799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446871031
+    },
+    {
+      "time": 1794624418.6005304,
+      "elapsed": 47.07799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446871234
+    },
+    {
+      "time": 1794624418.8509004,
+      "elapsed": 47.32799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446871531
+    },
+    {
+      "time": 1794624419.1013603,
+      "elapsed": 47.57799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446871656
+    },
+    {
+      "time": 1794624419.3516746,
+      "elapsed": 47.82799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446872031
+    },
+    {
+      "time": 1794624419.6020396,
+      "elapsed": 48.07799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446872281
+    },
+    {
+      "time": 1794624419.852206,
+      "elapsed": 48.32799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446872531
+    },
+    {
+      "time": 1794624420.1028666,
+      "elapsed": 48.57799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446872765
+    },
+    {
+      "time": 1794624420.3532205,
+      "elapsed": 48.82799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446873031
+    },
+    {
+      "time": 1794624420.6039407,
+      "elapsed": 49.07799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446873140
+    },
+    {
+      "time": 1794624420.8545609,
+      "elapsed": 49.32799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446873453
+    },
+    {
+      "time": 1794624421.1049244,
+      "elapsed": 49.57799999997951,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446873453
+    },
+    {
+      "time": 1794624421.3554227,
+      "elapsed": 49.843000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446874031
+    },
+    {
+      "time": 1794624421.6058874,
+      "elapsed": 50.093000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446874265
+    },
+    {
+      "time": 1794624421.8564146,
+      "elapsed": 50.343000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446874406
+    },
+    {
+      "time": 1794624422.106978,
+      "elapsed": 50.593000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446874406
+    },
+    {
+      "time": 1794624422.3572779,
+      "elapsed": 50.843000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446875031
+    },
+    {
+      "time": 1794624422.6074293,
+      "elapsed": 51.093000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446875281
+    },
+    {
+      "time": 1794624422.8579075,
+      "elapsed": 51.343000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446875531
+    },
+    {
+      "time": 1794624423.108411,
+      "elapsed": 51.593000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446875562
+    },
+    {
+      "time": 1794624423.3585854,
+      "elapsed": 51.843000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446876031
+    },
+    {
+      "time": 1794624423.6090434,
+      "elapsed": 52.093000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446876281
+    },
+    {
+      "time": 1794624423.8602724,
+      "elapsed": 52.343000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446876468
+    },
+    {
+      "time": 1794624424.1108649,
+      "elapsed": 52.593000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Room 5 \u2014 META base + DeepSeek panel graft \u00b7 13 route - Google Chrome",
+      "last_input_tick": 1446876750
+    },
+    {
+      "time": 1794624424.3614323,
+      "elapsed": 52.843000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Room 5 \u2014 META base + DeepSeek panel graft \u00b7 13 route - Google Chrome",
+      "last_input_tick": 1446877031
+    },
+    {
+      "time": 1794624424.6119406,
+      "elapsed": 53.093000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Room 5 \u2014 META base + DeepSeek panel graft \u00b7 13 route - Google Chrome",
+      "last_input_tick": 1446877296
+    },
+    {
+      "time": 1794624424.8626084,
+      "elapsed": 53.343000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Room 5 \u2014 META base + DeepSeek panel graft \u00b7 13 route - Google Chrome",
+      "last_input_tick": 1446877546
+    },
+    {
+      "time": 1794624425.1127694,
+      "elapsed": 53.593000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Room 5 \u2014 META base + DeepSeek panel graft \u00b7 13 route - Google Chrome",
+      "last_input_tick": 1446877796
+    },
+    {
+      "time": 1794624425.3631992,
+      "elapsed": 53.843000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Room 5 \u2014 META base + DeepSeek panel graft \u00b7 13 route - Google Chrome",
+      "last_input_tick": 1446878046
+    },
+    {
+      "time": 1794624425.6137233,
+      "elapsed": 54.093000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Room 5 \u2014 META base + DeepSeek panel graft \u00b7 13 route - Google Chrome",
+      "last_input_tick": 1446878250
+    },
+    {
+      "time": 1794624425.8642354,
+      "elapsed": 54.343000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Muse - Google Chrome",
+      "last_input_tick": 1446878515
+    },
+    {
+      "time": 1794624426.114662,
+      "elapsed": 54.593000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Muse - Google Chrome",
+      "last_input_tick": 1446878796
+    },
+    {
+      "time": 1794624426.3648982,
+      "elapsed": 54.843000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Chat \u2014 Muse - Google Chrome",
+      "last_input_tick": 1446879046
+    },
+    {
+      "time": 1794624426.6155038,
+      "elapsed": 55.093000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Chat \u2014 Muse - Google Chrome",
+      "last_input_tick": 1446879281
+    },
+    {
+      "time": 1794624426.8659341,
+      "elapsed": 55.343000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Chat \u2014 Muse - Google Chrome",
+      "last_input_tick": 1446879375
+    },
+    {
+      "time": 1794624427.1164699,
+      "elapsed": 55.593000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Chat \u2014 Muse - Google Chrome",
+      "last_input_tick": 1446879375
+    },
+    {
+      "time": 1794624427.3667984,
+      "elapsed": 55.843000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Chat \u2014 Muse - Google Chrome",
+      "last_input_tick": 1446880031
+    },
+    {
+      "time": 1794624427.618317,
+      "elapsed": 56.093000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Chat \u2014 Muse - Google Chrome",
+      "last_input_tick": 1446880296
+    },
+    {
+      "time": 1794624427.8691955,
+      "elapsed": 56.343000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Chat \u2014 Muse - Google Chrome",
+      "last_input_tick": 1446880546
+    },
+    {
+      "time": 1794624428.119863,
+      "elapsed": 56.593000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Chat \u2014 Muse - Google Chrome",
+      "last_input_tick": 1446880750
+    },
+    {
+      "time": 1794624428.3701863,
+      "elapsed": 56.843000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Chat \u2014 Muse - Google Chrome",
+      "last_input_tick": 1446880984
+    },
+    {
+      "time": 1794624428.6205301,
+      "elapsed": 57.093000000109896,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Chat \u2014 Muse - Google Chrome",
+      "last_input_tick": 1446881171
+    },
+    {
+      "time": 1794624428.8709297,
+      "elapsed": 57.35899999993853,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Chat \u2014 Muse - Google Chrome",
+      "last_input_tick": 1446881171
+    },
+    {
+      "time": 1794624429.1217167,
+      "elapsed": 57.60899999993853,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Chat \u2014 Muse - Google Chrome",
+      "last_input_tick": 1446881750
+    },
+    {
+      "time": 1794624429.372768,
+      "elapsed": 57.85899999993853,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Chat \u2014 Muse - Google Chrome",
+      "last_input_tick": 1446882046
+    },
+    {
+      "time": 1794624429.6231995,
+      "elapsed": 58.10899999993853,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Chat \u2014 Muse - Google Chrome",
+      "last_input_tick": 1446882312
+    },
+    {
+      "time": 1794624429.873569,
+      "elapsed": 58.35899999993853,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 525918,
+      "foreground_title": "Chat \u2014 Muse - Google Chrome",
+      "last_input_tick": 1446882546
+    },
+    {
+      "time": 1794624430.1238837,
+      "elapsed": 58.60899999993853,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446882796
+    },
+    {
+      "time": 1794624430.3745039,
+      "elapsed": 58.85899999993853,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446883062
+    },
+    {
+      "time": 1794624430.6266944,
+      "elapsed": 59.10899999993853,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446883296
+    },
+    {
+      "time": 1794624430.877123,
+      "elapsed": 59.35899999993853,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446883546
+    },
+    {
+      "time": 1794624431.1276765,
+      "elapsed": 59.60899999993853,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446883640
+    },
+    {
+      "time": 1794624431.3778653,
+      "elapsed": 59.85899999993853,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 53026238,
+      "foreground_title": "VITO_MUSEROOM - Standalon...",
+      "last_input_tick": 1446884062
+    },
+    {
+      "time": 1794624431.62848,
+      "elapsed": 60.10899999993853,
+      "hwnd": 8851124,
+      "title": "CODO_P8_CONTROL_20261114 - Google Chrome for Testing",
+      "pid": 27504,
+      "rect": [
+        -32000,
+        -32000,
+        -31840,
+        -31972
+      ],
+      "minimized": true,
+      "foreground": 2494478,
+      "foreground_title": "HaoHao-Setup-1.0.0.exe - Google Drive - Google Chrome",
+      "last_input_tick": 1446884296
+    }
+  ]
+}

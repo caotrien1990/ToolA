@@ -6674,19 +6674,19 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, []),
 
-    ('desktop_click', "V15 R59: CDP-first click with mouseMoved hover-arm, mouseDown/Up dispatch, and DOM-level synthetic .click() fallback. Returns dom_evidence_at_xy (tag/id/class/rect/disabled/textContent of element under coord) for diagnosing 'click=ok but app didn't react'. Win32 fallback retained. project_path optional; force_win32 skips CDP entirely.", {
+    ('desktop_click', "V15 R59: CDP-first click with mouseMoved hover-arm, mouseDown/Up dispatch, and DOM-level synthetic .click() fallback. Returns dom_evidence_at_xy (tag/id/class/rect/disabled/textContent of element under coord) for diagnosing 'click=ok but app didn't react'. Win32 fallback retained. checks reports converted virtual-screen bounds and modal-disabled warnings for Win32; out-of-bounds refuses, modal warns and dispatches. CDP geometry/modal checks are explicitly skipped. clicked describes dispatch, not independently verified app effect. project_path optional; force_win32 skips CDP entirely.", {
 
             "project_path": {"type": "string", "default": "", "description": "V15 R57: optional project root for session binding (mutating tool). Schema declares this so passing it never raises UNSUPPORTED_FIELD. When empty, runtime falls back to find_project_root(file_path) → page_id resolution; if all fail, raises PROJECT_PATH_REQUIRED (single source of truth)."},
 
             "hwnd": {"type": "integer", "default": 0, "description": "Optional for CDP path; required for Win32 fallback unless title_pattern set"},
 
-            "x": {"description": "Screen X coordinate of the click, in virtual-desktop pixels.", "type": "integer"},
+            "x": {"description": "X in the selected CDP page viewport, or in the target window client area for Win32. No automatic conversion between these two frames.", "type": "integer"},
 
-            "y": {"description": "Screen Y coordinate of the click, in virtual-desktop pixels.", "type": "integer"},
+            "y": {"description": "Y in the selected CDP page viewport, or in the target window client area for Win32. No automatic conversion between these two frames.", "type": "integer"},
 
             "cdp_port": {"description": "CDP port of the Electron target the click is routed through first. Default 9223.", "type": "integer", "default": 9223},
 
-            "title_pattern": {"description": "Title substring of the target window, used to verify the click lands on the intended app; empty skips the title check.", "type": "string", "default": ""},
+            "title_pattern": {"description": "Title filter for selecting the target window/page; empty is unpinned. Selection does not verify the application effect.", "type": "string", "default": ""},
 
             "match_mode": {"type": "string", "default": "contains_case_insensitive", "description": "exact|contains|regex|case_insensitive|contains_case_insensitive"},
 
@@ -6706,7 +6706,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["x", "y"]),
 
-    ('desktop_window_state', "V15 R58 T4d: Win32 ShowWindow primitive for window state changes (maximize/restore/minimize/normal/hide/show). Bypasses the unreliable 'click on chrome titlebar maximize button' pattern — clicking at fixed coords drifts with DPI scaling, theme, and Electron frame variations. Uses official Windows API ShowWindow(hwnd, SW_*). Returns rect_before, rect_after, was_visible, hwnd_resolved, prev_state. For Electron BrowserWindow maximize, prefer this over desktop_click(maximize_button_coords).", {
+    ('desktop_window_state', "V15 R58 T4d: Win32 ShowWindow primitive for window state changes (maximize/restore/minimize/normal/hide/show). Bypasses the unreliable 'click on chrome titlebar maximize button' pattern — clicking at fixed coords drifts with DPI scaling, theme, and Electron frame variations. Uses official Windows API ShowWindow(hwnd, SW_*). Returns rect_before, rect_after, was_visible, hwnd, prev_state and observation (immediate plus 100 ms samples over 1 second). Holds the existing driver lock during observation. Reports observed transitions with actor unknown; does not retry or guarantee persistence after the interval. For Electron BrowserWindow maximize, prefer this over desktop_click(maximize_button_coords).", {
 
             "project_path": {"type": "string", "default": "", "description": "Optional project root for session binding (mutating tool)."},
 
@@ -6720,7 +6720,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["state"]),
 
-    ('desktop_screenshot', 'T4d: capture a desktop screenshot of all monitors, one monitor, or one window. Default captures ALL monitors (virtual desktop); monitor=N (1-based) captures one monitor; hwnd>0 captures a window. Result includes monitors[] (bounds+primary).', {
+    ('desktop_screenshot', 'T4d: capture a desktop screenshot of all monitors, one monitor, or one window. Default captures ALL monitors (virtual desktop); monitor=N (1-based) captures one monitor; hwnd>0 captures a window. Result includes monitors[] (bounds+primary). Bridged capture checks console lock before capture and again before saving: T4_SCREEN_LOCKED/T4_SCREEN_STATE_UNKNOWN creates no PNG; unlocked uniform frames report uniform_frame and variance.', {
 
             "hwnd": {"description": "Window handle to capture; 0 (default) captures monitors instead of a single window.", "type": "integer", "default": 0},
 
@@ -6732,7 +6732,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, []),
 
-    ('desktop_send_text', 'V15 R92 T4d: focus a desktop window and send short text via clipboard paste, optionally submitting with Enter.', {
+    ('desktop_send_text', 'T4d: focus and paste text, optionally submitting. Native Edit text_verification precedes Enter; password/DOM controls report not_verified. delivery_verified remains dispatch metadata. Preserves text-only clipboard unless the user changes it; unsupported prior formats or snapshot failures abort before replacement. Bridged calls refuse locked/unknown console state.', {
 
             "text": {"type": "string", "description": "Required text to paste/type into the target desktop window."},
 
@@ -6742,11 +6742,11 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "match_mode": {"type": "string", "default": "contains_case_insensitive", "description": "exact|contains|regex|case_insensitive|contains_case_insensitive"},
 
-            "submit": {"type": "boolean", "default": True, "description": "Press Enter after sending text."},
+            "submit": {"type": "boolean", "default": True, "description": "Press Enter after readback and clipboard restoration. Native Edit mismatch or moved focus prevents submit; unsupported controls remain explicitly not_verified."},
 
             "method": {"type": "string", "default": "clipboard", "description": "Clipboard dispatch. Verify the actual value in the target app."},
             "paste_shortcut": {"type": "string", "enum": ["auto", "shift_insert", "ctrl_v"], "default": "auto", "description": "Auto uses Shift+Insert. Select ctrl_v for apps that require it."},
-            "clear_first": {"type": "boolean", "default": False, "description": "Select all in the focused input before replacing its contents."},
+            "clear_first": {"type": "boolean", "default": False, "description": "Send Ctrl+A before paste. Explicit opt-in: applications may select records outside an input; verify the focused control."},
 
             "pre_focus_delay_ms": {"description": "Delay in milliseconds after focusing the window before pasting, so the target app settles. Default 250.", "type": "integer", "default": 250},
 
@@ -6754,9 +6754,9 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "click_focus": {"description": "When true, click at click_x/click_y inside the window to set the text caret before pasting; default false pastes at the current caret.", "type": "boolean", "default": False},
 
-            "click_x": {"description": "X offset (window-relative pixels) of the focus click used when click_focus is true; 0 means no explicit point.", "type": "integer", "default": 0},
+            "click_x": {"description": "Screen X coordinate of the optional focus click; 0 uses the window-center heuristic.", "type": "integer", "default": 0},
 
-            "click_y": {"description": "Y offset (window-relative pixels) of the focus click used when click_focus is true; 0 means no explicit point.", "type": "integer", "default": 0},
+            "click_y": {"description": "Screen Y coordinate of the optional focus click; 0 uses the window-bottom heuristic.", "type": "integer", "default": 0},
 
             "project_path": {"type": "string", "description": "Project root for the session gate. W7 2026-08-19 (F020): this is a mutating tool with no file_path/page_id/session_id, so the gate cannot derive a project and a payload built from `required` always answered 400 PROJECT_PATH_REQUIRED."},
 

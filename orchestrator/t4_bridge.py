@@ -784,6 +784,7 @@ class T4Bridge:
                     entry.in_flight.add(entry.call_seq)
                     seqs[page_id] = entry.call_seq
         token = None
+        capture_token = None
         try:
             if tool_name in DRIVER_LOCK_TOOLS:
                 try:
@@ -806,6 +807,13 @@ class T4Bridge:
             failure = self._preflight_entries(tool_name, page_ids, agent_id)
             if failure:
                 return _as_raw(failure)
+            from orchestrator.runtime import console_guard
+            if tool_name in console_guard.BLOCKED_TOOLS:
+                state = await asyncio.to_thread(console_guard.console_state)
+                denied = console_guard.refusal(state)
+                if denied:
+                    return _as_raw(denied)
+                capture_token = console_guard.CAPTURE_GUARD.set(True)
             if tool_name in CLASS_G_TOOLS:
                 loop = asyncio.get_running_loop()
                 result = await loop.run_in_executor(
@@ -817,6 +825,8 @@ class T4Bridge:
                     result = await result
             return _as_raw(result)
         finally:
+            if capture_token is not None:
+                console_guard.CAPTURE_GUARD.reset(capture_token)
             with self._state_lock:
                 for page_id, seq in seqs.items():
                     entry = self.entries.get(page_id)

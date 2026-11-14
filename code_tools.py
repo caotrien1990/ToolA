@@ -2052,26 +2052,9 @@ def _t4_process_session_id():
 
 
 def _t4_console_state():
-    """Console lock state via logonui presence (plan section 2):
-    logonui.exe present in the console session means locked."""
-    state = {"explorer_present": None, "logonui_present": None,
-             "console_locked": None}
-    try:
-        import psutil
-        _names = set()
-        for _proc in psutil.process_iter(["name"]):
-            try:
-                _n = (_proc.info.get("name") or "").lower()
-            except Exception:
-                continue
-            if _n in ("explorer.exe", "logonui.exe"):
-                _names.add(_n)
-        state["explorer_present"] = "explorer.exe" in _names
-        state["logonui_present"] = "logonui.exe" in _names
-        state["console_locked"] = state["logonui_present"]
-    except Exception:
-        pass
-    return state
+    """Uncached lock signal, restricted to the active console session."""
+    from orchestrator.runtime.console_guard import console_state
+    return console_state()
 
 
 async def t4_host_status(agent_id: str = "") -> str:

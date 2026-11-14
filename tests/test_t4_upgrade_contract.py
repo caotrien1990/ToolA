@@ -211,7 +211,12 @@ def desktop_world(monkeypatch):
     con = SimpleNamespace(VK_CONTROL=17, VK_SHIFT=16, VK_INSERT=45, VK_RETURN=13,
                           KEYEVENTF_KEYUP=2, KEYEVENTF_EXTENDEDKEY=1, CF_UNICODETEXT=13)
     clip = SimpleNamespace(OpenClipboard=Mock(), CloseClipboard=Mock(),
-                           EmptyClipboard=Mock(), SetClipboardData=Mock())
+                           EmptyClipboard=Mock(), SetClipboardData=Mock(),
+                           EnumClipboardFormats=Mock(return_value=0),
+                           GetClipboardSequenceNumber=Mock(return_value=1),
+                           GetClipboardData=Mock(return_value="Tiếng Việt"))
+    from orchestrator.runtime import desktop_text
+    monkeypatch.setattr(desktop_text, "focused_control", lambda hwnd: None)
     for name, value in (("win32gui", gui), ("win32process", proc), ("win32api", api),
                         ("win32con", con), ("win32clipboard", clip)):
         monkeypatch.setitem(sys.modules, name, value)
