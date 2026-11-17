@@ -20570,7 +20570,7 @@ try:
                     'x-dual': True
                 },
                 'exit_code': {
-                    'type': 'integer'
+                    'anyOf': [{'type': 'integer'}, {'type': 'null'}]
                 },
                 'ok': {
                     'type': 'boolean',
@@ -20742,7 +20742,7 @@ try:
             'type': 'object',
             'x-audit': {
                 'status': 'audited',
-                'schema_sha256': 'db90645113b11ecf196e5f3e46560c6002882144d2a7445b8d812e86c06bafeb',
+                'schema_sha256': 'df15aeca924e76c2fb7c0719d95625bafa3978a2c9d9230759d8cab1d3771d22',
                 'depth_D': 4
             }
         },
@@ -20756,7 +20756,7 @@ try:
                     'type': 'number'
                 },
                 'exit_code': {
-                    'type': 'integer'
+                    'anyOf': [{'type': 'integer'}, {'type': 'null'}]
                 },
                 'ok': {
                     'type': 'boolean',
@@ -20856,7 +20856,7 @@ try:
             'type': 'object',
             'x-audit': {
                 'status': 'audited',
-                'schema_sha256': '102bc6b30dc9a5cbc89b50ad75bc91999bc62dd64083929df4bb169f732dac82',
+                'schema_sha256': 'f35faec3c75d9168623e03827affcf4b3101c589d54332c09857e2e48589a613',
                 'depth_D': 2
             }
         },

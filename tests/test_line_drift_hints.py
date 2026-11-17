@@ -32,6 +32,4 @@ class TestLineDriftHints(unittest.TestCase):
             self.assertFalse(result.get("ok"), msg=result)
             self.assertEqual(result.get("error_name"), "RANGE_PAST_EOF")
             self.assertEqual(result.get("total_lines"), 2)
-            notes = (result.get("ca_guidance") or {}).get("notes") or []
-            self.assertTrue(any("read_file_range" in str(n) for n in notes), result)
-            self.assertIn("native editor line numbers", " ".join(str(n) for n in notes))
+            self.assertNotIn("ca_guidance", result, msg=result)

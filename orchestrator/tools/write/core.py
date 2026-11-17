@@ -1659,11 +1659,6 @@ skip_symbol_check :bool =False )->str :
         retryable =False ,
         suggested_fallback ="STOP_AND_REPORT",
         ca_next_action ="stop_and_report",
-        ca_guidance ={
-        "tool_category":"mutating",
-        "retry_sequence":[],
-        "notes":["Do not use text diff tools on binary files."],
-        },
         )
 
     new_content ,encoding_check ,decode_error =ct._decode_text_payload (new_content ,content_encoding )
@@ -1697,9 +1692,6 @@ skip_symbol_check :bool =False )->str :
             "error_name":"RANGE_PAST_EOF" if start_line >total else "RANGE_OUT_OF_BOUNDS",
             "total_lines":total ,
             "ca_next_action":"seed_read_file_range_then_retry_write_fix",
-            "ca_guidance":{
-            "notes":["use start_line from the same read_file_range response; native editor line numbers are not accepted."],
-            },
             }
         if end_line <start_line :
             return {"error":f"end_line {end_line} must be >= start_line {start_line}"}
@@ -2693,16 +2685,16 @@ async def delete_file (file_path :str ,project_path :str ="",_ephemeral :bool =F
     except ImportError :
         pass
     if not fp .exists ():
-        return ct.json .dumps ({"error":f"File not found: {file_path}"})
+        return ct.json .dumps ({"ok":False ,"error":f"File not found: {file_path}"})
     if not fp .is_file ():
-        return ct.json .dumps ({"error":f"Not a file: {file_path}"})
+        return ct.json .dumps ({"ok":False ,"error":f"Not a file: {file_path}"})
 
     def _delete ():
         try :
             fp .unlink ()
             return {"ok":True ,"deleted":str (fp )}
         except Exception as exc :
-            return {"error":str (exc )}
+            return {"ok":False ,"error":str (exc )}
 
     result =await ct.asyncio .to_thread (_delete )
     if isinstance (result ,dict )and result .get ("ok"):
