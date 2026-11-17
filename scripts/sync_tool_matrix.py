@@ -229,7 +229,7 @@ def cmd_generate(project_path: Path) -> int:
     # D1 (2026-08-11): code_tools.TOOL_MAP alone is 213 tools; the remaining
     # 22 register through orchestrator_server.py's _register_tool callsites
     # (governed git, council cron, restart helpers, etc.). Import the server
-    # module so TOOL_MAP reaches the full 235-tool runtime surface — the same
+    # module so TOOL_MAP reaches the full runtime surface — the same
     # source of truth that /api/tools/names serves.
     try:
         import orchestrator_server  # noqa: F401  (side-effect: late registrations)

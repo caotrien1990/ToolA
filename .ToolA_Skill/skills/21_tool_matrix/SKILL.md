@@ -211,7 +211,7 @@ Sau mỗi action mutation:
 End of test:
 ```
 [ ] extract_log_section(... "System Error Log") for final audit
-[ ] cleanup via taskkill /F /IM electron.exe /T
+[ ] Release the owned page with cleanup_test_session(page_id).
 [ ] final reporting flow removed from matrix
 ```
 

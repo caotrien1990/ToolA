@@ -1,0 +1,98 @@
+[
+  {
+    "trial": 1,
+    "time": "2026-11-14T14:16:44.2115713+07:00",
+    "window": {
+      "hwnd": 35001122,
+      "title": "CODO_P8_EXPLICIT_20261114B - Google Chrome for Testing",
+      "pid": 72036,
+      "process_name": "chrome.exe",
+      "class_name": "Chrome_WidgetWin_1",
+      "parent_hwnd": 0,
+      "owner_hwnd": 0,
+      "visible": true,
+      "enabled": true,
+      "is_topmost": false,
+      "is_toolwindow": false,
+      "is_dialog_class": false,
+      "rect": {
+        "x": 10,
+        "y": 10,
+        "w": 1296,
+        "h": 888
+      }
+    },
+    "minimize": {
+      "ok": true,
+      "hwnd": 35001122,
+      "rect_after": {
+        "x": -32000,
+        "y": -32000,
+        "w": 160,
+        "h": 28
+      },
+      "is_minimized_after": true
+    },
+    "independent_before": true,
+    "focus": {
+      "ok": true,
+      "method": "win32_attach",
+      "hwnd": 35001122,
+      "matched_title": "",
+      "focused": true,
+      "contention_note": "3 /api/call requests were in flight around this one; the wall clock includes queueing, so a slow answer here is NOT evidence of a slow tool -- re-measure serially before tuning scope"
+    },
+    "independent_after": false,
+    "foreground": 35001122
+  },
+  {
+    "trial": 2,
+    "time": "2026-11-14T14:16:46.4810798+07:00",
+    "window": {
+      "hwnd": 35001122,
+      "title": "CODO_P8_EXPLICIT_20261114B - Google Chrome for Testing",
+      "pid": 72036,
+      "process_name": "chrome.exe",
+      "class_name": "Chrome_WidgetWin_1",
+      "parent_hwnd": 0,
+      "owner_hwnd": 0,
+      "visible": true,
+      "enabled": true,
+      "is_topmost": false,
+      "is_toolwindow": false,
+      "is_dialog_class": false,
+      "rect": {
+        "x": 10,
+        "y": 10,
+        "w": 1296,
+        "h": 888
+      }
+    },
+    "minimize": {
+      "ok": true,
+      "hwnd": 35001122,
+      "rect_after": {
+        "x": -32000,
+        "y": -32000,
+        "w": 160,
+        "h": 28
+      },
+      "is_minimized_after": true
+    },
+    "independent_before": true,
+    "focus": {
+      "ok": true,
+      "method": "win32_attach",
+      "hwnd": 35001122,
+      "matched_title": "",
+      "focused": true,
+      "contention_note": "2 /api/call requests were in flight around this one; the wall clock includes queueing, so a slow answer here is NOT evidence of a slow tool -- re-measure serially before tuning scope"
+    },
+    "independent_after": false,
+    "foreground": 35001122
+  }
+]
+{
+  "page_id": "pg-1794640601505-0-88c2fa",
+  "ok": true
+}

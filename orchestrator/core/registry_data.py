@@ -5479,7 +5479,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["operations", "project_path"]),  # W7: project_path is enforced by the write gate; declaring it keeps schema == runtime.
 
-    ('replace_between_anchors', 'V15 R43 P1 #3-B T2: anchor-based file patch. Resolves text anchors (start_anchor/end_anchor as substring or regex) to line numbers, then delegates to write_fix. Eliminates line-number brittleness for long functions. Token required. end_anchor_inclusive=false (default) preserves the end_anchor line.', {
+    ('replace_between_anchors', 'V15 R43 P1 #3-B T2: anchor-based file patch. Resolves text anchors (start_anchor/end_anchor as substring or regex) to line numbers, then delegates to write_fix. Eliminates line-number brittleness for long functions. end_anchor_inclusive=false (default) preserves the end_anchor line.', {
 
             "file_path": {"description": "File to patch, relative to project_path; the anchor range inside it is replaced.", "type": "string"},
 
@@ -5651,7 +5651,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('t4_host_status', 'Phase 2 Sprint 2 (plan 2/4) T1 read: T4-over-HTTP host status — daemon session id, console lock state, T4 loop alive + epoch, driver-lock holder, open pages (own pages in full; other owners as counts only), quarantine records, daemon generation. Not bridged: a plain daemon read.', {
 
-            "agent_id": {"description": "Caller identity injected by the dispatcher (header > body > env); scopes the page listing to the caller's own pages. Do not pass another agent's id.", "type": "string", "default": ""},
+            "agent_id": {"description": "Caller identity supplied by the transport. Unidentified HTTP callers receive counts only.", "type": "string", "default": ""},
 
         }, []),
 
@@ -5713,13 +5713,13 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, []),
 
-    ('cdp_attach_target', 'V15 R15 P2.6 / R44 T4a: attach Playwright to existing CDP target. V15 R16 A.1: auto-fallback to browser-level WS via /json/version when Electron rejects Target.createBrowserContext. Returns attach_id == page_id consumable by click/fill/evaluate_js/read_page/query_selector + attach_via field showing which path succeeded. Provide target_id (from list_cdp_targets) or websocket_url directly. R44: pass project_path so subsequent T4 mutating tools (fill_value/click) resolve the active session via page_id alone.', {
+    ('cdp_attach_target', 'V15 R15 P2.6 / R44 T4a: attach Playwright to existing CDP target. Browser-level WS fallback via /json/version is opt-in over HTTP (allow_browser_level_fallback=true). Returns attach_id == page_id consumable by click/fill/evaluate_js/read_page/query_selector + attach_via field showing which path succeeded. For HTTP, provide target_id from list_cdp_targets and an expected title or URL. R44: pass project_path so subsequent T4 mutating tools (fill_value/click) resolve the active session via page_id alone.', {
 
-            "target_id": {"type": "string", "default": "", "description": "Target id from list_cdp_targets response. Required if websocket_url not provided."},
+            "target_id": {"type": "string", "default": "", "description": "Target id from list_cdp_targets response. Required over HTTP, including when websocket_url is supplied."},
 
             "cdp_port": {"description": "Chrome DevTools Protocol port of the already-running target to attach to. Default 9223.", "type": "integer", "default": 9223},
 
-            "websocket_url": {"type": "string", "default": "", "description": "Optional: direct ws://... endpoint (skips target_id lookup). Use /json/version response for browser-level URL on Electron. Required if target_id not provided."},
+            "websocket_url": {"type": "string", "default": "", "description": "Optional direct ws:// endpoint. HTTP still requires target_id and the expected title or URL. The direct handler also supports a websocket_url-only attach."},
 
             "project_path": {"type": "string", "default": "", "description": "R44: originating project root — pinned to page state so fill_value/click/evaluate_js can resolve active session by page_id without re-passing project_path."},
 
@@ -5737,7 +5737,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["project_path"]),
 
-    ('launch_electron_with_cdp', 'V15 R16 A.2 T4: one-shot Electron launch + CDP attach. Detects launcher, injects --remote-debugging-port=<cdp_port>, runs background, fetches /json/version, calls cdp_attach_target. Returns page_id ready for click/fill_value/dom_state_diff. Replaces the manual 3-step dance from Recipe A.', {
+    ('launch_electron_with_cdp', 'Stateful MCP launch and attach. Over HTTP, start the app with remote debugging enabled and use list_cdp_targets followed by cdp_attach_target.', {
 
             "launcher_path": {"type": "string", "default": "", "description": ".bat/.ps1 launcher path; if empty, auto-find via inspect_project_runtime(project_path)"},
 
@@ -5751,7 +5751,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('dom_state_diff', 'V15 R16 A.4 T1: snapshot DOM element state (disabled/bg/color/className/visible/text) and compare across time. page_id must be a live pg-... ID. Two modes: no baseline_id returns a snapshot_id cached 10 minutes; baseline_id compares against that snapshot and must be recreated after restart or page replacement.', {
 
-            "page_id": {"type": "string", "pattern": "^(pg|cdp)-[A-Za-z0-9][A-Za-z0-9_-]*$", "description": "Only the pg-.../cdp-... page_id returned by cdp_attach_target/open_browser_page/launch_electron_with_cdp"},
+            "page_id": {"type": "string", "pattern": "^(pg|cdp)-[A-Za-z0-9][A-Za-z0-9_-]*$", "description": "Only the pg-.../cdp-... page_id returned by cdp_attach_target or open_browser_page"},
 
             "selector": {"type": "string", "description": "CSS selector for the element to snapshot"},
 
@@ -5921,15 +5921,12 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["page_id"]),
 
-    ('cleanup_test_session', 'V15 R16.6 T2 (+R43 P0 #6A): 1-call test wrap-up. Close CDP page (if page_id), taskkill listed processes (default electron.exe + chrome.exe), close active session. Token required. R43: idle_guard_signals=[{kind,...}] refuses cleanup while target busy → CLEANUP_BLOCKED_TARGET_BUSY. Bypass with idle_guard_force=true.', {
+    ('cleanup_test_session', 'Release the named test page. A launched page closes and a CDP attachment detaches. Requires a mutation token.', {
 
-            "project_path": {"description": "Project root of the test session to wrap up (page close, process kill, session close). Empty resolves the active session's project.", "type": "string", "default": ""},
-
-            "page_id": {"type": "string", "default": "", "description": "Optional CDP page_id to close before kill"},
-
-            "processes": {"type": "array", "default": [], "description": "Process names to taskkill; default ['electron.exe','chrome.exe']"},
-
-            "close_session_after": {"description": "When true (default), close the active ToolA session after closing the page and killing test processes.", "type": "boolean", "default": True},
+            "project_path": {"description": "Project root for the session gate.", "type": "string", "default": ""},
+            "page_id": {"type": "string", "description": "Owned page returned by open_browser_page or cdp_attach_target."},
+            "processes": {"type": "array", "default": [], "description": "Compatibility field. Non-empty process lists are refused."},
+            "close_session_after": {"type": "boolean", "default": False, "description": "Compatibility field. Closing a session requires a separate call with its exact ID."},
 
             "idle_guard_signals": {"type": "array", "default": [], "description": "R43 P0 #6A: signals[] array same shape as assert_target_idle. If provided and outcome != idle, cleanup is refused (CLEANUP_BLOCKED_TARGET_BUSY). Empty array = skip guard (legacy behavior)."},
 
@@ -5937,7 +5934,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "idle_guard_force": {"type": "boolean", "default": False, "description": "R43 P0 #6A: bypass idle guard. Use only when test intentionally cleaning up a failed/aborted run — note this in CA reply."},
 
-        }, []),
+        }, ["page_id"]),
 
     ('click_selector', 'V15 R16.9 T4: alias of click() that snapshots target element state BEFORE + AFTER click — returns enabled/disabled, visible, bg/color, className, value_length deltas in 1 call. Replaces CA pattern of (dom_state_diff → click → dom_state_diff). Pass before_after_state=false for pure click.', {
 
@@ -5983,9 +5980,9 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["page_id", "selector"]),
 
-    ('ensure_single_electron_instance', "V15 R16.9 T4: pre-launch hygiene — kill any existing electron.exe + free CDP port BEFORE launching a fresh instance. Prevents 'stale Electron from previous round' confusion. Returns existing_pids, killed, port_was_busy, port_free_after. Pair with launch_electron_with_cdp.", {
+    ('ensure_single_electron_instance', "Inspect running Electron processes and CDP port usage. With kill_existing=true, terminates electron.exe processes by image name across the desktop. To attach over HTTP, start the app with remote debugging enabled, then use list_cdp_targets and cdp_attach_target.", {
 
-            "project_path": {"description": "Project root used to resolve which Electron instance/port belongs to this project before killing stale ones; empty resolves from the active session.", "type": "string", "default": ""},
+            "project_path": {"description": "Project context reported in the result. The process scan and kill are system-wide.", "type": "string", "default": ""},
 
             "cdp_port": {"description": "CDP port that must be freed before the fresh Electron launch. Default 9223.", "type": "integer", "default": 9223},
 
@@ -6051,7 +6048,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["path"]),
 
-    ('create_folder', 'V15 R65 T2 file-artifact mutation: create a directory. Idempotent mkdir; an existing directory is SUCCESS (created=false). recursive=true creates the parent tree like mkdir -p. Requires normal mutation authorization/token. Path is a plain JSON string so spaces/non-ASCII survive with no shell quoting.', {
+    ('create_folder', 'V15 R65 T2 file-artifact mutation: create a directory. Idempotent mkdir; an existing directory is SUCCESS (created=false). recursive=true creates the parent tree like mkdir -p. Requires normal mutation authorization. Path is a plain JSON string so spaces/non-ASCII survive with no shell quoting.', {
 
             "path": {"type": "string", "description": "Absolute folder path to create. Windows path with spaces/diacritics OK (JSON string, no shell)."},
 
@@ -6061,7 +6058,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["path"]),
 
-    ('create_folders', 'V15 R65 T2 file-artifact mutation: batch create_folder. Pass a flat array of string paths. Requires normal mutation authorization/token. ok=true only when every path succeeded; a bad path does not abort the rest.', {
+    ('create_folders', 'V15 R65 T2 file-artifact mutation: batch create_folder. Pass a flat array of string paths. Requires normal mutation authorization. ok=true only when every path succeeded; a bad path does not abort the rest.', {
 
             "paths": {"type": "array", "description": "List of absolute folder paths to create."},
 
@@ -6095,19 +6092,19 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["path_a", "path_b"]),
 
-    ('fill_folder_dialog', 'V15 R27.1 / R31 T4: control Windows native folder dialog with owner_pid/parent_hwnd/exclude_titles/launched_after_ts filters to eliminate false matches (CapCut/browser). R31 adds DIALOG_AMBIGUOUS guard, dry_run, and modern picker fallback (Ctrl+L → paste → Enter for IFileDialog when no Edit child). Token-protected.', {
+    ('fill_folder_dialog', 'Fill a pinned native folder dialog, read back the entered path, and observe dialog closure. HTTP requires parent_hwnd or both owner_pid and a non-empty title_pattern. Verify the application selection separately.', {
 
             "title_pattern": {"type": "string", "default": "", "description": "Regex against dialog title; combined with auto_try_common_titles"},
 
-            "folder_path": {"description": "Folder path typed/pasted into the native folder dialog and confirmed.", "type": "string"},
+            "folder_path": {"description": "Folder path to enter and read back before submitting the dialog.", "type": "string"},
 
             "timeout_ms": {"description": "Overall timeout in milliseconds for finding and filling the dialog. Default 5000.", "type": "integer", "default": 5000},
 
             "wait_for_dialog_ms": {"description": "Time in milliseconds to wait for the folder dialog to appear before giving up. Default 3000.", "type": "integer", "default": 3000},
 
-            "auto_try_common_titles": {"description": "When true (default), also match dialogs by common folder-picker titles when the owner/title filters find nothing.", "type": "boolean", "default": True},
+            "auto_try_common_titles": {"description": "Try common titles on direct calls. The HTTP bridge forces this off and uses the supplied pin.", "type": "boolean", "default": True},
 
-            "electron_fallback_hint": {"type": "object", "default": {}, "description": "{page_id, suggested_handler} — fallback recipe when dialog absent"},
+            "electron_fallback_hint": {"type": "object", "default": {}, "description": "Legacy compatibility field. Recovery guidance uses the current dialog census."},
 
             "owner_pid": {"type": "integer", "default": 0, "description": "R31: only match windows owned by this PID (e.g. Rawcut electron PID) — eliminates CapCut/browser false-match"},
 
@@ -6121,7 +6118,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "dry_run": {"type": "boolean", "default": False, "description": "R31: return candidate list WITHOUT mutating"},
 
-            "try_modern_picker": {"type": "boolean", "default": True, "description": "R31: keyboard fallback (Ctrl+L → paste → Enter) for IFileDialog with no Edit child"},
+            "try_modern_picker": {"type": "boolean", "default": True, "description": "Expose the address Edit with Ctrl+L, set and read back the path, then press Enter."},
 
             "expected_hwnd": {"type": "integer", "default": 0, "description": "Bridge-set only (T4-over-HTTP 5.2(g)): hwnd bound by the bridge census; the handler re-checks it before acting. Caller-supplied values are discarded by the bridge."},
 
@@ -6141,15 +6138,17 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, []),
 
-    ('cancel_native_dialog', 'V15 R27 T4: close any open native dialog by clicking Cancel/Close button. Fallback to WM_CLOSE.', {
-
-            "title_pattern": {"description": "Title substring/regex identifying the native dialog to close.", "type": "string"},
+    ('cancel_native_dialog', 'Dismiss one pinned native dialog. HTTP requires parent_hwnd or both owner_pid and a non-empty title_pattern.', {
+            "owner_pid": {"type": "integer", "default": 0, "description": "Owning PID, paired with title_pattern."},
+            "parent_hwnd": {"type": "integer", "default": 0, "description": "Parent or owner HWND identifying the dialog."},
+            "exclude_titles": {"type": "array", "items": {"type": "string"}, "description": "Exclude titles containing these strings."},
+            "title_pattern": {"type": "string", "default": "", "description": "Title pattern required with the PID-only pin."},
 
         "button_pattern": {"description": "Button label pattern clicked to dismiss the dialog. Default 'Cancel|Huy|Close|Dong'; falls back to WM_CLOSE when no button matches.", "type": "string", "default": "Cancel|Huy|Close|Dong"},
 
             "expected_hwnd": {"type": "integer", "default": 0, "description": "Bridge-set only (T4-over-HTTP 5.2(g)): hwnd bound by the bridge census; the handler re-checks it before acting. Caller-supplied values are discarded by the bridge."},
 
-        }, ["title_pattern"]),
+        }, []),
 
     ('workflow_list', 'V15 R35 T1: list `.md` workflows from project (`<project>/.orchestrator_cache/workflows/`) and global (`<[A]>/.ToolA_Skill/workflows/`). Merge by name — project overrides global. Returns name, title, step_count, status (active/idle/complete), source, path.', {
 
@@ -6313,7 +6312,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
     ('verify_active_electron_source', 'V15 R41 T1: verify which file Electron CDP target is actually loaded from. Reads document.URL + window.location.href via evaluate_js, decodes file:/// to a local path. If expected_path is passed, returns matches_expected. Use case: prevent editing Source/ui/index.html when the app loaded a dist/ or public/ mirror. Returns all_loaded_resources (top 10 script/link href) for inspection.', {
 
-            "page_id": {"description": "CDP page id (from cdp_attach_target / launch_electron_with_cdp) whose loaded source file is verified.", "type": "string"},
+            "page_id": {"description": "CDP page id (from cdp_attach_target) whose loaded source file is verified.", "type": "string"},
 
             "expected_path": {"description": "Expected local file path the Electron target should have loaded; when given, the result reports matches_expected. Empty only reports the actual path.", "type": "string", "default": ""},
 
@@ -6575,7 +6574,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, []),
 
-    ('click_and_handle_folder_dialog', 'V15 R31 T4: GENERIC atomic click → folder picker → paste path → verify. Baseline visible windows, click DOM selector via CDP, poll for NEW dialog (owner_pid/launched_after filter), fill via fill_folder_dialog. Use for any Electron/web app with native folder picker after a UI click. Token-protected. Returns aggregated phases + picker_route.', {
+    ('click_and_handle_folder_dialog', 'V15 R31 T4: GENERIC atomic click → folder picker → paste path → verify. Baseline visible windows, click DOM selector via CDP, poll for NEW dialog (owner_pid/launched_after filter), fill via fill_folder_dialog. Use for any Electron/web app with native folder picker after a UI click. Stateful MCP only. Returns aggregated phases + picker_route.', {
 
             "page_id": {"description": "Browser page id where the selector is clicked to trigger the folder picker.", "type": "string"},
 
@@ -6660,7 +6659,9 @@ V15_R8_NEW_SCHEMA_SPECS = (
     ('desktop_window_list', 'V15 R8 B.5 T4d: enumerate visible top-level windows.', {
 
             "title_filter": {"description": "Case-insensitive title substring filter for the enumerated windows; empty lists all visible top-level windows.", "type": "string", "default": ""},
-
+            "owner_pid": {"type": "integer", "default": 0, "description": "Limit the window census to this PID."},
+            "include_child_controls": {"type": "boolean", "default": False, "description": "Include the child controls in each result."},
+            "include_invisible": {"type": "boolean", "default": False, "description": "Include hidden windows in the census."},
         }, []),
 
     ('desktop_app_focus', 'V15 R57: CDP-first focus with flexible target matching, optional navigation wait, and controlled Win32 fallback. Returns matched_title plus initial_url/final_url for CDP. project_path is OPTIONAL — runtime resolves session from project_path → file_path → page_id chain; omit only when session is already pinned via prior page-bound call.', {
@@ -6681,21 +6682,21 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "cdp_port": {"type": "integer", "default": 9223, "description": "Chromium DevTools Protocol port"},
 
-        }, ["title_pattern"]),
+        }, []),
 
-    ('desktop_click', "V15 R59: CDP-first click with mouseMoved hover-arm, mouseDown/Up dispatch, and DOM-level synthetic .click() fallback. Returns dom_evidence_at_xy (tag/id/class/rect/disabled/textContent of element under coord) for diagnosing 'click=ok but app didn't react'. Win32 fallback retained. project_path optional; force_win32 skips CDP entirely.", {
+    ('desktop_click', "V15 R59: CDP-first click with mouseMoved hover-arm, mouseDown/Up dispatch, and DOM-level synthetic .click() fallback. Returns dom_evidence_at_xy (tag/id/class/rect/disabled/textContent of element under coord) for diagnosing 'click=ok but app didn't react'. Win32 fallback retained. checks reports converted virtual-screen bounds and modal-disabled warnings for Win32; out-of-bounds refuses, modal warns and dispatches. CDP geometry/modal checks are explicitly skipped. clicked describes dispatch, not independently verified app effect. project_path optional; force_win32 skips CDP entirely.", {
 
             "project_path": {"type": "string", "default": "", "description": "V15 R57: optional project root for session binding (mutating tool). Schema declares this so passing it never raises UNSUPPORTED_FIELD. When empty, runtime falls back to find_project_root(file_path) → page_id resolution; if all fail, raises PROJECT_PATH_REQUIRED (single source of truth)."},
 
             "hwnd": {"type": "integer", "default": 0, "description": "Optional for CDP path; required for Win32 fallback unless title_pattern set"},
 
-            "x": {"description": "Screen X coordinate of the click, in virtual-desktop pixels.", "type": "integer"},
+            "x": {"description": "X in the selected CDP page viewport, or in the target window client area for Win32. No automatic conversion between these two frames.", "type": "integer"},
 
-            "y": {"description": "Screen Y coordinate of the click, in virtual-desktop pixels.", "type": "integer"},
+            "y": {"description": "Y in the selected CDP page viewport, or in the target window client area for Win32. No automatic conversion between these two frames.", "type": "integer"},
 
             "cdp_port": {"description": "CDP port of the Electron target the click is routed through first. Default 9223.", "type": "integer", "default": 9223},
 
-            "title_pattern": {"description": "Title substring of the target window, used to verify the click lands on the intended app; empty skips the title check.", "type": "string", "default": ""},
+            "title_pattern": {"description": "Title filter for selecting the target window/page; empty is unpinned. Selection does not verify the application effect.", "type": "string", "default": ""},
 
             "match_mode": {"type": "string", "default": "contains_case_insensitive", "description": "exact|contains|regex|case_insensitive|contains_case_insensitive"},
 
@@ -6715,7 +6716,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["x", "y"]),
 
-    ('desktop_window_state', "V15 R58 T4d: Win32 ShowWindow primitive for window state changes (maximize/restore/minimize/normal/hide/show). Bypasses the unreliable 'click on chrome titlebar maximize button' pattern — clicking at fixed coords drifts with DPI scaling, theme, and Electron frame variations. Uses official Windows API ShowWindow(hwnd, SW_*). Returns rect_before, rect_after, was_visible, hwnd_resolved, prev_state. For Electron BrowserWindow maximize, prefer this over desktop_click(maximize_button_coords).", {
+    ('desktop_window_state', "V15 R58 T4d: Win32 ShowWindow primitive for window state changes (maximize/restore/minimize/normal/hide/show). Bypasses the unreliable 'click on chrome titlebar maximize button' pattern — clicking at fixed coords drifts with DPI scaling, theme, and Electron frame variations. Uses official Windows API ShowWindow(hwnd, SW_*). Returns rect_before, rect_after, was_visible, hwnd, prev_state and observation (immediate plus 100 ms samples over 1 second). Holds the existing driver lock during observation. Reports observed transitions with actor unknown; does not retry or guarantee persistence after the interval. For Electron BrowserWindow maximize, prefer this over desktop_click(maximize_button_coords).", {
 
             "project_path": {"type": "string", "default": "", "description": "Optional project root for session binding (mutating tool)."},
 
@@ -6729,7 +6730,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["state"]),
 
-    ('desktop_screenshot', 'T4d: capture a desktop screenshot of all monitors, one monitor, or one window. Default captures ALL monitors (virtual desktop); monitor=N (1-based) captures one monitor; hwnd>0 captures a window. Result includes monitors[] (bounds+primary).', {
+    ('desktop_screenshot', 'T4d: capture a desktop screenshot of all monitors, one monitor, or one window. Default captures ALL monitors (virtual desktop); monitor=N (1-based) captures one monitor; hwnd>0 captures a window. Result includes monitors[] (bounds+primary). Bridged capture checks console lock before capture and again before saving: T4_SCREEN_LOCKED/T4_SCREEN_STATE_UNKNOWN creates no PNG; unlocked uniform frames report uniform_frame and variance.', {
 
             "hwnd": {"description": "Window handle to capture; 0 (default) captures monitors instead of a single window.", "type": "integer", "default": 0},
 
@@ -6741,7 +6742,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, []),
 
-    ('desktop_send_text', 'V15 R92 T4d: focus a desktop window and send short text via clipboard paste, optionally submitting with Enter.', {
+    ('desktop_send_text', 'T4d: focus and paste text, optionally submitting. Native Edit text_verification precedes Enter; password/DOM controls report not_verified. delivery_verified remains dispatch metadata. Preserves text-only clipboard unless the user changes it; unsupported prior formats or snapshot failures abort before replacement. Bridged calls refuse locked/unknown console state.', {
 
             "text": {"type": "string", "description": "Required text to paste/type into the target desktop window."},
 
@@ -6751,19 +6752,21 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "match_mode": {"type": "string", "default": "contains_case_insensitive", "description": "exact|contains|regex|case_insensitive|contains_case_insensitive"},
 
-            "submit": {"type": "boolean", "default": True, "description": "Press Enter after sending text."},
+            "submit": {"type": "boolean", "default": True, "description": "Press Enter after readback and clipboard restoration. Native Edit mismatch or moved focus prevents submit; unsupported controls remain explicitly not_verified."},
 
-            "method": {"type": "string", "default": "clipboard", "description": "Text delivery method. Default clipboard is reliable for Unicode/Electron inputs."},
+            "method": {"type": "string", "default": "clipboard", "description": "Clipboard dispatch. Verify the actual value in the target app."},
+            "paste_shortcut": {"type": "string", "enum": ["auto", "shift_insert", "ctrl_v"], "default": "auto", "description": "Auto uses Shift+Insert. Select ctrl_v for apps that require it."},
+            "clear_first": {"type": "boolean", "default": False, "description": "Send Ctrl+A before paste. Explicit opt-in: applications may select records outside an input; verify the focused control."},
 
             "pre_focus_delay_ms": {"description": "Delay in milliseconds after focusing the window before pasting, so the target app settles. Default 250.", "type": "integer", "default": 250},
 
-            "require_focus": {"description": "When true (default), abort instead of pasting when the target window cannot be verified as focused.", "type": "boolean", "default": True},
+            "require_focus": {"description": "Check foreground before optional focus-click. Keyboard dispatch always rechecks the target foreground.", "type": "boolean", "default": True},
 
             "click_focus": {"description": "When true, click at click_x/click_y inside the window to set the text caret before pasting; default false pastes at the current caret.", "type": "boolean", "default": False},
 
-            "click_x": {"description": "X offset (window-relative pixels) of the focus click used when click_focus is true; 0 means no explicit point.", "type": "integer", "default": 0},
+            "click_x": {"description": "Screen X coordinate of the optional focus click; 0 uses the window-center heuristic.", "type": "integer", "default": 0},
 
-            "click_y": {"description": "Y offset (window-relative pixels) of the focus click used when click_focus is true; 0 means no explicit point.", "type": "integer", "default": 0},
+            "click_y": {"description": "Screen Y coordinate of the optional focus click; 0 uses the window-bottom heuristic.", "type": "integer", "default": 0},
 
             "project_path": {"type": "string", "description": "Project root for the session gate. W7 2026-08-19 (F020): this is a mutating tool with no file_path/page_id/session_id, so the gate cannot derive a project and a payload built from `required` always answered 400 PROJECT_PATH_REQUIRED."},
 

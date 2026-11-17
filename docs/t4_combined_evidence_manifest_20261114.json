@@ -1,0 +1,70 @@
+{
+  "input_pack": {
+    "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\41. CLAUDELTNAI\\CODO_T4_COMBINED_PACK_20261114.md",
+    "sha256": "BA48F92FD99544B3154725756916638BBE67EF1D702AB11B811BE48B97DE4209"
+  },
+  "baseline": "4acf46391579d85b7f7f794b360dcbb17056c70b",
+  "merge_base": "68a43678d47051b2d5014b688e382193af6a8b29",
+  "artifacts": [
+    {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\wt_codo_t4_20261112\\scripts\\t4_a5_frozen_smoke.py",
+      "bytes": 5333,
+      "sha256": "AF3325A93A24408BF1EEC04FD86282F60DB78D7D6109C1BE6F5B636322D8D42D"
+    },
+    {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\wt_codo_t4_20261112\\docs\\t4_combined_o13_20261114.json",
+      "bytes": 4161,
+      "sha256": "AAA1B4F1221625E58191CF313189DFEBDF4DF0770AA5DD91B4889580E1BCD8B0"
+    },
+    {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\wt_codo_t4_20261112\\docs\\t4_pc40_initial_20261114.json",
+      "bytes": 8939,
+      "sha256": "6A62B16FC97E5D262B115C0AAD3408E47618198B770D273CBFCAD00DCAE3CE40"
+    },
+    {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\wt_codo_t4_20261112\\docs\\t4_pc40_counterfactual_20261114.json",
+      "bytes": 12653,
+      "sha256": "735A6252700E227FC2E143CD38944C9C5EFC3F6E800303CA7FBF67F95C72B5F3"
+    },
+    {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\wt_codo_t4_20261112\\docs\\t4_combined_k7_raw_20261114.json",
+      "bytes": 20615,
+      "sha256": "492D6D5CE9996EB05D80FBCD95C83036032EDF245A04488D8D6E6E852A81C7BF"
+    },
+    {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\wt_codo_t4_20261112\\docs\\t4_combined_p8_focus_raw_20261114.txt",
+      "bytes": 2604,
+      "sha256": "6B0832F2D8FA41778A443B6CB9F8B54B04B40486776FF04EAFE9A45E679C77BE"
+    },
+    {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\wt_codo_t4_20261112\\docs\\t4_combined_census_raw_20261114.json",
+      "bytes": 9083,
+      "sha256": "8B9D2D094B77DAAD80A5E8CC361812B6C002073714FBEF20E8705604C340E639"
+    },
+    {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\wt_codo_t4_20261112\\docs\\t4_combined_np7_baseline_raw_20261114.json",
+      "bytes": 1917,
+      "sha256": "F4EF8719CED87A508AAA9408E670322195BEA8049AC7CCB3467A064881749D72"
+    },
+    {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\wt_codo_t4_20261112\\docs\\t4_combined_test_results_20261114.json",
+      "bytes": 11375,
+      "sha256": "5AB7111FE7D5F4052E6C11A6F060A41D24F92E792633EB99994DC26A6B7132E7"
+    },
+    {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\wt_codo_t4_20261112\\docs\\t4_combined_evidence_20261114\\t4_combined_a5_baseline.json",
+      "bytes": 21407,
+      "sha256": "28C72F1FD0E15D6C21BB6C60B8A756D68B2CD0DE7D088FBDFCE7498FC87E5857"
+    },
+    {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\wt_codo_t4_20261112\\docs\\t4_combined_evidence_20261114\\t4_combined_p8_passive.json",
+      "bytes": 82290,
+      "sha256": "5BF26C1800790784FB716B5ADAB4E6970DC797DFF9C84F945B9E3036164E373B"
+    },
+    {
+      "path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\wt_codo_t4_20261112\\docs\\t4_combined_evidence_20261114\\t4_combined_p8_passive_repeat.json",
+      "bytes": 104290,
+      "sha256": "434922864615226C5AE5C07E54CB874C2E078F5EF70830AEE5DC761C27A6A5F5"
+    }
+  ]
+}

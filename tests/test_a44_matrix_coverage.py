@@ -34,7 +34,7 @@ from functools import lru_cache
 
 # Import-lift FIRST: orchestrator_server must be imported before any
 # independent count, or the registry surface is the 213-tool
-# code_tools-only subset instead of the full 258 (the trap recorded
+# code_tools-only subset instead of the full runtime surface (the trap recorded
 # at code_tools' audit self-lift; precedent test_a37 line 22).
 import orchestrator_server as srv
 

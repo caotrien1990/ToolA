@@ -2105,6 +2105,9 @@ _DUPLICATE_FAILURE_STATE: dict = {}
 # P12 (campaign-1608): fingerprint -> first_seen wall-clock, so a replayed
 # DUPLICATE_RETRY_BLOCKED verdict can disclose cached:true + how stale it is.
 _DUPLICATE_FIRST_SEEN: dict = {}
+_DUPLICATE_LOCK = threading.RLock()
+_DUPLICATE_TTL_SECONDS = 300
+_DUPLICATE_LIMIT = 4096
 # Compatibility alias retained for the anti-drift contract surface.
 _ANTI_DRIFT_CALL_STATE = _DUPLICATE_FAILURE_STATE
 _DETERMINISTIC_RETRY_CACHE = _DUPLICATE_FAILURE_STATE
@@ -2112,7 +2115,10 @@ _DETERMINISTIC_RETRY_CACHE = _DUPLICATE_FAILURE_STATE
 
 def _anti_drift_duplicate_failure(tool_name: str, body: dict, error_name: str,
                                   meta: dict | None = None) -> dict | None:
-    """Record deterministic failures within one agent/session/task epoch."""
+    """Compatibility entry point for the anti-drift contract tests.
+
+    Test keys join agent|session|task_epoch. Live _dedupe_identity uses session:agent without an epoch.
+    """
     meta = meta or {}
     identity = "|".join(str(meta.get(k) or "") for k in
                         ("agent_id", "session_id", "task_epoch"))
@@ -2144,17 +2150,13 @@ def _dedupe_call_key(identity: str, tool_name: str, body: dict) -> str:
 
 
 def _duplicate_retry_evict(identity: str, tool_name: str, body: dict) -> None:
-    """Group-3 Area 6d: a success deletes this exact call's recorded failure
-    entries (every error_name) from both dedupe dicts, so a later failure
-    is judged fresh. Post-execution bookkeeping only (A9). The scan is a
-    prefix match over both dicts (each capped at 4096 entries); tuple keys
-    written by the schema gate's inline guard are not fingerprints and
-    are never touched."""
+    """Forget every failure for this normalized call after success."""
     prefix = _dedupe_call_key(identity, tool_name, body) + "|"
-    for _state_dict in (_DUPLICATE_FAILURE_STATE, _DUPLICATE_FIRST_SEEN):
-        for _fp in [k for k in _state_dict
-                    if isinstance(k, str) and k.startswith(prefix)]:
-            del _state_dict[_fp]
+    with _DUPLICATE_LOCK:
+        for key in list(_DUPLICATE_FAILURE_STATE):
+            if isinstance(key, str) and key.startswith(prefix):
+                _DUPLICATE_FAILURE_STATE.pop(key, None)
+                _DUPLICATE_FIRST_SEEN.pop(key, None)
 
 
 # Group-3 Area 6c: True while a generation-absence episode is open in this
@@ -2163,27 +2165,27 @@ def _duplicate_retry_evict(identity: str, tool_name: str, body: dict) -> None:
 _BRIDGE_GEN0_EPISODE = False
 
 
-def _duplicate_retry_guard(agent_id: str, tool_name: str, body: dict, error_name: str) -> dict | None:
-    """Return DUPLICATE_RETRY_BLOCKED on 2nd identical deterministic failure, else None (record)."""
-    if len(_DUPLICATE_FAILURE_STATE) > 4096:
-        _DUPLICATE_FAILURE_STATE.clear()  # bounded memory; counter reset is acceptable
-    # Group-3 Area 6b: the fingerprint folds the normalized project key in
-    # (see _dedupe_call_key) instead of excluding project_path outright.
-    fp = f"{_dedupe_call_key(agent_id, tool_name, body)}|{error_name}"
+def _duplicate_retry_guard(identity: str, tool_name: str, body: dict, error_name: str) -> dict | None:
+    """Block repeated deterministic failures within the same caller's retry window."""
+    fp = f"{_dedupe_call_key(identity, tool_name, body)}|{error_name}"
     now = time.time()
-    count = _DUPLICATE_FAILURE_STATE.get(fp, 0) + 1
-    _DUPLICATE_FAILURE_STATE[fp] = count
-    if count <= 1:
-        # P12 (campaign-1608): stamp when this exact verdict was first produced so
-        # a later replayed (cached) block can disclose how stale it is.
-        if len(_DUPLICATE_FIRST_SEEN) > 4096:
-            _DUPLICATE_FIRST_SEEN.clear()
-        _DUPLICATE_FIRST_SEEN[fp] = now
-        return None  # first occurrence — record only
-    first_seen = _DUPLICATE_FIRST_SEEN.get(fp, now)
+    with _DUPLICATE_LOCK:
+        first_seen = _DUPLICATE_FIRST_SEEN.get(fp, now)
+        if fp not in _DUPLICATE_FAILURE_STATE or now - first_seen >= _DUPLICATE_TTL_SECONDS:
+            _DUPLICATE_FAILURE_STATE.pop(fp, None)
+            if len(_DUPLICATE_FAILURE_STATE) >= _DUPLICATE_LIMIT:
+                oldest = next(iter(_DUPLICATE_FAILURE_STATE))
+                _DUPLICATE_FAILURE_STATE.pop(oldest)
+                _DUPLICATE_FIRST_SEEN.pop(oldest, None)
+            _DUPLICATE_FAILURE_STATE[fp] = 1
+            _DUPLICATE_FIRST_SEEN[fp] = now
+            return None
+        count = _DUPLICATE_FAILURE_STATE[fp] + 1
+        _DUPLICATE_FAILURE_STATE[fp] = count
     return {
         "ok": False,
         "error_name": "DUPLICATE_RETRY_BLOCKED",
+        "original_error_name": error_name,
         "retryable": False,
         "reason": f"Identical payload already failed with {error_name}. Apply corrected_payload or stop.",
         "fingerprint": fp,
@@ -3981,7 +3983,7 @@ def _search_code_dom_gate(tool_name: str, body: dict) -> dict | None:
     mode = body.get("mode")
     if mode is None:
         return None
-    _accepted_modes = ["text", "regex", "symbol", "callers", "definition_usage", "index", "smart"]
+    from orchestrator.tools.search import _SEARCH_CODE_MODES as _accepted_modes
     if not isinstance(mode, str):
         return {
             "ok": False,
@@ -4481,9 +4483,7 @@ _PAYLOAD_EXAMPLES = {
         "view_id_pattern": "^view-",
     },
     "cleanup_test_session": {
-        "project_path": "D:/path/to/electron-app",
-        "page_id": "cdp-...-0",
-        "processes": ["electron.exe", "chrome.exe"],
+        "page_id": "pg-1730000000000-0-abcdef",
     },
     # R16.10: schema examples for R16.9 + R16.10 tools — CA round 5 retro showed
     # these were getting field names wrong (max_chars vs max_lines, etc.)
@@ -5352,8 +5352,8 @@ _TOOL_GOTCHAS: dict[str, list[str]] = {
     ],
     # V15 R16 — KtrSH enrichment from real Electron test gaps
     "cdp_attach_target": [
-        "Electron renderer rejects Target.createBrowserContext on page-level WS — V15 R16 auto-falls back to browser-level WS via /json/version; check attach_via field.",
-        "For Electron, prefer launch_electron_with_cdp (one-shot launch+attach) over manual list_cdp_targets + attach.",
+        "If Electron rejects a page-level WS, HTTP browser-level fallback requires allow_browser_level_fallback=true. Check attach_via in the result.",
+        "Use list_cdp_targets, then attach with target_id and the expected URL or title.",
         "websocket_url from /json/version is browser-level (works for connect_over_cdp + new_context). webSocketDebuggerUrl per page is page-level (works for raw CDP only).",
     ],
     "fill": [
@@ -5389,13 +5389,13 @@ _TOOL_GOTCHAS: dict[str, list[str]] = {
     # V15 R16 — gotchas for new tools
     "inspect_project_runtime": [
         "First call BEFORE any UI launch. Cheap T1 read; tells you which recipe (Electron / Node / native) applies.",
-        "has_remote_debugging_in_launcher=false means call launch_electron_with_cdp to inject the port flag automatically.",
+        "Enable remote debugging in the application launcher before listing CDP targets.",
     ],
     "launch_electron_with_cdp": [
         "One-shot: detect launcher → inject --remote-debugging-port → run background → fetch /json/version → cdp_attach_target. Returns page_id ready.",
-        "Token required (mutating). Always verify response.cdp_port matches what you intended.",
+        "Stateful MCP only. Verify the returned debugging port.",
         "If launcher already has --remote-debugging-port, runs as-is without modification.",
-        "Use cleanup: run_project_command('taskkill /F /IM electron.exe /T') after test.",
+        "Use close_browser_page with the returned page_id to release the attachment.",
     ],
     "dom_state_diff": [
         "Two-call pattern: (1) baseline snapshot without baseline_id → returns snapshot_id; (2) after action → call again with baseline_id → returns changes.",
@@ -5453,14 +5453,14 @@ _TOOL_PROMPT_RULES: dict[str, str] = {
     "list_cdp_targets": "Read-only CDP target discovery through [A]; no token required",
     "kill_process": "Protected cleanup only; prefer pid over process_name",
     # V15 R16 prompt rules
-    "cdp_attach_target": "For Electron use launch_electron_with_cdp; for Chrome use list_cdp_targets → cdp_attach_target(target_id). Check attach_via in response.",
+    "cdp_attach_target": "Use list_cdp_targets then supply target_id and the expected title or URL.",
     "fill": "DO NOT use for UNC paths or content with backslashes — JSON strips them. Use fill_value(encoding='base64') instead.",
     "evaluate_js": "Wrap multi-statement in IIFE. Prefer dom_state_diff / extract_log_section for common patterns.",
     "check_window_visibility": "Always before desktop_click on potentially-minimized windows; act on suggestion field.",
     "desktop_window_list": "Use to verify window exists before desktop_app_focus / check_window_visibility.",
     "read_console_errors": "Default level=error ignores warnings; do NOT treat CSP unsafe-eval as test fail.",
     "inspect_project_runtime": "Call FIRST before any UI launch — tells you which recipe (Electron/Node/native) applies.",
-    "launch_electron_with_cdp": "Replaces manual 3-step Electron launch. Returns page_id ready for click/fill_value/dom_state_diff.",
+    "launch_electron_with_cdp": "Stateful MCP launch and attach. HTTP attaches to a running debugging port.",
     "dom_state_diff": "Use a live pg-... page_id; fresh baseline after restart/page replacement; compare only within the same live generation",
     "extract_log_section": "Use for finding 'System Error Log' / 'Server Response' panels — locates by title text, extracts textarea content.",
     "fill_value": "Transport-safe DOM fill. encoding='base64' for UNC paths / UTF-8 / multi-line.",
@@ -5559,8 +5559,8 @@ _R40_ERROR_TO_ALTERNATIVE = {
         "reason": "Use snapshot to inspect candidates, then re-call with correct owner_pid/parent_hwnd.",
     },
     ("click_and_handle_folder_dialog", "NEW_DIALOG_NOT_FOUND"): {
-        "tool": "invoke_app_function",
-        "reason": "Click did not open native dialog (custom Electron UI?) — invoke handler directly.",
+        "tool": "evaluate_js",
+        "reason": "Inspect the custom picker on the owned page when no native dialog appears.",
     },
     ("desktop_click", "CDP_DISPATCH_FAILED"): {
         "tool": "desktop_click",
@@ -5638,7 +5638,7 @@ _R40_ERROR_TO_ALTERNATIVE = {
     },
     ("cdp_attach_target", "CDP_UNREACHABLE"): {
         "tool": "server_lifecycle_status",
-        "reason": "Verify CDP port is bound (port_owner_inspect / server_lifecycle_status). If not, relaunch with launch_electron_with_cdp.",
+        "reason": "Verify the app is running with remote debugging on the specified port.",
     },
     ("ANY", "CDP_UNREACHABLE"): {
         "tool": "port_owner_inspect",
@@ -15580,6 +15580,10 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
         or (body.get("agent_id", "") if isinstance(body, dict) else "")
         or os.environ.get("COUNCIL_AGENT_ID", "")
     )
+    # Scope T4 status to transport identity. A body agent_id cannot select another owner.
+    _t4_caller = str(request.headers.get("X-Agent-Id") or request.headers.get("X-Council-Agent") or "")
+    if tool_name == "t4_host_status":
+        _task_agent_id = _t4_caller
     # A37 #0b: publish the resolved identity for the WHOLE dispatch so _error_response --
     # which never receives an agent id -- can re-arm the bootstrap schema push. The gates
     # that reject on schema (UNSUPPORTED_FIELD, MISSING_REQUIRED_FIELD) return ~1300 lines
@@ -15902,23 +15906,21 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
             retryable=False,
         )
     except _DeprecatedFieldConflict as exc:
-        # CAP R3: ambiguous deprecated+canonical field conflict.
+        message = f"Ambiguous deprecated field '{exc.field}' for search_code: {exc.reason}"
         _dup = _duplicate_retry_guard(
             _dedupe_identity(_task_session_id, _task_agent_id),
             tool_name, body, "DEPRECATED_FIELD_CONFLICT")
         if _dup:
             return web.json_response({
                 "ok": False,
-                "error": "Identical deterministic failure already returned a correction",
-                "error_name": "DUPLICATE_RETRY_BLOCKED",
-                "retryable": False,
+                **_dup,
+                "error": message,
                 "deprecated_field": exc.field,
                 "ca_next_action": "apply_previous_correction_or_stop_and_report",
                 **_task_meta,
             }, status=409, headers=cors)
         return _error_response(
-            tool_name,
-            f"Ambiguous deprecated field '{exc.field}' for search_code: {exc.reason}",
+            tool_name, message,
             400, cors, {},
             error_name="DEPRECATED_FIELD_CONFLICT",
             reason=str(exc),
@@ -16029,27 +16031,9 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
     accepted_fields = allowed_params | _alias_sources
     unsupported = sorted(k for k in body.keys() if k not in allowed_params)
     if unsupported:
-        retry_scope = f"{_task_session_id or 'legacy'}:{_task_agent_id or 'legacy'}"
         # CAP R3: count truly-unknown fields per field (bounded cardinality)
         for _uf in unsupported:
             _compat_metric_unknown(tool_name, _uf)
-        retry_material = json.dumps({"tool": tool_name, "body": body, "unsupported": unsupported},
-                                    ensure_ascii=False, sort_keys=True, default=str)
-        retry_key = (str(retry_scope), hashlib.sha256(retry_material.encode("utf-8")).hexdigest(),
-                     "UNSUPPORTED_FIELD")
-        retry_count = int(_DUPLICATE_FAILURE_STATE.get(retry_key, 0)) + 1
-        _DUPLICATE_FAILURE_STATE[retry_key] = retry_count
-        if retry_count >= 2:
-            return web.json_response({
-                "ok": False,
-                "error": "Identical deterministic failure already returned a correction",
-                "error_name": "DUPLICATE_RETRY_BLOCKED",
-                "retryable": False,
-                "unsupported_fields": unsupported,
-                "accepted_aliases": _alias_metadata(tool_name),
-                "ca_next_action": "apply_previous_correction_or_stop_and_report",
-                **_task_meta,
-            }, status=409, headers=cors)
         err_name = "UNSUPPORTED_DRY_RUN" if "dry_run" in unsupported and tool_name in {"write_fix_html"} else "UNSUPPORTED_FIELD"
         # R19 Phase D — corrected_payload now preserves intent via alias mapping
         # before falling back to registry stub. CA's value is mapped to canonical
@@ -16083,15 +16067,24 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
             "retry_with_alias_mapping" if alias_remediable
             else "remove_unsupported_field"
         )
+        message = f"Unsupported field(s) for '{tool_name}': {', '.join(unsupported)}"
+        duplicate = _duplicate_retry_guard(
+            _dedupe_identity(_task_session_id, _task_agent_id), tool_name, body, err_name)
+        if duplicate:
+            return web.json_response({
+                **duplicate, "error": message,
+                "unsupported_fields": unsupported, "accepted_fields": sorted(accepted_fields),
+                "accepted_aliases": _alias_metadata(tool_name), "corrected_payload": corrected,
+                "ca_next_action": ca_next, **_task_meta,
+            }, status=409, headers=cors)
         return _error_response(
-            tool_name,
-            f"Unsupported field(s) for '{tool_name}': {', '.join(unsupported)}",
+            tool_name, message,
             400,
             cors,
             body,
             error_name=err_name,
             unsupported_fields=unsupported,
-accepted_fields=sorted(accepted_fields),
+            accepted_fields=sorted(accepted_fields),
             accepted_aliases=_alias_metadata(tool_name),  # R19: always include
             corrected_payload=corrected,
             corrected_payload_source=corrected_source,
@@ -16770,11 +16763,7 @@ accepted_fields=sorted(accepted_fields),
                         from orchestrator import t4_bridge as _t4_seam
                         _t4_applies = tool_name in _t4_seam.BRIDGED_TOOLS
                         if not _t4_applies:
-                            # Section 2 HTTP guard: a non-routed page
-                            # consumer over HTTP is answered by the guard
-                            # (its handler never runs against bridge
-                            # state); cleanup_test_session is carved out
-                            # by name inside the guard itself.
+                            # Excluded tools never inspect another loop's page state.
                             _t4_guard = _t4_seam.guard_non_routed_http_call(
                                 tool_name, body, generation=SERVER_GENERATION)
                     except Exception:
@@ -16805,7 +16794,7 @@ accepted_fields=sorted(accepted_fields),
                         try:
                             _t4_raw = await _t4_seam.submit_bridged(
                                 tool_name, fn, body,
-                                agent_id=_task_agent_id,
+                                agent_id=_t4_caller,
                                 transport=transport,
                                 generation=SERVER_GENERATION)
                         except Exception:

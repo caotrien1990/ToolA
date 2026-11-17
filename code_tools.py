@@ -303,6 +303,7 @@ TOKEN_REQUIRED_TOOLS = {
     "delete_file",                    # irreversible file delete
     "clear_closed_sessions",          # irreversible delete of closed-session audit rows (PC1-CLEANUP: matches existing REST handler which already requires X-Orchestrator-Token)
     "kill_process",                   # kills processes
+    "cleanup_test_session",           # releases the caller's scoped test target
     "run_project_command",            # arbitrary shell exec
     "run_project_test_script",        # runs artifact code
     "run_ps1_script",                 # arbitrary PowerShell
@@ -338,7 +339,7 @@ _MUTATION_SCOPE_MAP = {
     "desktop_click": "runtime_ui", "desktop_send_text": "runtime_ui", "assert_button_click_changes_state": "runtime_ui",
     # process — spawns / kills processes
     "kill_process": "process", "launch_electron_with_cdp": "process",
-    "ensure_single_electron_instance": "process", "cleanup_test_session": "process",
+    "ensure_single_electron_instance": "process", "cleanup_test_session": "runtime_ui",
     "run_project_command": "process", "restart_orchestrator_via_task": "process",
     # campaign-1608 (A11-b): restart_orchestrator_via_bat was the ONLY entry in the
     # gate set (PROTECTED | TOKEN_REQUIRED) with no scope, so /api/tools
@@ -2051,26 +2052,9 @@ def _t4_process_session_id():
 
 
 def _t4_console_state():
-    """Console lock state via logonui presence (plan section 2):
-    logonui.exe present in the console session means locked."""
-    state = {"explorer_present": None, "logonui_present": None,
-             "console_locked": None}
-    try:
-        import psutil
-        _names = set()
-        for _proc in psutil.process_iter(["name"]):
-            try:
-                _n = (_proc.info.get("name") or "").lower()
-            except Exception:
-                continue
-            if _n in ("explorer.exe", "logonui.exe"):
-                _names.add(_n)
-        state["explorer_present"] = "explorer.exe" in _names
-        state["logonui_present"] = "logonui.exe" in _names
-        state["console_locked"] = state["logonui_present"]
-    except Exception:
-        pass
-    return state
+    """Uncached lock signal, restricted to the active console session."""
+    from orchestrator.runtime.console_guard import console_state
+    return console_state()
 
 
 async def t4_host_status(agent_id: str = "") -> str:
@@ -2078,8 +2062,8 @@ async def t4_host_status(agent_id: str = "") -> str:
     T1 read, advertised but NOT bridged -- a plain daemon read of live
     bridge state. Page listing redaction (plan section 2): the
     caller's OWN pages in full; other owners' pages as a count only.
-    Surfaces the bridge's quarantine records, including
-    quarantine_stale decisions (plan section 3.4)."""
+    Quarantine records expose state, late_action_possible and reason when
+    present, including the quarantine_stale outcome (plan section 3.4)."""
     result = {"ok": True, "tool": "t4_host_status"}
     try:
         from orchestrator.t4_bridge import get_bridge
@@ -2284,7 +2268,7 @@ def _session_prompt(project_path: str, mode: str, idea: str = "", structure: str
         "═════ SESSION KICKSTART (V15 R16) ═════\n"
         "- Pre-flight: `inspect_project_runtime(project_path=[Ab:P])` → detect Electron/Node/Python launcher + remote-debugging port.\n"
         "- Skill router @ [A:P]\\.ToolA_Skill\\SKILLS.md. Quick recipes in 18_runtime_dom_T4 (T4 patterns A-E) and 22_electron_automation.\n"
-        "- New tools R16: inspect_project_runtime, launch_electron_with_cdp, dom_state_diff, extract_log_section, fill_value(encoding=base64). See skill 18 Recipe A-E.\n"
+        "- New tools R16: inspect_project_runtime, list_cdp_targets, cdp_attach_target, dom_state_diff, extract_log_section, fill_value(encoding=base64). See skill 18 Recipe A-E.\n"
         "- Failure triage in skill 18: button state does not change → check CDP attach. lost backslashes in fill → fill_value(encoding=base64). CSP unsafe-eval = warning (ignore default).\n"
         "- ALWAYS open_session(project_path=[Ab:P]) before any T2/T3 mutating call (auto-fires matrix_audit; check matrix_drift_present).\n"
         "\n"
@@ -5315,9 +5299,9 @@ async def optional_tool_probe(tools: list[str]) -> str:
         "command_helper": "path_quote_helper",
         "token_panel": "GET /api/token + protected_tools_status",
         # R16.9: surface real names for recurring CA mistakes
-        "click_selector": "click_selector EXISTS (R16.9) — or use canonical click",
+        "click_selector": "Stateful MCP only. Over HTTP, use click and dom_state_diff.",
         "read_skill": "read_skill EXISTS (R16.9, by short name)",
-        "checkpoint_loop_dom_state": "checkpoint_loop_dom_state EXISTS (R16.9)",
+        "checkpoint_loop_dom_state": "Stateful MCP only. Over HTTP, sample dom_state_diff and compare the returned baseline.",
         "ensure_single_electron_instance": "ensure_single_electron_instance EXISTS (R16.9)",
         "dom_screenshot_summary": "Compose screenshot_page(save_path=...) + query_selector(bbox) — base64 in JSON inflates token cost 99%",
     }
@@ -10988,7 +10972,7 @@ async def bootstrap_session(project_path: str = "", session_id: str = "",
         # T2 write
         {"name": "write_fix", "tier": "T2", "required": ["file_path", "start_line", "end_line", "new_content"],
          "aliases": ["path->file_path", "content->new_content", "start->start_line", "end->end_line"],
-         "notes": "REQUIRES token. For multi-hunk same file → use write_transaction (bottom-up sort)"},
+         "notes": "For multi-hunk same file → use write_transaction (bottom-up sort)"},
         {"name": "write_transaction", "tier": "T2", "required": ["operations"],
          "notes": "Atomic batch. R41 BUG FIX: same-file ops refresh cache between writes"},
         {"name": "write_new_file", "tier": "T2", "required": ["path", "new_content"]},
@@ -10996,17 +10980,18 @@ async def bootstrap_session(project_path: str = "", session_id: str = "",
         {"name": "open_browser_page", "tier": "T4", "required": ["url"],
          "aliases": ["wait_until->wait_for", "timeout->timeout_ms"],
          "notes": "wait_for: load|domcontentloaded|networkidle (default load); timeout_ms default 20000; polling apps -> domcontentloaded"},
-        {"name": "launch_electron_with_cdp", "tier": "T4", "required": ["executable_path"]},
+        {"name": "launch_electron_with_cdp", "tier": "T4", "required": [],
+         "notes": "Stateful MCP launch. HTTP uses list_cdp_targets on a running debugging port."},
         {"name": "list_cdp_targets", "tier": "T4", "required": [],
          "notes": "project_path harmless ignore. Use cdp_port (default 9223)"},
         {"name": "verify_active_electron_source", "tier": "T1", "required": ["page_id"],
          "notes": "R41: check which file Electron actually loaded (avoid editing wrong mirror)"},
         {"name": "fill_value", "tier": "T4", "required": ["page_id", "selector", "value"],
-         "notes": "Token-protected. encoding='base64' for Windows paths / Unicode"},
+         "notes": "encoding='base64' for Windows paths / Unicode"},
         {"name": "click_selector", "tier": "T4", "required": ["page_id", "selector"]},
         {"name": "fill_folder_dialog", "tier": "T4", "required": ["folder_path"],
          "aliases": ["path->folder_path"],
-         "notes": "Token-protected. Use folder_dialog_snapshot first. R42: auto_click_button_by_hwnd default True"},
+         "notes": "Inspect with folder_dialog_snapshot first. Pass parent_hwnd or owner_pid and title_pattern."},
         {"name": "click_and_handle_folder_dialog", "tier": "T4", "required": ["page_id", "click_selector", "folder_path"]},
         {"name": "wait_for_idle", "tier": "T1", "required": ["signals"],
          "notes": "R42: built-in polling — saves 60+ assert_target_idle calls"},
@@ -19918,13 +19903,13 @@ try:
         # Folder dialog
         "fill_folder_dialog": {
             "folder_dialog_snapshot": "MANDATORY: discover dialog candidates BEFORE fill (verifies owner_pid + class)",
-            "click_and_handle_folder_dialog": "Atomic click+fill combo if you have click_selector",
-            "cancel_native_dialog": "Close dialog without filling (cleanup)",
-            "invoke_app_function": "Fallback when native picker fails — call app handler directly",
+            "click": "On the owned page, click the picker trigger, then snapshot the dialog before filling",
+            "cancel_native_dialog": "Close the identified dialog with its owner pin",
+            "evaluate_js": "Inspect a custom picker on the owned page if no native dialog appears",
         },
         "click_and_handle_folder_dialog": {
             "folder_dialog_snapshot": "If NEW_DIALOG_NOT_FOUND, snapshot without filter to see actual dialog",
-            "invoke_app_function": "Fallback for custom Electron dialogs (no native picker)",
+            "evaluate_js": "Inspect the custom picker on the owned page when no native dialog appears",
         },
         # Search / locate
         "search_code": {
@@ -19981,7 +19966,7 @@ try:
         "list_cdp_targets": {
             "verify_active_electron_source": "After getting target_id, verify file actually loaded",
             "cdp_attach_target": "Attach to chosen target by id",
-            "launch_electron_with_cdp": "If no targets found, launch app first",
+            "inspect_project_runtime": "If no targets appear, check that the app was started with remote debugging enabled on the selected port",
         },
     }
 

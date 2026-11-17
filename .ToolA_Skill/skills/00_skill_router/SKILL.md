@@ -56,19 +56,19 @@ Sau bootstrap, đọc skill chuyên biệt nếu task vào sâu lĩnh vực cụ
 | Search exact text multi-word | [T1] search_code (v2 smart) | 15_search_code_intel |
 | Find symbol callers/usage | [T1] find_symbol (v2 include=usage) | 15_search_code_intel |
 | Edit [A] backend itself | read_file_range → write_fix, then restart_orchestrator_via_bat (native only under Anh's break-glass) | 05_write_pipeline |
-| Launch Electron / electron port / remote-debugging | [T4] launch_electron_with_cdp | 22_electron_automation |
+| Attach to an Electron app with remote debugging enabled | [T4] list_cdp_targets → cdp_attach_target (stateful MCP can launch with launch_electron_with_cdp) | 22_electron_automation |
 | Button state / DOM state / color change over time | [T1] dom_state_diff (Recipe D) | 18_runtime_dom_T4 |
 | Extract log / log area / textarea content from DOM | [T1] extract_log_section (Recipe E) | 18_runtime_dom_T4 |
 | Fill UNC / fill backslash / fill unicode / multi-line | [T2] fill_value(encoding=base64) (Recipe C) | 18_runtime_dom_T4 |
 | Read element.value (textarea/input) by selector | [T1] read_value(encoding=base64 optional) | 18_runtime_dom_T4 |
 | Dump all log panels at once (System Error + Agent + AI + User) | [T1] read_all_logs | 18_runtime_dom_T4 |
-| Run JS too long/escape-prone for inline evaluate_js | [T4b] run_script(script_path) | 18_runtime_dom_T4 |
+| Run JS too long/escape-prone for inline evaluate_js | [T4b, stateful MCP only] run_script(script_path) | 18_runtime_dom_T4 |
 | Enumerate DOM inputs/buttons/textareas/links | [T1] query_dom_candidates(filter) | 18_runtime_dom_T4 |
 | Map full DOM section + view-* panel structure | [T1] describe_page | 18_runtime_dom_T4 |
-| Cleanup test (close CDP page + taskkill electron + close session) | [T2] cleanup_test_session | 18_runtime_dom_T4 |
+| Release an owned test page (close launched page or detach attached app) | [T4] cleanup_test_session(page_id) | 18_runtime_dom_T4 |
 | Pre-launch hygiene (kill stale electron + free CDP port) | [T4] ensure_single_electron_instance | 22_electron_automation |
-| Click + need state delta in 1 call | [T4] click_selector | 18_runtime_dom_T4 |
-| Poll DOM state until change (server-side loop) | [T4] checkpoint_loop_dom_state | 18_runtime_dom_T4 |
+| Click + need state delta in 1 call | [T4, stateful MCP only] click_selector | 18_runtime_dom_T4 |
+| Poll DOM state until change (server-side loop) | [T4, stateful MCP only] checkpoint_loop_dom_state | 18_runtime_dom_T4 |
 | Read skill body by short name | [T1] read_skill(name) | 03_path_session |
 | Compact log (hash+preview only) | [T1] extract_log_section(mode="ref"\|"preview") | 18_runtime_dom_T4 |
 | List all tool names (3KB compact) | [T1] GET /api/tools/names | — |

@@ -152,6 +152,9 @@ class FakePage:
     def on(self, _event, _cb):
         pass
 
+    def is_closed(self):
+        return False
+
 
 class BadPage(FakePage):
     async def title(self):
@@ -171,6 +174,12 @@ class FakeContext:
 class FakeBrowser:
     def __init__(self, contexts):
         self.contexts = list(contexts)
+
+    def is_connected(self):
+        return True
+
+    def on(self, _event, _cb):
+        pass
 
     async def new_context(self):
         ctx = FakeContext([])
@@ -547,7 +556,9 @@ class TestHostStatus(BridgeCase):
         future = asyncio.run_coroutine_threadsafe(
             bridge.effectuate_quarantine(decision), bridge._loop)
         self.assertEqual(future.result(timeout=10), "quarantine_stale")
-        snap = bridge.status_snapshot("agent-a")
+        pages = {"pg-1-0-aaaaaa": {"page": object()}, "pg-1-0-bbbbbb": {"page": object()}}
+        with mock.patch.dict(tools_v15._BROWSER_PAGES, pages, clear=True):
+            snap = bridge.status_snapshot("agent-a")
         self.assertEqual([p["page_id"] for p in snap["pages"]],
                          ["pg-1-0-aaaaaa"])
         self.assertEqual(snap["pages"][0]["kind"], "launched")
@@ -557,8 +568,9 @@ class TestHostStatus(BridgeCase):
 
     async def test_status_tool_handler(self):
         import code_tools
-        result = json.loads(await code_tools.t4_host_status(
-            agent_id="agent-a"))
+        with mock.patch.object(code_tools, "_t4_console_state", return_value={"console_locked": False}), \
+                mock.patch.object(code_tools, "_t4_process_session_id", return_value=1):
+            result = json.loads(await code_tools.t4_host_status(agent_id="agent-a"))
         self.assertTrue(result["ok"])
         for key in ("loop_alive", "loop_epoch", "holder", "pages",
                     "other_owners_page_count", "quarantine_records",

@@ -484,14 +484,22 @@ class _FakeWorld:
             "owner", 0)
         gui.EnumWindows = _enum
         gui.EnumChildWindows = _enum_children
-        gui.SendMessage = lambda h, m, w, l: world.sent.append(
-            (h, m, l)) or 0
+        def send_message(hwnd, msg, _w, value):
+            world.sent.append((hwnd, msg, value))
+            if msg == con.WM_SETTEXT:
+                world.windows[hwnd]["title"] = value
+            return 1
+
+        gui.SendMessage = send_message
         gui.SetForegroundWindow = lambda h: True
         api.PostMessage = _post
         proc.GetWindowThreadProcessId = lambda h: (
             0, world.windows.get(h, {}).get("pid", 0))
+        desktop_input = types.ModuleType("orchestrator.runtime.desktop_input")
+        desktop_input.edit_text = lambda hwnd, capacity: _text(hwnd)[:capacity - 1]
+        desktop_input.send_chord = mock.Mock()
         return {"win32gui": gui, "win32con": con, "win32api": api,
-                "win32process": proc}
+                "win32process": proc, "orchestrator.runtime.desktop_input": desktop_input}
 
 
 class TestHandlerBoundRecheck(unittest.IsolatedAsyncioTestCase):

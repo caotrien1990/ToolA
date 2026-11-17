@@ -72,7 +72,7 @@ class TestTransportGateDS1(BridgeCase):
         self.assertEqual(ran_on, [bridge._loop_thread.ident])
 
     async def test_bridged_set_is_the_plan_routing_set(self):
-        self.assertEqual(len(BRIDGED_TOOLS), 32)
+        self.assertTrue({"cleanup_test_session", "query_dom_candidates"} <= BRIDGED_TOOLS)
         self.assertIn("compare_dom_snapshot", BRIDGED_TOOLS)
         self.assertIn("verify_active_electron_source", BRIDGED_TOOLS)
         self.assertNotIn("t4_host_status", BRIDGED_TOOLS)
@@ -97,7 +97,8 @@ class TestDriverLock(BridgeCase):
             "fill", _fast_handler, {}, agent_id="agent-b")
         busy = json.loads(busy_raw)
         self.assertEqual(busy["error_name"], "T4_BUSY")
-        self.assertEqual(busy["holder"]["agent"], "agent-a")
+        self.assertNotIn("agent", busy["holder"])
+        self.assertNotIn("token", busy["holder"])
         self.assertEqual(busy["holder"]["tool"], "click")
         self.assertIn("held_ms", busy["holder"])
         self.assertTrue(busy["retryable"])

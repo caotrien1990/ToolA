@@ -1,0 +1,167 @@
+{
+  "started_at": 1794624014.3315725,
+  "host_command": "D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/project-orchestrator/venv312/Scripts/python.exe",
+  "host_args": [
+    "D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/project-orchestrator/orchestrator_server.py",
+    "--mcp"
+  ],
+  "agent": "codo",
+  "calls": [
+    {
+      "time": 1794624015.7930863,
+      "name": "t4_host_status",
+      "payload": {},
+      "response": {
+        "meta": null,
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"ok\": true, \"tool\": \"t4_host_status\", \"loop_alive\": true, \"loop_epoch\": 1, \"holder\": null, \"pages\": [], \"other_owners_page_count\": 0, \"quarantine_records\": [], \"daemon_session_id\": 2, \"explorer_present\": true, \"logonui_present\": false, \"console_locked\": false, \"generation\": \"\", \"generation_source\": \"tool_supplied\", \"daemon_generation\": \"5003aa4e585f\", \"mcp_generation\": \"7351f032250b\", \"mcp_generation_matches_daemon\": false, \"mcp_generation_diverged_s\": 0.0, \"mcp_generation_note\": \"daemon is at generation 5003aa4e585f; this MCP host process minted 7351f032250b at its own import and cannot re-mint without a client reconnect. Tool results are NOT stale: every call proxies to the live daemon over HTTP. Reconnect the MCP client only when the bridge code itself (orchestrator/server/mcp_stdio.py or the tool registry it loads) changed — a plain daemon restart does not require it.\"}",
+            "annotations": null,
+            "meta": null
+          }
+        ],
+        "structuredContent": null,
+        "isError": false
+      }
+    },
+    {
+      "time": 1794624018.5820148,
+      "name": "open_session",
+      "payload": {
+        "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\wt_codo_t4_20261112",
+        "mode": "T1"
+      },
+      "response": {
+        "meta": null,
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"ok\": true, \"session_id\": \"untitled-session-2026-11-14-09-19-codo-5d07b185-9afbf782e104\", \"session_title\": \"Untitled Session 2026-11-14 09:19\", \"started_at\": \"2026-11-14T09:19:03\", \"resumed\": true, \"agent_id\": \"codo\", \"project_name\": \"wt_codo_t4_20261112\", \"project_path\": \"D:\\\\0. TRIEN\\\\1. DATA\\\\DATA\\\\5. VIBE APP\\\\1. APP\\\\8. ToolA\", \"requested_project_path\": \"D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/wt_codo_t4_20261112\", \"effective_project_path\": \"D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/wt_codo_t4_20261112\", \"relative_base_hint\": \"D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/wt_codo_t4_20261112\", \"project_path_confirmed\": true, \"root_exists\": true, \"path_resolution_note\": \"project_path confirmed\", \"resolved_from\": \"\", \"matrix_audit\": {\"code_tools\": 260, \"schema_tools\": 260, \"skill_tools\": 104, \"skill_folders\": 35, \"inventory_tools\": 258, \"inventory_active_count\": 258, \"inventory_retired_count\": 0, \"inventory_extra_count\": 0, \"inventory_extra_endpoints_count\": 0, \"inventory_extra_internal_count\": 0, \"inventory_extra_planned_count\": 0, \"inventory_extra_doc_only_count\": 0, \"inventory_extra_unknown_count\": 0, \"drift_count\": 2, \"ok_count\": 258, \"alias_drift_count\": 0, \"alias_drift_severity\": \"none\", \"contract_drift_count\": 1, \"progressive_gap_count\": 0, \"doc_description_present_count\": 260, \"doc_description_weak_count\": 9, \"doc_params_total\": 1426, \"doc_params_described_count\": 1426, \"doc_params_undescribed_count\": 0, \"doc_param_examples_registry_count\": 281, \"doc_param_examples_served_count\": 260, \"doc_fields_absent_by_design_count\": 4, \"purpose_eligible_count\": 180, \"purpose_covered_count\": 180, \"purpose_eligible_gap_count\": 0, \"error_phase_map_entries\": 66, \"error_system_names_total\": 41, \"error_system_names_phase_mapped_count\": 8, \"error_system_names_unmapped_count\": 33, \"audit_scope\": \"daemon_runtime\"}, \"matrix_drift_present\": true, \"progressive_gap_count\": 0, \"progressive_gaps_hint\": \"no progressive gaps\", \"project_switch_context\": {\"recent_projects_today\": [{\"project_path\": \"\", \"last_session_id\": \"direct-codo-1794624015-4adde6a8\", \"started_at\": \"2026-11-14T09:40:16\", \"ended_at\": null, \"status\": \"adopted\", \"is_current\": false}, {\"project_path\": \"D:\\\\0. TRIEN\\\\1. DATA\\\\DATA\\\\5. VIBE APP\\\\1. APP\\\\8. ToolA\", \"last_session_id\": \"untitled-session-2026-11-14-09-19-codo-5d07b185-9afbf782e104\", \"started_at\": \"2026-11-14T09:19:03\", \"ended_at\": null, \"status\": \"active\", \"is_current\": true}, {\"project_path\": \"D:\\\\0. TRIEN\\\\1. DATA\\\\DATA\\\\5. VIBE APP\\\\1. APP\\\\41. CLAUDELTNAI\", \"last_session_id\": \"untitled-session-2026-11-14-09-18-codo-5d07b185-5f1e9281d018\", \"started_at\": \"2026-11-14T09:18:47\", \"ended_at\": null, \"status\": \"active\", \"is_current\": false}], \"current_project_recent_files_5\": [\"t4_a5_frozen_smoke.py\", \"registry_data.py\", \"test_t4_combined_contract.py\", \"test_t4_upgrade_contract.py\", \"test_t4_bridge_core.py\"], \"current_project_recent_queries_5\": [], \"current_project_active_workflow_hint\": \"\"}, \"transport_policy\": {\"platform\": \"windows\", \"windows\": {\"powershell_inline\": \"forbidden\", \"node_inline\": \"forbidden\", \"preferred_transport\": \"script_file\", \"preferred_tool\": \"run_project_test_script\", \"enforcement\": {\"tool\": \"run_project_command\", \"error_names\": [\"POWERSHELL_INLINE_FORBIDDEN\", \"NODE_INLINE_FORBIDDEN\"], \"triggers_common\": [\"length>800\", \"multiline\", \"quote_density>=10\", \"non_ascii\", \"regex_json_unc_combo\", \"list_form_with_shell_metachars\"], \"triggers_ps_only\": [\"continuation_>>\", \"here_string\"]}, \"rationale\": \"Inline shells on Windows mangle non-ASCII (Vietnamese diacritics) via console code page, lose backslash escapes through cmd /c re-parsing, and break on continuation/here-string/heavy-quote payloads. The script-file path writes the body as a temp artifact (UTF-8 BOM for .ps1 / plain UTF-8 for .js) and invokes via -File / direct path so the interpreter reads source bytes unchanged.\", \"path_as_argv_warning\": \"R55 ADDITIONAL RULE: NEVER pass non-ASCII paths (Vietnamese diacritics, UNC shares with national characters) as DIRECT shell argv even with permitted runtimes. The Windows console argv re-encoding still applies BEFORE the interpreter parses argv. Symptom: downstream tools receive mojibake bytes and filesystem probes return exists=false. Safe routes: (a) write path into the script file body (run_ps1_script / run_node_script — body is read as UTF-8/UTF-8-BOM, no argv transit); (b) pass path as a JSON request body field (HTTP transport stays UTF-8 end-to-end). The R54 input mojibake detector on sample_unc_paths_with_root_check will surface INPUT_MOJIBAKE_SUSPECTED if upstream argv corruption occurred.\", \"one_shot_recipe_powershell\": {\"tool\": \"run_project_test_script\", \"args\": {\"project_path\": \"<project_root>\", \"runtime\": \"powershell\", \"script_content\": \"<multiline PS body, UTF-8 safe>\", \"script_label\": \"<short_audit_identifier>\"}, \"behaviour\": \"[A] writes .orchestrator_cache/test_scripts/<hash>.ps1 with UTF-8 BOM (PS 5.1 compat) and runs `powershell -NoProfile -ExecutionPolicy Bypass -File <temp>`.\"}, \"one_shot_recipe_node\": {\"tool\": \"run_project_test_script\", \"args\": {\"project_path\": \"<project_root>\", \"runtime\": \"node\", \"script_content\": \"<multiline JS body — JSON.stringify/UNC/regex safe>\", \"script_label\": \"<short_audit_identifier>\"}, \"behaviour\": \"[A] writes .orchestrator_cache/test_scripts/<hash>.js and runs `node <temp.js>` — JS string literals/regex/UNC bytes pass through unchanged.\"}}, \"posix\": {\"powershell_inline\": \"n/a\", \"preferred_transport\": \"exec\", \"preferred_tool\": \"run_project_command\", \"shell_mode\": \"exec_or_posix\"}, \"ca_next_action\": \"use_script_file_when_payload_is_non_trivial\", \"schema_version\": \"v15.r56\"}, \"cslt_policy\": {\"north_star\": {\"acronym\": \"CSLt\", \"order\": [\"Correctness\", \"Save token\", \"Less context\", \"Time fee\"], \"text\": \"Correctness > Save token > Less context > Time fee\", \"note\": \"CSLt not CLSt; Save token before Less context\"}, \"agent_transport_policy\": \"a_first_mcp_t4_ok\", \"matrix\": {\"path\": \"D:\\\\0. TRIEN\\\\1. DATA\\\\DATA\\\\5. VIBE APP\\\\1. APP\\\\8. ToolA\\\\project-orchestrator\\\\.council\\\\CA_TOOL_POLICY_MATRIX.json\", \"task_class_count\": 23}, \"a_first\": true, \"host_gate\": {\"agent_id\": \"codo\", \"is_hermes\": false, \"scope\": \"project\", \"decision\": \"allow_via_a\", \"allowed\": true, \"reason\": \"Inside project via [A]\", \"native_policy\": \"forbid\"}, \"metrics_contract\": {\"bypass_event\": \"native action matched to native_policy=forbid\", \"bypass_rate_formula\": \"forbidden_native_actions / all_classified_governed_actions\", \"required_counters\": [\"forbidden_native_count\", \"allowed_native_count\", \"via_a_count\", \"unclassified_count\", \"bypass_rate\"], \"zero_denominator\": \"null\", \"group_by\": [\"agent_id\", \"task_class\", \"project_path\", \"time_window\"]}, \"rules\": [\"Prefer [A] HTTP /api/call/* for project ops\", \"Native only when Matrix native_policy allows + log_native_event\", \"CLI C-suffix workers: transport_policy=http_only\", \"Outside project: allow_readonly only\"]}, \"requested_mode\": \"T1\", \"effective_mode\": \"T1\", \"mode_applied\": false, \"mode_matches_persisted\": true, \"mode_ignored_on_resume\": false, \"matrix_drift_note\": [{\"tool\": \"close_browser_page\", \"severity\": \"low\", \"ca_next_action\": \"run audit_tool_matrix\"}, {\"tool\": \"t4_host_status\", \"severity\": \"low\", \"ca_next_action\": \"run audit_tool_matrix\"}], \"generation\": \"5003aa4e585f\", \"concurrent_api_calls_observed\": 4, \"contention_note\": \"4 /api/call requests were in flight around this one; the wall clock includes queueing, so a slow answer here is NOT evidence of a slow tool -- re-measure serially before tuning scope\", \"generation_source\": \"daemon\", \"mcp_generation\": \"7351f032250b\", \"mcp_generation_matches_daemon\": false, \"mcp_generation_diverged_s\": 2.8}",
+            "annotations": null,
+            "meta": null
+          }
+        ],
+        "structuredContent": null,
+        "isError": false
+      }
+    },
+    {
+      "time": 1794624021.7229757,
+      "name": "open_browser_page",
+      "payload": {
+        "project_path": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\wt_codo_t4_20261112",
+        "url": "data:text/html,<html><body>T4_A5_FROZEN_MARKER</body></html>",
+        "headless": true
+      },
+      "response": {
+        "meta": null,
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"page_id\": \"pg-1794624021613-0-af5b02\", \"url\": \"data:text/html,<html><body>T4_A5_FROZEN_MARKER</body></html>\", \"title\": \"\", \"ok\": true, \"schema_version\": \"v15.r18\", \"generation\": \"5003aa4e585f\", \"operation_id\": \"6058b244c3c5a19b\", \"write_status_url\": \"/api/write_status?operation_id=6058b244c3c5a19b\", \"operation_attempts\": 1, \"generation_source\": \"daemon\", \"mcp_generation\": \"7351f032250b\", \"mcp_generation_matches_daemon\": false, \"mcp_generation_diverged_s\": 5.9}",
+            "annotations": null,
+            "meta": null
+          }
+        ],
+        "structuredContent": null,
+        "isError": false
+      }
+    },
+    {
+      "time": 1794624021.7531154,
+      "name": "read_page",
+      "payload": {
+        "page_id": "pg-1794624021613-0-af5b02"
+      },
+      "response": {
+        "meta": null,
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"page_id\": \"pg-1794624021613-0-af5b02\", \"selector\": \"body\", \"text\": \"T4_A5_FROZEN_MARKER\", \"length\": 19, \"truncated\": false, \"ok\": true, \"schema_version\": \"v15.r18\", \"generation\": \"5003aa4e585f\", \"generation_source\": \"daemon\", \"mcp_generation\": \"7351f032250b\", \"mcp_generation_matches_daemon\": false, \"mcp_generation_diverged_s\": 6.0}",
+            "annotations": null,
+            "meta": null
+          }
+        ],
+        "structuredContent": null,
+        "isError": false
+      }
+    },
+    {
+      "time": 1794624021.8142025,
+      "name": "describe_page",
+      "payload": {
+        "page_id": "pg-1794624021613-0-af5b02"
+      },
+      "response": {
+        "meta": null,
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"ok\": false, \"error\": \"page_id not found: pg-1794624021613-0-af5b02\", \"error_name\": \"PAGE_NOT_FOUND\", \"schema_version\": \"v15.r18\", \"ca_next_action\": \"read_error\", \"payload_example\": {\"page_id\": \"<Browser page id whose DOM structure (titled sections + view-* panels) is mapped.>\", \"area_class\": \"log-area\", \"view_id_pattern\": \"^view-\", \"auto_artifact\": false, \"project_path\": \"\", \"round_id\": \"\", \"auto_artifact_max_bytes\": 4096}, \"retry_sequence\": [], \"ca_guidance\": {\"phase\": \"T1\", \"phase_label\": \"Discover / Analyze / Read\", \"error_name\": \"PAGE_NOT_FOUND\", \"ca_next_action\": \"read_error\", \"call_pattern\": \"$body = @{ ... } | ConvertTo-Json -Depth 20\\nInvoke-RestMethod -Method Post -Uri \\\"http://localhost:8083/api/call/describe_page\\\" -ContentType \\\"application/json\\\" -Body $body\", \"payload_example\": {\"page_id\": \"<Browser page id whose DOM structure (titled sections + view-* panels) is mapped.>\", \"area_class\": \"log-area\", \"view_id_pattern\": \"^view-\", \"auto_artifact\": false, \"project_path\": \"\", \"round_id\": \"\", \"auto_artifact_max_bytes\": 4096}, \"required_fields\": [\"page_id\"], \"accepted_aliases\": {}, \"notes\": [\"Use PowerShell hashtable -> ConvertTo-Json; do not hand-write JSON for multiline content.\", \"Use project_path for the project root. Prefer relative file_path/path inside that root.\", \"For write_fix, write_fix_html, and write_new_file, use content_encoding='base64' when content has newlines, quotes, backslashes, HTML, JS, or large blocks.\", \"Read schema with GET http://localhost:8083/api/tools if a field is unclear.\"], \"known_gotchas\": [], \"recommended_prompt_rule\": \"\", \"see_also\": {}, \"suggested_alternative_tool\": {}}, \"phase\": \"runtime\", \"generation\": \"5003aa4e585f\", \"generation_source\": \"daemon\", \"mcp_generation\": \"7351f032250b\", \"mcp_generation_matches_daemon\": false, \"mcp_generation_diverged_s\": 6.0}",
+            "annotations": null,
+            "meta": null
+          }
+        ],
+        "structuredContent": null,
+        "isError": false
+      }
+    },
+    {
+      "time": 1794624022.942926,
+      "name": "close_browser_page",
+      "payload": {
+        "page_id": "pg-1794624021613-0-af5b02"
+      },
+      "response": {
+        "meta": null,
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"page_id\": \"pg-1794624021613-0-af5b02\", \"kind\": \"launched\", \"detached\": false, \"closed\": true, \"ok\": true, \"schema_version\": \"v15.r18\", \"generation\": \"5003aa4e585f\", \"generation_source\": \"daemon\", \"mcp_generation\": \"7351f032250b\", \"mcp_generation_matches_daemon\": false, \"mcp_generation_diverged_s\": 7.1}",
+            "annotations": null,
+            "meta": null
+          }
+        ],
+        "structuredContent": null,
+        "isError": false
+      }
+    },
+    {
+      "time": 1794624022.9579566,
+      "name": "read_page",
+      "payload": {
+        "page_id": "pg-1794624021613-0-af5b02"
+      },
+      "response": {
+        "meta": null,
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"ok\": false, \"error\": \"page_id not found: pg-1794624021613-0-af5b02\", \"error_name\": \"PAGE_NOT_FOUND\", \"schema_version\": \"v15.r18\", \"ca_next_action\": \"read_error\", \"payload_example\": {\"page_id\": \"<Browser page id returned by open_browser_page; the page whose text content is re>\", \"selector\": \"body\", \"max_chars\": 5000}, \"retry_sequence\": [], \"ca_guidance\": {\"phase\": \"T4\", \"phase_label\": \"Runtime / DOM / Browser / Server lifecycle\", \"error_name\": \"PAGE_NOT_FOUND\", \"ca_next_action\": \"read_error\", \"call_pattern\": \"$body = @{ ... } | ConvertTo-Json -Depth 20\\nInvoke-RestMethod -Method Post -Uri \\\"http://localhost:8083/api/call/read_page\\\" -ContentType \\\"application/json\\\" -Body $body\", \"payload_example\": {\"page_id\": \"<Browser page id returned by open_browser_page; the page whose text content is re>\", \"selector\": \"body\", \"max_chars\": 5000}, \"required_fields\": [\"page_id\"], \"accepted_aliases\": {}, \"notes\": [\"Use PowerShell hashtable -> ConvertTo-Json; do not hand-write JSON for multiline content.\", \"Use project_path for the project root. Prefer relative file_path/path inside that root.\", \"For write_fix, write_fix_html, and write_new_file, use content_encoding='base64' when content has newlines, quotes, backslashes, HTML, JS, or large blocks.\", \"Read schema with GET http://localhost:8083/api/tools if a field is unclear.\"], \"known_gotchas\": [], \"recommended_prompt_rule\": \"\", \"see_also\": {}, \"suggested_alternative_tool\": {}}, \"phase\": \"runtime\", \"generation\": \"5003aa4e585f\", \"generation_source\": \"daemon\", \"mcp_generation\": \"7351f032250b\", \"mcp_generation_matches_daemon\": false, \"mcp_generation_diverged_s\": 7.2}",
+            "annotations": null,
+            "meta": null
+          }
+        ],
+        "structuredContent": null,
+        "isError": false
+      }
+    }
+  ],
+  "fresh_host": true,
+  "comparison": "fresh operational/schema baseline; pre-bridge unverified",
+  "surface": [
+    "open_session",
+    "get_rule_core_text",
+    "call_tool"
+  ],
+  "http_negative_control": {
+    "command": "$ErrorActionPreference='Stop'\n$body=@'\n{\"page_id\": \"pg-1794624021613-0-af5b02\"}\n'@\nInvoke-RestMethod -Uri 'http://localhost:8083/api/call/read_page' -Method Post -Headers @{'X-Agent-Id'='codo'} -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($body)) | ConvertTo-Json -Depth 12",
+    "stdout": "{\n    \"ok\":  false,\n    \"error\":  \"page_id not found: pg-1794624021613-0-af5b02\",\n    \"error_name\":  \"PAGE_NOT_FOUND\",\n    \"schema_version\":  \"v15.r18\",\n    \"ca_next_action\":  \"read_error\",\n    \"payload_example\":  {\n                            \"page_id\":  \"\\u003cBrowser page id returned by open_browser_page; the page whose text content is re\\u003e\",\n                            \"selector\":  \"body\",\n                            \"max_chars\":  5000\n                        },\n    \"retry_sequence\":  [\n\n                       ],\n    \"ca_guidance\":  {\n                        \"phase\":  \"T4\",\n                        \"phase_label\":  \"Runtime / DOM / Browser / Server lifecycle\",\n                        \"error_name\":  \"PAGE_NOT_FOUND\",\n                        \"ca_next_action\":  \"read_error\",\n                        \"call_pattern\":  \"$body = @{ ... } | ConvertTo-Json -Depth 20\\nInvoke-RestMethod -Method Post -Uri \\\"http://localhost:8083/api/call/read_page\\\" -ContentType \\\"application/json\\\" -Body $body\",\n                        \"payload_example\":  {\n                                                \"page_id\":  \"\\u003cBrowser page id returned by open_browser_page; the page whose text content is re\\u003e\",\n                                                \"selector\":  \"body\",\n                                                \"max_chars\":  5000\n                                            },\n                        \"required_fields\":  [\n                                                \"page_id\"\n                                            ],\n                        \"accepted_aliases\":  {\n\n                                             },\n                        \"notes\":  [\n                                      \"Use PowerShell hashtable -\\u003e ConvertTo-Json; do not hand-write JSON for multiline content.\",\n                                      \"Use project_path for the project root. Prefer relative file_path/path inside that root.\",\n                                      \"For write_fix, write_fix_html, and write_new_file, use content_encoding=\\u0027base64\\u0027 when content has newlines, quotes, backslashes, HTML, JS, or large blocks.\",\n                                      \"Read schema with GET http://localhost:8083/api/tools if a field is unclear.\"\n                                  ],\n                        \"known_gotchas\":  [\n\n                                          ],\n                        \"recommended_prompt_rule\":  \"\",\n                        \"see_also\":  {\n\n                                     },\n                        \"suggested_alternative_tool\":  {\n\n                                                       }\n                    },\n    \"phase\":  \"runtime\",\n    \"generation\":  \"5003aa4e585f\"\n}\n",
+    "stderr": "",
+    "exit_code": 0
+  },
+  "ok": true,
+  "finished_at": 1794624023.148977
+}
