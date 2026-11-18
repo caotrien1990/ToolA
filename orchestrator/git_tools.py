@@ -42,6 +42,10 @@ def _absolute_branch_extras(root, value, tool):
     (b) exists outside any git repo, (c) does not exist (stat failed),
     (d) situation undetermined (rev-parse errored unexpectedly, the
     top-level does not contain the path, or _run itself raised).
+    Post-normalization, (a0)'s main use (same-repo existing file) is
+    unreachable; (a0) still serves alias-prefix rejects (case 18),
+    root-itself rejects (case 19) and absolute-remainder rejects that
+    resolve inside root (case 34).  F2 is NOT deleted or split.
     """
     resolved = Path(value).resolve()
     try:
@@ -77,13 +81,63 @@ def _absolute_branch_extras(root, value, tool):
             'ca_next_action': "could not determine the file's repo situation — use write_status to check for a matching ToolA write; for its content use read_file_range"}
 
 
+def _denylisted(value, low, absolute):
+    """F1 step 4 predicate -- shared by the original spelling and the step-5
+    rewritten form so the denylist is re-judged identically on re-entry.
+    The '.git' component rule applies only to absolute spellings; a relative
+    'sub/.git/config' stays allowed through here (pinned asymmetry)."""
+    return (low == '.git' or low.startswith('.git/')
+            or any(fnmatch.fnmatch(Path(low).name, pat) for pat in _SECRET_PATTERNS)
+            or (absolute and '.git' in low.split('/')))
+
+
+def _strip_root_prefix(value, root):
+    """F1 step 5 -- pure textual prefix-strip of THIS call's resolved root.
+
+    Returns the lexical relative remainder, or None to keep the step-5 raise
+    (prefix mismatch, root itself, empty remainder, or a non-length-preserving
+    normcase fold).  String surgery only: no stat/resolve/subprocess, so the
+    rewrite adds no crash surface and never stats a secret.  value is already
+    slash-folded+stripped by step 0; root is the resolved top-level Path.
+    normcase is the codebase's root-equality idiom (resolve_root / F2 a0); the
+    '/' boundary keeps sibling-prefix roots (C:/repo vs C:/repo2) from matching.
+    """
+    root_posix = root.as_posix()
+    prefix = root_posix if root_posix.endswith('/') else root_posix + '/'
+    nv = os.path.normcase(value)
+    np = os.path.normcase(prefix)
+    if nv == os.path.normcase(root_posix):
+        return None                          # root itself -> never '.'
+    if not nv.startswith(np):
+        return None                          # outside this root / sibling prefix
+    remainder = value[len(prefix):]
+    if not remainder:
+        return None                          # empty remainder -> keep the raise
+    # check A: folded value == folded prefix + folded remainder.  normcase is
+    # length-preserving for ASCII but not in general (U+0130 -> two code points),
+    # so verify the slice rather than assume alignment; fail closed on mismatch.
+    if nv != np + os.path.normcase(remainder):
+        return None
+    return remainder
+
+
 def _pathspecs(root, paths, *, tool=None, check_exists=False):
     result = []
-    for raw in paths or []:
+    # Work list of (spelling, reentered).  A step-5 rewrite pushes the remainder
+    # back with reentered=True so it re-runs step 0 (fold+strip+is_absolute) and
+    # steps 1-6 verbatim; step 5 is REJECT-ONLY on re-entry, so the prefix-strip
+    # happens AT MOST ONCE per item -- no recursion, no loop risk (case 34).
+    work = [(raw, False) for raw in reversed(paths or [])]
+    while work:
+        raw, reentered = work.pop()
         value = str(raw).replace('\\', '/').strip()
         low = value.lower(); absolute = Path(value).is_absolute()
         # F1: the validation ORDER is the contract -- raise at the first
-        # offending spec, with the step's reason_code.
+        # offending spec, with the step's reason_code.  Step 5 now normalizes
+        # an absolute spelling inside THIS repo root (textual prefix-strip) and
+        # re-enters the guard on the remainder; every other step is unchanged
+        # and also re-runs on the rewritten form (steps 0-3 are position-
+        # dependent, so the strip CAN expose new classifications: cases 29-34).
         # 1. empty / NUL
         if not value or chr(0) in value:
             raise GitToolError('INVALID_GIT_PATHSPEC', f"invalid pathspec {value!r}: a pathspec must not be empty or contain NUL characters; git pathspecs must be relative to the project repo root", reason_code='empty_or_nul')
@@ -108,12 +162,18 @@ def _pathspecs(root, paths, *, tool=None, check_exists=False):
                 message = f"invalid pathspec {value!r}: the path is absolute; git pathspecs must be relative to the project repo root"
             raise GitToolError('INVALID_GIT_PATHSPEC', message, reason_code=reason)
         # 4. denylist -- message stays the bare value, with NO extras, as
-        # before. The '.git' component rule applies only to absolute
-        # spellings; 'sub/.git/config' stays allowed through here.
-        if low == '.git' or low.startswith('.git/') or any(fnmatch.fnmatch(Path(low).name, pat) for pat in _SECRET_PATTERNS) or (absolute and '.git' in low.split('/')):
+        # before.  Shared predicate, re-run on the rewritten form.
+        if _denylisted(value, low, absolute):
             raise GitToolError('PATHSPEC_DENYLISTED', value)
-        # 5. absolute -- the only step that carries F2 branch extras
+        # 5. absolute -- normalize inside-root on the first pass, else the
+        # only step that carries F2 branch extras.  On re-entry, reject-only:
+        # an absolute remainder keeps the raise with F2 computed on itself.
         if absolute:
+            if not reentered:
+                rel = _strip_root_prefix(value, root)
+                if rel is not None:
+                    work.append((rel, True))
+                    continue
             raise GitToolError('INVALID_GIT_PATHSPEC', f"invalid pathspec {value!r}: the path is absolute; git pathspecs must be relative to the project repo root", reason_code='absolute_path', **_absolute_branch_extras(root, value, tool))
         # 6. the resolved target must stay inside the repo root
         candidate = (root / value).resolve()

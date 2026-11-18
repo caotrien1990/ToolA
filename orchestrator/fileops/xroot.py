@@ -232,8 +232,9 @@ def xroot_check(target_path: str | Path, _caller_tool: str, _session_id: str = "
 WRITE_TARGET_FIELDS = ("path", "file_path", "dst", "target_file", "destination")
 # Mutating tools whose path fields name INDEX entries, never a file they write:
 # git_stage / git_unstage run `git add` / `git restore --staged`, which leave the
-# working tree byte-identical, and git_tools._pathspecs already refuses an absolute,
-# ``.git``, secret-pattern or out-of-root spec. Measured 2026-09-29: read as write
+# working tree byte-identical, and git_tools._pathspecs refuses an absolute outside
+# the repo (same-repo absolutes are normalized to inside-root relative specs), plus
+# any ``.git``, secret-pattern or out-of-root spec. Measured 2026-09-29: read as write
 # targets (#35), their ``paths`` met the deny list: git_stage refused to STAGE
 # .council/council_config.json while that file was still a live_files entry.
 INDEX_ONLY_TOOLS = frozenset({"git_stage", "git_unstage"})
