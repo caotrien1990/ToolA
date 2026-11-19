@@ -118,6 +118,115 @@ class CouncilMessageB3Tests(unittest.TestCase):
         self.assertGreaterEqual(source.count("body_file: str = \"\""), 2)
         self.assertIn('payload["body_file"] = body_file', source)
 
+    def test_valid_marker_bearing_vietnamese_passes_inline(self):
+        # P16 §3.4 / §5.2-3: innocent Vietnamese carrying a probe marker
+        # ("ĐÃ", "Â", "á»") must pass both council gates.
+        for text in ("ĐÃ", "Â", "Brief ĐÃ gửi", "nói quá»"):
+            with self.subTest(text=text):
+                with mock.patch.object(srv, "_council_append_event"):
+                    result = json.loads(asyncio.run(srv.council_message(sender="codo", to="user", text=text)))
+                self.assertTrue(result["ok"], msg=result)
+
+    def test_valid_marker_bearing_vietnamese_passes_dispatch(self):
+        # §5.2: the dispatch gate (text leg) must pass too, not just the resolver.
+        for text in ("ĐÃ", "Â"):
+            with self.subTest(text=text):
+                with mock.patch.object(srv, "_council_append_event"):
+                    result = asyncio.run(srv._council_dispatch_message("codo", "user", text, queue=False))
+                self.assertTrue(result["ok"], msg=result)
+
+    def test_valid_marker_bearing_vietnamese_passes_body_file(self):
+        # §5.2 body_file leg; the clean marker-bearing first line is the proof
+        # file's own shape (§5.1).
+        for name, text in (("da.md", "ĐÃ FILE\nNội dung brief nguyên vẹn."), ("a_circ.txt", "Â\nDòng thứ hai.")):
+            with self.subTest(name=name):
+                path = self.root / ".council" / "briefs" / name
+                path.write_text(text, encoding="utf-8")
+                resolved, error = srv._council_message_source(None, ".council/briefs/" + name)
+                self.assertIsNone(error, msg=error)
+                self.assertEqual(resolved, text)
+
+    def test_plain_ascii_still_passes(self):
+        # §5.8: ASCII inline + body_file unaffected.
+        with mock.patch.object(srv, "_council_append_event"):
+            result = json.loads(asyncio.run(srv.council_message(sender="codo", to="user", text="plain ascii brief")))
+        self.assertTrue(result["ok"], msg=result)
+        path = self.root / ".council" / "briefs" / "ascii.md"
+        path.write_text("plain ascii brief", encoding="utf-8")
+        resolved, error = srv._council_message_source(None, ".council/briefs/ascii.md")
+        self.assertIsNone(error, msg=error)
+        self.assertEqual(resolved, "plain ascii brief")
+
+    def test_body_file_genuine_mojibake_still_rejected(self):
+        # §5.4: canonical corrupted + lone corrupted à-word via body_file. The
+        # lone à-word pins the body_file read strip as ASCII-only: a Unicode
+        # .strip() severs the trailing U+00A0 and "vÃ" alone no longer confirms.
+        canonical = "tiến hành kiểm tra tiếng Việt"
+        cases = (("corrupted.md", canonical.encode("utf-8").decode("latin-1")), ("lone_va.md", "và".encode("utf-8").decode("latin-1")))
+        for name, text in cases:
+            with self.subTest(name=name):
+                path = self.root / ".council" / "briefs" / name
+                path.write_text(text, encoding="utf-8")
+                _, error = srv._council_message_source(None, ".council/briefs/" + name)
+                self.assertEqual(error["error_name"], "SUSPECTED_MOJIBAKE")
+
+    def test_mixed_text_genuine_mojibake_still_rejected(self):
+        # §5.5: corrupted canonical + clean tail (Chinese / "ĐÃ") — whole-text
+        # confirmation fails these; per-token ANY confirmation rejects them.
+        corrupted = "tiến hành kiểm tra tiếng Việt".encode("utf-8").decode("latin-1")
+        for tail in (" — 你好", " ĐÃ"):
+            with self.subTest(tail=tail):
+                result = json.loads(asyncio.run(srv.council_message(to="user", text=corrupted + tail)))
+                self.assertEqual(result["error_name"], "SUSPECTED_MOJIBAKE")
+
+    def test_corrupted_a_words_inline_still_rejected(self):
+        # §5.10: lone à-words, ASCII lead/tail, and join-then-corrupt NBSP text.
+        # Bare str.split() would sever U+00A0 mid-sequence and miss these.
+        def corr(s):
+            return s.encode("utf-8").decode("latin-1")
+        cases = (corr("và"), corr("hành"), corr("và") + " plain ascii", corr("hello và"), ("tiến\xa0hành").encode("utf-8").decode("latin-1"))
+        for text in cases:
+            with self.subTest(text=text):
+                result = json.loads(asyncio.run(srv.council_message(to="user", text=text)))
+                self.assertEqual(result["error_name"], "SUSPECTED_MOJIBAKE")
+
+    def test_clean_lead_genuine_mojibake_still_rejected(self):
+        # §5.11: corruption behind clean lead words/phrases — first-segment-only
+        # confirmation would admit these.
+        corrupted = "tiến hành kiểm tra tiếng Việt".encode("utf-8").decode("latin-1")
+        for lead in ("ĐÃ ", "Hello ", "ĐÃ FILE BRIEF ", "tiếng Việt — 你好 "):
+            with self.subTest(lead=lead):
+                result = json.loads(asyncio.run(srv.council_message(to="user", text=lead + corrupted)))
+                self.assertEqual(result["error_name"], "SUSPECTED_MOJIBAKE")
+
+    def test_multiline_genuine_mojibake_still_rejected(self):
+        # §5.12: corruption on first/middle/last lines and paragraphs, inline +
+        # body_file (variant (a) is the proof file's own shape).
+        corrupted = "tiến hành kiểm tra tiếng Việt".encode("utf-8").decode("latin-1")
+        cases = (
+            "ĐÃ FILE\n" + corrupted,
+            "ĐÃ FILE\nSecond clean line\nThird clean line\n" + corrupted,
+            "ĐÃ FILE\n\n" + corrupted,
+            corrupted + "\nClean second line\nThird clean line",
+            corrupted + "\n\nClean para",
+            "ĐÃ FILE\nSecond clean line\nThird clean line\nFourth clean line\n" + corrupted,
+            corrupted + "\nClean second line\nThird clean line\nFourth clean line\nFifth clean line",
+            "Clean paragraph one\n\nClean paragraph two\n\n" + corrupted,
+            corrupted + "\n\nClean paragraph two\n\nClean paragraph three",
+            corrupted + "\nĐÃ FILE",
+            corrupted + "\n\nĐÃ FILE",
+            "ĐÃ FILE\nSecond clean line\n" + corrupted + "\nFourth clean line",
+            "Hello first paragraph\n\n" + corrupted + "\n\nClean third paragraph",
+        )
+        for text in cases:
+            with self.subTest(text=text[:40]):
+                result = json.loads(asyncio.run(srv.council_message(to="user", text=text)))
+                self.assertEqual(result["error_name"], "SUSPECTED_MOJIBAKE")
+        path = self.root / ".council" / "briefs" / "proof_shape.md"
+        path.write_text("ĐÃ FILE\n" + corrupted, encoding="utf-8")
+        _, error = srv._council_message_source(None, ".council/briefs/proof_shape.md")
+        self.assertEqual(error["error_name"], "SUSPECTED_MOJIBAKE")
+
 
 if __name__ == "__main__":
     unittest.main()

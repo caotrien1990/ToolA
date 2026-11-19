@@ -75,7 +75,8 @@ class TestMojibakeConfirmation(unittest.TestCase):
 
     def test_r54_council_detector_still_flags_mojibake(self):
         # The council transport probe is deliberately more eager (it guards a
-        # send, not a write) and must keep flagging on markers alone.
+        # send, not a write) and still flags on markers alone; the council gate
+        # additionally requires per-token confirmation (P16 §3.4).
         self.assertTrue(code_tools._r54_detect_mojibake(CORRUPTED)[0])
 
 

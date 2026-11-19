@@ -912,7 +912,16 @@ def _compact_accounting_result(result, task_meta: dict) -> dict:
             compact["tests"] = {"collected": tests.get("collected")}
         for key in ("stdout", "stderr"):
             if result.get(key) is not None:
-                compact[key] = str(result.get(key) or "")[-400:]
+                value = str(result.get(key) or "")
+                if len(value) > 400:
+                    n = 400
+                    if re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", value[:n]):
+                        n -= n % 4
+                    compact[key] = value[:n]
+                    compact[key + "_truncated"] = True
+                    compact[key + "_original_length"] = len(value)
+                else:
+                    compact[key] = value
         # A43: error_name is the one error field a later reader can GROUP BY, and
         # store.py:_log_session_event already reads it off this very dict -- the column,
         # its consumer (_record_error_resolution inherits the source row's error_name)
@@ -12109,6 +12118,17 @@ _COUNCIL_BODY_FILE_MAX_BYTES = 256 * 1024
 _COUNCIL_BODY_FILE_SUFFIXES = {".md", ".txt"}
 
 
+# P16 §3.4: per-token confirmation over ASCII-whitespace splits (ANY quantifier).
+# ASCII-only splitting keeps U+00A0 inside a corrupted à-token so the latin-1
+# round-trip still sees the full UTF-8 sequence; bare str.split() would sever it.
+def _council_mojibake_confirmed(text: str) -> bool:
+    return any(
+        ct._r54_detect_mojibake(tok)[0] and ct._mojibake_confirmed(tok)
+        for tok in re.split(r"[ \t\r\n]+", text)
+        if tok
+    )
+
+
 def _council_message_source(text=None, body_file=None):
     """Resolve exactly one safe council message source without repairing text."""
     has_text = text is not None and str(text).strip() != ""
@@ -12120,7 +12140,7 @@ def _council_message_source(text=None, body_file=None):
             "error": "provide exactly one of text or body_file",
         }
     if has_text:
-        resolved = str(text).strip()
+        resolved = str(text).strip(" \t\r\n")
     else:
         raw = str(body_file).strip().replace("\\", "/")
         rel = Path(raw)
@@ -12147,14 +12167,14 @@ def _council_message_source(text=None, body_file=None):
             return "", {"ok": False, "error_name": "BODY_FILE_TOO_LARGE",
                         "error": f"body_file exceeds {_COUNCIL_BODY_FILE_MAX_BYTES} bytes"}
         try:
-            resolved = candidate.read_text(encoding="utf-8", errors="strict").strip()
+            resolved = candidate.read_text(encoding="utf-8", errors="strict").strip(" \t\r\n")
         except UnicodeDecodeError:
             return "", {"ok": False, "error_name": "BODY_FILE_NOT_UTF8",
                         "error": "body_file must be strict UTF-8"}
         if not resolved:
             return "", {"ok": False, "error_name": "MESSAGE_BODY_REQUIRED",
                         "error": "resolved body_file is empty"}
-    if ct._r54_detect_mojibake(resolved)[0]:
+    if ct._r54_detect_mojibake(resolved)[0] and _council_mojibake_confirmed(resolved):
         return "", {"ok": False, "error_name": "SUSPECTED_MOJIBAKE",
                     "error": "message appears to be UTF-8 decoded with a legacy code page; resend UTF-8 bytes"}
     return resolved, None
@@ -12169,8 +12189,8 @@ async def _council_dispatch_message(sender, target, text, timeout_sec=6000, queu
     sender = (str(sender or "worker").strip() or "worker")[:40]
     target_raw = str(target or "").strip()
     target = target_raw.lower()
-    text = str(text or "").strip()
-    if ct._r54_detect_mojibake(text)[0]:
+    text = str(text or "").strip(" \t\r\n")
+    if ct._r54_detect_mojibake(text)[0] and _council_mojibake_confirmed(text):
         return {"ok": False, "error_name": "SUSPECTED_MOJIBAKE",
                 "error": "message appears to be UTF-8 decoded with a legacy code page; resend UTF-8 bytes"}
     try:
@@ -15584,6 +15604,7 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
     _t4_caller = str(request.headers.get("X-Agent-Id") or request.headers.get("X-Council-Agent") or "")
     if tool_name == "t4_host_status":
         _task_agent_id = _t4_caller
+    _task_agent_id = "" if _task_agent_id == "unknown" else _task_agent_id
     # A37 #0b: publish the resolved identity for the WHOLE dispatch so _error_response --
     # which never receives an agent id -- can re-arm the bootstrap schema push. The gates
     # that reject on schema (UNSUPPORTED_FIELD, MISSING_REQUIRED_FIELD) return ~1300 lines

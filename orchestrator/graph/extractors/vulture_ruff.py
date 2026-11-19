@@ -110,7 +110,7 @@ _RULE_CATEGORIES: dict[str, list[str]] = {
         "PLE0100", "PLE0101", "PLE0115", "PLE0116", "PLE0117",
         "PLE0118", "PLE0643", "PLE1132", "PLE1141", "PLE1142",
         "PLE4703",
-        "RUF006", "RUF008", "RUF012", "RUF015", "RUF018", "RUF100",
+        "RUF006", "RUF008", "RUF012", "RUF015", "RUF018", "RUF043", "RUF071", "RUF100",
         "PLW0129",
     ],
     "perf": [

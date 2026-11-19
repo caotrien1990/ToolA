@@ -75,7 +75,7 @@ No `--keyword`, `--file` flags supported. For single-file test -> use `run_proje
 
 - Read-only lint/check: run Ruff without mutation and report findings; no EXECUTE trigger is needed.
 - Auto-fix: use `ruff_fix(project_path, apply=false)` first, review the unified diff, then set `apply=true` only in active EXECUTE scope.
-- Keep `unsafe_fixes=false` unless Anh explicitly requests unsafe fixes. The supported runtime dependency is `ruff>=0.16,<0.17`.
+- Keep `unsafe_fixes=false` unless Anh explicitly requests unsafe fixes. The supported runtime dependency is `ruff>=0.17.5,<0.18`.
 
 ## Coverage classification (skill 10)
 
