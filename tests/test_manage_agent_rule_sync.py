@@ -438,6 +438,13 @@ class TestManageAgentSyncHook(unittest.TestCase):
         plugin_src = (hd / "toola-gates.mjs").read_text(encoding="utf-8")
         self.assertIn("native-write-gate.cjs", plugin_src)
         self.assertIn("read-gate.cjs", plugin_src)
+        # V2 shape pin: OpenCode >= 1.18.29 rejects the V1 bare-function export,
+        # and process.execPath inside the server is the opencode binary (silent
+        # fail-open). The SOT must stay V2 { id, setup } + explicit node.
+        self.assertIn('id: "toola-gates"', plugin_src)
+        self.assertIn("async setup(ctx)", plugin_src)
+        self.assertNotIn("spawnSync(process.execPath", plugin_src)
+        self.assertIn("TOOLA_GATE_NODE", plugin_src)
         data = json.loads(hf.read_text(encoding="utf-8"))
         self.assertIn("./plugins/active-task-guard.js", data["plugin"], "existing plugin preserved")
         self.assertIn("./plugins/toola-gates.mjs", data["plugin"])

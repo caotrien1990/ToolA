@@ -18604,22 +18604,29 @@ def _ma_hook_verify_registration(fmt: str, hook_file: Path, entries: dict,
 
 def _ma_probe_opencode_before(mod_path: Path, tool: str, args: dict, env: dict,
                               timeout: int = 25) -> dict:
-    """Drive the installed opencode ESM plugin's own tool.execute.before once.
-    The plugin blocks by THROWING, so a deny surfaces as a thrown Error whose
-    message carries the gate reason. Returns {deny, out}: deny True on throw or
-    on a JSON permissionDecision=deny line; out is combined stdout+stderr for
-    diagnosis. A module/load failure reports deny False with the error text."""
+    """Drive the installed opencode V2 plugin's execute.before hook once.
+    V2 default-exports { id, setup(ctx) }; setup registers the blocking hook via
+    ctx.tool.hook("execute.before", fn). The hook blocks by THROWING, so a deny
+    surfaces as a thrown Error whose message carries the gate reason. Returns
+    {deny, out}: deny True on throw or on a JSON permissionDecision=deny line;
+    out is combined stdout+stderr for diagnosis. A module/load failure reports
+    deny False with the error text."""
     import subprocess
     probe_mod = mod_path.parent / "_probe_opencode.mjs"
     probe_mod.write_text(
         "import plugin from './" + mod_path.name + "';\n"
-        "const pl = await plugin({ directory: process.cwd() });\n"
-        "const fn = pl['tool.execute.before'];\n"
+        "let fn = null;\n"
+        "const ctx = {\n"
+        "  tool: { hook: (name, h) => { if (name === 'execute.before') fn = h; } },\n"
+        "  session: { hook: () => {} },\n"
+        "  app: { log: async () => {} },\n"
+        "};\n"
+        "await plugin.setup(ctx);\n"
         "if (typeof fn !== 'function') { console.error('NO_BEFORE_HOOK'); process.exit(2); }\n"
         "const tool = process.env.PROBE_TOOL;\n"
         "const args = JSON.parse(process.env.PROBE_ARGS || '{}');\n"
         "try {\n"
-        "  await fn({ tool, sessionID: 'probe', callID: 'p1' }, { args });\n"
+        "  await fn({ tool, input: args, sessionID: 'probe', callID: 'p1' });\n"
         "  console.log('ALLOW');\n"
         "} catch (e) {\n"
         "  console.log('THROW: ' + ((e && e.message) || String(e)));\n"
@@ -23446,17 +23453,18 @@ try:
         tool_phases=TOOL_PHASES,
         phase_labels=PHASE_LABELS,
         schema={
-            "description": "CAN-053 T1 read-only: browse/filter raw CBM graph nodes with a cursor. Filters: kind (module|class|function|method), name_prefix, file_contains. Returns results+total+next_offset.",
+            "description": "CAN-053 T1 read-only: browse/filter raw CBM graph nodes with a cursor. Filters: kind (module|class|function|method|import|variable|name_literal), name_prefix, file_contains. Returns results+total+next_offset.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "project_path": {"type": "string", "description": "Absolute project root."},
-                    "kind": {"type": "string", "default": "", "description": "Node kind filter: module | class | function | method."},
+                    "kind": {"type": "string", "default": "", "enum": ["module", "class", "function", "method", "import", "variable", "name_literal"], "description": "Node kind filter: module | class | function | method | import | variable | name_literal."},
                     "name_prefix": {"type": "string", "default": "", "description": "Prefix match on node name."},
                     "file_contains": {"type": "string", "default": "", "description": "Substring match on file_path."},
                     "limit": {"type": "integer", "default": 100, "description": "Page size (clamped to 500)."},
                     "offset": {"type": "integer", "default": 0, "description": "Cursor offset; response returns next_offset."},
                 },
+                "required": ["project_path"],
             },
         },
     )
@@ -23470,17 +23478,18 @@ try:
         tool_phases=TOOL_PHASES,
         phase_labels=PHASE_LABELS,
         schema={
-            "description": "CAN-053 T1 read-only: browse/filter raw CBM graph edges with a cursor. Filters: kind (calls|imports_module|...), source_contains, target_contains. Returns results+total+next_offset.",
+            "description": "CAN-053 T1 read-only: browse/filter raw CBM graph edges with a cursor. Filters: kind (calls|defines|inherits|imports|imports_module|dynamic_ref), source_contains, target_contains. Returns results+total+next_offset.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "project_path": {"type": "string", "description": "Absolute project root."},
-                    "kind": {"type": "string", "default": "", "description": "Edge kind filter, e.g. calls | imports_module."},
+                    "kind": {"type": "string", "default": "", "enum": ["calls", "defines", "inherits", "imports", "imports_module", "dynamic_ref"], "description": "Edge kind filter: calls | defines | inherits | imports | imports_module | dynamic_ref."},
                     "source_contains": {"type": "string", "default": "", "description": "Substring match on source qualified_name or file."},
                     "target_contains": {"type": "string", "default": "", "description": "Substring match on target qualified_name or file."},
                     "limit": {"type": "integer", "default": 100, "description": "Page size (clamped to 500)."},
                     "offset": {"type": "integer", "default": 0, "description": "Cursor offset; response returns next_offset."},
                 },
+                "required": ["project_path"],
             },
         },
     )

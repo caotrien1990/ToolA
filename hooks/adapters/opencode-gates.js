@@ -1,24 +1,52 @@
-// OpenCode gates plugin (P22). OpenCode has no PreToolUse hook engine; a
-// plugin module's "tool.execute.before" is the equivalent interception point and
-// blocks by throwing. This plugin spawns the SOT gates with a translated Claude
-// PreToolUse payload and throws Error(reason) when the gate answers deny.
+// OpenCode gates plugin (P22) - V2 SOT for OpenCode >= 1.18.29 (binary 1.19.5).
+// sync_hook installs this file as toola-gates.mjs BESIDE the .cjs gate twins in
+// the host plugins dir and rewrites the two quoted gate names below from .js to
+// .cjs on copy (code_tools._ma_write_hook_target). ESM on purpose: the installed
+// .mjs is explicit ESM regardless of any ancestor package.json "type", while the
+// plugins-dir {"type":"commonjs"} marker keeps the spawned .cjs gates CJS.
 //
-// Tool mapping (OpenCode lowercase input.tool -> the gate's Claude matcher):
-//   write/edit/apply_patch         -> Write  (write gate)
-//   read/grep/glob/bash            -> Read/Grep/Glob/Bash (read gate)
-// The Anh-only break-glass toggle arrives on chat.message: "tắt gate"/"bật gate"
-// and "tắt read gate"/"bật read gate" are forwarded to the matching gate's
-// --prompt handler, which owns the state file. Installed beside the gates.
+// V1 exported a bare async function returning a hook map; V2 rejects that shape
+// ("Plugin must export a default definition with an id and an effect or setup
+// function"), which silently left every gate unenforced after the upgrade.
+// V2 default-exports { id, setup(ctx) } and registers hooks on the owning domain:
+//   tool.execute.before -> ctx.tool.hook("execute.before", event)  (throw = block)
+//   chat.message        -> ctx.session.hook("prompt", event)       (event.prompt.text)
+//
+// The gate CLIs stay the SOT: spawned with a translated Claude PreToolUse
+// payload, never imported in-process (their main() consumes stdin and calls
+// process.exit). Spawn with an explicit node binary: inside the OpenCode server
+// process process.execPath is the compiled opencode executable, NOT node -
+// spawning it with a gate path yields empty stdout, which enforce() would read
+// as allow (silent fail-open). TOOLA_GATE_NODE overrides the interpreter.
+//
+// Tool mapping (OpenCode lowercase event.tool -> the gate's Claude matcher):
+//   write/edit/multiedit/notebookedit -> Write/Edit/MultiEdit/NotebookEdit,
+//   apply_patch -> Write (write gate; see WRITE_NAMES below)
+//   read/grep/glob/bash/shell         -> Read/Grep/Glob/Bash (read gate)
+// Translation fixes vs the V1 relay: the grep target is ti.path (not file_path),
+// OpenCode's include filter maps to the gate's glob, and shell is the desktop
+// name of the Bash tool.
+// The Anh-only break-glass toggle arrives on the prompt hook: "tat gate"/"bat gate"
+// and "tat read gate"/"bat read gate" (diacritic-insensitive) are forwarded to the
+// matching gate's --prompt handler, which owns the state file.
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+const NODE_BIN = process.env.TOOLA_GATE_NODE || "node";
+// Installed beside the plugin; sync_hook renames the repo .js gates to .cjs and
+// rewrites these two quoted names on copy.
 const WRITE_GATE = path.join(HERE, "native-write-gate.js");
 const READ_GATE = path.join(HERE, "read-gate.js");
 
 const WRITE_TOOLS = new Set(["write", "edit", "multiedit", "apply_patch", "notebookedit"]);
-const READ_TOOLS = { read: "Read", grep: "Grep", glob: "Glob", bash: "Bash" };
+// Truthful labels for offlog/preflight: ca_policy_matrix._TOOL_TO_CLASS maps
+// Write/Edit/MultiEdit/NotebookEdit to write_existing_file, so enforcement is
+// unchanged. apply_patch stays "Write": "ApplyPatch" is unmapped in the matrix
+// (unknown class, forbid by accident) -- map it there first, then flip this row.
+const WRITE_NAMES = { write: "Write", edit: "Edit", multiedit: "MultiEdit", apply_patch: "Write", notebookedit: "NotebookEdit" };
+const READ_TOOLS = { read: "Read", grep: "Grep", glob: "Glob", bash: "Bash", shell: "Bash" };
 
 function foldPrompt(text) {
   return String(text || "")
@@ -31,7 +59,7 @@ function foldPrompt(text) {
 function runGate(gatePath, payload, promptEvent) {
   const args = [gatePath];
   if (promptEvent) args.push("--prompt");
-  const r = spawnSync(process.execPath, args, {
+  const r = spawnSync(NODE_BIN, args, {
     input: JSON.stringify(payload),
     encoding: "utf8",
     timeout: 15000,
@@ -56,35 +84,63 @@ function enforce(gatePath, payload) {
   }
 }
 
-export const ToolAGates = async () => ({
-  "tool.execute.before": async (input, output) => {
-    const tool = String((input && input.tool) || "").toLowerCase();
-    const args = (output && output.args) || {};
-    const cwd = args.cwd || args.workdir || undefined;
-    if (WRITE_TOOLS.has(tool)) {
-      const fp = args.file_path || args.filePath || args.notebook_path || args.path || "";
-      enforce(WRITE_GATE, { tool_name: "Write", tool_input: { file_path: fp }, cwd, session_id: input.sessionID });
-      return;
-    }
-    if (READ_TOOLS[tool]) {
-      const name = READ_TOOLS[tool];
-      const ti = { file_path: args.file_path || args.filePath || args.path, pattern: args.pattern, glob: args.glob, type: args.type, command: args.command, limit: args.limit, offset: args.offset };
-      enforce(READ_GATE, { tool_name: name, tool_input: ti, cwd, session_id: input.sessionID });
-    }
-  },
-  "chat.message": async (input, output) => {
-    const parts = (output && output.parts) || [];
-    const prompt = parts.filter((p) => p && p.type === "text").map((p) => p.text || "").join("\n").trim();
-    if (!prompt) return;
-    const said = foldPrompt(prompt);
-    if (said === "tat gate" || said === "bat gate") {
-      const msg = runGate(WRITE_GATE, { prompt, session_id: input.sessionID }, true);
-      if (msg) output.parts.push({ type: "text", text: msg });
-    } else if (said === "tat read gate" || said === "bat read gate") {
-      const msg = runGate(READ_GATE, { prompt, session_id: input.sessionID }, true);
-      if (msg) output.parts.push({ type: "text", text: msg });
-    }
-  },
-});
+function gateCall(event) {
+  const tool = String(event.tool || "").toLowerCase();
+  const args = event.input || event.args || {};
+  const cwd = args.cwd || args.workdir || undefined;
+  const session_id = event.sessionID;
+  if (WRITE_TOOLS.has(tool)) {
+    const fp = args.file_path || args.filePath || args.notebook_path || args.path || "";
+    return { gate: WRITE_GATE, payload: { tool_name: WRITE_NAMES[tool] || "Write", tool_input: { file_path: fp }, cwd, session_id } };
+  }
+  const name = READ_TOOLS[tool];
+  if (!name) return null;
+  const ti = {
+    file_path: args.file_path || args.filePath || args.path,
+    path: args.path,
+    pattern: args.pattern,
+    glob: args.glob || args.include,
+    type: args.type,
+    command: args.command,
+    limit: args.limit,
+    offset: args.offset,
+  };
+  return { gate: READ_GATE, payload: { tool_name: name, tool_input: ti, cwd, session_id } };
+}
 
-export default ToolAGates;
+export default {
+  id: "toola-gates",
+  async setup(ctx) {
+    const log = async (level, message) => {
+      try { await ctx.app.log({ body: { service: "toola-gates", level, message } }); } catch (e) { console.error(message); }
+    };
+    await log("info", "toola-gates V2 setup: registering execute.before + prompt hooks (node=" + NODE_BIN + ")");
+    if (!ctx.tool || typeof ctx.tool.hook !== "function") {
+      throw new Error("toola-gates: ctx.tool.hook missing; OpenCode plugin API mismatch");
+    }
+    await ctx.tool.hook("execute.before", (event) => {
+      const call = gateCall(event);
+      if (call) enforce(call.gate, call.payload);
+    });
+    // Break-glass is secondary: if the prompt domain is absent on this build,
+    // keep tool enforcement alive and log the degradation instead of failing
+    // the whole plugin load (which would silently disable BOTH gates).
+    try {
+      await ctx.session.hook("prompt", (event) => {
+        const prompt = String((event.prompt && event.prompt.text) || "").trim();
+        if (!prompt) return;
+        const said = foldPrompt(prompt);
+        let msg = "";
+        if (said === "tat gate" || said === "bat gate") {
+          msg = runGate(WRITE_GATE, { prompt, session_id: event.sessionID }, true);
+        } else if (said === "tat read gate" || said === "bat read gate") {
+          msg = runGate(READ_GATE, { prompt, session_id: event.sessionID }, true);
+        }
+        if (msg && event.prompt) event.prompt.text = prompt + "\n" + msg;
+      });
+    } catch (e) {
+      await log("warn", "toola-gates: prompt hook unavailable (" + (e && e.message) + "); break-glass degraded, tool gates active");
+    }
+    await log("info", "toola-gates V2 ready: gates enforced via " + READ_GATE + " / " + WRITE_GATE);
+  },
+};
