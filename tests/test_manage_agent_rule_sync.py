@@ -421,23 +421,29 @@ class TestManageAgentSyncHook(unittest.TestCase):
     def test_opencode_plugin_shape_and_idempotent(self):
         hd = self.root / "h_ope"
         hf = self.root / "opencode.json"
-        hf.write_text(json.dumps({"plugin": ["./plugins/active-task-guard.js"], "model": "x"}), encoding="utf-8")
+        hf.write_text(json.dumps({"plugin": ["./plugins/active-task-guard.js"],
+                                  "plugins": ["./plugins"], "model": "x"}), encoding="utf-8")
         ag = self._agent("opencode", "opencode-plugin", hd, hf)
         r1 = code_tools._ma_write_hook(ag, {}, dry_run=False)
         self.assertTrue(r1["ok"], r1)
-        # plugin ships as .mjs (explicit ESM), gates as .cjs (explicit CJS), and
-        # the dir carries a {"type":"commonjs"} package.json marker so the
-        # ancestor ~/.config/opencode/package.json "type":"module" cannot break
-        # the CJS gates (the live-install bug this test now pins).
+        # Plugin ships as CJS .js -- the plugins-dir {"type":"commonjs"} marker
+        # pins it under any ancestor "type" -- plus a generated one-line .mjs ESM
+        # twin. Desktop directory-discovery only loads .js; npm 1.x loads both.
+        # Gates ship as .cjs into ../gates/, the shared dir the plugin resolves
+        # as __dirname/../gates, which also owns the live state/offlog files.
+        self.assertTrue((hd / "toola-gates.js").exists())
         self.assertTrue((hd / "toola-gates.mjs").exists())
-        self.assertTrue((hd / "native-write-gate.cjs").exists())
-        self.assertTrue((hd / "read-gate.cjs").exists())
+        self.assertTrue((hd.parent / "gates" / "native-write-gate.cjs").exists())
+        self.assertTrue((hd.parent / "gates" / "read-gate.cjs").exists())
         pkg = json.loads((hd / "package.json").read_text(encoding="utf-8"))
         self.assertEqual(pkg.get("type"), "commonjs")
-        # the installed plugin must point at the .cjs gates
-        plugin_src = (hd / "toola-gates.mjs").read_text(encoding="utf-8")
+        twin = (hd / "toola-gates.mjs").read_text(encoding="utf-8")
+        self.assertIn('export { default } from "./toola-gates.js";', twin)
+        # the installed plugin must point at the .cjs gates in ../gates/
+        plugin_src = (hd / "toola-gates.js").read_text(encoding="utf-8")
         self.assertIn("native-write-gate.cjs", plugin_src)
         self.assertIn("read-gate.cjs", plugin_src)
+        self.assertIn('path.join(__dirname, "..", "gates")', plugin_src)
         # Dual-shape pin: desktop cli 2.x directory-discovery rejects the V1
         # bare-function export and needs { id, setup(ctx) }; npm opencode-ai
         # 1.x (the museroom member's host) rejects { id, setup } alone and
@@ -450,9 +456,21 @@ class TestManageAgentSyncHook(unittest.TestCase):
         self.assertIn('"tool.execute.before"', plugin_src)
         self.assertNotIn("spawnSync(process.execPath", plugin_src)
         self.assertIn("TOOLA_GATE_NODE", plugin_src)
+        # ApplyPatch audit label: the plugin relabels apply_patch -> ApplyPatch,
+        # and the matrix must map that name to the same write class -- unmapped
+        # it fell through to `unknown` (forbid by accident, no audit class).
+        self.assertIn('apply_patch: "ApplyPatch"', plugin_src)
+        from orchestrator.core import ca_policy_matrix
+        self.assertEqual(ca_policy_matrix._TOOL_TO_CLASS.get("ApplyPatch"),
+                         "write_existing_file")
         data = json.loads(hf.read_text(encoding="utf-8"))
         self.assertIn("./plugins/active-task-guard.js", data["plugin"], "existing plugin preserved")
-        self.assertIn("./plugins/toola-gates.mjs", data["plugin"])
+        # npm 1.x reads the singular "plugin" (file paths); desktop reads the
+        # plural "plugins" (directories) but auto-discovers the plugins dir, so
+        # sync registers only the singular key and preserves the plural untouched.
+        self.assertIn("./plugins/toola-gates.js", data["plugin"])
+        self.assertEqual(data["plugins"], ["./plugins"],
+                         "desktop plural key preserved, never written by sync")
         self.assertEqual(data["model"], "x")
         r2 = code_tools._ma_write_hook(ag, {}, dry_run=False)
         self.assertFalse(r2["changed"], r2)
@@ -741,11 +759,12 @@ class TestManageAgentSyncHook(unittest.TestCase):
                          "probe must not gate a fixture inside the (possibly harness-exempt) hooks_dir")
 
     def test_opencode_install_survives_a_type_module_ancestor_package_json(self):
-        # Mirror the live layout: ~/.config/opencode/package.json declares
+        # Mirror the live layout: ~/.config/opencode/package.json has declared
         # "type":"module", which used to make the installed CJS gates die on
         # require() so the plugin allowed everything. The install must ship the
-        # gates as .cjs, the plugin as .mjs, and a {"type":"commonjs"} marker,
-        # and the probe must then pass all four booleans through the plugin.
+        # gates as .cjs in ../gates/, the plugin as CJS .js pinned by a
+        # {"type":"commonjs"} marker plus a generated one-line .mjs ESM twin,
+        # and the probe must then pass all five booleans through BOTH shapes.
         stage = self.root / "fake_opencode_config"
         stage.mkdir()
         (stage / "package.json").write_text('{"type":"module"}\n', encoding="utf-8")

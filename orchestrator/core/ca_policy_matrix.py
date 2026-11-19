@@ -71,6 +71,10 @@ _TOOL_TO_CLASS: dict[str, str] = {
     # `unknown` -- the same forbid by accident, and no audit class to log under.
     "MultiEdit": "write_existing_file",
     "NotebookEdit": "write_existing_file",
+    # opencode's patch-apply tool, relabelled by the gates plugin's WRITE_NAMES
+    # (apply_patch -> ApplyPatch) for truthful offlog/preflight audit. Unmapped it
+    # fell through to `unknown` -- forbid by accident, no audit class to log under.
+    "ApplyPatch": "write_existing_file",
     "Read": "read_project_file",
     "Bash": "project_command",
     "Grep": "search_project_code",
@@ -373,7 +377,7 @@ def _is_mutating_self_edit_action(action: str) -> bool:
 def _is_native_mutation(task_class: str | None, action: str) -> bool:
     """ONE answer to "does this op change its target file?".
 
-    Asked by the [A] self-edit branch and by the outside-project memory branch,
+    Asked by the [A] self-edit branch and by the agent-memory branch (any scope),
     which used to spell it a second way. A mutating class is a mutation, a
     command-runner only when its declared action is a file mutation, and a bare
     verb only when no class resolved -- so a Read that says action="write"
@@ -493,13 +497,19 @@ def classify_action(
     # resolved to -- a privileged class keeps its row, a verb no table knows stays
     # unknown. Relabelling those a read recorded PowerShell move/rm/"" and a
     # restart as ALLOWED reads, where the Matrix says never guess.
-    if outside:
-        if is_agent_memory_target(target) and _is_native_mutation(task_class, action):
-            # The agent's OWN harness memory is written natively by mandate and
-            # governed by no [A] tool, so it gets its own class.
-            task_class = "agent_memory_write"
-        elif task_class in _OS_READ_CLASSES:
-            task_class = "outside_project_os_read"
+    # The agent's OWN harness memory is written natively by mandate and governed
+    # by no [A] tool, so it gets its own class in ANY scope. This used to sit
+    # under `if outside:`, but a harness home can carry a project marker (the
+    # opencode config root's package.json "type" pin, the museroom npm
+    # package.json), making target_scope answer "project" for the memory tree --
+    # which silently denied the ONE native write the Matrix allows (measured
+    # live: sync_hook's memory_allow leg failed for opencode while the unittest
+    # passed borrowing a marker-free home). hermes_host_gate already treats
+    # agent_memory_write as outside by class, so only this gate had to move.
+    if is_agent_memory_target(target) and _is_native_mutation(task_class, action):
+        task_class = "agent_memory_write"
+    elif outside and task_class in _OS_READ_CLASSES:
+        task_class = "outside_project_os_read"
     if _kw_hit(signal_blob, ("web",)) or "http" in action:
         if not task_class:
             task_class = "general_web_research"

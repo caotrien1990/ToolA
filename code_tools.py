@@ -18069,7 +18069,7 @@ _MA_HOOK_GATE_FILES = ("native-write-gate.js", "read-gate.js")
 _MA_HOOK_ADAPTER = {
     "claude-settings": None,
     "codex-hooks-json": ("codex.js", "codex-adapter.js"),
-    "opencode-plugin": ("opencode-gates.js", "toola-gates.mjs"),
+    "opencode-plugin": ("opencode-gates.js", "toola-gates.js"),
     "zcode-plugin": None,
 }
 _MA_HOOK_FORMATS = ("claude-settings", "codex-hooks-json", "zcode-plugin", "opencode-plugin", "none")
@@ -18246,8 +18246,13 @@ def _ma_hook_merge_codex(data: dict, entries: dict) -> tuple:
 
 
 def _ma_hook_merge_opencode(data: dict, plugin_rel: str) -> tuple:
-    """opencode.json carries a top-level "plugin" array of module paths. Add the
-    gates plugin path if absent; preserve every other plugin and key."""
+    """opencode.json carries a top-level "plugin" array of module FILE paths --
+    the key npm opencode-ai 1.x reads (measured: npm WARN-omits the desktop
+    "plugins" plural key). Desktop cli 2.x reads "plugins" as DIRECTORIES but
+    auto-discovers the plugins dir anyway (measured: desktop loads toola-gates.js
+    with plugins=[] empty), so sync writes only the singular key and preserves
+    any existing plural key untouched. Add the gates plugin path if absent;
+    preserve every other plugin and key."""
     plugins = data.setdefault("plugin", [])
     if not isinstance(plugins, list):
         plugins = []
@@ -18673,7 +18678,8 @@ def _ma_hook_probe(target: dict, hooks_dir: Path) -> dict:
     Claude-shaped targets feed the gates a Claude PreToolUse payload directly;
     codex-hooks-json targets feed the installed codex-adapter.js a Codex-shaped
     payload (apply_patch patch text / shell command); opencode-plugin targets
-    drive the installed ESM plugin's tool.execute.before (deny = throw).
+    drive BOTH shapes of the installed plugin (setup execute.before + server
+    tool.execute.before; deny = throw on both, entered via the .mjs ESM twin).
     Returns 4 booleans; a probe that cannot run reports False.
 
       read_deny     - unbounded read of a REAL >200-line project code file
@@ -18777,12 +18783,13 @@ def _ma_hook_probe(target: dict, hooks_dir: Path) -> dict:
                                 "cannot be probed")
     try:
         if opencode:
-            # The installed opencode adapter is an ESM plugin (.mjs so the
-            # plugins-dir package.json "type":"commonjs" marker that lets the
-            # CJS gates load cannot break it); enforcement lives in
-            # tool.execute.before, which blocks by throwing. The real host
-            # passes the workspace cwd in args -- mirror that or the write gate
-            # fail-closes on a missing cwd.
+            # The installed opencode plugin is CJS .js (pinned by the plugins-dir
+            # {"type":"commonjs"} marker) with a generated one-line .mjs ESM twin.
+            # The probe enters through the twin so the module kind is explicit
+            # regardless of any ancestor "type"; both host shapes (setup
+            # execute.before + server tool.execute.before) block by throwing. The
+            # real host passes the workspace cwd in args -- mirror that or the
+            # write gate fail-closes on a missing cwd.
             mod = hooks_dir / "toola-gates.mjs"
             if not mod.is_file():
                 probe["probe_error"] = "installed plugin missing: " + str(mod)
@@ -18865,20 +18872,27 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
                     "error": f"repo adapter missing: hooks/adapters/{adapter_spec[0]}"}
 
     # ---- plan the file copies ----
-    # opencode: the plugins dir lives under ~/.config/opencode whose package.json
-    # declares "type":"module", so plain .js loads as ESM and the CJS gates die
-    # on require() (measured 2026-10-04 on the live install: every gate spawn
-    # returned '' and the plugin allowed everything). Install the gates as .cjs
-    # and the plugin as .mjs -- explicit module kinds immune to any "type".
+    # opencode: the plugin ships as CJS .js -- the plugins-dir {"type":"commonjs"}
+    # marker pins it against any ancestor package.json "type" (the config root has
+    # declared both module and commonjs over time; measured 2026-10-04 a module
+    # ancestor made plain .js gates die on require() and the plugin allow everything).
+    # A generated one-line .mjs ESM twin re-exports the .js: desktop cli 2.x
+    # directory-discovery only loads .js (zero .mjs loads in the desktop log), npm
+    # opencode-ai 1.x loads both, and the twin is the explicit-ESM entry for config
+    # registration and the probe. Gates ship as .cjs into ../gates/ -- the shared
+    # gate dir that owns the state/offlog files; the plugin resolves it as
+    # __dirname/../gates, so gates must NOT land inside plugins/.
     oc = (fmt == "opencode-plugin")
+    gate_dst_dir = (hooks_dir.parent / "gates") if oc else hooks_dir
     copies = []  # (src Path, dst Path)
     for gate in _MA_HOOK_GATE_FILES:
         dst_name = gate[:-3] + ".cjs" if oc and gate.endswith(".js") else gate
-        copies.append((repo_hooks / gate, hooks_dir / dst_name))
+        copies.append((repo_hooks / gate, gate_dst_dir / dst_name))
     if adapter_src:
         copies.append((adapter_src, hooks_dir / adapter_name))
     binding_dst = hooks_dir / "hook-agent.json"
     pkg_marker_dst = (hooks_dir / "package.json") if oc else None
+    twin_dst = (hooks_dir / (Path(adapter_name).stem + ".mjs")) if oc and adapter_name else None
     # zcode (P24): the plugin's hooks/hooks.json ships INSIDE the source plugin
     # dir -- ZCode auto-discovers it from the plugin root. The repo SOT lives at
     # hooks/adapters/zcode-plugin/hooks/hooks.json and lands next to the gates.
@@ -18910,7 +18924,8 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
     if dry_run:
         out = {"ok": True, "agent": aid, "hook_format": fmt, "dry_run": True,
                "hooks_dir": str(hooks_dir), "hook_file": str(hook_file),
-               "files_to_write": [str(d) for _s, d in copies] + [str(binding_dst)],
+               "files_to_write": [str(d) for _s, d in copies] + [str(binding_dst)]
+                                 + ([str(twin_dst)] if twin_dst is not None else []),
                "would_register": bool(entries) or fmt in ("opencode-plugin", "zcode-plugin"),
                "coverage": "pending",
                "trust_step": trust_step}
@@ -18936,13 +18951,10 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
     hooks_dir.mkdir(parents=True, exist_ok=True)
     changed = False
     for src, dst in copies:
+        # Verbatim copies: the opencode SOT is CJS and already names the .cjs
+        # gates in ../gates/; no on-copy transform remains (the old ESM SOT
+        # needed its two quoted gate names rewritten .js -> .cjs).
         new_bytes = src.read_bytes()
-        if oc and adapter_src and dst.name == adapter_name:
-            # The installed .mjs plugin must spawn the .cjs gates it ships with.
-            new_bytes = (new_bytes.decode("utf-8")
-                         .replace('"native-write-gate.js"', '"native-write-gate.cjs"')
-                         .replace('"read-gate.js"', '"read-gate.cjs"')
-                         .encode("utf-8"))
         if dst.exists() and dst.read_bytes() == new_bytes:
             continue
         _ma_backup(dst)
@@ -18957,6 +18969,19 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
         if not pkg_marker_dst.exists() or pkg_marker_dst.read_text(encoding="utf-8") != marker_text:
             _atomic_write_text(pkg_marker_dst, marker_text, encoding="utf-8")
             files_written.append(str(pkg_marker_dst))
+            changed = True
+    if twin_dst is not None:
+        # One-line ESM twin of the CJS plugin, generated from adapter_name so the
+        # two never drift. Desktop directory-discovery only loads .js; npm 1.x
+        # loads both; the twin is the explicit-ESM entry for config registration
+        # and the install probe. CJS/ESM interop makes `default` = module.exports.
+        twin_text = ("// ESM twin of " + adapter_name + " (CJS SOT). One line so the two never drift.\n"
+                     'export { default } from "./' + adapter_name + '";\n')
+        if not twin_dst.exists() or twin_dst.read_text(encoding="utf-8") != twin_text:
+            if twin_dst.exists():
+                _ma_backup(twin_dst)
+            _atomic_write_text(twin_dst, twin_text, encoding="utf-8")
+            files_written.append(str(twin_dst))
             changed = True
     binding_text = _ma_hook_binding_text(aid)
     if not binding_dst.exists() or binding_dst.read_text(encoding="utf-8") != binding_text:

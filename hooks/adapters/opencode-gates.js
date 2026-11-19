@@ -1,9 +1,10 @@
-// OpenCode gates plugin (P22) - V2 SOT for OpenCode >= 1.18.29 (binary 1.19.5).
-// sync_hook installs this file as toola-gates.mjs BESIDE the .cjs gate twins in
-// the host plugins dir and rewrites the two quoted gate names below from .js to
-// .cjs on copy (code_tools._ma_write_hook_target). ESM on purpose: the installed
-// .mjs is explicit ESM regardless of any ancestor package.json "type", while the
-// plugins-dir {"type":"commonjs"} marker keeps the spawned .cjs gates CJS.
+"use strict";
+// OpenCode gates plugin (P22) - CJS SOT for OpenCode >= 1.18.29 (binary 1.19.5).
+// sync_hook installs this file VERBATIM as toola-gates.js in the host plugins
+// dir, generates the one-line toola-gates.mjs ESM twin beside it, and copies the
+// repo gate CLIs into ../gates/*.cjs. The plugins-dir {"type":"commonjs"} marker
+// pins this .js to CJS under any ancestor package.json "type"; the .mjs twin is
+// explicit ESM for npm config registration and the install probe.
 //
 // V1 exported a bare async function returning a hook map; V2 rejects that shape
 // ("Plugin must export a default definition with an id and an effect or setup
@@ -11,41 +12,43 @@
 // V2 default-exports { id, setup(ctx) } and registers hooks on the owning domain:
 //   tool.execute.before -> ctx.tool.hook("execute.before", event)  (throw = block)
 //   chat.message        -> ctx.session.hook("prompt", event)       (event.prompt.text)
+// CJS on purpose: module.exports is the default export through standard CJS/ESM
+// interop, so the .mjs twin and any ESM importer see the same object. Desktop
+// cli 2.x directory-discovery only loads .js (measured: zero .mjs loads in the
+// desktop log); npm opencode-ai 1.x -- the museroom member's host -- loads both.
 //
-// The gate CLIs stay the SOT: spawned with a translated Claude PreToolUse
-// payload, never imported in-process (their main() consumes stdin and calls
-// process.exit). Spawn with an explicit node binary: inside the OpenCode server
-// process process.execPath is the compiled opencode executable, NOT node -
-// spawning it with a gate path yields empty stdout, which enforce() would read
-// as allow (silent fail-open). TOOLA_GATE_NODE overrides the interpreter.
+// The gate CLIs in ../gates/ stay the SOT: spawned with a translated Claude
+// PreToolUse payload, never imported in-process (their main() consumes stdin
+// and calls process.exit). Spawn the .cjs twins so the gate module format is
+// explicit regardless of any package.json type above gates/.
+// Spawn with an explicit node binary: inside the OpenCode server process
+// process.execPath is the compiled opencode executable, NOT node - spawning it
+// with a gate path yields empty stdout, which enforce() would read as allow
+// (silent fail-open). TOOLA_GATE_NODE overrides the interpreter for probes.
 //
 // Tool mapping (OpenCode lowercase event.tool -> the gate's Claude matcher):
 //   write/edit/multiedit/notebookedit -> Write/Edit/MultiEdit/NotebookEdit,
-//   apply_patch -> Write (write gate; see WRITE_NAMES below)
+//   apply_patch -> ApplyPatch (write gate; see WRITE_NAMES below)
 //   read/grep/glob/bash/shell         -> Read/Grep/Glob/Bash (read gate)
 // Translation fixes vs the V1 relay: the grep target is ti.path (not file_path),
-// OpenCode's include filter maps to the gate's glob, and shell is the desktop
-// name of the Bash tool.
+// OpenCode's `include` filter maps to the gate's `glob`, and `shell` is the
+// desktop name of the Bash tool.
 // The Anh-only break-glass toggle arrives on the prompt hook: "tat gate"/"bat gate"
 // and "tat read gate"/"bat read gate" (diacritic-insensitive) are forwarded to the
 // matching gate's --prompt handler, which owns the state file.
-import { spawnSync } from "node:child_process";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+const { spawnSync } = require("node:child_process");
+const path = require("node:path");
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
 const NODE_BIN = process.env.TOOLA_GATE_NODE || "node";
-// Installed beside the plugin; sync_hook renames the repo .js gates to .cjs and
-// rewrites these two quoted names on copy.
-const WRITE_GATE = path.join(HERE, "native-write-gate.js");
-const READ_GATE = path.join(HERE, "read-gate.js");
+const GATES = path.join(__dirname, "..", "gates");
+const WRITE_GATE = path.join(GATES, "native-write-gate.cjs");
+const READ_GATE = path.join(GATES, "read-gate.cjs");
 
 const WRITE_TOOLS = new Set(["write", "edit", "multiedit", "apply_patch", "notebookedit"]);
 // Truthful labels for offlog/preflight: ca_policy_matrix._TOOL_TO_CLASS maps
-// Write/Edit/MultiEdit/NotebookEdit to write_existing_file, so enforcement is
-// unchanged. apply_patch stays "Write": "ApplyPatch" is unmapped in the matrix
-// (unknown class, forbid by accident) -- map it there first, then flip this row.
-const WRITE_NAMES = { write: "Write", edit: "Edit", multiedit: "MultiEdit", apply_patch: "Write", notebookedit: "NotebookEdit" };
+// Write/Edit/MultiEdit/NotebookEdit/ApplyPatch to write_existing_file, so
+// enforcement is unchanged and the audit class matches the real tool.
+const WRITE_NAMES = { write: "Write", edit: "Edit", multiedit: "MultiEdit", apply_patch: "ApplyPatch", notebookedit: "NotebookEdit" };
 const READ_TOOLS = { read: "Read", grep: "Grep", glob: "Glob", bash: "Bash", shell: "Bash" };
 
 function foldPrompt(text) {
@@ -108,7 +111,7 @@ function gateCall(event) {
   return { gate: READ_GATE, payload: { tool_name: name, tool_input: ti, cwd, session_id } };
 }
 
-export default {
+module.exports = {
   id: "toola-gates",
   async setup(ctx) {
     const log = async (level, message) => {

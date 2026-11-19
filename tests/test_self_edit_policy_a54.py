@@ -314,6 +314,32 @@ def test_agent_memory_write_is_allowed_native(fake_agent_home):
     assert r["error_name"] is None
 
 
+def test_agent_memory_write_survives_a_marker_bearing_home(fake_agent_home):
+    """Live defect (2026-11-19): the opencode config root carries a package.json
+    "type" pin and the museroom home an npm package.json, so target_scope answers
+    "project" for the agent's own memory tree. The memory reclassification used
+    to sit under `if outside:` and never fired there -- sync_hook's memory_allow
+    probe leg denied the ONE native write the Matrix allows, while this
+    marker-free fixture home passed. The exception is scope-independent:
+    hermes_host_gate already treats agent_memory_write as outside by class."""
+    (fake_agent_home / "package.json").write_text('{"type":"commonjs"}', encoding="utf-8")
+    target = fake_agent_home / "projects" / "slug" / "memory" / "note.md"
+    assert governed_project_root(str(target)) == fake_agent_home.resolve()
+    assert target_scope(target=str(target)) == "project"
+    assert is_agent_memory_target(str(target)) is True
+    r = _hook_shaped("Write", "write", target)
+    assert r["task_class"] == "agent_memory_write"
+    assert r["native_policy"] == "allow_native"
+    assert r["host_gate"]["decision"] == "allow_native"
+    assert r["host_gate"]["allowed"] is True
+    assert r["error_name"] is None
+    # No widening: a non-memory sibling under the same marker root stays denied.
+    sib = fake_agent_home / "projects" / "slug" / "code.py"
+    r2 = _hook_shaped("Write", "write", sib)
+    assert r2["task_class"] != "agent_memory_write"
+    assert r2["host_gate"]["allowed"] is False
+
+
 def test_memory_exception_is_scoped_to_the_memory_dir(fake_agent_home):
     """A sibling of memory/ in the same agent home is NOT memory."""
     target = fake_agent_home / "projects" / "slug" / "transcript.jsonl"

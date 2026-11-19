@@ -428,7 +428,7 @@
       "native_policy": "allow_native",
       "session_required": false,
       "token_required": false,
-      "verification": "target resolves under a registered agent's projects/<slug>/memory/ and under no project root",
+      "verification": "target resolves under a registered agent's projects/<slug>/memory/ (rule_file home from agents_registry.json), in ANY scope -- a harness home may itself carry a project marker (the opencode config root's package.json type pin, the museroom npm package.json); the memory exception never depended on the home being marker-free",
       "why_cslt": "The harness mandates native writes there and no [A] tool governs that tree; denying it breaks memory, not governance."
     },
     {
