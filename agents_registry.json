@@ -318,7 +318,21 @@
       "skill_dir": "D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/50. MUSE/skills",
       "skill_format": "folder",
       "mode": "A",
-      "id": "muse1"
+      "id": "muse1",
+      "agent_transport_policy": "a_first_mcp_t4_ok",
+      "transport_policy": "a_first_mcp_t4_ok",
+      "governance": {
+        "north_star": "CSLt",
+        "acronym": "CSLt",
+        "order": [
+          "Correctness",
+          "Save token",
+          "Less context",
+          "Time fee"
+        ],
+        "a_first": true,
+        "http_only": false
+      }
     },
     "muse2": {
       "rule_format": "markdown",
@@ -328,9 +342,69 @@
       "skill_format": "folder",
       "mode": "A",
       "id": "muse2",
-      "skill_dir": "D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/50. MUSE/skills"
+      "skill_dir": "D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/50. MUSE/skills",
+      "agent_transport_policy": "a_first_mcp_t4_ok",
+      "transport_policy": "a_first_mcp_t4_ok",
+      "governance": {
+        "north_star": "CSLt",
+        "acronym": "CSLt",
+        "order": [
+          "Correctness",
+          "Save token",
+          "Less context",
+          "Time fee"
+        ],
+        "a_first": true,
+        "http_only": false
+      },
+      "persona": "You are muse2 (model: Muse Spark 1.3), the user personal agent and CA. Always refer to yourself as \"muse2\" and address the user as \"anh\".",
+      "rule_file": "D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/50. MUSE/MUSE2/RULE.md"
+    },
+    "vito": {
+      "persona": "Always refer to yourself as \"Vito\" and address the user as \"Anh\".",
+      "rule_file": "C:/Users/ADMIN/.gemini/config/AGENTS.md",
+      "rule_format": "markdown",
+      "rule_template": "slim_gated",
+      "mcp_file": "C:/Users/ADMIN/.gemini/config/mcp_config.json",
+      "mcp_format": "json",
+      "mcp_key": "project-orchestrator",
+      "skill_dir": "C:/Users/ADMIN/.gemini/config/skills",
+      "skill_format": "folder",
+      "mode": "A",
+      "id": "vito",
+      "agent_transport_policy": "http_only",
+      "transport_policy": "http_only",
+      "governance": {
+        "north_star": "CSLt",
+        "acronym": "CSLt",
+        "order": [
+          "Correctness",
+          "Save token",
+          "Less context",
+          "Time fee"
+        ],
+        "a_first": true,
+        "http_only": true
+      },
+      "route_id": "vito",
+      "provider": "antigravity",
+      "display_name": "Vito",
+      "legacy_worker_name": "VitoC",
+      "rule_targets": [
+        {
+          "rule_file": "C:/Users/ADMIN/.gemini/config/AGENTS.md",
+          "rule_template": "slim_gated"
+        },
+        {
+          "rule_file": "C:/Users/ADMIN/.gemini/config/GEMINI.md",
+          "rule_template": "slim_gated"
+        }
+      ],
+      "hook_file": "C:/Users/ADMIN/.gemini/config/hooks.json",
+      "hooks_dir": "C:/Users/ADMIN/.gemini/config/hooks",
+      "hook_trust_step": "none"
     }
   },
-  "governance_normalized_at": "2026-09-11T10:07:07",
+  "governance_normalized_at": "2026-11-10T16:43:15",
   "governance_north_star": "CSLt"
 }
