@@ -143,4 +143,41 @@ export default {
     }
     await log("info", "toola-gates V2 ready: gates enforced via " + READ_GATE + " / " + WRITE_GATE);
   },
+
+  // --- npm opencode-ai 1.x host contract (@opencode-ai/plugin PluginModule) ---
+  // The museroom member (ope-watch.ps1) runs npm opencode.exe 1.19.5, and any
+  // project whose config registers plugins via a "plugin" array, use a loader
+  // that requires a default export { server(input) => Hooks } and rejects the
+  // desktop-only { id, setup } shape ("must default export an object with
+  // server()"), silently leaving that host gateless. Export BOTH shapes:
+  // desktop cli 2.x directory-discovery uses setup(ctx) above; npm 1.x /
+  // config-registration uses server(input) here. They share gateCall / enforce
+  // / runGate. npm passes tool args in output.args (desktop: event.input) and
+  // blocks by throwing, exactly like setup.
+  async server(input) {
+    return {
+      "tool.execute.before": async (inp, out) => {
+        const call = gateCall({ tool: inp.tool, input: (out && out.args) || {}, sessionID: inp.sessionID });
+        if (call) enforce(call.gate, call.payload);
+      },
+      // Break-glass parity, best-effort: npm chat.message carries the user text
+      // in output.parts (text parts), not event.prompt.text. A shape mismatch
+      // must never break tool enforcement, so errors here are swallowed.
+      "chat.message": async (inp, out) => {
+        try {
+          const parts = (out && out.parts) || [];
+          const prompt = parts.filter((p) => p && p.type === "text" && typeof p.text === "string").map((p) => p.text).join(" ").trim();
+          if (!prompt) return;
+          const said = foldPrompt(prompt);
+          let msg = "";
+          if (said === "tat gate" || said === "bat gate") {
+            msg = runGate(WRITE_GATE, { prompt, session_id: inp.sessionID }, true);
+          } else if (said === "tat read gate" || said === "bat read gate") {
+            msg = runGate(READ_GATE, { prompt, session_id: inp.sessionID }, true);
+          }
+          if (msg && Array.isArray(out.parts)) out.parts.push({ type: "text", text: msg });
+        } catch (e) { /* best-effort break-glass; tool enforcement unaffected */ }
+      },
+    };
+  },
 };

@@ -438,11 +438,16 @@ class TestManageAgentSyncHook(unittest.TestCase):
         plugin_src = (hd / "toola-gates.mjs").read_text(encoding="utf-8")
         self.assertIn("native-write-gate.cjs", plugin_src)
         self.assertIn("read-gate.cjs", plugin_src)
-        # V2 shape pin: OpenCode >= 1.18.29 rejects the V1 bare-function export,
-        # and process.execPath inside the server is the opencode binary (silent
-        # fail-open). The SOT must stay V2 { id, setup } + explicit node.
+        # Dual-shape pin: desktop cli 2.x directory-discovery rejects the V1
+        # bare-function export and needs { id, setup(ctx) }; npm opencode-ai
+        # 1.x (the museroom member's host) rejects { id, setup } alone and
+        # needs { server(input) => Hooks }. The SOT must export BOTH shapes
+        # over one shared gate logic, and spawn explicit node -- inside the
+        # server process.execPath is the opencode binary (silent fail-open).
         self.assertIn('id: "toola-gates"', plugin_src)
         self.assertIn("async setup(ctx)", plugin_src)
+        self.assertIn("async server(input)", plugin_src)
+        self.assertIn('"tool.execute.before"', plugin_src)
         self.assertNotIn("spawnSync(process.execPath", plugin_src)
         self.assertIn("TOOLA_GATE_NODE", plugin_src)
         data = json.loads(hf.read_text(encoding="utf-8"))

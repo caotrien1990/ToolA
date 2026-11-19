@@ -18604,13 +18604,18 @@ def _ma_hook_verify_registration(fmt: str, hook_file: Path, entries: dict,
 
 def _ma_probe_opencode_before(mod_path: Path, tool: str, args: dict, env: dict,
                               timeout: int = 25) -> dict:
-    """Drive the installed opencode V2 plugin's execute.before hook once.
-    V2 default-exports { id, setup(ctx) }; setup registers the blocking hook via
-    ctx.tool.hook("execute.before", fn). The hook blocks by THROWING, so a deny
-    surfaces as a thrown Error whose message carries the gate reason. Returns
-    {deny, out}: deny True on throw or on a JSON permissionDecision=deny line;
-    out is combined stdout+stderr for diagnosis. A module/load failure reports
-    deny False with the error text."""
+    """Drive BOTH host shapes of the installed opencode gates plugin once.
+    The SOT is dual-shape: desktop cli 2.x directory-discovery uses
+    { id, setup(ctx) } (ctx.tool.hook("execute.before", fn), args in
+    event.input); npm opencode-ai 1.x -- the museroom member's host -- uses
+    { server(input) => Hooks } ("tool.execute.before"(input, output), args
+    in output.args). Both block by THROWING, so a deny surfaces as a thrown
+    Error whose message carries the gate reason. Returns {deny, out}: deny
+    True only when BOTH shapes threw (or a legacy JSON permissionDecision=
+    deny line with no ALLOW) -- a plugin that enforces on one host line but
+    not the other is a defect, not a pass. out is combined stdout+stderr for
+    diagnosis; a module/load/shape failure reports deny False with the error
+    text."""
     import subprocess
     probe_mod = mod_path.parent / "_probe_opencode.mjs"
     probe_mod.write_text(
@@ -18623,13 +18628,23 @@ def _ma_probe_opencode_before(mod_path: Path, tool: str, args: dict, env: dict,
         "};\n"
         "await plugin.setup(ctx);\n"
         "if (typeof fn !== 'function') { console.error('NO_BEFORE_HOOK'); process.exit(2); }\n"
+        "if (typeof plugin.server !== 'function') { console.error('NO_SERVER_EXPORT'); process.exit(2); }\n"
+        "const hooks = await plugin.server({ directory: process.cwd(), worktree: process.cwd() });\n"
+        "const sfn = hooks && hooks['tool.execute.before'];\n"
+        "if (typeof sfn !== 'function') { console.error('NO_SERVER_HOOK'); process.exit(2); }\n"
         "const tool = process.env.PROBE_TOOL;\n"
         "const args = JSON.parse(process.env.PROBE_ARGS || '{}');\n"
         "try {\n"
         "  await fn({ tool, input: args, sessionID: 'probe', callID: 'p1' });\n"
-        "  console.log('ALLOW');\n"
+        "  console.log('setup=ALLOW');\n"
         "} catch (e) {\n"
-        "  console.log('THROW: ' + ((e && e.message) || String(e)));\n"
+        "  console.log('setup=THROW: ' + ((e && e.message) || String(e)));\n"
+        "}\n"
+        "try {\n"
+        "  await sfn({ tool, sessionID: 'probe', callID: 'p1' }, { args });\n"
+        "  console.log('server=ALLOW');\n"
+        "} catch (e) {\n"
+        "  console.log('server=THROW: ' + ((e && e.message) || String(e)));\n"
         "}\n",
         encoding="utf-8")
     try:
@@ -18640,7 +18655,8 @@ def _ma_probe_opencode_before(mod_path: Path, tool: str, args: dict, env: dict,
                            env=e2, capture_output=True, text=True, timeout=timeout,
                            creationflags=NOWINDOW_FLAGS)  # F-A1: no console flash
         out = ((r.stdout or "") + (r.stderr or "")).strip()
-        deny = ("THROW:" in out) or ('"permissionDecision"' in out and '"deny"' in out)
+        json_deny = '"permissionDecision"' in out and '"deny"' in out
+        deny = out.count("THROW:") >= 2 or (json_deny and "ALLOW" not in out)
         return {"deny": deny, "out": out}
     except Exception as exc:
         return {"deny": False, "out": f"probe spawn failed: {exc}"}
