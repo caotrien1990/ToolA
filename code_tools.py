@@ -40,6 +40,10 @@ import path_runtime
 import surgical_mapper
 from orchestrator import search_snapshots
 from orchestrator.core.text_cap import cap_head_tail
+from orchestrator.lifecycle.console_warp import (
+    CREATE_NEW_PROCESS_GROUP,
+    child_creationflags,
+)
 from orchestrator.mission import (
     tools as _mission_tools,  # noqa: F401 - eval'd by BASE_TOOL_MAP_SPECS as '_mission_tools.mission_*'
 )
@@ -58,7 +62,6 @@ from orchestrator.skip_rules import (
     name_matches_ignore,
 )
 from orchestrator.text_lines import split_lf, split_lines
-from orchestrator.lifecycle.console_warp import CREATE_NEW_PROCESS_GROUP, child_creationflags
 from rule_core import get_rule_core, get_rule_core_metadata
 
 # ─── Shared constants ─────────────────────────────────────────────────────────

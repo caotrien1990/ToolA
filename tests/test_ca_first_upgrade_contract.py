@@ -328,11 +328,22 @@ class TestCaFirstUpgradeContract(unittest.TestCase):
         fake_win32gui = types.SimpleNamespace(
             ChildWindowFromPoint=lambda hwnd, point: 777,
             SendMessageTimeout=lambda *args: 1,
+            # click_checks + the child-dispatch path (tools_v15 desktop_click)
+            # translate parent-client -> screen -> child-client. Identity keeps
+            # the pinned point (10, 20); missing these made the fake raise
+            # AttributeError -> WIN32_API_ERROR -> ok=False (C7, 2026-11-20).
+            ClientToScreen=lambda hwnd, point: point,
+            ScreenToClient=lambda hwnd, point: point,
+            WindowFromPoint=lambda point: 777,
+            GetAncestor=lambda hwnd, flags: hwnd,
+            IsWindowEnabled=lambda hwnd: True,
         )
         fake_win32api = types.SimpleNamespace(
             GetCurrentThreadId=lambda: 100,
             SetLastError=lambda value: None,
             GetLastError=lambda: 0,
+            # SM_XVIRTUALSCREEN/YVIRTUALSCREEN/CXVIRTUALSCREEN/CYVIRTUALSCREEN
+            GetSystemMetrics=lambda index: {76: 0, 77: 0, 78: 1920, 79: 1080}[index],
         )
         fake_win32con = types.SimpleNamespace(
             WM_MOUSEACTIVATE=0x0021,
