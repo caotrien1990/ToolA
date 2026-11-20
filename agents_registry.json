@@ -401,8 +401,17 @@
         }
       ],
       "hook_file": "C:/Users/ADMIN/.gemini/config/hooks.json",
+      "hook_format": "antigravity-hooks-json",
       "hooks_dir": "C:/Users/ADMIN/.gemini/config/hooks",
-      "hook_trust_step": "none"
+      "hook_trust_step": "none",
+      "hook_targets": [
+        {
+          "hook_file": "C:/Users/ADMIN/.gemini/config/hooks.json",
+          "hook_format": "antigravity-hooks-json",
+          "hooks_dir": "C:/Users/ADMIN/.gemini/config/hooks",
+          "hook_trust_step": "none"
+        }
+      ]
     }
   },
   "governance_normalized_at": "2026-11-10T16:43:15",

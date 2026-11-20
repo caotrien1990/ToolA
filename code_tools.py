@@ -18071,9 +18071,9 @@ _MA_HOOK_ADAPTER = {
     "codex-hooks-json": ("codex.js", "codex-adapter.js"),
     "opencode-plugin": ("opencode-gates.js", "toola-gates.js"),
     "zcode-plugin": None,
+    "antigravity-hooks-json": ("antigravity-adapter.js", "antigravity-adapter.js"),
 }
-_MA_HOOK_FORMATS = ("claude-settings", "codex-hooks-json", "zcode-plugin", "opencode-plugin", "none")
-
+_MA_HOOK_FORMATS = ("claude-settings", "codex-hooks-json", "zcode-plugin", "opencode-plugin", "antigravity-hooks-json", "none")
 
 def _ma_hooks_repo_dir() -> Path:
     return (Path(__file__).parent / "hooks").resolve()
@@ -18162,6 +18162,17 @@ def _ma_hook_entries(agent: dict) -> dict:
             "PreToolUse": [
                 {"matcher": "apply_patch", "hooks": [{"type": "command", "command": adapter_cmd, "timeout": 8, "statusMessage": "Native write gate..."}]},
                 {"matcher": "shell|local_shell|unified_exec|exec", "hooks": [{"type": "command", "command": adapter_cmd, "timeout": 8, "statusMessage": "Read gate..."}]},
+            ],
+        }
+    if fmt == "antigravity-hooks-json":
+        adapter_cmd = "node hooks/antigravity-adapter.js"
+        return {
+            "PreToolUse": [
+                {"matcher": "write_file|edit_file|read_file|run_command",
+                 "hooks": [{"type": "command", "command": adapter_cmd, "timeout": 10}]},
+            ],
+            "PreInvocation": [
+                {"type": "command", "command": f"{adapter_cmd} --prompt", "timeout": 5},
             ],
         }
     return {}
@@ -18263,6 +18274,15 @@ def _ma_hook_merge_opencode(data: dict, plugin_rel: str) -> tuple:
         changed = True
     return data, changed
 
+
+def _ma_hook_merge_antigravity(data: dict, entries: dict) -> tuple:
+    """Merge toola-gates block into Antigravity hooks.json.
+    Unrelated top-level keys preserved; returns (data, changed)."""
+    current = data.get("toola-gates")
+    if current == entries:
+        return data, False
+    data["toola-gates"] = entries
+    return data, True
 
 # ---- zcode plugin registration (P24) ----
 # P22 copied the gates into ~/.zcode/cli/plugins/cache/toola-gates/hooks and set
@@ -18565,6 +18585,14 @@ def _ma_hook_expected_registrations(fmt: str, entries: dict, adapter_name) -> li
             for g in groups:
                 for h in g.get("hooks", []):
                     exp.append(("hook", event, g.get("matcher"), h.get("command", "")))
+    elif fmt == "antigravity-hooks-json":
+        for event, groups in (entries or {}).items():
+            for g in groups:
+                if isinstance(g, dict) and "hooks" in g:
+                    for h in g.get("hooks", []):
+                        exp.append(("hook", event, g.get("matcher"), h.get("command", "")))
+                elif isinstance(g, dict) and "command" in g:
+                    exp.append(("hook", event, None, g.get("command", "")))
     elif fmt == "opencode-plugin":
         exp.append(("plugin", "./plugins/" + str(adapter_name)))
     return exp
@@ -18586,18 +18614,25 @@ def _ma_hook_verify_registration(fmt: str, hook_file: Path, entries: dict,
         data = json.loads(hook_file.read_text(encoding="utf-8")) if hook_file.exists() else {}
     except Exception as exc:
         return {"registered_ok": False, "missing_registrations": [f"hook_file unreadable: {exc}"]}
-    hooks = data.get("hooks", {}) if isinstance(data, dict) else {}
+    hooks = data.get("toola-gates", {}) if fmt == "antigravity-hooks-json" else (data.get("hooks", {}) if isinstance(data, dict) else {})
     for item in exp:
         kind = item[0]
         if kind == "hook":
             _k, event, matcher, cmd = item
             found = False
             for eg in (hooks.get(event) or []):
-                if not isinstance(eg, dict) or eg.get("matcher") != matcher:
+                if not isinstance(eg, dict):
                     continue
-                if any(eh.get("command") == cmd for eh in (eg.get("hooks") or [])):
-                    found = True
-                    break
+                if matcher is not None:
+                    if eg.get("matcher") != matcher:
+                        continue
+                    if any(eh.get("command") == cmd for eh in (eg.get("hooks") or [])):
+                        found = True
+                        break
+                else:
+                    if eg.get("command") == cmd:
+                        found = True
+                        break
             if not found:
                 missing.append(f"{event}[matcher={matcher}] command={cmd}")
         elif kind == "plugin":
@@ -18907,7 +18942,7 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
 
     # Registration plan per format. The target dict carries hooks_dir/format/id,
     # so the entry builders work on it directly.
-    entries = _ma_hook_entries(target) if fmt in ("claude-settings", "codex-hooks-json") else {}
+    entries = _ma_hook_entries(target) if fmt in ("claude-settings", "codex-hooks-json", "antigravity-hooks-json") else {}
     # zcode (P24): hook_file (cli config.json) is no longer written by us --
     # the ZCode CLI owns enabledPlugins through plugins install/update, so the
     # hook_file write-refusal does not apply to this format.
@@ -19040,6 +19075,18 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
                         "error": zreg["fatal"]}
             registered = True
             changed = changed or zreg.get("changed", False)
+        elif fmt == "antigravity-hooks-json":
+            data = json.loads(hook_file.read_text(encoding="utf-8")) if hook_file.exists() else {}
+            _ma_backup(hook_file)
+            _d, reg_changed = _ma_hook_merge_antigravity(data, entries)
+            if reg_changed:
+                _atomic_write_json(hook_file, data, indent=2)
+                okj, errj = _ma_validate_json(hook_file)
+                if not okj:
+                    return {"ok": False, "agent": aid, "hook_format": fmt,
+                            "error": f"post-write JSON invalid: {errj}"}
+            registered = True
+            changed = changed or reg_changed
     except Exception as exc:
         return {"ok": False, "agent": aid, "hook_format": fmt,
                 "error": f"hook_file registration failed: {exc}"}
