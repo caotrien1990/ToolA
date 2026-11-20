@@ -4990,6 +4990,33 @@ def _required_field_names(tool_name: str) -> list[str]:
     return list(((_schema_for_tool(tool_name).get("parameters") or {}).get("required") or []))
 
 
+def _registry_props_for_tool(tool_name: str) -> dict:
+    """Registry properties for a tool (the public contract), {} when unknown."""
+    try:
+        return ((_schema_for_tool(tool_name).get("parameters") or {}).get("properties") or {})
+    except Exception:
+        return {}
+
+
+def _accepted_fields_for_tool(tool_name: str) -> list[str]:
+    """The ONE derivation of the F-C8 accepted set (served-schema properties
+    UNION alias sources), sorted. Every call site that lists the accepted
+    set uses this function -- never a second derivation. (The S-9 F-C8
+    limb names the two derivations this replaces: _missing_required_
+    error's required-only list and _missing_required_detail's
+    props-only list.) The served schema is the single source of truth:
+    it is the registry schema plus the dispatcher-injected
+    definition_version (decorate_schema), so this derivation cannot drift
+    behind a future injected property. Unknown tools fall back to the
+    registry props (the pre-existing empty-for-unknown behaviour)."""
+    _served = _enriched_tool_schema(tool_name)
+    if _served is not None:
+        _props = set((_served.get("function", {}).get("parameters", {}) or {}).get("properties", {}) or {})
+    else:
+        _props = set(_registry_props_for_tool(tool_name))
+    return sorted(_props | set(_ARG_ALIASES.get(tool_name, {}) or {}))
+
+
 def _missing_required_error(tool_name: str, body: dict, required_fields: list[str]) -> dict:
     required = list(dict.fromkeys(required_fields))
     accepted = sorted(_tool_required_fields(tool_name) or required or list((body or {}).keys()))
@@ -16092,12 +16119,21 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
         duplicate = _duplicate_retry_guard(
             _dedupe_identity(_task_session_id, _task_agent_id), tool_name, body, err_name)
         if duplicate:
-            return web.json_response({
-                **duplicate, "error": message,
-                "unsupported_fields": unsupported, "accepted_fields": sorted(accepted_fields),
-                "accepted_aliases": _alias_metadata(tool_name), "corrected_payload": corrected,
-                "ca_next_action": ca_next, **_task_meta,
-            }, status=409, headers=cors)
+            # D1 (C-7 + N-8): the guard return routes through
+            # _error_response (the re-arm path) and carries the FULL
+            # shared set IN ADDITION to the guard's own 7 keys. Order:
+            # **material first, **duplicate second, so the guard's
+            # bookkeeping wins where they overlap (retryable: the guard
+            # hard-codes False; the contract-meta derivation for a 409
+            # would say True -- the live value stays False).
+            # error_name arrives via **duplicate (DUPLICATE_RETRY_BLOCKED).
+            _merged = {**material, **duplicate}
+            return _error_response(
+                tool_name, message, 409, cors, body,
+                **_merged,
+                accepted_aliases=_alias_metadata(tool_name),
+                **_task_meta,
+            )
         return _error_response(
             tool_name, message,
             400,
