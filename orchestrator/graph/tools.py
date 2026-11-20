@@ -129,6 +129,202 @@ async def _ensure_graph_fresh(project_path: str) -> dict:
         return {"auto_indexed": False, "reason": "check_failed", "error": type(exc).__name__}
 
 
+# ─── §3.2 freshness attachment (D8) ─────────────────────────────────────────
+# Every graph-consuming cbm answer carries the freshness sample it was produced under
+# (v12 §3.2, carried BY REFERENCE by plan r8 D8; the 8 derivation
+# steps, the outcome mapping, the auto-indexed exclusion, the boundary
+# rule and the per-tier tests are v12 §3.2's). SAMPLING IS HANDLER-SIDE:
+# Scope note (implementer clarification, 2026-11-20): the v12 §3.2 sentence is a blanket statement ("every cbm response"); it does not scope D8 to graph-consuming tools, and no sentence in §3.2 (or in r8, which carries §3.2 by reference) states such a scope. cbm_evolution reads git history live, not the graph, so no freshness sample exists for it; attaching a graph-freshness label would misdescribe the data. 13 of 17 cbm_* tools are wired; cbm_evolution is deliberately not wired.
+# gated tools reuse the gate/view sample already computed in the call
+# path (zero marginal scan); raw-query (tier-3) tools pay one
+# floor-budgeted `graph_status` read (the L693 floor budget,
+# `CBM_STATUS_SCAN_MIN_BUDGET_S`, inside `graph_status` itself).
+#
+# OUTCOME MAPPING (STEP 4): helper `fresh` -> fresh; the three
+# refusal-set reasons (`stale_scan_incomplete` / `freshness_unknown` /
+# `check_failed`) -> `unknown`; the auto-indexed branch (reason `stale`
+# OR `no_prior_run`) is EXCLUDED from the most-conservative comparison
+# on dual-gated tools (the operative label comes from the post-index
+# view sample alone) and labels `unknown` + the `auto_indexed` flag on
+# helper-only tools. View values are already §3.3-domain values and
+# pass through unchanged. The `stale_scan_incomplete` carried
+# `freshness` value is RECORDED (in the verbatim helper sample), never
+# compared. The comparison uses `value` ONLY, never the reason string.
+#
+# KEYS + MERGE: the ONLY new keys are `freshness_label`,
+# `status_error`, `stale_scan` + the sample keys `helper_sample`,
+# `view_sample`, `samples_disagree`. `freshness_label` is always
+# attached under its distinct key (never `freshness` — the view
+# success payload and the refusal body already carry `freshness`);
+# every key merges attach-if-absent (setdefault), so a payload that
+# already carries a key keeps its own value. `helper_sample` attaches
+# on every HELPER-gated tool (dual-gated and helper-only alike);
+# `view_sample` + `samples_disagree` only where a view sample exists;
+# `samples_disagree` is a BOOLEAN on MAPPED values, computed ONLY when
+# both samples exist AND the helper sample is not auto-indexed-excluded
+# (when excluded it carries `False` — "no comparison", NOT "samples
+# agree"); when only ONE sample exists the key does NOT attach. Tier-3
+# tools attach the three label keys only (no helper/view sample exists
+# there). `status_error` is the reason carrier: the refusal reason on
+# refusal legs, `"no_sample"` where no sample exists at all;
+# `stale_scan` is the scan dict where the operative sample carries one,
+# else None. Retained gates (v12 §3.1) are untouched: the label is a
+# disclosure, never a refusal — verdict STATEMENTS are withheld by the
+# seat, never by refusing a call.
+_FRESHNESS_CONSERVATIVENESS = {  # §3.3 order, most conservative first
+    "corrupt": 0, "error": 0, "disabled": 0,
+    "not_indexed": 1, "stale": 2, "unknown": 3, "indexing": 4, "fresh": 5,
+}
+
+# The view's refusal reasons that carry a sample WITHOUT a `freshness`
+# key: the four early-refusal paths (§3.2 SHAPE check). A `reason`
+# outside this set on a freshness-less unavailable payload is a
+# service-level `run_analysis_view` unavailable (`unavailable:*`,
+# e.g. busy/deadline/stopped) — the view never ran, so no view sample
+# exists.
+_VIEW_REFUSAL_REASONS = ("scope_blocked:", "store:", "freshness:")
+_VIEW_REFUSAL_BARE = {"missing_db", "missing_schema", "corrupt"}
+
+
+def _freshness_rank(value: str) -> int:
+    """Conservativeness rank: lower = more conservative (§3.3 order).
+    An unmapped value ranks as `unknown` (never silently fresh)."""
+    return _FRESHNESS_CONSERVATIVENESS.get(str(value or ""), 3)
+
+
+def _map_helper_sample(helper_sample: dict, *, dual_gated: bool) -> tuple:
+    """STEP 4 outcome mapping for a `_ensure_graph_fresh` return dict.
+    Returns (mapped_value, excluded): `mapped_value` is None exactly
+    when the auto-indexed branch is EXCLUDED from the comparison
+    (dual-gated only); on helper-only tools the same branch maps to
+    `unknown` + the flag (the post-index state is unsampled — an honest
+    unknown, not a stale or fresh claim)."""
+    reason = str((helper_sample or {}).get("reason") or "")
+    if bool((helper_sample or {}).get("auto_indexed")):
+        if dual_gated:
+            return None, True
+        return "unknown", False
+    if reason == "fresh":
+        return "fresh", False
+    return "unknown", False
+
+
+def _view_sample_from_payload(view_payload: dict) -> tuple:
+    """STEP 2 view sample from a `build_analysis_view` payload.
+    Returns (sample, status_error, stale_scan); sample is None when the
+    payload carries no view sample (a service-level `run_analysis_view`
+    unavailable — reason `unavailable:*` — never ran the view).
+    Success: {value} only (`value` in {fresh, indexing}); refusal:
+    {value, reason} (`reason` VERBATIM; `value` is the flattened
+    payload's `freshness` where the refusal carries one, else
+    `unknown` for the four early-refusal paths)."""
+    if not isinstance(view_payload, dict):
+        return None, None, None
+    reason = view_payload.get("reason")
+    freshness = view_payload.get("freshness")
+    status = view_payload.get("status")
+    status_error = view_payload.get("status_error")
+    stale_scan = view_payload.get("stale_scan")
+    if freshness is not None:
+        if status == "unavailable":
+            return ({"value": str(freshness), "reason": reason},
+                    status_error, stale_scan)
+        return {"value": str(freshness)}, status_error, stale_scan
+    if status == "unavailable":
+        text = str(reason or "")
+        if (text in _VIEW_REFUSAL_BARE
+                or any(text.startswith(p) for p in _VIEW_REFUSAL_REASONS)):
+            return ({"value": "unknown", "reason": reason},
+                    status_error, stale_scan)
+    return None, None, None
+
+
+def _freshness_attachment(*, helper_sample=None, view=None,
+                          status_sample=None) -> dict:
+    """STEP 3–6 + KEYS: compute the §3.2 attachment dict. `view` is the
+    triple from `_view_sample_from_payload` (or None when no view sample
+    exists). `status_sample` is a `graph_status` payload (tier-3 only;
+    tiers are exclusive). The dict carries ONLY the §3.2 keys; the
+    caller merges attach-if-absent."""
+    if view is not None:
+        view_sample, view_status_error, view_stale_scan = view
+    else:
+        view_sample, view_status_error, view_stale_scan = None, None, None
+    helper_reason = ""
+    helper_mapped = None
+    helper_excluded = False
+    if helper_sample is not None:
+        helper_reason = str(helper_sample.get("reason") or "")
+        helper_mapped, helper_excluded = _map_helper_sample(
+            helper_sample, dual_gated=view_sample is not None)
+    if status_sample is not None:
+        label = str(status_sample.get("freshness") or "unknown")
+        status_error = status_sample.get("error")
+        stale_scan = status_sample.get("stale_scan")
+    elif helper_sample is not None and view_sample is not None:
+        candidates = [v for v in (helper_mapped, view_sample.get("value"))
+                      if v is not None]
+        label = min(candidates, key=_freshness_rank) if candidates else "unknown"
+        status_error = view_status_error
+        stale_scan = view_stale_scan
+    elif helper_sample is not None:
+        label = helper_mapped if helper_mapped is not None else "unknown"
+        if helper_reason in _FRESHNESS_NOT_ESTABLISHED:
+            status_error = helper_reason
+            stale_scan = helper_sample.get("stale_scan")
+        else:
+            status_error = None
+            stale_scan = None
+    elif view_sample is not None:
+        label = str(view_sample.get("value") or "unknown")
+        status_error = view_status_error
+        stale_scan = view_stale_scan
+    else:
+        label = "unknown"
+        status_error = "no_sample"
+        stale_scan = None
+    attach = {"freshness_label": label, "status_error": status_error,
+              "stale_scan": stale_scan}
+    if helper_sample is not None:
+        attach["helper_sample"] = helper_sample
+    if view_sample is not None:
+        attach["view_sample"] = view_sample
+        if helper_sample is not None:
+            if helper_excluded:
+                attach["samples_disagree"] = False
+            else:
+                attach["samples_disagree"] = (
+                    helper_mapped != view_sample.get("value"))
+    return attach
+
+
+def _attach_freshness(payload, *, helper_sample=None, view=None,
+                      status_sample=None):
+    """Merge the §3.2 attachment onto a result payload dict,
+    attach-if-absent (setdefault) for every key. Returns the payload.
+    Non-dict payloads pass through unchanged."""
+    if not isinstance(payload, dict):
+        return payload
+    for key, value in _freshness_attachment(
+            helper_sample=helper_sample, view=view,
+            status_sample=status_sample).items():
+        payload.setdefault(key, value)
+    return payload
+
+
+def _err_freshness(name, exc, *, helper_sample=None, view=None,
+                   status_sample=None):
+    """HANDLER-ERROR leg: the handler's error return path (`_err`) with
+    the §3.2 label attached — the sampled value where the handler has a
+    sample, `unknown` / `no_sample` where no sample exists."""
+    envelope = {"ok": False, "error_name": type(exc).__name__,
+                "error": str(exc)}
+    envelope.update(_freshness_attachment(
+        helper_sample=helper_sample, view=view,
+        status_sample=status_sample))
+    return _json.dumps(envelope, ensure_ascii=False)
+
+
 _GRAPH_WRITE_LOCKS: dict = {}
 _GRAPH_REFRESH_LOCKS: dict = {}
 
@@ -313,12 +509,14 @@ async def cbm_nodes_query(project_path: str = "", kind: str = "", name_prefix: s
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
                             "error": path_err}, ensure_ascii=False)
     try:
+        _status_sample: dict | None = None
+        _status_sample = await asyncio.to_thread(_status.graph_status, project_path)
         result = await asyncio.to_thread(
             _query.nodes_query, project_path, kind=kind, name_prefix=name_prefix,
             file_contains=file_contains, limit=limit, offset=offset)
-        return _ok(result)
+        return _ok(_attach_freshness(result, status_sample=_status_sample))
     except Exception as e:
-        return _err("cbm_nodes_query", e)
+        return _err_freshness("cbm_nodes_query", e, status_sample=_status_sample)
 
 
 async def cbm_edges_query(project_path: str = "", kind: str = "", source_contains: str = "",
@@ -333,12 +531,14 @@ async def cbm_edges_query(project_path: str = "", kind: str = "", source_contain
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
                             "error": path_err}, ensure_ascii=False)
     try:
+        _status_sample: dict | None = None
+        _status_sample = await asyncio.to_thread(_status.graph_status, project_path)
         result = await asyncio.to_thread(
             _query.edges_query, project_path, kind=kind, source_contains=source_contains,
             target_contains=target_contains, limit=limit, offset=offset)
-        return _ok(result)
+        return _ok(_attach_freshness(result, status_sample=_status_sample))
     except Exception as e:
-        return _err("cbm_edges_query", e)
+        return _err_freshness("cbm_edges_query", e, status_sample=_status_sample)
 
 
 async def cbm_trace_path(project_path: str = "", start_node_id: str = "",
@@ -352,6 +552,8 @@ async def cbm_trace_path(project_path: str = "", start_node_id: str = "",
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
                             "error": path_err}, ensure_ascii=False)
     try:
+        _status_sample: dict | None = None
+        _status_sample = await asyncio.to_thread(_status.graph_status, project_path)
         result = await asyncio.to_thread(
             _query.cbm_trace_path, project_path, start_node_id,
             direction=direction, depth=depth,
@@ -370,7 +572,7 @@ async def cbm_trace_path(project_path: str = "", start_node_id: str = "",
         # path must stay fail-open exactly as the description promises and the
         # graph-disabled canary pins.
         if result.get("start_node_resolved") is False:
-            return _json.dumps({
+            _b023 = {
                 "ok": False,
                 "error_name": "START_NODE_NOT_FOUND",
                 "error": ("start_node_id %r is not a node in the graph. It must be a "
@@ -383,10 +585,12 @@ async def cbm_trace_path(project_path: str = "", start_node_id: str = "",
                          "shape. find_symbol cannot supply one -- it is a text search "
                          "returning file/line/match."),
                 "result": result,
-            }, ensure_ascii=False)
-        return _ok(result)
+            }
+            return _json.dumps(_attach_freshness(
+                _b023, status_sample=_status_sample), ensure_ascii=False)
+        return _ok(_attach_freshness(result, status_sample=_status_sample))
     except Exception as e:
-        return _err("cbm_trace_path", e)
+        return _err_freshness("cbm_trace_path", e, status_sample=_status_sample)
 
 
 # ─── Phase 3 tools (Steps 15-17) ─────────────────────────────────────────────
@@ -404,14 +608,16 @@ async def cbm_template_query(project_path: str = "", template: str = "",
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
                             "error": path_err}, ensure_ascii=False)
     try:
+        _status_sample: dict | None = None
+        _status_sample = await asyncio.to_thread(_status.graph_status, project_path)
         result = await asyncio.to_thread(
             _query.template_query, project_path, template,
             name=name, node_id=node_id, module=module,
             depth=int(depth or 2), limit=int(limit or 50),
             offset=int(offset or 0))
-        return _ok(result)
+        return _ok(_attach_freshness(result, status_sample=_status_sample))
     except Exception as e:
-        return _err("cbm_template_query", e)
+        return _err_freshness("cbm_template_query", e, status_sample=_status_sample)
 
 
 async def cbm_get_architecture(project_path: str = "", max_files: int = 0,
@@ -426,10 +632,11 @@ async def cbm_get_architecture(project_path: str = "", max_files: int = 0,
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
                             "error": path_err}, ensure_ascii=False)
     try:
+        _auto_idx: dict | None = None
         _auto_idx = await _ensure_graph_fresh(project_path)
         _refusal = _freshness_refusal(_auto_idx)
         if _refusal is not None:
-            return _ok(_refusal)
+            return _ok(_attach_freshness(_refusal, helper_sample=_auto_idx))
         # DOCS_GAP-6: optional bound overrides; 0/unset keeps config defaults.
         # P4 verify fix (STT-17): negative values are invalid — floor to 0 so
         # they keep the config default instead of causing immediate truncation
@@ -444,9 +651,9 @@ async def cbm_get_architecture(project_path: str = "", max_files: int = 0,
         result = await asyncio.to_thread(
             _query.cbm_get_architecture, project_path, **kwargs)
         result["auto_index_result"] = _auto_idx
-        return _ok(result)
+        return _ok(_attach_freshness(result, helper_sample=_auto_idx))
     except Exception as e:
-        return _err("cbm_get_architecture", e)
+        return _err_freshness("cbm_get_architecture", e, helper_sample=_auto_idx)
 
 
 async def cbm_dead_code(project_path: str = "", limit: int = 50,
@@ -462,10 +669,11 @@ async def cbm_dead_code(project_path: str = "", limit: int = 50,
                             "error": path_err}, ensure_ascii=False)
     try:
         # Task 3 auto-chain: ensure fresh graph before dead-code analysis
+        _auto_idx: dict | None = None
         _auto_idx = await _ensure_graph_fresh(project_path)
         _refusal = _freshness_refusal(_auto_idx)
         if _refusal is not None:
-            return _ok(_refusal)
+            return _ok(_attach_freshness(_refusal, helper_sample=_auto_idx))
         result = await asyncio.to_thread(_cbm_dead_code_dispatch, project_path,
                                          limit=int(limit or 50), scope=scope,
                                          file_filter=file_filter)
@@ -495,9 +703,9 @@ async def cbm_dead_code(project_path: str = "", limit: int = 50,
                 "to no graph edge, so a live method can appear in this list")
             result["ca_chain_next"] = "write_fix"
             result["ca_chain_precondition"] = "search_code(mode='callers') per entry returns no hit"
-        return _ok(result)
+        return _ok(_attach_freshness(result, helper_sample=_auto_idx))
     except Exception as e:
-        return _err("cbm_dead_code", e)
+        return _err_freshness("cbm_dead_code", e, helper_sample=_auto_idx)
 
 async def ruff_fix(project_path: str = "", path: str = ".", apply: bool = False,
                    unsafe_fixes: bool = False, preserve_hash: bool = False,
@@ -873,15 +1081,16 @@ async def cbm_cycle_point(project_path: str = "", **aliases) -> str:  # noqa: AR
                             "error": f"project_path is not an existing directory: {project_path}"},
                            ensure_ascii=False)
     try:
+        _auto_idx: dict | None = None
         _auto_idx = await _ensure_graph_fresh(project_path)
         _refusal = _freshness_refusal(_auto_idx)
         if _refusal is not None:
-            return _ok(_refusal)
+            return _ok(_attach_freshness(_refusal, helper_sample=_auto_idx))
         result = await asyncio.to_thread(_cycle_point.compute_cycle_point, project_path)
         result["auto_index_result"] = _auto_idx
-        return _ok(result)
+        return _ok(_attach_freshness(result, helper_sample=_auto_idx))
     except Exception as e:
-        return _err("cbm_cycle_point", e)
+        return _err_freshness("cbm_cycle_point", e, helper_sample=_auto_idx)
 
 
 async def cbm_analysis_view(
@@ -910,9 +1119,12 @@ async def cbm_analysis_view(
             test_files=test_files,
             finalize_scope=bool(finalize_scope),
         )
+        if isinstance(result, dict):
+            _view = _view_sample_from_payload(result)
+            result = _attach_freshness(result, view=_view)
         return _ok(result)
     except Exception as e:
-        return _err("cbm_analysis_view", e)
+        return _err_freshness("cbm_analysis_view", e)
 
 
 def _as_path_list(value) -> list[str] | None:
@@ -967,6 +1179,7 @@ async def cbm_test_gap(
     included = _as_path_list(included_files)
     tests = _as_path_list(test_files) or []
     want_arch = bool(include_architecture)
+    _view_box: dict = {}
 
     def _work(*, checkpoint, stop, deadline_mono, project_path, included_files, test_files, finalize_scope):
         del finalize_scope
@@ -988,6 +1201,7 @@ async def cbm_test_gap(
                 finalize_scope=False,
                 checkpoint=checkpoint,
             )
+            _view_box["view"] = _view_sample_from_payload(view_payload)
             if isinstance(view_payload, dict) and view_payload.get("status") != "unavailable":
                 view_payload = dict(view_payload)
                 if included_files is not None:
@@ -1007,10 +1221,11 @@ async def cbm_test_gap(
 
     try:
         # Task 3 auto-chain: ensure fresh graph before test-gap analysis
+        _auto_idx: dict | None = None
         _auto_idx = await _ensure_graph_fresh(project_path)
         _refusal = _freshness_refusal(_auto_idx)
         if _refusal is not None:
-            return _ok(_refusal)
+            return _ok(_attach_freshness(_refusal, helper_sample=_auto_idx))
         result = await _analysis_service.run_analysis_view(
             project_path,
             included_files=included,
@@ -1020,6 +1235,8 @@ async def cbm_test_gap(
         )
         if isinstance(result, dict):
             result["auto_index_result"] = _auto_idx
+            result = _attach_freshness(
+                result, helper_sample=_auto_idx, view=_view_box.get("view"))
             # Task 4 auto-chain: hint quality_gate after test_gap
             _gaps = result.get("gaps") or result.get("uncovered") or []
             if _gaps:
@@ -1027,7 +1244,8 @@ async def cbm_test_gap(
                 result["ca_chain_next"] = "cbm_quality_gate"
         return _ok(result)
     except Exception as e:
-        return _err("cbm_test_gap", e)
+        return _err_freshness("cbm_test_gap", e, helper_sample=_auto_idx,
+                              view=_view_box.get("view"))
 
 
 def _as_metrics(value) -> dict:
@@ -1140,6 +1358,8 @@ async def cbm_quality_gate(
     toml_text = rules_toml or aliases.get("toml") or ""
     baseline_raw = baseline if baseline else None
 
+    _view_box: dict = {}
+
     def _work(*, checkpoint, stop, deadline_mono, project_path, included_files, test_files, finalize_scope):
         del finalize_scope
         _raise_if_stopped(checkpoint, stop, deadline_mono)
@@ -1151,6 +1371,7 @@ async def cbm_quality_gate(
             finalize_scope=False,
             checkpoint=checkpoint,
         )
+        _view_box["view"] = _view_sample_from_payload(view)
         if chosen == "snapshot":
             payload = _snapshot_from_view(view, extra)
             payload["wrote"] = False
@@ -1199,12 +1420,13 @@ async def cbm_quality_gate(
         if isinstance(result, dict):
             result = dict(result)
             result["wrote"] = False
+            result = _attach_freshness(result, view=_view_box.get("view"))
         return _ok(result)
     except Exception as e:
-        return _err("cbm_quality_gate", e)
+        return _err_freshness("cbm_quality_gate", e, view=_view_box.get("view"))
 
     except Exception as e:
-        return _err("cbm_quality_gate", e)
+        return _err_freshness("cbm_quality_gate", e, view=_view_box.get("view"))
 
 
 def _as_ops(value) -> list:
@@ -1251,6 +1473,8 @@ async def cbm_what_if(
         chosen_kind = "observed"
     parsed_ops = _as_ops(ops if ops is not None else aliases.get("operations"))
 
+    _view_box: dict = {}
+
     def _work(*, checkpoint, stop, deadline_mono, project_path, included_files, test_files, finalize_scope):
         del finalize_scope
         _raise_if_stopped(checkpoint, stop, deadline_mono)
@@ -1262,14 +1486,16 @@ async def cbm_what_if(
             finalize_scope=False,
             checkpoint=checkpoint,
         )
+        _view_box["view"] = _view_sample_from_payload(view)
         return _whatif.simulate_sequence(view, parsed_ops, edge_kind=chosen_kind)
 
     try:
         # Task 3 auto-chain: ensure fresh graph before what-if analysis
+        _auto_idx: dict | None = None
         _auto_idx = await _ensure_graph_fresh(project_path)
         _refusal = _freshness_refusal(_auto_idx)
         if _refusal is not None:
-            return _ok(_refusal)
+            return _ok(_attach_freshness(_refusal, helper_sample=_auto_idx))
         result = await _analysis_service.run_analysis_view(
             project_path,
             included_files=included,
@@ -1281,9 +1507,12 @@ async def cbm_what_if(
             result = dict(result)
             result["wrote"] = False
             result["auto_index_result"] = _auto_idx
+            result = _attach_freshness(
+                result, helper_sample=_auto_idx, view=_view_box.get("view"))
         return _ok(result)
     except Exception as e:
-        return _err("cbm_what_if", e)
+        return _err_freshness("cbm_what_if", e, helper_sample=_auto_idx,
+                              view=_view_box.get("view"))
 
 
 def _as_lookback(value, default: int = 90) -> int:
@@ -1390,6 +1619,8 @@ async def cbm_dsm(
     pr = page_rows if page_rows is not None else aliases.get("rows", 100)
     pc = page_cols if page_cols is not None else aliases.get("cols", 100)
 
+    _view_box: dict = {}
+
     def _work(*, checkpoint, stop, deadline_mono, project_path, included_files, test_files, finalize_scope):
         del finalize_scope
         _raise_if_stopped(checkpoint, stop, deadline_mono)
@@ -1401,6 +1632,7 @@ async def cbm_dsm(
             finalize_scope=False,
             checkpoint=checkpoint,
         )
+        _view_box["view"] = _view_sample_from_payload(view)
         return _dsm.build_dsm(
             view=view,
             row_start=rs,
@@ -1421,9 +1653,10 @@ async def cbm_dsm(
         if isinstance(result, dict):
             result = dict(result)
             result["wrote"] = False
+            result = _attach_freshness(result, view=_view_box.get("view"))
         return _ok(result)
     except Exception as e:
-        return _err("cbm_dsm", e)
+        return _err_freshness("cbm_dsm", e, view=_view_box.get("view"))
 
 
 async def cbm_council_context(project_path: str = "", name: str = "",
@@ -1442,12 +1675,14 @@ async def cbm_council_context(project_path: str = "", name: str = "",
         return _json.dumps({"ok": False, "error_name": "SCHEMA_VIOLATION",
                             "error": path_err}, ensure_ascii=False)
     try:
+        _status_sample: dict | None = None
+        _status_sample = await asyncio.to_thread(_status.graph_status, project_path)
         result = await asyncio.to_thread(_query.council_graph_context, project_path,
                                          name=name, depth=int(depth or 2),
                                          file_path=file_path)
-        return _ok(result)
+        return _ok(_attach_freshness(result, status_sample=_status_sample))
     except Exception as e:
-        return _err("cbm_council_context", e)
+        return _err_freshness("cbm_council_context", e, status_sample=_status_sample)
 
 
 __all__ = ["cbm_index", "cbm_graph_status", "cbm_trace_path",
