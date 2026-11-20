@@ -3,8 +3,8 @@
 This file is generated for CA routing. Read it before opening source files.
 
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\.council`
-- Generated: 2026-10-08T09:34:27
-- Files indexed: 467
+- Generated: 2026-11-21T06:06:26
+- Files indexed: 470
 
 ## First Actions
 
@@ -26,11 +26,11 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 
 ## Groups
 
-- `config`: 44 files, 8974 LOC
-- `doc`: 322 files, 21690 LOC
+- `config`: 45 files, 8958 LOC
+- `doc`: 324 files, 21745 LOC
 - `script`: 2 files, 114 LOC
 - `source`: 79 files, 21386 LOC
-- `unknown`: 20 files, 3367 LOC
+- `unknown`: 20 files, 2785 LOC
 
 ## Highest Value Files
 
@@ -48,12 +48,12 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 - `tmp_codo9_fix_3008/apply_tq9b.js` | group `source` | lang `javascript` | LOC 214 | weight 7: symbol_routed: use function/class refs from INDEX first
 - `mcp_phase4_final.py` | group `source` | lang `python` | LOC 153 | weight 7: symbol_routed: use function/class refs from INDEX first
 - `tmp_clr2_writes.js` | group `source` | lang `javascript` | LOC 399 | weight 7: symbol_routed: use function/class refs from INDEX first
-- `tools_manifest.md` | group `doc` | lang `markdown` | LOC 261 | weight 6: metadata_first: search or read narrow ranges
+- `tools_manifest.md` | group `doc` | lang `markdown` | LOC 263 | weight 6: metadata_first: search or read narrow ranges
 - `scan_outbox/FULL_REPORT_2_ROUNDS.md` | group `doc` | lang `markdown` | LOC 547 | weight 6: large_file: use symbols, search, or bounded ranges before full read
-- `Live_council/council_live.txt` | group `unknown` | lang `text` | LOC 604 | weight 6: large_file: use symbols, search, or bounded ranges before full read
 - `tmp_ahealthhung/GROC_FIX_SNAPSHOT_1315/tests__test_autoheal_write_index_r1.py` | group `source` | lang `python` | LOC 156 | weight 6: symbol_routed: use function/class refs from INDEX first
 - `tmp_codo9_fix_3008/write_tq9b_tests.js` | group `source` | lang `javascript` | LOC 224 | weight 6: symbol_routed: use function/class refs from INDEX first
 - `route_scorecard.json` | group `config` | lang `json` | LOC 3306 | weight 6: large_file: use symbols, search, or bounded ranges before full read
+- `tmp_clr2_artifacts.js` | group `source` | lang `javascript` | LOC 196 | weight 6: symbol_routed: use function/class refs from INDEX first
 
 ## Entrypoints
 
@@ -67,7 +67,7 @@ Guardrail: NOT first tool in session -- NOT replacing find_symbol for defs -- es
 - `tmp_ahealthhung/GROC_FIX_SNAPSHOT_1315/orchestrator__lifecycle__restart_control_service.py`: complexity 168, 843 LOC, group `source`
 - `Live_council/archives/extracted_130325/council_live.txt`: complexity 157, 373 LOC, group `unknown`
 - `mcp_full_surface_test.py`: complexity 129, 380 LOC, group `source`
-- `tools_manifest.md`: complexity 92, 261 LOC, group `doc`
+- `tools_manifest.md`: complexity 89, 263 LOC, group `doc`
 - `rule_guardrail_solar_rag/DATA/A_RULE_TOOL_SYMBOL_HITS.txt`: complexity 63, 500 LOC, group `unknown`
 - `scan_outbox/CLUSTER_W1_C6_log.json`: complexity 46, 228 LOC, group `config`
 

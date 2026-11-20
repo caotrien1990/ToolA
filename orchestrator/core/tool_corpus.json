@@ -286,7 +286,7 @@
       "dọn file rác cụ thể theo đường dẫn"
     ],
     "samples": [
-      "Delete the stale scratch file _realtest_write_new.txt from the project root.",
+      "Delete the stale scratch file scratch_example.tmp from the project root.",
       "Xóa file tạm itemc_extract.py trong thư mục Temp giúp tôi."
     ],
     "source": "orchestrator/core/registry_data.py:3043"

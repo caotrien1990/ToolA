@@ -1,3 +1,12 @@
+throw 'ToolA_RestartControl is RETIRED (DP-2, 2026-10-24). Do NOT use this installer to reinstall the service.'
+# =====================================================================
+# DEPRECATED (2026-10-24) - DO NOT USE
+# RestartControl (restart_control_service / task ToolA_RestartControl)
+# has been RETIRED per decision DP-2 of campaign livez-drift-20261023.
+# Task ToolA_RestartControl was disabled on 2026-10-24; do NOT use
+# this installer to reinstall the service.
+# Standard installer: install_orchestrator_admin_task.ps1
+# =====================================================================
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $wrapper = Join-Path $root 'start_restart_control_high_il.cmd'

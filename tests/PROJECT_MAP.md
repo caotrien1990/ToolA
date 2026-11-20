@@ -1,14 +1,16 @@
 # Project Map
 
 - Schema: 2
-- Generated: 2026-10-11T08:43:30
+- Generated: 2026-11-21T06:06:26
 - Root: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\8. ToolA\project-orchestrator\tests`
-- Files indexed: 389
+- Files indexed: 537
 
 ## Groups
 
+- `config`: 81 files, 14182 LOC
+- `doc`: 2 files, 41 LOC
 - `script`: 2 files, 176 LOC
-- `source`: 382 files, 74071 LOC
+- `source`: 447 files, 89976 LOC
 - `unknown`: 5 files, 20 LOC
 
 ## Entrypoints
@@ -16,16 +18,16 @@
 
 ## Hotspots
 
-- `test_orchestrator_server_contract.py`: complexity 122, 4194 LOC, group `source`
-- `test_code_tools_cache.py`: complexity 96, 2546 LOC, group `source`
-- `test_manage_agent_rule_sync.py`: complexity 61, 880 LOC, group `source`
+- `test_no_window_spawn_census.py`: complexity 247, 915 LOC, group `source`
+- `test_orchestrator_server_contract.py`: complexity 122, 4197 LOC, group `source`
+- `test_code_tools_cache.py`: complexity 96, 2553 LOC, group `source`
+- `fixtures/returns_shape/get_rule_core_text__deepest.json`: complexity 94, 195 LOC, group `config`
+- `fixtures/returns_shape/get_rule_core_text__largest_bytes.json`: complexity 94, 195 LOC, group `config`
+- `fixtures/returns_shape/get_rule_core_text__second_deepest.json`: complexity 94, 195 LOC, group `config`
+- `test_manage_agent_rule_sync.py`: complexity 61, 897 LOC, group `source`
 - `test_a39_chain_registration_gate.py`: complexity 61, 454 LOC, group `source`
-- `test_conn_leak_audit.py`: complexity 54, 286 LOC, group `source`
-- `test_a34_active_chain.py`: complexity 52, 585 LOC, group `source`
-- `test_session_store_writer.py`: complexity 37, 474 LOC, group `source`
-- `test_cbm_campaign_contracts.py`: complexity 37, 334 LOC, group `source`
-- `test_graph_analysis_service.py`: complexity 36, 389 LOC, group `source`
-- `test_session_writer_stall_contract.py`: complexity 35, 258 LOC, group `source`
+- `test_listener_supervisor_fi.py`: complexity 59, 556 LOC, group `source`
+- `test_conn_leak_audit.py`: complexity 54, 284 LOC, group `source`
 
 ## Agent Usage
 
