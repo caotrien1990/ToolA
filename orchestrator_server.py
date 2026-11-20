@@ -4839,7 +4839,7 @@ def _retry_sequence(tool_name: str, error_name: str, body: dict | None,
         ]
     if error_name in ("MUTATION_TOKEN_REQUIRED", "MUTATION_TOKEN_EXPIRED"):
         return [
-            {"method": "GET", "url": os.environ.get("ORCHESTRATOR_BASE_URL", f"http://localhost:{PORT}") + "/api/token"},
+            {"method": "GET", "url": "/api/token", "note": "Resolve /api/token against your configured ToolA base (ORCHESTRATOR_BASE_URL); never localhost."},
             {"tool": tool_name, "payload": body, "headers": {"X-Orchestrator-Token": "token from GET /api/token"}},
         ]
     if error_name == "MISSING_REQUIRED_FIELD":
@@ -4859,6 +4859,19 @@ def _retry_sequence(tool_name: str, error_name: str, body: dict | None,
              "missing_fields": _mrf_missing, "payload": _mrf_payload,
              "note": ("Every name in this payload comes from the tool's registry "
                       "schema; replace the example values with real ones.")},
+        ]
+    if error_name == "SCHEMA_VIOLATION":
+        # D6 (S-9): mapper no-placeholders fallback, modeled on the MRF branch
+        # (L4836-4853). The mapper has no message access, so no ∩ logic runs
+        # here; the boundary construction covers the SV population the
+        # boundary sees. missing_fields is [] (an SV error is NOT a
+        # missing-field error); the reason DETAIL lives at the result level,
+        # not in the steps; accepted_fields + payload_example are
+        # RESULT-level keys carried by the caller/boundary, never step keys.
+        return [
+            {"action": "correct_invalid_fields", "tool": tool_name,
+             "missing_fields": [], "payload": dict(body),
+             "note": _SCHEMA_VIOLATION_FIX_NOTE},
         ]
     if error_name == "STALE_INDEX":
         file_path = body.get("file_path") or body.get("path") or "relative/file.py"
@@ -4963,14 +4976,51 @@ def _retry_sequence(tool_name: str, error_name: str, body: dict | None,
         ]
     return []
 
+_SCHEMA_VIOLATION_FIX_NOTE = (
+    "SCHEMA_VIOLATION: correct the invalid fields using "
+    "accepted_fields and payload_example at the result level; "
+    "replace the example values with real ones."
+)
+
+
+def _schema_violation_retry_steps(tool_name: str, err_text: str, body: dict | None,
+                                  payload_example: dict | None) -> list[dict]:
+    """D6 (S-9): boundary ∩-logic construction for SCHEMA_VIOLATION.
+
+    Placeholders ONLY for field names the SV error itself states, intersected
+    with the schema properties AND EXCLUDING names already in the body
+    (stated ∩ properties, per the `_missing_required_detail` fallback,
+    L5282-5283). A stated name outside properties gets NO placeholder; a
+    stated name already IN the body gets NO placeholder either. The step
+    shape matches the MRF branch (same step keys, same placeholder
+    convention); the result-level keys (accepted_fields / payload_example)
+    are carried by the caller/boundary, never step keys.
+    """
+    body = dict(body or {})
+    try:
+        _sv_props = list(((_schema_for_tool(tool_name).get("parameters") or {}).get("properties") or {}))
+    except Exception:
+        _sv_props = []
+    _sv_tokens = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", err_text or ""))
+    _sv_stated = [p for p in _sv_props if p in _sv_tokens and p not in body]
+    _sv_payload = dict(payload_example or {})
+    _sv_payload.update({k: v for k, v in body.items() if not str(k).startswith("_")})
+    for _sv_name in _sv_stated:
+        _sv_payload.setdefault(_sv_name, "<value>")
+    return [
+        {"action": "correct_invalid_fields", "tool": tool_name,
+         "missing_fields": [], "payload": _sv_payload,
+         "note": _SCHEMA_VIOLATION_FIX_NOTE},
+    ]
+
 
 def _default_hint(tool_name: str, error_name: str) -> str:
     return {
-        "MUTATION_TOKEN_REQUIRED": "Call GET /api/token, then retry with X-Orchestrator-Token.",
-        "MUTATION_TOKEN_EXPIRED": "Token TTL elapsed. Call GET /api/token to rotate, then retry with X-Orchestrator-Token.",
+        "MUTATION_TOKEN_REQUIRED": "Call GET /api/token via your configured ToolA base (ORCHESTRATOR_BASE_URL), then retry with X-Orchestrator-Token. Schema: toola-call schema <tool>.",
+        "MUTATION_TOKEN_EXPIRED": "Token TTL elapsed. Call GET /api/token via your configured ToolA base (ORCHESTRATOR_BASE_URL) to rotate, then retry with X-Orchestrator-Token. Schema: toola-call schema <tool>.",
         "STALE_INDEX": "Call read_file_range(project_path, file_path, force_reseed=true) or cache_delta, then retry. Never refresh_project_map on a large root such as [A:P].",
         "BACKUP_REQUIRED": "Call backup_status; if backup is missing, ask the user and call backup_project before retrying.",
-        "WRONG_ARGUMENTS": "Read GET /api/tools for required fields and use the payload_example exactly.",
+        "WRONG_ARGUMENTS": "Read the schema at /api/tools/<tool>/schema via your configured ToolA base (ORCHESTRATOR_BASE_URL) — toola-call schema <tool> — for required fields and use the payload_example exactly.",
         "MISSING_REQUIRED_FIELD": "Rebuild the payload using required_fields, accepted_fields, and payload_example.",
         "UNSUPPORTED_FIELD": "Remove unsupported fields and retry with the documented schema.",
         "UNSUPPORTED_DRY_RUN": f"Remove dry_run; {tool_name} does not support dry_run.",
@@ -5017,61 +5067,426 @@ def _accepted_fields_for_tool(tool_name: str) -> list[str]:
     return sorted(_props | set(_ARG_ALIASES.get(tool_name, {}) or {}))
 
 
+# D1 (C-7): single-producer correction construction (interface section 8,
+# G-C7 deliverable; the 2.4 loop closed CONVERGENT at wave 2 of the fresh
+# cap-4 loop, so the section 8 interface as filed in r8 IS the closed
+# deliverable). One builder serves the four sites (S4 pristine branch,
+# _missing_required_error, boundary MRF enrichment, duplicate-guard
+# return); no site keeps a private computation.
+#
+# Inputs (per section 8, with reshapes inside the contract -- see below):
+#   tool_name, error_name, body_echo (AFTER site-specific filtering),
+#   supported_fields, unsupported_fields, accepted_fields (the F-C8 set,
+#   props UNION aliases, derived ONCE via _accepted_fields_for_tool),
+#   schema_example, rearm_state.
+# Reshapes: error_message + status are added, because ca_guidance and
+#   _error_contract_meta need them and no section 8 input carried them.
+#   corrected_payload / corrected_payload_source / alias_remediable are
+#   optional keyword overrides, used ONLY where the site's pre-filter
+#   output IS the correction (the page_id null-fill: the filtered body
+#   echo with missing fields nulled) or the tool body already holds a
+#   corrected payload (boundary arm). The value passed is the shaped
+#   body echo / tool value, never a second construction: the builder's
+#   own algorithm on those inputs yields the identical dict (verified
+#   by the D1 acceptance run).
+# rearm_state: True -> emit schema_rearmed; False / None -> omit. The
+#   four sites pass None: there is NO non-consuming used-state peek
+#   (code_tools.py L2695-2729: bootstrap_forget is the only query and
+#   it consumes; bootstrap_first_use also consumes), so the builder
+#   cannot derive it without stealing the stamp from _error_response
+#   (S4 / guard / gate paths) or the success-exit branch (boundary
+#   path), which own the re-arm stamp. The material as DELIVERED
+#   carries schema_rearmed iff previously-used, via that stamp.
+# Outputs: the 11 pristine-only keys (hint, payload_example,
+#   retry_sequence, ca_guidance, phase, type, severity,
+#   suggested_fallback, schema_rearmed, corrected_payload_source,
+#   alias_remediable) + accepted_fields, corrected_payload,
+#   ca_next_action, retryable (+ the unsupported_fields echo).
+#   The builder emits NO envelope keys (ok / error / error_name / HTTP
+#   status are _error_response's) and NO **_task_meta (transport).
+#   accepted_aliases is neither an input nor an output: the alias
+#   derivation is the S4 derivation's, and the builder receives the
+#   F-C8 set as accepted_fields instead.
+# Conditionality (as coded): hint iff _default_hint returns non-empty;
+#   schema_rearmed iff rearm_state is True; the other 9 unconditional.
+# corrected_payload rule: an explicit input wins; else the S4 algorithm
+#   (alias-map / strip / registry-example fallback) when
+#   unsupported_fields is non-empty; else omitted with source
+#   "no_corrected_payload" (an MRF body is missing fields, so echoing
+#   it as "corrected" would hand back a payload that re-fails).
+# ca_next_action rule (reproduces every site's current value exactly):
+#   MISSING_REQUIRED_FIELD -> "rebuild_payload_using_required_and_
+#   accepted_fields" (the literal previously duplicated in
+#   _missing_required_error and _missing_required_detail, now owned
+#   here); UNSUPPORTED_FIELD / UNSUPPORTED_DRY_RUN ->
+#   "retry_with_alias_mapping" iff alias_remediable else
+#   "remove_unsupported_field" (S4's rule, NOT _ca_next_action's
+#   "remove_dry_run" for the dry-run name); else _ca_next_action.
+# D5 (C-8): map-primary field-name suggester + calibrated DL distance
+# fallback (v12 §2 C-8; plan r8 §D5). Advisory-only: a suggestion NEVER
+# auto-applies and NEVER rewrites the payload — the seat chooses whether
+# to use it. NO SUBSTRING RULES (the live _unknown_tool_payload
+# substring rule is the defect's exemplar, not a pattern to copy).
+#
+# EXPECTED TABLE (13 rows for 13 patterns, v12 §2 C-8):
+#   MAP (ATTESTED, v6 L45): name_contains -> name_prefix; max_depth ->
+#     depth; files -> included_files. A map row fires ONLY on tools
+#     accepting its target (global firing rule). The files row fires on
+#     all five included_files accepters and carries the TYPE WARNING
+#     (reshape the string value to an array, never copy verbatim).
+#   DISTANCE (decided): modules -> module (DL=1 — the ONLY pair
+#     suggesting under the distance rule on the corpus).
+#   NONE (decided — never suggest): from_symbol / to_symbol, query,
+#     from / to, paths, end / start.
+#   TBD (candidate targets INFERRED, undecided): source / target ->
+#     source_contains / target_contains (DL 9/9); name -> name_prefix
+#     (DL 7); end_node_id -> start_node_id (DL 5); node_id ->
+#     start_node_id (DL 6). Every TBD DL exceeds the 1..3 window, so
+#     TBD rows NEVER fire by distance; human review decides their
+#     targets, or they stay silent. direction needs NO rename (valid on
+#     trace_path, direction=out|in|both; guessed on edges_query) — a
+#     suggestion renaming direction is a map defect.
+#   NO-FIRE GUARDS (binding human review): name / node_id must NOT fire
+#     on cbm_template_query, where both are valid properties.
+#
+# CALIBRATION (procedure steps (1)-(6) run against the PROTOTYPE
+# suggester): 260 tools (census 2026-11-12);
+# exactly ONE bounded tool — cbm_template_query, window 1 (bound 1 is
+# the smallest satisfying bound: DISTANCE d=1, NONE min d=3); the other
+# 259 tools (census 2026-11-12) are map-only (256 accept no `module`, so no attested
+# distance pair exists; 3 have no accepted set). Failure default: a
+# tool with no separating bound in 1..3 is map-only — the distance
+# suggester is DISABLED there, never guess. No bound was found by
+# separation failure (the only tool with a distance pair separates).
+# TIE-BREAK: the smallest satisfying bound. ROUNDING + METRIC: exact
+# integer DL, no rounding in the comparison (the 37% figure is
+# provenance motivating the window, not a consumed input). POOL:
+# suggested VALUES are canonical property names ONLY — a nearest alias
+# source resolves via _ARG_ALIASES[tool] to its canonical property
+# (the _alias_sources KEY SET alone cannot resolve). COMPUTATION
+# compares the guessed name against the ACCEPTED SET (properties ∪
+# alias sources, procedure step (1)).
+# PRECEDENCE (total rules): a MAP hit suppresses the distance
+# suggester for that guess; ties -> silence; no input produces both a
+# map and a distance suggestion.
+#
+# KEY NAME (open question, plan §12.2 — decided by the 2.4 LOOP, NOT
+# here): the suggestions ride under _C8_SUGGESTION_KEY = "suggestions",
+# the EXISTING suggestion key already used by _unknown_tool_payload
+# (UNKNOWN_TOOL) in this file. No new key name is invented here; the
+# loop may rename it by changing this one constant.
+_C8_MAP = {
+    "name_contains": "name_prefix",
+    "max_depth": "depth",
+    "files": "included_files",
+}
+_C8_NONE = frozenset({
+    "from_symbol", "to_symbol", "query", "from", "to", "paths", "end", "start",
+})
+_C8_TBD = {
+    "source": "source_contains",
+    "target": "target_contains",
+    "name": "name_prefix",
+    "end_node_id": "start_node_id",
+    "node_id": "start_node_id",
+}
+_C8_SUGGESTION_FREE_TOOLS = frozenset({"cbm_graph_status", "cbm_get_architecture"})
+_C8_NO_FIRE = frozenset({("cbm_template_query", "name"), ("cbm_template_query", "node_id")})
+_C8_DISTANCE_BOUND = {"cbm_template_query": 1}  # calibrated per-tool windows; any tool absent here is map-only
+_C8_TYPE_WARNING = "reshape the string value to an array; never copy it verbatim"
+_C8_SUGGESTION_KEY = "suggestions"  # REUSED existing key (see KEY NAME note above)
+
+
+def _c8_damerau_levenshtein(a, b, bound):
+    """Optimal-string-alignment distance (restricted Damerau-Levenshtein), capped at bound (exact integers, no rounding in the comparison). Returns bound+1 as soon as even the best
+    possible completion of the current row exceeds bound (a later row can
+    reduce the row minimum by at most 1 per row - the sound Ukkonen
+    cutoff), or the exact distance when the computation completes. The
+    caller only tests min <= bound and equality for ties, and both are
+    exact under this cap: a value <= bound is always the exact distance.
+    Verified against the full-matrix optimal-string-alignment distance on 6000 random pairs, 0
+ mismatches (re-derived 2026-11-20, seed 20261120, museR Wave 2 report-A.md F-A23)."""
+    la, lb = len(a), len(b)
+    if abs(la - lb) > bound:
+        return bound + 1
+    prevprev = None
+    prev = list(range(lb + 1))
+    for i in range(1, la + 1):
+        cur = [i] + [0] * lb
+        row_min = cur[0]
+        for j in range(1, lb + 1):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+            v = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
+            if (i > 1 and j > 1 and prevprev is not None
+                    and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]):
+                v = min(v, prevprev[j - 2] + 1)
+            cur[j] = v
+            if v < row_min:
+                row_min = v
+        if row_min > bound + (la - i):
+            return bound + 1
+        prevprev, prev = prev, cur
+    return prev[lb]
+
+
+def _c8_suggest_field(tool_name, guessed, accepted_fields):
+    """One guessed field -> suggestion dict or None (v12 §2 C-8 steps
+    (3)-(6)). `accepted_fields` is the F-C8 accepted set (properties ∪
+    alias sources) from _accepted_fields_for_tool. Order is the
+    precedence: suggestion-free tools -> no-fire guards -> direction
+    (never renamed) -> NONE -> MAP (suppresses distance) -> alias-owned
+    (the alias map owns it via corrected_payload) -> TBD (never by
+    distance) -> calibrated distance (bound, unambiguous, canonical)."""
+    if not isinstance(guessed, str) or not accepted_fields:
+        return None
+    if tool_name in _C8_SUGGESTION_FREE_TOOLS:
+        return None
+    if (tool_name, guessed) in _C8_NO_FIRE:
+        return None
+    if guessed == "direction":
+        return None
+    if guessed in _C8_NONE:
+        return None
+    if guessed in _C8_MAP:
+        target = _C8_MAP[guessed]
+        if target in accepted_fields:
+            suggestion = {"field": guessed, "suggestion": target, "source": "map"}
+            if guessed == "files":
+                suggestion["type_warning"] = _C8_TYPE_WARNING
+            return suggestion
+        return None
+    if guessed in _ARG_ALIASES.get(tool_name, {}):
+        return None  # alias map owns it (corrected_payload)
+    if guessed in _C8_TBD:
+        return None  # TBD never fires by distance (vacuity); human review decides
+    bound = _C8_DISTANCE_BOUND.get(tool_name)
+    if bound is None:
+        return None  # map-only tool: failure default, distance disabled
+    best = None
+    best_name = None
+    tied = False
+    for candidate in accepted_fields:
+        if abs(len(guessed) - len(candidate)) > bound:
+            continue  # DL >= length difference > bound; cannot be the nearest
+        d = _c8_damerau_levenshtein(guessed, candidate, bound)
+        if best is None or d < best:
+            best = d
+            best_name = candidate
+            tied = False
+        elif d == best:
+            tied = True
+    if best is None or best > bound or tied:
+        return None  # out of window, or ambiguous: silence
+    canonical = _ARG_ALIASES.get(tool_name, {}).get(best_name, best_name)
+    return {"field": guessed, "suggestion": canonical, "source": "distance"}
+
+
+def _c8_suggest_fields(tool_name, unsupported_fields, accepted_fields):
+    """All unsupported fields -> suggestion list (possibly empty), in
+    unsupported order. At most one suggestion per guessed field, and
+    never both a map and a distance suggestion for one guess."""
+    return [s for s in (
+        _c8_suggest_field(tool_name, guessed, accepted_fields)
+        for guessed in (unsupported_fields or [])
+    ) if s is not None]
+
+
+def build_correction_material(tool_name, error_name, body_echo,
+                             supported_fields, unsupported_fields,
+                             accepted_fields, schema_example, rearm_state,
+                             *, error_message="", status=400,
+                             corrected_payload=None,
+                             corrected_payload_source=None,
+                             alias_remediable=None):
+    _body = dict(body_echo or {})
+    _unsupported = list(unsupported_fields or [])
+    _accepted = sorted(accepted_fields or [])
+    _example = dict(schema_example or {})
+    if corrected_payload is not None:
+        _corrected = dict(corrected_payload)
+        _source = corrected_payload_source or "site_provided_corrected_payload"
+        _remediable = list(alias_remediable or [])
+    elif _unsupported:
+        # The S4 construction, moved here verbatim (R19 Phases C + D):
+        # alias-map intent before stripping, registry-example fallback
+        # when nothing survives.
+        _aliases_for_tool = _ARG_ALIASES.get(tool_name, {}) or {}
+        _ignore_for_tool = _HARMLESS_IGNORE_FIELDS.get(tool_name, set())
+        _unsupported_set = set(_unsupported)
+        _corrected = {}
+        _remediable = []
+        for _k, _v in _body.items():
+            if _k in _unsupported_set:
+                if _k in _aliases_for_tool:
+                    _canonical = _aliases_for_tool[_k]
+                    if _canonical not in _body and _canonical not in _corrected:
+                        _corrected[_canonical] = _v
+                        _remediable.append(f"{_k}->{_canonical}")
+                elif _k in _ignore_for_tool:
+                    continue  # silently drop harmless
+                # else: strip (no recoverable intent)
+            else:
+                _corrected[_k] = _v
+        # Registry-derived fallback cannot introduce undeclared fields.
+        if not _corrected:
+            _corrected = dict(_payload_example_for_tool(tool_name, _schema_for_tool(tool_name)))
+            _source = "registry_payload_example_fallback" if _corrected else "empty_no_example"
+        elif _remediable:
+            _source = "alias_mapped_intent_preserved"
+        else:
+            _source = "stripped_unsupported_fields"
+    else:
+        _corrected = None
+        _source = corrected_payload_source or "no_corrected_payload"
+        _remediable = list(alias_remediable or [])
+    if error_name == "MISSING_REQUIRED_FIELD":
+        _ca_next = "rebuild_payload_using_required_and_accepted_fields"
+    elif error_name in ("UNSUPPORTED_FIELD", "UNSUPPORTED_DRY_RUN"):
+        _ca_next = "retry_with_alias_mapping" if _remediable else "remove_unsupported_field"
+    else:
+        _ca_next = _ca_next_action(error_name, tool_name)
+    _material = {}
+    _hint = _default_hint(tool_name, error_name)
+    if _hint:
+        _material["hint"] = _hint
+    _material["payload_example"] = _example
+    _material["retry_sequence"] = _retry_sequence(
+        tool_name, error_name, _body, corrected_payload=_corrected)
+    _material["ca_guidance"] = _ca_guidance(tool_name, error_message, _body, error_name)
+    try:
+        _material["phase"] = ct._phase_for_error_name(error_name) if hasattr(ct, "_phase_for_error_name") else "runtime"
+    except Exception:
+        _material["phase"] = "runtime"
+    _material.update(_error_contract_meta(error_name, status))
+    if rearm_state is True:
+        _material["schema_rearmed"] = True
+    if _corrected is not None:
+        _material["corrected_payload"] = _corrected
+    _material["corrected_payload_source"] = _source
+    _material["alias_remediable"] = _remediable
+    _material["accepted_fields"] = _accepted
+    _material["unsupported_fields"] = _unsupported
+    # D5 (C-8): field-name suggestions, advisory-only. Only on
+    # UNSUPPORTED_FIELD / UNSUPPORTED_DRY_RUN with unsupported fields
+    # (the MRF site passes unsupported=[] and the boundary arm passes
+    # unsupported=[], so this fires only at the S4 site in practice);
+    # omitted entirely when no field suggests, so every other error
+    # payload is byte-identical to pre-D5.
+    if error_name in ("UNSUPPORTED_FIELD", "UNSUPPORTED_DRY_RUN") and _unsupported:
+        _c8_suggestions = _c8_suggest_fields(tool_name, _unsupported, _accepted)
+        if _c8_suggestions:
+            _material[_C8_SUGGESTION_KEY] = _c8_suggestions
+    _material["ca_next_action"] = _ca_next
+    return _material
+
+
+# D2 (N-3 / G-N3): null-fill enumeration gate. Tools whose handlers
+# falsiness-check their required fields (enumerated live 2026-11-19,
+# 2 ocr). Null-fill in _missing_required_error applies ONLY to these
+# tools; any other tool keeps the omission branch (no corrected_payload,
+# source "no_corrected_payload"). Re-run the enumeration at every
+# re-census: a tool whose handler stops checking loses null-fill by
+# this gate, not by an edit. Default: a tool does NOT get null-fill.
+_N3_NULL_FILL_TOOLS = frozenset({
+    "cbm_graph_status", "cbm_get_architecture", "cbm_dsm",
+    "cbm_trace_path", "cbm_nodes_query", "cbm_edges_query",
+    "cbm_template_query", "ocr_map", "ocr_review",
+})
+
+
 def _missing_required_error(tool_name: str, body: dict, required_fields: list[str]) -> dict:
     required = list(dict.fromkeys(required_fields))
-    accepted = sorted(_tool_required_fields(tool_name) or required or list((body or {}).keys()))
+    # D1 (C-7 / F-C8): the accepted listing is the F-C8 set (registry
+    # properties UNION alias sources) via the ONE shared derivation --
+    # never the required-only list this function used to emit. The
+    # required / body-keys fallbacks are preserved for unregistered
+    # tools, where the derivation is empty.
+    accepted = _accepted_fields_for_tool(tool_name) or required or list((body or {}).keys())
     missing = [field for field in required if field not in (body or {})]
     example = _payload_example_for_tool(tool_name, {"parameters": {"required": required, "properties": {}}})
     if not example:
         example = _PAYLOAD_EXAMPLES.get(tool_name, {})
-    payload = {
-        "ok": False,
-        "error": f"Missing required field(s) for '{tool_name}': {', '.join(missing)}",
-        "error_name": "MISSING_REQUIRED_FIELD",
-        "type": "SCHEMA_VIOLATION",
-        "severity": "error",
-        "retryable": False,
-        "reason": f"missing required field(s): {', '.join(missing)}",
-        "missing_fields": missing,
-        "required_fields": required,
-        "accepted_fields": accepted,
-        "payload_example": example,
-        "ca_next_action": "rebuild_payload_using_required_and_accepted_fields",
-        "write_performed": False,
-        "applied": False,
-    }
-    if "page_id" in missing:
-        # LR-3 (page_id-accepting tools): hand back a corrected_payload whose
-        # missing fields are present with value None -- never a placeholder
-        # string -- plus the instruction to fill each null with a live value.
-        # The payload_example's missing-field values are nulled the same way.
+    # D1 (C-7): the page_id pre-filter STAYS AT THIS SITE (section 8):
+    # it shapes the body echo the builder receives. The filter itself
+    # (public accepted set, drop `_`-keys, fall back to unfiltered when
+    # empty) now applies on every call, not only when page_id is
+    # missing: the builder derives retry_sequence from the echo too,
+    # and echoing the raw post-S4 body would hand the retry payload the
+    # dispatcher-injected keys (`mode`, `calling_context`). The
+    # D2 (N-3): the null-fill below is gated on page_id in missing OR
+    # the tool being in _N3_NULL_FILL_TOOLS (the widened gate); the
+    # corrected_payload emission follows the same widened gate.
+    _public_props = _registry_props_for_tool(tool_name)
+    _accepted = set(_accepted_fields_for_tool(tool_name))
+    if _accepted:
+        body_echo = {
+            _key: _value
+            for _key, _value in dict(body or {}).items()
+            if _key in _accepted and not str(_key).startswith("_")
+        }
+    else:
+        body_echo = dict(body or {})
+    corrected = None
+    corrected_source = None
+    # D2 (N-3 / G-N3): null-fill widening. The page_id gate below stays
+    # verbatim (LR-3); the widened gate adds the enumerated tools whose
+    # handlers falsiness-check their required fields (d2-enumeration-
+    # record.md, 9/9 CHECK). A tool whose handler stops checking loses
+    # null-fill by the gate (re-run the enumeration at every re-census),
+    # not by an edit. Null-fill applies ONLY to missing REQUIRED fields
+    # of enumerated tools -- never to optional fields (an optional null
+    # is consumed silently downstream, so null-filling one would hide
+    # the field instead of guiding the seat).
+    if "page_id" in missing or tool_name in _N3_NULL_FILL_TOOLS:
+        # LR-3 (page_id-accepting tools) + N-3 (enumerated tools): hand
+        # back a corrected_payload whose missing fields are present with
+        # value None -- never a placeholder string -- plus the instruction
+        # to fill each null with a live value. The payload_example's
+        # missing-field values are nulled the same way.
         example = dict(example)
         for _field in missing:
             example[_field] = None
-        payload["payload_example"] = example
-        # The body reaching this gate has been mutated post-S4: the
-        # dispatcher injected the internal "mode" default (and may have
-        # re-attached a validated "calling_context"), neither of which the
-        # alias's public schema accepts. Echoing the raw body would hand
-        # back a corrected_payload that itself earns UNSUPPORTED_FIELD, so
-        # filter it to the same public accepted set S4 uses -- registry
-        # properties UNION _ARG_ALIASES source keys -- and drop keys
-        # starting with "_". If that set is empty (unregistered tool),
-        # fall back to the unfiltered copy rather than dropping fields.
-        _public_props = ((_schema_for_tool(tool_name).get("parameters") or {}).get("properties") or {})
-        _accepted = set(_public_props) | set(_ARG_ALIASES.get(tool_name, {}))
-        if _accepted:
-            corrected = {
-                _key: _value
-                for _key, _value in dict(body or {}).items()
-                if _key in _accepted and not str(_key).startswith("_")
-            }
-        else:
-            corrected = dict(body or {})
         for _field in missing:
-            corrected[_field] = None
-        payload["corrected_payload"] = corrected
+            body_echo[_field] = None
+        # The shaped echo IS the correction: pass it explicitly so the
+        # builder emits it (an MRF body otherwise emits no
+        # corrected_payload). The builder's own algorithm on these inputs
+        # yields the identical dict -- this is emission control for the
+        # pre-filter's output, not a second construction.
+        corrected = dict(body_echo)
+        corrected_source = ("page_id_missing_fields_nulled" if "page_id" in missing
+                            else "missing_fields_nulled")
+    error_text = f"Missing required field(s) for '{tool_name}': {', '.join(missing)}"
+    material = build_correction_material(
+        tool_name, "MISSING_REQUIRED_FIELD", body_echo,
+        sorted(_public_props), [], sorted(accepted), example, None,
+        error_message=error_text, status=400,
+        corrected_payload=corrected,
+        corrected_payload_source=corrected_source,
+    )
+    payload = {
+        "ok": False,
+        "error": error_text,
+        "error_name": "MISSING_REQUIRED_FIELD",
+        "reason": f"missing required field(s): {', '.join(missing)}",
+        "missing_fields": missing,
+        "required_fields": required,
+        "write_performed": False,
+        "applied": False,
+        **material,
+    }
+    if "page_id" in missing:
         payload["fill_instruction"] = "Fill each null field in corrected_payload with a live value before resending (for example, a page_id from a currently open page); resending a null returns the same MISSING_REQUIRED_FIELD error."
+    elif tool_name in _N3_NULL_FILL_TOOLS:
+        # N-3: the assertion is handler-dependent and is stated that way.
+        # The required gate is presence-only, so a null passes it; the
+        # handler then fails loudly and names the field to fill. (For
+        # these tools the resend error is the handler's SCHEMA_VIOLATION,
+        # not a second MISSING_REQUIRED_FIELD -- the page_id wording
+        # above is NOT reused here.)
+        payload["fill_instruction"] = ("Fill each null field in corrected_payload with a live value "
+                                       "before resending. A null passes the presence-only required "
+                                       "gate and fails loudly at the handler, which names the field to fill.")
     return payload
 
 
@@ -5090,7 +5505,7 @@ def _missing_required_detail(tool_name: str, err_text: str, body: dict | None) -
     body = dict(body or {})
     required = _required_field_names(tool_name)
     props = list(((_schema_for_tool(tool_name).get("parameters") or {}).get("properties") or {}))
-    accepted = sorted(props) if props else sorted(dict.fromkeys(required))
+    accepted = _accepted_fields_for_tool(tool_name) or sorted(dict.fromkeys(required))
     missing = [f for f in required if body.get(f) in (None, "") and f not in body]
     if not missing:
         missing = [f for f in required if body.get(f) in (None, "")]
@@ -5196,6 +5611,13 @@ def _generated_payload_example(tool_name: str, fn_schema: dict) -> dict:
             return "D:/path/to/project"
         if field in {"file_path", "path"}:
             return "relative/file.py"
+        # N-4 (D3): honor schema `example` keys before falling back to
+        # type/description placeholders. Precedence above this line is
+        # unchanged (enum > default > const > project_path/file_path); an
+        # example never overrides a default or an enum (the "+ enums" change
+        # is a no-op and is NOT made).
+        if "example" in spec:
+            return copy.deepcopy(spec["example"])
         kind = spec.get("type")
         if kind == "boolean":
             return False
@@ -5213,9 +5635,13 @@ def _generated_payload_example(tool_name: str, fn_schema: dict) -> dict:
         text = "<" + re.sub(r"\s+", " ", str(spec.get("description") or field)).strip()[:80] + ">"
         return text if len(text) >= minimum else text + ("x" * (minimum - len(text)))
 
+    # N-4 (D3): a field carrying an `example` key joins the example even
+    # without a default -- otherwise the key is honored by sample() but the
+    # field never appears (cbm_get_architecture max_files/max_symbols/
+    # timeout_s). Enum/default/const precedence in sample() is unchanged.
     names = required + [
         name for name, spec in props.items()
-        if name not in required and (name == "project_path" or "default" in spec)
+        if name not in required and (name == "project_path" or "default" in spec or "example" in spec)
     ]
     return _normalize_example_paths({name: sample(name, props[name]) for name in names})
 
@@ -5267,6 +5693,60 @@ _PAYLOAD_EXAMPLE_OVERRIDES: dict[str, dict] = {
         "project_path": "D:/path/to/project",
         "paths": ["docs/example.md"],
         "allow_all": False,
+    },
+    # N-4 (D3, 2026-11-19): one hand-written override per contracted cbm/ocr
+    # tool. Each is a VALID call shape: required fields present with legal
+    # values, enum fields legal, and node-id fields carrying a MARKED
+    # angle-bracket placeholder (human-read, unmistakable -- DISTINCT from
+    # N-3's null-fill for corrected payloads, which is machine-consumed).
+    # Trace/template land first; the remaining 5 cbm + 2 ocr follow in this
+    # dict. Tested as shipped (both legs; N/A-with-reason where no node-id
+    # placeholder exists). project_path keeps the codebase-wide fake-path
+    # literal (fails loud: project not found) -- the marking requirement
+    # applies to node-id/reference fields (v12 §2 N-4).
+    "cbm_trace_path": {
+        "project_path": "D:/path/to/project",
+        "start_node_id": "<node-id from a producer step>",
+    },
+    "cbm_template_query": {
+        "project_path": "D:/path/to/project",
+        "template": "callers",
+        "node_id": "<node-id from a producer step>",
+    },
+    "cbm_graph_status": {
+        "project_path": "D:/path/to/project",
+    },
+    "cbm_get_architecture": {
+        "project_path": "D:/path/to/project",
+        "max_files": 200,
+        "max_symbols": 500,
+        "timeout_s": 30,
+    },
+    "cbm_dsm": {
+        "project_path": "D:/path/to/project",
+        "edge_kind": "observed",
+    },
+    "cbm_nodes_query": {
+        "project_path": "D:/path/to/project",
+        "kind": "function",
+        "limit": 100,
+    },
+    "cbm_edges_query": {
+        "project_path": "D:/path/to/project",
+        "kind": "calls",
+        "limit": 100,
+    },
+    "ocr_map": {
+        "project_path": "D:/path/to/project",
+        "from_ref": "<git ref, e.g. HEAD~1>",
+        "to_ref": "<git ref, e.g. HEAD>",
+        "timeout": 120,
+    },
+    "ocr_review": {
+        "project_path": "D:/path/to/project",
+        "from_ref": "<git ref, e.g. HEAD~1>",
+        "to_ref": "<git ref, e.g. HEAD>",
+        "timeout": 120,
     },
 }
 
@@ -5534,7 +6014,7 @@ def _ca_guidance(tool_name: str, error: str = "", body: dict | None = None,
     ]
     lower_error = error.lower()
     if "token" in lower_error:
-        notes.insert(0, f"Fetch GET {_base}/api/token and send X-Orchestrator-Token on mutating calls.")
+        notes.insert(0, "Fetch GET /api/token via your configured ToolA base (ORCHESTRATOR_BASE_URL) and send X-Orchestrator-Token on mutating calls. Schema: toola-call schema <tool>.")
     if "backup" in lower_error:
         notes.insert(0, "Call backup_status first; if missing, ask the user before backup_project or use backup_override only after approval.")
     if "session" in lower_error:
@@ -15875,7 +16355,7 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
                     cors,
                     body,
                     error_name="MUTATION_TOKEN_EXPIRED",
-                    hint="Token TTL elapsed. Call GET /api/token to rotate to a fresh token, then retry with X-Orchestrator-Token.",
+                    hint="Token TTL elapsed. Call GET /api/token via your configured ToolA base (ORCHESTRATOR_BASE_URL) to rotate to a fresh token, then retry with X-Orchestrator-Token. Schema: toola-call schema <tool>.",
                     reason="mutation token past its TTL",
                     accepted_fields=["X-Orchestrator-Token"],
                     payload_example={"headers": {"X-Orchestrator-Token": "<fresh token from GET /api/token>"}},
@@ -15891,7 +16371,7 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
                     cors,
                     body,
                     error_name="MUTATION_TOKEN_REQUIRED",
-                    hint="Call GET /api/token and send X-Orchestrator-Token with the same request (this daemon runs with AUTO_TOKEN_INJECT off).",
+                    hint="Call GET /api/token via your configured ToolA base (ORCHESTRATOR_BASE_URL) and send X-Orchestrator-Token with the same request (this daemon runs with AUTO_TOKEN_INJECT off). Schema: toola-call schema <tool>.",
                     reason="protected tool requires X-Orchestrator-Token header",
                     accepted_fields=["X-Orchestrator-Token"],
                     payload_example={"headers": {"X-Orchestrator-Token": "<token from GET /api/token>"}},
@@ -16075,48 +16555,26 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
     # S4: registry properties are the public contract; signatures are internal.
     _registry_params = _schema_for_tool(tool_name).get("parameters") or {}
     _registry_props = _registry_params.get("properties") or {}
-    _alias_sources = set(_ARG_ALIASES.get(tool_name, {}))
     allowed_params = set(_registry_props)
-    accepted_fields = allowed_params | _alias_sources
+    accepted_fields = set(_accepted_fields_for_tool(tool_name))
     unsupported = sorted(k for k in body.keys() if k not in allowed_params)
     if unsupported:
         # CAP R3: count truly-unknown fields per field (bounded cardinality)
         for _uf in unsupported:
             _compat_metric_unknown(tool_name, _uf)
         err_name = "UNSUPPORTED_DRY_RUN" if "dry_run" in unsupported and tool_name in {"write_fix_html"} else "UNSUPPORTED_FIELD"
-        # R19 Phase D — corrected_payload now preserves intent via alias mapping
-        # before falling back to registry stub. CA's value is mapped to canonical
-        # field name when an alias exists, instead of being stripped silently.
-        aliases_for_tool = _ARG_ALIASES.get(tool_name, {})
-        ignore_for_tool = _HARMLESS_IGNORE_FIELDS.get(tool_name, set())
-        corrected = {}
-        alias_remediable = []  # which unsupported fields had alias map available
-        for k, v in body.items():
-            if k in set(unsupported):
-                if k in aliases_for_tool:
-                    canonical = aliases_for_tool[k]
-                    if canonical not in body and canonical not in corrected:
-                        corrected[canonical] = v
-                        alias_remediable.append(f"{k}->{canonical}")
-                elif k in ignore_for_tool:
-                    continue  # silently drop harmless
-                # else: strip (no recoverable intent)
-            else:
-                corrected[k] = v
-        # Registry-derived fallback cannot introduce undeclared fields.
-        if not corrected:
-            corrected = dict(_payload_example_for_tool(tool_name, _schema_for_tool(tool_name)))
-            corrected_source = "registry_payload_example_fallback" if corrected else "empty_no_example"
-        elif alias_remediable:
-            corrected_source = "alias_mapped_intent_preserved"
-        else:
-            corrected_source = "stripped_unsupported_fields"
-        # R19 Phase C — ca_next_action surfaces remediation path explicitly
-        ca_next = (
-            "retry_with_alias_mapping" if alias_remediable
-            else "remove_unsupported_field"
-        )
+        # D1 (C-7): the corrected-payload construction moved into
+        # build_correction_material (the single producer); this site
+        # keeps no private computation. The material is identical to
+        # what the inline construction produced (same alias mapping,
+        # same fallback, same ca_next_action rule).
         message = f"Unsupported field(s) for '{tool_name}': {', '.join(unsupported)}"
+        material = build_correction_material(
+            tool_name, err_name, body,
+            sorted(allowed_params), unsupported, sorted(accepted_fields),
+            _payload_example_for_tool(tool_name, _schema_for_tool(tool_name)),
+            None, error_message=message, status=400,
+        )
         duplicate = _duplicate_retry_guard(
             _dedupe_identity(_task_session_id, _task_agent_id), tool_name, body, err_name)
         if duplicate:
@@ -16136,18 +16594,11 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
                 **_task_meta,
             )
         return _error_response(
-            tool_name, message,
-            400,
-            cors,
-            body,
+            tool_name, message, 400, cors, body,
             error_name=err_name,
-            unsupported_fields=unsupported,
-            accepted_fields=sorted(accepted_fields),
-            accepted_aliases=_alias_metadata(tool_name),  # R19: always include
-            corrected_payload=corrected,
-            corrected_payload_source=corrected_source,
-            alias_remediable=alias_remediable,
-            ca_next_action=ca_next,
+            **material,
+            accepted_aliases=_alias_metadata(tool_name),
+            **_task_meta,
         )
 
     # ── LIVE-GAP-01 (2026-08-10): dispatcher-side mode defaults for the
@@ -16194,7 +16645,26 @@ async def _dispatch_tool_call_request(request, transport: str = "api"):
         if tool_name in _MUTATING_TOOLS:
             missing_payload.setdefault("write_performed", False)
             missing_payload.setdefault("applied", False)
-        return web.json_response(missing_payload, status=400, headers=cors)
+        # D1 (C-7 + N-8): route through _error_response (the re-arm
+        # path) instead of answering the dict directly. The dict's
+        # material (built by build_correction_material inside
+        # _missing_required_error) rides as **extra; ok / error /
+        # error_name are envelope keys and are passed positionally /
+        # explicitly, never spread. accepted_aliases is neither a
+        # builder input nor output (section 8) and is passed explicitly,
+        # as at the S4 site. error_name is the dict's own (DUPLICATE_
+        # RETRY_BLOCKED when the guard fired, else
+        # MISSING_REQUIRED_FIELD) -- the live relabel is preserved.
+        # Status stays 400 in both cases (the live value).
+        _mre_extra = {k: v for k, v in missing_payload.items()
+                      if k not in ("ok", "error", "error_name")}
+        return _error_response(
+            tool_name, missing_payload["error"], 400, cors, body,
+            error_name=missing_payload["error_name"],
+            **_mre_extra,
+            accepted_aliases=_alias_metadata(tool_name),
+            **_task_meta,
+        )
 
     # Numeric coercion follows registry types, not handler annotations.
     for _pname, _spec in _registry_props.items():
@@ -17134,9 +17604,70 @@ accepted_fields=sorted(accepted_fields),
                             if _mrf_detail not in _msg_old:
                                 _result[_msg_key] = (
                                     f"{_msg_old} | {_mrf_detail}" if _msg_old else _mrf_detail)
-                _result.setdefault("retry_sequence", _retry_sequence(
-                    tool_name, err_name, body,
-                    corrected_payload=_result.get("corrected_payload")))
+                    # D1 (C-7): single-producer correction material.
+                    # Applied with setdefault AFTER the _mrf enrichment
+                    # above, so the handler's own values win -- in
+                    # particular the body-merged payload_example the
+                    # _mrf arm builds. The builder fills the keys this
+                    # arm never set (type / severity /
+                    # suggested_fallback / corrected_payload_source /
+                    # alias_remediable / accepted_fields); the F-C8 set
+                    # (props union aliases) arrives via the shared
+                    # derivation, and _missing_required_detail's own
+                    # accepted derivation was fixed to the same set.
+                    # ORDER for D6 (S-9, NOT landed): D6's boundary
+                    # setdefault MUST be applied AFTER this block --
+                    # a setdefault can only fill what is absent, so
+                    # builder-first guarantees D6 can never overwrite
+                    # builder material. The current boundary behavior
+                    # is otherwise preserved (setdefault everywhere).
+                    # The re-arm stamp stays with the success-exit
+                    # branch (L17572), which runs downstream of here.
+                    try:
+                        _bnd_corrected = _result.get("corrected_payload")
+                        _bnd_material = build_correction_material(
+                            tool_name, err_name, body,
+                            sorted(_registry_props_for_tool(tool_name)),
+                            [], _accepted_fields_for_tool(tool_name),
+                            _tb_example or {}, None,
+                            error_message=err_text, status=400,
+                            corrected_payload=(_bnd_corrected if isinstance(_bnd_corrected, dict) else None),
+                            corrected_payload_source=("tool_body_corrected_payload" if isinstance(_bnd_corrected, dict) else None),
+                        )
+                        for _bnd_key, _bnd_val in _bnd_material.items():
+                            _result.setdefault(_bnd_key, _bnd_val)
+                    except Exception:
+                        pass  # enrichment must never fail the call
+                # D6 (S-9): boundary accepted_fields setdefault (design v12 §2 S-9,
+                # novelty [W6R3 OB-1] [W6R2 NIT-1]). UNCONDITIONAL-AT-SITE: this site
+                # sits inside the unconditional `if _status == "error":` arm (L17229)
+                # with no enclosing name-gate -- the setdefault fires for EVERY error
+                # result reaching the arm, not SV-gated. PLACEMENT (D1 ordering
+                # constraint): applied AFTER the D1 builder block (L17312-17326) --
+                # a setdefault can only fill what is absent, so builder-first
+                # guarantees D6 can never overwrite builder material (for MRF
+                # errors the builder already set the same shared-derivation value).
+                # The design's named site (pre-D1 L17049-17050, live L17263-17264
+                # payload_example setdefault) is the same arm; the after-builder
+                # placement keeps the unconditional scope while satisfying D1.
+                _result.setdefault("accepted_fields", _accepted_fields_for_tool(tool_name))
+                # D6 (S-9): boundary SCHEMA_VIOLATION construction (primary).
+                # The construction runs on the ORIGINAL error name (carried in
+                # original_error_name, L17239) whenever the renamed error's
+                # original was SCHEMA_VIOLATION, so repeat failures (renamed to
+                # DUPLICATE_RETRY_BLOCKED at L17234-17241) are covered too.
+                # Setdefault keeps a handler-pre-set sequence (the construction
+                # applies ONLY when no sequence is pre-set).
+                _sv_effective = err_name
+                if _sv_effective == "DUPLICATE_RETRY_BLOCKED":
+                    _sv_effective = _result.get("original_error_name") or _sv_effective
+                if _sv_effective == "SCHEMA_VIOLATION":
+                    _result.setdefault("retry_sequence", _schema_violation_retry_steps(
+                        tool_name, err_text, body, _result.get("payload_example") or _tb_example or {}))
+                else:
+                    _result.setdefault("retry_sequence", _retry_sequence(
+                        tool_name, err_name, body,
+                        corrected_payload=_result.get("corrected_payload")))
                 _result.setdefault("ca_guidance", _ca_guidance(tool_name, err_text, body, err_name))
                 if tool_name == "read_file_range" and err_name == "INVALID_RANGE":
                     # Error-specific range example wins over the generic function example.
@@ -17435,10 +17966,22 @@ accepted_fields=sorted(accepted_fields),
             if _dup:
                 _mre["original_error_name"] = _mre.get("error_name")
                 _mre.update(_dup)
-            return web.json_response(
-                _mre,
-                status=400,
-                headers=cors,
+            # D1 (C-7 + N-8): third bypass site found in repro (same gate
+            # shape as the required gate; not named in the plan's
+            # two-bypass list) -- route through _error_response (the
+            # re-arm path) so the MRF return re-arms. Same envelope /
+            # extra split as the required gate: ok / error / error_name
+            # are envelope keys, never spread; accepted_aliases is
+            # neither a builder input nor output (section 8) and is
+            # passed explicitly, as at the S4 site.
+            _mre_extra = {k: v for k, v in _mre.items()
+                          if k not in ("ok", "error", "error_name")}
+            return _error_response(
+                tool_name, _mre["error"], 400, cors, body,
+                error_name=_mre["error_name"],
+                **_mre_extra,
+                accepted_aliases=_alias_metadata(tool_name),
+                **_task_meta,
             )
         return _error_response(
             tool_name,
@@ -17483,6 +18026,22 @@ accepted_fields=sorted(accepted_fields),
             _result["hint"] = _exc_hint
         _result["ca_next_action"] = _ca_next_action(_result["error_name"], tool_name)
         _result["retry_sequence"] = _retry_sequence(tool_name, _result["error_name"], body)
+        # D6 (S-9): caller-4 enrichment -- setdefault BOTH result-level keys at
+        # this construction (design v12 §2 S-9). The accepted set comes from S4's
+        # shared derivation (_accepted_fields_for_tool); payload_example from the
+        # registry schema via _payload_example_for_tool with the same
+        # _PAYLOAD_EXAMPLES fallback the boundary uses. Setdefault with
+        # FORWARD-COMPATIBLE precedence: this construction is fresh today, so no
+        # handler-set value exists to win; the setdefault states the precedence
+        # if one ever reaches it. Without this enrichment the path carries
+        # neither key and _r101_dispatch_result projects without adding them.
+        _result.setdefault("accepted_fields", _accepted_fields_for_tool(tool_name))
+        try:
+            _c4_example = _payload_example_for_tool(tool_name, _schema_for_tool(tool_name))
+        except Exception:
+            _c4_example = {}
+        _result.setdefault("payload_example", _c4_example or _PAYLOAD_EXAMPLES.get(
+            tool_name, {"project_path": "D:/path/to/project"}))
         _result["ca_guidance"] = _ca_guidance(tool_name, _error_msg, body, _result["error_name"])
         logger.error(f"Tool '{tool_name}' error: {exc}")
         _result = _r101_dispatch_result(_result)
