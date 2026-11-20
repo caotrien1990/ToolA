@@ -143,7 +143,7 @@ async def _structured_validate(suffix: str, content: str) -> list[dict[str, Any]
         try:
             with ct.tempfile.NamedTemporaryFile(
                     suffix=suffix or ".txt", delete=False, mode="w",
-                    encoding="utf-8") as tmp:
+                    encoding="utf-8", newline='') as tmp:
                 tmp.write(content)
                 tmp_path = tmp.name
             val = ct.json.loads(await ct.validate_file(tmp_path))

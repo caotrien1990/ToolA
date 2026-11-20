@@ -271,7 +271,7 @@ async def _pre_write_syntax_check(fp: Path, content: str) -> dict:
         out_path = ""
         try:
             with ct.tempfile.NamedTemporaryFile(
-            suffix=suffix_for_temp, delete=False, mode="w", encoding="utf-8",
+            suffix=suffix_for_temp, delete=False, mode="w", encoding="utf-8", newline='',
             ) as tmp:
                 tmp.write(source)
                 tmp_path = tmp.name
@@ -1754,7 +1754,7 @@ skip_symbol_check :bool =False )->str :
         val_result =None 
         if fp .suffix .lower ()in _VALIDATE_EXTS :
             with ct.tempfile .NamedTemporaryFile (
-            suffix =fp .suffix ,delete =False ,mode ='w',encoding ='utf-8',
+            suffix =fp .suffix ,delete =False ,mode ='w',encoding ='utf-8',newline ='',
             )as tmp :
                 tmp .write (built ["proposed"])
                 tmp_path =tmp .name 
