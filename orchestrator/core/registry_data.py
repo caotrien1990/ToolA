@@ -499,7 +499,15 @@ BASE_TOOL_SCHEMAS = [
 						'x-dual': True
 					},
 					'suggested_alternative_tool': {
-						'type': 'string',
+						'properties': {
+							'reason': {
+								'type': 'string'
+							},
+							'tool': {
+								'type': 'string'
+							}
+						},
+						'type': 'object',
 						'x-dual': True
 					},
 					'normalization_applied': {
@@ -541,7 +549,7 @@ BASE_TOOL_SCHEMAS = [
 				],
 				'x-audit': {
 					'status': 'audited',
-					'schema_sha256': 'da799fb941b901f2ef4386b42d059f80e489def1f36472cc97e8e5364dbd8d9f',
+					'schema_sha256': '2bbd9b0cbb31510a206101432e8087a9f24b01417cd31798fd2feaecef3ed059',
 					'depth_D': 3
 				}
 			},
@@ -1657,7 +1665,15 @@ BASE_TOOL_SCHEMAS = [
 						'x-dual': True
 					},
 					'suggested_alternative_tool': {
-						'type': 'string',
+						'properties': {
+							'reason': {
+								'type': 'string'
+							},
+							'tool': {
+								'type': 'string'
+							}
+						},
+						'type': 'object',
 						'x-dual': True
 					},
 					'normalization_applied': {
@@ -1720,7 +1736,7 @@ BASE_TOOL_SCHEMAS = [
 				],
 				'x-audit': {
 					'status': 'audited',
-					'schema_sha256': '2ea5c1e4a374e24bbd6d8e637b561c889d12cef1723e2038f34ba6dd0a2ee8b9',
+					'schema_sha256': 'f54a9ed408b41d8a9b60797d2c209f6833a4fc1eaeb53a7e969ff195621c8ce7',
 					'depth_D': 5
 				}
 			},
@@ -2254,7 +2270,15 @@ BASE_TOOL_SCHEMAS = [
 						'x-dual': True
 					},
 					'suggested_alternative_tool': {
-						'type': 'string',
+						'properties': {
+							'reason': {
+								'type': 'string'
+							},
+							'tool': {
+								'type': 'string'
+							}
+						},
+						'type': 'object',
 						'x-dual': True
 					},
 					'normalization_applied': {
@@ -2321,7 +2345,7 @@ BASE_TOOL_SCHEMAS = [
 				],
 				'x-audit': {
 					'status': 'audited',
-					'schema_sha256': 'c7aa5c8a38151e5fcb31e3ae3f6753bf2d574b21ed41ac4efaee83919b5d13e7',
+					'schema_sha256': 'b788937786168c4b91d062feec50d0fcd41e5b690d75afc9dcb2fbfbbf38ae9f',
 					'depth_D': 6
 				}
 			},
@@ -2743,7 +2767,15 @@ BASE_TOOL_SCHEMAS = [
 						'x-dual': True
 					},
 					'suggested_alternative_tool': {
-						'type': 'string',
+						'properties': {
+							'reason': {
+								'type': 'string'
+							},
+							'tool': {
+								'type': 'string'
+							}
+						},
+						'type': 'object',
 						'x-dual': True
 					},
 					'normalization_applied': {
@@ -2785,7 +2817,7 @@ BASE_TOOL_SCHEMAS = [
 				],
 				'x-audit': {
 					'status': 'audited',
-					'schema_sha256': '7f1a267c706cf5b1ddd670ef0d98122f38f22f08a8f07755b9450de9dd6001ea',
+					'schema_sha256': '516edc81bbf372300bb46ba113c8a5f8cb657d19bdb4d0fa1e5eba7a494fbd62',
 					'depth_D': 3
 				}
 			},
@@ -4382,7 +4414,17 @@ EXTRA_TOOL_SCHEMAS = [
                         'type': 'array'
                     },
                     'command_received': {
-                        'type': 'string'
+                        'anyOf': [
+                            {
+                                'type': 'string'
+                            },
+                            {
+                                'items': {
+                                    'type': 'string'
+                                },
+                                'type': 'array'
+                            }
+                        ]
                     },
                     'cwd': {
                         'type': 'string'
@@ -4404,7 +4446,14 @@ EXTRA_TOOL_SCHEMAS = [
                         ]
                     },
                     'expected_port': {
-                        'type': 'null'
+                        'anyOf': [
+                            {
+                                'type': 'integer'
+                            },
+                            {
+                                'type': 'null'
+                            }
+                        ]
                     },
                     'expected_process_name': {
                         'type': 'string'
@@ -4413,7 +4462,14 @@ EXTRA_TOOL_SCHEMAS = [
                         'type': 'boolean'
                     },
                     'launch_verified': {
-                        'type': 'null'
+                        'anyOf': [
+                            {
+                                'type': 'boolean'
+                            },
+                            {
+                                'type': 'null'
+                            }
+                        ]
                     },
                     'ok': {
                         'type': 'boolean',
@@ -4423,10 +4479,24 @@ EXTRA_TOOL_SCHEMAS = [
                         'type': 'string'
                     },
                     'port_probe': {
-                        'type': 'null'
+                        'anyOf': [
+                            {
+                                'type': 'object'
+                            },
+                            {
+                                'type': 'null'
+                            }
+                        ]
                     },
                     'process_probe': {
-                        'type': 'null'
+                        'anyOf': [
+                            {
+                                'type': 'object'
+                            },
+                            {
+                                'type': 'null'
+                            }
+                        ]
                     },
                     'project_path': {
                         'type': 'string'
@@ -4475,7 +4545,7 @@ EXTRA_TOOL_SCHEMAS = [
                 'type': 'object',
                 'x-audit': {
                     'status': 'audited',
-                    'schema_sha256': '84b01f98ee0bdf75b64431e6c1da98e43d76109fd8871a957501dceb93112218',
+                    'schema_sha256': '1c16296de6e3a9041be73c8f9ff09fb1dec2b9236d4535d8705dedd1b5269e7a',
                     'depth_D': 2
                 }
             },
@@ -4515,7 +4585,7 @@ EXTRA_TOOL_SCHEMAS = [
 
 EXTRA_TOOL_SCHEMAS_R43 = [
 
-		{"type": "function", "function": {"name": "open_session", "description": "Open or resume the active session for a project and optional agent identity. Resume preserves title and mode by default; call rename_session to apply a different title. Opt-in force_new_session closes then creates atomically and refuses pending writes, drafts or audits; apply_requested_title renames in place without changing mode. Flags are mutually exclusive and require agent_id. Distinct non-empty agent_id values may hold concurrent active sessions on one project. R22 verbosity ∈ {full|terse|ref}; drift auto-forces full.", "parameters": {"type": "object", "properties": {"session_title": {"example": 'doc backfill', "type": "string", "default": "", "description": "Session title (if empty -> 'Untitled Session {time}')"}, "project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "default": ".", "description": "Project root (default '.')"}, "mode": {"example": 'T1', "type": "string", "enum": ["T1", "T2"], "default": "T1", "description": "Workflow TIER, never an execution verb. ONLY T1 or T2 are valid values. Aliases are accepted and folded: T1_FIX / T1_EXISTING_APP -> T1 (work inside an app that already exists), T2_BUILD / T2_NEW_APP -> T2 (build a new one). 'execute', 'write' and 'fix' are INVALID_MODE. Resume ignores mode; change an open session via set_workflow_mode."}, "verbosity": {"example": 'full', "type": "string", "enum": ["full", "terse", "ref"], "default": "full", "description": "R22: terse compresses metadata; drift auto-forces full."}, "agent_id": {"example": 'muse1', "type": "string", "default": "", "description": "Stable agent identity used to isolate concurrent active sessions"}, "force_new_session": {"example": False, "type": "boolean", "default": False, "description": "Explicitly close the active session before creating a new one; returns closed_session_id. Refuses pending work. Cannot combine with apply_requested_title."}, "apply_requested_title": {"example": False, "type": "boolean", "default": False, "description": "Explicitly apply a non-empty requested title on resume. Preserves session_id, mode and events; returns old_title, new_title and renamed."}}}, "returns": {'properties': {'agent_id': {'type': 'string'}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'ca_next_tool': {'type': 'string', 'x-dual': True}, 'cslt_policy': {'properties': {'a_first': {'type': 'boolean'}, 'agent_transport_policy': {'type': 'string'}, 'host_gate': {'properties': {'agent_id': {'type': 'string'}, 'allowed': {'type': 'boolean'}, 'decision': {'type': 'string'}, 'is_hermes': {'type': 'boolean'}, 'native_policy': {'type': 'string'}, 'reason': {'type': 'string'}, 'scope': {'type': 'string'}}, 'required': ['agent_id', 'is_hermes', 'scope', 'decision', 'allowed', 'reason', 'native_policy'], 'type': 'object'}, 'matrix': {'properties': {'path': {'type': 'string'}, 'task_class_count': {'type': 'integer'}}, 'required': ['path', 'task_class_count'], 'type': 'object'}, 'metrics_contract': {'properties': {'bypass_event': {'type': 'string'}, 'bypass_rate_formula': {'type': 'string'}, 'group_by': {'items': {'type': 'string'}, 'type': 'array'}, 'required_counters': {'items': {'type': 'string'}, 'type': 'array'}, 'zero_denominator': {'type': 'string'}}, 'required': ['bypass_event', 'bypass_rate_formula', 'required_counters', 'zero_denominator', 'group_by'], 'type': 'object'}, 'north_star': {'properties': {'acronym': {'type': 'string'}, 'note': {'type': 'string'}, 'order': {'items': {'type': 'string'}, 'type': 'array'}, 'text': {'type': 'string'}}, 'required': ['acronym', 'order', 'text', 'note'], 'type': 'object'}, 'rules': {'items': {'type': 'string'}, 'type': 'array'}}, 'required': ['north_star', 'agent_transport_policy', 'matrix', 'a_first', 'host_gate', 'metrics_contract', 'rules'], 'type': 'object'}, 'effective_mode': {'type': 'string'}, 'effective_project_path': {'type': 'string'}, 'effective_session_title': {'type': 'string'}, 'matrix_audit': {'properties': {'alias_drift_count': {'type': 'integer'}, 'alias_drift_severity': {'type': 'string'}, 'audit_scope': {'type': 'string'}, 'code_tools': {'type': 'integer'}, 'contract_drift_count': {'type': 'integer'}, 'doc_description_present_count': {'type': 'integer'}, 'doc_description_weak_count': {'type': 'integer'}, 'doc_fields_absent_by_design_count': {'type': 'integer'}, 'doc_param_examples_registry_count': {'type': 'integer'}, 'doc_param_examples_served_count': {'type': 'integer'}, 'doc_params_described_count': {'type': 'integer'}, 'doc_params_total': {'type': 'integer'}, 'doc_params_undescribed_count': {'type': 'integer'}, 'drift_count': {'type': 'integer'}, 'error_phase_map_entries': {'type': 'integer'}, 'error_system_names_phase_mapped_count': {'type': 'integer'}, 'error_system_names_total': {'type': 'integer'}, 'error_system_names_unmapped_count': {'type': 'integer'}, 'inventory_active_count': {'type': 'integer'}, 'inventory_extra_count': {'type': 'integer'}, 'inventory_extra_doc_only_count': {'type': 'integer'}, 'inventory_extra_endpoints_count': {'type': 'integer'}, 'inventory_extra_internal_count': {'type': 'integer'}, 'inventory_extra_planned_count': {'type': 'integer'}, 'inventory_extra_unknown_count': {'type': 'integer'}, 'inventory_retired_count': {'type': 'integer'}, 'inventory_tools': {'type': 'integer'}, 'ok_count': {'type': 'integer'}, 'progressive_gap_count': {'type': 'integer'}, 'purpose_covered_count': {'type': 'integer'}, 'purpose_eligible_count': {'type': 'integer'}, 'purpose_eligible_gap_count': {'type': 'integer'}, 'schema_tools': {'type': 'integer'}, 'skill_folders': {'type': 'integer'}, 'skill_tools': {'type': 'integer'}}, 'required': [], 'type': 'object'}, 'matrix_drift_present': {'type': 'boolean'}, 'mode_applied': {'type': 'boolean'}, 'mode_ignored_on_resume': {'type': 'boolean'}, 'mode_matches_persisted': {'type': 'boolean'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'path_resolution_note': {'type': 'string'}, 'progressive_gap_count': {'type': 'integer'}, 'progressive_gaps_hint': {'type': 'string'}, 'project_name': {'type': 'string'}, 'project_path': {'type': 'string'}, 'project_path_confirmed': {'type': 'boolean'}, 'project_switch_context': {'properties': {'current_project_active_workflow_hint': {'type': 'string'}, 'current_project_recent_files_5': {'items': {'type': 'string'}, 'type': 'array'}, 'current_project_recent_queries_5': {'items': {'properties': {'query': {'type': 'string'}, 'tool': {'type': 'string'}}, 'required': ['tool', 'query'], 'type': 'object'}, 'type': 'array'}, 'recent_projects_today': {'items': {'properties': {'ended_at': {'type': 'null'}, 'is_current': {'type': 'boolean'}, 'last_session_id': {'type': 'string'}, 'project_path': {'type': 'string'}, 'started_at': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['project_path', 'last_session_id', 'started_at', 'ended_at', 'status', 'is_current'], 'type': 'object'}, 'type': 'array'}}, 'required': ['recent_projects_today', 'current_project_recent_files_5', 'current_project_recent_queries_5', 'current_project_active_workflow_hint'], 'type': 'object'}, 'relative_base_hint': {'type': 'string'}, 'rename_session_payload': {'properties': {'agent_id': {'type': 'string'}, 'new_title': {'type': 'string'}, 'project_path': {'type': 'string'}}, 'required': ['project_path', 'new_title', 'agent_id'], 'type': 'object'}, 'requested_mode': {'type': 'string'}, 'requested_project_path': {'type': 'string'}, 'requested_session_title': {'type': 'string'}, 'resolved_from': {'type': 'string'}, 'resume_policy': {'type': 'string'}, 'resumed': {'type': 'boolean'}, 'root_exists': {'type': 'boolean'}, 'session_id': {'type': 'string'}, 'session_title': {'type': 'string'}, 'session_title_mismatch': {'type': 'boolean'}, 'started_at': {'type': 'string'}, 'transport_policy': {'properties': {'ca_next_action': {'type': 'string'}, 'platform': {'type': 'string'}, 'posix': {'properties': {'powershell_inline': {'type': 'string'}, 'preferred_tool': {'type': 'string'}, 'preferred_transport': {'type': 'string'}, 'shell_mode': {'type': 'string'}}, 'required': ['powershell_inline', 'preferred_transport', 'preferred_tool', 'shell_mode'], 'type': 'object'}, 'schema_version': {'type': 'string'}, 'windows': {'properties': {'enforcement': {'properties': {'error_names': {'items': {'type': 'string'}, 'type': 'array'}, 'tool': {'type': 'string'}, 'triggers_common': {'items': {'type': 'string'}, 'type': 'array'}, 'triggers_ps_only': {'items': {'type': 'string'}, 'type': 'array'}}, 'required': ['tool', 'error_names', 'triggers_common', 'triggers_ps_only'], 'type': 'object'}, 'node_inline': {'type': 'string'}, 'one_shot_recipe_node': {'properties': {'args': {'properties': {'project_path': {'type': 'string'}, 'runtime': {'type': 'string'}, 'script_content': {'type': 'string'}, 'script_label': {'type': 'string'}}, 'required': ['project_path', 'runtime', 'script_content', 'script_label'], 'type': 'object'}, 'behaviour': {'type': 'string'}, 'tool': {'type': 'string'}}, 'required': ['tool', 'args', 'behaviour'], 'type': 'object'}, 'one_shot_recipe_powershell': {'properties': {'args': {'properties': {'project_path': {'type': 'string'}, 'runtime': {'type': 'string'}, 'script_content': {'type': 'string'}, 'script_label': {'type': 'string'}}, 'required': ['project_path', 'runtime', 'script_content', 'script_label'], 'type': 'object'}, 'behaviour': {'type': 'string'}, 'tool': {'type': 'string'}}, 'required': ['tool', 'args', 'behaviour'], 'type': 'object'}, 'path_as_argv_warning': {'type': 'string'}, 'powershell_inline': {'type': 'string'}, 'preferred_tool': {'type': 'string'}, 'preferred_transport': {'type': 'string'}, 'rationale': {'type': 'string'}}, 'required': ['powershell_inline', 'node_inline', 'preferred_transport', 'preferred_tool', 'enforcement', 'rationale', 'path_as_argv_warning', 'one_shot_recipe_powershell', 'one_shot_recipe_node'], 'type': 'object'}}, 'required': ['platform', 'windows', 'posix', 'ca_next_action', 'schema_version'], 'type': 'object'}}, 'required': ['ok'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': '5635a514340cb63b6c84090a1026dd9d1271f1f10af6dfb8d3577921894db2bb', 'depth_D': 5}}}},
+		{"type": "function", "function": {"name": "open_session", "description": "Open or resume the active session for a project and optional agent identity. Resume preserves title and mode by default; call rename_session to apply a different title. Opt-in force_new_session closes then creates atomically and refuses pending writes, drafts or audits; apply_requested_title renames in place without changing mode. Flags are mutually exclusive and require agent_id. Distinct non-empty agent_id values may hold concurrent active sessions on one project. R22 verbosity ∈ {full|terse|ref}; drift auto-forces full.", "parameters": {"type": "object", "properties": {"session_title": {"example": 'doc backfill', "type": "string", "default": "", "description": "Session title (if empty -> 'Untitled Session {time}')"}, "project_path": {"example": 'D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator', "type": "string", "default": ".", "description": "Project root (default '.')"}, "mode": {"example": 'T1', "type": "string", "enum": ["T1", "T2"], "default": "T1", "description": "Workflow TIER, never an execution verb. ONLY T1 or T2 are valid values. Aliases are accepted and folded: T1_FIX / T1_EXISTING_APP -> T1 (work inside an app that already exists), T2_BUILD / T2_NEW_APP -> T2 (build a new one). 'execute', 'write' and 'fix' are INVALID_MODE. Resume ignores mode; change an open session via set_workflow_mode."}, "verbosity": {"example": 'full', "type": "string", "enum": ["full", "terse", "ref"], "default": "full", "description": "R22: terse compresses metadata; drift auto-forces full."}, "agent_id": {"example": 'muse1', "type": "string", "default": "", "description": "Stable agent identity used to isolate concurrent active sessions"}, "force_new_session": {"example": False, "type": "boolean", "default": False, "description": "Explicitly close the active session before creating a new one; returns closed_session_id. Refuses pending work. Cannot combine with apply_requested_title."}, "apply_requested_title": {"example": False, "type": "boolean", "default": False, "description": "Explicitly apply a non-empty requested title on resume. Preserves session_id, mode and events; returns old_title, new_title and renamed."}}}, "returns": {'properties': {'agent_id': {'type': 'string'}, 'ca_next_action': {'type': 'string', 'x-dual': True}, 'ca_next_tool': {'type': 'string', 'x-dual': True}, 'cslt_policy': {'properties': {'a_first': {'type': 'boolean'}, 'agent_transport_policy': {'type': 'string'}, 'host_gate': {'properties': {'agent_id': {'type': 'string'}, 'allowed': {'type': 'boolean'}, 'decision': {'type': 'string'}, 'is_hermes': {'type': 'boolean'}, 'native_policy': {'type': 'string'}, 'reason': {'type': 'string'}, 'scope': {'type': 'string'}}, 'required': ['agent_id', 'is_hermes', 'scope', 'decision', 'allowed', 'reason', 'native_policy'], 'type': 'object'}, 'matrix': {'properties': {'path': {'type': 'string'}, 'task_class_count': {'type': 'integer'}}, 'required': ['path', 'task_class_count'], 'type': 'object'}, 'metrics_contract': {'properties': {'bypass_event': {'type': 'string'}, 'bypass_rate_formula': {'type': 'string'}, 'group_by': {'items': {'type': 'string'}, 'type': 'array'}, 'required_counters': {'items': {'type': 'string'}, 'type': 'array'}, 'zero_denominator': {'type': 'string'}}, 'required': ['bypass_event', 'bypass_rate_formula', 'required_counters', 'zero_denominator', 'group_by'], 'type': 'object'}, 'north_star': {'properties': {'acronym': {'type': 'string'}, 'note': {'type': 'string'}, 'order': {'items': {'type': 'string'}, 'type': 'array'}, 'text': {'type': 'string'}}, 'required': ['acronym', 'order', 'text', 'note'], 'type': 'object'}, 'rules': {'items': {'type': 'string'}, 'type': 'array'}}, 'required': ['north_star', 'agent_transport_policy', 'matrix', 'a_first', 'host_gate', 'metrics_contract', 'rules'], 'type': 'object'}, 'effective_mode': {'type': 'string'}, 'effective_project_path': {'type': 'string'}, 'effective_session_title': {'type': 'string'}, 'matrix_audit': {'properties': {'alias_drift_count': {'type': 'integer'}, 'alias_drift_severity': {'type': 'string'}, 'audit_scope': {'type': 'string'}, 'code_tools': {'type': 'integer'}, 'contract_drift_count': {'type': 'integer'}, 'doc_description_present_count': {'type': 'integer'}, 'doc_description_weak_count': {'type': 'integer'}, 'doc_fields_absent_by_design_count': {'type': 'integer'}, 'doc_param_examples_registry_count': {'type': 'integer'}, 'doc_param_examples_served_count': {'type': 'integer'}, 'doc_params_described_count': {'type': 'integer'}, 'doc_params_total': {'type': 'integer'}, 'doc_params_undescribed_count': {'type': 'integer'}, 'drift_count': {'type': 'integer'}, 'error_phase_map_entries': {'type': 'integer'}, 'error_system_names_phase_mapped_count': {'type': 'integer'}, 'error_system_names_total': {'type': 'integer'}, 'error_system_names_unmapped_count': {'type': 'integer'}, 'inventory_active_count': {'type': 'integer'}, 'inventory_extra_count': {'type': 'integer'}, 'inventory_extra_doc_only_count': {'type': 'integer'}, 'inventory_extra_endpoints_count': {'type': 'integer'}, 'inventory_extra_internal_count': {'type': 'integer'}, 'inventory_extra_planned_count': {'type': 'integer'}, 'inventory_extra_unknown_count': {'type': 'integer'}, 'inventory_retired_count': {'type': 'integer'}, 'inventory_tools': {'type': 'integer'}, 'ok_count': {'type': 'integer'}, 'progressive_gap_count': {'type': 'integer'}, 'purpose_covered_count': {'type': 'integer'}, 'purpose_eligible_count': {'type': 'integer'}, 'purpose_eligible_gap_count': {'type': 'integer'}, 'schema_tools': {'type': 'integer'}, 'skill_folders': {'type': 'integer'}, 'skill_tools': {'type': 'integer'}}, 'required': [], 'type': 'object'}, 'matrix_drift_present': {'type': 'boolean'}, 'mode_applied': {'type': 'boolean'}, 'mode_ignored_on_resume': {'type': 'boolean'}, 'mode_matches_persisted': {'type': 'boolean'}, 'ok': {'type': 'boolean', 'x-dual': True}, 'path_resolution_note': {'type': 'string'}, 'progressive_gap_count': {'type': 'integer'}, 'progressive_gaps_hint': {'type': 'string'}, 'project_name': {'type': 'string'}, 'project_path': {'type': 'string'}, 'project_path_confirmed': {'type': 'boolean'}, 'project_switch_context': {'properties': {'current_project_active_workflow_hint': {'type': 'string'}, 'current_project_recent_files_5': {'items': {'type': 'string'}, 'type': 'array'}, 'current_project_recent_queries_5': {'items': {'properties': {'query': {'type': 'string'}, 'tool': {'type': 'string'}}, 'required': ['tool', 'query'], 'type': 'object'}, 'type': 'array'}, 'recent_projects_today': {'items': {'properties': {'ended_at': {'anyOf': [{'type': 'string'}, {'type': 'null'}]}, 'is_current': {'type': 'boolean'}, 'last_session_id': {'type': 'string'}, 'project_path': {'type': 'string'}, 'started_at': {'type': 'string'}, 'status': {'type': 'string'}}, 'required': ['project_path', 'last_session_id', 'started_at', 'ended_at', 'status', 'is_current'], 'type': 'object'}, 'type': 'array'}}, 'required': ['recent_projects_today', 'current_project_recent_files_5', 'current_project_recent_queries_5', 'current_project_active_workflow_hint'], 'type': 'object'}, 'relative_base_hint': {'type': 'string'}, 'rename_session_payload': {'properties': {'agent_id': {'type': 'string'}, 'new_title': {'type': 'string'}, 'project_path': {'type': 'string'}}, 'required': ['project_path', 'new_title', 'agent_id'], 'type': 'object'}, 'requested_mode': {'type': 'string'}, 'requested_project_path': {'type': 'string'}, 'requested_session_title': {'type': 'string'}, 'resolved_from': {'type': 'string'}, 'resume_policy': {'type': 'string'}, 'resumed': {'type': 'boolean'}, 'root_exists': {'type': 'boolean'}, 'session_id': {'type': 'string'}, 'session_title': {'type': 'string'}, 'session_title_mismatch': {'type': 'boolean'}, 'started_at': {'type': 'string'}, 'transport_policy': {'properties': {'ca_next_action': {'type': 'string'}, 'platform': {'type': 'string'}, 'posix': {'properties': {'powershell_inline': {'type': 'string'}, 'preferred_tool': {'type': 'string'}, 'preferred_transport': {'type': 'string'}, 'shell_mode': {'type': 'string'}}, 'required': ['powershell_inline', 'preferred_transport', 'preferred_tool', 'shell_mode'], 'type': 'object'}, 'schema_version': {'type': 'string'}, 'windows': {'properties': {'enforcement': {'properties': {'error_names': {'items': {'type': 'string'}, 'type': 'array'}, 'tool': {'type': 'string'}, 'triggers_common': {'items': {'type': 'string'}, 'type': 'array'}, 'triggers_ps_only': {'items': {'type': 'string'}, 'type': 'array'}}, 'required': ['tool', 'error_names', 'triggers_common', 'triggers_ps_only'], 'type': 'object'}, 'node_inline': {'type': 'string'}, 'one_shot_recipe_node': {'properties': {'args': {'properties': {'project_path': {'type': 'string'}, 'runtime': {'type': 'string'}, 'script_content': {'type': 'string'}, 'script_label': {'type': 'string'}}, 'required': ['project_path', 'runtime', 'script_content', 'script_label'], 'type': 'object'}, 'behaviour': {'type': 'string'}, 'tool': {'type': 'string'}}, 'required': ['tool', 'args', 'behaviour'], 'type': 'object'}, 'one_shot_recipe_powershell': {'properties': {'args': {'properties': {'project_path': {'type': 'string'}, 'runtime': {'type': 'string'}, 'script_content': {'type': 'string'}, 'script_label': {'type': 'string'}}, 'required': ['project_path', 'runtime', 'script_content', 'script_label'], 'type': 'object'}, 'behaviour': {'type': 'string'}, 'tool': {'type': 'string'}}, 'required': ['tool', 'args', 'behaviour'], 'type': 'object'}, 'path_as_argv_warning': {'type': 'string'}, 'powershell_inline': {'type': 'string'}, 'preferred_tool': {'type': 'string'}, 'preferred_transport': {'type': 'string'}, 'rationale': {'type': 'string'}}, 'required': ['powershell_inline', 'node_inline', 'preferred_transport', 'preferred_tool', 'enforcement', 'rationale', 'path_as_argv_warning', 'one_shot_recipe_powershell', 'one_shot_recipe_node'], 'type': 'object'}}, 'required': ['platform', 'windows', 'posix', 'ca_next_action', 'schema_version'], 'type': 'object'}}, 'required': ['ok'], 'type': 'object', 'x-audit': {'status': 'audited', 'schema_sha256': 'd4cceedd7d2254b3b54c995aa5bde31002c3e9b5c36b97c3a8851882bb961081', 'depth_D': 5}}}},
 
 	{"type": "function", "function": {"name": "close_session", "description": "Close the active session after log_native(native=[...]) has been called. V15 R64-D: now accepts either project_path (primary session lookup) OR session_id (direct lookup for sub-sessions like [Ac]/[Ad] opened mid-workflow). At least one of the two MUST be provided.", "parameters": {"type": "object", "properties": {"project_path": {"type": "string", "default": "", "description": "Project root of the session to close. Use for the primary [Ab] session."}, "session_id": {"type": "string", "default": "", "description": "V15 R64-D: direct session_id lookup. Use when you opened multiple sessions (e.g. [Ac], [Ad] sub-sessions) and need to close a specific one without re-deriving its project_path. Pulled from open_session's response."}, "agent_id": {"type": "string", "default": "", "description": "Stable agent identity; scopes active-session selection when non-empty."}}}}},
 
@@ -5936,7 +6006,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["page_id"]),
 
-    ('click_selector', 'V15 R16.9 T4: alias of click() that snapshots target element state BEFORE + AFTER click — returns enabled/disabled, visible, bg/color, className, value_length deltas in 1 call. Replaces CA pattern of (dom_state_diff → click → dom_state_diff). Pass before_after_state=false for pure click.', {
+    ('click_selector', 'V15 R16.9 T4: alias of click() that snapshots target element state BEFORE + AFTER click — returns enabled/disabled, visible, bg/color, className, value_length deltas in 1 call. Replaces CA pattern of (dom_state_diff → click → dom_state_diff). Pass before_after_state=false for pure click. Routed on both transports (HTTP + MCP) after the T4-11 fix.', {
 
             "page_id": {"description": "Browser page id returned by open_browser_page; the snapshotted click happens on this page.", "type": "string"},
 
@@ -6830,7 +6900,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["page_id", "button_selector", "observed_selector"]),
 
-    ('assert_console_no_error', 'T4 test: assert console.error count == 0.', {
+    ('assert_console_no_error', 'T4 test: assert console.error count == 0. Routed on both transports (HTTP + MCP) after the T4-12 fix.', {
 
             "page_id": {"description": "Browser page id whose console.error count is asserted to be zero.", "type": "string"},
 

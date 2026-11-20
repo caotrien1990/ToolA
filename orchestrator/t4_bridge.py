@@ -704,7 +704,8 @@ class T4Bridge:
             if entry is None:
                 if (page_id in (_live_pages_dict() or {})
                         or tool_name in {"cleanup_test_session", "close_browser_page", "open_browser_page"}):
-                    return _error_payload("PAGE_NOT_FOUND", page_id=page_id)
+                    return _error_payload("PAGE_NOT_FOUND", page_id=page_id,
+                                          ca_next_action="reopen_page_or_reattach")
                 continue
             if entry.reaping:
                 return _error_payload("PAGE_NOT_FOUND", page_id=page_id)

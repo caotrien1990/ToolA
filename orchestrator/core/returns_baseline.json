@@ -4,7 +4,7 @@
     "depth_D": 3
   },
   "architecture_context_pack": {
-    "sha256": "c7aa5c8a38151e5fcb31e3ae3f6753bf2d574b21ed41ac4efaee83919b5d13e7",
+    "sha256": "b788937786168c4b91d062feec50d0fcd41e5b690d75afc9dcb2fbfbbf38ae9f",
     "depth_D": 6
   },
   "audit_tool_matrix": {
@@ -32,7 +32,7 @@
     "depth_D": 5
   },
   "convene_council": {
-    "sha256": "2e8855239640b71433a105caace5eeb40e1a474025ea29313a2b7f4151e27974",
+    "sha256": "4cc0bcfe917c96b182ccffcf02fd182af89e0e7364385bb5eb63d4f2fa1cde3d",
     "depth_D": 3
   },
   "copy_file": {
@@ -48,7 +48,7 @@
     "depth_D": 1
   },
   "find_symbol": {
-    "sha256": "da799fb941b901f2ef4386b42d059f80e489def1f36472cc97e8e5364dbd8d9f",
+    "sha256": "2bbd9b0cbb31510a206101432e8087a9f24b01417cd31798fd2feaecef3ed059",
     "depth_D": 3
   },
   "get_rule_core_text": {
@@ -64,11 +64,11 @@
     "depth_D": 4
   },
   "ocr_map": {
-    "sha256": "636a75c7fe35f54f32298999d71cc283ae7ba4e3bd684de60a1208b0d6da426f",
+    "sha256": "5fb467b8631f80371ca1d393e708fb0c2b9950b68316d55cf38f0a9e55827f36",
     "depth_D": 3
   },
   "open_session": {
-    "sha256": "5635a514340cb63b6c84090a1026dd9d1271f1f10af6dfb8d3577921894db2bb",
+    "sha256": "d4cceedd7d2254b3b54c995aa5bde31002c3e9b5c36b97c3a8851882bb961081",
     "depth_D": 5
   },
   "query_index": {
@@ -76,7 +76,7 @@
     "depth_D": 4
   },
   "read_context_batch": {
-    "sha256": "2ea5c1e4a374e24bbd6d8e637b561c889d12cef1723e2038f34ba6dd0a2ee8b9",
+    "sha256": "f54a9ed408b41d8a9b60797d2c209f6833a4fc1eaeb53a7e969ff195621c8ce7",
     "depth_D": 5
   },
   "read_file_range": {
@@ -88,7 +88,7 @@
     "depth_D": 5
   },
   "run_project_command": {
-    "sha256": "84b01f98ee0bdf75b64431e6c1da98e43d76109fd8871a957501dceb93112218",
+    "sha256": "1c16296de6e3a9041be73c8f9ff09fb1dec2b9236d4535d8705dedd1b5269e7a",
     "depth_D": 2
   },
   "run_project_test_script": {
@@ -100,7 +100,7 @@
     "depth_D": 2
   },
   "search_code": {
-    "sha256": "7f1a267c706cf5b1ddd670ef0d98122f38f22f08a8f07755b9450de9dd6001ea",
+    "sha256": "516edc81bbf372300bb46ba113c8a5f8cb657d19bdb4d0fa1e5eba7a494fbd62",
     "depth_D": 3
   },
   "tool_decision_hint": {
@@ -124,7 +124,7 @@
     "depth_D": 4
   },
   "write_transaction": {
-    "sha256": "89b08b7ad7a2bce15fbe8dc672a9828bbd12b518a7bcc1d5551503d51b56af46",
+    "sha256": "bf27da34a6912dec4a2cb9cc59575409658a651f0b120ce3b0d47194453da844",
     "depth_D": 5
   },
   "git_status": {

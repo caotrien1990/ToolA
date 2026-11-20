@@ -6230,6 +6230,7 @@ def _error_response(tool_name: str, error: str, status: int, headers: dict,
         payload["payload_example"] = (discovery.get("payload_example")
                                       or {"discovery_url": _discovery_url})
         payload["ca_guidance"] = {
+            **guidance,
             "error_name": error_name,
             "ca_next_action": discovery.get("ca_next_action") or "filter_tool_names",
             "call_pattern": discovery.get("http_equivalent") or ("GET " + _discovery_url),

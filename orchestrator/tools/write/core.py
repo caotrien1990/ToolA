@@ -2649,7 +2649,7 @@ skip_verify :bool =False )->str :
 
     # ─── Tool 8: delete_file ───────────────────────────────────────────────────────
 
-async def delete_file (file_path :str ,project_path :str ="",_ephemeral :bool =False )->str :
+async def delete_file (file_path :str ,project_path :str ="",ephemeral :bool =False )->str :
     import code_tools as ct
 # R83: ephemeral=true is a CLEANUP mode for temp/derived files (C:/temp, %TEMP%,
 # *.bak_*, .orchestrator_cache). When set AND the path is under such a root, the

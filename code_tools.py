@@ -4409,6 +4409,7 @@ async def backup_status(project_path: str) -> str:
             f"Invalid project_path for 'backup_status': not a directory: {project_path}",
             error_name="INVALID_PROJECT_PATH",
             ca_next_action="pass_absolute_project_root",
+            status="invalid_path",
         )
     manifest_path = _project_cache_dir(str(root)) / "BACKUP_MANIFEST.json"
     if not manifest_path.exists():
@@ -20237,9 +20238,7 @@ try:
                         }
                     },
                     'required': [
-                        'selection_rule',
-                        'clauC',
-                        'codoC'
+                        'selection_rule'
                     ],
                     'type': 'object'
                 },
@@ -20285,7 +20284,7 @@ try:
             'type': 'object',
             'x-audit': {
                 'status': 'audited',
-                'schema_sha256': '2e8855239640b71433a105caace5eeb40e1a474025ea29313a2b7f4151e27974',
+                'schema_sha256': '4cc0bcfe917c96b182ccffcf02fd182af89e0e7364385bb5eb63d4f2fa1cde3d',
                 'depth_D': 3
             }
         },
@@ -21151,6 +21150,8 @@ try:
                 },
                 'apply_results': {
                     'items': {
+                        'anyOf': [
+                        {
                         'properties': {
                             'action_required': {
                                 'type': 'string'
@@ -21357,6 +21358,19 @@ try:
                             'ca_hint_commit'
                         ],
                         'type': 'object'
+                        },
+                        {
+                            'properties': {
+                                'ok': {
+                                    'type': 'boolean'
+                                }
+                            },
+                            'required': [
+                                'ok'
+                            ],
+                            'type': 'object'
+                        }
+                        ]
                     },
                     'type': 'array'
                 },
@@ -22056,7 +22070,7 @@ try:
             'type': 'object',
             'x-audit': {
                 'status': 'audited',
-                'schema_sha256': '89b08b7ad7a2bce15fbe8dc672a9828bbd12b518a7bcc1d5551503d51b56af46',
+                'schema_sha256': 'bf27da34a6912dec4a2cb9cc59575409658a651f0b120ce3b0d47194453da844',
                 'depth_D': 5
             }
         },
@@ -23435,10 +23449,6 @@ try:
                                     'type': 'integer'
                                 }
                             },
-                            'required': [
-                                'timeout',
-                                'note'
-                            ],
                             'type': 'object'
                         },
                         'type': 'array'
@@ -23515,7 +23525,7 @@ try:
                 'type': 'object',
                 'x-audit': {
                     'status': 'audited',
-                    'schema_sha256': '636a75c7fe35f54f32298999d71cc283ae7ba4e3bd684de60a1208b0d6da426f',
+                    'schema_sha256': '5fb467b8631f80371ca1d393e708fb0c2b9950b68316d55cf38f0a9e55827f36',
                     'depth_D': 3
                 }
             },

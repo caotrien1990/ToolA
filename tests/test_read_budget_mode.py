@@ -305,7 +305,7 @@ def test_file_summary_branch_is_not_budget_mode(tmp_path):
 
 def test_sot_case_code_tools_at_cap():
     # Section 3.1 SOT case, in-process on the real file at the project
-    # root (23,731 lines at this pin): the end_line pins the selection
+    # root (23,741 lines at this pin): the end_line pins the selection
     # at 1-3000 exactly as section 3.1 states it; the CAP fit then
     # delivers shown 1-905 with estimated_tokens 11,987.
     # Re-pinned 2026-11-09 (CLOSING_PACKAGE_20261109 F-1/F-2): the Stage-2
@@ -317,6 +317,10 @@ def test_sot_case_code_tools_at_cap():
     # orchestrator.lifecycle.console_warp import into isort order
     # (+4/-1 = net +3 -> 23,731). All four values re-measured in-process
     # with this read after that edit.
+    # Re-pinned 2026-11-20 (P16 phase d): the 26-fix batch grew the file
+    # 23,731 -> 23,741 lines (net +10, E15/E16/E17/E18+E19 in code_tools.py).
+    # Lines 1-3000 untouched, so shown 1-905 and estimated_tokens 11,987
+    # unchanged; only total_lines moved. Re-measured in-process after restart.
     root = Path(__file__).resolve().parents[1]
     assert (root / "code_tools.py").exists()
     raw = asyncio.run(code_tools.read_file_range(
@@ -324,7 +328,7 @@ def test_sot_case_code_tools_at_cap():
         start_line=1, end_line=3000, max_lines=3000, token_budget=100_000))
     body = json.loads(raw)
     assert body["ok"] is True
-    assert body["total_lines"] == 23_731
+    assert body["total_lines"] == 23_741
     assert body["selection"]["start_line"] == 1
     assert body["selection"]["end_line"] == 3000
     assert body["budget_mode"] is True
