@@ -10,6 +10,7 @@ COUNCIL RULE — LEADER AGENTS
 
 See `examples/CORE_RULE.txt` section `[A] TRANSPORT POLICY` for the canonical transport policy. Leader-specific additions:
 - Bootstrap, discovery, council messaging, model routing, read/write/verify, and [A] sync use HTTP `/api/call/<tool>`.
+- IDENTITY: every HTTP `/api/call` carries `X-Agent-Id: <your agent_id>` -- identity is resolved PER CALL and `open_session` does NOT stamp later calls; omit it and durable audit + the Graphity monitor record agent `unknown`. `a.ps1` injects it from `$AAgentId` / `$env:ORCHESTRATOR_AGENT_ID` / `$env:COUNCIL_AGENT_ID`.
 - Clau/ClauC may use MCP only for explicit stateful T4 page sessions; all workers use HTTP only.
 - Change any worker model with HTTP `council_worker_model`; never use Playwright DOM for model routing.
 ---

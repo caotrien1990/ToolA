@@ -2,6 +2,7 @@
 #
 #   . "<repo>\bin\a.ps1"
 #   $AProject = 'D:\path\to\project'          # absolute; [A] never resolves by cwd
+#   $AAgentId = 'opencode'                    # your registry agent_id; sent as X-Agent-Id on every call
 #   Call 'git_status' @{project_path = $AProject} 'ok,result'
 #   RFR 'src/app.py' 10 40                    # read_file_range; .result is LINE-NUMBERED
 #   WF  'src/app.py' 12 14 -Text $newLines    # write_fix, one region per call, bottom-up
@@ -37,6 +38,12 @@ function Send-ARequest {
     param([string]$Method, [string]$Path, [byte[]]$Body = $null, [int]$TimeoutSec = 180, [switch]$Raw)
     $request = [Net.WebRequest]::Create($script:ABase + $Path)
     $request.Method = $Method
+    # Identity: [A] resolves the caller PER CALL (X-Agent-Id > body.agent_id > env
+    # COUNCIL_AGENT_ID); open_session does NOT stamp later calls. Without the header
+    # the durable audit and the Graphity monitor record agent=unknown (2026-11-18).
+    $aidVar = Get-Variable -Name AAgentId -Scope Global -ErrorAction SilentlyContinue
+    $agentId = if ($aidVar -and $aidVar.Value) { [string]$aidVar.Value } elseif ($env:ORCHESTRATOR_AGENT_ID) { $env:ORCHESTRATOR_AGENT_ID } elseif ($env:COUNCIL_AGENT_ID) { $env:COUNCIL_AGENT_ID } else { '' }
+    if ($agentId) { $request.Headers.Add('X-Agent-Id', $agentId) }
     # .NET waits up to 350 ms for a '100 Continue' before every POST body otherwise.
     $request.ServicePoint.Expect100Continue = $false
     $request.Timeout = $TimeoutSec * 1000

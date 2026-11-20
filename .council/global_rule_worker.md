@@ -10,6 +10,8 @@ GLOBAL RULE — WORKER AGENTS
 
 See `examples/CORE_RULE.txt` section `[A] TRANSPORT POLICY` for the canonical transport policy. Worker-specific summary: CodoC/OpeC/GroC use HTTP `/api/call/<tool>` only and never MCP. If a worker task needs browser/T4 state beyond HTTP tools, report that it must be routed to ClauC/T4.
 
+- IDENTITY: every HTTP `/api/call` carries `X-Agent-Id: <your agent_id>` -- identity is resolved PER CALL and `open_session` does NOT stamp later calls; omit it and durable audit + the Graphity monitor record agent `unknown`. `a.ps1` injects it from `$AAgentId` / `$env:ORCHESTRATOR_AGENT_ID` / `$env:COUNCIL_AGENT_ID`.
+
 ## Failure Handling
 
 | Condition | Action |

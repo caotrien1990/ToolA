@@ -65,6 +65,10 @@ READ_GATE_RULE = "the deny reason names the [A] replacement"
 # around the deny. Pin the phrases that must survive the next trim -- the gate
 # fact, the [A] route that replaces it, and two of the shell shapes.
 WRITE_GATE_RULE = ("WRITE GATE", "write_new_file", "sed -i", "Set-Content")
+# IDENTITY (2026-11-18): every HTTP /api/call must carry X-Agent-Id; identity is
+# per-call, open_session does NOT stamp later calls, and a.ps1 injects the header
+# from $AAgentId / $env:ORCHESTRATOR_AGENT_ID. Pin the phrases, never sha.
+AGENT_ID_RULE = ("X-Agent-Id", "does NOT stamp later calls", "ORCHESTRATOR_AGENT_ID")
 
 def _read(name: str) -> str:
     return (EXAMPLES / name).read_text(encoding="utf-8")
@@ -118,6 +122,23 @@ class RuleCoreSotFilesCarryTheCwdRule(unittest.TestCase):
                 for fragment in WRITE_GATE_RULE:
                     self.assertIn(fragment, text)
 
+    def test_agent_identity_rule_in_every_sot_file(self):
+        # 2026-11-18: a CA session polled [A] for hours with no X-Agent-Id on any
+        # call -- 584 of 2000 audit rows landed agent=unknown because identity is
+        # resolved PER CALL and open_session does not stamp later calls. Pin the
+        # header, the per-call fact, and the a.ps1 env mechanism in every SOT.
+        for name in SOT_FILES:
+            text = _read(name)
+            for fragment in AGENT_ID_RULE:
+                with self.subTest(f"{name}:{fragment}"):
+                    self.assertIn(fragment, text)
+
+    def test_a_ps1_helper_injects_the_agent_header(self):
+        # The helper the rule recommends must itself send the header, or every
+        # PowerShell caller stays unknown no matter what the rule says.
+        ps1 = (Path(code_tools.__file__).resolve().parent / "bin" / "a.ps1").read_text(encoding="utf-8")
+        self.assertIn("X-Agent-Id", ps1)
+        self.assertIn("ORCHESTRATOR_AGENT_ID", ps1)
     def test_blind_audit_paragraph_present_in_every_sot_file(self):
         # Point 7 (Q4): the blind-audit law lands as ONE identical paragraph in
         # every SOT file (decision record UPGRADE_P7916_P7_DECISION_20261103, §2).
