@@ -75,6 +75,8 @@ class TestTransportGateDS1(BridgeCase):
         self.assertTrue({"cleanup_test_session", "query_dom_candidates"} <= BRIDGED_TOOLS)
         self.assertIn("compare_dom_snapshot", BRIDGED_TOOLS)
         self.assertIn("verify_active_electron_source", BRIDGED_TOOLS)
+        self.assertTrue({"click_selector", "assert_console_no_error"}
+                        <= BRIDGED_TOOLS)
         self.assertNotIn("t4_host_status", BRIDGED_TOOLS)
 
 
@@ -302,6 +304,51 @@ class TestMultiEntryAndSuspect(BridgeCase):
         self.assertEqual(json.loads(raw)["error_name"], "PAGE_NOT_FOUND")
 
 
+class TestAdmittedToolSubmissions(BridgeCase):
+    """F2-7 (P-SUBMIT): exactly three proofs, one test function each,
+    no parametrization; one registered entry per test (B2-2 per-test cap)."""
+
+    async def test_admitted_tools_reach_handler(self):
+        bridge = self.make_bridge()
+        bridge.register_entry("pg-1", owner_agent="agent-a")
+        ran_on = []
+
+        async def handler(**_body):
+            ran_on.append(threading.get_ident())
+            return _ok()
+
+        for tool in ("click_selector", "assert_console_no_error"):
+            raw = await bridge.submit(tool, handler, {"page_id": "pg-1"},
+                                      agent_id="agent-a", transport="api")
+            self.assertEqual(json.loads(raw), {"ok": True})
+        self.assertEqual(ran_on, [bridge._loop_thread.ident] * 2)
+
+    async def test_suspect_blocks_admitted_click(self):
+        bridge = self.make_bridge()
+        bridge.register_entry("pg-1", owner_agent="agent-a")
+        bridge.get_entry("pg-1").suspect = {"reason": "eval_timeout", "at": 0.0}
+        ran_on = []
+
+        async def handler(**_body):
+            ran_on.append(threading.get_ident())
+            return _ok()
+
+        raw = await bridge.submit("click_selector", handler,
+                                  {"page_id": "pg-1"}, agent_id="agent-a",
+                                  transport="api")
+        self.assertEqual(json.loads(raw)["error_name"], "PAGE_SUSPECT")
+        self.assertEqual(ran_on, [])
+
+    async def test_suspect_read_through_for_admitted_assert(self):
+        bridge = self.make_bridge()
+        bridge.register_entry("pg-1", owner_agent="agent-a")
+        bridge.get_entry("pg-1").suspect = {"reason": "eval_timeout", "at": 0.0}
+        raw = await bridge.submit("assert_console_no_error", _fast_handler,
+                                  {"page_id": "pg-1"}, agent_id="agent-a",
+                                  transport="api")
+        self.assertEqual(json.loads(raw), {"ok": True})
+        self.assertIsNotNone(bridge.get_entry("pg-1").suspect)
+
 class TestDeadlineMap(unittest.TestCase):
     def test_plan_rows(self):
         self.assertEqual(deadline_for("read_page"), 60.0)
@@ -315,6 +362,13 @@ class TestDeadlineMap(unittest.TestCase):
         self.assertEqual(deadline_for("wait_for_selector"), 35.0)
         self.assertEqual(deadline_for("evaluate_js",
                                       {"timeout_ms": 200000}), 120.0)
+        # T4-11/T4-12 (F2-3): click_selector mirrors click's fixed 30 s row
+        # (fixed, NOT dynamic - a raw timeout_ms never moves it);
+        # assert_console_no_error keeps the 60 s default (no row added).
+        self.assertEqual(deadline_for("click_selector"), 30.0)
+        self.assertEqual(deadline_for("click_selector",
+                                      {"timeout_ms": 200000}), 30.0)
+        self.assertEqual(deadline_for("assert_console_no_error"), 60.0)
 
 
 if __name__ == "__main__":

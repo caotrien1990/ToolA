@@ -47,6 +47,8 @@ BRIDGED_TOOLS = frozenset({
     "fill_value", "read_value", "dom_state_diff", "ui_state_summary",
     "extract_log_section", "read_all_logs", "save_log_snapshot",
     "verify_active_electron_source",
+    # T4-11/T4-12 admitted case-by-case (P-SANCTION): routed, not advertised
+    "click_selector", "assert_console_no_error",
 })
 
 # HTTP discovery includes the supported T4 handlers and host status.
@@ -67,10 +69,10 @@ DISCOVERY_TOOLS = frozenset({
 # Page-state consumers supported only by the stateful MCP host.
 NON_ROUTED_CONSUMERS = frozenset({
     "click_and_handle_folder_dialog",
-    "invoke_app_function", "click_selector", "checkpoint_loop_dom_state",
+    "invoke_app_function", "checkpoint_loop_dom_state",
     "click_and_checkpoint_loop", "run_script", "record_ui_flow",
     "assert_text_visible", "assert_button_click_changes_state",
-    "assert_console_no_error", "launch_electron_with_cdp",
+    "launch_electron_with_cdp",
 })
 
 # Every excluded page-state consumer is guarded on HTTP.
@@ -84,7 +86,7 @@ GUARDED_TOOLS = NON_ROUTED_CONSUMERS - GUARD_EXEMPT_TOOLS
 # runs on the T4 loop.
 DRIVER_LOCK_TOOLS = frozenset({
     "open_browser_page", "cdp_attach_target", "close_browser_page", "cleanup_test_session",
-    "click", "fill", "fill_value", "evaluate_js",
+    "click", "click_selector", "fill", "fill_value", "evaluate_js",
     "desktop_click", "desktop_send_text", "desktop_window_state",
     "desktop_app_focus", "fill_folder_dialog", "cancel_native_dialog",
 })
@@ -125,7 +127,7 @@ for _t in ("read_page", "describe_page", "query_selector",
            "check_window_visibility", "verify_active_electron_source"):
     _FIXED_DEADLINES_S[_t] = 60.0
 _FIXED_DEADLINES_S["cdp_attach_target"] = 90.0
-for _t in ("click", "fill", "fill_value", "screenshot_page",
+for _t in ("click", "click_selector", "fill", "fill_value", "screenshot_page",
            "desktop_click", "desktop_send_text", "desktop_app_focus",
            "desktop_window_state", "fill_folder_dialog",
            "cancel_native_dialog", "desktop_screenshot"):
@@ -185,7 +187,8 @@ def is_well_formed_page_id(value):
 
 
 def guard_non_routed_http_call(tool_name, body, generation=""):
-    """Return an actionable transport error before touching another loop's page state."""
+    """Return an actionable transport error before touching another loop's page state.
+    Scope: proxied MCP only; the direct-MCP leg is code-gate-inferred, live-unproven (U-20)."""
     if tool_name not in NON_ROUTED_CONSUMERS:
         return None
     for key in PAGE_ID_ARG_KEYS:

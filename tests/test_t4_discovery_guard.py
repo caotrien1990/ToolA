@@ -20,8 +20,9 @@ osrv = importlib.import_module("orchestrator_server")
 import tools_v15 as _v15
 from orchestrator import t4_bridge
 from orchestrator.t4_bridge import (
-    BRIDGED_TOOLS, DISCOVERY_TOOLS, GUARDED_TOOLS, GUARD_EXEMPT_TOOLS,
-    NON_ROUTED_CONSUMERS, guard_non_routed_http_call, is_well_formed_page_id,
+    BRIDGED_TOOLS, DISCOVERY_TOOLS, DRIVER_LOCK_TOOLS, GUARDED_TOOLS,
+    GUARD_EXEMPT_TOOLS, NON_ROUTED_CONSUMERS, deadline_for,
+    guard_non_routed_http_call, is_well_formed_page_id,
 )
 from orchestrator.core import call_cache
 
@@ -38,6 +39,8 @@ EXPECTED_ROUTING = frozenset({
     "fill_value", "read_value", "dom_state_diff", "ui_state_summary",
     "extract_log_section", "read_all_logs", "save_log_snapshot",
     "verify_active_electron_source",
+    # T4-11/T4-12 admitted (P-SANCTION): routed, not advertised
+    "click_selector", "assert_console_no_error",
 })
 EXPECTED_DISCOVERY = frozenset({
     "open_browser_page", "cdp_attach_target", "list_cdp_targets",
@@ -58,10 +61,10 @@ ROUTED_UTILITIES = frozenset({
 })
 EXPECTED_EXCLUSIONS = frozenset({
     "click_and_handle_folder_dialog",
-    "invoke_app_function", "click_selector", "checkpoint_loop_dom_state",
+    "invoke_app_function", "checkpoint_loop_dom_state",
     "click_and_checkpoint_loop", "run_script", "record_ui_flow",
     "assert_text_visible", "assert_button_click_changes_state",
-    "assert_console_no_error", "launch_electron_with_cdp",
+    "launch_electron_with_cdp",
 })
 PAGE_BOUND_GUARDED = EXPECTED_EXCLUSIONS - {"launch_electron_with_cdp"}
 WELL_PG = "pg-1730000000000-0-abc123"
@@ -78,8 +81,9 @@ class TestCensusGuard:
 
     def test_discovery_matches_supported_tools(self):
         assert DISCOVERY_TOOLS == EXPECTED_DISCOVERY
+        routed_not_advertised = {"click_selector", "assert_console_no_error"}
         assert DISCOVERY_TOOLS - {"t4_host_status"} == \
-            EXPECTED_ROUTING - ROUTED_UTILITIES
+            EXPECTED_ROUTING - ROUTED_UTILITIES - routed_not_advertised
         assert "t4_host_status" not in BRIDGED_TOOLS
         assert "t4_host_status" in osrv.ct.TOOL_MAP
 
@@ -329,6 +333,14 @@ class TestGuardShapes:
         assert not is_well_formed_page_id(None)
         assert not is_well_formed_page_id(12345)
 
+    def test_non_dict_body_still_refused(self):
+        # P-FAILEDGES: the merged guard must refuse a non-dict body for a
+        # guarded tool, never fall through to None.
+        for body in (None, "junk", 12345, ["page_id"]):
+            out = guard_non_routed_http_call("run_script", body)
+            assert out["ok"] is False, body
+            assert out["error_name"] == "T4_NOT_ROUTED", body
+
 
 class TestGuardCarveOutAndScope:
     @pytest.mark.parametrize("body", [
@@ -347,6 +359,21 @@ class TestGuardCarveOutAndScope:
                 tool, {"page_id": WELL_PG}) is None, tool
             assert guard_non_routed_http_call(
                 tool, {"page_id": "junk"}) is None, tool
+
+    def test_admitted_tools_are_routed_not_guarded(self):
+        # T4-11/T4-12 (P-SANCTION): routed, not advertised; guard returns
+        # None, click takes the driver lock, assert stays lock-exempt.
+        for tool in ("click_selector", "assert_console_no_error"):
+            assert tool in BRIDGED_TOOLS
+            assert tool not in NON_ROUTED_CONSUMERS
+            assert tool not in DISCOVERY_TOOLS
+            assert guard_non_routed_http_call(tool, {"page_id": WELL_PG}) is None
+            assert guard_non_routed_http_call(tool, {}) is None
+        assert "click_selector" in DRIVER_LOCK_TOOLS
+        assert "assert_console_no_error" not in DRIVER_LOCK_TOOLS
+        assert deadline_for("click_selector") == 30.0
+        assert deadline_for("click_selector", {"timeout_ms": 200000}) == 30.0
+        assert deadline_for("assert_console_no_error") == 60.0
 
     def test_seam_consults_guard_only_under_api_transport(self):
         """Source-level pin: the guard call site in the dispatcher sits
