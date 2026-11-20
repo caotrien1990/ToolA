@@ -493,8 +493,8 @@ def template_query(project_path: str, template: str, *, name: str = "",
                 target_mod = module or name
                 if conn.execute(
                         "SELECT id FROM nodes WHERE kind='module' AND "
-                        "qualified_name=? LIMIT 1;",
-                        (target_mod,)).fetchone() is None:
+                        "(qualified_name=? OR file_path=?) LIMIT 1;",
+                        (target_mod, target_mod)).fetchone() is None:
                     payload["error"] = ("module_not_found: pass module= or name= "
                                         "(module qualified_name or file_path)")
                     return payload
@@ -503,9 +503,9 @@ def template_query(project_path: str, template: str, *, name: str = "",
                     "FROM edges e JOIN nodes n ON n.id=e.source "
                     "JOIN nodes m ON m.id=e.target "
                     "WHERE e.kind='imports_module' AND m.kind='module' "
-                    "AND m.qualified_name=? "
+                    "AND (m.qualified_name=? OR m.file_path=?) "
                     "ORDER BY n.file_path, n.qualified_name, e.line "
-                    "LIMIT ? OFFSET ?;", (target_mod, limit, offset)).fetchall()
+                    "LIMIT ? OFFSET ?;", (target_mod, target_mod, limit, offset)).fetchall()
                 res = [{"file_path": r["file_path"], "import": r["qualified_name"],
                         "line": r["line"]} for r in rows]
                 total = conn.execute(
@@ -513,7 +513,7 @@ def template_query(project_path: str, template: str, *, name: str = "",
                     "FROM edges e JOIN nodes n ON n.id=e.source "
                     "JOIN nodes m ON m.id=e.target "
                     "WHERE e.kind='imports_module' AND m.kind='module' "
-                    "AND m.qualified_name=?);", (target_mod,)).fetchone()[0]
+                    "AND (m.qualified_name=? OR m.file_path=?));", (target_mod, target_mod)).fetchone()[0]
             elif template == "orphan_symbols":
                 # E3: true population via total_count + offset pagination (report 2.6).
                 # Fetch a generous headroom so the Python entry-point filter still

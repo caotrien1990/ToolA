@@ -97,6 +97,22 @@ class TestTemplateQueryModuleNotFound(unittest.TestCase):
         self.assertEqual(payload["count"], 1)
         self.assertEqual(payload["results"][0]["file_path"], "b.py")
 
+    def test_imported_by_known_file_path_behaves_as_before(self):
+        # D7 phase 2 (WIDEN): the file_path form of imported_by must
+        # succeed for a known module, mirroring imports.
+        payload = _run("imported_by", True, [_IMPORTED_BY_ROW], 1, module="b.py")
+        self.assertIsNone(payload["error"], msg=payload)
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["results"][0]["file_path"], "b.py")
+
+    def test_imported_by_unknown_file_path_reports_module_not_found(self):
+        # D7 phase 2 (WIDEN): an unknown file_path still fails loud,
+        # with the restored full text promising both forms.
+        payload = _run("imported_by", False, [], 0, module="no/such.py")
+        self.assertIsNotNone(payload["error"], msg=payload)
+        self.assertTrue(payload["error"].startswith("module_not_found"),
+                        msg=payload["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -650,6 +650,7 @@ def test_every_paginated_template_actually_pages(tmp_path) -> None:
     for template, kw in (("module_deps", {}),
                          ("entry_points", {}),
                          ("imported_by", {"module": "util"}),
+                         ("imported_by", {"module": "util.py"}),
                          ("callers", {"name": "helper"})):
         whole = _call(template, limit=500, **kw)
         assert whole["error"] is None, (template, whole)
