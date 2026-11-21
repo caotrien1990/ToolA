@@ -22488,8 +22488,8 @@ try:
                 "properties": {
                     "project_path": {"type": "string", "description": "Absolute project root."},
                     "template": {"type": "string", "description": "One of: callers, callees, imports, imported_by, orphan_symbols, module_deps, entry_points, impact_scope."},
-                    "name": {"type": "string", "description": "Symbol name (resolved via graph lookup)."},
-                    "node_id": {"type": "string", "description": "Exact graph node id (wins over name)."},
+                    "name": {"type": "string", "description": "Symbol name (resolved via graph lookup). For template=callers/callees put the symbol whose callers/callees you want HERE (the from_symbol habit is remapped to name), or use node_id with an ID from a previous graph result."},
+                    "node_id": {"type": "string", "description": "Exact graph node id from a previous graph result (wins over name). Alternative to name for callers/callees."},
                     "module": {"type": "string", "description": "Module qualified_name for imports/imported_by."},
                     "depth": {"type": "integer", "description": "BFS depth for impact_scope (clamped to 5). Default: 2."},
                     "limit": {"type": "integer", "description": "Max results (clamped to 500). Default: 50."},

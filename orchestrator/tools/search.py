@@ -1684,7 +1684,17 @@ async def search_code(query: str = "", path: str = "", project_path: str = "",
     if not query:
         return json.dumps({"ok": False, "error": "Missing query", "error_name": "MISSING_REQUIRED_FIELD", "accepted_fields": ["query", "pattern", "regex", "q", "project_path", "path", "mode"]}, ensure_ascii=False)
     if not _path:
-        return json.dumps({"ok": False, "error": "Missing path - pass 'path' or 'project_path'", "error_name": "MISSING_REQUIRED_FIELD"}, ensure_ascii=False)
+        # SEARCH_CODE_PATH_REQUIREMENT (2026-11-21): the schema now declares the
+        # anyOf project_path/path requirement, but a call that still misses it must
+        # be fixable in ONE retry: name the missing field, list the accepted set,
+        # and hand back a corrected_payload carrying the caller's own query plus
+        # project_path=null to fill with the real project root.
+        return json.dumps({"ok": False, "error": "Missing path - pass 'path' or 'project_path'", "error_name": "MISSING_REQUIRED_FIELD",
+                           "missing_fields": ["project_path"], "required_fields": ["query", "project_path|path"],
+                           "accepted_fields": ["query", "project_path", "path", "mode", "file_pattern", "query_encoding", "flags", "force", "max_context_lines", "max_results", "max_file_bytes"],
+                           "corrected_payload": {"query": query, "project_path": None, "mode": mode},
+                           "corrected_payload_source": "missing_fields_nulled",
+                           "fill_instruction": "Fill project_path in corrected_payload with the absolute project root (the repo you are searching), then resend once. The legacy alias path carries the same value."}, ensure_ascii=False)
 
     regex_worker = None
     effective_regex_deadline = None

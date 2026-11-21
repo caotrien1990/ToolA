@@ -2056,6 +2056,19 @@ _ARG_ALIASES.setdefault('cbm_dead_code', {}).update({'max_results': 'limit', 'ma
 _ARG_ALIASES.setdefault('cbm_edges_query', {}).update({'max_results': 'limit', 'max_items': 'limit', 'top_k': 'limit'})
 _ARG_ALIASES.setdefault('cbm_nodes_query', {}).update({'max_results': 'limit', 'max_items': 'limit', 'top_k': 'limit'})
 _ARG_ALIASES.setdefault('cbm_template_query', {}).update({'max_results': 'limit', 'max_items': 'limit', 'top_k': 'limit'})
+# v11 1c (GUIDANCE_V11_CLAIM_OPE_20261121): intent-preserving remaps. A CA
+# asking for the STAGED diff writes git CLI habit 'cached=true'; stripping it
+# silently downgraded the call to the worktree default (ok-but-wrong-scope).
+# Value-transform aliases live in _ARG_VALUE_ALIASES below; from_symbol is the
+# graph-query habit for the symbol whose callers/callees are wanted -> name.
+_ARG_ALIASES.setdefault('cbm_template_query', {}).update({'from_symbol': 'name', 'symbol': 'name'})
+_ARG_ALIASES.setdefault('git_diff', {}).update({'cached': 'scope', 'staged': 'scope'})
+# v11 1c: value-level remap applied when an alias maps a BOOLEAN CLI habit
+# onto an enum field: cached=true / staged=true mean scope='staged'.
+_ARG_VALUE_ALIASES = {
+    ('git_diff', 'cached'): {True: 'staged'},
+    ('git_diff', 'staged'): {True: 'staged'},
+}
 _ARG_ALIASES.setdefault('council_cron_job_list', {}).update({'max_results': 'limit', 'max_items': 'limit', 'top_k': 'limit'})
 _ARG_ALIASES.setdefault('council_route_scorecard', {}).update({'max_results': 'limit', 'max_items': 'limit', 'top_k': 'limit'})
 _ARG_ALIASES.setdefault('get_session_events', {}).update({'max_results': 'limit', 'max_items': 'limit', 'top_k': 'limit'})
@@ -5022,7 +5035,9 @@ def _default_hint(tool_name: str, error_name: str) -> str:
         "BACKUP_REQUIRED": "Call backup_status; if backup is missing, ask the user and call backup_project before retrying.",
         "WRONG_ARGUMENTS": "Read the schema at /api/tools/<tool>/schema via your configured ToolA base (ORCHESTRATOR_BASE_URL) — toola-call schema <tool> — for required fields and use the payload_example exactly.",
         "MISSING_REQUIRED_FIELD": "Rebuild the payload using required_fields, accepted_fields, and payload_example.",
-        "UNSUPPORTED_FIELD": "Remove unsupported fields and retry with the documented schema.",
+        "UNSUPPORTED_FIELD": ("Keep the object/scope/effect the task asked for when retrying: if corrected_payload_source is stripped_unsupported_fields the corrected body may have LOST intent (e.g. git_diff cached=true means scope=staged; cbm_template_query from_symbol means name=<symbol>). Re-fill the real value, then retry once."
+                              if tool_name in ("git_diff", "cbm_template_query")
+                              else "Remove unsupported fields and retry with the documented schema."),
         "UNSUPPORTED_DRY_RUN": f"Remove dry_run; {tool_name} does not support dry_run.",
         "PROJECT_PATH_REQUIRED": "Set project_path to the absolute project root; use relative file_path/path inside it.",
         "RUN_TEST_PROFILE_INVALID": f"Use one of: {', '.join(_RUN_TEST_PROFILES)}.",
@@ -5320,6 +5335,10 @@ def build_correction_material(tool_name, error_name, body_echo,
                 if _k in _aliases_for_tool:
                     _canonical = _aliases_for_tool[_k]
                     if _canonical not in _body and _canonical not in _corrected:
+                        # v11 1c: value-level intent remap (cached=true ->
+                        # scope='staged'); without it the alias would put a
+                        # boolean into an enum field and lose the intent.
+                        _v = _ARG_VALUE_ALIASES.get((tool_name, _k), {}).get(_v, _v)
                         _corrected[_canonical] = _v
                         _remediable.append(f"{_k}->{_canonical}")
                 elif _k in _ignore_for_tool:
@@ -5653,6 +5672,26 @@ def _generated_payload_example(tool_name: str, fn_schema: dict) -> dict:
 # trailing backslash, no `\t`/`\f` escape ambiguity). Keep in sync with
 # registry_data.py whenever the accepted-fields contract changes there.
 _PAYLOAD_EXAMPLE_OVERRIDES: dict[str, dict] = {
+    # v11 1a (GUIDANCE_V11_CLAIM_OPE_20261121): the generated example mixed
+    # legacy start_line/end_line/max_lines WITH ranges[], which the read
+    # contract rejects (RANGES_WITH_LEGACY_PARAMS). Curated single-range
+    # example reads ONE bounded range; the multi-range shape lives in the
+    # ranges description (registry_data.py) as its own separate call.
+    "read_file_range": {
+        "project_path": "D:/path/to/project",
+        "file_path": "relative/file.py",
+        "start_line": 10,
+        "end_line": 12,
+    },
+    # v11 1b: the generated example paired Python script_content with the
+    # runtime default "node". One consistent pair: Python marker script +
+    # runtime=python. The schema default stays "node" for existing callers.
+    "run_project_test_script": {
+        "project_path": "D:/path/to/project",
+        "script_content": "print('GV11_EXAMPLE_OK')",
+        "runtime": "python",
+        "script_label": "gv11-example",
+    },
     "find_symbol": {
         "name": "my_function",
         "project_path": "D:/path/to/project",
@@ -5661,9 +5700,13 @@ _PAYLOAD_EXAMPLE_OVERRIDES: dict[str, dict] = {
         "symbol": "my_function",
         "project_path": "D:/path/to/project",
     },
+    # SEARCH_CODE_PATH_REQUIREMENT (2026-11-21): project_path is REQUIRED (anyOf
+    # with the legacy path alias). The example carries a REAL absolute root of the
+    # repo-root shape the tool expects, not the "D:/path/to/project" placeholder a
+    # CA cannot copy into a working call.
     "search_code": {
-        "query": "pattern to find",
-        "project_path": "D:/path/to/project",
+        "query": "build_tool_schemas",
+        "project_path": "D:/0. TRIEN/1. DATA/DATA/5. VIBE APP/1. APP/8. ToolA/project-orchestrator",
         # registry enum is text|regex|symbol|callers|...; "text" is the literal/plain-text
         # mode. Use "regex" for pattern matching. Do NOT use "literal" — not in enum.
         "mode": "text",
@@ -5749,6 +5792,21 @@ _PAYLOAD_EXAMPLE_OVERRIDES: dict[str, dict] = {
         "timeout": 120,
     },
 }
+
+
+# v11 §2a (GUIDANCE_V11_CLAIM_OPE_20261121): the short guidance block lives
+# HERE, once, and rides every served schema via the shared decoration exit
+# (out_fn["usage_guidance"]). Do NOT duplicate into SLIM/CORE unless the
+# pilot shows CAs ignoring the intent rule.
+_V11_GUIDANCE = (
+    "Pick the tool by purpose and use the live schema for exact field names, enums and "
+    "co-conditions; fill project/file/symbol/scope from the real task. On a pre-execution "
+    "rejection, keep the object, scope and effect the user asked for: a corrected_payload "
+    "with source stripped_unsupported_fields may have lost intent - re-fill real values, "
+    "retry once, then report tool/error_name/what was tried. After a command ran or timed "
+    "out, read process results and state before re-running; for a lost write response check "
+    "write_status. Verify the result against the original purpose even when ok=true."
+)
 
 
 def _payload_example_for_tool(tool_name: str, fn_schema: dict) -> dict:
@@ -13162,7 +13220,7 @@ ct.PROTECTED_TOOL_NAMES.update({"git_stage", "git_unstage", "git_commit"})
 _GIT_TOOL_SPECS = [
 ("git_status",git_status,"T1",False,False,"none",{}, {"project_path":{"type":"string","description":"Absolute Git repository root — git_status takes no file path; to check one file use read_file_range or run_ps1_script"},"include_ignored":{"type":"boolean","description":"Include ignored records","default":False},"max_records":{"type":"integer","description":"Cap displayed records (default 100; 0=all displayed rows). Counts/state_hash/staged_hash always cover all files. For every individual path use compact_untracked=false,max_records=0.","default":100},"compact_untracked":{"type":"boolean","description":"Group untracked descendants by top-level directory with untracked_count; presentation only, no ignore rules or file changes. Set false for individual paths.","default":True}},["project_path"]),
 ("git_stale_check",git_stale_check,"T1",False,False,"none",{}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"max_commit_age_hours":{"type":"number","description":"Old HEAD threshold in hours","default":168},"expected_state_hash":{"type":"string","description":"Prior git_status state_hash for drift detection"}},["project_path"]),
-("git_diff",git_diff,"T1",False,False,"none",{"files":"paths"}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"scope":{"type":"string","enum":["worktree","staged","both"],"description":"Diff scope","default":"worktree"},"paths":{"type":"array","items":{"type":"string"},"description":"Relative pathspec allowlist — relative paths are preferred; an absolute path inside this repo is accepted and normalized to a relative pathspec server-side; an absolute path outside this repo is still rejected; for a file outside the repo use read_file_range (content/hash) or run_ps1_script (metadata)"},"context_lines":{"type":"integer","description":"Unified context lines","default":3},"max_chars":{"type":"integer","description":"Output cap","default":50000},"check_whitespace":{"type":"boolean","description":"Run git diff --check semantics","default":False}},["project_path"]),
+("git_diff",git_diff,"T1",False,False,"none",{"files":"paths"}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"scope":{"type":"string","enum":["worktree","staged","both"],"description":"Diff scope: worktree = unstaged changes, staged = the index (what git diff --cached shows), both = combined. Staged part requested -> scope=staged; the git CLI habit cached=true is remapped to scope=staged, never silently dropped to the worktree default.","default":"worktree"},"paths":{"type":"array","items":{"type":"string"},"description":"Relative pathspec allowlist — relative paths are preferred; an absolute path inside this repo is accepted and normalized to a relative pathspec server-side; an absolute path outside this repo is still rejected; for a file outside the repo use read_file_range (content/hash) or run_ps1_script (metadata)"},"context_lines":{"type":"integer","description":"Unified context lines","default":3},"max_chars":{"type":"integer","description":"Output cap","default":50000},"check_whitespace":{"type":"boolean","description":"Run git diff --check semantics","default":False}},["project_path"]),
 ("git_log",git_log,"T1",False,False,"none",{}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"limit":{"type":"integer","description":"Maximum commits","default":20},"ref":{"type":"string","description":"Revision reference — or a tracked file path, for that file's commit history","default":"HEAD"}},["project_path"]),
 ("git_stage",git_stage,"T2",True,True,"file_artifact",{"files":"paths"}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"paths":{"type":"array","items":{"type":"string"},"description":"Relative paths to stage — relative paths are preferred; an absolute path inside this repo is accepted and normalized to a relative pathspec server-side; an absolute path outside this repo is still rejected; for a file outside the repo use read_file_range (content/hash) or run_ps1_script (metadata)"},"paths_file":{"type":"string","description":"UTF-8 newline-delimited paths; relative preferred, absolute entries inside this repo are normalized server-side; alternative to paths"},"allow_all":{"type":"boolean","description":"Explicitly stage all changes","default":False},"expected_state_hash":{"type":"string","description":"Optional pre-stage git_status state_hash"}},["project_path"]),
 ("git_unstage",git_unstage,"T2",True,True,"file_artifact",{"files":"paths"}, {"project_path":{"type":"string","description":"Absolute Git repository root"},"paths":{"type":"array","items":{"type":"string"},"description":"Relative paths to unstage — relative paths are preferred; an absolute path inside this repo is accepted and normalized to a relative pathspec server-side; an absolute path outside this repo is still rejected; for a file outside the repo use read_file_range (content/hash) or run_ps1_script (metadata)"},"paths_file":{"type":"string","description":"UTF-8 newline-delimited paths; relative preferred, absolute entries inside this repo are normalized server-side; alternative to paths"},"allow_all":{"type":"boolean","description":"Explicitly unstage all","default":False},"expected_staged_hash":{"type":"string","description":"Optional prior staged_hash"}},["project_path"]),
@@ -15902,6 +15960,9 @@ def _prepare_tool_schema(name: str, schema: dict) -> dict:
     out_schema = copy.deepcopy(schema)
     out_fn = out_schema["function"]
     out_fn["payload_example"] = _payload_example_for_tool(name, out_fn)
+    # v11 §2a (GUIDANCE_V11_CLAIM_OPE_20261121): guidance rides the served
+    # schema (one SOT: _V11_GUIDANCE).
+    out_fn["usage_guidance"] = _V11_GUIDANCE
     out_fn["protected"] = name in ct.PROTECTED_TOOL_NAMES
     out_fn["mutating"] = _is_mutating_tool(name)
     out_fn["requires_token"] = name in _TOKEN_REQUIRED_TOOLS

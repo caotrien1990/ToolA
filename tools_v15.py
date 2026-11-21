@@ -808,6 +808,28 @@ async def replace_between_anchors(
     )
 
 
+def _sub_error_text(sub: dict) -> str:
+    """WRITE_TRANSACTION_BLIND_ERROR (2026-11-21): name the REAL sub-error.
+
+    The old message read only sub.get('error', 'unknown'), so a sub-result
+    reporting failure via error_name/message/reason collapsed to the literal
+    'unknown' and the caller could not tell what to fix. Fallback chain:
+    error -> error_name (+ message/reason/error_msg) -> error_name alone ->
+    'unknown' WITH the ok value and keys so the next reader sees the shape.
+    Does not touch error_name values or the auto-revert behavior.
+    """
+    if not isinstance(sub, dict):
+        return f"unknown (non-dict sub-result: {type(sub).__name__})"
+    err = sub.get("error")
+    if err:
+        return str(err)
+    ename = sub.get("error_name")
+    if ename:
+        detail = sub.get("message") or sub.get("reason") or sub.get("error_msg")
+        return f"{ename}: {detail}" if detail else str(ename)
+    return f"unknown (ok={sub.get('ok')!r}, keys={sorted(sub.keys())})"
+
+
 async def write_transaction(operations: list, project_path: str = "",
                               backup: bool = True,
                               structural_check: bool = True) -> str:
@@ -921,7 +943,7 @@ async def write_transaction(operations: list, project_path: str = "",
         dry_results.append(sub)
         if not sub.get("ok"):
             return _err(
-                f"dry_run failed at operation[{i}] (tool={_op_tool(op)}): {sub.get('error', 'unknown')}",
+                f"dry_run failed at operation[{i}] (tool={_op_tool(op)}): {_sub_error_text(sub)}",
                 error_name="DRY_RUN_FAILED",
                 index=i,
                 dry_run_results=dry_results,
@@ -1049,7 +1071,7 @@ async def write_transaction(operations: list, project_path: str = "",
         else:
             rollback = _rollback("apply_failed")
             return _err(
-                f"apply failed at operation[{i}] (tool={_op_tool(op)}): {sub.get('error', 'unknown')}",
+                f"apply failed at operation[{i}] (tool={_op_tool(op)}): {_sub_error_text(sub)}",
                 error_name="BATCH_VERIFY_FAILED_AUTO_REVERT",
                 index=i,
                 successful_so_far=i,
