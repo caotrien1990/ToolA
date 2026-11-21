@@ -5150,10 +5150,10 @@ def _accepted_fields_for_tool(tool_name: str) -> list[str]:
 #     on cbm_template_query, where both are valid properties.
 #
 # CALIBRATION (procedure steps (1)-(6) run against the PROTOTYPE
-# suggester): 260 tools (census 2026-11-12);
+# suggester): 260 tools (census 2026-11-12, CODO_T4_VERIFICATION);
 # exactly ONE bounded tool — cbm_template_query, window 1 (bound 1 is
 # the smallest satisfying bound: DISTANCE d=1, NONE min d=3); the other
-# 259 tools (census 2026-11-12) are map-only (256 accept no `module`, so no attested
+# 259 tools (census 2026-11-12, CODO_T4_VERIFICATION) are map-only (256 accept no `module`, so no attested
 # distance pair exists; 3 have no accepted set). Failure default: a
 # tool with no separating bound in 1..3 is map-only — the distance
 # suggester is DISABLED there, never guess. No bound was found by
