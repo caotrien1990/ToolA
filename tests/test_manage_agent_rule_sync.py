@@ -328,7 +328,11 @@ class TestManageAgentSyncHook(unittest.TestCase):
         real_hooks = Path(code_tools.__file__).parent / "hooks"
         for gate in ("native-write-gate.js", "read-gate.js"):
             shutil.copyfile(real_hooks / gate, repo_hooks / gate)
-        for name in ("codex.js", "opencode-gates.js", "hermes-gate.js"):
+        # hermes-read-gate.js is part of the shipped SOT set: _ma_write_hook_target
+        # refuses a hermes install whose repo copy is missing, so a fixture that
+        # omitted it would exercise the error path instead of the install.
+        for name in ("codex.js", "opencode-gates.js", "hermes-gate.js",
+                     "hermes-read-gate.js"):
             shutil.copyfile(real_hooks / "adapters" / name, repo_hooks / "adapters" / name)
         shutil.copyfile(real_hooks / "adapters" / "zcode-plugin" / "hooks" / "hooks.json",
                         repo_hooks / "adapters" / "zcode-plugin" / "hooks" / "hooks.json")
@@ -772,12 +776,19 @@ class TestManageAgentSyncHook(unittest.TestCase):
         self.assertEqual(r["coverage"], "pending")
         self.assertEqual(r["registration"], "verify_only")
         self.assertFalse(r["would_register"], "the installer authors no registration")
-        planned = " ".join(r["files_to_write"])
+        # Names, not a joined blob: "read-gate.js" is a SUBSTRING of
+        # "hermes-read-gate.js", so a joined assertion cannot tell the two files
+        # apart -- and the old assertNotIn("read-gate.js") on a joined string was
+        # satisfied only because neither file existed yet.
+        planned = [Path(p).name for p in r["files_to_write"]]
         self.assertIn("native-write-gate.js", planned)
         self.assertIn("hook-agent.json", planned)
-        self.assertNotIn("read-gate.js", planned, r["files_to_write"])
+        # The read leg plans as a PAIR: the adapter plus the policy SOT it spawns.
+        self.assertIn("hermes-read-gate.js", planned, r["files_to_write"])
+        self.assertIn("read-gate.js", planned, r["files_to_write"])
         self.assertFalse((hd / "native-write-gate.js").exists())
         self.assertFalse((hd / "hook-agent.json").exists())
+        self.assertFalse((hd / "read-gate.js").exists(), "a dry run lands nothing")
 
     def test_hermes_install_lands_the_adapter_and_never_writes_config(self):
         sot = (self.repo_hooks / "adapters" / "hermes-gate.js").read_bytes()
@@ -786,8 +797,13 @@ class TestManageAgentSyncHook(unittest.TestCase):
         r = code_tools._ma_write_hook(ag, {}, dry_run=False)
         self.assertTrue(r["ok"], r)
         self.assertEqual((hd / "native-write-gate.js").read_bytes(), sot)
-        self.assertFalse((hd / "read-gate.js").exists(),
-                         "the generic read gate is not Hermes-wire-compatible; it must not land")
+        # hooks/read-gate.js lands now, as a LIBRARY beside hermes-read-gate.js and
+        # never registered by name: its hookSpecificOutput dialect is exactly what
+        # the adapter exists to translate, so ONE policy serves both hosts instead of
+        # a second copy free to drift. Verbatim bytes, no on-copy transform.
+        self.assertEqual((hd / "read-gate.js").read_bytes(),
+                         (self.repo_hooks / "read-gate.js").read_bytes())
+        self.assertTrue((hd / "hermes-read-gate.js").is_file())
         self.assertEqual(json.loads((hd / "hook-agent.json").read_text(encoding="utf-8")),
                          {"agent_id": "hermes"})
         self.assertFalse(r["registered"])
@@ -795,9 +811,14 @@ class TestManageAgentSyncHook(unittest.TestCase):
         self.assertTrue(r["registered_ok"], r.get("missing_registrations"))
         self.assertFalse(r["consent_drift"], "an unchanged gate ages no consent")
         self.assertEqual(hf.read_bytes(), before, "config.yaml must stay byte-identical")
-        # A missing read leg must never be scored as a failed one (absent, not False).
-        self.assertNotIn("read_deny", r["probe"], r["probe"])
-        self.assertNotIn("read_allow", r["probe"], r["probe"])
+        # Every hook host scores the SAME five legs, hermes-shell-hooks included
+        # (2026-11-23 item 3): its read legs spawn hermes-read-gate.js, which
+        # translates the wire and runs the co-installed read-gate.js policy SOT.
+        # Dropping the leg from the probe -- the old shape -- let a real read-gate
+        # failure hide inside a green coverage answer, so both read legs must be
+        # PRESENT and TRUE here.
+        self.assertTrue(r["probe"]["read_deny"], r["probe"])
+        self.assertTrue(r["probe"]["read_allow"], r["probe"])
         self.assertIn(r["coverage"], ("full", "partial"), r)
         if r["coverage"] == "partial":
             self.assertEqual(r.get("probe_failed"), ["memory_allow"], r)
@@ -830,6 +851,166 @@ class TestManageAgentSyncHook(unittest.TestCase):
         self.assertNotEqual(landed, generic)
         self.assertTrue(r["consent_drift"], "real bytes moved under hooks_dir, so consent aged")
         self.assertIn("hooks doctor", r.get("host_note", ""), r)
+
+    # ---------- hermes-shell-hooks READ gate (2026-11-23 item 3) ----------
+    def _spawn_gate(self, hd, script, payload):
+        """Run one INSTALLED hook script once, return its trimmed stdout.
+        NATIVE_READ_GATE_DIR is pinned to the tmp hooks_dir so no test can flip
+        the real read-gate.state.json that sits beside the repo SOT."""
+        import subprocess
+        env = dict(os.environ)
+        env["ORCHESTRATOR_AGENT_ID"] = "hermes"
+        env["NATIVE_READ_GATE_DIR"] = str(hd)
+        r = subprocess.run(["node", str(hd / script)], input=json.dumps(payload),
+                           env=env, capture_output=True, text=True, timeout=60)
+        return (r.stdout or "").strip()
+
+    def _hermes_installed(self):
+        """A hermes home with BOTH legs installed for real, so the read adapter and
+        the policy SOT it spawns sit in the same hooks_dir (the adapter resolves
+        it as __dirname/read-gate.js). Returns (hooks_dir, hook_file, agent, r)."""
+        sot = (self.repo_hooks / "adapters" / "hermes-gate.js").read_bytes()
+        hd, hf, ag, cmd, cmd_prompt = self._hermes_home(seed=sot)
+        r = code_tools._ma_write_hook(ag, {}, dry_run=False)
+        self.assertTrue(r["ok"], r)
+        return hd, hf, ag, r
+
+    def _big_repo_file(self):
+        repo = Path(code_tools.__file__).parent
+        f = repo / "orchestrator_server.py"
+        return f if f.is_file() else (repo / "code_tools.py")
+
+    def test_hermes_read_gate_denies_in_the_dialect_hermes_actually_reads(self):
+        hd, hf, ag, r = self._hermes_installed()
+        self.assertTrue((hd / "hermes-read-gate.js").is_file())
+        self.assertTrue((hd / "read-gate.js").is_file(),
+                        "the policy SOT must land beside the adapter that spawns it")
+        big = self._big_repo_file()
+        out = self._spawn_gate(hd, "hermes-read-gate.js", {
+            "hook_event_name": "pre_tool_call", "tool_name": "read_file",
+            "tool_input": {"path": str(big)}, "session_id": "_t", "cwd": str(hd)})
+        self.assertTrue(out, "an unbounded read of a >200-line in-project code file must answer")
+        data = json.loads(out)
+        # agent/shell_hooks.py _PRE_TOOL_DIALECTS (:644) reads the TOP-LEVEL verb
+        # keys only, and hookSpecificOutput occurs NOWHERE in the Hermes runtime. A
+        # relay that kept the SOT shape would enforce nothing in silence, so this is
+        # the assertion the whole adapter exists to satisfy.
+        self.assertEqual(data.get("action"), "block")
+        self.assertNotIn("hookSpecificOutput", data)
+        self.assertTrue(str(data.get("message") or "").strip())
+        # the bounded read of the same file allows, and ALLOW is empty stdout + exit 0
+        out2 = self._spawn_gate(hd, "hermes-read-gate.js", {
+            "hook_event_name": "pre_tool_call", "tool_name": "read_file",
+            "tool_input": {"path": str(big), "limit": 50}, "session_id": "_t",
+            "cwd": str(hd)})
+        self.assertEqual(out2, "")
+
+    def test_hermes_read_gate_translates_the_sot_verdict_case_by_case(self):
+        # Parity is structural, not a copy: the adapter holds no R1/R2 logic of its
+        # own, it re-dialects whatever read-gate.js answers. Pinning it case by case
+        # is what fails HERE if a future SOT edit outruns the translation.
+        hd, hf, ag, r = self._hermes_installed()
+        repo = Path(code_tools.__file__).parent
+        big = self._big_repo_file()
+        cases = [
+            ("R1 unbounded", "read_file", {"path": str(big)},
+             "Read", {"file_path": str(big)}),
+            ("R1 bounded", "read_file", {"path": str(big), "limit": 100},
+             "Read", {"file_path": str(big), "limit": 100}),
+            ("R2 symbol over the repo", "search_files",
+             {"pattern": "def main", "path": str(repo)},
+             "Grep", {"pattern": "def main", "path": str(repo)}),
+            ("R2 non-code glob is not gated", "search_files",
+             {"pattern": "def main", "path": str(repo), "file_glob": "*.md"},
+             "Grep", {"pattern": "def main", "path": str(repo), "glob": "*.md"}),
+            ("target=files is a name listing", "search_files",
+             {"pattern": "read_gate", "target": "files", "path": str(repo)},
+             "Glob", {}),
+        ]
+        for name, htool, hti, ctool, cti in cases:
+            hm = self._spawn_gate(hd, "hermes-read-gate.js", {
+                "hook_event_name": "pre_tool_call", "tool_name": htool,
+                "tool_input": hti, "session_id": "_t", "cwd": str(repo)})
+            gt = self._spawn_gate(hd, "read-gate.js", {
+                "hook_event_name": "PreToolUse", "tool_name": ctool,
+                "tool_input": cti, "session_id": "_t", "cwd": str(repo)})
+            hm_block = bool(hm) and json.loads(hm).get("action") == "block"
+            hso = (json.loads(gt).get("hookSpecificOutput") or {}) if gt else {}
+            gt_block = hso.get("permissionDecision") == "deny"
+            self.assertEqual(hm_block, gt_block, name)
+
+    def test_hermes_read_gate_fails_open_on_every_broken_input(self):
+        # A READ gate that denies when it is itself broken bricks every read the CA
+        # owns, including the reads needed to fix it. Each failure path must answer
+        # ALLOW (empty stdout, exit 0) -- the same promise read-gate.js:9-13 makes on
+        # the Claude host.
+        import subprocess
+        hd, hf, ag, r = self._hermes_installed()
+        big = self._big_repo_file()
+        p = subprocess.Popen(["node", str(hd / "hermes-read-gate.js")],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, text=True,
+                             env=dict(os.environ, NATIVE_READ_GATE_DIR=str(hd)))
+        so, se = p.communicate("{this is not json", timeout=60)
+        self.assertEqual(p.returncode, 0, se)
+        self.assertEqual((so or "").strip(), "")
+        # No hook_event_name -> not a pre_tool_call event -> ALLOW. This is exactly
+        # why the probe payloads carry it: without it a DEAD gate scores as a
+        # healthy install (see _ma_hook_probe.write_payload).
+        out = self._spawn_gate(hd, "hermes-read-gate.js", {
+            "tool_name": "read_file", "tool_input": {"path": str(big)},
+            "cwd": str(hd)})
+        self.assertEqual(out, "")
+        # a tool this gate does not own -- a writer, terminal, web -- is not its business
+        out = self._spawn_gate(hd, "hermes-read-gate.js", {
+            "hook_event_name": "pre_tool_call", "tool_name": "write_file",
+            "tool_input": {"path": str(big)}, "cwd": str(hd)})
+        self.assertEqual(out, "")
+        # enabled:false in the state file beside the SOT opens the gate. That is the
+        # ONE escape hatch: a break-glass prompt hook would be a second pre_llm_call
+        # entry, i.e. another config.yaml write, and this format authors none.
+        (hd / "read-gate.state.json").write_text(json.dumps({"enabled": False}),
+                                                 encoding="utf-8")
+        out = self._spawn_gate(hd, "hermes-read-gate.js", {
+            "hook_event_name": "pre_tool_call", "tool_name": "read_file",
+            "tool_input": {"path": str(big)}, "cwd": str(hd)})
+        self.assertEqual(out, "")
+
+    def test_hermes_read_gate_leg_is_advisory_until_anh_registers_it(self):
+        # The fixture hooks: block carries ONLY the write gate, so the read leg must
+        # report inactive WITHOUT costing the working write gate its verdict: this
+        # format verifies registration and authors no config.yaml.
+        hd, hf, ag, r = self._hermes_installed()
+        rg = r["read_gate"]
+        self.assertTrue(rg["files_present"], "both read-leg files landed in hooks_dir")
+        self.assertFalse(rg["registered"], "the hooks: block carries only the write gate")
+        self.assertFalse(rg["consented"])
+        self.assertFalse(rg["active"])
+        self.assertFalse(rg["scored"], "the probe scores it, the registration verdict does not")
+        self.assertEqual(rg["matcher"], "read_file|search_files")
+        self.assertIn("config.yaml", rg["note"])
+        self.assertTrue(r["registered_ok"], r.get("missing_registrations"))
+        self.assertEqual(r["registration"], "verify_only")
+        # ... and the SAME leg flips active the moment the entry + consent exist.
+        rd_cmd = code_tools._ma_hook_command(ag, "hermes-read-gate.js")
+        NL = chr(10)  # the fixture YAML is built by hand, so the newline is named
+        text = hf.read_text(encoding="utf-8")
+        block = ("    - matcher: read_file|search_files" + NL
+                 + "      command: " + rd_cmd + NL
+                 + "      timeout: 10" + NL
+                 + "      fail_closed: true" + NL)
+        self.assertIn("  pre_llm_call:" + NL, text)
+        hf.write_text(text.replace("  pre_llm_call:" + NL,
+                                   block + "  pre_llm_call:" + NL), encoding="utf-8")
+        al = self.root / "shell-hooks-allowlist.json"
+        data = json.loads(al.read_text(encoding="utf-8"))
+        data["approvals"].append({"event": "pre_tool_call", "command": rd_cmd})
+        al.write_text(json.dumps(data), encoding="utf-8")
+        res = code_tools._ma_hook_verify_hermes(ag, hf)
+        self.assertTrue(res["read_gate"]["registered"], res["hermes_events"])
+        self.assertTrue(res["read_gate"]["consented"])
+        self.assertTrue(res["read_gate"]["active"], res["read_gate"])
+        self.assertTrue(res["registered_ok"], res["missing_registrations"])
 
     def test_hermes_verifier_parses_both_yaml_item_shapes(self):
         hd, hf, ag, cmd, cmd_prompt = self._hermes_home()
@@ -865,13 +1046,18 @@ class TestManageAgentSyncHook(unittest.TestCase):
         self.assertFalse(res3["registered_ok"])
         self.assertIn("allowlist", " ".join(res3["missing_registrations"]).lower())
 
-    def test_hermes_probe_scores_the_write_legs_through_the_adapter(self):
+    def test_hermes_probe_scores_all_five_legs_through_the_adapters(self):
+        # 2026-11-23 item 3 closed the gap this test used to pin: hermes now carries
+        # a read leg (hermes-read-gate.js + the read-gate.js SOT it spawns), so the
+        # probe answers the SAME five booleans as every other hook host. A leg that
+        # is merely absent on one host is how a real failure reads as green.
         sot = (self.repo_hooks / "adapters" / "hermes-gate.js").read_bytes()
         hd, hf, ag, cmd, cmd_prompt = self._hermes_home(seed=sot)
         code_tools._ma_write_hook(ag, {}, dry_run=False)
         probe = code_tools._ma_hook_probe(ag, hd)
-        self.assertNotIn("read_deny", probe, probe)
-        self.assertNotIn("read_allow", probe, probe)
+        # the read legs run through the READ adapter, not the write one
+        self.assertTrue(probe["read_deny"], probe)
+        self.assertTrue(probe["read_allow"], probe)
         # write_deny holds whether [A] rules deny or is unreachable (fail closed);
         # outside_deny is the leg proving the relay is not swallowing the verdict.
         self.assertTrue(probe["write_deny"], probe)

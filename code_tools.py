@@ -18066,6 +18066,16 @@ def _ma_write_skill(ag: dict, reg: dict, skill_name: str, dry_run: bool,
 # The SOT gate files every hook-enabled host receives. Copied verbatim; the
 # per-host binding is hook-agent.json, so ONE gate source serves every host.
 _MA_HOOK_GATE_FILES = ("native-write-gate.js", "read-gate.js")
+# hermes-shell-hooks READ leg: (path under hooks/, the name it lands as in
+# hooks_dir). The adapter spawns the policy SOT BY THAT LANDED NAME, so the two
+# entries are a matched pair and must move together. read-gate.js lands as a
+# LIBRARY and is never registered on Hermes: its hookSpecificOutput dialect is
+# exactly what the adapter exists to translate. native-write-gate.js is NOT listed
+# here -- the consented write gate must never be overwritten by the generic one.
+_MA_HOOK_HERMES_READ_COPIES = (
+    ("read-gate.js", "read-gate.js"),
+    ("adapters/hermes-read-gate.js", "hermes-read-gate.js"),
+)
 # Per-format adapter source (under hooks/adapters/) -> the file name it lands as
 # in the agent's hooks_dir. claude-settings needs none: it registers the gates
 # directly. zcode registers ${ZCODE_PLUGIN_ROOT}/hooks/<gate> so the gates land
@@ -18341,6 +18351,11 @@ def _ma_hook_run_zcode_cli(cli_path: str, args: list, timeout: int = 120) -> dic
         r = subprocess.run(["node", cli_path, "plugins"] + list(args),
                            capture_output=True, text=True, encoding="utf-8",
                            errors="replace", timeout=timeout,
+                           # Same Windows trap as _ma_probe_opencode_before: no payload
+                           # on stdin here either, so the parent handle gets inherited
+                           # and a closed parent stdin kills CreateProcess with
+                           # [WinError 6] before the CLI runs. DEVNULL, always.
+                           stdin=subprocess.DEVNULL,
                            creationflags=NOWINDOW_FLAGS)  # F-A1: no console flash
     except Exception as exc:
         return {"ok": False, "rc": -1, "stdout": "", "stderr": f"cli spawn failed: {exc}"}
@@ -18684,7 +18699,8 @@ def _ma_hook_verify_hermes(target: dict, hook_file: Path) -> dict:
     approval is verified in-band here, not deferred to a later host step.
 
     Returns {registered_ok, missing_registrations, hermes_events,
-    allowlist_present}.
+    allowlist_present, read_gate}. The read_gate leg is ADVISORY: it is reported
+    on every hermes answer and never folded into registered_ok.
     """
     gate = "native-write-gate.js"
     want = (("pre_tool_call", _ma_hook_command(target, gate)),
@@ -18746,9 +18762,32 @@ def _ma_hook_verify_hermes(target: dict, hook_file: Path) -> dict:
     for event, cmd in want:
         if allow_present and (event, cmd) not in consented:
             missing.append(f"{event}: not allowlisted (hermes hooks approve) -> {cmd}")
+    # The READ leg is ADVISORY and deliberately never enters ``missing``.
+    # sync_hook installs hooks/adapters/hermes-read-gate.js plus the read-gate.js
+    # policy SOT it spawns, but this format authors no config.yaml, so the leg
+    # arrives UNREGISTERED by design until Anh writes the hooks: entry and
+    # consents to it. Folding a leg that cannot be registered from here into
+    # registered_ok would report a working write gate as broken and drop coverage
+    # full -> partial over Anh own step.
+    rd_cmd = _ma_hook_command(target, "hermes-read-gate.js")
+    rd_live = rd_cmd in (live.get("pre_tool_call") or [])
+    rd_consented = ("pre_tool_call", rd_cmd) in consented
+    rd_dir = Path(str(target.get("hooks_dir") or ""))
+    rd_files = ((rd_dir / "hermes-read-gate.js").is_file()
+                and (rd_dir / "read-gate.js").is_file())
+    read_gate = {"command": rd_cmd, "matcher": "read_file|search_files",
+                 "files_present": rd_files, "registered": rd_live,
+                 "consented": rd_consented,
+                 "active": bool(rd_live and rd_consented and rd_files),
+                 "scored": False,
+                 "note": ("advisory only -- never affects registered_ok or coverage. "
+                          "Activate by adding ONE pre_tool_call entry to config.yaml "
+                          "hooks: with matcher read_file|search_files, this command, "
+                          "timeout 10 and fail_closed true, then hermes hooks approve "
+                          "so the (event, command) pair lands in shell-hooks-allowlist.json")}
     return {"registered_ok": not missing, "missing_registrations": missing,
             "hermes_events": {k: v for k, v in live.items()},
-            "allowlist_present": allow_present}
+            "allowlist_present": allow_present, "read_gate": read_gate}
 
 
 def _ma_probe_opencode_before(mod_path: Path, tool: str, args: dict, env: dict,
@@ -18802,6 +18841,16 @@ def _ma_probe_opencode_before(mod_path: Path, tool: str, args: dict, env: dict,
         e2["PROBE_ARGS"] = json.dumps(args)
         r = subprocess.run(["node", str(probe_mod)], cwd=str(mod_path.parent),
                            env=e2, capture_output=True, text=True, timeout=timeout,
+                           # This is the one gate spawn that carries no payload on
+                           # stdin -- the others pipe their JSON, which hands the child
+                           # a valid handle. capture_output alone still makes CPython set
+                           # STARTF_USESTDHANDLES and pass GetStdHandle(STD_INPUT_HANDLE)
+                           # through, so once a test runner closes the parent stdin
+                           # (pytest capsys does) CreateProcess fails with
+                           # [WinError 6] THE HANDLE IS INVALID before node starts.
+                           # Measured 2026-11-24: every opencode leg then read ALLOW
+                           # with the gate never having run. DEVNULL is a real handle.
+                           stdin=subprocess.DEVNULL,
                            creationflags=NOWINDOW_FLAGS)  # F-A1: no console flash
         out = ((r.stdout or "") + (r.stderr or "")).strip()
         json_deny = '"permissionDecision"' in out and '"deny"' in out
@@ -18824,11 +18873,12 @@ def _ma_hook_probe(target: dict, hooks_dir: Path) -> dict:
     payload (apply_patch patch text / shell command); opencode-plugin targets
     drive BOTH shapes of the installed plugin (setup execute.before + server
     tool.execute.before; deny = throw on both, entered via the .mjs ESM twin);
-    hermes-shell-hooks feeds the ONE installed script (native-write-gate.js, the
-    adapter landed under the name config.yaml consents to) a Hermes-shaped
-    pre_tool_call payload and reads the top-level action/decision verb back.
-    Returns 4 booleans, or 3 for hermes-shell-hooks whose read legs are ABSENT
-    rather than False; a probe that cannot run reports False.
+    hermes-shell-hooks feeds the installed scripts a Hermes-shaped pre_tool_call
+    payload -- native-write-gate.js for the write legs, hermes-read-gate.js for
+    the read legs (that adapter translates the payload, spawns the co-installed
+    read-gate.js policy SOT and relays its verdict as {"action": "block"}) -- and
+    reads the top-level action/decision verb back.
+    Returns five booleans; a probe that cannot run reports False.
 
       read_deny     - unbounded read of a REAL >200-line project code file
                       (the ToolA repo's orchestrator_server.py) -> deny.
@@ -18928,6 +18978,19 @@ def _ma_hook_probe(target: dict, hooks_dir: Path) -> dict:
             # bounded shell shape (head -n), an unbounded one a plain cat.
             cmd = f'cat "{path}"' if limit is None else f'head -n {limit} "{path}"'
             return {"tool_name": "shell", "tool_input": {"command": cmd}, "cwd": str(repo_root)}
+        if hermes:
+            # Hermes names the reader args identically: tools/file_tools.py
+            # READ_FILE_SCHEMA (:1182) is read_file(path, offset=1, limit=2000),
+            # so path IS the gate file_path and limit IS its limit. The R1 law
+            # ports with no adjustment, and limit defaulting to 2000 is exactly
+            # the unbounded case the gate exists to catch. hook_event_name is
+            # mandatory, not decorative -- see write_payload.
+            hti = {"path": str(path)}
+            if limit is not None:
+                hti["limit"] = limit
+            return {"hook_event_name": "pre_tool_call", "tool_name": "read_file",
+                    "tool_input": hti, "session_id": "_ma_hook_probe",
+                    "cwd": str(repo_root)}
         return {"tool_name": "Read", "tool_input": ti, "cwd": str(repo_root)}
 
     def write_payload(path):
@@ -18954,20 +19017,20 @@ def _ma_hook_probe(target: dict, hooks_dir: Path) -> dict:
                     "cwd": str(repo_root)}
         return {"tool_name": "Write", "tool_input": {"file_path": str(path)}, "cwd": str(repo_root)}
 
-    # hermes-shell-hooks: the adapter lands AS native-write-gate.js (the name the
-    # live config.yaml consents to), so the write script name is already right;
-    # read_script is left unset for hermes because no read leg is scored there.
-    read_script = "codex-adapter.js" if codex else ("read-gate.js" if not hermes else None)
+    # hermes-shell-hooks: the WRITE adapter lands AS native-write-gate.js (the name
+    # the live config.yaml consents to), so that script name is already right. The
+    # READ legs go through hermes-read-gate.js, which translates the payload and
+    # spawns the co-installed read-gate.js; codex routes every leg through
+    # codex-adapter.js.
+    read_script = ("codex-adapter.js" if codex
+                   else ("hermes-read-gate.js" if hermes else "read-gate.js"))
     write_script = "codex-adapter.js" if codex else "native-write-gate.js"
 
-    probe = {"write_deny": False, "outside_deny": False, "memory_allow": False}
-    if not hermes:
-        # The read legs exist only where a read gate is actually installed. For
-        # hermes-shell-hooks they stay ABSENT rather than False, so a leg that
-        # cannot exist never scores as a failed one -- see _probe_keys in
-        # _ma_write_hook_target.
-        probe["read_deny"] = False
-        probe["read_allow"] = False
+    # Every hook host scores the same five legs (see _probe_keys in
+    # _ma_write_hook_target): a leg that exists on one host must not be absent on
+    # another, or a real failure reads as green.
+    probe = {"read_deny": False, "read_allow": False,
+             "write_deny": False, "outside_deny": False, "memory_allow": False}
     if memory is None:
         probe["probe_error"] = ("registry row carries no rule_file, so the agent's own "
                                 "auto-memory dir -- the one native write the Matrix allows -- "
@@ -18986,46 +19049,49 @@ def _ma_hook_probe(target: dict, hooks_dir: Path) -> dict:
                 probe["probe_error"] = "installed plugin missing: " + str(mod)
                 return probe
             ocw = str(repo_root)
-            probe["read_deny"] = _ma_probe_opencode_before(
-                mod, "read", {"filePath": str(repo_read), "cwd": ocw}, env)["deny"]
-            probe["read_allow"] = not _ma_probe_opencode_before(
-                mod, "read", {"filePath": str(repo_read), "limit": 50, "cwd": ocw}, env)["deny"]
-            probe["write_deny"] = _ma_probe_opencode_before(
-                mod, "write", {"filePath": str(repo_write), "cwd": ocw}, env)["deny"]
-            probe["outside_deny"] = _ma_probe_opencode_before(
-                mod, "write", {"filePath": str(outside), "cwd": ocw}, env)["deny"]
+
+            def _oc(tool, args):
+                res = _ma_probe_opencode_before(mod, tool, args, env)
+                # A spawn that could not start is NOT a gate verdict. Measured
+                # 2026-11-24: pytest capture closes the parent stdin, CreateProcess
+                # dies with [WinError 6], every leg came back False, and the answer
+                # read as a policy ALLOW with no trace that the gate never ran. The
+                # reason has to survive into the payload or the flake is unfindable.
+                if "spawn failed" in (res.get("out") or ""):
+                    probe.setdefault("probe_error", res["out"])
+                return res
+
+            probe["read_deny"] = _oc("read", {"filePath": str(repo_read), "cwd": ocw})["deny"]
+            probe["read_allow"] = not _oc("read", {
+                "filePath": str(repo_read), "limit": 50, "cwd": ocw})["deny"]
+            probe["write_deny"] = _oc("write", {
+                "filePath": str(repo_write), "cwd": ocw})["deny"]
+            probe["outside_deny"] = _oc("write", {
+                "filePath": str(outside), "cwd": ocw})["deny"]
             if memory is not None:
-                probe["memory_allow"] = not _ma_probe_opencode_before(
-                    mod, "write", {"filePath": str(memory), "cwd": ocw}, env)["deny"]
+                probe["memory_allow"] = not _oc("write", {
+                    "filePath": str(memory), "cwd": ocw})["deny"]
             return probe
-        if hermes:
-            # hermes-shell-hooks: ONE installed script answers both dialects, and
-            # the read legs are deliberately ABSENT rather than False -- the
-            # generic read-gate.js is not Hermes-wire-compatible (emits
-            # hookSpecificOutput, whitelists Read/Grep/Bash), so there is nothing
-            # here to score. Every payload carries hook_event_name: measured
-            # 2026-11-23, without it hermes-gate.js main() (:179-183) falls
-            # through to process.exit(0) and ALLOWS, so a probe that omitted it
-            # would certify a dead gate as a healthy install.
-            out = run(write_script, write_payload(repo_write))
-            probe["write_deny"] = denied(out)
-            out = run(write_script, write_payload(outside))
-            probe["outside_deny"] = denied(out)
-            if memory is not None:
-                out = run(write_script, write_payload(memory))
-                probe["memory_allow"] = (not denied(out))
-        else:
-            out = run(read_script, read_payload(repo_read))
-            probe["read_deny"] = denied(out)
-            out = run(read_script, read_payload(repo_read, limit=50))
-            probe["read_allow"] = (not denied(out))
-            out = run(write_script, write_payload(repo_write))
-            probe["write_deny"] = denied(out)
-            out = run(write_script, write_payload(outside))
-            probe["outside_deny"] = denied(out)
-            if memory is not None:
-                out = run(write_script, write_payload(memory))
-                probe["memory_allow"] = (not denied(out))
+        # Every non-opencode host runs THESE SAME five legs, hermes-shell-hooks
+        # included: read_payload and write_payload branch to the Hermes wire
+        # internally, denied() matches the top-level action/decision verb, and the
+        # hermes read legs spawn hermes-read-gate.js -- the adapter that translates
+        # the payload, runs the co-installed read-gate.js policy SOT and relays its
+        # verdict. hook_event_name stays mandatory in those payloads: measured
+        # 2026-11-23, without it both hermes adapters fall through to an
+        # empty-stdout ALLOW, so a probe that omitted it would certify a dead gate
+        # as a healthy install.
+        out = run(read_script, read_payload(repo_read))
+        probe["read_deny"] = denied(out)
+        out = run(read_script, read_payload(repo_read, limit=50))
+        probe["read_allow"] = (not denied(out))
+        out = run(write_script, write_payload(repo_write))
+        probe["write_deny"] = denied(out)
+        out = run(write_script, write_payload(outside))
+        probe["outside_deny"] = denied(out)
+        if memory is not None:
+            out = run(write_script, write_payload(memory))
+            probe["memory_allow"] = (not denied(out))
     except Exception as exc:
         probe["probe_error"] = str(exc)
     finally:
@@ -19099,19 +19165,27 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
     oc = (fmt == "opencode-plugin")
     gate_dst_dir = (hooks_dir.parent / "gates") if oc else hooks_dir
     copies = []  # (src Path, dst Path)
-    # hermes-shell-hooks: the adapter IS the gate. hooks/adapters/hermes-gate.js
-    # lands AS native-write-gate.js -- exactly the file name the live config.yaml
-    # consents to -- so copying the generic hooks/ gate over it would CLOBBER the
-    # working barrier with one that emits hookSpecificOutput, a key the Hermes
-    # runtime never reads (measured 2026-11-23: 0 occurrences across agent/ and
-    # hermes_cli/). hooks/read-gate.js is excluded for the same reason: it
-    # whitelists the Claude tool names Read/Grep/Bash and exits 0 on Hermes
-    # write_file|patch, so it enforces nothing here. Both generic gates therefore
-    # stay out of a hermes hooks_dir entirely.
+    # hermes-shell-hooks: the WRITE adapter IS the write gate. hooks/adapters/
+    # hermes-gate.js lands AS native-write-gate.js -- exactly the file name the
+    # live config.yaml consents to -- so copying the generic hooks/ gate over it
+    # would CLOBBER the working barrier with one that emits hookSpecificOutput, a
+    # key the Hermes runtime never reads (measured 2026-11-23: 0 occurrences
+    # across agent/ and hermes_cli/). The generic native-write-gate.js therefore
+    # stays out of a hermes hooks_dir. hooks/read-gate.js DOES land, as a LIBRARY
+    # beside hermes-read-gate.js and never registered by name: it is the R1/R2
+    # policy SOT that adapter spawns, so one policy serves both hosts instead of
+    # a second copy free to drift.
     generic_gates = () if hm else _MA_HOOK_GATE_FILES
     for gate in generic_gates:
         dst_name = gate[:-3] + ".cjs" if oc and gate.endswith(".js") else gate
         copies.append((repo_hooks / gate, gate_dst_dir / dst_name))
+    if hm:
+        for rel, dst_name in _MA_HOOK_HERMES_READ_COPIES:
+            src = repo_hooks / rel
+            if not src.is_file():
+                return {"ok": False, "agent": aid, "hook_format": fmt,
+                        "error": f"repo SOT missing: hooks/{rel}"}
+            copies.append((src, hooks_dir / dst_name))
     if adapter_src:
         copies.append((adapter_src, hooks_dir / adapter_name))
     binding_dst = hooks_dir / "hook-agent.json"
@@ -19320,17 +19394,15 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
     if zc:
         probe_hooks_dir = Path((zcode_cli or {}).get("installed_hooks_dir") or str(hooks_dir))
     probe = _ma_hook_probe(target, probe_hooks_dir)
-    # hermes-shell-hooks carries NO read leg. Measured 2026-11-23: the generic
-    # read-gate.js emits hookSpecificOutput, a key that appears NOWHERE in the
-    # Hermes runtime (0 hits across agent/ and hermes_cli/), and it whitelists
-    # Claude tool names Read/Grep/Bash while Hermes sends write_file|patch -- so
-    # it exits 0 on every Hermes tool. Registering it would install a gate that
-    # enforces nothing, which is the drift this format exists to kill. The hermes
-    # probe therefore scores the three write legs and the read legs stay ABSENT
-    # from _probe_keys (absent, NOT False -- a missing leg must not read as a
-    # failed one).
-    _probe_keys = (("write_deny", "outside_deny", "memory_allow") if hm else
-                   ("read_deny", "read_allow", "write_deny", "outside_deny", "memory_allow"))
+    # Every hook host now scores the SAME five legs, hermes-shell-hooks included:
+    # its read legs spawn hermes-read-gate.js, which translates the Hermes wire,
+    # runs the co-installed read-gate.js policy SOT and relays the verdict as
+    # {"action": "block"} -- the shape agent/shell_hooks.py _PRE_TOOL_DIALECTS
+    # (:644) actually reads. What stays unregistered is the config.yaml ENTRY, and
+    # read_gate.active reports that; dropping the leg would hide a real read-gate
+    # failure inside a green coverage answer.
+    _probe_keys = ("read_deny", "read_allow", "write_deny", "outside_deny",
+                   "memory_allow")
     probe_failed = [k for k in _probe_keys if not probe.get(k)]
     probe_ok = not probe_failed and registered_ok
     # trust steps (codex /hooks) only defer coverage when the probes AND the
@@ -19356,6 +19428,11 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
         # registration is VERIFIED, not authored: "registered" stays False on
         # purpose and a dry run reports would_register False.
         out["registration"] = "verify_only"
+        # The read leg rides along on every answer so Anh sees it without asking:
+        # the adapter and its policy SOT DO land in hooks_dir, and active:false
+        # means the config.yaml entry plus consent are still missing -- the normal
+        # state while registration stays verify_only, never a failure.
+        out["read_gate"] = regcheck.get("read_gate") or {}
         if gate_changed:
             # Hermes consent is the (event, command) PAIR only -- measured
             # 2026-11-23 in agent/shell_hooks.py _consented (:319-330), which
@@ -19431,7 +19508,7 @@ def _ma_write_hook(ag: dict, reg: dict, dry_run: bool) -> dict:
                   "registered_ok", "missing_registrations", "planned_cli",
                   "cli_calls", "version", "version_bumped", "legacy_residue",
                   "host_note", "installed_hooks_dir", "registration",
-                  "consent_drift"):
+                  "consent_drift", "read_gate"):
             if k in r0:
                 out[k] = r0[k]
     if all(c == "none" for c in covs):
