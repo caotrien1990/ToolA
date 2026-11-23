@@ -1,0 +1,16 @@
+# Line endings for Markdown. The repo runs with core.autocrlf=true, so .md files
+# land on disk as CRLF while every blob in HEAD is already LF (measured
+# 2026-11-23: 266 tracked .md, 0 with CRLF in the blob, 143 with CRLF on disk).
+# Pinning text eol=lf makes checkout and index normalisation agree, so a .md diff
+# shows content and never a whole-file rewrite.
+*.md text eol=lf
+
+# Override -- one file, and it is the exception the broad rule above would misjudge.
+# .council/rule_guardrail_solar_rag/round1/RAG_SOLAR_SYSTEM_RULE_MAP.md holds
+# 40,594 NUL bytes in 81,420 B (measured 2026-11-23, byte-identical in HEAD blob
+# and on disk), which is why git auto-classified it binary before any attributes
+# file existed. "*.md text" forces it back to text: inert on TODAY's bytes
+# (git hash-object with the attribute and with none agree --
+# ee346a19c452a4fd0bb8683acbd8aa4c307f02f9), but a text diff/apply path over NUL
+# content is exactly how a later edit gets mangled. Pin it to binary again.
+.council/rule_guardrail_solar_rag/round1/RAG_SOLAR_SYSTEM_RULE_MAP.md -text

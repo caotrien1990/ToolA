@@ -309,7 +309,10 @@ class TestManageAgentSyncHook(unittest.TestCase):
     """P22: sync_hook installs + registers the native read/write gates per host
     format. A tmp fake profile per format proves the right shape is written, a
     second run is idempotent (changed:false), unrelated hook entries are
-    preserved, and fbuf/hermes (hook_format=none) skip with coverage=none. The
+    preserved, and fbuf (hook_format=none) skips with coverage=none. hermes is
+    NOT a skip any more: since the 2026-11-23 re-enable task it carries
+    hook_format=hermes-shell-hooks, which installs the adapter WITHOUT authoring
+    a registration and verifies the live hooks: block read-only. The
     probe runs the REAL gate files via node."""
 
     def setUp(self):
@@ -325,7 +328,7 @@ class TestManageAgentSyncHook(unittest.TestCase):
         real_hooks = Path(code_tools.__file__).parent / "hooks"
         for gate in ("native-write-gate.js", "read-gate.js"):
             shutil.copyfile(real_hooks / gate, repo_hooks / gate)
-        for name in ("codex.js", "opencode-gates.js"):
+        for name in ("codex.js", "opencode-gates.js", "hermes-gate.js"):
             shutil.copyfile(real_hooks / "adapters" / name, repo_hooks / "adapters" / name)
         shutil.copyfile(real_hooks / "adapters" / "zcode-plugin" / "hooks" / "hooks.json",
                         repo_hooks / "adapters" / "zcode-plugin" / "hooks" / "hooks.json")
@@ -353,7 +356,9 @@ class TestManageAgentSyncHook(unittest.TestCase):
         self.assertFalse((hd / "native-write-gate.js").exists())
 
     def test_none_format_skips_with_coverage_none(self):
-        for aid in ("fbuf", "hermes"):
+        # hermes moved to hook_format=hermes-shell-hooks on 2026-11-23 (it runs a
+        # real shell-hook gate), so fbuf is the only format-none host left.
+        for aid in ("fbuf",):
             ag = self._agent(aid, "none", "", "")
             result = code_tools._ma_write_hook(ag, {}, dry_run=False)
             self.assertTrue(result["ok"], result)
@@ -716,6 +721,179 @@ class TestManageAgentSyncHook(unittest.TestCase):
         self.assertTrue(old_cache.is_dir())
         data = json.loads(hf.read_text(encoding="utf-8"))
         self.assertTrue(data["plugins"]["enabledPlugins"].get("toola-gates@local"))
+
+    # ---------- hermes-shell-hooks (2026-11-23 re-enable task) ----------
+    def _hermes_home(self, seed=None):
+        """A tmp Hermes-shaped home: hooks_dir, a config.yaml whose hooks: block
+        reproduces the LIVE one at C:/Users/ADMIN/AppData/Local/hermes/config.yaml
+        (measured 2026-11-23 at L2363-2371) in BOTH YAML item shapes -- an indented
+        command: under the matcher group AND a bare dash-item command: -- plus the
+        shell-hooks-allowlist.json holding the (event, command) pairs Hermes
+        consented to. seed = bytes to pre-place at hooks_dir/native-write-gate.js.
+        Returns (hooks_dir, hook_file, agent_row, cmd, cmd_prompt)."""
+        hd = self.root / "h_hermes"
+        hd.mkdir(parents=True, exist_ok=True)
+        gate = hd / "native-write-gate.js"
+        if seed is not None:
+            gate.write_bytes(seed)
+        cmd = 'node "' + gate.as_posix() + '"'
+        cmd_prompt = cmd + " --prompt"
+        hf = self.root / "hermes_config.yaml"
+        hf.write_text(
+            "model: hermes\n"
+            "hooks:\n"
+            "  pre_tool_call:\n"
+            "    - matcher: write_file|patch\n"
+            "      command: " + cmd + "\n"
+            "      timeout: 10\n"
+            "      fail_closed: true\n"
+            "  pre_llm_call:\n"
+            "    - command: " + cmd_prompt + "\n"
+            "      timeout: 10\n"
+            "profile: default\n",
+            encoding="utf-8")
+        (self.root / "shell-hooks-allowlist.json").write_text(json.dumps({
+            "approvals": [{"event": "pre_tool_call", "command": cmd},
+                          {"event": "pre_llm_call", "command": cmd_prompt}],
+        }), encoding="utf-8")
+        ag = self._agent("hermes", "hermes-shell-hooks", hd, hf)
+        # The installer has to agree with what the host consented to, byte for byte:
+        # a command-string drift means Hermes skips the hook silently.
+        self.assertEqual(code_tools._ma_hook_command(ag, "native-write-gate.js"), cmd)
+        self.assertEqual(code_tools._ma_hook_command(ag, "native-write-gate.js",
+                         prompt=True), cmd_prompt)
+        return hd, hf, ag, cmd, cmd_prompt
+
+    def test_hermes_dry_run_promises_no_registration(self):
+        hd, hf, ag, cmd, cmd_prompt = self._hermes_home()
+        r = code_tools._ma_write_hook(ag, {}, dry_run=True)
+        self.assertTrue(r["ok"], r)
+        self.assertTrue(r["dry_run"])
+        self.assertEqual(r["coverage"], "pending")
+        self.assertEqual(r["registration"], "verify_only")
+        self.assertFalse(r["would_register"], "the installer authors no registration")
+        planned = " ".join(r["files_to_write"])
+        self.assertIn("native-write-gate.js", planned)
+        self.assertIn("hook-agent.json", planned)
+        self.assertNotIn("read-gate.js", planned, r["files_to_write"])
+        self.assertFalse((hd / "native-write-gate.js").exists())
+        self.assertFalse((hd / "hook-agent.json").exists())
+
+    def test_hermes_install_lands_the_adapter_and_never_writes_config(self):
+        sot = (self.repo_hooks / "adapters" / "hermes-gate.js").read_bytes()
+        hd, hf, ag, cmd, cmd_prompt = self._hermes_home(seed=sot)
+        before = hf.read_bytes()
+        r = code_tools._ma_write_hook(ag, {}, dry_run=False)
+        self.assertTrue(r["ok"], r)
+        self.assertEqual((hd / "native-write-gate.js").read_bytes(), sot)
+        self.assertFalse((hd / "read-gate.js").exists(),
+                         "the generic read gate is not Hermes-wire-compatible; it must not land")
+        self.assertEqual(json.loads((hd / "hook-agent.json").read_text(encoding="utf-8")),
+                         {"agent_id": "hermes"})
+        self.assertFalse(r["registered"])
+        self.assertEqual(r["registration"], "verify_only")
+        self.assertTrue(r["registered_ok"], r.get("missing_registrations"))
+        self.assertFalse(r["consent_drift"], "an unchanged gate ages no consent")
+        self.assertEqual(hf.read_bytes(), before, "config.yaml must stay byte-identical")
+        # A missing read leg must never be scored as a failed one (absent, not False).
+        self.assertNotIn("read_deny", r["probe"], r["probe"])
+        self.assertNotIn("read_allow", r["probe"], r["probe"])
+        self.assertIn(r["coverage"], ("full", "partial"), r)
+        if r["coverage"] == "partial":
+            self.assertEqual(r.get("probe_failed"), ["memory_allow"], r)
+
+    def test_hermes_install_is_idempotent(self):
+        sot = (self.repo_hooks / "adapters" / "hermes-gate.js").read_bytes()
+        hd, hf, ag, cmd, cmd_prompt = self._hermes_home(seed=sot)
+        code_tools._ma_write_hook(ag, {}, dry_run=False)
+        r2 = code_tools._ma_write_hook(ag, {}, dry_run=False)
+        self.assertFalse(r2["changed"], r2)
+        self.assertEqual(r2["files_written"], [])
+        self.assertFalse(r2["consent_drift"])
+        self.assertEqual((hd / "native-write-gate.js").read_bytes(), sot)
+
+    def test_hermes_generic_gate_never_clobbers_the_adapter(self):
+        # The pre-fix copy loop shipped BOTH generic gates into hooks_dir, so the
+        # 9813 B generic native-write-gate.js overwrote the 8748 B adapter that the
+        # live config.yaml actually consents to. The generic gate emits
+        # hookSpecificOutput, a key the Hermes runtime never reads, so every native
+        # write by Hermes would then lose its barrier in silence -- coverage would
+        # still have claimed full. This is the defect the format exists to close.
+        generic = (self.repo_hooks / "native-write-gate.js").read_bytes()
+        sot = (self.repo_hooks / "adapters" / "hermes-gate.js").read_bytes()
+        self.assertNotEqual(generic, sot, "fixture premise: the two gates differ")
+        hd, hf, ag, cmd, cmd_prompt = self._hermes_home(seed=generic)
+        r = code_tools._ma_write_hook(ag, {}, dry_run=False)
+        self.assertTrue(r["ok"], r)
+        landed = (hd / "native-write-gate.js").read_bytes()
+        self.assertEqual(landed, sot, "the adapter must win the consented file name")
+        self.assertNotEqual(landed, generic)
+        self.assertTrue(r["consent_drift"], "real bytes moved under hooks_dir, so consent aged")
+        self.assertIn("hooks doctor", r.get("host_note", ""), r)
+
+    def test_hermes_verifier_parses_both_yaml_item_shapes(self):
+        hd, hf, ag, cmd, cmd_prompt = self._hermes_home()
+        res = code_tools._ma_hook_verify_hermes(ag, hf)
+        self.assertTrue(res["registered_ok"], res["missing_registrations"])
+        self.assertTrue(res["allowlist_present"])
+        self.assertEqual(sorted(res["hermes_events"]), ["pre_llm_call", "pre_tool_call"])
+        self.assertEqual(res["hermes_events"]["pre_tool_call"], [cmd])
+        self.assertEqual(res["hermes_events"]["pre_llm_call"], [cmd_prompt])
+
+    def test_hermes_verifier_flags_a_renamed_gate_and_lost_consent(self):
+        hd, hf, ag, cmd, cmd_prompt = self._hermes_home()
+        # A renamed gate changes the command string, and Hermes consent is keyed on
+        # the (event, command) PAIR (agent/shell_hooks.py _consented :319-330), so
+        # the hook would be skipped while the file sat happily on disk.
+        bad = dict(ag)
+        bad["hooks_dir"] = str(hd.parent / "renamed")
+        res = code_tools._ma_hook_verify_hermes(bad, hf)
+        self.assertFalse(res["registered_ok"])
+        self.assertIn("renamed/native-write-gate.js", " ".join(res["missing_registrations"]))
+        # registered but revoked: the allowlist no longer holds one pair
+        al = self.root / "shell-hooks-allowlist.json"
+        data = json.loads(al.read_text(encoding="utf-8"))
+        data["approvals"] = [a for a in data["approvals"]
+                             if a["event"] != "pre_llm_call"]
+        al.write_text(json.dumps(data), encoding="utf-8")
+        res2 = code_tools._ma_hook_verify_hermes(ag, hf)
+        self.assertFalse(res2["registered_ok"], res2["missing_registrations"])
+        self.assertIn("not allowlisted", " ".join(res2["missing_registrations"]))
+        # no allowlist at all -> Hermes fires nothing
+        al.unlink()
+        res3 = code_tools._ma_hook_verify_hermes(ag, hf)
+        self.assertFalse(res3["registered_ok"])
+        self.assertIn("allowlist", " ".join(res3["missing_registrations"]).lower())
+
+    def test_hermes_probe_scores_the_write_legs_through_the_adapter(self):
+        sot = (self.repo_hooks / "adapters" / "hermes-gate.js").read_bytes()
+        hd, hf, ag, cmd, cmd_prompt = self._hermes_home(seed=sot)
+        code_tools._ma_write_hook(ag, {}, dry_run=False)
+        probe = code_tools._ma_hook_probe(ag, hd)
+        self.assertNotIn("read_deny", probe, probe)
+        self.assertNotIn("read_allow", probe, probe)
+        # write_deny holds whether [A] rules deny or is unreachable (fail closed);
+        # outside_deny is the leg proving the relay is not swallowing the verdict.
+        self.assertTrue(probe["write_deny"], probe)
+        self.assertTrue(probe["outside_deny"], probe)
+        import urllib.request as _ur
+        try:
+            _ur.urlopen("http://localhost:8083/health", timeout=3)
+        except Exception:
+            self.skipTest("[A] daemon not reachable; memory_allow needs preflight")
+        self.assertTrue(probe["memory_allow"], probe)
+
+    def test_registry_row_for_hermes_is_the_new_format(self):
+        reg = json.loads(Path(code_tools._AGENTS_REGISTRY_PATH).read_text(encoding="utf-8"))
+        row = (reg.get("agents") or {}).get("hermes") or {}
+        self.assertEqual(row.get("hook_format"), "hermes-shell-hooks",
+                         "hook_format=none made sync_hook skip hermes with coverage=none")
+        self.assertTrue(str(row.get("hooks_dir") or "").strip())
+        self.assertTrue(str(row.get("hook_file") or "").strip())
+        self.assertEqual(row.get("hook_trust_step"), "none")
+        self.assertIn("hermes-shell-hooks", code_tools._MA_HOOK_FORMATS)
+        self.assertEqual(code_tools._MA_HOOK_ADAPTER["hermes-shell-hooks"],
+                         ("hermes-gate.js", "native-write-gate.js"))
 
     # ---------- probe with the real gates ----------
     def test_probe_real_gates_deny_and_allow(self):
