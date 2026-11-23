@@ -3,9 +3,9 @@
   "mode": "delegate_map",
   "repository": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator",
   "ref_metadata": {
-    "ocr_mode": "workspace",
+    "ocr_mode": "commit",
     "schema_version": "1",
-    "commit": null,
+    "commit": "bf59d4f30a4428db8331b907df91f1e23a28afcc",
     "from_ref": null,
     "to_ref": null,
     "merge_base": null,
@@ -13,222 +13,282 @@
   },
   "files": [
     {
-      "path": "tests/test_a45_returns_shape.py",
+      "path": ".ToolA_Skill/numbered-skills.lock.json",
       "status": "added",
-      "changed": 695
+      "changed": 132
     },
     {
-      "path": "orchestrator/core/returns_shape.py",
-      "status": "added",
-      "changed": 533
-    },
-    {
-      "path": "orchestrator_server.py",
+      "path": "tests/test_a31_skill_surface_gates.py",
       "status": "modified",
-      "changed": 36
+      "changed": 15
     },
     {
-      "path": "orchestrator/session/logs.py",
+      "path": ".ToolA_Skill/skills/council-brainstorm-loop/scripts/council_brainstorm_loop.ps1",
       "status": "modified",
-      "changed": 14
-    },
-    {
-      "path": "install_restart_control_task.ps1",
-      "status": "modified",
-      "changed": 8
-    },
-    {
-      "path": "code_tools.py",
-      "status": "modified",
-      "changed": 6
+      "changed": 4
     }
   ],
   "counts": {
-    "previewed": 32,
-    "mapped": 6,
-    "dropped_by_ocr": 23,
-    "dropped_by_a": 3
+    "previewed": 42,
+    "mapped": 3,
+    "dropped_by_ocr": 39,
+    "dropped_by_a": 0
   },
   "totals": {
-    "insertions": 2507,
-    "deletions": 190
+    "insertions": 624,
+    "deletions": 970
   },
   "min_changed_lines": 1,
   "excluded_summary": {
-    "runtime_state_dir": 2,
-    "data_json": 1,
-    "unsupported_ext": 23
+    "unsupported_ext": 39
   },
   "excluded_files": [
     {
-      "path": ".council/context_registry.json",
+      "path": ".ToolA_Skill/SKILLS.md",
       "status": "modified",
-      "changed": 2,
-      "exclude_reason": "runtime_state_dir"
+      "changed": 12,
+      "exclude_reason": "unsupported_ext"
     },
     {
-      "path": ".council/session_meta.json",
+      "path": ".ToolA_Skill/references/owned_page_release.md",
+      "status": "added",
+      "changed": 5,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/references/token_refresh.md",
+      "status": "added",
+      "changed": 3,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/00_skill_router/SKILL.md",
       "status": "modified",
-      "changed": 4,
-      "exclude_reason": "runtime_state_dir"
+      "changed": 59,
+      "exclude_reason": "unsupported_ext"
     },
     {
-      "path": "agents_registry.json",
+      "path": ".ToolA_Skill/skills/01_bootstrap_health/SKILL.md",
       "status": "modified",
-      "changed": 10,
-      "exclude_reason": "data_json"
+      "changed": 102,
+      "exclude_reason": "unsupported_ext"
     },
     {
-      "path": "PROJECT_CONTEXT.md",
+      "path": ".ToolA_Skill/skills/02_mode_control/SKILL.md",
       "status": "modified",
-      "changed": 46,
+      "changed": 5,
       "exclude_reason": "unsupported_ext"
     },
     {
-      "path": "PROJECT_MAP.md",
+      "path": ".ToolA_Skill/skills/03_path_session/SKILL.md",
       "status": "modified",
-      "changed": 28,
+      "changed": 7,
       "exclude_reason": "unsupported_ext"
     },
     {
-      "path": "_a34_full_suite.status",
-      "status": "deleted",
-      "changed": 19,
-      "exclude_reason": "unsupported_ext"
-    },
-    {
-      "path": "_a37_regB2.status",
-      "status": "deleted",
-      "changed": 1,
-      "exclude_reason": "unsupported_ext"
-    },
-    {
-      "path": "_a38_full_suite.status",
-      "status": "deleted",
-      "changed": 32,
-      "exclude_reason": "unsupported_ext"
-    },
-    {
-      "path": "_a41_full_suite.status",
-      "status": "deleted",
-      "changed": 52,
-      "exclude_reason": "unsupported_ext"
-    },
-    {
-      "path": "_a42_full_suite.status",
-      "status": "deleted",
-      "changed": 29,
-      "exclude_reason": "unsupported_ext"
-    },
-    {
-      "path": "_realtest_write_new.txt",
-      "status": "deleted",
-      "changed": 1,
-      "exclude_reason": "unsupported_ext"
-    },
-    {
-      "path": "docs/PLAN_TOOLA_1210_FINAL.md",
+      "path": ".ToolA_Skill/skills/04_tool_tiers/SKILL.md",
       "status": "modified",
-      "changed": 163,
+      "changed": 17,
       "exclude_reason": "unsupported_ext"
     },
     {
-      "path": "orchestrator/PROJECT_CONTEXT.md",
+      "path": ".ToolA_Skill/skills/05_write_pipeline/SKILL.md",
       "status": "modified",
-      "changed": 6,
+      "changed": 5,
       "exclude_reason": "unsupported_ext"
     },
     {
-      "path": "orchestrator/PROJECT_MAP.md",
+      "path": ".ToolA_Skill/skills/06_token_auth/SKILL.md",
       "status": "modified",
-      "changed": 6,
+      "changed": 234,
       "exclude_reason": "unsupported_ext"
     },
     {
-      "path": "tests/PROJECT_CONTEXT.md",
+      "path": ".ToolA_Skill/skills/07_error_schema_hints/SKILL.md",
       "status": "modified",
-      "changed": 10,
+      "changed": 59,
       "exclude_reason": "unsupported_ext"
     },
     {
-      "path": "tests/PROJECT_MAP.md",
+      "path": ".ToolA_Skill/skills/08_command_windows/SKILL.md",
+      "status": "modified",
+      "changed": 7,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/09_testing_validation/SKILL.md",
+      "status": "modified",
+      "changed": 7,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/10_coverage_report/SKILL.md",
       "status": "modified",
       "changed": 8,
       "exclude_reason": "unsupported_ext"
     },
     {
-      "path": ".ToolA_Skill/workflows/mcp_175_tool_workflow_fixture.md",
-      "status": "added",
-      "changed": 31,
+      "path": ".ToolA_Skill/skills/11_repo_vs_runtime/SKILL.md",
+      "status": "modified",
+      "changed": 9,
       "exclude_reason": "unsupported_ext"
     },
     {
-      "path": "docs/G0_VERDICT_CONGESTION_20261024.md",
-      "status": "added",
-      "changed": 51,
+      "path": ".ToolA_Skill/skills/12_native_audit/SKILL.md",
+      "status": "modified",
+      "changed": 11,
       "exclude_reason": "unsupported_ext"
     },
     {
-      "path": "docs/PLAN_TOOLA_1210_G0_AMENDMENT_A_PRIME.md",
-      "status": "added",
-      "changed": 160,
+      "path": ".ToolA_Skill/skills/13_apply_after_dry_run/SKILL.md",
+      "status": "modified",
+      "changed": 22,
       "exclude_reason": "unsupported_ext"
     },
     {
-      "path": "docs/PROMPT_AI_WEB_KET_NOI_TOOLA.md",
-      "status": "added",
-      "changed": 86,
+      "path": ".ToolA_Skill/skills/14_token_jwt_redesign/SKILL.md",
+      "status": "modified",
+      "changed": 12,
       "exclude_reason": "unsupported_ext"
     },
     {
-      "path": "docs/incident_1510/EVIDENCE_NOTES.md",
-      "status": "added",
+      "path": ".ToolA_Skill/skills/15_search_code_intel/SKILL.md",
+      "status": "modified",
+      "changed": 25,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/16_server_lifecycle/SKILL.md",
+      "status": "modified",
+      "changed": 444,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/17_session_audit/SKILL.md",
+      "status": "modified",
+      "changed": 11,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/18_runtime_dom_T4/SKILL.md",
+      "status": "modified",
+      "changed": 9,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/18_runtime_dom_T4/references/cdp_driver_pattern.md",
+      "status": "modified",
+      "changed": 4,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/19_image_mode/SKILL.md",
+      "status": "modified",
+      "changed": 12,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/21_tool_matrix/SKILL.md",
+      "status": "modified",
+      "changed": 6,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/22_electron_automation/SKILL.md",
+      "status": "modified",
+      "changed": 15,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/26_workflow_ingestion/SKILL.md",
+      "status": "modified",
+      "changed": 205,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/27_context_pool_write/SKILL.md",
+      "status": "modified",
+      "changed": 49,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/28_ocr_review/SKILL.md",
+      "status": "modified",
+      "changed": 3,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/broker-worker-bootstrap/SKILL.md",
+      "status": "modified",
+      "changed": 7,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/council-brainstorm-loop/SKILL.md",
+      "status": "modified",
+      "changed": 7,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/council-console-loop/SKILL.md",
+      "status": "modified",
+      "changed": 5,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/council-cron-jobs/SKILL.md",
+      "status": "modified",
+      "changed": 3,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/git-governance/SKILL.md",
+      "status": "modified",
+      "changed": 3,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/leader-council-skill/SKILL.md",
+      "status": "modified",
+      "changed": 7,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/project-orchestrator-fix-loop/SKILL.md",
+      "status": "modified",
+      "changed": 3,
+      "exclude_reason": "unsupported_ext"
+    },
+    {
+      "path": ".ToolA_Skill/skills/rule_skill_changer/SKILL.md",
+      "status": "modified",
       "changed": 30,
       "exclude_reason": "unsupported_ext"
     },
     {
-      "path": "docs/incident_1510/R4_BOOTSTEP_SPAM_ROOTCAUSE.md",
-      "status": "added",
-      "changed": 62,
+      "path": ".ToolA_Skill/skills/update-rule-skill-all-ca/SKILL.md",
+      "status": "modified",
+      "changed": 6,
       "exclude_reason": "unsupported_ext"
     },
     {
-      "path": "docs/incident_1510/R4_MUSEB_1031_VERDICT.md",
-      "status": "added",
-      "changed": 127,
-      "exclude_reason": "unsupported_ext"
-    },
-    {
-      "path": "docs/incident_1510/pyspy_52372.txt",
-      "status": "added",
-      "changed": 296,
-      "exclude_reason": "unsupported_ext"
-    },
-    {
-      "path": "muse_tunnel.bat",
-      "status": "added",
-      "changed": 127,
-      "exclude_reason": "unsupported_ext"
-    },
-    {
-      "path": "toola_shell.bat",
-      "status": "added",
-      "changed": 18,
+      "path": ".ToolA_Skill/skills/verify-new-function/SKILL.md",
+      "status": "modified",
+      "changed": 5,
       "exclude_reason": "unsupported_ext"
     }
   ],
   "binary": "D:\\0. TRIEN\\1. DATA\\DATA\\5. VIBE APP\\1. APP\\8. ToolA\\project-orchestrator\\venv_ocr\\node_modules\\@alibaba-group\\ocr-win32-x64\\bin\\opencodereview.exe",
   "binary_source": "venv_ocr",
   "exit_code": 0,
-  "stdout_bytes": 5486,
+  "stdout_bytes": 8476,
   "stderr_bytes": 0,
   "stdout_empty": false,
-  "duration_s": 0.279,
+  "duration_s": 1.954,
   "color_flag": "never",
   "force_color_scrubbed": false,
   "llm_used": false,
   "token_cost": 0,
   "ca_next_action": "ocr_rule",
-  "ca_hint_map": "files[] is sorted by changed-line count, so the first entry is where the change lives. excluded_summary counts every dropped file by reason; lower min_changed_lines or pass include_excluded=true to see them.",
-  "ca_next_tool": "ocr_rule"
+  "ca_hint_map": "files[] is sorted by changed-line count, so the first entry is where the change lives. excluded_summary counts every dropped file by reason; lower min_changed_lines or pass include_excluded=true to see them."
 }
