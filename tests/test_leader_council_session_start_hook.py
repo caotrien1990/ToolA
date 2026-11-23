@@ -30,6 +30,13 @@ class LeaderCouncilSessionStartHookTests(unittest.TestCase):
             result = subprocess.run(
                 [str(bash_exe), HOOK_PATH.as_posix()], capture_output=True, text=True,
                 encoding="utf-8", env=env, check=False,
+                # No payload rides stdin here, so capture_output alone still makes CPython
+                # hand bash the parent GetStdHandle(STD_INPUT_HANDLE). Once another test in
+                # the same run has closed that fd, CreateProcess dies with [WinError 6] THE
+                # HANDLE IS INVALID before bash starts -- measured 2026-11-24: this file
+                # passed alone and failed when paired with any suite that spawns. DEVNULL is
+                # a real handle, and the hook is fed no stdin either way.
+                stdin=subprocess.DEVNULL,
             )
         return result, json.loads(result.stdout)
 

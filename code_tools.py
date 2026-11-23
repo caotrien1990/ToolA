@@ -1788,13 +1788,32 @@ def _select_python_interpreter(project_root: Path | None = None, explicit: str =
              "sys.exit(3 if any(importlib.util.find_spec(x) is None for x in m) else 0)")
     attempted = []
     for source, candidate in _python_interpreter_candidates(project_root, explicit):
+        spawn_error = ""
         try:
             capable = _subprocess.run([candidate, "-c", probe], capture_output=True,
+                                      # The third of the same Windows family. No payload
+                                      # rides stdin here, so capture_output alone still
+                                      # makes CPython hand the child the parent
+                                      # GetStdHandle(STD_INPUT_HANDLE); once a test runner
+                                      # closes that fd, CreateProcess dies with
+                                      # [WinError 6] BEFORE the interpreter runs, so every
+                                      # candidate reports capable:False at once -- a
+                                      # missing-module verdict the spawn never tested.
+                                      # Measured 2026-11-24: this very file scored
+                                      # 19-passed and 9-failed on alternate runs of
+                                      # test_skip_gates_consumers_b027j alone.
+                                      stdin=_subprocess.DEVNULL,
                                       timeout=8, check=False,
                                       creationflags=NOWINDOW_FLAGS).returncode == 0  # F-A1
-        except (OSError, _subprocess.SubprocessError):
+        except (OSError, _subprocess.SubprocessError) as exc:
             capable = False
-        attempted.append({"source": source, "executable": candidate, "capable": capable})
+            # Fail loud: a spawn that could not start is not an interpreter that lacks
+            # a module. Naming them apart is the only way this reads as a defect.
+            spawn_error = f"{type(exc).__name__}: {exc}"
+        row = {"source": source, "executable": candidate, "capable": capable}
+        if spawn_error:
+            row["spawn_error"] = spawn_error
+        attempted.append(row)
         if capable:
             return {"ok": True, "executable": candidate, "source": source,
                     "required_modules": modules, "attempted": attempted}
