@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: update-rule-skill-all-ca
 description: Use when updating council/core/worker rules or canonical skills and propagating them to every CA. Prevents missed sync_rule/sync_skill/adapter steps and stale generated rule files.
 ---
@@ -30,6 +33,7 @@ Use this skill when the task says update/sync rule, leader rule, worker rule, co
 5. Run dry-run first:
    - `manage_agent(action="sync_rule", target="all", dry_run=true)` for rule changes.
    - `manage_agent(action="sync_skill", target="all", skill_name="<name>", dry_run=true)` for each changed skill.
+   - OpenCode folder targets: Before each OpenCode folder sync, inventory the effective loader roots and move discoverable backup trees (_ma_archive and loose .bak_ma folders) to a retained location outside every root. Record source and destination. Compare dry-run source, target, file count and folder SHA-256 with the manifest for this pair, including bundled references. After apply, check match and member hashes, relocate any newly created archive, then run opencode debug skill --pure from the target project with the real configuration. Match the frontmatter name to the expected active SKILL.md path. A missing or different winner stops the next sync. Repeat on future syncs.
 6. Apply sync:
    - `manage_agent(action="sync_rule", target="all", dry_run=false)`.
    - `manage_agent(action="sync_skill", target="all", skill_name="<name>", dry_run=false)`.
@@ -40,7 +44,7 @@ Use this skill when the task says update/sync rule, leader rule, worker rule, co
 8. If backend Python changed, run `py_compile`, restart [A] with `restart_orchestrator_via_bat` (delay_seconds=2 only), wait for health, then rerun schema verification. `[A:S]` is the MECHANISM that tool drives, NOT the call path -- launching the .bat yourself is a kill-pipeline reinvention. Proof of restart is `GET /health` showing a NEW `pid` AND a CHANGED `generation`; the tool answering ok:true is not proof. Do not restart [A] while worker dispatch is in flight.
 9. Verify propagation with bounded `rg` against:
    - canonical files,
-   - every `rule_file` path reported by the live `manage_agent(action='sync_rule', target='all', dry_run=true)` -- that dry-run IS the list and `agents_registry.json` is its SOT. Never verify against a path set written down here: it drifts both ways at once. Measured 2026-09-20: the live target set is 10 files, while the hardcoded list this line replaced named `C:\Users\ADMIN\.commandcode` (retired id `comc`, absent from the registry, `AGENTS.md` last written 2026-07-15, receives no sync) and omitted 6 registered targets -- so following it checked 4 live paths out of 10 plus one dead one and then reported "propagation verified".
+   - every rule_file in manage_agent(action='sync_rule', target='all', dry_run=true). Compare against the live manifest for this run.
 10. Report: changed canonical files, sync commands/results, adapter targets, tests, stale references found/cleared, and any `unknown/not verified`.
 
 ## Guardrails

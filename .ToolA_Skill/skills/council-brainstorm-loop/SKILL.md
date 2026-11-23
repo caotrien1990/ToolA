@@ -1,13 +1,16 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: council-brainstorm-loop
 description: Run artifact-based multi-worker brainstorm loops through the [A] council/broker. Use when Anh asks the current CA to coordinate council workers across rounds, dispatch file-based prompts, collect broker responses, use support helpers, score peer plans, or synthesize a final rule/system plan.
 ---
 
 # Council Brainstorm Loop
 
-Use this skill when the current leader CA coordinates one-shot broker workers through [A]. The rule of the skill is simple: **artifacts carry context; broker replies prove execution; Codo coordinates but does not assume memory.**
+Use this skill when the current leader CA coordinates one-shot broker workers through [A]. The rule of the skill is simple: **artifacts carry context; broker replies prove execution; the current leader coordinates but does not assume memory.**
 
-Before the current leader CA coordinates a brainstorm loop or sends any `council_message` / `council_worker_model` call, Codo must load `leader-council-skill` first. This applies to continuation prompts such as "implement plan" or "tiếp" even without the exact `bật hội đồng tr` trigger; this skill handles loop mechanics and does not replace leader routing/model gates.
+Before the current leader CA coordinates a brainstorm loop or sends any `council_message` / `council_worker_model` call, the current leader must load `leader-council-skill` first. This applies to continuation prompts such as "implement plan" or "tiếp" even without the exact `bật hội đồng tr` trigger; this skill handles loop mechanics and does not replace leader routing/model gates.
 
 ## Mandatory Measurement Closeout
 

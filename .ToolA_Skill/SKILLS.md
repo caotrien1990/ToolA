@@ -17,12 +17,12 @@ Routing table. Lookup only; do not read full skill bodies here.
 | `SCHEMA_VIOLATION`, `UNSUPPORTED_FIELD` | `07_error_schema_hints/` | high |
 | `run_project_command`, path-with-spaces | `08_command_windows/` | high |
 | `run_test_profile`, `validate_file` | `09_testing_validation/` | high |
-| Coverage report, 47-tool checklist | `10_coverage_report/` | medium |
+| Coverage report for the current tool catalog | `10_coverage_report/` | medium |
 | UI bug / DOM / browser visible | `11_repo_vs_runtime/` | high |
 | Native fallback usage | `12_native_audit/` | high |
 | `apply_after_dry_run`, `STALE_TARGET` | `13_apply_after_dry_run/` | medium |
 | Token/JWT redesign | `14_token_jwt_redesign/` | medium |
-| Code search (text, symbol, semantic) | `15_search_code_intel/` | high (V15 new) |
+| Code search (text, symbols, callers and graph queries) | `15_search_code_intel/` | high (V15 new) |
 | Governed Git status/stale/diff/log/stage/unstage/commit | `git-governance/` | high |
 | Server lifecycle / port / cache stale | `16_server_lifecycle/` | high (V15 new) |
 | Tool selection ([A] vs native vs T4) | `00_skill_router/` | high (V15 new) |
@@ -37,14 +37,14 @@ Routing table. Lookup only; do not read full skill bodies here.
 | Workflow dispenser (`workflow_list`, `workflow_start`, `workflow_submit_step`) | `26_workflow_ingestion/` | high (R35+) |
 | `bootstrap_session` first-call macro (compact overview) | `00_skill_router/` | high (R42) |
 | MD workflow ingestion / parse `## Known domain rules` | `26_workflow_ingestion/` | high (R43 new) |
-| Manual memory/context-pool write, stale correction artifact, librarian ingest note | `27_context_pool_write/` | high (R20260619) |
+| Review a stale correction artifact and its provenance | `27_context_pool_write/` | high (R20260619) |
 | Leader mode anti-drift / first-dispatch Q worker routing / council coordination skill | `leader-council-skill/` | high (R20260619) |
 | Broker worker task needs write outside cwd / bootstrap [A] for worker artifact writes | `broker-worker-bootstrap/` | high |
 | Council / `bat hoi dong Tr` / `hoi dong` legacy compatibility, `council_message` broker one-shot, `council_worker_model` worker model routing | `leader-council-skill/` | high (D4 2026-08-11: 24_council_tr retired) |
 | Council brainstorm multi-worker artifact loop (rounds, synthesis, track-by-name) | `council-brainstorm-loop/` | high (R20260911) |
 | Project orchestrator fix-loop (targeted [A] edit + validate + commit cycle) | `project-orchestrator-fix-loop/` | high (R20260911) |
 | Council cron schedule CRUD/trigger/history, pinned worker+model and narrator+model | `council-cron-jobs/` | high |
-| Console/merge/audit/verify text artifacts, base+plug report update, zero-audit document loop (`council_console_loop` alias) | `council-console-loop/` | high |
+| Console/merge/audit/verify text artifacts, base+plug report update, zero-audit document loop | `council-console-loop/` | high |
 | Semantic / security review of a diff or a whole tree, zero-LLM delegate mode | `28_ocr_review/` | high |
 | Rule or skill body changed and must reach every CA, worker/council routing edits | `update-rule-skill-all-ca/` | high |
 | A newly added [A] tool needs its verification pass before anyone trusts it | `verify-new-function/` | high |
@@ -62,3 +62,7 @@ Routing table. Lookup only; do not read full skill bodies here.
 **R43.3 status (2026-05-21; R2 structure cleanup 2026-06-16; D4 cleanup 2026-08-11)**: council route resolves to `leader-council-skill/SKILL.md`. The legacy `24_council_tr/` folder was removed 2026-06-19 and its residual routes were merged into `leader-council-skill/` on 2026-08-11. Run `audit_tool_matrix` for live count.
 
 - Council route measurement/scorecard: use `council_route_scorecard` after council replies/timeouts; source contract: `leader-council-skill` Route Measurement Gate.
+
+## Skill verification metadata
+
+version identifies the skill revision. last_verified and verified_head record the latest check of the skill's routing, frontmatter and update-scope contracts. Recheck affected examples against the served schema and the working source when either changes. The CA performing that review owns the stamp and records any outstanding behavior checks in the build report.

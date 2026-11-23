@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: write_pipeline
 description: |
   Use for all [T2] write operations: write_fix, write_new_file, write_fix_html, multi-file
@@ -61,7 +64,7 @@ write_transaction({
 Pipeline: dry_run all → backup_project → apply (mỗi op atomic) → batch validate once. Nếu 1 op fail → ABORT toàn batch, leave .bak cho rollback manual.
 
 **Khi nào write_transaction KHÔNG đủ**:
-- Cần fuzzy-match anchor text (không biết line number) → CHƯA có (`write_fix_by_anchor` defer R40+). Workaround: `search_code(query="anchor text", mode="literal")` → lấy line, rồi `write_fix(start_line, end_line)`.
+- Cần fuzzy-match anchor text (không biết line number) → CHƯA có (`write_fix_by_anchor` defer R40+). Workaround: `search_code(query="anchor text", mode="text")` → lấy line, rồi `write_fix(start_line, end_line)`.
 
 **Recovery FILE_CHANGED_OUTSIDE_ORCHESTRATOR (R39 explicit)**:
 1. `read_file_range(project_path, file_path, start, end, force_reseed=true)` — call DUY NHẤT reseed read_token của file đó

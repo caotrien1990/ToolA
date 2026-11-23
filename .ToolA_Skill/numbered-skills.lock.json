@@ -1,0 +1,132 @@
+{
+  "version": 1,
+  "scope": "canonical numbered skills with deployed shared references",
+  "algorithm": "code_tools._ma_skill_dir_summary",
+  "skills": [
+    {
+      "folder": "00_skill_router",
+      "files": 2,
+      "folder_sha256": "6677f0f83c9516f96587ef7b125fac6f343fcff70b39c69978a7a8077051b9e8"
+    },
+    {
+      "folder": "01_bootstrap_health",
+      "files": 2,
+      "folder_sha256": "c27c68a8566d0d5602411973782659aa6bfabd3849d95595b33cefb0b48d2964"
+    },
+    {
+      "folder": "02_mode_control",
+      "files": 3,
+      "folder_sha256": "cb5fda4996e08ff4f9f9689659c1235ad3a6ec37cebd9a3c9187fbc4ba6c83b0"
+    },
+    {
+      "folder": "03_path_session",
+      "files": 1,
+      "folder_sha256": "9cf544cee9bff925e326a5a33327d48526cb84c1a2c15dadbe239f13d6b0f38f"
+    },
+    {
+      "folder": "04_tool_tiers",
+      "files": 1,
+      "folder_sha256": "af6c02343f7d759b2b50cd58ce672a9cf22d7e4e2f1b91852934c454161ba731"
+    },
+    {
+      "folder": "05_write_pipeline",
+      "files": 1,
+      "folder_sha256": "772e197c02e8dc976eb6182ac7a43f0fd04562a848ff79209f1b62ca3db1d0c3"
+    },
+    {
+      "folder": "06_token_auth",
+      "files": 2,
+      "folder_sha256": "6b715894a14bf60d14593865e83cbf1d01d845949606747d2b3d213a7ff8f531"
+    },
+    {
+      "folder": "07_error_schema_hints",
+      "files": 1,
+      "folder_sha256": "31b8d852cb0ec9424abdbf0379c0b8b7cc417a6fb0d91102867d701c1ad1e472"
+    },
+    {
+      "folder": "08_command_windows",
+      "files": 1,
+      "folder_sha256": "73a4d7ecba3de5f4bbca19038462897282697d4b0401b620c390f46cbf136474"
+    },
+    {
+      "folder": "09_testing_validation",
+      "files": 1,
+      "folder_sha256": "062d049b07f300a661e9525c24746ba1a6c893bf84ebca25c1343ffb0493e27d"
+    },
+    {
+      "folder": "10_coverage_report",
+      "files": 1,
+      "folder_sha256": "fc3b9433f0132bdf0514af92c8dbc9f09c5df639781ace13da553ff8d7413e82"
+    },
+    {
+      "folder": "11_repo_vs_runtime",
+      "files": 2,
+      "folder_sha256": "70eb0d8e51573111ec5c9021d2023d5afebe7366fc8be224146293db31255e00"
+    },
+    {
+      "folder": "12_native_audit",
+      "files": 1,
+      "folder_sha256": "39d30333397368bb816950226571cdd0443a71a9c6a968e179fbb51be2b5debd"
+    },
+    {
+      "folder": "13_apply_after_dry_run",
+      "files": 1,
+      "folder_sha256": "59201cb8f4216a6977ae97b7e49022d7d9a00a6647191ffe18b3ebfcb93c4d98"
+    },
+    {
+      "folder": "14_token_jwt_redesign",
+      "files": 2,
+      "folder_sha256": "26a9d8e18194e2888cb3cfe11c561fe0cbf8c065643b6792eeba3995170363c5"
+    },
+    {
+      "folder": "15_search_code_intel",
+      "files": 1,
+      "folder_sha256": "866c6bfbba71396afcc97af14716d5f8fa6ddc1a2ada1d2a28c8b8d7f27c7e6d"
+    },
+    {
+      "folder": "16_server_lifecycle",
+      "files": 2,
+      "folder_sha256": "a4dff3825abd71b54aa2b88d395f93c4a9ae69b8524e624875552fcd6750c3ce"
+    },
+    {
+      "folder": "17_session_audit",
+      "files": 1,
+      "folder_sha256": "2ef6f4d237cf95886e90df5b6b40c990edefa36a8dd3f449ea94d4b430a2e7c8"
+    },
+    {
+      "folder": "18_runtime_dom_T4",
+      "files": 5,
+      "folder_sha256": "25c72150ffcabeb2bc55684fe2e2f89735fdcdd3d2dabad6973ec208856794c9"
+    },
+    {
+      "folder": "19_image_mode",
+      "files": 1,
+      "folder_sha256": "791631b760003d82fcd35022f506d76e1142e5bc3a3b1f830337121aa632e387"
+    },
+    {
+      "folder": "21_tool_matrix",
+      "files": 3,
+      "folder_sha256": "546b0672f1eab91a70f38cfb0dddc88f72f83effeb775ae2078c77a649eb7721"
+    },
+    {
+      "folder": "22_electron_automation",
+      "files": 2,
+      "folder_sha256": "70cfafaaec6fe7a0524587e4160892290efff599a19bf0923cf4d1f71f592c19"
+    },
+    {
+      "folder": "26_workflow_ingestion",
+      "files": 1,
+      "folder_sha256": "8cd6d3d0afc1558e3fafab41c3d20e8064b3d9b70855ef3b48dfcdf72b28ea50"
+    },
+    {
+      "folder": "27_context_pool_write",
+      "files": 1,
+      "folder_sha256": "423a4533fe33e7f2b9a7225b811ddac823c5a678b50d88d79e92a0a96e962457"
+    },
+    {
+      "folder": "28_ocr_review",
+      "files": 1,
+      "folder_sha256": "975d5ab45d7bfe462962de71b59f90f9ac34102942008906944c1d615bcfae58"
+    }
+  ]
+}

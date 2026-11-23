@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: tool_matrix
 description: |
   Use after adding/removing/renaming an [A] tool, after large skill/workflow edits,
@@ -81,6 +84,7 @@ Response shape:
 | `skill_ref_missing_tool` | medium | Either fix skill SKILL.md trigger.tool typo, or register the tool. |
 | `inventory_outdated` | low | Append tool to the appropriate tier section in `.ToolA_Skill/references/tool_surface_current.md`. |
 | `obsolete_payload_in_harness` | medium | Update harness `.md`/`.ps1` to current contract (e.g. `mode=base64` → `query_encoding=base64`). |
+| skill_frontmatter_value_off_contract | medium | Inspect contract_drift and select a declared low, medium or high risk value. |
 
 ## Pre-call optimizations
 
@@ -211,7 +215,7 @@ Sau mỗi action mutation:
 End of test:
 ```
 [ ] extract_log_section(... "System Error Log") for final audit
-[ ] Release the owned page with cleanup_test_session(page_id).
+[ ] Release only the held page_id via close_browser_page; apply references/owned_page_release.md.
 [ ] final reporting flow removed from matrix
 ```
 

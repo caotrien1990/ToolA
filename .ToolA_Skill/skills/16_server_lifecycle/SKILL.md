@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: server_lifecycle
 description: |
   Use when [A] orchestrator or any project server is stuck, port-blocked, cache-stale,
@@ -50,10 +53,10 @@ Anti-pattern: ❌ Treat stale as always-blocker. Read-only T1 (search_code/find_
 
 | Symptom | Tool flow |
 |---------|-----------|
-| Port 8083 already in use | `server_lifecycle_status(8083)` → if same [A] running, OK; else kill old |
-| New code, UI same | `bundle_version_check(http://localhost:3099)` then `static_asset_cache_check` |
+| Configured ToolA port in use | Inspect server_lifecycle_status for that port and verify the owner. Keep other processes running; use the ToolA restart gate for its own service. |
+| External app UI shows an old build | Example external app UI http://localhost:3099; pass its HTML URL as html_url to bundle_version_check and its asset URL to static_asset_cache_check. |
 | Stop-Process Access Denied | That measured the CA shell (Medium IL), not [A] (High IL). [A] itself → `restart_orchestrator_via_bat`; another PID → [A] `kill_process` only on Anh's ask. `server_lifecycle_status.can_kill` is a username estimate, not a permission probe |
-| "Restart but health still old PID" | `detect_stale_server(8083, expected_bundle_version=<from log>)` |
+| Runtime still shows old PID | Use detect_stale_server with the port resolved from the active launcher. |
 | Browser shows old text after re-deploy | `static_asset_cache_check(<asset url>)` → Cache-Control + hash compare |
 | schtasks LastResult=1 / NO_8083 | Diagnose High-IL `&&` short-circuit (below); do not thrash more restarts first |
 
@@ -156,9 +159,9 @@ When code edits did not change runtime after 2 attempts:
 
 ## bundle_version_check details
 
-- For HTML pages with build metadata: extract `<meta name="build-version" content="...">` or query `?v=2026-05-13` from CSS/JS link
-- Compare against expected_bundle_version (CA tracks from last deploy)
-- Returns `{version_found, version_expected, drift: bool}`
+- The default marker recognizes a meta element with name="version" or an asset query ?v=. A custom marker_regex needs a capture group.
+- The payload contains url, version_found and matched. Compare version_found with the expected build in the caller.
+- See 21_tool_matrix for skill_frontmatter_value_off_contract.
 
 ## static_asset_cache_check details
 
@@ -213,8 +216,7 @@ CA shows this to User; does NOT execute the kill itself. That boundary is AUTHOR
 
 ## Harness
 
-- Test 1: kill [A] → `port_owner_inspect(8083)` → returns process_name=null, listening=false
-- Test 2: start [A] → `server_lifecycle_status(8083)` → returns own PID + can_kill=true
+- On an authorized test instance, inspect the configured port and compare the observed PID to the fixture. Use the ordinary host restart gate for ToolA.
 - Test 3: simulate cache stale (Cache-Control: max-age=3600 on CSS) → 2nd fetch differs → flag
 - Test 4: restart_server_via_bat_hint on a project .bat → `restart_command` runs that bat; on [A]'s own `start_orchestrator.bat` → it names `restart_orchestrator_via_bat`
 - Test 5: restart_orchestrator_via_bat → pre gen G0 → post gen G1≠G0 + health ok

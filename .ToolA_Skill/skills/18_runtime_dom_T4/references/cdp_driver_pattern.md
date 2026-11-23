@@ -4,8 +4,8 @@ Use this reference for Electron or Chromium automation through the Chrome DevToo
 
 ## Preconditions
 
-- The app must be launched with a remote debugging port, usually `--remote-debugging-port=9223`.
-- The debug port must answer `http://127.0.0.1:9223/json`.
+- The app must be launched with a remote debugging port, in this example `--remote-debugging-port=9223`.
+- For this launch the debug port must answer `http://127.0.0.1:9223/json`.
 - A page target must exist. If `title_pattern` is provided, the title must match one page target.
 - Shell wrapper exit code is not proof of GUI readiness.
 

@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: repo_vs_runtime
 description: |
   Use when CA must decide if a bug requires repo-side inspection (code) or runtime-side
@@ -41,7 +44,7 @@ After fix attempt #1 → re-test → no change?
   → STILL TRY repo angle (#2)
 After fix attempt #2 → re-test → no change?
   → FORCE T4 (server lifecycle, cache, bundle version, DOM render)
-  → If T4 reveals cache/server issue → user action (restart .bat) → then re-test
+  -> For an external app, use its documented restart procedure with its owner; for ToolA follow skill 16 and the restart approval gate.
   → If T4 reveals genuine code issue → back to repo with new info
 ```
 
@@ -57,7 +60,7 @@ After fix attempt #2 → re-test → no change?
 - `open_browser_page + read_page + screenshot_page` — DOM truth
 - `read_console_errors + read_network_errors` — runtime errors
 - `server_lifecycle_status(port)` — stale server detect
-- `static_asset_cache_check(url)` — browser cache stale
+- static_asset_cache_check(url) checks the external app asset on its own origin.
 - `bundle_version_check(html_url)` — bundle reloaded?
 
 ## Symptoms → which side first
@@ -103,6 +106,6 @@ For resumed-session tool replay errors, source truth and runtime truth may diver
 ## Harness
 
 - Test 1: simulated UI bug → 2 code fixes → no change → next attempt CA must call T4
-- Test 2: cache-stale scenario → T4c flags → User restart .bat → re-test pass
+- Test 2: Verify an external app cache issue, follow that app’s authorized restart procedure, then re-test.
 - Test 3: server-restart-needed scenario → T4 detects port stale → recommend action
 - Test 4: real code bug → T1 find_symbol succeeds first attempt (skill correctly chose repo-first)

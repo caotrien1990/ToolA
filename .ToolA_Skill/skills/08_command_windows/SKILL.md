@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: command_windows
 description: |
   Use when CA needs to run shell commands via run_project_command, especially for paths
@@ -44,7 +47,7 @@ There are two parsers in this path: the outer JSON transport and the Windows she
 
 For `shell_mode="auto"`, only a standalone `script.ps1` path means PowerShell `-File`. A command such as `findstr pattern script.ps1` is a normal command and must not be treated as a script-file invocation.
 
-When reading/searching files, prefer `search_code` or `read_file_range`. Do not spend retries on fragile `findstr`/`dir` pipelines, shell operators (`|`, `&&`, `>`), or Unix-style `/` path segments on Windows. On `STALE_INDEX`, switch once to `search_code(mode="literal")` or `read_file_range` with known lines.
+When reading/searching files, prefer `search_code` or `read_file_range`. Do not spend retries on fragile `findstr`/`dir` pipelines, shell operators (`|`, `&&`, `>`), or Unix-style `/` path segments on Windows. On `STALE_INDEX`, switch once to `search_code(mode="text")` or `read_file_range` with known lines.
 
 Bootstrap ownership is a two-step recipe: call `bootstrap_session(session_id, agent_id, owner_claim_id)`, retain the original claim, then call `begin_task` with the server-issued `owner_capability` and the original claim when the claim is still pending.
 
@@ -55,7 +58,7 @@ Bootstrap ownership is a two-step recipe: call `bootstrap_session(session_id, ag
 | Mode | Khi nào | Đó là gì | Audit |
 |------|---------|----------|-------|
 | **A. PRE-HEALTH bootstrap probe** | Trước health-check đầu session | Native exemption duy nhất pre-health (CORE_RULE §BOOTSTRAP) | KHÔNG cần audit |
-| **B. POST-HEALTH `[A]` API call** | Sau health OK, từ CA shell | `node -e` chạy `http.request('http://localhost:8083/api/call/<tool>')` — đây vẫn là **[A] API usage**, không phải native fallback | KHÔNG cần audit |
+| **B. POST-HEALTH `[A]` API call** | Sau health OK, từ CA shell | `node -e` chạy `http.request(new URL('/api/call/<tool>', process.env.ORCHESTRATOR_BASE_URL))` — đây vẫn là **[A] API usage**, không phải native fallback | KHÔNG cần audit |
 | **C. Native subprocess / fs / spawn** | Bất cứ khi nào tránh API | Native fallback, vi phạm SAFETY rule | **Required**: `log_native_event` |
 
 **Hardline**: Mode A & B chỉ KHÁC nhau ở thời điểm. Cả hai đều dùng `node -e` cú pháp giống nhau. Mode C khác bản chất — gọi `fs`, `child_process.spawn`, `os`, etc.

@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: error_schema_hints
 description: |
   Use to interpret structured errors from [A] API and decide next step. Activate on any
@@ -42,49 +45,23 @@ CA flow khi nhận error:
 
 
 
-## ⚡ V15 R22 — Per-tool verbosity toggle
+## Verbosity by tool
 
-**8 tool nhận `verbosity ∈ {full|terse|ref}`** (default `full`, back-compat):
+Read [A:API]/api/tools for the current census. Check the named tool's schema before setting verbosity.
 
-| Tool | Saving terse | What gets stripped |
-|---|---|---|
-| `open_session` | ~400/call | path_resolution_note + progressive_gaps_hint + resolved_from + matrix_audit compressed to 3 counts |
-| `audit_tool_matrix` | ~1500/call | drift/alias_drift capped at 3 entries + coverage + inventory_classification dropped |
-| `get_skill_state` | ~2800/call | per-entry path/path_absolute/size_bytes/read_file_range_payload* across 23 skills |
-| `read_skill` | ~300/call | path_absolute + total_lines + shown_lines + max_lines + truncated metadata |
-| `declare_mission` | ~800/call | irrelevant_skills_skip + recommended_sequence + caveats + score_floor_explanation |
-| `tool_decision_hint` | ~550/call | rationale + tools_validation + payload_example_per_tool schemas (kept: keys only) |
-| Error responses (`_err`) | ~350/error | ca_guidance.notes + known_gotchas + recommended_prompt_rule |
+| Tool | Allowed values | Default | Use |
+|---|---|---|---|
+| audit_tool_matrix | full, terse, ref | full | Inspect audit drift |
+| open_session | full, terse, ref | full | Read session entry state |
+| get_skill_state | full, terse, ref | full | Discover available skills |
+| read_skill | full, terse, ref | full | Read one skill |
+| declare_mission | full, terse, ref | full | Review mission routing |
+| tool_decision_hint | full, terse, ref | full | Inspect tool guidance |
+| mission_status | summary, full | summary | Inspect mission status |
+| bootstrap_session | terse, compact, ref, full | terse | Session bootstrap response |
+| list_structure | empty string, terse, normal, full | empty string | Project tree output |
 
-**Tổng**: ~5-7K tokens/session khi CA opt-in `terse` từ round 2.
-
-### Drift safety net (auto-force `full`)
-
-- `open_session`: nếu `matrix_drift_present=True` OR `progressive_gap_count>0` → bỏ qua `verbosity=terse/ref`, return `full` + `_drift_override` field.
-- `audit_tool_matrix`: nếu `drift_count>0` OR `progressive_gap_count>0` → cùng cơ chế.
-- Các tool khác (skill_state, read_skill, mission, decision_hint): respect verbosity as-is. CA chọn = CA chịu.
-
-### Usage pattern
-
-```jsonc
-// Round 1: full để CA học content
-open_session({project_path, session_title: "..."})
-get_skill_state({})
-declare_mission({mission: "..."})
-
-// Round 2+: terse
-open_session({project_path, verbosity: "terse"})  // matrix_audit chỉ 3 counts
-get_skill_state({verbosity: "terse"})              // chỉ tên 23 skills
-read_skill({name: "18", verbosity: "terse"})       // chỉ result + skill_name
-tool_decision_hint({task: "...", verbosity: "terse"})  // chỉ recommended_*
-audit_tool_matrix({project_path, verbosity: "terse"})  // drift capped at 3
-```
-
-### `_err` verbosity
-
-`_err(msg, error_name, verbosity="full"|"terse")` — caller forward CA's verbosity choice.
-Default `full` (errors should be visible). `terse` chỉ khi CA confident về error pattern.
-
+bootstrap_session and list_structure control discovery output. On an error, inspect error_name and ca_next_action in the actual response.
 ## 🔄 V15 R19 — Alias contract registry
 
 Trên `UNSUPPORTED_FIELD`, response giờ luôn có `accepted_aliases` + `ca_next_action`:

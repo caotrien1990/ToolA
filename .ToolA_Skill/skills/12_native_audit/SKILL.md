@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: native_audit
 description: |
   Use whenever a native tool (Edit, Read, Write, Bash, Grep, Glob) is invoked on repo/project
@@ -20,7 +23,7 @@ risk_level: medium
 
 ## When native is allowed (HARD)
 
-ONLY in these cases:
+Pure inspection within CORE_RULE read limits is audit-exempt. For native actions outside that limited inspection, check the following exceptions:
 1. **Anh's own break-glass** — a broken [A], or a scope Anh names (Claude host: Anh's `tắt gate` prompt); never self-authorized. A working [A] edits itself through `read_file_range` → `write_fix` like any project
 2. **Environment permission block** preventing API call (rare)
 3. **Read-only OS config** outside any project (`%APPDATA%\Claude\*.json`)
@@ -30,7 +33,7 @@ ONLY in these cases:
 Never allowed:
 - Multi-file batch without [A] API
 - Auth/token/delete operations
-- Project files, [A]'s own tree included, when [A] is available — must use API
+- Project writes while [A] is available, including edits to [A] itself.
 
 > Self-edit is NOT an exception. A native write to [A]'s own tree is still
 > `task_class=upgrade_orchestrator`, so the ledger names it, but its
@@ -40,7 +43,7 @@ Never allowed:
 > code. The only native path into [A] is case 1: Anh's break-glass while [A] itself
 > is broken, never self-authorized.
 
-## Mandatory audit (every native use)
+## Audit for permitted native actions outside pure inspection
 
 Live schema fields only (GET `/api/tools/log_native_event/schema` if unsure).  
 **Required:** `action_type`, `tool_name`.  
@@ -203,7 +206,7 @@ Before native project write: call `hermes_host_gate_check` / `classify_ca_action
 
 ## Harness
 
-- Test 1: open session, native Edit 1 file, log_native_event, close session → events table shows 1 native
+- Test 1: Inspect a small file within the read gate. For a separately authorized audited operation, verify its event by session and action.
 - Test 2: native_preflight(action_type="connection refused") on a project file → must deny HOST_GATE_DENY (a claimed outage licenses nothing)
 - Test 3: try native on [Ab:P] file when API is up → must STOP (negative test)
 - Test 4: forbid-row native write → log_native_event returns HOST_GATE_DENY / POLICY_REJECT / logged_and_rejected

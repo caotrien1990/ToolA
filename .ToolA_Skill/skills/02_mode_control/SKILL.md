@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: mode_control
 description: |
   Use to determine whether CA is in DEFAULT (T1 read-only) or EXECUTE mode. Activate
@@ -122,7 +125,7 @@ NOT covered by exception:
 ## Guardrails
 
 - Default mode at a genuinely new session/task; if a compaction handoff records an unfinished exact go-ahead, restore that scoped EXECUTE state unless the newest user message reverses it
-- T2/T3 tools without active trigger → return 409 `EXECUTE_TRIGGER_REQUIRED` (server enforces)
+- Without the user trigger for a scoped EXECUTE action, stop at the host decision gate. Report a daemon error only if the daemon actually returned it.
 - Never carry EXECUTE beyond the authorized action; do carry it across turns while that action is unfinished
 
 ## Operational Impact

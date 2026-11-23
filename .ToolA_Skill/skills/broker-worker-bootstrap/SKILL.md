@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: broker-worker-bootstrap
 description: Use inside a broker-worker task when the prompt says "If this task must write outside cwd, bootstrap [A] and use [A] write tools." Keeps worker writes outside cwd routed through [A] instead of failing or silently using native filesystem writes.
 ---
@@ -13,7 +16,7 @@ Use this skill when a broker task requires reading or writing outside the worker
 
 ## Rule
 
-- Use HTTP `[A:API]` only: `http://localhost:8083/api/call/<tool>`.
+- Use HTTP `[A:API]` only: `[A:API]/api/call/<tool>`.
 - Do not use MCP.
 - For artifact/source writes outside `cwd`, open/verify the project root with `open_session`, then use `write_new_file` or `write_fix`.
 - Use `content_encoding="base64"` for multiline text, JSON, Markdown, code, paths, backslashes, quotes, or Vietnamese.
@@ -22,7 +25,7 @@ Use this skill when a broker task requires reading or writing outside the worker
 
 ## Minimal Flow
 
-1. `GET http://localhost:8083/api/tools/<tool>/schema` if a payload field is unclear.
+1. `GET [A:API]/api/tools/<tool>/schema` if a payload field is unclear.
 2. `POST /api/call/open_session` with `project_path` set to the target root.
 3. `POST /api/call/write_new_file` or `write_fix`.
 4. Validate if the prompt asks for verification.

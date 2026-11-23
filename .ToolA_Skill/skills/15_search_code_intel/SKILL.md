@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: search_code_intel
 description: |
   Use for code search, symbol lookup, callers/usage discovery, regex/text scan, and any
@@ -7,9 +10,9 @@ description: |
   V15 R12: unified base64 transport via query_encoding / name_encoding fields (mode=base64 REMOVED).
 trigger:
   - task_pattern: "find | where is | search | lookup | locate | callers | usage of"
-  - tool: "search_code | find_symbol | query_index | get_file_symbols | regex_search | find_callers | find_definition_and_usage | import_graph | ast_query | git_blame_symbol | get_project_summary"
+  - tool: "search_code | find_symbol | query_index | get_file_symbols | cbm_graph_status | cbm_trace_path | ocr_map | import_graph | ast_query | git_blame_symbol | get_project_summary"
 preconditions:
-  - "Project indexed (generate_project_map ran) for semantic results"
+  - "Check the project index before an indexed graph or symbol query"
   - "For non-indexed: live filesystem fallback available"
 related_skills:
   - 07_error_schema_hints
@@ -26,8 +29,8 @@ What are you looking for?
 ├─ Function/class/const definition by name → find_symbol(name)
 ├─ All callers of symbol X → find_symbol(name, include="callers") (v2)
 ├─ Definition + usages in one call → find_symbol(name, include="all") (v2)
-├─ Exact text/string (single token) → search_code(query, mode="literal")
-├─ Multi-word phrase → search_code(query, mode="smart") [V15 R2 default]
+├─ Exact text or phrase → search_code(query, mode="text")
+├─ Multi-word discovery → search_code(query, mode="smart")
 ├─ Regex pattern → search_code(query, mode="regex")
 ├─ Unicode/Vietnamese with diacritics → search_code(query=<b64>, query_encoding="base64") [V15 R12]
 ├─ Symbols in 1 file → get_file_symbols(file_path)
@@ -39,8 +42,9 @@ What are you looking for?
 
 | Mode | When | Behavior |
 |------|------|----------|
-| `smart` (default) | Multi-word task description | Single token → literal; multi-word → OR-split with at least 1 token match per result |
-| `literal` | Exact phrase | re.escape(query) |
+| text (default) | Literal text search | Exact text or phrase |
+| smart | Multi-word discovery | Explicit selection |
+| symbol, callers, definition_usage, index | Symbol/relationship or indexed lookup | Select the mode for the question |
 | `regex` | Pattern with groups/alternation | Validated regex, IGNORECASE |
 
 > **mode="base64" REMOVED in V15 R12.** Use `query_encoding="base64"` (transport-level) with any of the
@@ -79,7 +83,7 @@ Replaces 3 separate calls; saves ~5 KB context per investigation.
 1. **Is target a known symbol name?** → find_symbol (O(1) via INDEX)
 2. **Is target free text?** → search_code smart
 3. **Need full body excerpt?** → set `context_lines=10` to avoid extra read_file_range
-4. **Searching across multiple projects?** → loop project_path; multi-project search planned R6
+4. Query each project by its own project_path; record the scope with each hit.
 
 ## Efficiency Notes
 
@@ -90,7 +94,7 @@ Replaces 3 separate calls; saves ~5 KB context per investigation.
 
 ## Anti-patterns
 
-- ❌ `search_code(query="hidden row")` with literal default → 0 hit (use smart)
+- Use text for an exact phrase and smart for token-based discovery.
 - ❌ Multiple search_code calls when find_symbol(include="all") suffices
 - ❌ Reading full file when read_file_range with range_id works
 - ❌ Native grep when [A] indexed search works (loses governance)
@@ -105,6 +109,11 @@ Replaces 3 separate calls; saves ~5 KB context per investigation.
 | Class method find_symbol | Searches "def name" pattern; nested methods may need find_symbol on class then get_file_symbols |
 | Stale INDEX | refresh_project_map; if returns empty → generate_project_map |
 
+## Code graph and changed-file review
+
+Use cbm_graph_status(project_path=project_root) to check the graph for a single project. For impact analysis use cbm_trace_path(project_path=project_root, start_node_id=node_id) with a node ID from the graph. Use search_code with mode callers or definition_usage for the corresponding symbol query.
+
+For review scope, ocr_map(project_path=project_root, commit=full_sha, min_changed_lines=1, include_excluded=true) maps an immutable diff and reports excluded files. Capture ref_metadata and counts. Use 28_ocr_review for the review workflow.
 ## Harness
 
 - Test 1: search_code multi-word → smart mode returns ≥1 hit per word

@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: skill_router
 description: |
   Master decision tree for routing CA actions across [A] tools, native tools, and T4 runtime.
@@ -21,20 +24,9 @@ risk_level: low
 
 # 00 — Skill Router (Master Decision Tree)
 
-## ⚡ V15 R42 — FIRST-CALL EVERY SESSION: `bootstrap_session(project_path)`
+## Session entry
 
-CA pain report R42: 17% calls failed UNSUPPORTED_FIELD vì không biết schema. Fix: **mỗi session đầu tiên gọi `bootstrap_session(project_path)`** trước bất cứ work khác. Trả 1-call compact:
-
-- `orchestrator_health` (port, version)
-- `active_workflow` (User-activated workflow if any)
-- `key_tools_compact` (~35 tool with required fields + alias hints + notes)
-- `common_pitfalls` (lessons R29-R41 distilled)
-- `active_skills_index` (skill names)
-- `see_also_macros` (audit_tool_matrix, acceptance_dashboard, per-tool inspector endpoint URLs)
-
-Saves ~5-10 schema queries per session. Read once → biết tool nào accept project_path, field aliases, token requirements, workflow state.
-
-Sau bootstrap, đọc skill chuyên biệt nếu task vào sâu lĩnh vực cụ thể.
+Call get_rule_core_text with your agent_id once per process/session. Reuse that bootstrap epoch after compaction. For file or folder work, open_session with the absolute project root. When task ownership is required, follow the owner claim flow in skill 08. bootstrap_session needs session_id, agent_id and owner_claim_id; project_path alone is insufficient.
 
 ---
 
@@ -46,9 +38,9 @@ Sau bootstrap, đọc skill chuyên biệt nếu task vào sâu lĩnh vực cụ
 | Old memory/context before search/scan/fetch/history | [Q] `/pre_search` via [Q:A] first, then normal [A]/council route | leader-council-skill |
 | Council dispatch / worker routing / multi-worker brainstorm / implement council plan | Load `leader-council-skill` first, then use the loop/fix skill needed by the task | leader-council-skill + council-brainstorm-loop/project-orchestrator-fix-loop |
 | Auto-chain hint in tool response (`ca_hint`/`ca_next_action`, the scoped `ca_hint_commit`/`ca_hint_rule`/`ca_hint_review`/`ca_hint_scope`, or the rarer `ca_chain_hint`/`ca_chain_next`) | Read whichever key the payload actually carries -- both vocabularies exist in code, so never rename an emitted field to match a doc. Present as suggestion, do NOT auto-execute `ca_next_action`/`ca_chain_next` without user go-ahead | 00_skill_router |
-| Deprecated tool (`regex_search`, `find_callers`, `find_definition_and_usage`, `read_chunks`) | Use `search_code` (mode=regex/smart) or `read_file_range` instead | 00_skill_router |
+| Deprecated search aliases | search_code with regex, callers or definition_usage as appropriate; read_file_range for a known span | 15_search_code_intel |
 | Multi-file write + audit/rollback | [T2] [A] | 05_write_pipeline |
-| Single-file <30 lines low-risk | Native Edit + log_native_event | 12_native_audit |
+| Small project edit | [T2] read_file_range, then write_fix | 05_write_pipeline |
 | Auth/token/write pipeline (any size) | [T2] [A] | 05_write_pipeline + 06_token_auth |
 | UI bug / runtime / DOM | [T4] | 18_runtime_dom_T4 |
 | Server stuck / port / cache stale | [T4c] | 16_server_lifecycle |
@@ -65,8 +57,8 @@ Sau bootstrap, đọc skill chuyên biệt nếu task vào sâu lĩnh vực cụ
 | Run JS too long/escape-prone for inline evaluate_js | [T4b, stateful MCP only] run_script(script_path) | 18_runtime_dom_T4 |
 | Enumerate DOM inputs/buttons/textareas/links | [T1] query_dom_candidates(filter) | 18_runtime_dom_T4 |
 | Map full DOM section + view-* panel structure | [T1] describe_page | 18_runtime_dom_T4 |
-| Release an owned test page (close launched page or detach attached app) | [T4] cleanup_test_session(page_id) | 18_runtime_dom_T4 |
-| Pre-launch hygiene (kill stale electron + free CDP port) | [T4] ensure_single_electron_instance | 22_electron_automation |
+| Release your own page | [T4] close_browser_page(page_id); attached pages detach | 18_runtime_dom_T4 |
+| Inspect a CDP launch conflict | Inspect the owner and the port supplied by the launcher. Keep other apps running. | 22_electron_automation |
 | Click + need state delta in 1 call | [T4, stateful MCP only] click_selector | 18_runtime_dom_T4 |
 | Poll DOM state until change (server-side loop) | [T4, stateful MCP only] checkpoint_loop_dom_state | 18_runtime_dom_T4 |
 | Read skill body by short name | [T1] read_skill(name) | 03_path_session |
@@ -88,7 +80,7 @@ Sau bootstrap, đọc skill chuyên biệt nếu task vào sâu lĩnh vực cụ
 
 ```
 task arrives →
-  bootstrap [A] once (health OK; stop on connection-refused)
+  bootstrap with get_rule_core_text once per process/session; stop on refusal
   is_project_work?
     yes → [A]-first: classify task_class via CA_TOOL_POLICY_MATRIX
           (SOT: .council/CA_TOOL_POLICY_MATRIX.json, echoed live by
@@ -104,12 +96,7 @@ task arrives →
           is_UI_runtime_concern?
             yes → [T4] (use 18_runtime_dom_T4)
             no →
-              is_multi_file or audit_required?
-                yes → [T2] [A] write_pipeline
-                no →
-                  scope ≤ 30 lines AND low_risk AND not in {auth, token, write_pipeline}?
-                    yes → Native Edit + log_native_event (skill 12) — still counts for metrics
-                    no → [T2] [A] write_pipeline
+              use [T2] read_file_range and the project write pipeline
               after 2 failed cycles + runtime unchanged →
                 FORCE [T4] check (server/cache/port)
 ```
@@ -118,7 +105,7 @@ task arrives →
 
 | Class | Primary | Native |
 |---|---|---|
-| Project read/search/path | `[A]` T1 | forbid |
+| Project read/search/path | [A] T1 | Bounded pure inspection per CORE_RULE; read-to-edit via read_file_range |
 | Project write/create/batch/delete | `[A]` T2 | forbid |
 | Session/backup/audit | `[A]` T3 | forbid (log native only for true exceptions) |
 | CLI C-suffix worker | HTTP-only | no native project FS |
@@ -159,22 +146,10 @@ When Anh steers “A plus native” / rejects micro-call spam: batch mechanical 
 
 - `.ToolA_Skill/references/tool_surface_current.md` — exhaustive tiered tool surface reference for matrix audits
 - `TOOL_REFERENCE.md` — representative tiered reference for user-facing documentation
-## Worker Cost Routing (R20260619)
+## Council routing
 
-Before any council dispatch, choose the cheapest tier that can safely complete the task:
+Read leader-council-skill and the currently enabled council configuration before dispatch. Use the assigned role, risk level and cost limits for this task.
 
-| Task class | Default route | Do not use |
-|---|---|---|
-| Local scan, grep, path verify, backup/remove/move, D:/BR cleanup | OpeC / FREE | ClauC/CodoC unless Anh explicitly requests |
-| Internet research, docs/community fetch, broad source gathering | Cheapest FREE-tier enabled worker routed via `leader-council-skill` | ClauC/CodoC |
-| Synthesis, implementation proposal, rule shrink, gatekeeper design, 2-round brainstorm | A MEDIUM-cost routed model worker (`council_worker_model` SET+GET) | Free workers as final authority |
-| T4/stateful MCP/browser runtime, high-stakes final judgement, user-requested expensive review | ClauC or CodoC / EXPENSIVE | Routine cleanup/scan |
+## ToolA pages
 
-Hard gates:
-- ClauC is not a cleanup worker.
-- CodoC is not a default helper.
-- Removed-route notes about retired workers are obsolete. The live research/scan/report split comes from the `enabled` rows of `.council/council_config.json` and `leader-council-skill`; do not keep a slot table in this file.
-- Expensive dispatch prompts must state why the routed free/medium workers and [A] write tools are insufficient.
-- For memory/context-pool writes, prefer `[A] write` to a bounded artifact, then let librarian ingest/distill if needed.
-
-Lookup artifact: `D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\17. Council_Tr\context_pool_specs\MODEL_COST_ROUTING_SPEC_v1_1.md`.
+Resolve [A:API] from the active launcher or ORCHESTRATOR_BASE_URL. Main uses /, Council uses /council. Check these three integrated routes separately and record status plus generation. For /monitor compare the HTML title with orchestrator/web_ui/monitor.html. For /api/monitor/health require a JSON object with boolean up. For /matrixtool compare the title with orchestrator/web_ui/matrix.html. Record the working-file SHA when the served build contains uncommitted pages. A legacy Monitor origin is optional.

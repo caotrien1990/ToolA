@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: coverage_report
 description: |
   Use when reporting regression test results, tool coverage, skill loop test pass-rate.
@@ -84,10 +87,7 @@ Pass threshold: ≥ 95% router accuracy + 100% negative_tests passed.
 
 ## Tool coverage report
 
-For "verify all 48 tools" tasks:
-- Iterate `/api/tools` list
-- Smoke test 1 representative call per tool (with payload_example)
-- Classify: ok=true → pass; specific error_name → fail; missing/404 → untested
+For a full-surface coverage report, obtain the current list from [A:API]/api/tools and record its generation. Classify each authorized test by the observed outcome. For mutating or owner-gated operations, record untested unless the required scope was issued.
 
 Use `<live_tool_count>` placeholder in template, substitute count from /api/tools length.
 

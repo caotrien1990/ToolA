@@ -588,14 +588,7 @@ def test_contract_gate_ignores_absent_risk_level(tmp_path, monkeypatch):
     assert _contract_offenders(res) == set()
 
 
-def test_real_tree_contract_offenders_are_exactly_the_known_debt(real_audit):
-    """The shipped tree carries exactly one off-contract declaration today:
-    17_session_audit's `risk_level: low-medium` (SKILL.md:16). The pin cuts
-    both ways: a second offender fails the suite, and fixing the SKILL.md --
-    a content change owned by the skill-update lane -- must update this pin
-    in the same commit."""
-    assert _contract_offenders(real_audit) == {"17_session_audit"}
-    entry = [d for d in real_audit["contract_drift"]
-             if d["type"] == "skill_frontmatter_value_off_contract"][0]
-    assert entry["value"] == "low-medium"
-    assert real_audit["summary"]["contract_drift_count"] == 1
+def test_real_tree_has_no_off_contract_skill_risk(real_audit):
+    """An invalid declared risk must surface in both the findings and the count."""
+    assert _contract_offenders(real_audit) == set()
+    assert real_audit["summary"]["contract_drift_count"] == 0

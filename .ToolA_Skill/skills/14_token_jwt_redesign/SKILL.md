@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: token_jwt_redesign
 description: |
   Future-state design for moving from shared-secret token to JWT. Currently a design
@@ -17,19 +20,16 @@ risk_level: low
 
 # 14 — Token / JWT Redesign (V16+ design spec)
 
-## Current state (V15) — shared secret
+## Current shared-secret implementation
 
-- 1 random token generated per [A] lifecycle (file `<orchestrator_cache>/.session_token`)
-- All CAs use same token; localhost-readable
-- Rotation = restart only; no expiry, no revocation
-- All-or-nothing: token holder has full T2/T3 mutate access
+Use 06_token_auth for the live default and conditional client flow. The authoritative expiry paragraph is in references/token_refresh.md. The following JWT sections are a design proposal.
 
 ## Why migrate
 
 | Limitation (V15) | V16+ JWT solution |
 |------------------|--------------------|
 | Single token, all-or-nothing | JWT claims encode `tier_max`, `tool_allowlist` |
-| No expiry → must restart to rotate | `exp` claim → CA proactive refetch before expiry |
+| Shared expiry without per-client claims | Proposed exp claim for the individual client |
 | No CA identity | `sub: <agent_id>`, audit trail per CA |
 | Token leak = total compromise | Short-lived; revocation list possible |
 | No scope on project | `proj: [Ab:P]` claim limits to specific project |

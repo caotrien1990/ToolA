@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: image_mode
 description: |
   Use when rendering data as image (PNG/SVG) is more useful than text.
@@ -45,14 +48,7 @@ Some User research suggests image is ~30% cheaper than equivalent text. This is 
 - `desktop_screenshot(...)` — full-screen PNG to a disk path, never inlined (T4)
 - `describe_page(...)` — the DOM as text (T1); the cheap first choice before any pixel
 
-**There is no server-side render tool, and none is scheduled.** Until 2026-09-17 this
-section advertised `render_mermaid` and `render_table_as_image` as "(Planned R+1)". Neither
-was ever implemented: measured against the live tool surface — the same set
-`_tool_names_payload` builds and `/api/tools/names` publishes — both resolve to nothing. A
-skill that names a callable which does not exist costs CA a real round trip to discover
-that, so the two names are gone from every actionable line here, and the frontmatter
-`trigger.tool` is pinned by `tests/test_a31_skill_surface_gates.py`: a token there must
-name a live tool, with no `(planned)` escape hatch left to re-add one through.
+Historical note (September 2026): earlier revisions advertised planned renderer names and subsequently removed them from the actionable list. For current rendering capabilities use the served catalog; the frontmatter lists the screenshot entry points used by this skill.
 
 ## Typical workflow
 

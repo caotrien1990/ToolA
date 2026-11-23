@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: electron_automation
 description: |
   Use when task involves Electron-based app UI: launch, attach CDP, click,
@@ -64,7 +67,7 @@ If none of those match → it's not Electron; use skill 18 generic browser recip
 Electron apps shipped without remote-debugging-port can be launched WITH the flag via `launch_electron_with_cdp`. It detects the launcher, injects `--remote-debugging-port=<port>`, runs background, fetches `/json/version`, calls `cdp_attach_target` — one tool call.
 
 ```jsonc
-launch_electron_with_cdp({"project_path": "<root>", "cdp_port": 9223, "verify_after_ms": 6000})
+launch_electron_with_cdp({"project_path": "<root>", "cdp_port": 9223, "verify_after_ms": 6000})  // example: this app was launched on CDP 9223
 // → {ok, page_id, cdp_port, attach_via, command_executed, launch_pid}
 ```
 
@@ -109,13 +112,7 @@ Array.from(document.querySelectorAll('button')).map(b => ({id: b.id, text: b.tex
 
 ## Cleanup pattern
 
-Pass the page ID returned to this caller. Cleanup closes a launched page or detaches from an attached application.
-
-```jsonc
-cleanup_test_session({"page_id": "<owned page_id>"})
-```
-
-Close a project session separately by its exact session ID. Process termination requires a separately authorized PID.
+Follow references/owned_page_release.md. Use close_browser_page with your held page_id. Release the project session separately by its own ID.
 
 ## CSP unsafe-eval handling
 
@@ -159,7 +156,7 @@ extract_log_section({"page_id":"<id>", "section_title":"System Error Log"})
 // → {ok, content:"<full log>", is_empty:false}
 
 // 8. Release this page or CDP attachment
-cleanup_test_session({"page_id":"<id>"})
+close_browser_page({"page_id":"<owned page_id>"})
 
 // 9. final report + session wrap-up
 ```

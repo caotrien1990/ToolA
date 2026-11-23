@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: session_audit
 description: |
   Use for session lifecycle (open, close, rename), audit trail (events, native_log,
@@ -13,10 +16,12 @@ preconditions:
 related_skills:
   - 12_native_audit
   - 03_path_session
-risk_level: low-medium
+risk_level: medium
 ---
 
-# 17 — Session / Audit / Auxiliary (T3)
+# 17 - Session audit and handoff
+
+This skill uses medium for its session lifecycle and audit writes. Skill risk_level uses low, medium, high. Council RISK_LEVEL records dispatch risk; DEV_LEVEL records developer judgement. A tool's T1/T2/T3/T4 tier is a separate registry field.
 
 ## 🧭 V15 R18 — declare_mission @ session opener
 
@@ -31,7 +36,7 @@ declare_mission({
   top_skills: 5
 })
 // → relevant_skills: [{name:"18_runtime_dom_T4",score:0.92}, {name:"22_electron_automation",score:0.88}, ...]
-// → recommended_sequence: ["1. read_skill(name='18')", "2. ensure_single_electron_instance(...)", ...]
+// Read the returned recommended_sequence and check ownership before a runtime action.
 // → irrelevant_skills_skip: [...18 skills CA không cần đọc...]
 // → tokens_saved_estimate: ~18000
 ```

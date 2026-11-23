@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: council-cron-jobs
 description: Create, update, inspect, trigger, and delete durable council schedules that pin a worker/model and optional narrator/model. Use for council cron, scheduled workers, scheduled narrators, and recurring council jobs.
 ---

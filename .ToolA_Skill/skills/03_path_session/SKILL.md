@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: path_session
 description: |
   Use whenever CA touches a file/folder path or operates on a project. Activate on User
@@ -45,7 +48,7 @@ Never join `project_path` with absolute `file_path` (would double-prefix). If sc
 
 Whenever User mentions any file/folder path (even outside current project):
 1. Identify project root by walking up looking for `.orchestrator_cache/`, `.git/`, `package.json`, or `requirements.txt`
-2. Call `open_session(project_path=<root>)` BEFORE any read/write
+2. After rule bootstrap, call open_session with the absolute project root before file/folder work.
 3. The file becomes `file_path` relative to project_path
 4. Session DB stores `[Ab]/[Ac]/[Ad]..` slot for it; `list_sessions` enumerates
 
@@ -85,7 +88,7 @@ Whenever User mentions any file/folder path (even outside current project):
 
 ## Guardrails
 
-- After health OK and BEFORE first mutating call: `open_session` mandatory
+- Open the session before file/folder work (SLIM_RULE). Check requires_session on each tool independently. The AUTO_WRITE fallback on a mutating call is server behavior, not the host entry sequence.
 - V15 R8 C.1: close_session middleware resolves path automatically
 - Sessions auto-close if idle > N hours (server policy); resume creates new session_id
 

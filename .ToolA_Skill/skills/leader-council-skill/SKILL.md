@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: leader-council-skill
 description: Council leader anti-drift skill. Use when Anh triggers leader mode with exact user input "bat hoi dong tr" or "bat hoi dong tr" with Vietnamese diacritics, or when a leader CA must coordinate multi-worker council work without drifting. Enforces Q-first before old-context clarify/search/scan/fetch/history work, bounded Q memory context, full-path broker dispatches, worker/model routing, and Round 2+ peer scoring. Never use from broker/worker prompts or text containing "[broker response]".
 trigger:
@@ -71,7 +74,7 @@ The important upgrade is measurement, not another route rewrite. Before every co
 ```text
 TASK_ID: <stable id>
 OBJECTIVE_CLASS: <bounded task class>
-RISK_LEVEL: low | mid | high
+RISK_LEVEL: low | medium | high
 DEV_LEVEL: low | mid | high
 LOAD_BUDGET_SOURCE: benchmark | observed-history | conservative-heuristic
 INDEPENDENT_QUESTIONS: <integer>
@@ -140,7 +143,7 @@ Do not apply Benchmark-Calibrated Routing v3. That table is not a live route rul
 
 ## Risk And Development Routing Gate
 
-Classify `RISK_LEVEL` and `DEV_LEVEL` (`low | mid | high`) as measurement metadata in the dispatch envelope. Use the stricter axis as the verification floor.
+Classify `RISK_LEVEL` (`low | medium | high`) and `DEV_LEVEL` (`low | mid | high`) as measurement metadata in the dispatch envelope. Use the stricter axis as the verification floor.
 
 Do not map RISK×DEV to a worker/model pair from the suspended table. Worker/model comes only from Anh or from the live pin after SET+GET. ClauC remains outside the normal routing order and is used only by its exceptional-route gate.
 

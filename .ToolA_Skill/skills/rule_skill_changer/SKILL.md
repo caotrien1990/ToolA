@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: rule_skill_changer
 description: Trigger: "cập nhật skill rule". Use when changing rules, council routing, worker routing, skill bodies, skill router, or syncing rule/skill to all CA. Forces querying related [A] Python files before deciding whether code changes are needed.
 trigger:
@@ -29,6 +32,7 @@ Do not sync first. Follow this numbered order exactly:
 7. **Compile/test Python if changed**: run `py_compile`; restart [A] with `restart_orchestrator_via_bat` (`delay_seconds=2` only) only if Python source changed and no worker dispatch is in flight; poll `/health` through the refusal until a NEW `pid` and a CHANGED `generation`.
 8. **Verify live schema/tool behavior**: read relevant live schemas such as `council_message`, `council_worker_model`, `manage_agent`, or the changed tool; run a small behavior test when runtime/tool behavior changed.
 9. **Dry-run sync**: run `manage_agent sync_rule dry_run=true` and/or `manage_agent sync_skill dry_run=true` only after source/diff/schema are clean.
+9a. **OpenCode folder sync.** Before each OpenCode folder sync, inventory the effective loader roots and move discoverable backup trees (_ma_archive and loose .bak_ma folders) to a retained location outside every root. Record source and destination. Compare dry-run source, target, file count and folder SHA-256 with the manifest for this pair, including bundled references. After apply, check match and member hashes, relocate any newly created archive, then run opencode debug skill --pure from the target project with the real configuration. Match the frontmatter name to the expected active SKILL.md path. A missing or different winner stops the next sync. Repeat on future syncs.
 10. **Apply sync**: run the required `sync_rule` / `sync_skill` only if dry-run is correct.
 11. **Adapter sync after rule sync**: update only adapter targets returned by the live registry/tool dry-run, because `sync_rule` can overwrite adapter refs. Do not hardcode CA names.
 12. **Verify propagation**: bounded-search canonical files and all target CA locations.
@@ -204,11 +208,7 @@ self-consistent, not that disk matches it. Run it AFTER the restart or it grades
   and the transport line naming which workers are HTTP-only. The greeting lists drift the OTHER way
   too -- the leader list had never included the live GroC. Rewriting a line also clears the
   double-encoded `ChA o` mojibake sitting in both files.
-- Three literal markers are REQUIRED in each of those two docs. The live checks sit at
-  `code_tools.py:16871-16875`, with the retired-label word-boundary scan just above at 16869-16870
-  and the roster/retired reads at 16851-16853. An earlier version of THIS skill anchored them at
-  `16849-16853` and was wrong -- a `file:line` anchor is exactly what the `constants` blind spot
-  below cannot check, so the skill drifted against the code it documents.
+The literal council marker checks are in code_tools.py:19744-19749. Locate the marker strings in the current revision before changing the prose.
 - Each marker accepts SEVERAL literal variants, all matched lowercased, so grep for ANY variant and
   never for the single phrase: no-cost-chain accepts `no fixed chain`, `no cost chain`,
   `no fixed cost chain` or `do not use a cost chain`; the CodoC marker accepts `not default leader`
@@ -239,26 +239,16 @@ fragments include a git-worktree probe and an HTML version scraper. Pick by what
 and for every blind spot below the manual step is the only coverage that exists.
 
 - `rule_drift_check` opens exactly THREE files -- `RULE_DRIFT_SOURCES` at
-  `code_tools.py:3235-3239` = `examples/CORE_RULE.txt`, `examples/SLIM_RULE.txt`,
-  `examples/SLIM_RULE_INLINE.txt`. Every rule text OUTSIDE `examples/` (the 10 rendered CA rule
-  files, `.council/*.md`, every `SKILL.md`) is invisible to all four of its checks. Manual: grep
+  code_tools.py:3338 defines the rule sources under examples/. For rendered CA rule files use the targets in the current sync_rule dry-run. Other rule and skill files need a separate scan.
   those paths yourself, per classes B and C above.
-  - `tool_names` (`:4737`) matches by POSITION only: `` `tool(`` and `/api/call/<tool>`. A stale
+  - tool_names (code_tools.py:5113) recognizes tool references by position.
     tool named in prose as bare `` `tool` `` is deliberately NOT flagged -- that change removed 16
     false positives out of 16. The one exception is a name in `_DEPRECATED_TOOLS`, which is a
-    ONE-member set (`electron_devtools_log`, `:17198`), so a freshly deprecated alias stays
+    registry set (code_tools.py:20074); read its current entries. A newly deprecated alias stays
     unchecked until it is added there. Manual: after renaming or retiring a tool, grep the rule
     files for the BARE name and add the old name to `_DEPRECATED_TOOLS`.
-  - `agent_list` (`:4787`) is blind in BOTH directions. The id list is HARDCODED at `:4796` --
-    `\b(clau|codo|gro|pic|ope|hermes|kilo|cozo)\b` -- so `fbuf`, `claultnai` and `zcode` are live
-    registry ids this regex can never match: a stale mention of them cannot be reported at all.
-    And the config side reads `cfg["agents"].keys()` WITHOUT the `enabled` filter, so a row retired
-    the approved way (`enabled: false`) still counts as present and a rule file may keep routing to
-    it at severity zero. Those two facts together are the other half of "drift bao 0 nhung kiem tra
-    lai con drift". Manual: take the id set from `manage_agent(action='list')` +
-    `agents_registry.json`, intersect it with the `enabled: true` rows of `council_config.json`, and
-    grep every retired id yourself with a word boundary.
-  - `behavior_sets` (`:4805`) opens NO file -- it is code vs code (`_MUTATION_SCOPE_MAP`,
+  - agent_list (code_tools.py:5163) obtains configured ids from .council/council_config.json at :5166. Compare enabled dispatch routes separately against the live configuration.
+  - `behavior_sets` (`:5182`) opens NO file -- it is code vs code (`_MUTATION_SCOPE_MAP`,
     `TOKEN_REQUIRED_TOOLS`, `PROTECTED_TOOL_NAMES` vs `TOOL_MAP`, `tool_mutation_scope`,
     `tool_phase`). It is also where 100% of the live rows come from: 20 rows, all `info`, all the
     CAN-012 decoupled-by-design baseline. So `drift_count: 20` is the FLOOR of a healthy surface and

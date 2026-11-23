@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: tool_tiers
 description: |
   Use to pick the right tool tier for any task — T1 read, T2 write/verify, T3
@@ -23,9 +26,9 @@ risk_level: low
 
 | Tier | Label | Token | Examples |
 |------|-------|-------|----------|
-| **T1** | Discover / Analyze / Read | No | find_symbol, search_code, read_file_range, list_structure, get_project_summary |
+| **T1** | Discover / read / session entry | Check the tool schema | open_session, search_code, read_file_range, list_structure |
 | **T2** | Mutate / Verify / Refresh | Yes (most) | write_fix, validate, project_map, run_project_command, backup_project |
-| **T3** | Session / Audit / Auxiliary | Yes (mutating) | open_session, close_session, log_native_event, prepare_ca_session |
+| **T3** | Audit and auxiliary operations | Per tool | log_native_event, prepare_ca_session |
 | **T4** | Runtime / DOM / Browser / Server lifecycle | Mixed | open_browser_page, server_lifecycle_status, screenshot_page, electron_devtools_log |
 
 ## Selection Matrix
@@ -34,12 +37,12 @@ risk_level: low
 Project work?                    → [A]-first via CA_TOOL_POLICY_MATRIX
                                    (.council/CA_TOOL_POLICY_MATRIX.json;
                                     skill 21_tool_matrix references/)
-Read code/files (project)?       → T1 [A] (read_file_range / search_code) — native forbid
+Read project files?              -> T1; bounded pure inspection per CORE_RULE is audit-exempt. Seed a read_token via read_file_range before edits.
 Need to write/modify?            → T2
 Multi-file or critical write?    → T2 [A] (rollback essential)
 Single-file <30 lines low-risk?  → T2 write_fix; native only under Anh's break-glass (skill 12)
 Auth/token/delete?               → T2 [A] always (governance)
-Open/close session?              → T3
+Open a project session?          -> T1 open_session; inspect the catalog tier for each other lifecycle operation.
 Native used / off-project host?  → T3 log_native_event / create_pending_audit
 UI bug / runtime / browser?      → T4
 Server stuck / port issue?       → T4c
@@ -57,16 +60,14 @@ Token-gated tools = `requires_token` in `GET /api/tools/<tool>/schema` (SOT `cod
 
 A typical task spans tiers:
 ```
-T1 (find_symbol/read) → T1 (analyze) → T3 (open_session) →
-T2 (write_fix dry_run) → T2 (apply) → T2 (validate) → T3 (close_session)
+T1 open_session -> T1 read -> T2 preview/apply -> validate -> close the session when appropriate.
 ```
 Each tier transition is a natural checkpoint for the routing decision.
 
 ## Anti-patterns
 
 - ❌ Native Bash for repo file ops when API up (loses governance)
-- ❌ Skipping T3 open_session before T2 write (server returns ACTIVE_SESSION_REQUIRED)
-- ❌ Calling T2 without first fetching token (returns MUTATION_TOKEN_REQUIRED; retry once)
+- Inspect requires_session and the live response for each tool. AUTO_TOKEN_INJECT is on by default; fetch only on MUTATION_TOKEN_REQUIRED.
 - ❌ Using T1 when T4 needed for UI bug (you'll loop guessing CSS)
 
 ## Inline decision examples

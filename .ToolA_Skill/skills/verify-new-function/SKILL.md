@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: verify-new-function
 description: "Run the post-build verification pipeline after a new function/module/fix is implemented. Trigger when Anh says 'chạy skill verify' / 'chay skill verify' or asks to verify a newly built function with the locked council process: detailed code/function/logic audit, consolidated final audit, ClauC devine audit, scoped fix verification, benchmark, and guardrail update."
 ---
@@ -248,7 +251,7 @@ UNKNOWN / NOT VERIFIED
 6. If failure is librarian judgement, update only:
 
 ```text
-C:\Users\ADMIN\.claude-mem\staging\q-hardening\Q_LIBRARIAN_GUARDRAILS.md
+D:\0. TRIEN\1. DATA\DATA\5. VIBE APP\1. APP\21. ToolQ\staging\q-hardening\Q_LIBRARIAN_GUARDRAILS.md
 ```
 
 7. The scan-only worker writes final lock/seal report; if the scan-only worker is unavailable, use a small mid-dev scanner slot and record the fallback:

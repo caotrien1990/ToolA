@@ -1,10 +1,12 @@
 param(
   [string]$Room = "D:\BR",
-  [string]$ABase = "http://localhost:8083",
+  [string]$ABase = $env:ORCHESTRATOR_BASE_URL,
   [int]$TimeoutSec = 6000
 )
 
 $ErrorActionPreference = "Stop"
+if (-not $ABase) { throw "Supply -ABase or configure ORCHESTRATOR_BASE_URL for the active ToolA instance." }
+$ABase = $ABase.TrimEnd("/")
 
 function Invoke-A {
   param(

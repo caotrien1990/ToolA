@@ -1,6 +1,9 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: council-console-loop
-description: Use when the current leader CA must coordinate council workers for text-only console/merge/audit/verify loops, including the alias council_console_loop. Use for combining base and plug artifacts, updating plans or reports, cross-checking source documents, eliminating duplicate/missing/drifted points, and producing a final zero-audit artifact. This skill is for deterministic document consolidation and verification, not brainstorming or creative plan invention.
+description: Use when the current leader CA must coordinate council workers for text-only console/merge/audit/verify loops. Use for combining base and plug artifacts, updating plans or reports, cross-checking source documents, eliminating duplicate/missing/drifted points, and producing a final zero-audit artifact. This skill is for deterministic document consolidation and verification, not brainstorming or creative plan invention.
 ---
 
 # Council Console Loop

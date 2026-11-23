@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: apply_after_dry_run
 description: |
   Use when CA has run write_fix/write_new_file with dry_run=true and needs to apply
@@ -9,7 +12,7 @@ trigger:
   - error_name: "STALE_TARGET | DRY_RUN_NOT_FOUND | TARGET_MODIFIED_SINCE_DRY_RUN"
 preconditions:
   - "Active session"
-  - "Mutation token"
+  - "Observe the live token gate for the selected operation"
   - "Recent dry_run completed (returned dry_run_id)"
 related_skills:
   - 05_write_pipeline
@@ -25,7 +28,7 @@ risk_level: high
 1. write_fix(file, range, content, dry_run=true)
    → returns { ok:true, dry_run_id: "<uuid>", target_file_hash, diff_preview, validation, warnings }
 2. Review diff_preview + validation + warnings (CA + User)
-3. apply_after_dry_run(project_path, dry_run_id, confirm_hash=<target_file_hash>, confirm_warnings=[...])
+3. Call apply_after_dry_run with project_path, dry_run_id and confirm_hash. Set confirm_warnings=true only after reviewing and accepting the warnings.
    → server re-checks target_file_hash matches current disk; if not → STALE_TARGET
    → applies the previously-stored payload atomically
    → triggers same post-write validate + cache_delta
@@ -53,10 +56,7 @@ Server checks `target_file_hash` against current disk at apply time:
 
 ## confirm_warnings parameter
 
-Dry_run may surface warnings (e.g., "removes 3 functions", "BOM detected", "encoding mismatch risk"). To apply despite warnings, pass them in `confirm_warnings=[...]`:
-- Acts as explicit acknowledgment ("I read the warnings")
-- Without it, apply may refuse with `WARNINGS_NOT_ACKNOWLEDGED`
-- Empty list `[]` = no warnings to acknowledge (cleanest path)
+confirm_warnings is a boolean, default false. Inspect the warnings before deciding. Leave it false for a clean preview or when warnings are unaccepted. Acknowledge accepted warnings with true.
 
 ## Anti-patterns
 
@@ -74,7 +74,7 @@ result = apply_after_dry_run(
   project_path=proj,
   dry_run_id=dry.dry_run_id,
   confirm_hash=dry.target_file_hash,
-  confirm_warnings=dry.warnings or []
+  confirm_warnings=warnings_reviewed_and_accepted  # boolean decision by the reviewer
 )
 # auto post-write: validate + cache_delta in result
 ```
@@ -85,7 +85,7 @@ result = apply_after_dry_run(
 |------------|--------|
 | `STALE_TARGET` | Re-read file, redo dry_run, do NOT auto-apply |
 | `DRY_RUN_NOT_FOUND` | dry_run_id expired or wrong; start over |
-| `WARNINGS_NOT_ACKNOWLEDGED` | Include confirm_warnings from dry response |
+| WARNINGS_NOT_ACKNOWLEDGED | Review every warning; cancel or explicitly acknowledge with true |
 | `MUTATION_TOKEN_REQUIRED` | Fetch token (skill 06), retry once |
 
 ## Operational Impact
@@ -96,13 +96,13 @@ result = apply_after_dry_run(
 
 ## Guardrails
 
-- Dry_run TTL ~5 minutes (server-side); after that, redo
+- The dry-run record expires after 30 minutes. Redo the preview if it expires.
 - One apply per dry_run (idempotent via hash, but redundant calls = noise)
-- Token required (this is a protected mutating tool)
+- Check the served requires_token flag and follow skill 06 on a token-specific error.
 
 ## Harness
 
 - Test 1: dry_run → immediate apply → success, auto validate
 - Test 2: dry_run → wait > TTL → apply → DRY_RUN_NOT_FOUND
 - Test 3: dry_run → external `touch` file → apply → STALE_TARGET → redo
-- Test 4: dry_run with warnings → apply without confirm_warnings → WARNINGS_NOT_ACKNOWLEDGED → retry with list → success
+- Test 4: Warnings without acknowledgement produce WARNINGS_NOT_ACKNOWLEDGED. After explicit review, retry with boolean true.

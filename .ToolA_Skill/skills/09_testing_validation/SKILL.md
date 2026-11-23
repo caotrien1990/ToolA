@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: testing_validation
 description: |
   Use after every T2 write to verify integrity (syntax, symbols, encoding) and to run
@@ -71,7 +74,7 @@ Available profiles:
 
 No `--keyword`, `--file` flags supported. For single-file test -> use `run_project_command` with explicit `python -m unittest <module>`.
 
-### Ruff 0.16 lint vs fix
+### Ruff lint and fix (dependency range in requirements.txt)
 
 - Read-only lint/check: run Ruff without mutation and report findings; no EXECUTE trigger is needed.
 - Auto-fix: use `ruff_fix(project_path, apply=false)` first, review the unified diff, then set `apply=true` only in active EXECUTE scope.
@@ -86,7 +89,7 @@ After test run, classify:
 - **untested** — function/class with no test file mention (audit gap)
 - **retry-pass** — passed after explicit retry (flag flaky)
 
-Each tracked separately; total = pass + fail + skip + untested. See skill 10 for report format.
+Count each item once. total = pass + fail + skip + untested + retry_pass. Report retry_pass as its own outcome.
 
 ## Anti-patterns
 

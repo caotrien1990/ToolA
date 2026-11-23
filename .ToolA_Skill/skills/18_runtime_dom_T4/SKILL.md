@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: runtime_dom_T4
 description: |
   Use this skill when the task involves runtime UI verification, DOM inspection,
@@ -11,7 +14,7 @@ trigger:
 preconditions:
   - "[A] is reachable through MCP/API"
   - "Target app server is running when the test needs a live app"
-  - "For Electron/Chromium CDP: process was launched with --remote-debugging-port, usually 9223"
+  - "For CDP, use the port supplied to that Electron or Chromium launch."
 related_skills:
   - 03_path_session
   - 08_command_windows
@@ -27,7 +30,7 @@ desktop, or server behavior.
 
 ## Runtime UI Fix Workflow
 
-1. Use `list_cdp_targets(cdp_port=9223)` or `launch_electron_with_cdp` to confirm a page is attached.
+1. Use the launch-specific CDP port with list_cdp_targets. Target discovery does not establish page ownership.
 2. Use `verify_active_electron_source(page_id, expected_path=...)` before editing Electron HTML/JS/CSS.
 3. Use `read_console_errors(page_id, level="error")` for a quick runtime error scan.
 4. Use `query_selector`, `read_value`, `read_page`, or `evaluate_js` to inspect the live state.
@@ -71,7 +74,7 @@ read_all_logs({ "page_id": "...", "max_chars": 2000, "tail": true })
 | Save evidence to disk | `save_log_snapshot` or `screenshot_page(save_path=...)` |
 | Launch Electron and attach CDP | `launch_electron_with_cdp` |
 | Check a desktop window before Win32 action | `check_window_visibility` |
-| Clean up a runtime test | `cleanup_test_session` |
+| Release an owned test page | close_browser_page(page_id); see references/owned_page_release.md |
 
 ## Script Execution
 

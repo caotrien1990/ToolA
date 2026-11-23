@@ -1,4 +1,7 @@
 ---
+version: "1.0.0"
+last_verified: "2026-11-22"
+verified_head: "dd41e2fc8f78761f8f7b9a104fb5cd98fdf1cad0"
 name: ocr_review
 description: |
   Use when a change needs a SEMANTIC review (logic, security, cross-language) that ruff
