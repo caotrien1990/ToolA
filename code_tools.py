@@ -18780,7 +18780,9 @@ def _ma_hook_verify_hermes(target: dict, hook_file: Path) -> dict:
                        "Hermes will not fire an unconsented hook")
     for event, cmd in want:
         if allow_present and (event, cmd) not in consented:
-            missing.append(f"{event}: not allowlisted (hermes hooks approve) -> {cmd}")
+            missing.append(f"{event}: not allowlisted (launch hermes once with "
+            f"--accept-hooks, or HERMES_ACCEPT_HOOKS=1 / hooks_auto_accept: true "
+            f"-- there is no 'hermes hooks approve' subcommand) -> {cmd}")
     # The READ leg is ADVISORY and deliberately never enters ``missing``.
     # sync_hook installs hooks/adapters/hermes-read-gate.js plus the read-gate.js
     # policy SOT it spawns, but this format authors no config.yaml, so the leg
@@ -18802,8 +18804,9 @@ def _ma_hook_verify_hermes(target: dict, hook_file: Path) -> dict:
                  "note": ("advisory only -- never affects registered_ok or coverage. "
                           "Activate by adding ONE pre_tool_call entry to config.yaml "
                           "hooks: with matcher read_file|search_files, this command, "
-                          "timeout 10 and fail_closed true, then hermes hooks approve "
-                          "so the (event, command) pair lands in shell-hooks-allowlist.json")}
+                          "timeout 10 and fail_closed true, then launch hermes once with "
+                          "--accept-hooks (measured: hermes --accept-hooks acp) so the (event, command) "
+                          "pair lands in shell-hooks-allowlist.json")}
     return {"registered_ok": not missing, "missing_registrations": missing,
             "hermes_events": {k: v for k, v in live.items()},
             "allowlist_present": allow_present, "read_gate": read_gate}
