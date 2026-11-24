@@ -2214,8 +2214,11 @@ escape_project_root :bool =False ,skip_pre_write_check :bool =False )->str :
         return ct.json .dumps (decode_error ,ensure_ascii =False )
     # Windows batch/PowerShell REQUIRE CRLF; normalize so a LF payload does not
     # produce a broken .bat/.cmd/.ps1 (2026-07-17 CRLF-preserve upgrade).
+    # A lone "\r" is a line end too: fold it to "\n" FIRST (same rootcause as
+    # the write_fix merge fix at core.py:1705), or a bare CR survives into the
+    # .bat/.cmd/.ps1 and cmd/PowerShell see merged/split lines (task CORE2214).
     if str (path ).lower ().rsplit ('.',1 )[-1 ]in ('bat','cmd','ps1'):
-        new_content =new_content .replace ('\r\n','\n').replace ('\n','\r\n')
+        new_content =new_content .replace ('\r\n','\n').replace ('\r','\n').replace ('\n','\r\n')
         # XROOT: absolute paths outside project root go through the central policy.
         # escape_project_root is kept as a backward-compatible caller flag; policy
         # off preserves the older bypass behavior while still writing the ledger.
