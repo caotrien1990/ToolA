@@ -790,6 +790,31 @@ class TestManageAgentSyncHook(unittest.TestCase):
         self.assertFalse((hd / "hook-agent.json").exists())
         self.assertFalse((hd / "read-gate.js").exists(), "a dry run lands nothing")
 
+    def test_hermes_dry_run_reports_the_read_gate_leg(self):
+        # The dry path carries the SAME key the real path does, so a spec can verify
+        # the read leg without landing anything. Without this assertion a later
+        # refactor of the dry branch drops read_gate silently: every other gate here
+        # still passes while the answer stops reporting the leg.
+        hd, hf, ag, cmd, cmd_prompt = self._hermes_home()
+        r = code_tools._ma_write_hook(ag, {}, dry_run=True)
+        self.assertIn("read_gate", r, sorted(r))
+        rg = r["read_gate"]
+        # Field for field the shape of the real install's leg (:18799-18809).
+        self.assertEqual(sorted(rg), sorted(("command", "matcher", "files_present",
+                                             "registered", "consented", "active",
+                                             "scored", "note")))
+        # It reports LIVE host state, it does not predict the install: the fixture
+        # hooks: block carries only the write gate and nothing has been copied yet.
+        self.assertFalse(rg["files_present"], "a dry run has not copied the read pair")
+        self.assertFalse(rg["registered"])
+        self.assertFalse(rg["consented"])
+        self.assertFalse(rg["active"])
+        self.assertEqual(rg["matcher"], "read_file|search_files")
+        self.assertIn("config.yaml", rg["note"])
+        # Adding the key must not move the verdict the real path owns.
+        self.assertEqual(r["coverage"], "pending")
+        self.assertEqual(r["registration"], "verify_only")
+
     def test_hermes_install_lands_the_adapter_and_never_writes_config(self):
         sot = (self.repo_hooks / "adapters" / "hermes-gate.js").read_bytes()
         hd, hf, ag, cmd, cmd_prompt = self._hermes_home(seed=sot)

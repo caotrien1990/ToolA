@@ -424,7 +424,8 @@ def _restrict_secret(path: Path) -> tuple[bool, str | None]:
             )
             environment = dict(os.environ)
             environment["RESTART_SECRET_PATH"] = str(path)
-            run_kwargs = {"capture_output": True, "text": True, "timeout": 10, "check": False, "env": environment}
+            run_kwargs = {"capture_output": True, "text": True, "timeout": 10, "check": False, "env": environment,
+                          "stdin": subprocess.DEVNULL}  # TESTGAPS-1124: WinError 6 family
             if os.name == "nt":
                 run_kwargs["creationflags"] = child_creationflags()
                 run_kwargs["startupinfo"] = child_startupinfo()

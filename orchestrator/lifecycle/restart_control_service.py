@@ -236,7 +236,8 @@ class TaskSchedulerAdapter:
         self.settled_stop = settled_stop
 
     def _call(self, action: str) -> bool:
-        kwargs = {"capture_output": True, "text": True, "timeout": 20, "check": False}
+        kwargs = {"capture_output": True, "text": True, "timeout": 20, "check": False,
+                  "stdin": subprocess.DEVNULL}  # TESTGAPS-1124: WinError 6 family
         if os.name == "nt":
             kwargs["creationflags"] = child_creationflags()
             kwargs["startupinfo"] = child_startupinfo()
@@ -273,7 +274,8 @@ class TaskSchedulerAdapter:
             return False
         if pid <= 0:
             return False
-        kwargs = {"capture_output": True, "text": True, "timeout": 15, "check": False}
+        kwargs = {"capture_output": True, "text": True, "timeout": 15, "check": False,
+                  "stdin": subprocess.DEVNULL}  # TESTGAPS-1124: WinError 6 family
         if os.name == "nt":
             kwargs["creationflags"] = child_creationflags()
             kwargs["startupinfo"] = child_startupinfo()
@@ -315,7 +317,8 @@ def _process_details(pid: int) -> tuple[float, str]:
         "$o=[ordered]@{created=$unix;exe=$p.ExecutablePath};"
         "$o|ConvertTo-Json -Compress"
     )
-    run_kwargs = {"capture_output": True, "text": True, "timeout": 5, "check": False}
+    run_kwargs = {"capture_output": True, "text": True, "timeout": 5, "check": False,
+                  "stdin": subprocess.DEVNULL}  # TESTGAPS-1124: WinError 6 family
     if os.name == "nt":
         run_kwargs["creationflags"] = child_creationflags()
         run_kwargs["startupinfo"] = child_startupinfo()
@@ -382,6 +385,7 @@ def _pid_alive(pid: int) -> bool:
         result = subprocess.run(
             ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
             capture_output=True, text=True, timeout=5, check=False,
+            stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family
             **({"creationflags": child_creationflags(), "startupinfo": child_startupinfo()} if os.name == "nt" else {}),
         )
         return result.returncode == 0 and str(pid) in result.stdout
@@ -983,6 +987,7 @@ def main() -> int:
         result = subprocess.run(
             [str(console_python), str(root / "restart_orchestrator.py"), "--clear-timeout", "30"],
             cwd=str(root), capture_output=True, text=True, timeout=45, check=False,
+            stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family
             **({"creationflags": child_creationflags(), "startupinfo": child_startupinfo()} if os.name == "nt" else {}),
         )
         return result.returncode == 0

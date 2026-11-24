@@ -125,6 +125,7 @@ def _run_git(
         check=False,
         env=_git_env(),
         shell=False,
+        stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
 

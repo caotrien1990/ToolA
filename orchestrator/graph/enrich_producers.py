@@ -139,6 +139,7 @@ def _git_changed_files(root: str) -> list[str]:
         proc = subprocess.run(
             ["git", "status", "--porcelain=v1", "-z"],
             cwd=root, capture_output=True, timeout=_GIT_SCOPE_TIMEOUT_S,
+            stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         if proc.returncode != 0:

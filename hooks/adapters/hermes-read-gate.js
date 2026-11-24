@@ -42,7 +42,8 @@
 //         command: node "<hooks_dir>/hermes-read-gate.js"
 //         timeout: 10
 //         fail_closed: true
-// then consenting with "hermes hooks approve" so the (event, command) pair lands
+// then consenting with --accept-hooks (measured: hermes --accept-hooks acp), or
+// HERMES_ACCEPT_HOOKS=1, or the CLI prompt, so the (event, command) pair lands
 // in shell-hooks-allowlist.json (agent/shell_hooks.py _consented :319-330 skips an
 // unapproved spec). Until then this file sits in hooks_dir inert and sync_hook
 // reports read_gate.active = false. There is deliberately NO break-glass prompt

@@ -142,6 +142,7 @@ class Watcher:
             [sys.executable, str(Path(__file__).resolve()), "--capture",
              "--config", str(self.cfg["_config_path"])],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
+            stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family
             timeout=self.cfg["capture_timeout_seconds"], creationflags=CREATE_NO_WINDOW,
         )
         data = {"exit_code": proc.returncode, "stderr": proc.stderr[-2000:]}
@@ -343,6 +344,7 @@ def capture_system(cfg):
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
              "$ErrorActionPreference='Stop'; (Get-MpPreference).ExclusionPath | ConvertTo-Json -Compress"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
+            stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family
                 timeout=10, creationflags=CREATE_NO_WINDOW)
         except subprocess.TimeoutExpired:
             result["defender"] = {"error": "read-only Get-MpPreference timed out"}

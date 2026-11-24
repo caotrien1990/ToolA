@@ -292,6 +292,7 @@ async def _pre_write_syntax_check(fp: Path, content: str) -> dict:
             actual_cmd,
             stdout=ct.subprocess.PIPE,
             stderr=ct.subprocess.PIPE,
+            stdin=ct.subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family (code_tools.py :1794)
             text=True,
             timeout=5,
             creationflags=ct.NOWINDOW_FLAGS,
@@ -1697,8 +1698,11 @@ skip_symbol_check :bool =False )->str :
             return {"error":f"end_line {end_line} must be >= start_line {start_line}"}
         end =min (end_line ,total )
         # Normalize the caller's new_content to the file's ending so the splice
-        # never leaves a mixed CRLF/LF file.
-        _nc =new_content .replace ('\r\n','\n')
+        # never leaves a mixed CRLF/LF file. A lone "\r" is a line end too
+        # (split_lines): fold it to "\n" FIRST, or a payload line ending in a
+        # bare "\r" splices in without the file's "\n" and merges with the next
+        # line (measured 2026-11-24: 22 of 34 files, non-prod stdin campaign).
+        _nc =new_content .replace ('\r\n','\n').replace ('\r','\n')
         if start_line ==1 and _nc .startswith ('\ufeff'):
             # Line 1 re-sent WITH its BOM: the BOM is framing, keep it as such.
             _nc =_nc [1 :]
@@ -1715,7 +1719,8 @@ skip_symbol_check :bool =False )->str :
                 return {"error": "Single-line banner replacement crosses Markdown section headings",
                         "error_name": "BANNER_RANGE_CROSSES_SECTION",
                         "ca_next_action": "use_start_line_equal_end_line_for_banner"}
-        # A lone "\r" already ends a line (split_lines): adding _eol would make it "\r\n".
+        # After the normalization above no lone "\r" survives in the payload, so
+        # only a truly unterminated last line needs the file's _eol appended.
         if new_lines and not new_lines [-1 ].endswith (('\n','\r')):
             new_lines [-1 ]+=_eol
         proposed =('\ufeff' if _bom else '')+''.join (lines [:start_line -1 ]+new_lines +lines [end :])

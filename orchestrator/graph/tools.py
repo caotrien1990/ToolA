@@ -402,6 +402,7 @@ def _project_policy_rules(target: str, root: str) -> tuple[list[str], str]:
         completed = subprocess.run(
             [_console_python(), "-m", "ruff", "check", target, "--show-settings"],
             cwd=root, capture_output=True, text=True, encoding="utf-8",
+            stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family
             errors="replace", timeout=30, check=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except Exception as exc:
         return [], f"{type(exc).__name__}: {exc}"
@@ -775,6 +776,7 @@ async def ruff_fix(project_path: str = "", path: str = ".", apply: bool = False,
     try:
         completed = await asyncio.to_thread(
             subprocess.run, command, cwd=root, capture_output=True, text=True,
+            stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family
             encoding="utf-8", errors="replace", timeout=120, check=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except Exception as exc:

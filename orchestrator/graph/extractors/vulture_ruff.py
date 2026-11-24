@@ -362,6 +362,7 @@ def scan_vulture(project_path: str, min_conf: int = 60,
             timeout=_SCAN_TIMEOUT_S,
             check=False,
             env=_scan_env(),
+            stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except subprocess.TimeoutExpired as exc:
@@ -412,6 +413,7 @@ def scan_ruff(project_path: str, rules: str | None = None,
             timeout=_SCAN_TIMEOUT_S,
             check=False,
             env=_scan_env(),
+            stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except subprocess.TimeoutExpired as exc:

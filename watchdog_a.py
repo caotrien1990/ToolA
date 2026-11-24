@@ -331,7 +331,9 @@ def _fire(state: dict) -> int:
     else:
         log(str(down_n) + " consecutive liveness failures -> schtasks /run " + RESTART_TASK + " evidence=" + evidence)
         try:
-            result = subprocess.run(["schtasks", "/run", "/tn", RESTART_TASK], capture_output=True, text=True, timeout=30, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            result = subprocess.run(["schtasks", "/run", "/tn", RESTART_TASK], capture_output=True, text=True, timeout=30,
+                                    stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family
+                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             log("schtasks rc=" + str(result.returncode))
         except Exception as exc:
             log("schtasks run failed: " + str(exc))

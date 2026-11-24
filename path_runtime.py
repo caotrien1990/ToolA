@@ -53,6 +53,9 @@ def find_orchestrator_dir(candidate: str | Path) -> Path | None:
 
 def resolve_ui_html(orchestrator_dir: str | Path | None = None) -> Path:
     base_dir = Path(orchestrator_dir).resolve() if orchestrator_dir else ORCHESTRATOR_DIR
+    bundled = base_dir / "orchestrator" / "web_ui" / "main.html"
+    if bundled.is_file():
+        return bundled
     ui_dir = base_dir.parent / "UI"
     preferred = ui_dir / "8. AGENT TOOL - READ WRITE TEST_UI.html"
     if preferred.exists():

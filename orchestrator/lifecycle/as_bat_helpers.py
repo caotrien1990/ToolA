@@ -39,6 +39,7 @@ def run_hidden(
 ) -> subprocess.CompletedProcess[str]:
     kwargs: dict = {
         "args": argv,
+        "stdin": subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family
         "timeout": timeout,
         "check": False,
         "text": True,

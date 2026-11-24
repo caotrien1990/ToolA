@@ -51,6 +51,7 @@ def _run(cmd: list[str], timeout: int = 20) -> subprocess.CompletedProcess[str]:
         "cwd": str(ROOT),
         "text": True,
         "capture_output": True,
+        "stdin": subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family
         "timeout": timeout,
         "encoding": "utf-8",
         "errors": "replace",

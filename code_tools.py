@@ -5410,6 +5410,7 @@ def _kill_process_tree(proc, *, is_windows: bool) -> dict:
         if is_windows:
             result = subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
                                       capture_output=True, text=True, timeout=10,
+                                      stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family, see :1794
                                       creationflags=NOWINDOW_FLAGS)  # F-A1: no console flash
             evidence.update({"succeeded": result.returncode == 0, "returncode": result.returncode, "stdout": result.stdout or "", "stderr": result.stderr or ""})
             if result.returncode != 0 and proc.poll() is None:
@@ -6577,7 +6578,7 @@ async def run_project_command(
             creationflags = 0
             stdout_target = subprocess.PIPE
             stderr_target = subprocess.PIPE
-            stdin_target = None
+            stdin_target = subprocess.DEVNULL  # TESTGAPS-1124: WinError 6 family, see :1794
             close_fds = False
             # C2-followup (2026-08-10): commit 4e4e8bf added
             # `start_new_session=start_new_session` to this Popen call but
@@ -10110,6 +10111,7 @@ async def run_project_test_script(
         proc = await run_in_executor_lane(
             "test", _sp_rpts.Popen, cmd, cwd=str(root), stdout=_sp_rpts.PIPE,
             stderr=_sp_rpts.PIPE, text=True, encoding="utf-8", errors="replace",
+            stdin=_sp_rpts.DEVNULL,  # TESTGAPS-1124: WinError 6 family, see :1794
             env=child_env, creationflags=creationflags,
             start_new_session=(sys.platform != "win32"),
         )
@@ -14945,6 +14947,7 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                 # _lint_only_introduced must lint with exactly these rules.
                 r = subprocess.run(_ruff_lint_argv(fp), capture_output=True, text=True,
                                    encoding="utf-8", errors="replace", timeout=10,
+                                   stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family, see :1794
                                    creationflags=NOWINDOW_FLAGS)  # F-A1: no console flash
                 if r.returncode == 1:
                     err = (r.stdout or "").strip() or (r.stderr or "").strip()
@@ -14953,6 +14956,11 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                         # empty text means we lost it in transit. Saying nothing here
                         # is what let defect (2) hide behind a green "clean" result.
                         return {"ok": True, "lang": "python", "file": str(fp), "lint_skipped_reason": "ruff exited 1 (findings exist) but produced no output on stdout/stderr - lint result is UNKNOWN, not clean", "ruff_fix_applicable": False, "ruff_rules_matched": [], "ruff_fix_hint": ""}
+                    if not _RUFF_FINDING_RE.search(err):
+                        # TESTGAPS-1124: rc=1 with text but no concise finding line is
+                        # the launcher talking ("No module named ruff"), not findings.
+                        # Gate on the finding shape, not on the exit code alone.
+                        return {"ok": True, "lang": "python", "file": str(fp), "lint_skipped_reason": f"ruff exited 1 with no finding line ({err[:200]}) - lint result is UNKNOWN, not clean", "ruff_fix_applicable": False, "ruff_rules_matched": [], "ruff_fix_hint": ""}
                     applicable, matched_rules, hint_text = _py_error_ruff_hint(err)
                     return {"ok": True, "lang": "python", "file": str(fp), "lint_warning": err, "ruff_fix_applicable": applicable, "ruff_rules_matched": matched_rules, "ruff_fix_hint": hint_text}
                 if r.returncode != 0:
@@ -14961,15 +14969,19 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                     # and the bare return below read exactly like a clean file.
                     detail = ((r.stderr or "").strip() or (r.stdout or "").strip())[:300]
                     return {"ok": True, "lang": "python", "file": str(fp), "lint_skipped_reason": f"ruff exited {r.returncode} ({detail}) - lint result is UNKNOWN, not clean", "ruff_fix_applicable": False, "ruff_rules_matched": [], "ruff_fix_hint": ""}
-            except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            except (OSError, subprocess.SubprocessError) as exc:
                 # Also fail loud: a missing or hung linter is not a clean file.
-                return {"ok": True, "lang": "python", "file": str(fp), "lint_skipped_reason": f"ruff could not run ({type(exc).__name__}) - lint result is UNKNOWN, not clean", "ruff_fix_applicable": False, "ruff_rules_matched": [], "ruff_fix_hint": ""}
+                # TESTGAPS-1124: widened from (FileNotFoundError, TimeoutExpired).
+                # WinError 6 is an OSError; the narrow tuple let a dead spawn escape
+                # as a crash. spawn_error names it apart, idiom of :1808-1815.
+                return {"ok": True, "lang": "python", "file": str(fp), "lint_skipped_reason": f"ruff could not run ({type(exc).__name__}) - lint result is UNKNOWN, not clean", "spawn_error": f"{type(exc).__name__}: {exc}", "ruff_fix_applicable": False, "ruff_rules_matched": [], "ruff_fix_hint": ""}
             return {"ok": True, "lang": "python", "file": str(fp)}
         elif lang == "js":
             try:
                 r = subprocess.run(
                     ["node", "--check", str(fp)],
                     capture_output=True, text=True, timeout=10,
+                    stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family, see :1794
                     creationflags=NOWINDOW_FLAGS,  # F-A1: no console flash
                 )
                 if r.returncode == 0:
@@ -14993,6 +15005,7 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                 if resolved:
                     cmd[0] = resolved
                 r = subprocess.run(cmd, capture_output=True, text=True, timeout=10,
+                                   stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family, see :1794
                                    creationflags=NOWINDOW_FLAGS)  # F-A1: no console flash
                 try:
                     os.unlink(out_path)
@@ -15036,6 +15049,7 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                         tmp.write(body)
                         tmp_path = tmp.name
                     r = subprocess.run(["node", "--check", tmp_path], capture_output=True, text=True, timeout=10,
+                                       stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family, see :1794
                                        creationflags=NOWINDOW_FLAGS)  # F-A1: no console flash
                     os.unlink(tmp_path)
                     if r.returncode != 0:
@@ -15072,6 +15086,7 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                 if resolved:
                     cmd[0] = resolved
                 r = subprocess.run(cmd, capture_output=True, text=True, timeout=10,
+                                   stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family, see :1794
                                    creationflags=NOWINDOW_FLAGS)  # F-A1: no console flash
                 for path in (tmp_path, out_path):
                     try:
@@ -19253,6 +19268,11 @@ def _ma_write_hook_target(ag: dict, target: dict, dry_run: bool) -> dict:
             # Same story as the real install: hermes-shell-hooks registers
             # nothing, so a dry run must not promise a config.yaml write.
             out["registration"] = "verify_only"
+            # The read leg reports on the dry path too, so a spec can verify it
+            # without landing anything. _ma_hook_verify_hermes is READ-ONLY (measured
+            # 2026-11-24: no write/mkdir/unlink/copy in its body), so this is the SAME
+            # live value the real install returns -- not a prediction of one.
+            out["read_gate"] = _ma_hook_verify_hermes(target, hook_file).get("read_gate") or {}
         if zc:
             # Plan-only: manifests + the CLI commands, nothing executed except
             # the read-only plugins list --json (decides install vs update).
@@ -20214,6 +20234,7 @@ async def council_tracker(open_file: bool = False, tail_lines: int = 80,
                 [_sys.executable, _COUNCIL_TRACKER_SCRIPT],
                 cwd=_COUNCIL_TRACKER_ROOT, env=env,
                 capture_output=True, timeout=120,
+                stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family, see :1794
                 creationflags=NOWINDOW_FLAGS,  # F-A1: no console flash
             )
         except subprocess.TimeoutExpired:

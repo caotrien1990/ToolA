@@ -62,7 +62,7 @@ class CommandTransportC2Tests(unittest.TestCase):
             result = json.loads(asyncio.run(code_tools.run_project_command(str(self.project), ["python", "hung.py"], shell_mode="exec", timeout=1)))
         self.assertTrue(result["timed_out"])
         self.assertEqual(result["stderr"], "final stderr")
-        taskkill.assert_called_once_with(["taskkill", "/PID", str(fake.pid), "/T", "/F"], capture_output=True, text=True, timeout=10, creationflags=134217728)
+        taskkill.assert_called_once_with(["taskkill", "/PID", str(fake.pid), "/T", "/F"], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, creationflags=134217728)
         self.assertEqual(result["process_evidence"]["tree_kill"]["method"], "taskkill")
 
     def test_script_runner_uses_shared_tree_timeout_and_clean_env(self):
@@ -149,7 +149,7 @@ class CommandTransportC2Tests(unittest.TestCase):
               "print('holder', g.pid, flush=True)\n")
 
     def test_descendant_holding_the_pipes_does_not_hold_the_answer(self):
-        proc = subprocess.Popen([sys.executable, "-c", self.HOLDER], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        proc = subprocess.Popen([sys.executable, "-c", self.HOLDER], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, stdin=subprocess.DEVNULL)
         t0 = time.monotonic()
         out, err, timed_out, evidence = code_tools._communicate_with_tree_timeout(proc, 60, is_windows=sys.platform == "win32")
         elapsed = time.monotonic() - t0
@@ -169,7 +169,7 @@ class CommandTransportC2Tests(unittest.TestCase):
 
     def test_timeout_kills_the_live_tree_within_a_bound(self):
         flags = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if sys.platform == "win32" else {"start_new_session": True}
-        proc = subprocess.Popen([sys.executable, "-c", "import time; print('started', flush=True); time.sleep(60)"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **flags)
+        proc = subprocess.Popen([sys.executable, "-c", "import time; print('started', flush=True); time.sleep(60)"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **flags, stdin=subprocess.DEVNULL)
         t0 = time.monotonic()
         out, err, timed_out, evidence = code_tools._communicate_with_tree_timeout(proc, 3, is_windows=sys.platform == "win32")
         self.assertLess(time.monotonic() - t0, 12, evidence)
