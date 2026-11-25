@@ -294,7 +294,8 @@ async def _pre_write_syntax_check(fp: Path, content: str) -> dict:
             stderr=ct.subprocess.PIPE,
             stdin=ct.subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family (code_tools.py :1794)
             text=True,
-            timeout=5,
+            # Match validate_file: a cold npm shim can exceed five seconds.
+            timeout=10,
             creationflags=ct.NOWINDOW_FLAGS,
             )
             if proc.returncode != 0:
@@ -306,7 +307,7 @@ async def _pre_write_syntax_check(fp: Path, content: str) -> dict:
         except ct.subprocess.TimeoutExpired:
             return {
             "ok":True ,
-            "warn":"pre_write_syntax_check_timeout_5s",
+            "warn":"pre_write_syntax_check_timeout_10s",
             "checker":" ".join(cmd),
             }
         except FileNotFoundError as exc:

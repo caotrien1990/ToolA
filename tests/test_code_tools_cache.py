@@ -22,7 +22,8 @@ from orchestrator.tools.write.core import _boot_write_sweep, _pre_write_syntax_c
 
 class TestCodeToolsCache(unittest.TestCase):
     def setUp(self):
-        self.tempdir = Path(tempfile.mkdtemp(prefix='project_orchestrator_test_'))
+        # APIs resolve Windows 8.3 aliases; mocks and expected paths must match.
+        self.tempdir = Path(tempfile.mkdtemp(prefix='project_orchestrator_test_')).resolve()
         self.project_path = self.tempdir
         self.sample_file = self.project_path / 'sample.py'
         self.sample_file.write_text(
@@ -1929,6 +1930,57 @@ class TestCodeToolsCache(unittest.TestCase):
                 self.assertEqual(result.get('error_name'), 'SYNTAX_ERROR_PRE_WRITE')
                 self.assertIn('ca_next_action', result)
                 self.assertFalse((self.project_path / name).exists())
+
+    def test_pre_write_syntax_gate_checks_slow_real_esbuild_before_writing(self):
+        import shlex
+
+        real_which = code_tools.shutil.which
+        esbuild = real_which('esbuild')
+        if not esbuild:
+            candidate = Path(code_tools.os.environ.get('APPDATA', '')) / 'npm' / 'esbuild.cmd'
+            esbuild = str(candidate) if candidate.is_file() else None
+        self.assertIsNotNone(esbuild, 'This integration test requires real esbuild')
+
+        # Reproduce a cold npm shim: exceed the old 5s pre-write budget while
+        # staying inside validate_file's 10s budget. Never fake parser output.
+        checker = self.project_path / 'slow_esbuild.py'
+        checker.write_text(
+            'import subprocess, sys, time\n'
+            'time.sleep(5.5)\n'
+            f'raise SystemExit(subprocess.call([{esbuild!r}] + sys.argv[1:]))\n',
+            encoding='utf-8',
+        )
+        if sys.platform == 'win32':
+            launcher = self.project_path / 'slow_esbuild.cmd'
+            launcher.write_text(f'@"{sys.executable}" "{checker}" %*\n', encoding='utf-8')
+        else:
+            launcher = self.project_path / 'slow_esbuild'
+            launcher.write_text(
+                f'#!/bin/sh\nexec {shlex.quote(sys.executable)} {shlex.quote(str(checker))} "$@"\n',
+                encoding='utf-8',
+            )
+            launcher.chmod(0o700)
+
+        def resolve_checker(command, *args, **kwargs):
+            return str(launcher) if command == 'esbuild' else real_which(command, *args, **kwargs)
+
+        for suffix in ('.jsx', '.tsx'):
+            for valid in (False, True):
+                name = f'slow_{"valid" if valid else "broken"}{suffix}'
+                content = 'const x = <div><span /></div>;\n' if valid else 'const x = <div><span></div>;\n'
+                with self.subTest(name=name), mock.patch.object(
+                    code_tools.shutil, 'which', side_effect=resolve_checker,
+                ):
+                    result = json.loads(asyncio.run(code_tools.write_new_file(
+                        name, project_path=str(self.project_path), new_content=content,
+                    )))
+                    if valid:
+                        self.assertTrue(result.get('ok'), msg=result)
+                        self.assertEqual((self.project_path / name).read_text(encoding='utf-8'), content)
+                    else:
+                        self.assertFalse(result.get('ok'), msg=result)
+                        self.assertEqual(result.get('error_name'), 'SYNTAX_ERROR_PRE_WRITE')
+                        self.assertFalse((self.project_path / name).exists())
 
     def test_pre_write_syntax_gate_rejects_invalid_json(self):
         result = json.loads(asyncio.run(code_tools.write_new_file(
