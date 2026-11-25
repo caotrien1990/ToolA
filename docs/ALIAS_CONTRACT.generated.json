@@ -20,8 +20,10 @@
     "top_k": "limit"
   },
   "cbm_template_query": {
+    "from_symbol": "name",
     "max_items": "limit",
     "max_results": "limit",
+    "symbol": "name",
     "top_k": "limit"
   },
   "cdp_attach_target": {
@@ -137,7 +139,9 @@
     "msg": "message"
   },
   "git_diff": {
-    "files": "paths"
+    "cached": "scope",
+    "files": "paths",
+    "staged": "scope"
   },
   "git_log": {
     "max_items": "limit",

@@ -305,12 +305,12 @@ def test_file_summary_branch_is_not_budget_mode(tmp_path):
 
 def test_sot_case_code_tools_at_cap():
     # Section 3.1 SOT case, in-process on the real file at the project
-    # root (23,741 lines at this pin): the end_line pins the selection
+    # root (24,110 lines at this pin): the end_line pins the selection
     # at 1-3000 exactly as section 3.1 states it; the CAP fit then
     # delivers shown 1-905 with estimated_tokens 11,987.
     # Re-pinned 2026-11-09 (CLOSING_PACKAGE_20261109 F-1/F-2): the Stage-2
     # M3 commit e7c4721 grew the file +95 lines and relocated its mid-file
-    # `import logging` to the top import block.
+    # import logging to the top import block.
     # Re-pinned 2026-11-20 (C7): commits e7c4721..cdebaaf grew the file
     # 23,516 -> 23,728 lines (6262a18 +53, 21a0b85 +70, the hooks/P16/T4
     # series the rest), and this re-pin's own edit hoisted the misplaced
@@ -321,6 +321,12 @@ def test_sot_case_code_tools_at_cap():
     # 23,731 -> 23,741 lines (net +10, E15/E16/E17/E18+E19 in code_tools.py).
     # Lines 1-3000 untouched, so shown 1-905 and estimated_tokens 11,987
     # unchanged; only total_lines moved. Re-measured in-process after restart.
+    # Re-pinned 2026-11-25 (CI fails audit, run 45517146172): commits
+    # 3e7c3ce..948c698 grew the file 23,741 -> 24,110 (c10849c +249,
+    # 96483d9 +77, 6579448 +19, 2c8bc61 +3, adda45a +21; dd41e2f and
+    # 948c698 net +0). shown 1-905 and estimated_tokens 11,987 re-measured
+    # identical; only total_lines moved. Per-commit totals measured with
+    # the repo's own split_lines (git show), HEAD cross-checked in-process.
     root = Path(__file__).resolve().parents[1]
     assert (root / "code_tools.py").exists()
     raw = asyncio.run(code_tools.read_file_range(
@@ -328,7 +334,7 @@ def test_sot_case_code_tools_at_cap():
         start_line=1, end_line=3000, max_lines=3000, token_budget=100_000))
     body = json.loads(raw)
     assert body["ok"] is True
-    assert body["total_lines"] == 23_741
+    assert body["total_lines"] == 24_110
     assert body["selection"]["start_line"] == 1
     assert body["selection"]["end_line"] == 3000
     assert body["budget_mode"] is True

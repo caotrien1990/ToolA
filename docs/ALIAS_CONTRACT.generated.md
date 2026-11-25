@@ -3,7 +3,7 @@
 Generated from runtime `orchestrator_server._ARG_ALIASES`.
 
 - Tools with aliases: 73
-- Total aliases: 224
+- Total aliases: 228
 - Source of truth: `orchestrator_server.py:_ARG_ALIASES` plus runtime `register_tool(aliases=...)` updates
 
 | Tool | Alias | Canonical |
@@ -20,8 +20,10 @@ Generated from runtime `orchestrator_server._ARG_ALIASES`.
 | `cbm_nodes_query` | `max_items` | `limit` |
 | `cbm_nodes_query` | `max_results` | `limit` |
 | `cbm_nodes_query` | `top_k` | `limit` |
+| `cbm_template_query` | `from_symbol` | `name` |
 | `cbm_template_query` | `max_items` | `limit` |
 | `cbm_template_query` | `max_results` | `limit` |
+| `cbm_template_query` | `symbol` | `name` |
 | `cbm_template_query` | `top_k` | `limit` |
 | `cdp_attach_target` | `port` | `cdp_port` |
 | `checkpoint_loop_dom_state` | `observe_selector` | `selector` |
@@ -87,7 +89,9 @@ Generated from runtime `orchestrator_server._ARG_ALIASES`.
 | `get_session_events` | `max_results` | `limit` |
 | `get_session_events` | `top_k` | `limit` |
 | `git_commit` | `msg` | `message` |
+| `git_diff` | `cached` | `scope` |
 | `git_diff` | `files` | `paths` |
+| `git_diff` | `staged` | `scope` |
 | `git_log` | `max_items` | `limit` |
 | `git_log` | `max_results` | `limit` |
 | `git_log` | `top_k` | `limit` |

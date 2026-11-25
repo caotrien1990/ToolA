@@ -53,6 +53,15 @@ class _FakeSubprocess:
     CalledProcessError = subprocess.CalledProcessError
     SubprocessError = subprocess.SubprocessError
 
+    # The same lie about the module's surface applies to CONSTANTS: production
+    # names subprocess.DEVNULL at the spawn site (TESTGAPS-1124, adda45a), and a
+    # double without it turns every run into AttributeError -> OCR_EXEC_FAILED
+    # (measured 2026-11-25: 21 p5 + 3 a30b fails, CI run 45517146172). Re-export
+    # the spawn-constant family, not just the one today's traceback named.
+    DEVNULL = subprocess.DEVNULL
+    PIPE = subprocess.PIPE
+    STDOUT = subprocess.STDOUT
+
     def __init__(self, stdout="", returncode=0, stderr="", raises=None):
         self.stdout = stdout
         self.returncode = returncode

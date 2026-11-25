@@ -81,6 +81,13 @@ FROZEN = {
         "S5 static guard itself: carries the token in its patterns and "
         "in this frozen list",
     ),
+    "orchestrator/web_views.py": (
+        "mention",
+        "UI monitor health-field name list only (the string livez_protocol "
+        "among display fields); no protocol comparison -- classification "
+        "stays in livez_contract. Untracked UI-lane file: absent from CI "
+        "checkouts, and extra FROZEN entries are subset-tolerant.",
+    ),
 }
 
 PREDICATE_PATTERNS = [
@@ -103,7 +110,7 @@ def _census():
         capture_output=True,
         text=True,
         timeout=60,
-    )
+    stdin=subprocess.DEVNULL)
     assert proc.returncode in (0, 1), proc.stderr  # 1 = no matches
     found = set()
     for line in proc.stdout.splitlines():

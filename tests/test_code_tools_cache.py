@@ -2266,10 +2266,15 @@ class TestCodeToolsCache(unittest.TestCase):
             regex_worker._bootstrap(str(job), str(out))
         status, rows = pickle.loads(out.read_bytes())
         self.assertEqual((status, [row.get('line') for row in rows]), ('ok', [3]), msg=rows)
-        # new_content that ends at a lone CR has ended its line already: no "\n" added.
+        # new_content that ends at a lone CR has ended its line already: write_fix
+        # folds that CR to "\n" (core.py normalize, adda45a / CORE2214) instead of
+        # splicing a bare CR that merges with the next line. No EXTRA "\n" is added;
+        # the rest of the file keeps its original lone CRs (minimum footprint).
+        # Re-pinned 2026-11-25 (CI fails audit): the old pin b'...c = 9\rd = 4\n'
+        # preserved the pre-fix merge bug the normalize contract deliberately closed.
         wrote = json.loads(asyncio.run(code_tools.write_fix(str(self.sample_file), 3, 3, 'c = 9\r')))
         self.assertTrue(wrote.get('ok'), msg=wrote)
-        self.assertEqual(self.sample_file.read_bytes(), b'a = 1\rb = 2\nc = 9\rd = 4\n')
+        self.assertEqual(self.sample_file.read_bytes(), b'a = 1\rb = 2\nc = 9\nd = 4\n')
 
     def test_anchor_lines_are_the_lines_write_fix_counts(self):
         # F2, review of #32: replace_between_anchors numbered its anchors with

@@ -58,7 +58,7 @@ class TestAliasCanonicalFieldsExist(unittest.TestCase):
         """Contract snapshot: the alias total pinned in the assert below IS the contract.
 
         A37: the counts left both the method name and this summary line -- they read "113
-        aliases across 42 tools" while the asserts pin 224 and 73. A number written twice
+        aliases across 42 tools" while the asserts pin 228 and 73. A number written twice
         rots in whichever copy nobody runs, so it is now written once, in the assert.
 
         History: 102/39 until 2026-07-08; +2 aliases (delay, delay_sec ->
@@ -91,7 +91,11 @@ class TestAliasCanonicalFieldsExist(unittest.TestCase):
         # deliberately NOT a fourth for min_changed_lines: that one is [A]'s own knob,
         # not an OCR flag name, so a wrong guess must come back as UNSUPPORTED_FIELD
         # with accepted_fields rather than be accepted under an undocumented spelling.
-        self.assertEqual(total, 224, f"Expected 224 aliases, got {total}")
+        # Re-based 2026-11-25 (CI fails audit): +4 from dd41e2f (Guidance v11,
+        # 2026-11-21) -- cbm_template_query from_symbol/symbol -> name and
+        # git_diff cached/staged -> scope. Committed runtime behavior; the docs
+        # artifact and this pin were not regenerated with it (CI run 45517146172).
+        self.assertEqual(total, 228, f"Expected 228 aliases, got {total}")
 
     def test_alias_tool_count_matches_pinned_total(self):
         # A37: digits removed from the NAME (it said 42 while asserting 73). The comment
