@@ -562,6 +562,8 @@ class TestOrchestratorServerContract(unittest.IsolatedAsyncioTestCase):
         self.assertIn('content_encoding', schemas['write_new_file'])
 
     def test_ui_regression_copy_prompt_icons_and_english(self):
+        if not orchestrator_server.HTML_FILE.is_file():
+            self.skipTest('External UI checkout is not included in the ToolA source checkout')
         html = orchestrator_server.HTML_FILE.read_text(encoding='utf-8')
 
         self.assertIn('<html lang="en">', html)
@@ -792,7 +794,7 @@ process.stdout.write(JSON.stringify(snapshots));
                 encoding='utf-8',
                 timeout=30,
                 check=False,
-            )
+            stdin=subprocess.DEVNULL)
         self.assertEqual(completed.returncode, 0, completed.stderr)
         full_g1, delta_g1, full_g2 = json.loads(completed.stdout)
 
@@ -1943,14 +1945,33 @@ process.stdout.write(JSON.stringify(snapshots));
         self.assertEqual(first, second)
 
     async def test_mcp_dispatch_reaches_tool_without_top_level_wrapper(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            response = await orchestrator_server.dispatch_tool_call(
-                'workflow_list',
-                {'project_path': tmp},
-                transport='mcp',
-            )
+        from aiohttp import web
+        from aiohttp.test_utils import TestServer
+
+        calls = []
+
+        async def workflow_list(request):
+            body = await request.json()
+            calls.append((request.path, body))
+            return await orchestrator_server.dispatch_tool_call(
+                'workflow_list', body, transport='http')
+
+        app = web.Application()
+        app.router.add_post('/api/call/workflow_list', workflow_list)
+        # Exercise the real HTTP hop and local tool dispatch without a daemon
+        # running on the developer machine or the CI runner.
+        async with TestServer(app) as daemon:
+            with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {
+                'ORCHESTRATOR_BASE_URL': str(daemon.make_url('')).rstrip('/'),
+            }):
+                response = await orchestrator_server.dispatch_tool_call(
+                    'workflow_list',
+                    {'project_path': tmp},
+                    transport='mcp',
+                )
 
         payload = json.loads(response.text)
+        self.assertEqual(calls, [('/api/call/workflow_list', {'project_path': tmp})])
         self.assertNotEqual(payload.get('error_name'), 'UNKNOWN_TOOL')
         self.assertIn('workflows', payload)
 
@@ -3316,7 +3337,7 @@ class TestTokenStateMachine(unittest.IsolatedAsyncioTestCase):
         proc = subprocess.run(
             [sys.executable, "-c", probe, repo], cwd=repo, env=env,
             capture_output=True, encoding="utf-8", errors="replace", timeout=180,
-        )
+        stdin=subprocess.DEVNULL)
         self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
         self.assertEqual(proc.stdout.strip().splitlines()[-1], "WRITES 0")
 

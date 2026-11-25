@@ -340,6 +340,55 @@ class TestManageAgentSyncHook(unittest.TestCase):
         patcher = mock.patch.object(code_tools, "_ma_hooks_repo_dir", return_value=repo_hooks)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # Run the installed Node gates against a local policy fixture: CI has
+        # neither a running daemon nor registered agent homes. The gates and
+        # probe stay real; only the external preflight service is replaced.
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        import threading
+
+        rule_file = root / "agent_home" / "AGENTS.md"
+        memory_root = (rule_file.parent / "projects" / "_ma_hook_probe" / "memory").resolve()
+
+        class Preflight(BaseHTTPRequestHandler):
+            def do_POST(self):
+                payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                target = Path(payload.get("target", "")).resolve()
+                allowed = (self.path == "/api/native_preflight"
+                           and payload.get("action_type") == "write"
+                           and target.parent == memory_root
+                           and target.name == f"_probe_{payload.get('agent_id')}.md")
+                body = json.dumps({
+                    "ok": True, "decision": "allow" if allowed else "deny",
+                    "host_gate": {"scope": "agent_memory" if allowed else "project"},
+                }).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"ok":true}')
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Preflight)
+        thread = threading.Thread(target=lambda: server.serve_forever(poll_interval=0.01),
+                                  daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join, 5)
+        self.addCleanup(server.shutdown)
+        env_patch = mock.patch.dict(os.environ, {
+            "ORCHESTRATOR_BASE_URL": f"http://127.0.0.1:{server.server_port}",
+        })
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
+        rule_patch = mock.patch(f"{__name__}._registered_rule_file", return_value=str(rule_file))
+        rule_patch.start()
+        self.addCleanup(rule_patch.stop)
 
     def _agent(self, aid, fmt, hooks_dir, hook_file, trust="none"):
         return {"id": aid, "hook_format": fmt, "hooks_dir": str(hooks_dir),

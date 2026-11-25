@@ -75,7 +75,8 @@ def _make_restorable_bak(root: Path, name: str = "broken.py"):
 
 class TestBootWriteSweepLedgerA02(unittest.TestCase):
     def setUp(self):
-        self.tempdir = Path(tempfile.mkdtemp(prefix="a02_ledger_"))
+        # write_fix resolves targets, including Windows short-name TEMP aliases.
+        self.tempdir = Path(tempfile.mkdtemp(prefix="a02_ledger_")).resolve()
         self.cache = self.tempdir / "cache"
         self.cache.mkdir()
 
@@ -411,7 +412,8 @@ class LedgerRowEndsAtItsNewlineOnlyTest(unittest.TestCase):
     NAME = "x" + chr(0x2028) + "y" + chr(0x85) + "z.py"
 
     def setUp(self):
-        self.root = Path(tempfile.mkdtemp(prefix="a02_nl_"))
+        # xroot records canonical paths; TEMP may contain a Windows 8.3 alias.
+        self.root = Path(tempfile.mkdtemp(prefix="a02_nl_")).resolve()
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
         self.target = self.root / self.NAME
 

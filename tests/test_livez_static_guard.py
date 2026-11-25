@@ -1,8 +1,8 @@
 """Static guard against livez_protocol drift (Sprint 5 net, plan D5).
 
-Census: ``rg -l --no-ignore --glob '!__pycache__' livez_protocol .`` from
-the repo root (the explicit ``.`` path is mandatory: rg without a path
-reads stdin when stdin is not a TTY and returns empty).
+Census uses ``rg -l --no-ignore --glob '!__pycache__' livez_protocol .``
+when available, with a Python scan otherwise. The explicit ``.`` path keeps
+rg from reading stdin when it is not a TTY. Both scan visible text files.
 
 Every file in the census is classified into one of 6 classes:
 predicate / producer / mention / test / docs / archive. The archive class
@@ -23,10 +23,13 @@ Self-check at freeze time (S5, 2026-10-23): the patterns in (ii) were run
 over the only mention-class file, restart_control_service.py, and
 produced 0 hits, so this guard is not red on its own list from day one.
 """
+import os
 import re
 import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TOKEN = "livez_protocol"
@@ -101,16 +104,41 @@ def _is_archive(rel_path: str) -> bool:
     return rel_path.endswith(".bak") or "_recycle_bin/" in rel_path
 
 
-def _census():
+def _python_census(root: Path):
+    """Mirror rg's visible-file census when the optional executable is absent."""
+    needle = TOKEN.encode("utf-8")
+    found = set()
+    for directory, dirs, files in os.walk(root):
+        dirs[:] = [name for name in dirs
+                   if not name.startswith(".") and name != "__pycache__"]
+        for name in files:
+            if name.startswith("."):
+                continue
+            path = Path(directory) / name
+            with path.open("rb") as stream:
+                tail = b""
+                while chunk := stream.read(64 * 1024):
+                    if b"\0" in chunk:
+                        break
+                    if needle in tail + chunk:
+                        found.add(path.relative_to(root).as_posix())
+                        break
+                    tail = chunk[-(len(needle) - 1):]
+    return found
+
+
+def _census(root=REPO_ROOT):
     rg = shutil.which("rg")
-    assert rg, "ripgrep (rg) is required for the livez static guard census"
+    if not rg:
+        return _python_census(root)
     proc = subprocess.run(
         [rg, "-l", "--no-ignore", "--glob", "!__pycache__", TOKEN, "."],
-        cwd=str(REPO_ROOT),
+        cwd=str(root),
         capture_output=True,
         text=True,
         timeout=60,
-    stdin=subprocess.DEVNULL)
+        stdin=subprocess.DEVNULL,
+    )
     assert proc.returncode in (0, 1), proc.stderr  # 1 = no matches
     found = set()
     for line in proc.stdout.splitlines():
@@ -142,10 +170,43 @@ def test_mention_files_carry_no_predicate():
     for rel, (cls, _reason) in FROZEN.items():
         if cls != "mention":
             continue
-        text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="replace")
+        source = REPO_ROOT / rel
+        if rel == "orchestrator/web_views.py" and not source.exists():
+            continue  # Optional external UI lane; inspect it whenever present.
+        text = source.read_text(encoding="utf-8", errors="replace")
         for pattern in PREDICATE_PATTERNS:
             hit = pattern.search(text)
             assert hit is None, (
                 "%s is classified mention but matches predicate pattern %r: %r"
                 % (rel, pattern.pattern, hit.group(0) if hit else "")
             )
+
+
+def test_census_without_rg_scans_visible_text_and_chunk_boundaries(tmp_path, monkeypatch):
+    (tmp_path / "present.py").write_text(TOKEN, encoding="utf-8")
+    (tmp_path / "split.txt").write_text("x" * (64 * 1024 - 4) + TOKEN, encoding="utf-8")
+    (tmp_path / "binary.bin").write_bytes(b"\0" + TOKEN.encode("utf-8"))
+    (tmp_path / ".hidden.py").write_text(TOKEN, encoding="utf-8")
+    for name in (".hidden", "__pycache__"):
+        directory = tmp_path / name
+        directory.mkdir()
+        (directory / "ignored.py").write_text(TOKEN, encoding="utf-8")
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    assert _census(tmp_path) == {"present.py", "split.txt"}
+
+
+def test_optional_mention_absence_keeps_present_and_required_files_guarded(tmp_path, monkeypatch):
+    required = tmp_path / "orchestrator/lifecycle/restart_control_service.py"
+    required.parent.mkdir(parents=True)
+    required.write_text('"""Protocol display field only."""', encoding="utf-8")
+    monkeypatch.setitem(globals(), "REPO_ROOT", tmp_path)
+    test_mention_files_carry_no_predicate()
+
+    optional = tmp_path / "orchestrator/web_views.py"
+    optional.write_text('if data.get("livez_protocol") >= 2:\n    pass\n', encoding="utf-8")
+    with pytest.raises(AssertionError, match="classified mention"):
+        test_mention_files_carry_no_predicate()
+    optional.unlink()
+    required.unlink()
+    with pytest.raises(FileNotFoundError):
+        test_mention_files_carry_no_predicate()

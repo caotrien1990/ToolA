@@ -63,8 +63,9 @@ def _repo(tmp_path, monkeypatch, name):
 
 
 def _index(root, **kw):
-    from orchestrator.graph.indexer import index_project
-    return index_project(str(root), scope="full", **kw)
+    from orchestrator.graph.indexer import JS_EXTS, index_project
+    # Extension defaults are frozen at import; opt in independently of host env.
+    return index_project(str(root), scope="full", exts=JS_EXTS, **kw)
 
 
 def _rows(root):

@@ -170,7 +170,7 @@ def test_success_path_emits_ok_true():
     """core.py:2703 via the :2715 carrier -- the success shape is untouched."""
     with tempfile.TemporaryDirectory() as tmp:
         (Path(tmp) / "package.json").write_text("{}\n", encoding="utf-8")
-        target = Path(tmp) / "gone.txt"
+        target = (Path(tmp) / "gone.txt").resolve()
         target.write_text("bye\n", encoding="utf-8")
         result = _run(str(target), project_path=tmp)
         assert not target.exists(), "success path must delete the file"

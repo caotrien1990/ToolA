@@ -54,8 +54,9 @@ def _repo(tmp_path, monkeypatch, files, name="dc"):
     monkeypatch.setenv("ORCHESTRATOR_PARALLEL_INDEX", "off")
     monkeypatch.setenv("CBM_EXTRACT_JS", "1")
     monkeypatch.setenv("CBM_GRAPH_ENABLED", "1")
-    from orchestrator.graph.indexer import index_project
-    index_project(str(root), scope="full")
+    from orchestrator.graph.indexer import JS_EXTS, PYTHON_EXTS, index_project
+    # Extension defaults are frozen at import; name the fixture languages.
+    index_project(str(root), scope="full", exts=PYTHON_EXTS + JS_EXTS)
     return root
 
 

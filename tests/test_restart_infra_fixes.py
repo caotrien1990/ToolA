@@ -6,6 +6,7 @@ import threading
 import time
 import unittest
 import urllib.request
+from unittest import mock
 from pathlib import Path
 
 import tools_v15
@@ -345,7 +346,10 @@ class RestartInfrastructureFixTests(unittest.TestCase):
                 )
             popen.assert_not_called()
 
-    def test_controller_rereads_replaced_secret_and_signed_reload_works(self):
+    @mock.patch("orchestrator.lifecycle.restart_protocol._restrict_secret",
+                return_value=(True, None))
+    def test_controller_rereads_replaced_secret_and_signed_reload_works(self, restrict_secret):
+        # ACL enforcement is covered separately; retain real disk reads and HMAC.
         with tempfile.TemporaryDirectory() as tmp:
             secret_path = Path(tmp) / "restart_control.secret"
             first_secret = b"a" * 32
@@ -385,6 +389,8 @@ class RestartInfrastructureFixTests(unittest.TestCase):
                 )
                 with urllib.request.urlopen(restart_request, timeout=2) as response:
                     self.assertTrue(json.loads(response.read())["ok"])
+                self.assertGreaterEqual(restrict_secret.call_count, 3)
+                restrict_secret.assert_called_with(secret_path)
             finally:
                 server.shutdown()
                 server.server_close()

@@ -90,18 +90,24 @@ class McpToolResultIsTheTextBlockOnlyTests(unittest.TestCase):
     # A backslash and non-ASCII text: an escaped copy would change both.
     ANSWER = '{"ok":true,"path":"C:\\\\a","note":"Tiếng Việt"}'
 
-    def test_zeromcp_itself_still_double_wraps_a_str_tool(self):
-        """Positive control for the producer. If this goes RED, zeromcp changed how it
-        answers, and the override below should be re-measured (or deleted), not kept on
-        faith."""
+    def test_zeromcp_str_tool_uses_its_advertised_result_shape(self):
+        """Support both installed 1.4's wrapper and CI 1.10's plain-text result.
+
+        The bridge must remove the wrapper on older zeromcp and stay harmless
+        when upstream already omits it; either version must preserve the text.
+        """
         from zeromcp import McpServer
 
         server = _answer_tool(McpServer("control"), self.ANSWER)
         listed = _rpc(server, "tools/list")["tools"][0]
         called = _rpc(server, "tools/call", {"name": "sample", "arguments": {"x": "1"}})
 
-        self.assertIn("outputSchema", listed)
-        self.assertEqual(called["structuredContent"], {"result": self.ANSWER})
+        if "outputSchema" in listed:
+            self.assertEqual(called["structuredContent"], {"result": self.ANSWER})
+        else:
+            self.assertNotIn("structuredContent", called)
+        self.assertEqual(called["content"], [{"type": "text", "text": self.ANSWER}])
+        self.assertFalse(called["isError"])
 
     def test_the_bridge_server_answers_with_the_text_block_only(self):
         server = _answer_tool(mcp_stdio._mcp_plain_text_server("t"), self.ANSWER)

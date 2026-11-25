@@ -486,7 +486,7 @@ def _s2_link(target, link):
     a symlink elsewhere. Returns True when the link was created."""
     if os.name == "nt":
         p = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)],
-                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, stdin=subprocess.DEVNULL)
         return p.returncode == 0 and Path(link).exists()
     try:
         os.symlink(str(target), str(link), target_is_directory=True)

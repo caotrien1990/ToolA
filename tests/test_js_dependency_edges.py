@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from orchestrator.graph import store as gstore
 from orchestrator.graph.extractors import javascript as js
-from orchestrator.graph.indexer import index_project
+from orchestrator.graph.indexer import JS_EXTS, index_project
 
 
 ESM = {
@@ -94,7 +94,7 @@ def test_an_esm_import_node_carries_a_dotted_module_path(tmp_path, monkeypatch):
 
 def test_an_esm_project_gets_dependency_edges(tmp_path, monkeypatch):
     root = _repo(tmp_path, monkeypatch, "esm_dep", ESM)
-    res = index_project(str(root), scope="full")
+    res = index_project(str(root), scope="full", exts=JS_EXTS)
     assert res["dependency_edges"] >= 1, (
         "ESM import resolved to 0 dependency edges (stats=%s)"
         % res["dependency_stats"])
@@ -114,7 +114,7 @@ def test_require_emits_an_import_node(tmp_path, monkeypatch):
 
 def test_a_commonjs_project_gets_dependency_edges(tmp_path, monkeypatch):
     root = _repo(tmp_path, monkeypatch, "cjs_dep", CJS)
-    res = index_project(str(root), scope="full")
+    res = index_project(str(root), scope="full", exts=JS_EXTS)
     assert res["dependency_edges"] >= 1, (
         "CommonJS require resolved to 0 dependency edges (stats=%s)"
         % res["dependency_stats"])
@@ -155,7 +155,7 @@ def test_a_mixed_project_resolves_both_halves(tmp_path, monkeypatch):
     files = dict(ESM)
     files.update(CJS)
     root = _repo(tmp_path, monkeypatch, "mixed", files)
-    res = index_project(str(root), scope="full")
+    res = index_project(str(root), scope="full", exts=JS_EXTS)
     assert res["dependency_edges"] >= 2, (
         "expected an edge from each half, got %s (stats=%s)"
         % (res["dependency_edges"], res["dependency_stats"]))
@@ -174,7 +174,7 @@ def test_a_bare_package_specifier_stays_unresolved_not_misresolved(tmp_path,
     root = _repo(tmp_path, monkeypatch, "bare", files)
     qnames = _imports_of("ext.js", files["ext.js"], root)
     assert qnames == ["fs.fs"] or qnames == ["fs"], qnames
-    res = index_project(str(root), scope="full")
+    res = index_project(str(root), scope="full", exts=JS_EXTS)
     # the ESM half still resolves; the bare specifier does not invent an edge
     assert res["dependency_edges"] >= 1
 
@@ -189,7 +189,7 @@ def test_parent_relative_specifier_resolves(tmp_path, monkeypatch):
     root = _repo(tmp_path, monkeypatch, "parent_rel", files)
     qnames = _imports_of("app/deep.js", files["app/deep.js"], root)
     assert qnames == ["lib.util.helper"], qnames
-    res = index_project(str(root), scope="full")
+    res = index_project(str(root), scope="full", exts=JS_EXTS)
     assert res["dependency_edges"] >= 1, res["dependency_stats"]
 
 
@@ -201,5 +201,5 @@ def test_extensionless_relative_specifier_resolves(tmp_path, monkeypatch):
                    "export function run() { return helper(); }\n"),
     }
     root = _repo(tmp_path, monkeypatch, "extless", files)
-    res = index_project(str(root), scope="full")
+    res = index_project(str(root), scope="full", exts=JS_EXTS)
     assert res["dependency_edges"] >= 1, res["dependency_stats"]
