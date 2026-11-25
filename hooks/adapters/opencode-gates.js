@@ -67,6 +67,12 @@ function runGate(gatePath, payload, promptEvent) {
     encoding: "utf8",
     timeout: 15000,
     env: process.env,
+    // WT-flicker fix (2026-11-25): the OpenCode server is console-less, so a
+    // gate child spawned without windowsHide allocates a fresh VISIBLE console
+    // (conhost -> OpenConsole -> WindowsTerminal handoff) on every read/grep/
+    // glob/bash call. windowsHide:true sets CREATE_NO_WINDOW, keeping the gate
+    // headless. Measured 37 visible handoffs / 120s before this flag.
+    windowsHide: true,
   });
   return (r.stdout || "").trim();
 }
