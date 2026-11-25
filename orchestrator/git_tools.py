@@ -91,7 +91,7 @@ def _denylisted(value, low, absolute):
             or (absolute and '.git' in low.split('/')))
 
 
-def _strip_root_prefix(value, root):
+def _strip_root_prefix(value, root, raw_root=None):
     """F1 step 5 -- pure textual prefix-strip of THIS call's resolved root.
 
     Returns the lexical relative remainder, or None to keep the step-5 raise
@@ -101,27 +101,39 @@ def _strip_root_prefix(value, root):
     slash-folded+stripped by step 0; root is the resolved top-level Path.
     normcase is the codebase's root-equality idiom (resolve_root / F2 a0); the
     '/' boundary keeps sibling-prefix roots (C:/repo vs C:/repo2) from matching.
+
+    raw_root (the caller's original project_path spelling) is a fallback prefix:
+    resolve() expands 8.3 short names (CI RUNNER~1 -> runneradmin) and junctions,
+    so a resolved root can mismatch an absolute value the caller spelled with the
+    short/linked form.  Trying the caller's own spelling accepts an inside-root
+    absolute path regardless of that expansion, while the remainder stays lexical
+    (no '..' collapse).  Step 6 still re-validates the resolved remainder inside
+    root, so the fallback cannot admit an escape.
     """
-    root_posix = root.as_posix()
-    prefix = root_posix if root_posix.endswith('/') else root_posix + '/'
     nv = os.path.normcase(value)
-    np = os.path.normcase(prefix)
-    if nv == os.path.normcase(root_posix):
-        return None                          # root itself -> never '.'
-    if not nv.startswith(np):
-        return None                          # outside this root / sibling prefix
-    remainder = value[len(prefix):]
-    if not remainder:
-        return None                          # empty remainder -> keep the raise
-    # check A: folded value == folded prefix + folded remainder.  normcase is
-    # length-preserving for ASCII but not in general (U+0130 -> two code points),
-    # so verify the slice rather than assume alignment; fail closed on mismatch.
-    if nv != np + os.path.normcase(remainder):
-        return None
-    return remainder
+    bases = [root.as_posix()]
+    if raw_root is not None:
+        bases.append(str(raw_root).replace(chr(92), '/'))
+    for base in bases:
+        prefix = base if base.endswith('/') else base + '/'
+        np = os.path.normcase(prefix)
+        if nv == os.path.normcase(base):
+            return None                      # root itself -> never '.'
+        if not nv.startswith(np):
+            continue                         # outside this root / sibling prefix
+        remainder = value[len(prefix):]
+        if not remainder:
+            return None                      # empty remainder -> keep the raise
+        # check A: folded value == folded prefix + folded remainder.  normcase is
+        # length-preserving for ASCII but not in general (U+0130 -> two code points),
+        # so verify the slice rather than assume alignment; fail closed on mismatch.
+        if nv != np + os.path.normcase(remainder):
+            return None
+        return remainder
+    return None
 
 
-def _pathspecs(root, paths, *, tool=None, check_exists=False):
+def _pathspecs(root, paths, *, tool=None, check_exists=False, raw_root=None):
     result = []
     # Work list of (spelling, reentered).  A step-5 rewrite pushes the remainder
     # back with reentered=True so it re-runs step 0 (fold+strip+is_absolute) and
@@ -170,7 +182,7 @@ def _pathspecs(root, paths, *, tool=None, check_exists=False):
         # an absolute remainder keeps the raise with F2 computed on itself.
         if absolute:
             if not reentered:
-                rel = _strip_root_prefix(value, root)
+                rel = _strip_root_prefix(value, root, raw_root)
                 if rel is not None:
                     work.append((rel, True))
                     continue
@@ -201,7 +213,7 @@ def _pathspecs(root, paths, *, tool=None, check_exists=False):
             raise GitToolError('PATHSPEC_NOT_FOUND', 'pathspec not found in worktree, index or HEAD: ' + ', '.join(missing), pathspecs=missing, ca_next_action='check which paths actually exist with git_status', ca_next_tool='git_status')
     return result
 
-def _pathspecs_from_file(root, paths_file, *, tool=None, check_exists=False):
+def _pathspecs_from_file(root, paths_file, *, tool=None, check_exists=False, raw_root=None):
     if not paths_file:
         return []
     source=Path(paths_file).resolve()
@@ -216,7 +228,7 @@ def _pathspecs_from_file(root, paths_file, *, tool=None, check_exists=False):
     specs=[]
     for index, raw in enumerate(split_lines(text),1):  # U+2028/U+0085 are legal in a file name
         try:
-            specs.extend(_pathspecs(root,[raw],tool=tool,check_exists=check_exists))
+            specs.extend(_pathspecs(root,[raw],tool=tool,check_exists=check_exists,raw_root=raw_root))
         except GitToolError as e:
             raise GitToolError(e.error_name,
                                f'paths_file entry {index} rejected: {raw!r}',
@@ -396,7 +408,7 @@ def stale_check(project_path, max_commit_age_hours=168, expected_state_hash=''):
     return {'ok':True,'stale':bool(stale),'reasons':stale,'operation_states':states,'commit_age_hours':age,'expected_state_changed':changed,'status':_state(s),'note':'ahead/behind uses local refs only; no fetch performed'}
 
 def diff(project_path, scope='worktree', paths=None, context_lines=3, max_chars=50000, check_whitespace=False):
-    root=resolve_root(project_path); specs=_pathspecs(root,paths or [],tool='git_diff',check_exists=True); scope=str(scope).lower(); base=['--literal-pathspecs','diff','--no-ext-diff','--no-textconv','--no-color',f'--unified={max(0,min(int(context_lines),20))}']
+    root=resolve_root(project_path); specs=_pathspecs(root,paths or [],tool='git_diff',check_exists=True,raw_root=project_path); scope=str(scope).lower(); base=['--literal-pathspecs','diff','--no-ext-diff','--no-textconv','--no-color',f'--unified={max(0,min(int(context_lines),20))}']
     # P7/F3: fail loud on pathspecs that match nothing -- the state-aware
     # existence check (on disk OR in the index OR in HEAD) now lives in
     # _pathspecs under check_exists=True, shared with stage/unstage. With
@@ -494,7 +506,7 @@ def stage(project_path, paths=None, paths_file='', allow_all=False, expected_sta
     root=resolve_root(project_path); before=status(str(root))
     if expected_state_hash and expected_state_hash!=before['state_hash']: raise GitToolError('GIT_STATE_STALE','working tree changed',current_state_hash=before['state_hash'])
     if paths and paths_file: raise GitToolError('GIT_PATH_INPUT_CONFLICT','pass paths or paths_file, not both')
-    specs=_pathspecs_from_file(root,paths_file,tool='git_stage',check_exists=True) if paths_file else _pathspecs(root,paths,tool='git_stage',check_exists=True)
+    specs=_pathspecs_from_file(root,paths_file,tool='git_stage',check_exists=True,raw_root=project_path) if paths_file else _pathspecs(root,paths,tool='git_stage',check_exists=True,raw_root=project_path)
     if not specs and not allow_all: raise GitToolError('GIT_PATHS_REQUIRED','paths required unless allow_all=true')
 
     if allow_all: raise GitToolError('GIT_ALLOW_ALL_REFUSED','allow_all is disabled; pass explicit safe paths')
@@ -535,7 +547,7 @@ def unstage(project_path, paths=None, paths_file='', allow_all=False, expected_s
     root=resolve_root(project_path); before=status(str(root))
     if expected_staged_hash and expected_staged_hash!=before['staged_hash']: raise GitToolError('GIT_STATE_STALE','index changed',current_staged_hash=before['staged_hash'])
     if paths and paths_file: raise GitToolError('GIT_PATH_INPUT_CONFLICT','pass paths or paths_file, not both')
-    specs=_pathspecs_from_file(root,paths_file,tool='git_unstage',check_exists=True) if paths_file else _pathspecs(root,paths,tool='git_unstage',check_exists=True)
+    specs=_pathspecs_from_file(root,paths_file,tool='git_unstage',check_exists=True,raw_root=project_path) if paths_file else _pathspecs(root,paths,tool='git_unstage',check_exists=True,raw_root=project_path)
     if not specs and not allow_all: raise GitToolError('GIT_PATHS_REQUIRED','paths required unless allow_all=true')
 
     if allow_all: raise GitToolError('GIT_ALLOW_ALL_REFUSED','allow_all is disabled; pass explicit paths')
