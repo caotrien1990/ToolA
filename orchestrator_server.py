@@ -6815,7 +6815,9 @@ async def handle_options(request):
 async def handle_root(request):
     if not HTML_FILE.exists():
         return web.Response(text=f"UI file not found: {HTML_FILE}", status=404)
-    html_content = HTML_FILE.read_text(encoding='utf-8')
+    from orchestrator.web_views import decorate_page
+
+    html_content = decorate_page(HTML_FILE.read_text(encoding='utf-8'), "main")
     return web.Response(text=html_content, content_type='text/html',
                         charset='utf-8',
                         headers=_cors(request.headers.get('Origin'), {'Cache-Control': 'no-store'}))
@@ -7812,6 +7814,7 @@ def _council_cancel_worker(entry: dict) -> bool:
     try:
         subprocess.run(["taskkill", "/F", "/T", "/PID", str(int(pid))],
                        capture_output=True, timeout=15,
+                       stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family
                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         return True
     except Exception:
@@ -9970,6 +9973,7 @@ def _council_ltn_key(env: dict[str, str]) -> str:
             ["powershell.exe", "-NoProfile", "-Command",
              "[Environment]::GetEnvironmentVariable('LTN_KEY','User')"],
             capture_output=True, text=True, timeout=20,
+            stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         return (out.stdout or "").strip()
@@ -10156,6 +10160,7 @@ def _council_kill_process_tree(pid: int) -> None:
                 ["taskkill", "/PID", str(pid), "/T", "/F"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         else:
@@ -10197,6 +10202,7 @@ def _council_cleanup_broker_session(agent: str, raw: str, prompt: str, started_a
             subprocess.run(
                 [cli("opencode"), "session", "delete", session_id],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family
                 timeout=30, creationflags=flags,
             )
             return True
@@ -10208,6 +10214,7 @@ def _council_cleanup_broker_session(agent: str, raw: str, prompt: str, started_a
             subprocess.run(
                 [cli("kilo"), "session", "delete", session_id],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family
                 timeout=30, creationflags=flags,
             )
             return True
@@ -12474,6 +12481,7 @@ async def handle_council_pick_folder(request):
             subprocess.run,
             ['powershell', '-STA', '-Command', ps_cmd],
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), capture_output=True, text=True, timeout=60,
+            stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family
         )
         path = (result.stdout or '').strip()
         if result.returncode == 0 and path:
@@ -15298,7 +15306,11 @@ async def handle_council_send(request):
 async def handle_council_dashboard(request):
     """GET /council - localhost-only read-only council activity dashboard."""
     cors = _cors(request.headers.get('Origin'))
-    if not _is_local(request) or not _origin_ok(request):
+    # Same host rule the packaged Monitor surface enforces, imported rather than
+    # restated, so the two gates cannot drift apart (S6: /council accepted any
+    # Host while /api/monitor/* and /assets/toola/* pinned loopback).
+    from orchestrator.web_views import host_ok
+    if not _is_local(request) or not host_ok(request) or not _origin_ok(request):
         return web.Response(text="blocked", status=403, headers=cors)
 
     if not SERVER_READY:
@@ -15326,9 +15338,10 @@ async def handle_council_dashboard(request):
         )
 
     from orchestrator.council.dashboard import render_council_dashboard
+    from orchestrator.web_views import decorate_page
 
     return web.Response(
-        text=render_council_dashboard(),
+        text=decorate_page(render_council_dashboard(), "council"),
         content_type='text/html',
         charset='utf-8',
         headers=_cors(request.headers.get('Origin'), {'Cache-Control': 'no-store, max-age=0'}),
@@ -20506,6 +20519,9 @@ def create_app() -> web.Application:
         client_max_size=MAX_REQUEST_BODY_BYTES,
         middlewares=[_http_defense_middleware],
     )
+    from orchestrator.web_views import register_web_routes
+
+    register_web_routes(app)
     app.router.add_get('/', handle_root)
     app.router.add_get('/favicon.ico', handle_favicon)
     app.router.add_get('/health', handle_health)
@@ -21155,7 +21171,10 @@ if __name__ == "__main__":
     else:
         _entry_console = has_console()
         _keystone_ok = ensure_hidden_console(attach_parent=False)
-        _keystone_branch = "failed" if not _keystone_ok else ("realloc" if _entry_console else "alloc")
+        # Headless keystone (WT-flicker fix 2026-11-25): no console is allocated.
+        # A console-less daemon spawns every child with CREATE_NO_WINDOW; an
+        # inherited console window (if any) is hidden. "headless" is the normal branch.
+        _keystone_branch = "headless" if not _entry_console else ("hidden" if _keystone_ok else "hide-failed")
         logger.info("CONSOLE_WARP keystone branch=" + _keystone_branch)
         install_proactor_fix()
         asyncio.run(_run_server())
