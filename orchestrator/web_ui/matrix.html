@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ToolA Function Matrix</title>
+<style>
+:root {
+  --bg: #0f1117; --bg2: #161922; --bg3: #1e2230; --bg4: #262b3a;
+  --fg: #e2e5ef; --fg2: #9aa0b4; --fg3: #636a80;
+  --accent: #5b8af5; --accent2: #3d6de0; --accent-dim: #1a2a52;
+  --green: #4ade80; --green-dim: #14332a;
+  --amber: #fbbf24; --amber-dim: #3d2f0a;
+  --red: #f87171; --red-dim: #3d1418;
+  --purple: #a78bfa; --purple-dim: #231a3d;
+  --cyan: #22d3ee; --cyan-dim: #0a2d33;
+  --pink: #f472b6; --pink-dim: #3d1428;
+  --border: #2a2f3e; --ta-control-border: #6b7280; --radius: 6px;
+  --font: 'Inter', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f5f6f8; --bg2: #ffffff; --bg3: #ebedf2; --bg4: #dfe2ea;
+    --fg: #1a1d2b; --fg2: #4a5068; --fg3: #7a8098;
+    --accent: #2563eb; --accent2: #1d4ed8; --accent-dim: #dbeafe;
+    --green: #16a34a; --green-dim: #dcfce7;
+    --amber: #d97706; --amber-dim: #fef3c7;
+    --red: #dc2626; --red-dim: #fee2e2;
+    --purple: #7c3aed; --purple-dim: #ede9fe;
+    --cyan: #0891b2; --cyan-dim: #cffafe;
+    --pink: #db2777; --pink-dim: #fce7f3;
+    --border: #d1d5e0;
+  }
+}
+/* theme.css is injected AFTER this style block (web_views.py:49) and re-points every
+   matrix token at the dark --ta-* palette (theme.css:57-62), so the prefers-color-scheme
+   block above could never win on its own. html[data-toola-page="matrix"]:root is
+   (0,2,1) against theme.css's (0,1,1), so it wins on specificity instead of order.
+   .toola-nav reads --ta-* directly, which is why the nav stayed dark without this. */
+@media (prefers-color-scheme: light) {
+  html[data-toola-page="matrix"]:root {
+    --ta-bg: #f5f6f8; --ta-panel: #ffffff; --ta-panel-soft: #ebedf2; --ta-control: #e6e9f0;
+    --ta-elevated: #dfe2ea; --ta-border: #d1d5e0; --ta-text: #1a1d2b; --ta-muted: #4a5068;
+    /* WCAG 1.4.11: a control's boundary needs 3:1 against BOTH the page and the
+       control's own fill. --ta-border (#d1d5e0) is 1.36:1 against white, so the
+       hairline that made the light block readable is not the one that may draw a
+       button edge -- hence a separate token, not a darker --ta-border. */
+    --ta-control-border: #5b6178;
+    --ta-faint: #5b6178; --ta-accent: #2563eb; --ta-accent-hover: #1d4ed8;
+    --ta-accent-soft: rgba(37,99,235,.12); --ta-ok: #16a34a; --ta-warn: #d97706; --ta-error: #dc2626;
+    /* Measured, not guessed: the dark-mode semantic tones (#4ade80/#fbbf24/#a78bfa/
+       #22d3ee, all ~1.0-1.5 luminance-ratio relatives of a near-black page) land at
+       2.76-3.4:1 as text on white -- under AA for the 12px .mm-tier-label and the
+       11.84px #mm-source. These are the darkest Tailwind 600/700 rungs that still
+       read as the same hue; every one clears 4.5:1 against its own -dim tint. */
+    --green: #166534; --green-dim: #dcfce7;
+    --amber: #92400e; --amber-dim: #fef3c7;
+    --red: #b91c1c; --red-dim: #fee2e2;
+    --purple: #6d28d9; --purple-dim: #ede9fe;
+    --cyan: #155e75; --cyan-dim: #cffafe;
+    --pink: #be185d; --pink-dim: #fce7f3;
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font); background: var(--bg); color: var(--fg); line-height: 1.5; padding: 16px; min-height: 100vh; }
+h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 4px; }
+h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 8px; color: var(--accent); }
+h3 { font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg3); margin-bottom: 6px; }
+.subtitle { color: var(--fg2); font-size: 0.85rem; margin-bottom: 20px; }
+.mono { font-family: var(--mono); }
+
+/* Tabs */
+.tabs { display: flex; gap: 2px; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 0; overflow-x: auto; }
+.tab { padding: 8px 16px; font-size: 0.8rem; font-weight: 500; color: var(--fg3); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; white-space: nowrap; background: none; border-top: none; border-left: none; border-right: none; font-family: var(--font); }
+.tab:hover { color: var(--fg2); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* Stats row */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 16px; }
+.stat { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+.stat-value { font-size: 1.5rem; font-weight: 700; font-family: var(--mono); }
+.stat-label { font-size: 0.7rem; color: var(--fg3); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+.stat-t1 .stat-value { color: var(--green); }
+.stat-t2 .stat-value { color: var(--amber); }
+.stat-t3 .stat-value { color: var(--purple); }
+.stat-t4 .stat-value { color: var(--cyan); }
+.stat-total .stat-value { color: var(--accent); }
+
+/* Filters */
+.filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+.search { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 12px; color: var(--fg); font-family: var(--mono); font-size: 0.8rem; width: 260px; outline: none; }
+.search:focus { border-color: var(--accent); }
+.filter-btn { padding: 4px 10px; font-size: 0.72rem; font-weight: 500; border-radius: 99px; border: 1px solid var(--border); background: var(--bg2); color: var(--fg2); cursor: pointer; transition: all 0.15s; font-family: var(--font); }
+.filter-btn:hover { border-color: var(--fg3); }
+.filter-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+.filter-btn.t1 { --fc: var(--green); }
+.filter-btn.t1.active { background: var(--green-dim); border-color: var(--green); color: var(--green); }
+.filter-btn.t2 { --fc: var(--amber); }
+.filter-btn.t2.active { background: var(--amber-dim); border-color: var(--amber); color: var(--amber); }
+.filter-btn.t3 { --fc: var(--purple); }
+.filter-btn.t3.active { background: var(--purple-dim); border-color: var(--purple); color: var(--purple); }
+.filter-btn.t4 { --fc: var(--cyan); }
+.filter-btn.t4.active { background: var(--cyan-dim); border-color: var(--cyan); color: var(--cyan); }
+.result-count { font-size: 0.75rem; color: var(--fg3); font-family: var(--mono); margin-left: auto; }
+
+/* Tool grid */
+.tool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; }
+.tool-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; cursor: pointer; transition: all 0.15s; position: relative; }
+.tool-card:hover { border-color: var(--accent); background: var(--bg3); }
+.tool-card.selected { border-color: var(--accent); background: var(--accent-dim); }
+.tool-name { font-family: var(--mono); font-size: 0.75rem; font-weight: 500; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tool-meta { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+.badge { font-size: 0.6rem; font-weight: 600; padding: 1px 5px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.04em; }
+.badge-t1 { background: var(--green-dim); color: var(--green); }
+.badge-t2 { background: var(--amber-dim); color: var(--amber); }
+.badge-t3 { background: var(--purple-dim); color: var(--purple); }
+.badge-t4 { background: var(--cyan-dim); color: var(--cyan); }
+.badge-mut { background: var(--red-dim); color: var(--red); }
+.badge-protect { background: var(--pink-dim); color: var(--pink); }
+.badge-cat { background: var(--bg4); color: var(--fg3); }
+.badge-err-i { background: var(--red-dim); color: var(--red); }
+.badge-err-ii { background: var(--amber-dim); color: var(--amber); }
+.badge-dep { background: var(--bg4); color: var(--fg3); text-decoration: line-through; }
+.badge-miss { background: var(--amber-dim); color: var(--amber); }
+.sb-controls { display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin-bottom:10px; font-size:0.8rem; color:var(--fg2); }
+.sb-controls label { display:flex; gap:5px; align-items:center; cursor:pointer; }
+.sb-legend { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:6px; margin-top:14px; font-size:0.78rem; color:var(--fg2); }
+.sb-legend b { color:var(--fg); }
+.sb-note { font-size:0.78rem; color:var(--fg2); margin-top:10px; line-height:1.6; }
+#sunburst-container svg { display:block; margin:0 auto; max-width:100%; height:auto; }
+#sunburst-container text { font-family:var(--mono); fill:var(--fg); }
+#sunburst-container .radial-edge { stroke:var(--border); stroke-width:1; }
+#sunburst-container .radial-edge-tier { stroke:var(--fg3); stroke-width:1.5; }
+/* (a) tô cành cây theo tier - dùng data-tier đã có sẵn trên path (L1049/1068/1087) */
+#sunburst-container .radial-edge[data-tier="T1"] { stroke:#4ade80; stroke-opacity:.5; }
+#sunburst-container .radial-edge[data-tier="T2"] { stroke:#fbbf24; stroke-opacity:.5; }
+#sunburst-container .radial-edge[data-tier="T3"] { stroke:#a78bfa; stroke-opacity:.5; }
+#sunburst-container .radial-edge[data-tier="T4"] { stroke:#22d3ee; stroke-opacity:.5; }
+#sunburst-container .radial-edge-tier[data-tier="T1"] { stroke:#4ade80; }
+#sunburst-container .radial-edge-tier[data-tier="T2"] { stroke:#fbbf24; }
+#sunburst-container .radial-edge-tier[data-tier="T3"] { stroke:#a78bfa; }
+#sunburst-container .radial-edge-tier[data-tier="T4"] { stroke:#22d3ee; }
+/* (c) hàng lọc tier trong thanh điều khiển chung - chấm màu + số tool */
+.filter-btn.ctl-tier { display:inline-flex; align-items:center; gap:6px; }
+.filter-btn.ctl-tier .tier-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--sc,#888); flex:0 0 auto; }
+.filter-btn.ctl-tier .ctl-count { font-size:0.72rem; color:var(--fg3); }
+.filter-btn.ctl-tier.active { border-color:var(--sc,#888); color:var(--fg); }
+#sunburst-container .radial-tool { cursor:pointer; stroke:var(--bg2); stroke-width:1; }
+#sunburst-container .radial-tool:hover { stroke:#fff; stroke-width:2; }
+#sunburst-container .radial-tier { cursor:pointer; stroke:var(--bg2); stroke-width:2.5; }
+#sunburst-container .radial-tier:hover { stroke:#fff; }
+
+/* Dashboard (Radial tab only, 2026-11-17) */
+.dash-grid { display:grid; grid-template-columns:150px minmax(0,1fr) 320px; grid-template-areas:"top top top" "gvbar gvbar gvbar" "stages center side" "status status status"; gap:10px; align-items:start; }
+.dash-topbar { grid-area:top; display:flex; align-items:center; gap:12px; padding:8px 12px; background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); }
+.dash-title { font-weight:700; letter-spacing:0.08em; }
+.dash-clock { margin-left:auto; font-family:var(--mono); color:var(--fg2); font-size:0.85rem; }
+.dash-stages { grid-area:stages; display:flex; flex-direction:column; gap:8px; }
+.dash-stage { text-align:left; background:var(--bg2); border:1px solid var(--border); border-left:4px solid var(--sc,#888); border-radius:var(--radius); padding:10px 12px; cursor:pointer; color:var(--fg); }
+.dash-stage:hover { border-color:var(--fg3); }
+.dash-stage.active { border-color:var(--sc,#888); box-shadow:0 0 0 1px var(--sc,#888) inset; }
+.dash-stage .st-name { font-weight:700; font-size:0.9rem; }
+.dash-stage .st-meta { font-size:0.75rem; color:var(--fg2); margin-top:2px; }
+#sunburst-container { grid-area:center; min-width:0; }
+.dash-side { grid-area:side; display:flex; flex-direction:column; gap:10px; min-width:0; }
+.dash-box { background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:10px 12px; }
+.dash-box-title { font-weight:700; font-size:0.85rem; margin-bottom:8px; }
+.dash-pills { display:flex; flex-wrap:wrap; gap:6px; }
+.dash-pill { background:var(--bg); border:1px solid var(--border); border-radius:999px; padding:3px 10px; font-size:0.78rem; color:var(--fg2); cursor:pointer; font-family:var(--mono); }
+#sb-bridge-pill { cursor:default; }
+.dash-pill.ok { color:#4ade80; border-color:#4ade80; }
+.dash-pill.warn { color:#fbbf24; border-color:#fbbf24; }
+.dash-pill.bad { color:#f87171; border-color:#f87171; }
+.dash-pill.off { color:var(--fg3); }
+.dash-pill.active { outline:2px solid var(--fg); color:var(--fg); }
+.dash-statusbar .dash-pill { cursor:default; }
+.dash-log { font-family:var(--mono); font-size:0.75rem; line-height:1.7; max-height:220px; overflow-y:auto; }
+.dash-log-row { display:flex; gap:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dash-log-row .lt { color:var(--fg3); }
+.dash-log-row .ok { color:#4ade80; }
+.dash-log-row .err { color:#f87171; }
+.dash-statusbar { grid-area:status; display:flex; flex-wrap:wrap; gap:6px; padding:8px 12px; background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); }
+#sunburst-container .radial-group { cursor:pointer; stroke:var(--bg2); stroke-width:1.5; }
+#sunburst-container .radial-group:hover { stroke:#fff; }
+#sunburst-container .radial-group-hit { cursor:pointer; }
+.dash-gvbar { grid-area:gvbar; display:none; align-items:center; gap:10px; padding:8px 12px; background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); font-size:0.85rem; }
+.dash-gvbar.on { display:flex; }
+.dash-gvbar .gv-title { font-weight:700; }
+.dash-gvbar .gv-meta { color:var(--fg2); font-size:0.78rem; }
+#sb-gv-back { cursor:pointer; }
+
+/* Chain section */
+.chain-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 10px; }
+.chain-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.chain-steps { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-family: var(--mono); font-size: 0.72rem; }
+.chain-step { background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; white-space: nowrap; }
+.chain-step.highlight { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+.chain-arrow { color: var(--fg3); font-size: 0.8rem; }
+.chain-desc { font-size: 0.78rem; color: var(--fg2); margin-top: 8px; line-height: 1.5; }
+
+/* Gap section */
+.gap-card { background: var(--bg2); border-left: 3px solid var(--red); border-radius: 0 var(--radius) var(--radius) 0; padding: 12px 14px; margin-bottom: 8px; }
+.gap-card.warn { border-left-color: var(--amber); }
+.gap-card.info { border-left-color: var(--accent); }
+.gap-title { font-weight: 600; font-size: 0.85rem; margin-bottom: 4px; overflow-wrap: break-word; word-break: break-word; }
+.gap-detail { font-size: 0.78rem; color: var(--fg2); }
+
+/* Automation section */
+.auto-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 8px; }
+.auto-trigger { font-family: var(--mono); font-size: 0.78rem; color: var(--amber); font-weight: 500; }
+.auto-action { font-family: var(--mono); font-size: 0.78rem; color: var(--green); margin-top: 4px; }
+.auto-reason { font-size: 0.75rem; color: var(--fg3); margin-top: 4px; }
+
+/* Detail panel */
+.detail-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-top: 12px; position: sticky; top: 16px; }
+.detail-name { font-family: var(--mono); font-size: 1rem; font-weight: 600; margin-bottom: 8px; overflow-wrap: break-word; word-break: break-word; }
+.detail-row { display: flex; gap: 8px; margin-bottom: 4px; font-size: 0.8rem; }
+.detail-label { color: var(--fg2); min-width: 80px; }
+.detail-value { color: var(--fg); min-width: 0; overflow-wrap: break-word; word-break: break-word; }
+.detail-chain { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.detail-chain h3 { margin-bottom: 6px; }
+
+/* Responsive */
+@media (max-width: 600px) {
+  .tool-grid { grid-template-columns: 1fr; }
+  .stats { grid-template-columns: repeat(3, 1fr); }
+  .search { width: 100%; }
+  .chain-steps { font-size: 0.65rem; }
+}
+/* Matrix: a scrollable, left-to-right tree. The SVG reads its anchors from the HTML nodes. */
+html[data-toola-page="matrix"] body { --mm-gutter: clamp(12px, 2.4vw, 36px); padding: 0 var(--mm-gutter) 24px; }
+html[data-toola-page="matrix"] body > .toola-nav { margin: 0 calc(-1 * var(--mm-gutter)) 22px; border-radius: 0; }
+.mm-heading { max-width: 1540px; margin: 0 auto 14px; }
+.mm-heading .subtitle { margin: 4px 0 0; }
+.mm-kicker { color: var(--fg2); font: 600 .72rem/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+#tabs, #panel-mindmap { max-width: 1540px; margin-inline: auto; }
+#panel-mindmap [hidden] { display: none; }
+.mm-map { position: relative; isolation: isolate; background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; }
+.mm-view-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+.mm-view-controls button { min-width: 36px; min-height: 36px; padding: 4px 9px; border: 1px solid var(--ta-control-border, var(--border)); border-radius: 7px; background: var(--bg3); color: var(--fg); font: inherit; font-size: .82rem; cursor: pointer; }
+.mm-view-controls button:hover { border-color: var(--fg2); }
+.mm-view-controls output { min-width: 54px; text-align: center; color: var(--fg); font: .8rem var(--mono); }
+.mm-view-hint { margin-inline-start: auto; color: var(--fg2); font-size: .8rem; }
+/* 620px is the tallest ordinary state (603px) plus its scrollbar, and at a 1080px
+   viewport the document still reports zero page scroll -- 540px forced every big
+   cluster to scroll inside the map for no gain. */
+/* Grain fades toward the rim instead of tiling to the edges -- Forest's
+   .project-universe-grain trick, moved onto the background layer so it costs no extra
+   element and cannot move an anchor. The dot field and its mask are one layer; the
+   solid fill sits under it unmasked. */
+/* Grain fades out toward the rim instead of tiling to the edges -- Forest's
+   .project-universe-grain idea (mask-image: radial-gradient(circle,#000,transparent 76%)),
+   but baked into one background shorthand rather than a masked layer. A ::before would
+   scroll with the content because the stage is the scroller, and a mask on the stage
+   itself would fade the NODES too. A veil drawn above the dots and below the content
+   needs neither. Layer order is top-first, so the veil comes before the dot tile and
+   the solid var(--bg) stays last: getComputedStyle(stage).backgroundColor keeps reporting
+   the real fill, which is the neighbour the contrast lock measures wires against. */
+/* The stage CENTRES its canvas on both axes (Anh 2026-11-23: "sao cai nay khong de o
+   giua ma lech o tren vay"). Removing the 107px root-pin earlier this round fixed the
+   root INSIDE the canvas; this is the other box, and it is what his screenshot shows.
+   .mm-stage was display:block, so the canvas -- width:max-content, shorter and narrower
+   than the stage in every closed state -- sat at the TOP-LEFT corner and all the slack
+   pooled below-right: measured closed at 1440 it leaves 947px of dead space to its
+   right, and at 390 the root stands 93px ABOVE the stage centre (above 0 / below 187).
+   justify-content + align-items: center was measured and REJECTED: on a scroll
+   container it clips an overflowing child on BOTH sides and the left half is then
+   unreachable, because scrollLeft cannot go negative (forced 3000x2000 canvas: left
+   edge at -816px with maxScrollLeft 815, so 816px of content can never be scrolled to)
+   which would break the pan, ArrowRight and fit locks. margin:auto absorbs FREE space
+   only: centred when the stage has slack (rootOffStageCentre 0 at 1440 and at 390), and
+   on overflow it resolves to 0 -- left 0, maxScrollLeft 1631, byte-identical to the old
+    block layout. flex:none keeps the canvas at its content width instead of letting the
+    flex line squeeze it, and the auto margins are part of the child margin box, so
+    scrollHeight stays equal to clientHeight and the zero-scroll-range asserts hold.
+
+    VERTICAL is the same mechanism, and root_probe.py measured it state by state: the
+    root's centre EQUALS the stage's centre wherever the canvas fits -- closed 190/190
+    at both 1440 and 390, half-open 239/239 and 226/226, and after "Vua khung"
+    284/284 and 204/204 (zoom 0.6 / 0.44). Exactly ONE state reads off-centre:
+    all-tiers-open, where the canvas is 945px in a 576px stage at 1440 and 925px in
+    540px at 390. There the auto margins resolve to 0, scrollTop stays 0, and the root
+    lands 165px / 147px BELOW the stage centre. That is correct and must NOT be
+    "fixed": centring an overflowing scroll box pushes content above the origin,
+    which setPanTotal clamps away ("negative pan does not exist", matrix.js) and which
+    the fit lock forbids outright by asserting scrollTop == 0 after "Vua khung".
+    Anh's complaint was the fitting states -- closed and half-open -- and both are 0. */
+.mm-stage { display: flex; overflow: auto; max-height: min(620px, 64vh); min-height: min(380px, 52vh); overflow-anchor: none; scrollbar-width: thin; cursor: grab; --mm-ease: cubic-bezier(.22, 1, .36, 1); background: radial-gradient(circle at 50% 45%, transparent 0%, transparent 52%, var(--bg) 84%) , radial-gradient(circle, color-mix(in srgb, var(--fg2) 18%, transparent) 1px, transparent 1px) 0 0 / 22px 22px, var(--bg); }
+.mm-stage.is-panning, .mm-stage.is-panning * { cursor: grabbing; user-select: none !important; }
+.mm-stage:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; }
+/* Gap is pure sideways cost, and the 26px that used to sit here was chosen for a
+   TWO-track rail: measured 1461px (52px gap), 1371px (34px) or 1331px (26px) at a
+   pinned 603px height. One column at both axes deleted that trade -- the deep state
+   is now ~1008px wide at 1440 against a 1369px stage, so there is slack and the gap
+   is no longer buying width, it is buying CLEARANCE. Anh's second complaint ("wire
+   bi chen thang qua cot tiep theo") measured as wires 2-4px off a card edge at 390,
+   where the corridor was 16px and four tier lanes had to fit inside it. A corridor
+   has to hold a fan AND leave air at both ends, so it is 34px desktop / 26px mobile.
+   laneOffset budgets from the edges: span = corridor - 2*LANE_CLEAR, so the OUTERMOST
+   lane is exactly LANE_CLEAR (7px) off either column at any width, and the step
+   between four tier lanes is 6.7px desktop / 4px mobile -- distinguishable, not fused.
+   Height cost is nil: gap is a horizontal track size. */
+/* Vertical alignment is CENTRE for both children of the line (Anh 2026-11-23: "sao cai
+   nay khong de o giua ma lech o tren vay"). It was flex-start, which pins whatever is
+   shorter to the top: with .mm-root alone set to align-self:center the two disagreed,
+   and the measured gap was +72.5px in the closed state (the root is taller than four
+   collapsed tiers, so the tiers sat at the top of a line the root filled) while states
+   with branches open read 0. Centring the line makes the root's centre and the branch
+   column's centre the same point in every state, which is what "ở giữa" means. Height
+/* --mm-trunk-runway is the air a PREFIX -> TOOL spine needs to the RIGHT of its rail
+   (Anh 2026-11-23: "wire thang cua node ngon prefix chuyen sang ben phai di"). The
+   spine used to run down the LEFT gutter, at railLeft - corridor/2, which is
+   arithmetically the same x as the group->head arc's control point
+   ((groupRight + railLeft)/2) -- so six arcs hugged it along a ~530px run
+   (runway_probe: OVERLAPPING_ARCS = 6, at BOTH widths). The left gutter now belongs to
+   those arcs alone and the spine has its own runway on the right, which is why the
+   canvas reserves padding-right SEPARATELY from --mm-pad: the wire layer is inset:0 on
+   this box's padding box, so the runway is inside the SVG and cannot be clipped, while
+   a spine past the padding edge would be. 16px at both axes -- the desktop --mm-pad is
+   already 26px so nothing shrinks, and mobile's 8px is the value that would have cut
+   the stroke. matrix.js reads the same variable, so layout and geometry cannot drift. */
+.mm-canvas { position: relative; display: flex; align-items: center; flex: none; margin: auto; width: max-content; min-height: 366px; padding-block: 25px; padding-inline-start: var(--mm-pad); padding-inline-end: max(var(--mm-pad), var(--mm-trunk-runway)); gap: var(--mm-gap); --mm-pad: clamp(14px, 2.6vw, 26px); --mm-gap: clamp(26px, 2.4vw, 34px); --mm-trunk-runway: 16px; --mm-root-width: 148px; --mm-tier-width: 196px; --mm-cluster-width: 172px; --mm-group-width: 166px; --mm-tool-width: 170px; }
+.mm-wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+/* THE RELATION LAYER (Anh 2026-11-24: "phần mind maps cần thể hiện tool chain và các tool
+   liên quan, auto chain"). Until now the canvas drew ONE thing -- the taxonomy, tier >
+   cluster > group > tool -- and the three tables that say what a tool LEADS TO (CHAINS 8
+   rows, SB_LINKS 30 edges, SB_AUTO 16 auto-fires) shipped only as prose in the detail
+   panel and in the hidden inventory. So the map could not answer "what follows this tool"
+   even though the data for it was already in the file.
+   Same box as .mm-wires: inset:0 on this padding box, so it shares the wire layer's
+   coordinate space and needs no second CTM. It is FIRST in the DOM and at z-index 0 while
+   every card is auto/0, which is exactly Anh's ruling ("Layer SVG riêng, NGUnder thẻ bài"):
+   an edge that must cross a rail passes BEHIND the cards instead of slashing across them.
+   .mm-wires keeps z-index 1, so the hierarchy's paint order does not move at all -- and
+   every census written so far targets svg.mm-wires / #mm-branch-wires, which is why this
+   layer is invisible to them by construction rather than by luck.
+   pointer-events:none: a reading aid. A stroke that eats a click on a 170px chip is the
+   regression :908 exists to catch, and this layer must not become a second one. */
+.mm-relations { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; overflow: visible; }
+/* Direct children only: the arrowheads live in a separate 0-size defs svg precisely so
+   that replaceChildren() on this layer cannot destroy them, and so a path census of the
+   layer counts edges and nothing else. */
+.mm-relations > path { fill: none; vector-effect: non-scaling-stroke; stroke-linecap: round; }
+/* A chain route is the load-bearing one: solid, thickest, numbered. It is the only edge
+   kind whose order matters, which is why it is the only one that carries a digit. */
+.mm-relations .mm-chain-edge { stroke: var(--amber); stroke-width: 2.2; stroke-opacity: .92; marker-end: url(#mm-rel-arrow-chain); }
+/* An auto-chain fires without being asked. Cyan and a coarse dash, so it reads as the
+   machine's move and not the user's. The digit is SB_AUTO's own grouping key and NOT a
+   row of AUTO_CHAIN_RULES -- measured 2026-11-24: rank 2 is cbm_dead_code, registry row 2
+   is ca_hint_commit -- so it is a lane label, never a pointer into the live registry. */
+.mm-relations .mm-auto-edge { stroke: var(--cyan); stroke-width: 1.9; stroke-opacity: .85; stroke-dasharray: 7 5; marker-end: url(#mm-rel-arrow-auto); }
+/* Inventory edges are the quiet majority -- 30 rows over four kinds -- so they stay thin
+   and grey and one dash pattern per kind tells them apart without a legend sentence. */
+.mm-relations .mm-link-edge { stroke: var(--fg2); stroke-width: 1.4; stroke-opacity: .7; stroke-dasharray: 2 6; }
+.mm-relations .mm-link-delegates-to { stroke-dasharray: 8 4; marker-end: url(#mm-rel-arrow-link); }
+.mm-relations .mm-link-recommends { stroke-dasharray: 12 4; marker-end: url(#mm-rel-arrow-link); }
+.mm-relations .mm-link-alias-dispatch { stroke-dasharray: 3 3; marker-end: url(#mm-rel-arrow-link); }
+/* alias-shared-handler is a pair with no direction -- the panel already says "cặp không
+   hướng" -- so it gets a bar and NO arrowhead. Pointing it would claim a direction the
+   source data refuses to assert, which is the lie this whole campaign keeps meeting. */
+.mm-relations .mm-link-alias-shared-handler { stroke-dasharray: none; stroke-opacity: .42; }
+/* The label is SVG text in this same layer, never a DOM badge inside the chip: a badge
+   would grow the card, and the shared-left-edge, slot-overlap and wire-piercing censuses
+   are all measured off those rects. paint-order:stroke puts a halo on it so the digit
+   stays readable where the curve crosses a wire. */
+.mm-relations > text { font: 700 .62rem/1 var(--mono); paint-order: stroke; stroke: var(--bg2); stroke-width: 3.5px; stroke-linejoin: round; text-anchor: middle; dominant-baseline: middle; }
+.mm-relations .mm-chain-edge-label { fill: var(--amber); }
+.mm-relations .mm-auto-edge-label { fill: var(--cyan); }
+/* The marker host. Zero size, absolute, out of flow: it contributes nothing to the
+   canvas's max-content width, which is what the rail and fit locks are measured on. */
+.mm-rel-defs { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
+.mm-wires path { fill: none; stroke: var(--mm-tone); stroke-width: 1.65; stroke-opacity: .65; vector-effect: non-scaling-stroke; }
+.mm-wires .is-focus { stroke-opacity: 1; stroke-width: 2.4; }
+/* ISSUE 2 (Anh 2026-11-24) + A3 (Anh 2026-11-25, direction B): chain panel on the LEAF
+   chip, now a NODE IN THE MAP: absolute inside #mm-canvas with left/top in map coords, so
+   it pans/zooms WITH the map instead of sticking to the screen. Absolute is out of flow and
+   feeds no intrinsic width (abspos descendants contribute zero to max-content); the old
+   right=435@390 claim is re-measured in T-P3. repositionChainPanel clamps left so the panel
+   never overflows the canvas right edge into the stage's scrollable overflow. */
+.mm-chain-panel { position: absolute; z-index: 60;
+  width: 268px; max-height: 300px; overflow: auto; padding: 8px 10px;
+  background: color-mix(in srgb, var(--bg2) 97%, var(--fg2)); border: 1px solid var(--amber);
+  border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.42); font: .74rem/1.35 var(--mono);
+  color: var(--fg); }
+.mm-chain-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding-bottom: 5px; margin-bottom: 6px; border-bottom: 1px solid var(--border); }
+.mm-chain-panel-head strong { color: var(--amber); font-size: .82rem; overflow: hidden; text-overflow: ellipsis; }
+.mm-chain-panel-close { flex: none; width: 22px; height: 22px; line-height: 1; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--fg2); }
+.mm-chain-panel-route { margin: 0 0 7px; }
+.mm-chain-panel-title { color: var(--fg); font-weight: 700; margin-bottom: 4px; }
+.mm-chain-panel-title span { color: var(--amber); font-weight: 500; }
+.mm-chain-panel-steps { display: flex; flex-wrap: wrap; gap: 3px; }
+.mm-chain-step, .mm-chain-rel { cursor: pointer; border: 1px solid var(--border); border-radius: 5px;
+  padding: 2px 5px; font: .68rem/1.3 var(--mono); color: var(--fg2); background: var(--bg2); }
+.mm-chain-step:hover, .mm-chain-rel:hover { border-color: var(--amber); color: var(--fg); }
+.mm-chain-step.is-current { border-color: var(--amber); color: var(--amber); background: color-mix(in srgb, var(--amber) 14%, var(--bg2)); }
+.mm-chain-panel-rel { margin-top: 7px; padding-top: 6px; border-top: 1px dashed var(--border); }
+.mm-chain-panel-rel h4 { margin: 0 0 4px; font-size: .7rem; color: var(--fg2); font-weight: 600; }
+.mm-chain-empty { color: var(--fg2); font-size: .7rem; }
+/* q6=m: chain mates ring bright IN the tree. A ring, not a re-dimming. */
+.mm-canvas button[data-mm-tool].mm-chain-mate { border-color: var(--amber) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--amber) 55%, transparent), 0 0 10px color-mix(in srgb, var(--amber) 35%, transparent);
+  filter: none !important; z-index: 2; }
+/* Colour-dim, never alpha -- the rule the comment below this one has been stating
+   since the wire layer was built, and the one .is-muted did not obey. A muted wire at
+   stroke-opacity .25 is a translucent line, and a translucent line over a card reads
+   straight through it: the same leak Atlas :1479 forbids for nodes. Grayscale plus
+   brightness takes the colour away without taking the opacity away, so a muted wire
+   still occludes and still reads as a wire the map has decided is not the answer. */
+.mm-wires .is-muted { filter: grayscale(100%) brightness(.62); }
+/* Wires as first-class interactive citizens (Atlas demo :1470). The SVG layer keeps
+   pointer-events:none so it can never eat a click meant for a DOM node; only the
+   invisible fat hit-paths opt back in, per-element. A 1.65px stroke is unhittable at
+   this density, so every wire gets a transparent 14px twin as the hover target. */
+.mm-wires .mm-wire-hit { stroke: transparent; stroke-width: 14; fill: none; pointer-events: stroke; cursor: pointer; }
+/* FOCUS: dim + blur everything that is not the focused subtree (Anh 2026-11-23:
+   'khi chon hoac hover 1 node thi cac node con lai toi xuong va blur nhe. xem lai html
+   atom de dung co che'). The mechanism is Atlas :1470-1531 -- ONE class on the
+   container arms the dim and every kept element carries its own marker, so the CSS is
+   a pair of rules instead of a per-element calculation, and hover and selection cannot
+   drift apart because both go through applyMapFocus.
+
+   WHY THE OLD RULE WAS NOT ENOUGH: it filtered .mm-wires path and nothing else. Cards
+   were never touched, so hovering a node dimmed some lines while the map of nodes looked
+   exactly as before -- which is why Anh saw nothing happen.
+
+   OPACITY IS NOT PART OF THE DIM, and that is Atlas's own rule, not a preference
+   (:1479 pins node opacity with the reason written in its file: a translucent card lets
+   the wire behind it read straight through). This page is exactly the case that guards
+   against -- 241 chips with wires running between columns -- so the dim is grey +
+   darkness + blur, and brightness is .72 rather than Atlas's .95 because this map
+   renders on a LIGHT palette (Playwright reports prefers-color-scheme: light and
+   test_matrix_palette_contrast_meets_wcag_in_both_palettes pins it), where 95% would
+   be invisible. All three are paint-only: no card's getBoundingClientRect moves, so the
+   anchor lock's 0.02px delta and the wire geometry's getScreenCTM both stand. */
+/* THE SELECTORS ARE ONE COMPOUND EACH, WITH NO LINE BREAK BEFORE A :not(), and that is
+   a measured defect rather than a style preference. The first version of this rule broke
+   after ':is(.mm-root, ...)' and again after ':not(.mm-trace)': whitespace in a selector
+   is a DESCENDANT COMBINATOR, so 'path:not(.mm-wire-hit):not(.mm-trace)\n  :not(.mm-wire-lit)'
+   asks for an element that is a descendant of such a path -- and an SVG path has no
+   children, so the rule matched nothing at all. The wire dim silently applied to zero
+   elements, which is the same failure this campaign has hit eleven times: a census that
+   finds nothing reports the same zero a clean page reports. The card rule had the mirror
+   defect -- it dimmed the spans INSIDE a card instead of the card, so the border and
+   background stayed at full strength and the map read as un-dimmed with grey text.
+   Both are written long and unwrapped so the compound cannot be broken by a formatter. */
+.mm-canvas:is(.mm-wire-hover, .mm-has-focus) :is(.mm-root, .mm-tier, .mm-cluster-btn, .mm-group > button, .mm-bucket-btn, .mm-tools > button, .mm-bucket-body > button):not(.mm-focus-keep):not([data-mm-lit="true"]) { filter: grayscale(100%) brightness(.72) blur(1.2px); }
+/* The wires, same contract. .mm-wire-hit is the invisible 14px hover twin and must
+   never be painted; .mm-trace is a transient clone; a lit or kept wire stays at full
+   strength so the focus subtree reads as one lit tree. */
+.mm-canvas:is(.mm-wire-hover, .mm-has-focus) .mm-wires path:not(.mm-wire-hit):not(.mm-trace):not(.mm-wire-lit):not(.mm-wire-keep) { filter: grayscale(100%) brightness(.72); }
+/* The dim arrives rather than snaps -- 180ms inside the file's own 250-640ms band, on
+   its single named ease. Filter and stroke-width paint without reflowing, so the
+   transition moves no rect the fit contract measures. */
+.mm-canvas :is(.mm-root, .mm-tier, .mm-cluster-btn, .mm-group > button, .mm-bucket-btn,
+    .mm-tools > button, .mm-bucket-body > button),
+.mm-wires path { transition: filter 180ms var(--mm-ease, cubic-bezier(.22, 1, .36, 1)); }
+.mm-wires .mm-wire-lit { stroke-opacity: 1; stroke-width: 2.6; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--mm-tone) 75%, transparent)); stroke-dasharray: 5 7; animation: mm-flow 1.5s linear infinite; }
+/* Branch arrival, Forest's stagger without Forest's motion. blur() and opacity are
+   paint-only: they create no reflow, so a node's rect never moves and the fit contract
+   that measures anchors 0.02px stays intact. cubic-bezier(.22,1,.36,1) is their single
+   named ease (--os-dna-ease); 380ms sits inside their 250-640ms band. */
+@keyframes mm-arrive { from { opacity: 0; filter: blur(4px); } to { opacity: 1; filter: blur(0); } }
+.mm-branches .mm-arriving .mm-cluster { animation: mm-arrive 380ms var(--mm-ease, cubic-bezier(.22, 1, .36, 1)) both; animation-delay: calc(90ms + var(--branch-index, 0) * 45ms); }
+.mm-wires .mm-trace { stroke-width: 3; stroke-dasharray: 16 84; animation: mm-pulse 780ms ease-out both; }
+.mm-wires .mm-trace-open { stroke-dasharray: 100; animation: mm-draw 460ms ease-out both; }
+@keyframes mm-draw { from { stroke-dashoffset: 100; opacity: 1; } to { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes mm-pulse { 0% { stroke-dashoffset: 16; opacity: 0; } 28% { opacity: 1; } 100% { stroke-dashoffset: -100; opacity: 0; } }
+[data-mm-tier="T1"] { --mm-tone: var(--green); }
+[data-mm-tier="T2"] { --mm-tone: var(--amber); }
+[data-mm-tier="T3"] { --mm-tone: var(--purple); }
+[data-mm-tier="T4"] { --mm-tone: var(--cyan); }
+/* Height was the overflow, not width: every sane state already fitted the 1528px
+   stage but stood 901-918px tall inside a 540px one. Three levers, all measured on
+   that stage at the shipped knobs -- one line per closed node (below), two leaf
+   columns, and a group column count that waits for a wide stage because that is the
+   one paying width the stage may not have. Leaf columns were the height lever: one
+   column is 1183x778, two is 1357x603, three is 1531x568 -- the third buys 35px of
+   height for 174px of width and breaches the stage, so two was the ceiling.
+   SUPERSEDED on the leaf axis (Anh 2026-11-23): two columns is what he called lỗi,
+   because a second-track chip forces its wire to cross the first track, and the
+   rail is one column now. That cost is no longer a cost -- the pan is unbounded, so
+   the map may be taller than the stage. The measured numbers above are kept because
+   they are the WIDTH story for the group axis, which still stands. Counts come from
+   syncMapBranchLayout rather than build time, and they are explicit because the
+   canvas is width:max-content, where an auto-fit track collapses back to one tall
+   rail. Rejected: collapsing .mm-cluster to display:contents does shorten the canvas
+   to 474px, but it widens it to 1521px and turns three group wires backwards on
+   council and two on audit -- a chip ends up right of the body it opens. Fit is not
+   worth a reversed edge. Also rejected: an accordion at the tier row. It would have
+   kept one tier open and thus the height down, but branch independence is an older
+   invariant than this fit work (test_matrix_horizontal_edges_zoom_and_independent_
+   branches), and two open tiers only scroll inside the stage -- 953px of canvas in a
+   620px one, page still zero. */
+.mm-branches, .mm-groups, .mm-cluster-body, .mm-tools { display: grid; align-content: start; gap: 9px; }
+.mm-groups { grid-template-columns: max-content; }
+.mm-cluster { display: flex; align-items: center; gap: var(--mm-gap); }
+.mm-cluster-body { grid-template-columns: repeat(var(--mm-group-cols, 1), max-content); }
+/* --mm-leaf-cols is set by syncMapBranchLayout and is 1 everywhere: one column is
+   what makes a leaf wire safe, not merely a height knob. Every card in the rail
+   shares one left edge, so a bezier from the group's right edge to a chip's left
+   edge spends its whole travel in the empty gutter and cannot land on a card. */
+.mm-tools { grid-template-columns: repeat(var(--mm-leaf-cols, 1), var(--mm-tool-width)); gap: 4px; }
+/* BUCKET NODES (Anh 2026-11-23: "gói prefix thì prefix thành node và từ prefix mới
+   dẫn ra node tool"). A section head used to be a caption -- a div with no aria, no
+   toggle and no wire -- which meant a 31-tool rail was 31 rows of ink whether or not
+   Anh wanted to read all of them. It is a node now: it carries aria-expanded, it owns
+   its chips inside .mm-bucket-body, and the router draws a stem from it into each
+   tool. The wrapper spans the rail (grid-column 1/-1) and its children keep the
+   rail's width, so the LEFT EDGE is unchanged -- the canvas does not grow sideways,
+   which is the premise the one-shared-edge lock exists to protect. */
+.mm-bucket { grid-column: 1 / -1; display: grid; gap: 4px; }
+.mm-bucket-btn { position: relative; box-sizing: border-box; margin: 0; text-align: left;
+  font: inherit; cursor: pointer; display: grid; grid-template-columns: minmax(0,1fr) auto;
+  align-items: center; gap: 8px; width: var(--mm-tool-width); min-height: 30px; padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--mm-tone) 55%, var(--border));
+  border-left: 3px solid var(--mm-tone); border-radius: 7px;
+  background: color-mix(in srgb, var(--mm-tone) 14%, var(--bg2)); color: var(--fg); }
+.mm-bucket-btn[aria-expanded="false"] small { color: var(--fg2); }
+.mm-bucket-copy { display: grid; gap: 1px; min-width: 0; }
+.mm-bucket-copy strong { font: 700 .74rem/1.25 var(--mono); letter-spacing: .02em;
+  color: var(--mm-tone); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mm-bucket-copy small { color: var(--fg2); font-size: .66rem; line-height: 1.2; }
+.mm-bucket-body { display: grid; grid-template-columns: repeat(var(--mm-leaf-cols, 1), var(--mm-tool-width));
+  gap: 4px; }
+.mm-bucket-body[hidden] { display: none; }
+/* A closed node was paying two lines of meta for a button whose only job is to
+   open. Compressing it to one line is the largest single win measured here, and it
+   costs nothing sideways: on a 1538px stage T1/code 918px -> 603, ops 901 -> 603,
+   council 869 -> 571, audit 799 -> 501, ui 740 -> 458, canvas WIDTH unmoved at
+   1357/1182, and no wire turned backwards. The hidden small is the same count the
+   breadcrumb and the expanded chip already show, so this removes duplication rather
+   than information. aria-expanded drives it instead of :has() because every toggle
+   path already maintains that attribute. */
+.mm-tier[aria-expanded="false"], .mm-cluster-btn[aria-expanded="false"], .mm-group > button[aria-expanded="false"] { min-height: 34px; padding: 5px 9px; }
+.mm-tier[aria-expanded="false"] .mm-meta, .mm-cluster-btn[aria-expanded="false"] small, .mm-group > button[aria-expanded="false"] small { display: none; }
+.mm-tier[aria-expanded="false"] .mm-toggle, .mm-cluster-btn[aria-expanded="false"] .mm-toggle, .mm-group > button[aria-expanded="false"] .mm-toggle { width: 18px; height: 18px; font-size: .85rem; }
+.mm-tier[aria-expanded="false"] strong, .mm-cluster-btn[aria-expanded="false"] strong, .mm-group > button[aria-expanded="false"] strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .88rem; }
+.mm-branch, .mm-group { display: flex; align-items: center; gap: var(--mm-gap); }
+.mm-root, .mm-tier, .mm-cluster-btn, .mm-group > button, .mm-tools > button, .mm-tools button[data-mm-tool] { position: relative; flex: none; box-sizing: border-box; margin: 0; text-align: left; font: inherit; border: 1px solid var(--border); border-radius: 10px; background: var(--bg2); color: var(--fg); }
+/* --mm-tone is set by [data-mm-tier] and every node here carries one, except the
+   root: it is the far endpoint of all four tier wires, so the hover lift reaches it
+   too, and an unresolved var() makes border-color fall back to currentColor (the
+   near-white --fg) and background to transparent -- the root visibly loses its box
+   on any tier-wire hover. Pin it to --accent, the colour its border already uses. */
+/* The root CENTRES, it is not pinned (Anh 2026-11-23: "sao cai nay khong de o giua ma
+   lech o tren vay"). This rule used to carry margin-top: 107px -- one magic number
+   measured against one particular open state, on a canvas set to align-items:
+   flex-start, so the root never moved no matter what the branches did. Measured across
+   six states the root's centre sat between 84px BELOW and 1020px ABOVE the centre of
+   everything else, and it was right (-1px) in exactly one of them. align-self: center
+   makes it a rule instead of a coincidence: the flex line is as tall as the branches
+   column, so the root sits at its middle in every state, closed or fully open.
+   AMENDS the root-position lock in test_web_ui_campaign.py, which asserted
+   node.offsetTop stays CONSTANT while branches open and close -- that lock is what the
+   pin existed to satisfy, and a centred root must move as the column grows. It now
+   asserts the centreing itself. */
+.mm-root { --mm-tone: var(--accent); display: grid; align-content: center; gap: 4px; width: var(--mm-root-width); min-height: 98px; align-self: center; padding: 12px; border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); background: color-mix(in srgb, var(--accent) 15%, var(--bg2)); border-radius: 14px; }
+.mm-root strong { font-size: 1.65rem; line-height: 1.05; letter-spacing: -.04em; }
+.mm-root small, .mm-source, .mm-tier small, .mm-group small, .mm-cluster-btn small { color: var(--fg2); font-size: .74rem; line-height: 1.25; }
+.mm-root small { overflow-wrap: anywhere; }
+.mm-source[data-state="live"] { color: var(--green); }
+.mm-source[data-state="stale"] { color: var(--amber); }
+.mm-source[data-state="offline"] { color: var(--red); }
+.mm-tier, .mm-group > button, .mm-cluster-btn, .mm-tools > button, .mm-tools button[data-mm-tool] { cursor: pointer; border-color: color-mix(in srgb, var(--mm-tone) 42%, var(--border)); }
+.mm-tier, .mm-group > button, .mm-cluster-btn { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; border-left: 3px solid var(--mm-tone); background: color-mix(in srgb, var(--mm-tone) 9%, var(--bg2)); }
+.mm-tier { width: var(--mm-tier-width); min-height: 69px; padding: 8px 10px; }
+.mm-tier-copy, .mm-group-copy, .mm-cluster-copy { display: grid; gap: 3px; min-width: 0; }
+.mm-tier strong, .mm-group strong, .mm-cluster-btn strong { font-size: .92rem; line-height: 1.18; overflow-wrap: anywhere; }
+.mm-tier-label { margin-inline-end: 6px; color: var(--mm-tone); font: 700 .75rem var(--mono); }
+.mm-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 7px; }
+.mm-tier::after { position: absolute; content: ''; pointer-events: none; inset: auto auto 0 0; width: var(--mm-activity, 0%); height: 2px; background: var(--mm-tone); border-radius: inherit; }
+.mm-more { grid-column: 1 / -1; justify-content: center !important; min-height: 28px !important; border-style: dashed !important; background: transparent !important; color: var(--mm-tone) !important; font: 600 .72rem/1.2 var(--mono) !important; }
+/* 71 of 241 tool names are wider than the chip; ellipsize with the full name in the
+   button title rather than chopping the tail off with no signal. */
+.mm-tool-label { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mm-group > button, .mm-cluster-btn { width: var(--mm-group-width); min-height: 42px; padding: 6px 9px; }
+.mm-cluster-btn { width: var(--mm-cluster-width); }
+.mm-tools > button, .mm-tools button[data-mm-tool] { display: flex; align-items: center; gap: 7px; min-height: 31px; padding: 4px 8px; border-radius: 7px; font: .8rem/1.2 var(--mono); overflow: hidden; }
+.mm-more { grid-column: 1 / -1; justify-content: center !important; min-height: 28px !important; border-style: dashed !important; background: transparent !important; color: var(--mm-tone) !important; font: 600 .72rem/1.2 var(--mono) !important; }
+.mm-tool-icon { flex: none; width: 14px; height: 14px; color: var(--mm-tone); fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.mm-toggle { display: grid; place-items: center; width: 23px; height: 23px; border: 1px solid color-mix(in srgb, var(--mm-tone) 48%, var(--border)); border-radius: 50%; color: var(--mm-tone); font: 600 1rem/1 var(--mono); }
+.mm-toggle::before { content: '+'; }
+[aria-expanded="true"] > .mm-toggle::before { content: '−'; }
+.mm-canvas button:is(:hover, [aria-expanded="true"], [aria-current="true"], .is-focus) { border-color: var(--mm-tone); background: color-mix(in srgb, var(--mm-tone) 16%, var(--bg2)); }
+.mm-canvas button:focus-visible { outline: 2px solid var(--mm-tone); outline-offset: 3px; }
+.mm-canvas button.is-muted:not(:hover, :focus-visible) { border-color: var(--border); background: var(--bg2); }
+[data-mm-count][data-alert="true"] { color: var(--red); font-weight: 650; }
+/* Hover lift, ported from the Atlas demo but deliberately WITHOUT its scale(1.15).
+   A transform moves getBoundingClientRect, and the fit contract measures anchors to a
+   0.02px delta (test_matrix_lookup_reveals_source_path_without_moving_anchors) while
+   test_matrix_horizontal_edges_zoom_and_independent_branches reads node boxes at 80%
+   zoom. box-shadow and outline paint without reflowing, so the lift costs zero fit. */
+.mm-canvas [data-mm-lit="true"] { border-color: var(--mm-tone); background: color-mix(in srgb, var(--mm-tone) 26%, var(--bg2)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--mm-tone) 55%, transparent), 0 0 16px color-mix(in srgb, var(--mm-tone) 30%, transparent); }
+/* matrix.js:2307 stamps data-mm-errors on the tier button whenever the live feed
+   reports errors for that tier, and no rule ever read it -- the signal existed only
+   in the DOM. Paint the activity bar and the tier label red, but leave --mm-tone
+   alone: it still has to identify the tier on the wires. */
+.mm-tier[data-mm-errors] { border-color: color-mix(in srgb, var(--red) 65%, var(--border)); }
+.mm-tier[data-mm-errors]::after { background: var(--red); }
+.mm-tier[data-mm-errors] .mm-tier-label { color: var(--red); }
+.mm-foot { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; align-items: center; padding: 12px 14px; border-top: 1px solid var(--border); color: var(--fg2); font-size: .8rem; }
+.mm-foot strong { color: var(--fg); }
+.mm-sample { grid-column: 1 / -1; }
+#mm-detail:not([hidden]) { margin-top: 12px; max-height: 42vh; overflow-y: auto; overscroll-behavior: contain; background: var(--bg2); border: 1px solid var(--border); padding: 12px; border-radius: 9px; }
+/* Leaf panel head: one row carries the identity the 18 label/value rows used to
+   spell out, so the answer to "what is this" is above the fold. Badges reuse the
+   inventory classes; the count keeps data-mm-count so renderMap still finds it. */
+.mm-detail-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+.mm-detail-id { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; min-width: 0; }
+.mm-detail-id strong { font: 650 1.02rem var(--mono); color: var(--fg); overflow-wrap: anywhere; }
+.mm-detail-head [data-mm-count] { margin: 0 0 0 auto; color: var(--fg2); font: .74rem var(--mono); white-space: nowrap; }
+.mm-detail-head [data-mm-close] { flex: none; }
+/* Progressive disclosure. Every machine fact sits behind a summary; Effect and Use
+   case are the only things open by default. */
+.detail-slim { display: grid; gap: 9px; }
+.detail-effect { margin: 0; color: var(--fg); font-size: .92rem; line-height: 1.5; overflow-wrap: anywhere; }
+.detail-use { margin: 0; color: var(--fg2); font-size: .82rem; line-height: 1.5; overflow-wrap: anywhere; }
+.detail-sect { border: 1px solid var(--ta-control-border, var(--border)); border-radius: 8px; background: var(--bg3); }
+.detail-sect > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 7px; padding: 7px 10px; color: var(--fg); font-size: .8rem; font-weight: 600; }
+.detail-sect > summary::-webkit-details-marker { display: none; }
+.detail-sect > summary::before { content: '+'; flex: none; width: 10px; color: var(--fg2); font: 700 .9rem var(--mono); }
+.detail-sect[open] > summary::before { content: '-'; }
+.detail-sect[open] > summary { border-bottom: 1px solid var(--ta-control-border, var(--border)); }
+.detail-sect > .detail-row { padding-inline: 10px; }
+.detail-sect > .detail-row:first-of-type { padding-top: 8px; }
+.detail-sect > .detail-row:last-of-type { padding-bottom: 9px; }
+.detail-sect > .chain-row { padding-inline: 10px; }
+.detail-sect > .chain-row:first-of-type { padding-top: 8px; }
+.detail-sect > .chain-row:last-of-type { padding-bottom: 9px; }
+.toola-matrix-meta .meta-empty { margin: 8px 10px; color: var(--fg2); font-size: .78rem; }
+.toola-matrix-meta > details, .toola-matrix-meta .meta-method { margin: 0 10px 9px; padding: 6px 9px; border: 1px solid var(--ta-control-border, var(--border)); border-radius: 7px; background: var(--bg2); font-size: .78rem; }
+.toola-matrix-meta > details > summary, .toola-matrix-meta .meta-method > summary { cursor: pointer; color: var(--fg2); font-weight: 600; }
+.toola-matrix-meta > details p, .toola-matrix-meta .meta-method p { margin: 6px 0 0; color: var(--fg2); line-height: 1.55; }
+.detail-list { margin: 4px 0 0; padding-left: 16px; }
+.detail-aside { color: var(--fg2); }
+.detail-island { margin: 0; color: var(--red); font-size: .78rem; }
+.chain-row { margin-bottom: 6px; }
+.chain-row:last-child { margin-bottom: 0; }
+.chain-name { font-size: .75rem; color: var(--fg2); }
+.mm-heading h1 { font-size: clamp(1.55rem, 2.5vw, 2.15rem); letter-spacing: -.045em; }
+.mm-lookup { position: relative; z-index: 3; display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.mm-lookup-field { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; min-height: 42px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg2); }
+.mm-search-icon { width: 14px; height: 14px; flex: 0 0 14px; border: 1.5px solid var(--cyan); border-radius: 50%; position: relative; }
+.mm-search-icon::after { content: ''; position: absolute; width: 6px; height: 1.5px; background: var(--cyan); right: -4px; bottom: -2px; transform: rotate(45deg); }
+.mm-lookup-field:focus-within { border-color: var(--cyan); box-shadow: 0 0 14px color-mix(in srgb, var(--cyan) 18%, transparent); }
+#mm-search { flex: 1; min-width: 0; border: 0; outline: none; color: var(--fg); background: transparent; padding: 5px; font: inherit; font-size: .9rem; }
+#mm-search-clear, #mm-detail [data-mm-close] { border: 1px solid var(--ta-control-border, var(--border)); border-radius: 6px; background: var(--bg3); color: var(--fg); padding: 5px 8px; font: inherit; font-size: .78rem; cursor: pointer; }
+#mm-search-status { color: var(--fg2); font: .72rem var(--mono); text-align: right; white-space: nowrap; }
+.mm-hits { position: absolute; inset: calc(100% + 4px) 0 auto; max-height: min(46vh, 340px); overflow: auto; padding: 5px; background: var(--bg2); border: 1px solid var(--border); box-shadow: 0 14px 35px #0008; border-radius: 8px; }
+.mm-hit { display: flex; gap: 8px; align-items: baseline; min-height: 36px; padding: 6px 9px; cursor: pointer; border: 1px solid transparent; border-radius: 5px; overflow-wrap: anywhere; }
+.mm-hit strong { font: 650 .81rem var(--mono); color: var(--fg); }
+.mm-hit small { color: var(--fg2); }
+.mm-hit[aria-selected="true"], .mm-hit:hover { background: var(--bg3); border-color: var(--mm-tone); }
+.mm-badge { flex: none; color: var(--mm-tone); font: 700 .73rem var(--mono); }
+.mm-path { display: grid; grid-template-columns: repeat(4, minmax(0,auto)) minmax(0,1fr); gap: 16px; align-items: stretch; margin: 11px 0; }
+.mm-path-node { position: relative; display: grid; align-content: center; gap: 3px; border: 1px solid color-mix(in srgb, var(--mm-tone) 64%, var(--border)); background: color-mix(in srgb, var(--mm-tone) 11%, var(--bg3)); color: var(--fg); padding: 7px 9px; border-radius: 7px; overflow-wrap: anywhere; }
+.mm-path-node small { color: var(--mm-tone); font: 700 .66rem var(--mono); }
+.mm-path-node:not(:last-child)::after { content: ''; width: 20px; position: absolute; left: 100%; top: 50%; border-top: 2px solid var(--mm-tone); box-shadow: 0 0 8px var(--mm-tone); }
+.mm-path-node:last-child { font-family: var(--mono); box-shadow: 0 0 16px color-mix(in srgb, var(--mm-tone) 21%, transparent); }
+.mm-service-list { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.mm-service { position: relative; max-width: 100%; }
+.mm-service summary { cursor: pointer; list-style: none; padding: 4px 8px; border: 1px solid var(--border); border-radius: 12px; white-space: nowrap; }
+.mm-service summary::-webkit-details-marker { display: none; }
+.mm-service summary::before { content: '○'; margin-right: 5px; color: var(--fg2); }
+.mm-service summary:has([data-service-state="ok"])::before { content: '✓'; color: var(--green); }
+.mm-service summary:has([data-service-state="warn"])::before { content: '!'; color: var(--amber); font-weight: 800; }
+.mm-service summary:has([data-service-state="bad"])::before { content: '×'; color: var(--red); }
+.mm-service summary:hover, .mm-service[open] summary { border-color: var(--fg2); }
+.mm-service p { position: absolute; z-index: 3; width: min(245px, 65vw); inset: calc(100% + 4px) 0 auto auto; margin: 0; padding: 9px; border: 1px solid var(--border); border-radius: 7px; color: var(--fg); background: var(--bg2); box-shadow: 0 8px 20px #0008; overflow-wrap: anywhere; }
+@media (max-width: 1050px) { .mm-service-list { justify-content: flex-start; } .mm-service p { right: auto; left: 0; } }
+@media (max-width: 600px) {
+  .mm-lookup { display: grid; grid-template-rows: 42px 16px; gap: 3px; }
+  #mm-search-status { text-align: left; }
+  .mm-hits { top: 45px; }
+  .mm-path { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+  .mm-path-node:last-child { grid-column: 1 / -1; }
+  .mm-path-node:not(:last-child)::after { width: 12px; }
+  .mm-path-node:nth-child(3)::after { width: 0; height: 12px; border-top: 0; border-left: 2px solid var(--mm-tone); top: 100%; left: 50%; }
+  .mm-path-node { font-size: .77rem; }
+  .mm-hit { flex-wrap: wrap; }
+  .mm-service:nth-child(2) p { left: auto; right: 0; }
+  .mm-detail-head { gap: 6px; }
+  .mm-detail-head [data-mm-count] { margin-left: 0; flex: 1 0 auto; }
+}
+@media (max-width: 1050px) { .mm-foot { grid-template-columns: 1fr; } }
+@media (max-width: 600px) {
+  html[data-toola-page="matrix"] body > .toola-nav { margin-bottom: 12px; }
+  .mm-heading { margin-bottom: 10px; }
+  .mm-heading h1 { line-height: 1.15; }
+  .mm-view-controls { padding: 6px 8px; }
+  .mm-view-hint { margin-inline-start: 3px; }
+  .mm-canvas { min-height: 0; padding-block: 15px; --mm-pad: 8px; --mm-gap: 26px; --mm-root-width: 88px; --mm-tier-width: 138px; --mm-cluster-width: 148px; --mm-group-width: 148px; --mm-tool-width: 172px; --mm-leaves-per-row: 1; }
+  /* The mobile block carried a SECOND magic number here -- margin-top: 105px, a
+     sibling of the 107px just removed from the desktop rule. The amended centring lock
+     caught it: green at 1440, red by 52.5px at 390 and 320. Deleting the desktop pin
+     while a width-specific pin survives is half a fix, and the half that survives is
+     the half no desktop probe would ever see. */
+  .mm-root { padding: 9px; }
+  .mm-tier { min-height: 75px; padding: 5px 7px; gap: 6px; line-height: 1.16; }
+  .mm-tier strong, .mm-group strong, .mm-cluster-btn strong { font-size: .9rem; }
+}
+@media (max-width: 360px) { .mm-view-hint { display: none; } }
+@media (prefers-reduced-motion: reduce) { .mm-wires .mm-trace { animation: none; } .mm-wires .mm-wire-lit { animation: none; stroke-dasharray: none; } .mm-branches .mm-arriving .mm-cluster { animation: none; } }
+
+  /* C1: selected-chip emphasis is PAINT ONLY (box-shadow) -- zero rect/transform delta. */
+  #mm-canvas [data-mm-tool][aria-current="true"] {
+    box-shadow: 0 0 0 2px var(--ta-accent, var(--accent)), 0 0 14px color-mix(in srgb, var(--ta-accent, var(--accent)) 45%, transparent);
+  }
+  /* C3: one-finger swipe pans natively; the JS pinch handler preventDefaults two-finger moves. */
+  .mm-stage { touch-action: pan-x pan-y; }
+  /* C4: return-to-chip flash, paint only, removed by JS after ~2500ms. */
+  #mm-canvas .mm-return-flash {
+    box-shadow: 0 0 0 3px var(--ta-warn, var(--amber)), 0 0 18px color-mix(in srgb, var(--ta-warn, var(--amber)) 55%, transparent);
+  }
+  /* C5: explicit theme stamps. :root[data-theme=X] is (0,2,0) and sits AFTER the media
+     blocks, so it ties-and-wins the light media :root:not([data-theme="dark"]) and beats
+     the dark :root (0,1,0). The matrix --ta-* stamps are (0,3,1), beating both the light
+     media html[data-toola-page="matrix"]:root (0,2,1) and theme.css :root (0,1,1). With no
+     stamp the media queries are untouched (the both-palette WCAG lock reads fresh contexts).
+     The dark matrix stamp also restores the dark semantic tones the light media block
+     re-points, so forcing dark under a light OS does not leave light-rung text on dark. */
+  :root[data-theme="light"] {
+    --bg: #f5f6f8; --bg2: #ffffff; --bg3: #ebedf2; --bg4: #dfe2ea;
+    --fg: #1a1d2b; --fg2: #4a5068; --fg3: #7a8098;
+    --accent: #2563eb; --accent2: #1d4ed8; --accent-dim: #dbeafe;
+    --green: #16a34a; --green-dim: #dcfce7;
+    --amber: #d97706; --amber-dim: #fef3c7;
+    --red: #dc2626; --red-dim: #fee2e2;
+    --purple: #7c3aed; --purple-dim: #ede9fe;
+    --cyan: #0891b2; --cyan-dim: #cffafe;
+    --pink: #db2777; --pink-dim: #fce7f3;
+    --border: #d1d5e0;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1117; --bg2: #161922; --bg3: #1e2230; --bg4: #262b3a;
+    --fg: #e2e5ef; --fg2: #9aa0b4; --fg3: #636a80;
+    --accent: #5b8af5; --accent2: #3d6de0; --accent-dim: #1a2a52;
+    --green: #4ade80; --green-dim: #14332a;
+    --amber: #fbbf24; --amber-dim: #3d2f0a;
+    --red: #f87171; --red-dim: #3d1418;
+    --purple: #a78bfa; --purple-dim: #231a3d;
+    --cyan: #22d3ee; --cyan-dim: #0a2d33;
+    --pink: #f472b6; --pink-dim: #3d1428;
+    --border: #2a2f3e; --ta-control-border: #6b7280;
+  }
+  html[data-toola-page="matrix"][data-theme="light"]:root {
+    --ta-bg: #f5f6f8; --ta-panel: #ffffff; --ta-panel-soft: #ebedf2; --ta-control: #e6e9f0;
+    --ta-elevated: #dfe2ea; --ta-border: #d1d5e0; --ta-text: #1a1d2b; --ta-muted: #4a5068;
+    --ta-control-border: #5b6178;
+    --ta-faint: #5b6178; --ta-accent: #2563eb; --ta-accent-hover: #1d4ed8;
+    --ta-accent-soft: rgba(37,99,235,.12); --ta-ok: #16a34a; --ta-warn: #d97706; --ta-error: #dc2626;
+    --green: #166534; --green-dim: #dcfce7;
+    --amber: #92400e; --amber-dim: #fef3c7;
+    --red: #b91c1c; --red-dim: #fee2e2;
+    --purple: #6d28d9; --purple-dim: #ede9fe;
+    --cyan: #155e75; --cyan-dim: #cffafe;
+    --pink: #be185d; --pink-dim: #fce7f3;
+  }
+  html[data-toola-page="matrix"][data-theme="dark"]:root {
+    --ta-bg: #08090b; --ta-panel: #101216; --ta-panel-soft: #13161b;
+    --ta-control: #181b20; --ta-elevated: #20242b; --ta-border: rgba(255,255,255,.08);
+    --ta-control-border: #6b7280;
+    --ta-text: #f3f4f6; --ta-muted: #a4aab4; --ta-faint: #87909e;
+    --ta-accent: #7c6ff2; --ta-accent-hover: #958bf7; --ta-accent-soft: rgba(124,111,242,.12);
+    --ta-ok: #42c98a; --ta-warn: #dfa851; --ta-error: #eb6971;
+    --green: #4ade80; --green-dim: #14332a;
+    --amber: #fbbf24; --amber-dim: #3d2f0a;
+    --red: #f87171; --red-dim: #3d1418;
+    --purple: #a78bfa; --purple-dim: #231a3d;
+    --cyan: #22d3ee; --cyan-dim: #0a2d33;
+    --pink: #f472b6; --pink-dim: #3d1428;
+  }
+
+</style>
+</head>
+<body>
+<header class="mm-heading">
+  <span class="mm-kicker">ToolA / System map</span>
+  <h1>Ma trận vận hành</h1>
+  <p class="subtitle">Gõ chức năng hoặc chọn một nhánh để lần tới công cụ.</p>
+</header>
+<div class="tabs" id="tabs">
+  <button class="tab active" type="button" data-tab="mindmap">Mind map</button>
+  <button class="tab" type="button" data-tab="inventory">Inventory</button>
+  <button class="tab" type="button" data-tab="chains">Tool Chains</button>
+  <button class="tab" type="button" data-tab="gaps">Gap Analysis</button>
+  <button class="tab" type="button" data-tab="automation">Auto-Chain</button>
+  <button class="tab" type="button" data-tab="sunburst">Radial</button>
+</div>
+<section class="panel active" id="panel-mindmap" aria-label="Bản đồ ToolA">
+  <div class="mm-lookup">
+    <div class="mm-lookup-field"><span class="mm-search-icon" aria-hidden="true"></span>
+      <input type="search" id="mm-search" placeholder="Tìm tool hoặc chức năng…" aria-label="Tìm tool hoặc chức năng" role="combobox" aria-autocomplete="list" aria-controls="mm-hits" aria-expanded="false" autocomplete="off" spellcheck="false">
+      <button type="button" id="mm-search-clear" hidden>Xóa</button>
+    </div>
+    <span id="mm-search-status" role="status"></span>
+    <div id="mm-hits" class="mm-hits" role="listbox" aria-label="Kết quả tìm công cụ" hidden></div>
+  </div>
+  <div class="mm-map" id="mm-map" data-mm-view="horizontal">
+    <div class="mm-view-controls" role="group" aria-label="Điều khiển sơ đồ">
+      <button type="button" data-mm-view-action="zoom-out" aria-label="Thu nhỏ">−</button>
+      <output id="mm-zoom-level" aria-label="Mức thu phóng">100%</output>
+      <button type="button" data-mm-view-action="zoom-in" aria-label="Phóng to">+</button>
+      <button type="button" data-mm-view-action="reset">Vừa khung</button>
+
+      <button type="button" data-mm-view-action="sound" aria-pressed="false" aria-label="Bật tiếng khi rê chuột">♪</button>
+      <button type="button" data-mm-view-action="relations" aria-pressed="true" aria-label="Hiện chuỗi và liên kết khi chọn một tool">Chuỗi &amp; liên kết</button>
+      <button type="button" data-mm-view-action="theme" aria-pressed="false" aria-label="Đổi giao diện sáng/tối">◐</button>
+      <small class="mm-view-hint">Lăn chuột để thu phóng · Kéo để di chuyển</small>
+    </div>
+    <div class="mm-stage" id="mm-stage" role="region" tabindex="0" aria-label="Sơ đồ ngang ToolA. Dùng phím mũi tên để di chuyển.">
+      <div class="mm-canvas" id="mm-canvas">
+        <svg class="mm-rel-defs" aria-hidden="true"><defs>
+          <marker id="mm-rel-arrow-chain" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0.5 0.8 L7 4 L0.5 7.2 Z" fill="var(--amber)"/></marker>
+          <marker id="mm-rel-arrow-auto" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M0.5 0.8 L7 4 L0.5 7.2 Z" fill="var(--cyan)"/></marker>
+          <marker id="mm-rel-arrow-link" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0.5 0.8 L7 4 L0.5 7.2 Z" fill="var(--fg2)"/></marker>
+        </defs></svg>
+        <svg class="mm-relations" id="mm-relation-wires" aria-hidden="true"></svg>
+        <svg class="mm-wires" id="mm-branch-wires" aria-hidden="true"></svg>
+        <div class="mm-root" id="mm-root">
+          <strong>ToolA</strong>
+          <small id="mm-inventory">Danh mục công cụ</small>
+          <span class="mm-source" id="mm-source" role="status" data-state="connecting">Đang kết nối</span>
+          <small data-mm-count id="mm-total">— lượt · — lỗi</small>
+        </div>
+        <div class="mm-branches">
+          <div class="mm-branch" data-mm-tier="T1">
+            <button class="mm-tier" type="button" data-mm-tier="T1" aria-expanded="false" aria-controls="mm-groups-T1">
+              <span class="mm-tier-copy">
+                <span><span class="mm-tier-label">T1</span><strong>Đọc & tra cứu</strong></span>
+                <span class="mm-meta"><small data-mm-static>Nhóm chức năng</small><small data-mm-count>— lượt · — lỗi</small></span>
+              </span>
+              <span class="mm-toggle" aria-hidden="true"></span>
+            </button>
+            <section class="mm-groups" id="mm-groups-T1" aria-label="T1 · Nhóm chức năng" hidden></section>
+          </div>
+          <div class="mm-branch" data-mm-tier="T2">
+            <button class="mm-tier" type="button" data-mm-tier="T2" aria-expanded="false" aria-controls="mm-groups-T2">
+              <span class="mm-tier-copy">
+                <span><span class="mm-tier-label">T2</span><strong>Ghi & kiểm thử</strong></span>
+                <span class="mm-meta"><small data-mm-static>Nhóm chức năng</small><small data-mm-count>— lượt · — lỗi</small></span>
+              </span>
+              <span class="mm-toggle" aria-hidden="true"></span>
+            </button>
+            <section class="mm-groups" id="mm-groups-T2" aria-label="T2 · Nhóm chức năng" hidden></section>
+          </div>
+          <div class="mm-branch" data-mm-tier="T3">
+            <button class="mm-tier" type="button" data-mm-tier="T3" aria-expanded="false" aria-controls="mm-groups-T3">
+              <span class="mm-tier-copy">
+                <span><span class="mm-tier-label">T3</span><strong>Phiên & kiểm toán</strong></span>
+                <span class="mm-meta"><small data-mm-static>Nhóm chức năng</small><small data-mm-count>— lượt · — lỗi</small></span>
+              </span>
+              <span class="mm-toggle" aria-hidden="true"></span>
+            </button>
+            <section class="mm-groups" id="mm-groups-T3" aria-label="T3 · Nhóm chức năng" hidden></section>
+          </div>
+          <div class="mm-branch" data-mm-tier="T4">
+            <button class="mm-tier" type="button" data-mm-tier="T4" aria-expanded="false" aria-controls="mm-groups-T4">
+              <span class="mm-tier-copy">
+                <span><span class="mm-tier-label">T4</span><strong>Runtime & giao diện</strong></span>
+                <span class="mm-meta"><small data-mm-static>Nhóm chức năng</small><small data-mm-count>— lượt · — lỗi</small></span>
+              </span>
+              <span class="mm-toggle" aria-hidden="true"></span>
+            </button>
+            <section class="mm-groups" id="mm-groups-T4" aria-label="T4 · Nhóm chức năng" hidden></section>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="mm-foot">
+      <span><strong>5 phút đến mốc dữ liệu</strong> · chỉ tính lượt có kết quả trong feed</span>
+      <div class="mm-service-list" aria-label="Trạng thái dịch vụ">
+        <details class="mm-service"><summary><strong>ToolA</strong> · <span id="mm-service-a">—</span></summary><p id="mm-service-a-reason"></p></details>
+        <details class="mm-service"><summary><strong>ToolQ</strong> · <span id="mm-service-q">—</span></summary><p id="mm-service-q-reason"></p></details>
+      </div>
+      <span class="mm-sample" id="mm-sample">Chưa có mẫu hoạt động. Danh mục luôn xem được.</span>
+    </div>
+  </div>
+  <section id="mm-detail" tabindex="-1" aria-label="Chi tiết công cụ" hidden></section>
+</section>
+
+<!-- INVENTORY PANEL -->
+<div class="panel" id="panel-inventory">
+  <div class="stats" id="stats"></div>
+  <div class="filters">
+    <input class="search" id="search" placeholder="Search tool name..." autocomplete="off">
+    <button class="filter-btn t1 active" data-tier="T1">T1 Read</button>
+    <button class="filter-btn t2 active" data-tier="T2">T2 Write</button>
+    <button class="filter-btn t3 active" data-tier="T3">T3 Audit</button>
+    <button class="filter-btn t4 active" data-tier="T4">T4 Desktop</button>
+    <button class="filter-btn active" data-cat="all">All Cats</button>
+    <span class="result-count" id="result-count">260</span>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 300px;gap:12px;">
+    <div class="tool-grid" id="tool-grid"></div>
+    <div class="detail-panel" id="detail-panel" style="display:none;"></div>
+  </div>
+</div>
+
+<!-- CHAINS PANEL -->
+<div class="panel" id="panel-chains">
+  <div id="chains-container"></div>
+</div>
+
+<!-- GAPS PANEL -->
+<div class="panel" id="panel-gaps">
+  <div id="gaps-container"></div>
+</div>
+
+<!-- AUTOMATION PANEL -->
+<div class="panel" id="panel-automation">
+  <div id="auto-container"></div>
+</div>
+
+<!-- RADIAL PANEL (dashboard, 2026-11-17) — radial tree + live bridge feed -->
+<div class="panel" id="panel-sunburst">
+  <div class="sb-controls">
+    <input class="search" id="sb-search" aria-label="Tìm tool trong Radial" placeholder="Tìm tool... (vd: read_file_range)" autocomplete="off" style="max-width:280px">
+    <button class="filter-btn" id="sb-reset">Thu về gốc</button>
+    <button class="filter-btn" id="sb-zoom-in" title="Phóng to">+</button>
+    <button class="filter-btn" id="sb-zoom-out" title="Thu nhỏ">−</button>
+    <button class="filter-btn" id="sb-zoom-reset" title="Về tỉ lệ 1:1">1:1</button>
+    <label><input type="checkbox" id="sb-toggle-auto" checked> <span style="color:#fbbf24">auto-chain</span> (nét đứt dày)</label>
+    <label><input type="checkbox" id="sb-toggle-delegates" checked> <span style="color:#58a6ff">delegates-to</span> (nét liền dày + mũi tên)</label>
+    <label><input type="checkbox" id="sb-toggle-alias-dispatch" checked> <span style="color:#3fb950">alias-dispatch</span></label>
+    <label><input type="checkbox" id="sb-toggle-alias-shared" checked> <span style="color:#7ee787">alias-shared-handler</span></label>
+    <label><input type="checkbox" id="sb-toggle-recommends" checked> <span style="color:#bc8cff">recommends</span> (gạch chấm)</label>
+    <span style="font-size:0.78rem;color:var(--fg2)">ToolA → tier → nhóm → tool. Bấm tier hoặc nhóm để xem chi tiết. Cuộn để zoom, kéo để dịch.</span>
+  </div>
+  <div id="sb-search-results" aria-label="Kết quả tìm tool"></div>
+  <div id="sb-breadcrumb" style="font-size:0.8rem;color:var(--fg2);margin-bottom:6px;"></div>
+  <div class="dash-grid">
+    <div class="dash-topbar"><span class="dash-title">ToolA · MATRIX</span><span class="dash-pill" id="sb-bridge-pill">bridge [···]</span><span class="dash-clock" id="sb-clock"></span></div>
+    <div class="dash-gvbar" id="sb-gvbar"><button class="filter-btn" id="sb-gv-back">← Overview</button><span class="gv-title" id="sb-gv-title"></span><span class="gv-meta" id="sb-gv-meta"></span></div>
+    <div class="dash-stages" id="sb-stages"></div>
+    <div id="sunburst-container"></div>
+    <div class="dash-side">
+      <div class="dash-box">
+        <div class="dash-box-title">Trạng thái tĩnh <span style="color:var(--fg3);font-weight:400">— bấm một pill để lọc radial</span></div>
+        <div class="dash-pills" id="sb-static"></div>
+      </div>
+      <div class="dash-box">
+        <div class="dash-box-title">Hoạt động live <span id="sb-live-state" role="status" style="color:var(--fg3);font-weight:400">· connecting…</span></div>
+        <div class="dash-log" id="sb-live"></div>
+      </div>
+    </div>
+    <div class="dash-statusbar" id="sb-statusbar"></div>
+  </div>
+  <div id="sb-tierboard" style="margin-top:14px;"></div>
+  <div id="sb-detail" style="margin-top:12px;"></div>
+  <div id="sb-legend" class="sb-legend"></div>
+  <div id="sb-notes" class="sb-note"></div>
+</div>
+
+<script src="/assets/toola/matrix.js"></script>
+</body>
+</html>
