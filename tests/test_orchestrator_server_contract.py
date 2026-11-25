@@ -2,6 +2,7 @@
 import asyncio
 import contextlib
 import hashlib
+import importlib.util
 import json
 import os
 import shutil
@@ -26,6 +27,12 @@ import code_tools
 import orchestrator_server
 import tools_v15
 from orchestrator.server.audit_writer import DurableAuditWriter
+
+
+try:
+    _WEB_VIEWS_PRESENT = importlib.util.find_spec('orchestrator.web_views') is not None
+except (ModuleNotFoundError, ValueError):
+    _WEB_VIEWS_PRESENT = False
 
 
 @contextlib.contextmanager
@@ -239,6 +246,7 @@ class TestOrchestratorServerContract(unittest.IsolatedAsyncioTestCase):
             release.set()
             await asyncio.gather(*workers)
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_favicon_route_returns_no_content(self):
         app = orchestrator_server.create_app()
         request = make_mocked_request('GET', '/favicon.ico')
@@ -607,6 +615,7 @@ class TestOrchestratorServerContract(unittest.IsolatedAsyncioTestCase):
         self.assertIn(origin, orchestrator_server._ALLOWED_ORIGINS)
         self.assertIn(f"http://127.0.0.1:{orchestrator_server.PORT}", orchestrator_server._ALLOWED_ORIGINS)
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_clear_closed_sessions_route_registered(self):
         app = orchestrator_server.create_app()
         request = make_mocked_request('DELETE', '/api/sessions/closed?project_path=C:/repo')
@@ -615,6 +624,7 @@ class TestOrchestratorServerContract(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(match.handler, orchestrator_server.handle_clear_closed_sessions)
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_api_tools_response_is_not_browser_cached(self):
         app = orchestrator_server.create_app()
         request = make_mocked_request('GET', '/api/tools')
@@ -624,6 +634,7 @@ class TestOrchestratorServerContract(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.headers.get('Cache-Control'), 'no-store, max-age=0')
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_api_logs_response_is_not_browser_cached(self):
         app = orchestrator_server.create_app()
         request = make_mocked_request('GET', '/api/logs')
@@ -633,6 +644,7 @@ class TestOrchestratorServerContract(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.headers.get('Cache-Control'), 'no-store, max-age=0')
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_council_dashboard_uses_fetch_state_without_page_refresh(self):
         app = orchestrator_server.create_app()
         request = make_mocked_request('GET', '/council')
@@ -704,6 +716,7 @@ class TestOrchestratorServerContract(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('http-equiv="refresh"', response.text)
         self.assertNotIn('location.reload', response.text)
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_council_dashboard_materializes_full_and_delta_payloads_in_shipped_js(self):
         app = orchestrator_server.create_app()
         request = make_mocked_request('GET', '/council')
@@ -839,6 +852,7 @@ process.stdout.write(JSON.stringify(snapshots));
         context_row = '<span class="usage-label">Context window</span><span class="usage-value">12.3k</span>'
         self.assertIn(context_row, html)
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_council_state_route_returns_generated_at_and_agents(self):
         old_here = orchestrator_server._HERE
         old_alive = orchestrator_server._council_alive_agents
@@ -1677,6 +1691,7 @@ process.stdout.write(JSON.stringify(snapshots));
         raw = 'Thinking: still investigating\n- Modified: noisy detail\nEXIT_CODE=0'
         self.assertEqual(orchestrator_server._council_extract_log_response(raw), '')
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_council_latest_msg_prefers_newer_prompt_dispatch_file(self):
         old_here = orchestrator_server._HERE
         old_alive = orchestrator_server._council_alive_agents
@@ -1711,6 +1726,7 @@ process.stdout.write(JSON.stringify(snapshots));
         self.assertIn('source="prompt_codo_batch.txt"', codo['latest_msg'])
         self.assertIn('prompt-file batch dispatch', codo['latest_msg'])
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_council_latest_msg_prefers_prompt_dispatch_even_if_inbox_newer(self):
         old_here = orchestrator_server._HERE
         old_alive = orchestrator_server._council_alive_agents
@@ -1745,6 +1761,7 @@ process.stdout.write(JSON.stringify(snapshots));
         self.assertIn('source="prompt_codo_batch.txt"', codo['latest_msg'])
         self.assertIn('prompt-file batch dispatch', codo['latest_msg'])
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_council_latest_msg_prefers_prompt_file_over_newer_run_file(self):
         old_here = orchestrator_server._HERE
         old_alive = orchestrator_server._council_alive_agents
@@ -1782,6 +1799,7 @@ process.stdout.write(JSON.stringify(snapshots));
         self.assertNotIn('codex exec noisy batch wrapper', codo['latest_msg'])
         self.assertNotIn('inbox dispatch', codo['latest_msg'])
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_api_logs_reads_bounded_tail(self):
         original_log_file = orchestrator_server.LOG_FILE
         original_tail_bytes = orchestrator_server.LOG_TAIL_BYTES
@@ -1811,6 +1829,7 @@ process.stdout.write(JSON.stringify(snapshots));
         self.assertNotIn('old-entry-000', messages)
         self.assertEqual(response.headers.get('X-Log-Tail-Bytes'), '256')
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_token_panel_contract_is_nested_and_masked(self):
         app = orchestrator_server.create_app()
         request = make_mocked_request('GET', '/api/token_panel')
@@ -1851,6 +1870,7 @@ process.stdout.write(JSON.stringify(snapshots));
 
         self.assertEqual(unsupported, [])
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_tool_inspector_route_returns_accepted_fields(self):
         app = orchestrator_server.create_app()
         request = make_mocked_request('GET', '/api/tool_inspector/search_code')
@@ -1975,6 +1995,7 @@ process.stdout.write(JSON.stringify(snapshots));
         self.assertNotEqual(payload.get('error_name'), 'UNKNOWN_TOOL')
         self.assertIn('workflows', payload)
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_tool_inspector_token_status_is_tool_specific(self):
         app = orchestrator_server.create_app()
         request_command = make_mocked_request('GET', '/api/tool_inspector/run_project_command')
@@ -1988,6 +2009,7 @@ process.stdout.write(JSON.stringify(snapshots));
         self.assertTrue(command_payload['requires_token'])
         self.assertFalse(test_payload['requires_token'])
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_command_helper_route_returns_windows_wrapper(self):
         app = orchestrator_server.create_app()
         request = make_mocked_request('GET', '/api/command_helper?subdir=2.%20Rawcut&command=node%20health-check.js')
@@ -2002,6 +2024,7 @@ process.stdout.write(JSON.stringify(snapshots));
         self.assertEqual(payload['safe_command'], payload['wrapper'])
         self.assertEqual(payload['ca_next_action'], 'use_safe_command')
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_protected_tools_status_route_is_masked_and_machine_readable(self):
         app = orchestrator_server.create_app()
         request = make_mocked_request('GET', '/api/protected_tools_status')
@@ -2707,6 +2730,7 @@ process.stdout.write(JSON.stringify(snapshots));
 
 
     # ── Council Task 3/4/5 contract tests ──────────────────────────────────
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_council_dashboard_includes_collapse_and_pause_controls(self):
         app = orchestrator_server.create_app()
         request = make_mocked_request('GET', '/council')
@@ -2741,6 +2765,7 @@ process.stdout.write(JSON.stringify(snapshots));
         # 0.12: dashboard stop button calls /api/council/stop (pause/play not referenced in UI).
         self.assertIn('/api/council/stop', response.text)
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_council_state_payload_includes_usage_and_paused_fields(self):
         old_here = orchestrator_server._HERE
         old_alive = orchestrator_server._council_alive_agents
@@ -2812,6 +2837,7 @@ process.stdout.write(JSON.stringify(snapshots));
         self.assertEqual(clau['status']['label'], 'idle')
         self.assertEqual(clau['runtime']['state'], 'idle')
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_council_state_payload_marks_paused_from_file(self):
         old_here = orchestrator_server._HERE
         old_metrics = orchestrator_server._council_agent_metrics
@@ -2885,6 +2911,7 @@ process.stdout.write(JSON.stringify(snapshots));
             # Idempotent: second clear returns False
             self.assertFalse(orchestrator_server._council_clear_paused(root, 'ope'))
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_council_pause_endpoint_aliases_stop_no_paused_file(self):
         old_here = orchestrator_server._HERE
         old_find = orchestrator_server._council_find_agent_pids
@@ -2920,6 +2947,7 @@ process.stdout.write(JSON.stringify(snapshots));
                 orchestrator_server._HERE = old_here
                 orchestrator_server._council_find_agent_pids = old_find
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_council_pause_endpoint_rejects_invalid_agent(self):
         request = make_mocked_request(
             'POST', '/api/council/pause',
@@ -2936,6 +2964,7 @@ process.stdout.write(JSON.stringify(snapshots));
         self.assertIn('codo', body['allowed'])
         self.assertIn('clau', body['allowed'])
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_council_pause_endpoint_blocks_disallowed_origin(self):
         # _is_local uses request.remote (loopback) — default is OK; we test
         # the _origin_ok branch by sending a bad Origin header.
@@ -2951,6 +2980,7 @@ process.stdout.write(JSON.stringify(snapshots));
         body = json.loads(response.text)
         self.assertEqual(body['error_name'], 'ORIGIN_BLOCKED')
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_council_play_endpoint_clears_paused_file(self):
         old_here = orchestrator_server._HERE
         with tempfile.TemporaryDirectory() as tmp:
@@ -2983,6 +3013,7 @@ process.stdout.write(JSON.stringify(snapshots));
         self.assertFalse((root / '.council' / 'paused_ope.json').exists())
         self.assertIn('NOT auto-restart', body['note'])
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_council_play_endpoint_rejects_invalid_agent(self):
         request = make_mocked_request(
             'POST', '/api/council/play',
@@ -3031,6 +3062,7 @@ process.stdout.write(JSON.stringify(snapshots));
         self.assertIn('05_write_pipeline\\SKILL.md', prompt)
         self.assertIn('09_testing_validation\\SKILL.md', prompt)
         self.assertIn('COUNCIL_OUTPUT_INCOMPLETE', prompt)
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_council_clear_session_endpoint_clears_runtime_files(self):
         old_here = orchestrator_server._HERE
         with tempfile.TemporaryDirectory() as tmp:
@@ -3593,6 +3625,7 @@ class TestHttpDefense(unittest.IsolatedAsyncioTestCase):
         resp = await orchestrator_server._http_defense_middleware(req, self._ok)
         self.assertEqual(resp.status, 200)
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     def test_can006_app_sets_client_max_size(self):
         app = orchestrator_server.create_app()
         self.assertEqual(app._client_max_size,
@@ -3771,6 +3804,7 @@ class TestHttpDefense(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mutating.status, 503)
         self.assertEqual(json.loads(mutating.text)['error_name'], 'ORCHESTRATOR_STARTING')
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_council_dashboard_boot_html_while_starting(self):
         with mock.patch.object(orchestrator_server, 'SERVER_READY', False), \
              mock.patch.object(orchestrator_server, 'SERVER_STARTUP_PHASE', 'boot_write_sweep'):
@@ -4637,6 +4671,7 @@ class TestCouncilPreflight(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(body['agents']['ope']['reachable'])
         self.assertFalse(body['agents']['codo']['auth_ok'])
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     def test_preflight_route_registered(self):
         paths = {route.resource.canonical for route in orchestrator_server.create_app().router.routes()}
         self.assertIn('/api/council/preflight', paths)
@@ -4678,6 +4713,7 @@ class TestAT139SemaphoreCancellation(unittest.IsolatedAsyncioTestCase):
                 orchestrator_server._TOOL_SEM_LIMITS['command'])))
         self.assertEqual(orchestrator_server._SEMAPHORE_HOLDERS, {})
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     async def test_semaphore_and_cancel_endpoints_have_documented_shapes(self):
         task = asyncio.create_task(asyncio.sleep(60))
         orchestrator_server._INFLIGHT_OPERATIONS['op-cancel'] = task

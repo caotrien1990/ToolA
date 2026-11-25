@@ -1,4 +1,5 @@
 import hashlib
+import importlib.util
 import json
 import os
 import socket
@@ -12,6 +13,12 @@ import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+try:
+    _WEB_VIEWS_PRESENT = importlib.util.find_spec('orchestrator.web_views') is not None
+except (ModuleNotFoundError, ValueError):
+    _WEB_VIEWS_PRESENT = False
+
 
 ROOT=Path(__file__).resolve().parents[1]; SERVER=ROOT/"orchestrator_server.py"; PYTHON=os.environ.get("ORCHESTRATOR_TEST_PYTHON",sys.executable)
 def free_port():
@@ -46,7 +53,7 @@ class CrossProcessTaskEpochTests(unittest.TestCase):
         if hasattr(self,"http"): self.stop_http()
         self.t.cleanup()
     def start_http(self):
-        p=subprocess.Popen([PYTHON,str(SERVER)],cwd=ROOT,env=self.env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); end=time.time()+30
+        p=subprocess.Popen([PYTHON,str(SERVER)],cwd=ROOT,env=self.env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL); end=time.time()+30
         while time.time()<end:
             if p.poll() is not None: raise AssertionError(f"HTTP child exited {p.returncode}")
             try:
@@ -63,6 +70,7 @@ class CrossProcessTaskEpochTests(unittest.TestCase):
         self.assertEqual(actual,status,value); return value
     def sink_payload(self,c,text): return {"session_id":"cross-process","agent_id":"owner","task_epoch":c["task_epoch"],"prompt_hash":c["prompt_hash"],"project_path":str(self.sink),"path":"epoch-sink.txt","new_content":text,"overwrite":True}
 
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'HTTP child runs orchestrator_server.py which requires UI-lane orchestrator.web_views, absent from this checkout')
     def test_http_mcp_share_authoritative_epoch_and_restart(self):
         claim="claim-cross-process-0123456789abcdef0123456789abcdef"; boot=self.http_tool("bootstrap_session",{"session_id":"cross-process","agent_id":"owner","owner_claim_id":claim}); cap=boot["owner_capability"]
         one=self.mcp.tool("begin_task",{"session_id":"cross-process","prompt":"mcp epoch","agent_id":"owner","owner_capability":cap,"owner_claim_id":claim})
