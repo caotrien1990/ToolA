@@ -374,7 +374,9 @@ class TestSearchSnapshotStore(unittest.TestCase):
         def changing_read(path: Path, watchdog=None) -> bytes:
             nonlocal mutation_count
             payload = original_read(path, watchdog)
-            if Path(path) == target:
+            # CI's 8.3 short-name TEMP (RUNNER~1) differs from the .resolve()d
+            # capture path; compare resolved paths so the mutation actually fires.
+            if Path(path).resolve() == target.resolve():
                 mutation_count += 1
                 target.write_bytes(payload + (b"x" * mutation_count))
             return payload
@@ -545,7 +547,7 @@ pin.release()
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-        )
+        stdin=subprocess.DEVNULL)
         try:
             for _ in range(500):
                 if ready.exists() or child.poll() is not None:

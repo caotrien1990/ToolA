@@ -26,6 +26,14 @@ from orchestrator.server.audit_writer import (
 from orchestrator.storage.spool import read_spool, spool_depth
 
 
+import importlib.util
+
+try:
+    _WEB_VIEWS_PRESENT = importlib.util.find_spec('orchestrator.web_views') is not None
+except (ModuleNotFoundError, ValueError):
+    _WEB_VIEWS_PRESENT = False
+
+
 class DurableAuditIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
         future = srv._DURABLE_METRICS_FUTURE
@@ -361,6 +369,7 @@ class DurableAuditIntegrationTests(unittest.TestCase):
         self.assertEqual(report["failed"], 0)
         self.assertEqual(durable_seen, ["flush-durable-id"])
         self.assertEqual(telemetry_seen, ["flush-telemetry-id"])
+    @unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
     def test_create_app_cleanup_orders_background_executor_durable_then_telemetry(self) -> None:
         app = srv.create_app()
         callbacks = list(app.on_cleanup)

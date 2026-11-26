@@ -15,10 +15,16 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 from yarl import URL
 
-from orchestrator import web_views
+try:
+    from orchestrator import web_views
+except ImportError:  # UI-lane module absent in this checkout (separate campaign)
+    web_views = None
+
+_WEB_VIEWS_PRESENT = web_views is not None
 from path_runtime import resolve_ui_html
 
 
+@unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
 class PackagedPagesTests(unittest.TestCase):
     def test_bundle_wins_without_parent_ui(self):
         with tempfile.TemporaryDirectory() as root:
@@ -43,6 +49,7 @@ class PackagedPagesTests(unittest.TestCase):
 
 
 
+@unittest.skipUnless(_WEB_VIEWS_PRESENT, 'UI-lane module orchestrator.web_views is not part of this checkout (separate campaign)')
 class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         fixture_dir = tempfile.TemporaryDirectory(prefix="monitor sqlite ")

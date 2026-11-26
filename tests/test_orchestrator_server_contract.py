@@ -2172,6 +2172,16 @@ process.stdout.write(JSON.stringify(snapshots));
                 code_tools.TOOL_SCHEMAS.pop()
 
     async def test_dry_run_write_skips_backup_gate(self):
+        # In-process dispatch has no daemon startup schema-init. Write-ledger
+        # admission (_write_ledger_begin -> _write_ledger_db_get) reads the
+        # write_operations table directly and fails loud when it is absent. The
+        # ambient pytest sessions DB is created lazily, and the xroot attribution
+        # path only initializes it when find_project_root resolves a project for
+        # the target -- which does not happen for a cross-drive TEMP target (CI
+        # layout: project on D:, TEMP on C:). Seed the run DB schema up front so
+        # this test no longer depends on drive layout. Mirrors daemon startup;
+        # the assertions below are unchanged.
+        code_tools._session_store_module._init_session_db()
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / 'preview.py'
             target.write_text('value = 1\n', encoding='utf-8')
