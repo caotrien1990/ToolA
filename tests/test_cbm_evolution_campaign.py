@@ -51,7 +51,7 @@ def _git(root: Path, *args: str, check: bool = True, extra_env: dict | None = No
         check=check,
         env=env,
         shell=False,
-    )
+    stdin=subprocess.DEVNULL)
 
 
 def _init_repo(root: Path) -> None:
@@ -220,7 +220,7 @@ class TestNoGitShallowLive:
             capture_output=True,
             shell=False,
             env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
-        )
+        stdin=subprocess.DEVNULL)
         injected = compute_evolution(
             str(src), records=[_rec("a@x.com", ["new.py"])], shallow=True, history_truncated=True
         )

@@ -269,7 +269,7 @@ def test_migrate_forward_then_rollback(tmp_path):
         capture_output=True,
         text=True,
         cwd=str(_REPO_ROOT),
-    )
+    stdin=subprocess.DEVNULL)
     assert proc.returncode == 0, proc.stderr + proc.stdout
     import json as _json
     payload = _json.loads(proc.stdout.strip())

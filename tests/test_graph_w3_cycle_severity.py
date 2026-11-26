@@ -59,7 +59,7 @@ def _imports_cleanly(project, module):
         [sys.executable, "-c",
          "import sys; sys.path.insert(0, %r)\nimport %s" % (project, module)],
         capture_output=True, text=True, timeout=60,
-    )
+    stdin=subprocess.DEVNULL)
     return proc.returncode == 0, (proc.stderr or "").strip()
 
 

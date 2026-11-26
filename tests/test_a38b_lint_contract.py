@@ -40,7 +40,7 @@ def _ruff(*args: str):
     proc = subprocess.run(
         [sys.executable, "-m", "ruff", "check", *args],
         cwd=str(REPO), capture_output=True, text=True,
-    )
+    stdin=subprocess.DEVNULL)
     if "No module named" in (proc.stderr or ""):
         pytest.skip("ruff is not installed in this interpreter")
     return proc

@@ -39,7 +39,7 @@ def _make_unreadable(path: Path) -> bool:
         subprocess.run(
             ["icacls", str(path), "/deny", f"{user}:(RD)"],
             capture_output=True, text=True, check=False,
-        )
+        stdin=subprocess.DEVNULL)
     except Exception:
         return False
     try:
@@ -58,7 +58,7 @@ def _restore(path: Path) -> None:
         subprocess.run(
             ["icacls", str(path), "/remove:d", user],
             capture_output=True, text=True, check=False,
-        )
+        stdin=subprocess.DEVNULL)
     except Exception:
         pass
 

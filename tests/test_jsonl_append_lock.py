@@ -269,7 +269,7 @@ def test_giving_up_on_a_foreign_holder_says_timeout_not_deadlock(tmp_path: Path)
         [sys.executable, "-c", holder_script,
          str(jsonl_store._sidecar_path(target))],
         stdout=subprocess.PIPE, text=True,
-    )
+    stdin=subprocess.DEVNULL)
     try:
         assert holder.stdout is not None
         assert holder.stdout.readline().strip() == "locked", "helper never locked"
@@ -309,7 +309,7 @@ def test_the_lock_is_actually_taken_and_released(tmp_path: Path) -> None:
             [sys.executable, "-c", probe,
              str(jsonl_store._sidecar_path(target))],
             capture_output=True, text=True, timeout=60,
-        )
+        stdin=subprocess.DEVNULL)
         return done.stdout.strip()
 
     with jsonl_store._exclusive_file_lock(target, key, 5.0):
@@ -342,7 +342,7 @@ def test_a_held_append_lock_does_not_block_readers_in_other_processes(
         done = subprocess.run(
             [sys.executable, "-c", reader, str(target)],
             capture_output=True, text=True, timeout=60,
-        )
+        stdin=subprocess.DEVNULL)
         said = done.stdout.strip()
         assert not said.startswith("DENIED"), "a reader was locked out: %s" % said
         assert int(said) > 0

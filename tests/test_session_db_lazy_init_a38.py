@@ -68,7 +68,7 @@ class ImportIsSideEffectFree(unittest.TestCase):
             out = subprocess.run(
                 [sys.executable, "-c", code],
                 capture_output=True, text=True, env=env, timeout=60,
-            )
+            stdin=subprocess.DEVNULL)
             self.assertEqual(out.returncode, 0, out.stderr)
             self.assertIn("DBEXISTS False", out.stdout)
             self.assertIn("WRITER True", out.stdout)
@@ -100,7 +100,7 @@ class ImportIsSideEffectFree(unittest.TestCase):
                 out = subprocess.run(
                     [sys.executable, "-c", code],
                     capture_output=True, text=True, env=env, timeout=60,
-                )
+                stdin=subprocess.DEVNULL)
                 self.assertEqual(out.returncode, 0, out.stderr)
                 self.assertIn("IMPORT_OK", out.stdout)
             finally:

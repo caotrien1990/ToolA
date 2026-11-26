@@ -106,7 +106,7 @@ def _run_isolated(module_names: tuple[str, ...], sandbox: Path) -> tuple[int, li
          *[str(ROOT / "tests" / name) for name in module_names]],
         cwd=str(ROOT), env=env, capture_output=True, text=True,
         encoding="utf-8", errors="replace", timeout=900,
-    )
+    stdin=subprocess.DEVNULL)
     leftovers = sorted(
         child.name for child in sandbox.iterdir()
         if not child.name.startswith("pytest-of-")

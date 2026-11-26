@@ -73,7 +73,7 @@ def _spawn_writers(target: Path, root: Path) -> list[subprocess.CompletedProcess
             [sys.executable, str(script), str(_ROOT), str(target),
              "p%d" % pid, str(_THREADS), str(_PER_THREAD)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-        )
+        stdin=subprocess.DEVNULL)
         for pid in range(_PROCESSES)
     ]
     results = []
@@ -160,7 +160,7 @@ def test_a_reader_in_another_process_is_never_locked_out(tmp_path) -> None:
     writer = subprocess.Popen(
         [sys.executable, str(script), str(_ROOT), str(target)],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-    )
+    stdin=subprocess.DEVNULL)
     try:
         reads, denials = 0, []
         import time as _time

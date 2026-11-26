@@ -62,7 +62,7 @@ def test_second_process_blocked(tmp_path):
         capture_output=True,
         text=True,
         timeout=30,
-    )
+    stdin=subprocess.DEVNULL)
     sub = json.loads(out.stdout.strip())
     assert sub["ok"] is False
     assert sub["error_name"] == "ORCHESTRATOR_ALREADY_RUNNING"

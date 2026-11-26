@@ -118,7 +118,7 @@ class GraphEnabledLiveFlagA13(unittest.TestCase):
                  f"--basetemp={child_tmp}"],
                 cwd=_PROJ_ROOT, env=child_env,
                 capture_output=True, text=True, timeout=600,
-            )
+            stdin=subprocess.DEVNULL)
         finally:
             shutil.rmtree(child_tmp, ignore_errors=True)
         self.assertEqual(

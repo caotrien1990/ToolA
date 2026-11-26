@@ -25,7 +25,7 @@ class TestCouncilNoTimeoutMonitor(unittest.IsolatedAsyncioTestCase):
         proc = subprocess.Popen(
             [sys.executable, '-c', 'import time; time.sleep(1.2); print("DONE")'],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        )
+        stdin=subprocess.DEVNULL)
         stdout, stderr, timed_out, timeout_kind = orchestrator_server._council_communicate_idle(
             proc, None, 1, 1,
         )

@@ -162,7 +162,7 @@ def test_a_junction_cannot_steer_the_sweep_out_of_the_bin(root, tmp_path_factory
         ["cmd", "/c", "mklink", "/J", str(link), str(outside)],
         capture_output=True,
         text=True,
-    )
+    stdin=subprocess.DEVNULL)
     if proc.returncode != 0 or not link.exists():
         pytest.skip("no directory junction here: " + (proc.stderr or "").strip())
     out = srv._bak_archive_sweep(str(root), dry_run=False, now=NOW)

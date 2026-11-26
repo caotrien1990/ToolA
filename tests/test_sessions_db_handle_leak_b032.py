@@ -83,7 +83,7 @@ def _run_isolated(module_names: tuple[str, ...], sandbox: Path) -> tuple[int, li
          *[str(ROOT / "tests" / name) for name in module_names]],
         cwd=str(ROOT), env=env, capture_output=True, text=True,
         encoding="utf-8", errors="replace", timeout=1800,
-    )
+    stdin=subprocess.DEVNULL)
     # #34: measure only. A parent that deletes the child's leftovers before
     # counting them can never report a leak; the WAL-handle retry belongs to the
     # child's own cleanup (conftest's registered directories), not to the gauge.
