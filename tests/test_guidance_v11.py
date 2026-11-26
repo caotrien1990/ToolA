@@ -174,7 +174,34 @@ def test_1c_git_hint_names_the_intent():
     assert "scope=staged" not in generic
 
 
-# ─── 1c: cbm_template_query from_symbol intent preservation ─────────────────
+def test_1c_git_cached_live_normalize_path_preserves_intent():
+    # REGRESSION (Ope 2026-11-26, guidance v11 pilot live gate): the LIVE
+    # dispatcher path is _normalize_body, which renames cached->scope BEFORE S4
+    # field validation. The value remap (True->'staged') MUST apply at that
+    # rename point too; otherwise scope stays a boolean, S4 accepts the field
+    # name, and the handler raises INVALID_GIT_DIFF_SCOPE -- the UNSUPPORTED_FIELD
+    # corrector (which also remaps) never runs. The isolated-corrector test above
+    # does NOT exercise this live path, which is how the defect slipped through.
+    body, applied = osrv._normalize_body("git_diff", {"project_path": "X", "cached": True})
+    assert body.get("scope") == "staged", body
+    assert "cached" not in body, body
+    assert "cached->scope" in applied, applied
+    # the staged=true CLI habit remaps the same way
+    body2, _ = osrv._normalize_body("git_diff", {"project_path": "X", "staged": True})
+    assert body2.get("scope") == "staged", body2
+    # an explicit canonical scope is untouched (no double remap)
+    body3, _ = osrv._normalize_body("git_diff", {"project_path": "X", "scope": "both"})
+    assert body3.get("scope") == "both", body3
+    # cbm from_symbol carries a STRING value: rename only, value passes through
+    body4, _ = osrv._normalize_body("cbm_template_query",
+                                    {"project_path": "X", "template": "callers", "from_symbol": "helper"})
+    assert body4.get("name") == "helper", body4
+    # a tool with NO value alias is unaffected (negative control)
+    body5, _ = osrv._normalize_body("git_log", {"project_path": "X", "max_results": 5})
+    assert body5.get("limit") == 5, body5
+
+
+# --- 1c: cbm_template_query from_symbol intent preservation -----------------
 
 B_PY = "def helper():\n    return 1\n\n\ndef worker():\n    return helper()\n"
 A_PY = "import b\n\n\ndef run():\n    return b.worker()\n"

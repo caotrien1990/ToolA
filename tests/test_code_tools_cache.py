@@ -3,7 +3,6 @@ import asyncio
 import base64
 import gc
 import json
-import os
 import shutil
 import sqlite3
 import sys
@@ -19,15 +18,6 @@ from concurrent.futures import ThreadPoolExecutor
 import code_tools
 from orchestrator.tools.write import core as write_core
 from orchestrator.tools.write.core import _boot_write_sweep, _pre_write_syntax_check
-
-
-def _esbuild_available():
-    import shutil
-    if shutil.which('esbuild'):
-        return True
-    appdata = os.environ.get('APPDATA', '')
-    candidate = Path(appdata) / 'npm' / 'esbuild.cmd' if appdata else None
-    return bool(candidate and candidate.is_file())
 
 
 class TestCodeToolsCache(unittest.TestCase):

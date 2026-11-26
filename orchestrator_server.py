@@ -2968,6 +2968,13 @@ def _write_ledger_db_upsert_once(rec: dict, db_path=None) -> bool:
     """Persist one ledger record: a later send replaces an earlier one (#36), and a
     send never regresses its own terminal state."""
     try:
+        # 2DEC cleanup 2: self-ensure the schema before INSERT, the same idempotent
+        # + thread-safe call the SELECT branch (db_get / db_list) already uses. Every
+        # ledger write funnels through here (direct persist, spool drain, memory-gap
+        # replay), so a fresh / uninitialized DB no longer dies with 'no such table'
+        # and silently strands the row in the spool. Inside the try so an init
+        # contention failure still degrades to the spool fallback (bool contract).
+        _ensure_write_ledger_schema()
         result = rec.get("result") if isinstance(rec.get("result"), dict) else None
         result_json = json.dumps(result, ensure_ascii=False) if result is not None else None
         conn = sqlite3.connect(str(db_path or ct._SESSIONS_DB), timeout=2.0)
@@ -4115,7 +4122,15 @@ def _normalize_body(tool_name: str, body: dict) -> tuple[dict, list]:
             applied.append(f"compat: {', '.join(sorted(_compat_meta['deprecated_fields']))}")
     for old, new in aliases.items():
         if old in body and new not in body:
-            body[new] = body.pop(old)
+            _v = body.pop(old)
+            # v11 1c live-path fix (Ope 2026-11-26): apply the value-level intent
+            # remap at the rename point too (git_diff cached=True -> scope='staged').
+            # Without it the early rename put a boolean into the enum field, S4
+            # accepted the field name, and the handler raised INVALID_GIT_DIFF_SCOPE
+            # before the UNSUPPORTED_FIELD corrector (which also remaps) could run.
+            # Tools with no value alias are unaffected (.get returns value as-is).
+            _v = _ARG_VALUE_ALIASES.get((tool_name, old), {}).get(_v, _v)
+            body[new] = _v
             applied.append(f"{old}->{new}")
         elif old in body and new in body:
             # Agent-enablement F1 (2026-08-08): canonical+alias both supplied.
