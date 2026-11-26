@@ -1,0 +1,85 @@
+/* Shared Council Precision tokens. Graph semantics keep their own colours. */
+:root {
+  --ta-bg:#08090b; --ta-panel:#101216; --ta-panel-soft:#13161b;
+  --ta-control:#181b20; --ta-elevated:#20242b; --ta-border:rgba(255,255,255,.08);
+  /* A control's boundary needs 3:1 against the page AND against the control's own
+     fill (WCAG 1.4.11 names both as adjacent colours). --ta-border is a .08-alpha
+     hairline: 1.18:1 on the dark page, 1.36:1 on white. It draws dividers well and
+     button edges not at all, so button borders get their own opaque token rather
+     than making --ta-border dark for every divider in council/monitor. #565d70 was
+     the first pick and is still short -- 3.03:1 on the page but 2.7:1 on the
+     --ta-control fill it sits on -- so the rung is #6b7280: 4.12/3.67 dark,
+     4.47/3.98 light. */
+  --ta-control-border:#6b7280;
+  --ta-text:#f3f4f6; --ta-muted:#a4aab4; --ta-faint:#87909e;
+  --ta-accent:#7c6ff2; --ta-accent-hover:#958bf7; --ta-accent-soft:rgba(124,111,242,.12);
+  --ta-ok:#42c98a; --ta-warn:#dfa851; --ta-error:#eb6971;
+  --ta-font:"Segoe UI Variable","Inter Variable",Inter,"Segoe UI",system-ui,sans-serif;
+  --ta-mono:"JetBrains Mono",ui-monospace,"Cascadia Code",Consolas,monospace;
+  --ta-radius:7px;
+}
+.toola-nav {
+  display:flex;flex-wrap:wrap;align-items:center;gap:2px 4px;margin:0;padding:5px 12px;
+  position:relative;box-sizing:border-box;max-width:100%;
+  color:var(--ta-muted);background:var(--ta-panel);border-bottom:1px solid var(--ta-border);
+  font:600 13px/1.3 var(--ta-font);letter-spacing:normal;
+}
+.toola-nav-mark {font:700 11px/1 var(--ta-mono);letter-spacing:.1em;color:var(--ta-muted);margin:0 6px 0 2px;white-space:nowrap;}
+.toola-nav a {display:inline-flex;align-items:center;min-height:32px;padding:0 10px;border-radius:var(--ta-radius);color:var(--ta-muted);text-decoration:none;white-space:nowrap;}
+.toola-nav a:hover,.toola-nav a[aria-current="page"] {background:var(--ta-accent-soft);color:var(--ta-text);}
+.toola-nav a[aria-current="page"] {box-shadow:inset 0 -2px var(--ta-accent);}
+.toola-nav a:focus-visible {outline:2px solid var(--ta-accent-hover);outline-offset:1px;}
+.toola-nav .toola-external {margin-inline-start:auto;font:600 11px/1.3 var(--ta-mono);}
+html[data-toola-page="main"] body {font-family:var(--ta-font);}
+html[data-toola-page="main"] body.theme-dark {
+  --bg-base:var(--ta-bg);--bg-card:var(--ta-panel);--bg-deep:var(--ta-panel-soft);
+  --bg-row:var(--ta-control);--border:var(--ta-border);--text-main:var(--ta-text);
+  --text-muted:var(--ta-muted);--text-dim:var(--ta-faint);--accent:var(--ta-accent);
+  --accent-txt:var(--ta-accent-hover);--radius:var(--ta-radius);
+}
+html[data-toola-page="main"] body.theme-light {
+  --ta-panel:#f4f4f4;--ta-border:#d1d5db;--ta-muted:#393c41;--ta-text:#171a20;
+  --ta-accent:#3e6ae1;--ta-accent-hover:#2d56b8;--ta-accent-soft:rgba(62,106,225,.12);
+}
+html[data-toola-page="council"] {
+  --bg:var(--ta-bg);--panel:var(--ta-panel);--panel-soft:var(--ta-panel-soft);
+  --control:var(--ta-control);--elevated:var(--ta-elevated);--border:var(--ta-border);
+  --text:var(--ta-text);--muted:var(--ta-muted);--accent:var(--ta-accent);
+  --accent-hover:var(--ta-accent-hover);--accent-soft:var(--ta-accent-soft);
+  --font:var(--ta-font);--mono:var(--ta-mono);--radius-ctrl:var(--ta-radius);
+}
+html[data-toola-page="monitor"] {
+  --bg1:var(--ta-bg);--bg2:var(--ta-bg);--bg3:var(--ta-panel);
+  --panel:var(--ta-panel);--panel-2:var(--ta-panel-soft);--panel-3:var(--ta-control);
+  --line:var(--ta-border);--ink:var(--ta-text);--mut:var(--ta-muted);--dim:var(--ta-faint);
+  --sans:var(--ta-font);--mono:var(--ta-mono);--acc:var(--ta-accent);--acc-soft:var(--ta-accent-hover);--acc-dim:var(--ta-accent-soft);
+}
+html[data-toola-page="monitor"] body {background:var(--ta-bg);}
+html[data-toola-page="monitor"] #bar {background:var(--ta-panel);}
+html[data-toola-page="monitor"] #bar::before {background:linear-gradient(90deg,transparent,var(--ta-accent),transparent);}
+/* Keep shared navigation outside the responsive, scrollable Monitor controls. */
+html[data-toola-page="monitor"] #monitorHeader {position:fixed;inset:0 0 auto;z-index:10;}
+html[data-toola-page="monitor"] #monitorHeader > .toola-nav {z-index:1;}
+html[data-toola-page="monitor"] #monitorHeader > #bar {position:relative;inset:auto;z-index:auto;}
+.toola-monitor-note {padding:4px 10px;color:var(--ta-muted);font-size:11px;}
+.toola-monitor-note a {color:var(--ta-accent-hover);}
+html[data-toola-page="matrix"] {
+  --bg:var(--ta-bg);--bg2:var(--ta-panel);--bg3:var(--ta-control);--bg4:var(--ta-elevated);
+  --fg:var(--ta-text);--fg2:var(--ta-muted);--fg3:var(--ta-faint);--accent:var(--ta-accent-hover);
+  --accent2:var(--ta-accent);--accent-dim:var(--ta-accent-soft);--border:var(--ta-border);
+  --font:var(--ta-font);--mono:var(--ta-mono);--radius:var(--ta-radius);
+}
+html[data-toola-page="matrix"] .toola-nav {margin:0 0 16px;border-radius:var(--ta-radius);}
+.toola-matrix-meta {margin:8px 0;padding:10px 12px;background:var(--ta-panel-soft);border:1px solid var(--ta-border);border-radius:var(--ta-radius);}
+.toola-matrix-meta summary {cursor:pointer;color:var(--ta-text);}
+.toola-matrix-meta ul {margin:6px 0 0 18px;}
+.toola-matrix-meta li {margin:3px 0;overflow-wrap:anywhere;}
+.toola-matrix-meta p {margin-top:6px;color:var(--ta-muted);}
+.toola-matrix-meta button {margin:2px 4px 2px 0;}
+#sb-search-results {display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 8px;}
+#sb-search-results:empty {display:none;}
+#sunburst-container :is(circle,g,path)[role="button"]:focus-visible {outline:none;filter:drop-shadow(0 0 4px var(--ta-accent-hover));}
+@media(max-width:500px) {
+  .toola-nav {padding:4px 6px;}
+  .toola-nav a {padding:0 7px;min-height:36px;}
+}

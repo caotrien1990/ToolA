@@ -1,0 +1,3085 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tool [A] Project Orchestrator</title>
+<style>
+/*  CSS Variables Dark (default)  */
+:root {
+  --bg-base:#0f1117;--bg-card:#1a1d2e;--bg-deep:#161929;--bg-row:#1e2235;
+  --border:#2d3748;--text-main:#e2e8f0;--text-muted:#94a3b8;--text-dim:#64748b;
+  --accent:#3b82f6;--accent-txt:#93c5fd;
+  --green-bg:#064e3b;--green-txt:#6ee7b7;
+  --red-bg:#7f1d1d;--red-txt:#fca5a5;
+  --amber-bg:#78350f;--amber-txt:#fcd34d;
+  --progress:#10b981;--shadow:0 4px 20px rgba(0,0,0,.5);
+  --radius:6px;--trans:all 0.2s ease;
+}
+/* Light theme override  */
+body.theme-light {
+  --bg-base:#ffffff;--bg-card:#f4f4f4;--bg-deep:#f8f9fa;--bg-row:#eeeeee;
+  --border:#d1d5db;--text-main:#171a20;--text-muted:#393c41;--text-dim:#8e8e8e;
+  --accent:#3e6ae1;--accent-txt:#2d56b8;
+  --green-bg:#dcfce7;--green-txt:#166534;
+  --red-bg:#fee2e2;--red-txt:#991b1b;
+  --amber-bg:#fef3c7;--amber-txt:#92400e;
+  --progress:#3ea14b;--shadow:0 4px 20px rgba(0,0,0,.12);
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg-base);color:var(--text-main);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;min-height:100vh;padding-bottom:140px;transition:background .25s,color .25s}
+
+/*  Header  */
+.header{position:sticky;top:0;z-index:100;background:var(--bg-deep);border-bottom:1px solid var(--border);padding:10px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.logo{font-size:20px;font-weight:700;color:var(--accent-txt);white-space:nowrap;min-width:90px}
+.logo-sub{font-size:10px;color:var(--text-dim)}
+.folder-group{display:flex;align-items:center;gap:6px;flex:1;min-width:240px}
+.folder-input{flex:1;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-main);padding:7px 10px;font-size:13px;outline:none;transition:border-color .2s}
+.folder-input:focus{border-color:var(--accent)}
+.btn{border:none;border-radius:var(--radius);cursor:pointer;font-size:13px;font-weight:500;padding:7px 14px;transition:var(--trans);line-height:1.3}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:.9}
+.btn-secondary{background:var(--bg-row);color:var(--text-muted);border:1px solid var(--border)}.btn-secondary:hover{background:var(--border);color:var(--text-main)}
+.conn-badge{padding:5px 10px;border-radius:20px;font-size:11px;font-weight:600;background:var(--red-bg);color:var(--red-txt);white-space:nowrap;cursor:default}
+.conn-badge.ok{background:var(--green-bg);color:var(--green-txt)}
+.conn-badge.warn{background:var(--amber-bg);color:var(--amber-txt)}
+/* Theme toggle */
+.theme-btn{background:var(--bg-row);border:1px solid var(--border);border-radius:20px;padding:5px 12px;cursor:pointer;font-size:12px;color:var(--text-muted);transition:var(--trans);white-space:nowrap}
+.theme-btn:hover{border-color:var(--accent);color:var(--accent-txt)}
+
+/*  Bootstrap Panel  */
+#bootstrap-panel{background:var(--bg-card);border-bottom:1px solid var(--border);padding:8px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.btn-copy{background:var(--green-bg);color:var(--green-txt);border:1px solid var(--green-txt);border-radius:var(--radius);padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;transition:var(--trans)}
+.btn-copy:hover{opacity:.85}.btn-copy.copied{background:var(--accent);border-color:var(--accent);color:#fff}
+
+/*  Summary Bar  */
+.summary-bar{background:var(--bg-card);border-bottom:1px solid var(--border);padding:8px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.summary-stats{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:155px}
+.s-count{font-size:12px;color:var(--text-muted)}.s-count strong{color:var(--accent-txt)}
+.mode-tabs{display:flex;gap:6px}
+.mode-tab{padding:5px 14px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-weight:500;transition:var(--trans)}
+.mode-tab:hover{border-color:var(--accent);color:var(--text-main)}
+.mode-tab.active{background:var(--bg-row);border-color:var(--accent);color:var(--accent-txt)}
+.mode-tab.t1.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.mode-tab.t2.active{background:var(--green-bg);border-color:var(--green-txt);color:var(--green-txt)}
+.mode-tab.t3.active{background:rgba(168,85,247,0.18);border-color:#a855f7;color:#c084fc}
+.mode-tab.t4.active{background:rgba(245,158,11,0.18);border-color:#f59e0b;color:#fbbf24}
+.v15-badge{display:inline-flex;flex-direction:column;align-items:flex-start;gap:4px;min-height:23px;max-width:min(820px,100%);padding:7px 12px;border-radius:12px;font-size:11px;font-weight:600;background:linear-gradient(90deg,rgba(34,197,94,0.18),rgba(168,85,247,0.18));border:1px solid rgba(34,197,94,0.4);color:#86efac;letter-spacing:0.2px;line-height:1.35;white-space:normal}
+.v15-badge-head{display:flex;align-items:center;gap:8px;max-width:100%;min-width:0}
+.v15-badge-label{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;border:1px solid rgba(134,239,172,0.35);background:rgba(15,23,42,0.28);font-family:Consolas,monospace;color:#d9f99d;white-space:nowrap}
+.v15-badge-text{color:var(--text-main);font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.v15-badge-text.secondary{display:block;max-width:100%;font-weight:500;color:#e5eefc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v15-badge-meta{display:flex;flex-direction:column;gap:4px;max-width:100%;width:100%}
+.v15-badge-meta-line{display:block;max-width:100%;padding:2px 8px;border-radius:8px;border:1px solid rgba(134,239,172,0.22);background:rgba(15,23,42,0.2);color:#d1fae5;font-family:Consolas,monospace;font-size:10px;white-space:normal;overflow-wrap:anywhere}
+.v15-badge-meta-line .meta-title{font-weight:700;color:#f8fafc;margin-right:4px}
+.v15-badge-meta-line.warn{border-color:rgba(251,191,36,0.35);color:#fde68a}
+.v15-badge-meta-line.err{border-color:rgba(252,165,165,0.4);color:#fecaca}
+.v15-badge-meta-line.schema{border-color:rgba(147,197,253,0.35);color:#bfdbfe}
+.v15-badge-meta-line.info{border-color:rgba(196,181,253,0.35);color:#ddd6fe}
+.header-actions{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.header-action-btn{display:inline-flex;align-items:center;justify-content:center;padding:3px 8px;border-radius:999px;border:1px solid rgba(96,165,250,0.35);background:rgba(37,99,235,0.12);color:#bfdbfe;font-size:10px;font-weight:600;font-family:Consolas,monospace;cursor:pointer;transition:var(--trans)}
+.header-action-btn:hover{border-color:#60a5fa;color:#dbeafe;background:rgba(37,99,235,0.2)}
+.progress-wrap{display:flex;align-items:center;gap:8px}
+.progress-bar{width:100px;height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.progress-fill{height:100%;background:var(--progress);border-radius:3px;transition:width .3s}
+.progress-label{font-size:11px;color:var(--text-dim)}
+
+/*  Tool Table  */
+.tools-section{padding:14px 20px}
+.tools-title{font-size:14px;font-weight:600;color:var(--text-main);margin-bottom:10px}
+.tool-table{width:100%;border-collapse:collapse;background:var(--bg-card);border-radius:8px;overflow:hidden;border:1px solid var(--border)}
+.tool-table thead th{background:var(--bg-deep);color:var(--text-dim);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:9px 10px;text-align:left;border-bottom:1px solid var(--border)}
+.tool-table tbody tr{border-bottom:1px solid var(--border);transition:background .12s}
+.tool-table tbody tr:hover{background:var(--bg-row)}
+.tool-table td{padding:7px 10px;vertical-align:middle}
+.tool-table tr.group-hdr td{background:var(--bg-deep);color:var(--text-dim);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:5px 10px}
+.col-tid{width:42px;color:var(--text-dim);font-size:11px;font-family:monospace;font-weight:700}
+.col-icon{width:28px;text-align:center;font-size:15px}
+.col-name{font-family:monospace;font-size:13px;font-weight:500}
+.col-mode{width:60px}
+.mode-tag{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;background:var(--bg-row);color:var(--text-dim);border:1px solid var(--border)}
+.mode-tag.t1{background:rgba(59,130,246,.14);color:#93c5fd;border-color:#60a5fa}
+.mode-tag.t2{background:var(--green-bg);color:var(--green-txt);border-color:var(--green-txt)}
+.mode-tag.t3{background:rgba(245,158,11,.14);color:#fbbf24;border-color:#f59e0b}
+.col-api{width:44px;text-align:center;font-size:12px}
+.col-status{width:64px;text-align:center}
+.status-toggle{cursor:pointer;font-size:13px;padding:2px 5px;border-radius:4px;border:none;background:transparent;transition:background .12s}
+.status-toggle:hover{background:var(--bg-row)}
+
+/*  Log + Result  */
+.section{padding:0 20px 14px}
+.section-title{font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:6px;display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
+.section-title .toggle-icon{color:var(--text-dim);font-size:11px;transition:transform .2s}
+.section-title .toggle-icon.open{transform:rotate(90deg)}
+.log-filter{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px}
+.log-filter button{padding:3px 10px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--text-dim);cursor:pointer;font-size:11px;transition:var(--trans)}
+.log-filter button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.scrollbox{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow-y:auto;padding:10px;font-family:monospace;font-size:12px}
+.log-box{min-height:80px;max-height:240px}
+.result-box{min-height:60px;max-height:280px;white-space:pre-wrap;color:var(--text-muted)}
+.result-box.ok{border-color:var(--progress);color:var(--green-txt)}
+.result-box.err{border-color:var(--red-txt);color:var(--red-txt)}
+.log-entry{padding:5px 0;border-bottom:1px solid var(--border)}
+.log-entry:last-child{border:none}
+.log-meta{display:flex;gap:8px;font-size:10px;color:var(--text-dim);margin-bottom:2px}
+.log-source{font-weight:700;text-transform:uppercase;color:var(--accent-txt)}
+.log-content{white-space:pre-wrap;color:var(--text-muted)}
+.empty-st{color:var(--text-dim);font-style:italic;font-size:12px}
+
+/*  Modal  */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;align-items:center;justify-content:center}
+.modal-overlay.active{display:flex}
+.modal-box{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;width:520px;max-width:95vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:var(--shadow)}
+.modal-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.modal-title{font-size:14px;font-weight:600;color:var(--text-main);font-family:monospace}
+.modal-close{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:20px;padding:0 4px;line-height:1}
+.modal-close:hover{color:var(--text-main)}
+.modal-body{padding:14px 16px;overflow-y:auto;flex:1}
+.modal-footer{padding:10px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+.form-group{margin-bottom:12px}
+.form-label{display:block;font-size:12px;font-weight:500;color:var(--text-muted);margin-bottom:4px}
+.req{color:var(--red-txt)}
+.form-input{width:100%;background:var(--bg-deep);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-main);padding:7px 10px;font-size:13px;outline:none;resize:vertical}
+.form-input:focus{border-color:var(--accent)}
+textarea.form-input{min-height:72px;font-family:monospace;font-size:12px}
+.form-hint{font-size:11px;color:var(--text-dim);margin-top:2px}
+.form-warn{background:var(--red-bg);color:var(--red-txt);border-radius:var(--radius);padding:8px 12px;font-size:12px;margin-bottom:10px}
+
+/*  Toast  */
+.toast{position:fixed;bottom:150px;right:20px;padding:9px 16px;border-radius:var(--radius);font-size:13px;font-weight:500;z-index:999;opacity:0;transform:translateY(8px);transition:all .25s;pointer-events:none;max-width:340px;box-shadow:var(--shadow)}
+.toast.show{opacity:1;transform:none}
+.toast.success{background:var(--green-bg);color:var(--green-txt);border:1px solid var(--green-txt)}
+.toast.error{background:var(--red-bg);color:var(--red-txt);border:1px solid var(--red-txt)}
+.toast.info{background:var(--bg-card);color:var(--accent-txt);border:1px solid var(--accent)}
+
+/*  CA Usage Log Drawer  */
+#ca-drawer{position:fixed;bottom:0;left:0;right:0;z-index:150;background:var(--bg-deep);border-top:2px solid var(--border);box-shadow:0 -4px 20px rgba(0,0,0,.3);transition:height .25s ease}
+#ca-drawer.collapsed{height:38px;overflow:hidden}
+#ca-drawer.expanded{height:280px}
+#ca-drawer-header{height:38px;padding:0 18px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;border-bottom:1px solid var(--border)}
+#ca-drawer-header:hover{background:var(--bg-row)}
+.ca-drawer-title{font-size:12px;font-weight:700;color:var(--accent-txt);letter-spacing:.04em}
+.ca-log-badge{background:var(--accent);color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700}
+.ca-drawer-spacer{flex:1}
+.ca-drawer-controls{display:flex;gap:6px;align-items:center}
+.ca-ctrl-btn{padding:3px 9px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-dim);cursor:pointer;font-size:11px;transition:var(--trans)}
+.ca-ctrl-btn:hover{border-color:var(--accent);color:var(--accent-txt)}
+#ca-drawer-body{height:242px;display:flex;flex-direction:column;padding:0 4px 4px}
+#ca-filter-bar{padding:6px 14px;display:flex;gap:6px;align-items:center;border-bottom:1px solid var(--border)}
+#ca-filter-bar button{padding:2px 9px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text-dim);cursor:pointer;font-size:11px;transition:var(--trans)}
+#ca-filter-bar button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+#ca-filter-bar .ca-stats{margin-left:auto;font-size:11px;color:var(--text-dim)}
+#ca-table-wrap{flex:1;overflow-y:auto;padding:0 10px}
+.ca-table{width:100%;border-collapse:collapse;font-size:11px;font-family:monospace}
+.ca-table thead th{position:sticky;top:0;background:var(--bg-deep);color:var(--text-dim);padding:5px 6px;text-align:left;font-weight:600;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border)}
+.ca-table tbody tr{border-bottom:1px solid var(--border)}
+.ca-table tbody tr:hover{background:var(--bg-row)}
+.ca-table td{padding:5px 6px;vertical-align:middle;color:var(--text-muted)}
+.ca-table td.ts{color:var(--text-dim);white-space:nowrap}
+.ca-table td.tool{color:var(--text-main);font-weight:600}
+.ca-table td.tid{color:var(--accent-txt)}
+.ca-table td.theme{font-size:10px}
+.ca-table td.status-ok{color:var(--green-txt)}
+.ca-table td.status-err{color:var(--red-txt)}
+.ca-table td.status-warn{color:var(--amber-txt)}
+.ca-table td.dur{text-align:right;color:var(--text-dim)}
+.ca-table td.preview{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-dim)}
+
+/*  CA Session Log Panel  */
+#ca-log-panel{display:none;padding:14px 20px 14px}
+#ca-log-panel.active{display:flex;gap:14px;height:calc(100vh - 220px);min-height:400px}
+.cal-sidebar{width:210px;flex-shrink:0;display:flex;flex-direction:column;gap:6px;overflow-y:auto}
+.cal-sidebar-hdr{font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;padding:2px 0 6px;flex-shrink:0}
+.cal-session-item{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px;cursor:pointer;transition:border-color .15s;flex-shrink:0}
+.cal-session-item:hover,.cal-session-item.active{border-color:var(--accent);background:var(--bg-row)}
+.cal-sess-title{font-size:12px;font-weight:600;color:var(--text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:186px}
+.cal-sess-meta{font-size:10px;color:var(--text-dim);margin-top:2px;display:flex;align-items:center;gap:4px}
+.cal-dot{display:inline-block;width:6px;height:6px;border-radius:50%}
+.cal-dot.active{background:var(--green-txt)}.cal-dot.closed{background:var(--text-dim)}
+.cal-no-sess{color:var(--text-dim);font-style:italic;font-size:12px;padding:8px 0}
+.cal-detail{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.cal-detail-hdr{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex-shrink:0}
+.cal-detail-title{font-size:13px;font-weight:700;color:var(--text-main);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-coverage{font-size:10px;color:var(--text-dim)}
+.cal-sse{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600}
+.cal-sse.live{background:var(--green-bg);color:var(--green-txt)}
+.cal-sse.off{background:var(--red-bg);color:var(--red-txt)}
+.cal-badges{padding:8px 14px;border-bottom:1px solid var(--border);display:flex;gap:5px;flex-wrap:wrap;flex-shrink:0}
+.cal-bdg{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:10px;font-size:11px;background:var(--bg-deep);border:1px solid var(--border);color:var(--text-muted);white-space:nowrap}
+.cal-bdg strong{color:var(--accent-txt)}
+.cal-events-hdr{padding:5px 14px;border-bottom:1px solid var(--border);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);display:flex;gap:8px;flex-shrink:0}
+.cal-events-wrap{flex:1;overflow-y:auto;padding:4px 14px 8px;font-family:monospace;font-size:12px}
+.cal-ev{padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.cal-ev:last-child{border:none}
+.cal-ev-main{color:var(--text-muted)}
+.cal-ev-main .cn-ok{color:var(--green-txt)}
+.cal-ev-main .cn-err{color:var(--red-txt)}
+.cal-ev-main .cn-warn{color:var(--amber-txt)}
+.cal-ev-reason{font-size:11px;padding:1px 0 3px 16px;opacity:.85;color:var(--red-txt)}
+.cal-ev-reason.warn{color:var(--amber-txt)}
+.cal-empty{color:var(--text-dim);font-style:italic;font-size:12px;padding:20px 14px;text-align:center}
+.cal-detail-btns{display:flex;gap:6px;flex-shrink:0}
+.cal-btn{padding:3px 9px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-dim);cursor:pointer;font-size:11px;transition:var(--trans);white-space:nowrap}
+.cal-btn:hover{border-color:var(--accent);color:var(--accent-txt)}
+/* tab highlight */
+.mode-tab.ca-log-tab.active{background:var(--amber-bg);border-color:var(--amber-txt);color:var(--amber-txt)}
+
+/*  Spinner  */
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{display:inline-block;width:12px;height:12px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .55s linear infinite;vertical-align:middle;margin-right:5px}
+
+/*  Icon Glow (no box  drop-shadow only)  */
+.icon-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;font-size:16px;transition:filter .2s}
+.icon-nav     {--glow:59,130,246}
+.icon-read    {--glow:139,92,246}
+.icon-write   {--glow:245,158,11}
+.icon-runtime {--glow:245,158,11}
+.icon-validate{--glow:16,185,129}
+.icon-exec    {--glow:239,68,68}
+.icon-cache   {--glow:6,182,212}
+.icon-backup  {--glow:20,184,166}
+.icon-parser  {--glow:124,58,237}
+.icon-workflow{--glow:99,102,241}
+.icon-t2      {--glow:52,211,153}
+[class*="icon-"].icon-badge{filter:drop-shadow(0 0 4px rgba(var(--glow),.85))}
+.tool-table tbody tr:hover [class*="icon-"].icon-badge{filter:drop-shadow(0 0 8px rgba(var(--glow),1)) brightness(1.15)}
+/* Row cursor */
+.tool-table tbody tr[data-name]{cursor:pointer}
+
+/*  Activity Column  */
+.col-prog{width:76px;padding:7px 10px}
+.tool-prog{height:3px;border-radius:2px;background:rgba(255,255,255,.06);width:100%;position:relative;overflow:hidden;transition:background .4s}
+.tool-prog.running{background:rgba(var(--glow-run,99,102,241),.18)}
+.tool-prog.running::after{content:'';position:absolute;top:0;left:-60%;width:60%;height:100%;background:var(--accent);border-radius:2px;animation:prog-slide 1.1s ease-in-out infinite}
+.tool-prog.done{background:var(--progress);animation:prog-fade 2.8s forwards}
+.tool-prog.error{background:var(--red-txt);animation:prog-fade 2.8s forwards}
+@keyframes prog-slide{0%{left:-60%}100%{left:150%}}
+@keyframes prog-fade{0%{opacity:1}70%{opacity:1}100%{opacity:0}}
+/* Sprint 3 - New Panels */
+.s3-panel{background:var(--bg-card);border-bottom:1px solid var(--border);padding:0}
+.s3-panel summary{list-style:none;display:flex;align-items:center;gap:8px;padding:8px 20px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text-muted);user-select:none}
+.s3-panel summary:hover{background:var(--bg-row)}
+.s3-panel summary::marker,.s3-panel summary::-webkit-details-marker{display:none}
+.s3-panel[open] summary{color:var(--text-main)}
+.s3-panel-body{padding:10px 20px 14px;display:flex;flex-direction:column;gap:8px}
+.s3-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.s3-label{font-size:11px;color:var(--text-dim);min-width:72px}
+.s3-input{flex:1;min-width:120px;background:var(--bg-deep);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-main);padding:5px 8px;font-size:12px;outline:none;font-family:monospace}
+.s3-input:focus{border-color:var(--accent)}
+.s3-result{background:var(--bg-deep);border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px;font-family:monospace;font-size:12px;color:var(--text-muted);white-space:pre-wrap;max-height:200px;overflow-y:auto}
+.s3-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.s3-badge.ok{background:var(--green-bg);color:var(--green-txt)}
+.s3-badge.err{background:var(--red-bg);color:var(--red-txt)}
+.s3-badge.warn{background:var(--amber-bg);color:var(--amber-txt)}
+.s3-warn{background:var(--amber-bg);color:var(--amber-txt);border-radius:var(--radius);padding:6px 10px;font-size:12px}
+.s3-tag-list{display:flex;flex-wrap:wrap;gap:4px}
+.s3-tag{background:var(--bg-row);border:1px solid var(--border);border-radius:4px;padding:2px 7px;font-size:11px;color:var(--text-muted);font-family:monospace}
+.s3-plan-step{background:var(--bg-deep);border-left:3px solid var(--accent);padding:6px 10px;border-radius:0 var(--radius) var(--radius) 0;font-size:12px;color:var(--text-muted)}
+.cov-table{width:100%;border-collapse:collapse;font-size:12px}
+.cov-table th{background:var(--bg-deep);color:var(--text-dim);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:5px 8px;text-align:left;border-bottom:1px solid var(--border)}
+.cov-table td{padding:5px 8px;border-bottom:1px solid var(--border);color:var(--text-muted)}
+.cov-table tr:hover td{background:var(--bg-row)}
+.cov-ok{color:var(--green-txt);font-weight:700}
+.cov-err{color:var(--red-txt);font-weight:700}
+.cov-warn{color:var(--amber-txt);font-weight:700}
+</style>
+</head>
+<body class="theme-dark">
+
+<!-- Header -->
+<header class="header">
+  <div>
+    <div class="logo">Tool [A]</div>
+    <div class="logo-sub">Project Orchestrator</div>
+  </div>
+  <div class="folder-group">
+    <input type="text" class="folder-input" id="folder-path" placeholder="Paste the absolute project path here...">
+    <button class="btn btn-primary" id="btn-set-folder">Set Folder</button>
+  </div>
+  <span class="conn-badge" id="status-badge">Checking...</span>
+  <span class="conn-badge warn" id="cache-badge">Cache: ?</span>
+  <button class="theme-btn" id="theme-toggle">Light</button>
+</header>
+
+<!-- Bootstrap Panel -->
+<div id="bootstrap-panel" hidden style="display:none;padding:8px 20px;background:var(--bg-card);border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px;align-items:center">
+  <span id="bootstrap-status" style="color:var(--green-txt);font-size:13px"> Project map ready</span>
+  <span style="font-size:11px;color:var(--text-dim);flex:1">Paste this at the start of the agent chat</span>
+  <button class="btn-copy" id="btn-copy-prompt"> Copy Agent Prompt</button>
+</div>
+
+<!-- Summary Bar -->
+<div class="summary-bar">
+  <div class="summary-stats">
+    <span class="s-count">API tools: <strong id="api-total">?</strong> total (<span id="api-visible">?</span> shown)</span>
+    <div class="progress-wrap">
+      <span class="progress-label" id="prog-label">0/<span id="prog-total">?</span></span>
+      <div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
+    </div>
+  </div>
+  <div class="mode-tabs">
+    <button class="mode-tab active" data-mode="all">All</button>
+    <button class="mode-tab t1" data-mode="T1" title="Discover / Analyze / Read">T1</button>
+    <button class="mode-tab t2" data-mode="T2" title="Mutate / Verify / Refresh">T2</button>
+    <button class="mode-tab t3" data-mode="T3" title="Session / Audit / Auxiliary">T3</button>
+    <button class="mode-tab t4" data-mode="T4" title="Runtime / DOM / Browser / Server lifecycle (V15)">T4</button>
+    <button class="mode-tab ca-log-tab" id="btn-calog-tab" data-mode="calog" title="Open session history panel">Sessions</button>
+  </div>
+  <span class="v15-badge" id="v15-badge" title="[A] CA advisory rail: hint, warning, next action, and schema guidance from the app."><span class="v15-badge-label">[A]</span><span class="v15-badge-text">Hint, warning, schema guidance will appear here.</span></span>
+  <span class="header-actions">
+    <button class="header-action-btn" id="btn-auto-token" type="button" title="Toggle AUTO_TOKEN_INJECT (User trust mode)" onclick="toggleAutoToken()">🔒 Strict</button>
+  </span>
+  <!-- V15 R36: Workflow dropdown ([A:Ed] launcher + activate/stop) -->
+  <span class="wf-dropdown" id="wf-dropdown" style="position:relative;display:inline-block;margin-left:8px">
+    <button class="header-action-btn" id="btn-wf-toggle" type="button" title="Workflow menu: create new, activate, stop">🛠️ Workflow ▼</button>
+    <div id="wf-menu" style="display:none;position:absolute;top:100%;right:0;background:var(--panel-bg,#1c2128);border:1px solid var(--border,#2d333b);border-radius:6px;padding:4px;min-width:240px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.4)">
+      <div class="wf-menu-item" data-act="new" style="padding:8px 10px;cursor:pointer;border-radius:4px;color:var(--accent,#3fb950);font-weight:bold">+ New workflow</div>
+      <div style="border-top:1px solid var(--border,#2d333b);margin:4px 0"></div>
+      <div id="wf-path-label" style="padding:8px 10px 6px;color:var(--text-dim,#7d8590);font-size:10px;line-height:1.4;border-radius:4px;word-break:break-all">Project: not set</div>
+      <div id="wf-menu-list" style="max-height:240px;overflow:auto">
+        <div style="padding:8px 10px;color:var(--text-dim,#7d8590);font-size:11px">No workflows yet.</div>
+      </div>
+      <div style="border-top:1px solid var(--border,#2d333b);margin:4px 0"></div>
+      <div class="wf-menu-item" data-act="stop" id="wf-stop-item" style="padding:8px 10px;cursor:pointer;border-radius:4px;color:var(--err,#f85149);display:none">⏹ Stop workflow</div>
+      <div class="wf-menu-item" data-act="open-editor" style="padding:8px 10px;cursor:pointer;border-radius:4px;color:var(--text-dim,#7d8590);font-size:11px">Open [A:Ed] in new tab ↗</div>
+    </div>
+  </span>
+</div>
+<!-- V15 R36: Active workflow banner (visible only when User activated) -->
+<div id="wf-active-banner" style="display:none;background:linear-gradient(90deg,rgba(63,185,113,0.12),rgba(63,185,113,0.02));border:1px solid #3fb950;border-radius:6px;padding:10px 14px;margin:8px 0;font-size:12px">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+    <div>
+      <strong style="color:#3fb950">▶ Workflow active:</strong>
+      <span id="wf-active-name" style="font-family:monospace"></span>
+      <span style="color:#7d8590;margin-left:8px">Step <strong id="wf-active-step">?</strong> / <span id="wf-active-total">?</span></span>
+    </div>
+    <div>
+      <button class="header-action-btn" id="wf-active-refresh" type="button" title="Reload current step">🔄</button>
+      <button class="header-action-btn" id="wf-active-stop" type="button" title="Stop workflow" style="color:#f85149">⏹ Stop</button>
+    </div>
+  </div>
+  <div id="wf-active-step-body" style="margin-top:8px;padding:8px 10px;background:#0d1117;border-radius:4px;font-family:Consolas,monospace;font-size:11px;white-space:pre-wrap;max-height:200px;overflow:auto"></div>
+</div>
+
+<!-- Tool Table -->
+<section class="tools-section">
+  <div class="tools-title">Orchestrator Tools</div>
+  <table class="tool-table">
+    <thead><tr>
+      <th class="col-tid">TID</th><th class="col-icon"></th>
+      <th>Tool</th><th class="col-mode">Mode</th>
+      <th class="col-api">API</th><th class="col-status">Status</th>
+      <th class="col-prog">Activity</th>
+    </tr></thead>
+    <tbody id="tool-tbody"></tbody>
+  </table>
+</section>
+
+<!-- V15 R36: Session Log collapsed by default (User has agent test/feedback; no longer follows raw logs). -->
+<div class="section" id="log-section-r36" style="opacity:0.6">
+  <div class="section-title" id="log-toggle" style="font-size:11px;color:#7d8590">
+    <span class="toggle-icon" id="log-icon"></span> Session Log <span style="font-size:10px;color:#7d8590">(collapsed — click to expand)</span>
+  </div>
+  <div id="log-wrap" style="display:none">
+    <div class="log-filter" id="log-filter">
+      <button data-filter="all" class="active">All</button>
+      <button data-filter="user">User</button>
+      <button data-filter="tool">Tool</button>
+      <button data-filter="system">System</button>
+    </div>
+    <div class="scrollbox log-box" id="log-entries">
+      <div class="empty-st">Logs will appear when you call tools.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Result Section -->
+<div class="section">
+  <div class="section-title">Latest Result</div>
+  <div class="scrollbox result-box" id="result-output"><span class="empty-st">Choose a tool to begin...</span></div>
+</div>
+
+<!-- CA Session Log Panel -->
+<div id="ca-log-panel">
+  <div class="cal-sidebar">
+<div class="cal-sidebar-hdr">Session History <button class="ca-ctrl-btn" id="cal-clear-closed-btn" title="Delete closed sessions" style="float:right">Clear</button></div>
+    <div id="cal-session-list"><div class="cal-no-sess">No sessions yet.<br>Click Get Folder or call open_session to begin.</div></div>
+  </div>
+  <div class="cal-detail" id="cal-detail">
+    <div class="cal-empty">Choose a session to view logs</div>
+  </div>
+</div>
+<!-- Sprint 3 Panels -->
+
+<!-- Token Panel -->
+<details class="s3-panel">
+  <summary>&#x1F511; Token Panel <span id="s3-token-badge" class="s3-badge warn" style="margin-left:8px">?</span></summary>
+  <div class="s3-panel-body">
+    <div class="s3-row">
+      <span class="s3-label">Token prefix</span>
+      <span id="s3-token-prefix" style="font-family:monospace;font-size:12px;color:var(--text-muted)">(not fetched)</span>
+      <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" onclick="s3FetchToken()">Refresh</button>
+    </div>
+    <div id="s3-token-result" class="s3-result" style="min-height:36px">Click Refresh to fetch token status</div>
+    <div class="s3-warn">&#x26A0;&#xFE0F; T2/T3 tools require X-Orchestrator-Token header. Fetch once via GET /api/token, reuse it for the session, never display the raw token.</div>
+  </div>
+</details>
+
+<!-- Tool Inspector -->
+<details class="s3-panel">
+  <summary>&#x1F50D; Tool Inspector</summary>
+  <div class="s3-panel-body">
+    <div class="s3-row">
+      <span class="s3-label">Tool name</span>
+      <input id="s3-inspect-name" class="s3-input" placeholder="e.g. write_fix" style="max-width:220px">
+      <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" onclick="s3InspectTool()">Inspect</button>
+    </div>
+    <div id="s3-inspect-fields" class="s3-tag-list"></div>
+    <div id="s3-inspect-result" class="s3-result" style="min-height:60px">Enter a tool name and click Inspect</div>
+  </div>
+</details>
+
+<!-- Schema Assistant -->
+<details class="s3-panel">
+  <summary>&#x1F9E9; Schema Assistant</summary>
+  <div class="s3-panel-body">
+    <div class="s3-row">
+      <span class="s3-label">Error JSON</span>
+      <textarea id="s3-schema-input" class="s3-input" placeholder='Paste an UNSUPPORTED_FIELD response here' style="min-height:72px"></textarea>
+    </div>
+    <div class="s3-row">
+      <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" onclick="s3SchemaAssist()">Build corrected payload</button>
+      <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" onclick="s3CopySchemaPayload()">Copy payload</button>
+    </div>
+    <div id="s3-schema-result" class="s3-result" style="min-height:90px">Paste a schema error to inspect unsupported fields, accepted fields, and corrected_payload.</div>
+    <div class="s3-warn">Mutating retries are blocked until you confirm required dry_run/safety gates for that tool.</div>
+  </div>
+</details>
+
+<!-- Command Helper -->
+<details class="s3-panel">
+  <summary>&#x26A1; Command Helper &#x2014; PowerShell Templates</summary>
+  <div class="s3-panel-body">
+    <div class="s3-warn">&#x1F6AB; NEVER use curl / wget / bash / cat / grep / sed / awk on Windows. Use Invoke-RestMethod for API calls and read_file_range/search_code for project files.</div>
+    <div class="s3-row">
+      <span class="s3-label">Tool</span>
+      <input id="s3-cmd-tool" class="s3-input" placeholder="write_fix" style="max-width:180px">
+      <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" onclick="s3GenCommand()">Generate</button>
+    </div>
+    <div class="s3-row">
+      <span class="s3-label">Sub path</span>
+      <input id="s3-cmd-subpath" class="s3-input" placeholder="optional folder with spaces">
+    </div>
+    <div id="s3-cmd-result" class="s3-result" style="min-height:90px">Click Generate to produce a PowerShell template</div>
+  </div>
+</details>
+
+<!-- Coverage Dashboard -->
+<details class="s3-panel">
+  <summary>&#x1F4CA; Coverage Dashboard</summary>
+  <div class="s3-panel-body">
+    <div class="s3-row" style="justify-content:space-between">
+      <span id="s3-cov-summary" style="font-size:12px;color:var(--text-muted)">Click Refresh to compute</span>
+      <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" onclick="s3RefreshCoverage()">Refresh</button>
+    </div>
+    <div id="s3-cov-tested"></div>
+    <div style="font-size:11px;font-weight:600;color:var(--text-dim);margin-top:4px">Baseline Failure View (failed first attempt):</div>
+    <div id="s3-cov-baseline" class="s3-tag-list"></div>
+    <div style="font-size:11px;font-weight:600;color:var(--text-dim);margin-top:4px">After-Retry Coverage View (passed after retry):</div>
+    <div id="s3-cov-retry" class="s3-tag-list"></div>
+    <div style="font-size:11px;font-weight:600;color:var(--text-dim);margin-top:4px">Untested tools (skipped with reason):</div>
+    <div id="s3-cov-untested" class="s3-tag-list"></div>
+  </div>
+</details>
+
+<!-- Hint Quality Panel -->
+<details class="s3-panel">
+  <summary>&#x2691; Hint Quality Panel</summary>
+  <div class="s3-panel-body">
+    <div class="s3-row">
+      <span class="s3-label">Error / hint JSON</span>
+      <textarea id="s3-hint-input" class="s3-input" placeholder='Paste an API error response' style="min-height:72px"></textarea>
+    </div>
+    <div class="s3-row">
+      <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" onclick="s3ClassifyHint()">Classify</button>
+    </div>
+    <div id="s3-hint-result" class="s3-result" style="min-height:70px">Excellent = concrete retry_sequence. Good = payload_example + accepted_fields. Weak = vague notes or missing ca_next_action. Weak P0 hints create an issue.</div>
+  </div>
+</details>
+
+<!-- Session Summary UX -->
+<details class="s3-panel">
+  <summary>&#x1F4DD; Session Summary</summary>
+  <div class="s3-panel-body">
+    <div id="s3-session-summary" class="s3-result" style="min-height:84px">Close-session summaries must show duration_minutes, native_fallback_count, read/write/validate breakdown, success/total, untested tools, and issues created. Sessions are not clean if native_fallback_count &gt; 0 or critical tools remain untested.</div>
+  </div>
+</details>
+
+<!-- Batch Checklist UX -->
+<details class="s3-panel">
+  <summary>&#x2705; Batch Checklist</summary>
+  <div class="s3-panel-body">
+    <div class="s3-plan-step"><strong>After write batch:</strong><br>
+      validate_file for each changed code file &#x2192; validate_symbols if supported &#x2192; one cache_delta for the whole batch &#x2192; log_native(native=[]) when no fallback was used.
+    </div>
+  </div>
+</details>
+
+<!-- Core Rule -->
+<details class="s3-panel">
+  <summary>&#x1F4CB; Core Rule</summary>
+  <div class="s3-panel-body">
+    <div class="s3-plan-step">Open <code>[A:P]\examples\CORE_RULE.txt</code> directly (V15: super-core ≤ 4KB).</div>
+    <button class="btn btn-primary" id="btn-copy-core-rule" style="margin-top:8px">OPEN CORE RULE</button>
+  </div>
+</details>
+
+<!-- V15 R3+ Skill Router Panel -->
+<details class="s3-panel" open>
+  <summary>&#x1F9ED; V15 Skill Router <span class="s3-badge" style="margin-left:8px;background:rgba(168,85,247,0.18);border-color:#a855f7;color:#c084fc">Progressive Disclosure</span></summary>
+  <div class="s3-panel-body">
+    <div class="s3-row">
+      <span class="s3-label">Skills folder</span>
+      <span style="font-family:monospace;font-size:12px;color:var(--text-muted)">[A:P]\.ToolA_Skill\</span>
+      <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" onclick="v15LoadSkills()">Refresh</button>
+    </div>
+    <div id="v15-skills-list" class="s3-result" style="min-height:60px">Click Refresh to scan skill folders</div>
+    <div class="s3-warn">&#x2139;&#xFE0F; V15 Progressive Disclosure: CA reads <code>SKILLS.md</code> router first, then opens ONE skill per task. Skill ≤ 3 per task. Each skill = folder with <code>SKILL.md</code> + YAML frontmatter.</div>
+  </div>
+</details>
+
+<!-- V15 R5 T4 Runtime Panel -->
+<details class="s3-panel">
+  <summary>&#x1F310; T4 Runtime / DOM / Browser <span class="s3-badge" style="margin-left:8px;background:rgba(245,158,11,0.18);border-color:#f59e0b;color:#fbbf24">New V15</span></summary>
+  <div class="s3-panel-body">
+    <div class="s3-plan-step"><strong>T4a</strong> — Browser DOM read-only (Playwright/CDP)</div>
+    <div class="s3-plan-step"><strong>T4b</strong> — Browser actions (click/fill/evaluate) [EXECUTE-gated]</div>
+    <div class="s3-plan-step"><strong>T4c</strong> — Server lifecycle (port, PID, stale-check)</div>
+    <div class="s3-plan-step"><strong>T4d</strong> — Desktop/Electron via CDP</div>
+    <div class="s3-row" style="margin-top:8px">
+      <span class="s3-label">Target URL/port</span>
+      <input type="text" id="v15-t4-target" placeholder="http://127.0.0.1:3099 or :9223 (Electron CDP)" style="flex:1;padding:5px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-main);font-size:12px">
+      <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" onclick="v15T4Check()">Status</button>
+    </div>
+    <div id="v15-t4-result" class="s3-result" style="min-height:36px">Enter a localhost URL or port; click Status to check lifecycle</div>
+    <div class="s3-warn">&#x26A0;&#xFE0F; T4 trigger: rule = after 2 failed code-fix cycles with runtime unchanged → check T4 BEFORE further code edits. Mutating T4b/c/d requires explicit "proceed" confirmation.</div>
+  </div>
+</details>
+
+<!-- V15 R6 Decision Hint Panel -->
+<details class="s3-panel">
+  <summary>&#x1F9ED; Tool Decision Hint <span class="s3-badge" style="margin-left:8px;background:rgba(59,130,246,0.18);border-color:#3b82f6;color:#60a5fa">V15 R6</span></summary>
+  <div class="s3-panel-body">
+    <div class="s3-row">
+      <span class="s3-label">Task description</span>
+      <input type="text" id="v15-decision-task" placeholder="e.g. 'find btnStep1 callers' or 'edit 5 files atomic'" style="flex:1;padding:5px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-main);font-size:12px">
+      <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" onclick="v15Decide()">Recommend</button>
+    </div>
+    <div id="v15-decision-result" class="s3-result" style="min-height:50px">Describe a task; get tool tier + skill recommendation</div>
+    <div class="s3-warn">&#x2139;&#xFE0F; Decision matrix: ≤2 edits/file&lt;500 lines → Native | ≥6 edits OR ≥3 files atomic → [T2] [A] | UI/runtime → [T4] | Auth/token → [T2] always.</div>
+  </div>
+</details>
+
+<!-- V15 R3 [Ab..Az] Project Registry -->
+<details class="s3-panel">
+  <summary>&#x1F4C2; [Ab..Az] Project Registry <span class="s3-badge" style="margin-left:8px">Multi-project</span></summary>
+  <div class="s3-panel-body">
+    <div class="s3-row">
+      <span class="s3-label">Active</span>
+      <span id="v15-projects-summary" style="font-family:monospace;font-size:12px;color:var(--text-muted)">(load via Refresh)</span>
+      <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" onclick="v15LoadProjects()">Refresh</button>
+    </div>
+    <div id="v15-projects-list" class="s3-result" style="min-height:60px">Click Refresh to load registered projects</div>
+  </div>
+</details>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">Tool</span>
+      <button class="modal-close" id="modal-close" aria-label="Close modal">Close</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="btn-cancel">Close</button>
+      <button class="btn btn-primary" id="btn-execute">Run</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- CA Usage Log Drawer -->
+<div id="ca-drawer" class="collapsed">
+  <div id="ca-drawer-header">
+    <span class="ca-drawer-title"> CA USAGE LOG</span>
+    <span class="ca-log-badge" id="ca-badge">0</span>
+    <span class="ca-drawer-spacer"></span>
+    <div class="ca-drawer-controls" id="ca-controls">
+      <button class="ca-ctrl-btn" id="ca-export-btn" title="Copy log as JSON">Export</button>
+      <button class="ca-ctrl-btn" id="ca-clear-btn" title="Clear log">Clear</button>
+      <span style="font-size:12px;color:var(--text-dim)" id="ca-chevron"></span>
+    </div>
+  </div>
+  <div id="ca-drawer-body">
+    <div id="ca-filter-bar">
+      <button data-cf="all" class="active">All</button>
+      <button data-cf="success">Success</button>
+      <button data-cf="error">Error</button>
+      <button data-cf="warn">Warn</button>
+      <span class="ca-stats" id="ca-stats"></span>
+    </div>
+    <div id="ca-table-wrap">
+      <table class="ca-table">
+        <thead><tr>
+          <th style="width:72px">Time</th>
+          <th>Tool</th>
+          <th style="width:38px">TID</th>
+          <th style="width:44px">Theme</th>
+          <th style="width:56px">Status</th>
+          <th style="width:50px">ms</th>
+          <th>Params / Result</th>
+        </tr></thead>
+        <tbody id="ca-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+// ================================================================
+// Constants & State
+// ================================================================
+const BACKEND_API = (window.location.protocol === 'http:' || window.location.protocol === 'https:')
+  ? window.location.origin
+  : 'http://localhost:8083';
+let _ORCH_TOKEN = null;
+async function getOrchToken(force=false) {
+  if (_ORCH_TOKEN && !force) return _ORCH_TOKEN;
+  try {
+    const r = await fetch(`${BACKEND_API}/api/token`, { cache: 'no-store' });
+    if (r.ok) {
+      const data = await r.json();
+      _ORCH_TOKEN = data.token || null;
+    }
+  } catch {}
+  return _ORCH_TOKEN;
+}
+async function orchHeaders(extra) {
+  const tok = await getOrchToken();
+  const h = Object.assign({'Content-Type': 'application/json'}, extra || {});
+  if (tok) h['X-Orchestrator-Token'] = tok;
+  return h;
+}
+async function fetchWithFreshToken(url, options={}) {
+  const opts = Object.assign({}, options);
+  opts.headers = await orchHeaders(opts.headers);
+  let response = await fetch(url, opts);
+  if (response.status === 403) {
+    _ORCH_TOKEN = null;
+    opts.headers = await orchHeaders(opts.headers);
+    response = await fetch(url, opts);
+  }
+  return response;
+}
+const CA_LOG_KEY  = 'ca_usage_log_v1';
+const MAX_CA_LOG  = 500;
+const TOOL_SCHEMA_CACHE = {};
+const TOOL_SCHEMA_PROMISES = {};
+
+let currentTool   = null;
+let folderPath    = '';
+let currentMode   = 'T1_DISCOVER_ANALYZE_READ';
+let _bootstrapTxt = '';
+let activeLogFilter = 'all';
+let caFilter      = 'all';
+let drawerOpen    = false;
+let modalLoadSeq  = 0;
+let modalLoadPromise = null;
+let runtimeToolCounter = 1;
+const sessionLogs = [];
+let _appLogSince = '';
+const _appLogSeen = new Set();
+
+function currentLogCursor() {
+  const now = new Date();
+  const pad = (value, size = 2) => String(value).padStart(size, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())},${pad(now.getMilliseconds(), 3)}`;
+}
+
+// ================================================================
+// Tool Definitions
+// ================================================================
+// Curated tool list auto-pruned at runtime against /api/tools.
+// T1/T2/T3 phases match server phase metadata.
+const TOOLS = [
+  {id:'T1-00', icon:'📋', name:'get_rule_core_text',          phase:'T1', group:'T1', desc:'Read raw CORE_RULE text plus runtime metadata'},
+  {id:'T1-01', icon:'🚦', name:'open_session',                phase:'T1', group:'T1', desc:'Open or resume a CA session'},
+  {id:'T1-02', icon:'💾', name:'cache_status',                phase:'T1', group:'T1', desc:'Read cache state'},
+  {id:'T1-03', icon:'📊', name:'get_project_summary',         phase:'T1', group:'T1', desc:'Project summary from INDEX'},
+  {id:'T1-04', icon:'🔎', name:'query_index',                 phase:'T1', group:'T1', desc:'Filter files from INDEX'},
+  {id:'T1-05', icon:'🎯', name:'find_symbol',                 phase:'T1', group:'T1', desc:'Find symbol definitions'},
+  {id:'T1-06', icon:'🔍', name:'search_code',                 phase:'T1', group:'T1', desc:'Regex search through code'},
+  {id:'T1-07', icon:'📖', name:'read_file_range',             phase:'T1', group:'T1', desc:'Read a bounded file range'},
+  {id:'T1-08', icon:'🧩', name:'get_file_symbols',            phase:'T1', group:'T1', desc:'List symbols in one file'},
+  {id:'T1-09', icon:'🌳', name:'list_structure',              phase:'T1', group:'T1', desc:'Folder tree fallback'},
+  {id:'T1-10', icon:'📌', name:'workflow_status',             phase:'T1', group:'T1', desc:'Read workflow state'},
+  {id:'T1-11', icon:'➡️', name:'next_recommended_action',     phase:'T1', group:'T1', desc:'Next deterministic action'},
+  {id:'T1-12', icon:'🔬', name:'capability_status',           phase:'T1', group:'T1', desc:'Parser capability status'},
+  {id:'T1-13', icon:'💡', name:'suggest_missing_capabilities', phase:'T1', group:'T1', desc:'Suggest optional capabilities'},
+  {id:'T1-14', icon:'📏', name:'get_folder_size',             phase:'T1', group:'T1', desc:'Count folder files and bytes'},
+  {id:'T1-15', icon:'📈', name:'get_usage_stats',             phase:'T1', group:'T1', desc:'Usage and session stats'},
+  {id:'T1-16', icon:'📚', name:'list_sessions',               phase:'T1', group:'T1', desc:'List sessions'},
+  {id:'T1-17', icon:'📜', name:'get_session_events',          phase:'T1', group:'T1', desc:'Read session events'},
+
+  {id:'T2-01', icon:'🧾', name:'backup_status',               phase:'T2', group:'T2', desc:'Read backup manifest'},
+  {id:'T2-02', icon:'📦', name:'backup_project',              phase:'T2', group:'T2', desc:'Create project backup'},
+  {id:'T2-03', icon:'✏️', name:'write_fix',                   phase:'T2', group:'T2', desc:'Edit a line range'},
+  {id:'T2-04', icon:'📝', name:'write_fix_html',              phase:'T2', group:'T2', desc:'Edit HTML safely; no dry_run'},
+  {id:'T2-05', icon:'➕', name:'write_new_file',              phase:'T2', group:'T2', desc:'Create a new file; no dry_run'},
+  {id:'T2-06', icon:'🗑️', name:'delete_file',                 phase:'T2', group:'T2', desc:'Delete a file'},
+  {id:'T2-07', icon:'✅', name:'validate_file',               phase:'T2', group:'T2', desc:'Validate syntax'},
+  {id:'T2-08', icon:'🛡️', name:'validate_symbols',            phase:'T2', group:'T2', desc:'Validate symbol drift'},
+  {id:'T2-09', icon:'🧮', name:'cache_delta',                 phase:'T2', group:'T2', desc:'Compare disk to INDEX'},
+  {id:'T2-10', icon:'♻️', name:'refresh_project_map',         phase:'T2', group:'T2', desc:'Refresh INDEX'},
+  {id:'T2-11', icon:'🗺️', name:'generate_project_map',        phase:'T2', group:'T2', desc:'Generate INDEX'},
+  {id:'T2-12', icon:'▶️', name:'run_project_command',         phase:'T2', group:'T2', desc:'Run bounded command'},
+  {id:'T2-13', icon:'🧪', name:'run_test_profile',            phase:'T2', group:'T2', desc:'Run known test profile'},
+  {id:'T2-14', icon:'📄', name:'create_benchmark_request',    phase:'T2', group:'T2', desc:'Create BENCHMARK_REQUEST.md'},
+  {id:'T2-15', icon:'🏗️', name:'create_build_context',        phase:'T2', group:'T2', desc:'Create BUILD_CONTEXT.md'},
+  {id:'T2-16', icon:'⚙️', name:'set_workflow_mode',           phase:'T2', group:'T2', desc:'Set workflow mode'},
+
+  {id:'T3-01', icon:'🚦', name:'prepare_ca_session',          phase:'T3', group:'T3', desc:'Prepare CA bootstrap prompt'},
+  {id:'T3-02', icon:'🔒', name:'close_session',               phase:'T3', group:'T3', desc:'Close active session'},
+  {id:'T3-03', icon:'🏷️', name:'rename_session',              phase:'T3', group:'T3', desc:'Rename active session'},
+  {id:'T3-04', icon:'🛰️', name:'log_native_event',            phase:'T3', group:'T3', desc:'Log one native fallback'},
+  {id:'T3-05', icon:'🪵', name:'log_native',                  phase:'T3', group:'T3', desc:'End-of-session native log'},
+
+  // V15 R8 — merged & new tools
+  // Round A merges (T1/T2)
+  {id:'V15-A-01', icon:'🧩', name:'validate',                  phase:'T2', group:'T2', desc:'V15 R8: unified file/symbols/encoding validate'},
+  {id:'V15-A-02', icon:'🗺️', name:'project_map',               phase:'T2', group:'T2', desc:'V15 R8: status/generate/refresh/delta unified'},
+  {id:'V15-A-03', icon:'📡', name:'state',                     phase:'T1', group:'T1', desc:'V15 R8: cache/workflow/recommendation state aggregator'},
+
+  // B.1 T1 code intel
+  {id:'V15-B1-01', icon:'🔣', name:'regex_search',                 phase:'T1', group:'T1', desc:'Regex search (smart mode alias)'},
+  {id:'V15-B1-02', icon:'📞', name:'find_callers',                 phase:'T1', group:'T1', desc:'Find caller sites of symbol'},
+  {id:'V15-B1-03', icon:'🎯', name:'find_definition_and_usage',    phase:'T1', group:'T1', desc:'1-call: def + callers + usages'},
+  {id:'V15-B1-04', icon:'🕸️', name:'import_graph',                 phase:'T1', group:'T1', desc:'Scan import/require edges across project'},
+  {id:'V15-B1-05', icon:'🌳', name:'ast_query',                    phase:'T1', group:'T1', desc:'Python AST preset patterns'},
+  {id:'V15-B1-06', icon:'🩸', name:'git_blame_symbol',             phase:'T1', group:'T1', desc:'git log -L for symbol'},
+  {id:'V15-B1-07', icon:'🔮', name:'semantic_search',              phase:'T1', group:'T1', desc:'STUB — embedding model required'},
+  {id:'V15-B1-08', icon:'🏷️', name:'type_search',                  phase:'T1', group:'T1', desc:'STUB — LSP/type server required'},
+
+  // B.2 T2/T3 management
+  {id:'V15-B2-01', icon:'📦', name:'write_transaction',            phase:'T2', group:'T2', desc:'Atomic multi-file write with rollback'},
+  {id:'V15-B2-02', icon:'📜', name:'session_audit_summary',        phase:'T3', group:'T3', desc:'Aggregate session state summary'},
+  {id:'V15-B2-03', icon:'🧭', name:'tool_decision_hint',           phase:'T1', group:'T1', desc:'Recommend tier+tool+skill for task'},
+
+  // B.3 T4a Browser
+  {id:'V15-B3-01', icon:'🌐', name:'open_browser_page',            phase:'T4', group:'T4', desc:'T4a: launch Chromium, return page_id'},
+  {id:'V15-B3-02', icon:'📖', name:'read_page',                    phase:'T4', group:'T4', desc:'T4a: text content of selector'},
+  {id:'V15-B3-03', icon:'🎯', name:'query_selector',               phase:'T4', group:'T4', desc:'T4a: existence + visibility + bbox'},
+  {id:'V15-B3-04', icon:'🖱️', name:'click',                        phase:'T4', group:'T4', desc:'T4b: click selector'},
+  {id:'V15-B3-05', icon:'✍️', name:'fill',                         phase:'T4', group:'T4', desc:'T4b: fill input'},
+  {id:'V15-B3-06', icon:'⚡', name:'evaluate_js',                  phase:'T4', group:'T4', desc:'T4b: eval JS in page'},
+  {id:'V15-B3-07', icon:'⚠️', name:'read_console_errors',          phase:'T4', group:'T4', desc:'T4a: console messages'},
+  {id:'V15-B3-08', icon:'🌐', name:'read_network_errors',          phase:'T4', group:'T4', desc:'T4a: failed/4xx/5xx requests'},
+  {id:'V15-B3-09', icon:'📸', name:'screenshot_page',              phase:'T4', group:'T4', desc:'T4a: PNG screenshot to cache'},
+  {id:'V15-B3-10', icon:'⏳', name:'wait_for_selector',            phase:'T4', group:'T4', desc:'T4a: wait for visibility'},
+  {id:'V15-B3-11', icon:'🔄', name:'compare_dom_snapshot',         phase:'T4', group:'T4', desc:'T4a: diff text between pages'},
+
+  // B.4 T4c Server lifecycle
+  {id:'V15-B4-01', icon:'🩺', name:'server_lifecycle_status',      phase:'T4', group:'T4', desc:'T4c: port owner + can_kill probe'},
+  {id:'V15-B4-02', icon:'🔍', name:'port_owner_inspect',           phase:'T4', group:'T4', desc:'T4c: PID + process name'},
+  {id:'V15-B4-03', icon:'🧟', name:'detect_stale_server',          phase:'T4', group:'T4', desc:'T4c: bundle marker compare'},
+  {id:'V15-B4-04', icon:'💨', name:'static_asset_cache_check',     phase:'T4', group:'T4', desc:'T4c: HEAD + 2 GET hash compare'},
+  {id:'V15-B4-05', icon:'🔖', name:'bundle_version_check',         phase:'T4', group:'T4', desc:'T4c: extract version marker'},
+  {id:'V15-B4-06', icon:'♻️', name:'restart_server_via_bat_hint',  phase:'T4', group:'T4', desc:'T4c: structured restart hint (no exec)'},
+
+  // B.5 T4d Desktop/Electron
+  {id:'V15-B5-01', icon:'🪟', name:'desktop_window_list',          phase:'T4', group:'T4', desc:'T4d: visible top-level windows'},
+  {id:'V15-B5-02', icon:'🎯', name:'desktop_app_focus',            phase:'T4', group:'T4', desc:'T4d: SetForegroundWindow'},
+  {id:'V15-B5-03', icon:'🖱️', name:'desktop_click',                phase:'T4', group:'T4', desc:'T4d: SendMessage click'},
+  {id:'V15-B5-04', icon:'🖼️', name:'desktop_screenshot',           phase:'T4', group:'T4', desc:'T4d: PIL ImageGrab'},
+  {id:'V15-B5-05', icon:'🔌', name:'electron_devtools_log',        phase:'T4', group:'T4', desc:'T4d: CDP target enumeration'},
+  {id:'V15-B5-05B', icon:'🎯', name:'list_cdp_targets',            phase:'T4', group:'T4', desc:'T4d: read-only CDP target list'},
+  {id:'V15-B5-06', icon:'🌲', name:'process_tree_inspect',         phase:'T4', group:'T4', desc:'T4d: psutil process tree'},
+
+  // B.6 T4 Test/Assertion
+  {id:'V15-B6-01', icon:'🧪', name:'run_playwright_test',          phase:'T4', group:'T4', desc:'T4 test: execute Node script'},
+  {id:'V15-B6-02', icon:'🎬', name:'record_ui_flow',               phase:'T4', group:'T4', desc:'T4 test: tracing stub'},
+  {id:'V15-B6-03', icon:'👁️', name:'assert_text_visible',          phase:'T4', group:'T4', desc:'T4 test: text visible assert'},
+  {id:'V15-B6-04', icon:'🔘', name:'assert_button_click_changes_state', phase:'T4', group:'T4', desc:'T4 test: before/after diff'},
+  {id:'V15-B6-05', icon:'🚫', name:'assert_console_no_error',      phase:'T4', group:'T4', desc:'T4 test: console.error count == 0'},
+
+  // B.7 UI backend (T1 read-only)
+  {id:'V15-B7-02', icon:'🧩', name:'get_skill_state',              phase:'T1', group:'T1', desc:'Available skills in .ToolA_Skill/'},
+  {id:'V15-B7-03', icon:'📂', name:'list_projects',                phase:'T1', group:'T1', desc:'Registered [Ab..Az] projects'},
+  {id:'V15-B7-04', icon:'📋', name:'get_validation_queue',         phase:'T1', group:'T1', desc:'Pending dry_run_ids'},
+  {id:'V15-B7-05', icon:'🧭', name:'progressive_matrix_check',      phase:'T1', group:'T1', desc:'Static workflow/schema/UI matrix certification'},
+
+  // V15 R13/R14 — newer tools missing from UI hardcoded list
+  {id:'V15-R13-01', icon:'🧮', name:'audit_tool_matrix',             phase:'T3', group:'T3', desc:'Cross-check TOOL_MAP/schemas/skills/router/inventory — drift report'},
+  {id:'V15-R13-03', icon:'🔁', name:'restart_orchestrator_via_task', phase:'T4', group:'T4', desc:'Detached restart via Task Scheduler — High IL, no UAC'},
+  {id:'V15-R14-01', icon:'🛑', name:'cancel_pending_restart',        phase:'T4', group:'T4', desc:'Kill pending restart_helper.cmd before it fires'},
+
+  // V15 R9 — legacy tools previously missing from UI TOOLS hardcoded list
+  {id:'L1-01', icon:'🗂️', name:'resolve_project_path',             phase:'T1', group:'T1', desc:'Resolve user path → canonical project metadata'},
+  {id:'L1-02', icon:'🔒', name:'protected_tools_status',           phase:'T1', group:'T1', desc:'Read protected-tool list + token policy'},
+  {id:'L1-03', icon:'❝',  name:'path_quote_helper',                phase:'T1', group:'T1', desc:'PS-safe path quote wrapper'},
+  {id:'L1-04', icon:'🧪', name:'optional_tool_probe',              phase:'T1', group:'T1', desc:'Probe optional capability tools'},
+  {id:'L2-01', icon:'🔣', name:'validate_encoding',                phase:'T2', group:'T2', desc:'UTF-8 + BOM + mojibake check (alias of validate)'},
+  {id:'L2-02', icon:'✅', name:'post_write_batch_verify',          phase:'T2', group:'T2', desc:'Validate batch + cache_delta + encoding'},
+  {id:'L2-03', icon:'🔁', name:'apply_after_dry_run',              phase:'T2', group:'T2', desc:'Apply previously-stored dry_run by id'},
+  {id:'L2-04', icon:'🧹', name:'kill_process',                     phase:'T2', group:'T2', desc:'Protected PID/name process cleanup'},
+  {id:'L3-01', icon:'🚨', name:'create_pending_audit',             phase:'T3', group:'T3', desc:'Queue native fallback audit when API down'},
+  {id:'L3-02', icon:'🔄', name:'sync_pending_audit',               phase:'T3', group:'T3', desc:'Sync pending audits back to events'},
+];
+const TOOL_MAP = Object.fromEntries(TOOLS.map(t => [t.name, t]));
+let GROUPS = [];
+
+function refreshGroups() {
+  GROUPS = [
+    {label:'T1 - Discover / Analyze / Read', ids:TOOLS.filter(t => t.phase === 'T1').map(t => t.id), group:'T1', iconCls:'icon-read'},
+    {label:'T2 - Mutate / Verify / Refresh', ids:TOOLS.filter(t => t.phase === 'T2').map(t => t.id), group:'T2', iconCls:'icon-write'},
+    {label:'T3 - Session / Audit / Auxiliary', ids:TOOLS.filter(t => t.phase === 'T3').map(t => t.id), group:'T3', iconCls:'icon-workflow'},
+    {label:'T4 - Runtime / DOM / Browser / Server lifecycle', ids:TOOLS.filter(t => t.phase === 'T4').map(t => t.id), group:'T4', iconCls:'icon-runtime'},
+  ];
+}
+
+function inferRuntimeToolPhase(toolName, normalized) {
+  if (normalized?.phase && ['T1','T2','T3','T4'].includes(normalized.phase)) return normalized.phase;
+  if (/^(write_|delete_|apply_|backup_|validate_|refresh_|generate_|cache_delta|post_write_batch_verify|set_workflow_mode)/.test(toolName)) return 'T2';
+  if (/^(prepare_|close_session|rename_session|log_native|create_pending_audit|sync_pending_audit)/.test(toolName)) return 'T3';
+  if (/^(open_browser_page|read_page|query_selector|click|fill|evaluate_js|read_console_errors|read_network_errors|screenshot_page|wait_for_selector|compare_dom_snapshot|server_lifecycle_status|port_owner_inspect|detect_stale_server|static_asset_cache_check|bundle_version_check|restart_server_via_bat_hint|desktop_|run_playwright_test|record_ui_flow|assert_)/.test(toolName)) return 'T4';
+  return 'T1';
+}
+
+function inferRuntimeToolIcon(toolName, phase) {
+  if (phase === 'T2') return '🧩';
+  if (phase === 'T3') return '🪵';
+  if (phase === 'T4') return '🧪';
+  return '🆕';
+}
+
+function ensureRuntimeTool(entry) {
+  const normalized = normalizeToolSchema(entry);
+  if (!normalized?.name || TOOL_MAP[normalized.name]) return false;
+  const phase = inferRuntimeToolPhase(normalized.name, normalized);
+  const tool = {
+    id:`RT-${String(runtimeToolCounter++).padStart(2, '0')}`,
+    icon: inferRuntimeToolIcon(normalized.name, phase),
+    name: normalized.name,
+    phase,
+    group: phase,
+    desc: normalized.description || 'Runtime-discovered backend tool'
+  };
+  TOOLS.push(tool);
+  TOOL_MAP[tool.name] = tool;
+  refreshGroups();
+  return true;
+}
+
+refreshGroups();
+
+function mergeUniqueStrings(...values) {
+  return Array.from(new Set(values.flat().filter(v => typeof v === 'string' && v)));
+}
+
+function titleCaseField(name) {
+  return String(name || '')
+    .split('_')
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function normalizeToolSchema(entry, fallbackName='') {
+  const fn = entry && entry.function ? entry.function : entry;
+  const parameters = fn?.parameters || {};
+  const properties = parameters.properties || fn?.properties || {};
+  const acceptedFields = Array.isArray(fn?.accepted_fields)
+    ? fn.accepted_fields
+    : Object.keys(properties);
+  return {
+    name: fn?.name || entry?.tool_name || fallbackName,
+    description: fn?.description || entry?.description || '',
+    properties,
+    accepted_fields: acceptedFields,
+    required_fields: Array.isArray(parameters.required)
+      ? parameters.required.slice()
+      : Array.isArray(fn?.required_fields)
+        ? fn.required_fields.slice()
+        : [],
+    payload_example: fn?.payload_example || entry?.payload_example || {},
+    warning: entry?.warning || fn?.warning || ''
+  };
+}
+
+function cacheToolSchema(entry, fallbackName='') {
+  const normalized = normalizeToolSchema(entry, fallbackName);
+  if (!normalized.name) return null;
+  const existing = TOOL_SCHEMA_CACHE[normalized.name] || {};
+  TOOL_SCHEMA_CACHE[normalized.name] = {
+    name: normalized.name,
+    description: normalized.description || existing.description || '',
+    properties: Object.assign({}, existing.properties || {}, normalized.properties || {}),
+    accepted_fields: mergeUniqueStrings(
+      existing.accepted_fields || Object.keys(existing.properties || {}),
+      normalized.accepted_fields || Object.keys(normalized.properties || {})
+    ),
+    required_fields: mergeUniqueStrings(existing.required_fields || [], normalized.required_fields || []),
+    payload_example: Object.assign({}, existing.payload_example || {}, normalized.payload_example || {}),
+    warning: normalized.warning || existing.warning || ''
+  };
+  return TOOL_SCHEMA_CACHE[normalized.name];
+}
+
+function inferDynamicFieldType(fieldName, property, sampleValue) {
+  if (property?.type === 'integer' || property?.type === 'number' || typeof sampleValue === 'number') return 'number';
+  if (property?.type === 'boolean' || typeof sampleValue === 'boolean') return 'select';
+  if (property?.type === 'array' || property?.type === 'object') return 'textarea';
+  if (typeof sampleValue === 'string' && sampleValue.length > 80) return 'textarea';
+  if (/(content|body|json|payload|command|reason|idea|query|pattern|prompt|text|script|native)/i.test(fieldName)) return 'textarea';
+  return 'text';
+}
+
+function buildDynamicField(toolName, fieldName, schema) {
+  const property = schema.properties?.[fieldName] || {};
+  const sampleValue = schema.payload_example ? schema.payload_example[fieldName] : undefined;
+  const fieldText = FIELD_TEXT[fieldName];
+  const type = inferDynamicFieldType(fieldName, property, sampleValue);
+  const fallbackHint = property.description || `Runtime schema field for ${toolName}`;
+  const field = {
+    name: fieldName,
+    label: fieldText ? fieldText[0] : titleCaseField(fieldName),
+    hint: fieldText ? fieldText[1] : fallbackHint,
+    type,
+    required: (schema.required_fields || []).includes(fieldName)
+  };
+  if (sampleValue !== undefined && sampleValue !== null && typeof sampleValue !== 'object') {
+    field.default = sampleValue;
+  }
+  if (type === 'select') {
+    field.options = [
+      {value:'', label:'(empty)'},
+      {value:'true', label:'true'},
+      {value:'false', label:'false'}
+    ];
+    if (typeof sampleValue === 'boolean') field.default = String(sampleValue);
+  }
+  return field;
+}
+
+function buildDynamicToolForm(toolName) {
+  const schema = TOOL_SCHEMA_CACHE[toolName];
+  if (!schema) return null;
+  const fieldNames = schema.accepted_fields?.length
+    ? schema.accepted_fields
+    : Object.keys(schema.properties || {});
+  if (!fieldNames.length) return {warning: schema.warning || '', fields: []};
+  return {
+    warning: schema.warning || '',
+    fields: fieldNames.map(fieldName => buildDynamicField(toolName, fieldName, schema))
+  };
+}
+
+async function fetchToolSchema(toolName) {
+  const cached = TOOL_SCHEMA_CACHE[toolName];
+  if (cached?.accepted_fields?.length || Object.keys(cached?.properties || {}).length) return cached;
+  if (!TOOL_SCHEMA_PROMISES[toolName]) {
+    TOOL_SCHEMA_PROMISES[toolName] = (async () => {
+      try {
+        const response = await fetchWithFreshToken(`${BACKEND_API}/api/tool_inspector/${toolName}`, {cache:'no-store'});
+        if (!response.ok) return TOOL_SCHEMA_CACHE[toolName] || null;
+        const schema = await response.json();
+        return cacheToolSchema(schema, toolName);
+      } catch {
+        return TOOL_SCHEMA_CACHE[toolName] || null;
+      } finally {
+        delete TOOL_SCHEMA_PROMISES[toolName];
+      }
+    })();
+  }
+  return TOOL_SCHEMA_PROMISES[toolName];
+}
+
+async function ensureToolForm(toolName) {
+  if (TOOL_FORMS[toolName]) return TOOL_FORMS[toolName];
+  const schema = await fetchToolSchema(toolName);
+  if (!schema) return null;
+  const dynamicForm = buildDynamicToolForm(toolName);
+  if (!dynamicForm) return null;
+  TOOL_FORMS[toolName] = dynamicForm;
+  return dynamicForm;
+}
+
+const toolApiStatus  = {};
+const toolUserStatus = {};
+const toolRunState   = {};
+
+function setToolRunState(toolName, state) {
+  toolRunState[toolName] = state;
+  const el = document.getElementById(`tprog-${toolName}`);
+  if (!el) return;
+  el.className = `tool-prog${state === 'idle' ? '' : ' ' + state}`;
+  if (state === 'done' || state === 'error') {
+    clearTimeout(el._resetTo);
+    el._resetTo = setTimeout(() => { el.className = 'tool-prog'; }, 3200);
+  }
+}
+
+// ================================================================
+// TOOL_FORMS
+// ================================================================
+const TOOL_FORMS = {
+  get_rule_core_text:{fields:[]},
+  list_structure:{fields:[
+    {name:'path',label:'Folder path',type:'text',hint:'Absolute path to the project folder',required:true},
+    {name:'depth',label:'Depth',type:'number',hint:'Default: 2',default:2}]},
+  find_symbol:{fields:[
+    {name:'name',label:'Symbol name',type:'text',hint:'Function, class, or variable name',required:true},
+    {name:'path',label:'Folder path',type:'text',hint:'Absolute path',required:true}]},
+  read_file_range:{fields:[
+    {name:'file_path',label:'File path',type:'text',hint:'Absolute path',required:true},
+    {name:'start_line',label:'Start line',type:'number',hint:'Default: 1',default:1},
+    {name:'end_line',label:'End line',type:'number',hint:'Leave empty = end of file'}]},
+  search_code:{fields:[
+    {name:'query',label:'Regex pattern',type:'text',hint:'Pattern to search for',required:true},
+    {name:'path',label:'Folder path',type:'text',hint:'Absolute path',required:true},
+    {name:'file_pattern',label:'Filter file',type:'text',hint:'VD: *.py, *.js',default:'*'}]},
+  get_file_symbols:{fields:[
+    {name:'file_path',label:'File path',type:'text',hint:'Absolute path',required:true}]},
+  write_fix:{fields:[
+    {name:'file_path',label:'File path',type:'text',hint:'Absolute path',required:true},
+    {name:'start_line',label:'Start line',type:'number',hint:'From 1',required:true},
+    {name:'end_line',label:'End line',type:'number',hint:'Inclusive',required:true},
+    {name:'new_content',label:'New content',type:'textarea',hint:'Replacement content',required:true}]},
+  write_new_file:{fields:[
+    {name:'path',label:'New file path',type:'text',hint:'Absolute path',required:true},
+    {name:'content',label:'File content',type:'textarea',hint:'Content for the new file',required:true}]},
+  write_fix_html:{fields:[
+    {name:'file_path',label:'File path .html',type:'text',hint:'Absolute path',required:true},
+    {name:'start_line',label:'Start line',type:'number',hint:'First line to replace',required:true},
+    {name:'end_line',label:'End line',type:'number',hint:'Last line to replace',required:true},
+    {name:'new_content',label:'New content',type:'textarea',hint:'Replacement content',required:true},
+    {name:'project_path',label:'Project path',type:'text',hint:'Optional',default:''},
+    {name:'content_encoding',label:'Encoding',type:'text',hint:'none | base64',default:'none'},
+    {name:'force',label:'Force',type:'text',hint:'true | false',default:'false'}]},
+  validate_file:{fields:[
+    {name:'file_path',label:'File path',type:'text',hint:'Absolute path',required:true},
+    {name:'lang',label:'Language',type:'text',hint:'python | js | ts | auto',default:'auto'}]},
+  validate_symbols:{fields:[
+    {name:'file_path',label:'File path',type:'text',hint:'Absolute path',required:true},
+    {name:'project_path',label:'Project path',type:'text',hint:'Optional - so snh vs INDEX',default:''}]},
+  get_project_summary:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true}]},
+  query_index:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true},
+    {name:'group',label:'Group',type:'text',hint:'source | doc | test | config | script',default:''},
+    {name:'min_complexity',label:'Min complexity',type:'number',hint:'Optional',default:''},
+    {name:'min_loc',label:'Min LOC',type:'number',hint:'Optional',default:''},
+    {name:'file_pattern',label:'File pattern',type:'text',hint:'fnmatch: *.py',default:''},
+    {name:'max_results',label:'Max results',type:'number',hint:'Default: 50',default:50}]},
+  get_usage_stats:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true},
+    {name:'last_n',label:'Entry count',type:'number',hint:'Default: 200',default:200}]},
+  get_folder_size:{fields:[
+    {name:'folder_path',label:'Folder path',type:'text',hint:'Absolute path',required:true}]},
+  generate_project_map:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true}]},
+  refresh_project_map:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true}]},
+  cache_status:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true}]},
+  delete_file:{warning:'This file will be permanently deleted!',fields:[
+    {name:'file_path',label:'File path',type:'text',hint:'Absolute path',required:true}]},
+  cache_delta:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true}]},
+  backup_project:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true},
+    {name:'backup_dir',label:'Backup directory',type:'text',hint:'Leave empty = automatic'}]},
+  backup_status:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true}]},
+  run_project_command:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true},
+    {name:'command',label:'Command to run',type:'text',hint:'VD: python -m pytest',required:true},
+    {name:'timeout',label:'Timeout (seconds)',type:'number',hint:'Default: 60',default:60}]},
+  run_test_profile:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true},
+    {name:'profile',label:'Profile',type:'text',hint:'pytest | unittest | npm_test | py_compile'},
+    {name:'timeout',label:'Timeout (seconds)',type:'number',hint:'Default: 60',default:60}]},
+  capability_status:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Optional'}]},
+  suggest_missing_capabilities:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Optional'}]},
+  prepare_ca_session:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true},
+    {name:'mode',label:'Workflow mode',type:'text',hint:'VD: T1_EXISTING_APP, T2_NEW_BUILD'},
+    {name:'idea',label:'Task description',type:'textarea',hint:'Short description'}]},
+  set_workflow_mode:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true},
+    {name:'mode',label:'Mode',type:'text',hint:'VD: T1_EXISTING_APP',required:true},
+    {name:'idea',label:'Task description',type:'textarea',hint:'Optional'}]},
+  workflow_status:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true}]},
+  next_recommended_action:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true}]},
+  create_benchmark_request:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true},
+    {name:'idea',label:'Benchmark description',type:'textarea',hint:'Describe the request'}]},
+  create_build_context:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true},
+    {name:'idea',label:'Build description',type:'textarea',hint:'Describe the request'},
+    {name:'approved_inputs',label:'Approved inputs',type:'textarea',hint:'Optional'}]},
+  open_session:{fields:[
+    {name:'session_title',label:'Session title',type:'text',hint:'Optional session title'},
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true},
+    {name:'mode',label:'Workflow mode',type:'text',hint:'Optional; default T1'}]},
+  close_session:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true}]},
+  rename_session:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true},
+    {name:'new_title',label:'New title',type:'text',hint:'New session title',required:true}]},
+  log_native_event:{fields:[
+    {name:'action_type',label:'Action type',type:'text',hint:'read | write | execute | validate | cache | backup | workflow',required:true},
+    {name:'tool_name',label:'Tool name',type:'text',hint:'Native tool or command name',required:true},
+    {name:'target',label:'Target',type:'text',hint:'File, command, symbol, or scope'},
+    {name:'duration_ms',label:'Duration (ms)',type:'number',hint:'Elapsed time in milliseconds',default:0},
+    {name:'status',label:'Status',type:'text',hint:'ok | error | warn',default:'ok'},
+    {name:'reason',label:'Reason',type:'textarea',hint:'Optional explanation'},
+    {name:'instead_of',label:'Instead of',type:'text',hint:'Orchestrator tool replaced by native fallback'},
+    {name:'failed_payload',label:'Failed payload',type:'textarea',hint:'Optional JSON payload'},
+    {name:'failed_error',label:'Failed error',type:'textarea',hint:'Optional error text'},
+    {name:'native_command',label:'Native command',type:'textarea',hint:'Native command or action used'},
+    {name:'scope',label:'Scope',type:'text',hint:'Optional scope'},
+    {name:'risk',label:'Risk',type:'text',hint:'Optional risk note'},
+    {name:'project_path',label:'Project path',type:'text',hint:'Optional absolute path'}]},
+  log_native:{fields:[
+    {name:'native',label:'Native fallback log',type:'textarea',hint:'JSON array, or [] if none were used',default:'[]'}]},
+  list_sessions:{fields:[
+    {name:'project_path',label:'Project path',type:'text',hint:'Absolute path',required:true},
+    {name:'limit',label:'Limit',type:'number',hint:'Default: 10',default:10}]},
+  get_session_events:{fields:[
+    {name:'session_id',label:'Session ID',type:'text',hint:'Session identifier',default:''},
+    {name:'project_path',label:'Project path',type:'text',hint:'Optional absolute path'},
+    {name:'limit',label:'Limit',type:'number',hint:'Default: 50',default:50},
+    {name:'offset',label:'Offset',type:'number',hint:'Default: 0',default:0}]},
+};
+
+const FIELD_TEXT = {
+  file_path: ['File path', 'Absolute path or path relative to the project'],
+  path: ['Path', 'Absolute path or path relative to the project'],
+  project_path: ['Project path', 'Absolute project root path'],
+  folder_path: ['Folder path', 'Absolute folder path'],
+  start_line: ['Start line', '1-based line number'],
+  end_line: ['End line', 'Inclusive end line'],
+  new_content: ['New content', 'Replacement content'],
+  content: ['File content', 'Content for the new file'],
+  name: ['Symbol name', 'Function, class, or variable name'],
+  query: ['Regex pattern', 'Pattern to search for'],
+  command: ['Command', 'Example: python -m unittest'],
+  timeout: ['Timeout (seconds)', 'Default: 60'],
+  force: ['Force', 'true | false'],
+  depth: ['Depth', 'Default: 2'],
+  file_pattern: ['File filter', 'Example: *.py, *.js'],
+  lang: ['Language', 'python | js | ts | auto'],
+  group: ['Group', 'source | doc | test | config | script'],
+  min_complexity: ['Min complexity', 'Optional'],
+  min_loc: ['Min LOC', 'Optional'],
+  max_results: ['Max results', 'Default: 50'],
+  last_n: ['Entry count', 'Default: 200'],
+  backup_dir: ['Backup directory', 'Leave empty for automatic'],
+  profile: ['Profile', 'pytest | unittest | npm_test | py_compile'],
+  mode: ['Workflow mode', 'Example: T1_DISCOVER_ANALYZE_READ'],
+  idea: ['Task description', 'Short task description'],
+  approved_inputs: ['Approved inputs', 'Optional'],
+  content_encoding: ['Encoding', 'none | base64'],
+  new_title: ['New title', 'Session title'],
+  session_title: ['Session title', 'Optional'],
+  session_id: ['Session ID', 'Session identifier from list_sessions'],
+  limit: ['Limit', 'Maximum number of rows/events'],
+  offset: ['Offset', 'Pagination offset'],
+  action_type: ['Action type', 'read | write | execute | validate | cache | backup | workflow'],
+  tool_name: ['Tool name', 'Tool or native action name'],
+  target: ['Target', 'File, command, symbol, or scope'],
+  duration_ms: ['Duration (ms)', 'Elapsed time in milliseconds'],
+  status: ['Status', 'ok | error | warn'],
+  reason: ['Reason', 'Optional explanation'],
+  native: ['Native fallback log', 'JSON array of native fallback entries']
+};
+for (const form of Object.values(TOOL_FORMS)) {
+  for (const field of form.fields || []) {
+    const fixed = FIELD_TEXT[field.name];
+    if (!fixed) continue;
+    field.label = fixed[0];
+    field.hint = fixed[1];
+  }
+}
+
+// ================================================================
+// Render Table
+// ================================================================
+function renderTable() {
+  const tbody = document.getElementById('tool-tbody');
+  // Use escapeHtml on all interpolated tool metadata (Fix 8: XSS hardening)
+  let html = '';
+  const stIcons = ['○','✅','⚠️'];
+  for (const grp of GROUPS) {
+    html += `<tr class="group-hdr" data-group="${escapeHtml(grp.group)}"><td colspan="7">${escapeHtml(grp.label)}</td></tr>`;
+    for (const tid of grp.ids) {
+      const t = TOOLS.find(x => x.id === tid);
+      if (!t) continue;
+      const api = toolApiStatus[t.name] === true ? '' : toolApiStatus[t.name] === false ? '' : '';
+      const st = toolUserStatus[t.name] || 0;
+      const modeTag = `<span class="mode-tag ${escapeHtml((t.phase || t.group || 'T3').toLowerCase())}">${escapeHtml(t.phase || t.group || 'T3')}</span>`;
+      const iconBadge = `<span class="icon-badge ${escapeHtml(grp.iconCls)}">${escapeHtml(t.icon)}</span>`;
+      html += `<tr data-group="${escapeHtml(t.group)}" data-name="${escapeHtml(t.name)}">
+        <td class="col-tid">${escapeHtml(t.id)}</td>
+        <td class="col-icon">${iconBadge}</td>
+        <td class="col-name"><strong>${escapeHtml(t.name)}</strong><br><span style="font-size:11px;color:var(--text-dim);font-family:sans-serif">${escapeHtml(t.desc)}</span></td>
+        <td class="col-mode">${modeTag}</td>
+        <td class="col-api" id="api-${escapeHtml(t.name)}">${api}</td>
+        <td class="col-status"><button class="status-toggle" data-name="${escapeHtml(t.name)}">${stIcons[st]}</button></td>
+        <td class="col-prog"><div class="tool-prog" id="tprog-${escapeHtml(t.name)}"></div></td>
+      </tr>`;
+    }
+  }
+  tbody.innerHTML = html;
+  // Row click  open modal (ignore clicks on buttons)
+  tbody.querySelectorAll('tr[data-name]').forEach(row => {
+    row.addEventListener('click', e => {
+      if (e.target.closest('button')) return;
+      openModal(row.dataset.name);
+    });
+  });
+  tbody.querySelectorAll('.status-toggle').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    const n = b.dataset.name;
+    toolUserStatus[n] = ((toolUserStatus[n] || 0) + 1) % 3;
+    b.textContent = stIcons[toolUserStatus[n]];
+    updateProgress();
+  }));
+}
+
+function updateProgress() {
+  const total = TOOLS.length;
+  const c = TOOLS.filter(t => (toolUserStatus[t.name] || 0) !== 0).length;
+  document.getElementById('prog-label').innerHTML = `${c}/<span id="prog-total">${total}</span>`;
+  document.getElementById('prog-fill').style.width = total ? `${Math.round(c/total*100)}%` : '0%';
+}
+
+// ================================================================
+// API Check - always fetch fresh schemas so newly added tools appear immediately.
+// ================================================================
+function _applyApiTools(tools) {
+  let addedRuntimeTool = false;
+  for (const tool of tools) {
+    if (ensureRuntimeTool(tool)) addedRuntimeTool = true;
+  }
+  const names = new Set(tools.map(t => typeof t === 'string' ? t : (t.name || t.function?.name || '')));
+  for (const name of Object.keys(TOOL_FORMS)) {
+    if (!names.has(name) && !TOOL_MAP[name]) delete TOOL_FORMS[name];
+  }
+  let cnt = 0;
+  for (const t of TOOLS) {
+    const ok = names.has(t.name);
+    toolApiStatus[t.name] = ok;
+    if (ok) cnt++;
+    const c = document.getElementById(`api-${t.name}`);
+    if (c) c.textContent = ok ? '' : '';
+  }
+  const apiTotalEl = document.getElementById('api-total');
+  if (apiTotalEl) apiTotalEl.textContent = tools.length;
+  const apiVisibleEl = document.getElementById('api-visible');
+  if (apiVisibleEl) apiVisibleEl.textContent = cnt;
+  document.getElementById('status-badge').textContent = `Connected (${tools.length})`;
+  document.getElementById('status-badge').className = 'conn-badge ok';
+  if (addedRuntimeTool) {
+    renderTable();
+    updateProgress();
+    const activeMode = document.querySelector('.mode-tab.active')?.dataset.mode || 'all';
+    if (activeMode !== 'calog') applyModeFilter(activeMode);
+  }
+}
+async function checkApiTools(force = false) {
+  try {
+    const r = await fetch(`${BACKEND_API}/api/tools`, { cache: 'no-store' });
+    if (!r.ok) throw newError();
+    const tools = await r.json();
+    tools.forEach(tool => cacheToolSchema(tool));
+    _applyApiTools(tools);
+  } catch {
+    document.getElementById('status-badge').textContent = 'Disconnected';
+    document.getElementById('status-badge').className = 'conn-badge';
+    document.getElementById('api-total').textContent = '?';
+    const apiVisibleEl = document.getElementById('api-visible');
+    if (apiVisibleEl) apiVisibleEl.textContent = '?';
+  }
+}
+
+// ================================================================
+// Cache Status
+// ================================================================
+async function checkCacheStatus(p) {
+  const el = document.getElementById('cache-badge');
+  if (!p) { el.textContent = 'Cache: '; return; }
+  try {
+    const r = await fetch(`${BACKEND_API}/api/call/cache_status`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project_path:p})});
+    const d = await r.json();
+    if (d.error) { el.textContent='Cache: Err'; el.className='conn-badge'; return; }
+    if ((d.drift_warning || d.status === 'stale') && !checkCacheStatus._refreshing) {
+      checkCacheStatus._refreshing = true;
+      showToast('Cache is stale: run refresh_project_map before using cache.', 'error');
+      try {
+        await fetch(`${BACKEND_API}/api/call/refresh_project_map`, {
+          method:'POST',
+          headers: await orchHeaders(),
+          body: JSON.stringify({project_path:p})
+        });
+      } finally {
+        checkCacheStatus._refreshing = false;
+      }
+    }
+    const s = (d.status||'?').replace(/_/g,' ');
+    el.textContent = `Cache: ${s==='ok'?'OK':s}`;
+    el.className = d.status==='ok' ? 'conn-badge ok' : 'conn-badge warn';
+  } catch { el.textContent='Cache: ?'; el.className='conn-badge'; }
+}
+
+// ================================================================
+// Toast
+// ================================================================
+function showToast(msg, type='info', options={}) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = `toast show ${type}`;
+  clearTimeout(t._to); t._to = setTimeout(() => t.classList.remove('show'), 3000);
+  if (options.syncAdvisory !== false) {
+    setCaAdvisoryNotice({
+      label:'[A]',
+      title: type === 'error' ? 'warning' : type === 'success' ? 'update' : 'hint',
+      body: msg,
+      chips: options.chips || []
+    });
+  }
+}
+
+function caAdviceEscapeParts(parts, maxItems = 4) {
+  return parts.filter(Boolean).slice(0, maxItems).map(part => escapeHtml(String(part)));
+}
+
+function caAdviceTruncate(text, maxLen = 96) {
+  const raw = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return '';
+  return raw.length > maxLen ? raw.slice(0, maxLen - 1) + '…' : raw;
+}
+
+function formatCaRetryStep(step) {
+  if (!step) return '';
+  if (typeof step === 'string') return step;
+  if (typeof step !== 'object') return String(step);
+  if (step.method && step.url) return `${step.method} ${step.url}`;
+  if (step.tool) return step.tool;
+  return Object.keys(step).slice(0, 3).join(', ');
+}
+
+function normalizeCaBadgeType(chip = {}) {
+  const labelRaw = String(chip.label || '').toLowerCase();
+  const kindRaw = String(chip.kind || '').toLowerCase();
+  if (/err|error/.test(labelRaw) || /err|error/.test(kindRaw)) return { kind:'err', title:'Error' };
+  if (/warn|warning/.test(labelRaw) || /warn|warning/.test(kindRaw)) return { kind:'warn', title:'Warn' };
+  if (/hint|next/.test(labelRaw)) return { kind:'info', title:'Hint' };
+  if (/schema|payload|retry/.test(labelRaw) || /schema|payload|retry/.test(kindRaw)) return { kind:'schema', title:'Schema' };
+  return { kind:'info', title:'Info' };
+}
+
+function cleanCaSummary(summaryText) {
+  const raw = String(summaryText || '').trim();
+  if (!raw) return '';
+  return raw.split(/\s+\|\s+(?=(warning|hint|next|schema|retry|payload):)/i)[0].trim();
+}
+
+function setCaAdvisoryNotice(notice = {}) {
+  const badge = document.getElementById('v15-badge');
+  if (!badge) return;
+  const label = notice.label || '[A]';
+  const title = caAdviceTruncate(notice.title || notice.body || 'CA advisory rail', 120);
+  const body = notice.body ? caAdviceTruncate(notice.body, 180) : '';
+  const chips = Array.isArray(notice.chips) ? notice.chips : [];
+  const visibleMeta = chips
+    .filter(chip => chip && chip.label && chip.value)
+    .slice(0, 6)
+    .map(chip => {
+      const meta = normalizeCaBadgeType(chip);
+      return `<span class="v15-badge-meta-line ${meta.kind}"><span class="meta-title">${escapeHtml(meta.title)}:</span>${escapeHtml(caAdviceTruncate(chip.value, 180))}</span>`;
+    })
+    .join('');
+  badge.innerHTML = `<span class="v15-badge-head"><span class="v15-badge-label">${escapeHtml(label)}</span><span class="v15-badge-text">${escapeHtml(title || 'CA advisory rail')}</span></span>${body && body !== title ? `<span class="v15-badge-text secondary">${escapeHtml(body)}</span>` : ''}${visibleMeta ? `<span class="v15-badge-meta">${visibleMeta}</span>` : ''}`;
+  const titleParts = caAdviceEscapeParts([title, body]).concat(chips.slice(0, 6).map(chip => {
+    const meta = normalizeCaBadgeType(chip);
+    return `${meta.title}: ${caAdviceTruncate(chip.value, 120)}`;
+  }));
+  badge.title = titleParts.join(' | ');
+}
+
+function buildCaAdvisoryFromResult(toolName, result, summaryText) {
+  const guidance = result?.ca_guidance || {};
+  const warning = result?.warning || guidance?.warning || result?.delimiter_warning;
+  const hint = result?.hint || guidance?.notes?.[0] || '';
+  const next = result?.ca_next_action || guidance?.ca_next_action || '';
+  const accepted = result?.accepted_fields || guidance?.accepted_fields || [];
+  const retry = result?.retry_sequence || guidance?.retry_sequence || [];
+  const payload = result?.corrected_payload || result?.payload_example || guidance?.payload_example || null;
+  const chips = [];
+  const cleanSummary = cleanCaSummary(summaryText);
+  const summaryIsOk = /^OK(\b|$)/.test(cleanSummary);
+  const primaryError = result?.error_name || '';
+  const primaryReason = result?.reason || (result?.error && result.error !== primaryError ? result.error : '');
+  const promoteSummaryToInfo = !primaryError && !!cleanSummary;
+
+  if (primaryError) chips.push({label:'error', value: primaryReason || primaryError, kind:'err'});
+  if (warning) chips.push({label:'warning', value: warning, kind:'warn'});
+  if (hint) chips.push({label:'hint', value: hint, kind:'info'});
+  if (next) chips.push({label:'next', value: next, kind:'info'});
+  if (accepted && accepted.length) chips.push({label:'schema', value: accepted.slice(0, 5).join(', '), kind:'schema'});
+  if (retry && retry.length) chips.push({label:'retry', value: retry.slice(0, 3).map(formatCaRetryStep).filter(Boolean).join(' > '), kind:'schema'});
+  if (payload && typeof payload === 'object') chips.push({label:'payload', value: Object.keys(payload).slice(0, 5).join(', '), kind:'schema'});
+  if (promoteSummaryToInfo) chips.push({label:'info', value: cleanSummary, kind:'info'});
+
+  return {
+    label:'[A]',
+    title:`${toolName} is running`,
+    body: primaryError ? `${primaryError}${primaryReason ? `: ${primaryReason}` : ''}` : '',
+    chips
+  };
+}
+
+async function openCoreRule() {
+  try {
+    const r = await fetch(`${BACKEND_API}/api/open_core_rule`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+    });
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    showToast('Core Rule opened.', 'success');
+  } catch (err) {
+    showToast(`Open Core Rule failed: ${err.message || err}`, 'error');
+  }
+}
+
+// ================================================================
+// Session Log
+// ================================================================
+function escapeHtml(s){
+  return String(s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+
+function resolveIndexedFileCount(...sources) {
+  for (const source of sources) {
+    if (!source || typeof source !== 'object') continue;
+    const candidates = [
+      source.cache_files,
+      source.file_count,
+      source.total_files,
+      source.files_indexed,
+      source.files,
+      source.stats?.files,
+      source.summary?.stats?.files,
+      source.cache_status?.cache_files,
+    ];
+    for (const candidate of candidates) {
+      if (typeof candidate === 'number' && Number.isFinite(candidate)) return candidate;
+      if (typeof candidate === 'string' && candidate.trim() !== '' && !Number.isNaN(Number(candidate))) {
+        return Number(candidate);
+      }
+    }
+  }
+  return '?';
+}
+
+function appendLog(source, type, content) {
+  sessionLogs.push({ts:new Date().toLocaleTimeString(),source,type,content:typeof content==='string'?content:JSON.stringify(content,null,2)});
+  renderLog(activeLogFilter);
+}
+function rememberAppLog(entry) {
+  const key = `${entry.timestamp || ''}|${entry.level || ''}|${entry.message || ''}`;
+  if (_appLogSeen.has(key)) return false;
+  _appLogSeen.add(key);
+  if (_appLogSeen.size > 500) {
+    const first = _appLogSeen.values().next().value;
+    _appLogSeen.delete(first);
+  }
+  return true;
+}
+async function pollAppLogs() {
+  try {
+    const qs = _appLogSince ? `?since=${encodeURIComponent(_appLogSince)}` : '';
+    const r = await fetch(`${BACKEND_API}/api/logs${qs}`, { cache: 'no-store' });
+    if (!r.ok) return;
+    const entries = await r.json();
+    if (!Array.isArray(entries)) return;
+    let changed = false;
+    for (const entry of entries) {
+      if (!rememberAppLog(entry)) continue;
+      if (entry.timestamp && (!_appLogSince || entry.timestamp > _appLogSince)) {
+        _appLogSince = entry.timestamp;
+      }
+      sessionLogs.push({
+        ts: entry.timestamp ? entry.timestamp.slice(11, 19) : new Date().toLocaleTimeString(),
+        source: 'system',
+        type: entry.level || 'info',
+        content: entry.message || '',
+      });
+      changed = true;
+    }
+    if (changed) renderLog(activeLogFilter);
+  } catch {}
+}
+function renderLog(filter='all') {
+  const el = document.getElementById('log-entries');
+  const list = sessionLogs.filter(e => filter==='all'||e.source===filter);
+  if (!list.length) { el.innerHTML='<div class="empty-st">No logs yet.</div>'; return; }
+  el.innerHTML = list.slice(-80).map(e=>`
+    <div class="log-entry">
+      <div class="log-meta"><span class="log-source">${e.source}</span><span>${e.type}</span><span>${e.ts}</span></div>
+      <div class="log-content">${escapeHtml(e.content)}</div>
+    </div>`).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+// ================================================================
+// CA Usage Log (persistent, localStorage)
+// ================================================================
+function caLogLoad() {
+  try { return JSON.parse(localStorage.getItem(CA_LOG_KEY) || '[]'); }
+  catch { return []; }
+}
+function caLogSave(entries) {
+  try { localStorage.setItem(CA_LOG_KEY, JSON.stringify(entries.slice(-MAX_CA_LOG))); }
+  catch {}
+}
+function caLogKey(entry) {
+  return [
+    entry.ts || entry._server_ts || '',
+    entry.tool || '',
+    entry.tid || '',
+    entry.status || '',
+    entry.preview || ''
+  ].join('|');
+}
+function caLogMerge(localEntries, serverEntries) {
+  const merged = [];
+  const seen = new Set();
+  for (const entry of [...localEntries, ...serverEntries]) {
+    if (!entry || typeof entry !== 'object') continue;
+    const key = caLogKey(entry);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(entry);
+  }
+  merged.sort((a, b) => {
+    const at = a._server_ts || Date.parse(a.ts || '') || 0;
+    const bt = b._server_ts || Date.parse(b.ts || '') || 0;
+    if (at !== bt) return at - bt;
+    return String(a.ts || '').localeCompare(String(b.ts || ''));
+  });
+  return merged.slice(-MAX_CA_LOG);
+}
+async function caLogSyncFromServer() {
+  try {
+    const r = await fetch(`${BACKEND_API}/api/ui_log?limit=${MAX_CA_LOG}`, { cache: 'no-store' });
+    if (!r.ok) return;
+    const data = await r.json();
+    const serverEntries = Array.isArray(data.entries) ? data.entries : [];
+    const before = caLogLoad();
+    const after = caLogMerge(before, serverEntries);
+    if (after.length !== before.length || after.some((entry, idx) => caLogKey(entry) !== caLogKey(before[idx]))) {
+      caLogSave(after);
+      renderCaLog();
+    }
+  } catch {}
+}
+// Fix 10: mirror to server-side ui_log.jsonl so audit trail isn't split.
+function caLogMirrorToServer(entry) {
+  try {
+    fetch(`${BACKEND_API}/api/ui_log`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(entry),
+    }).catch(() => {}); // best-effort, swallow network errors
+  } catch {}
+}
+function caLogAdd(entry) {
+  const entries = caLogLoad();
+  entries.push(entry);
+  caLogSave(entries);
+  caLogMirrorToServer(entry);
+  renderCaLog();
+}
+function handleCrossTabStorageSync(evt) {
+  if (!evt || evt.key !== CA_LOG_KEY) return;
+  renderCaLog();
+}
+function renderCaLog() {
+  const entries = caLogLoad();
+  const filtered = entries.filter(e => caFilter==='all' || e.status===caFilter);
+  document.getElementById('ca-badge').textContent = entries.length;
+  const ok = entries.filter(e=>e.status==='success').length;
+  const err = entries.filter(e=>e.status==='error').length;
+  const warn = entries.filter(e=>e.status==='warn').length;
+  document.getElementById('ca-stats').textContent = `Total ${entries.length} | ${ok} ${err} ${warn}`;
+  const tbody = document.getElementById('ca-tbody');
+  if (!filtered.length) { tbody.innerHTML=`<tr><td colspan="7" style="color:var(--text-dim);padding:10px">No logs yet.</td></tr>`; return; }
+  tbody.innerHTML = filtered.slice().reverse().map(e => {
+    const scls = e.status==='success'?'status-ok':e.status==='error'?'status-err':'status-warn';
+    const sico = e.status==='success'?'':e.status==='error'?'':'';
+    const themeIco = e.theme==='dark'?'':'';
+    return `<tr>
+      <td class="ts">${e.ts}</td>
+      <td class="tool">${escapeHtml(e.tool)}</td>
+      <td class="tid">${escapeHtml(e.tid||'')}</td>
+      <td class="theme">${themeIco} ${escapeHtml(e.theme||'')}</td>
+      <td class="${scls}">${sico}</td>
+      <td class="dur">${e.ms||''}</td>
+      <td class="preview" title="${escapeHtml(e.preview||'')}">${escapeHtml((e.preview||'').substring(0,120))}</td>
+    </tr>`;
+  }).join('');
+}
+
+function syncFolderPath(nextPath) {
+  const normalized = String(nextPath || '').trim();
+  if (!normalized) return;
+  folderPath = normalized;
+  localStorage.setItem('toolC_folderPath', normalized);
+  const input = document.getElementById('folder-path');
+  if (input) input.value = normalized;
+  if (typeof refreshActiveBanner === 'function') refreshActiveBanner();
+  if (typeof refreshWorkflowMenu === 'function') refreshWorkflowMenu();
+}
+
+function currentTheme() { return document.body.classList.contains('theme-light') ? 'light' : 'dark'; }
+
+async function clearClosedSessions(evt) {
+  if (evt) evt.stopPropagation();
+  const fp = folderPath || localStorage.getItem('toolC_folderPath') || '';
+  if (!fp) { showToast('Set a folder before clearing closed sessions.', 'error'); return; }
+  if (!confirm('Delete all closed CA sessions for this project?')) return;
+  try {
+    const r = await fetchWithFreshToken(
+      `${BACKEND_API}/api/sessions/closed?project_path=${encodeURIComponent(fp)}`,
+      { method:'DELETE' }
+    );
+    const data = await r.json();
+    if (!r.ok || !data.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    if (_calCurrentSid && data.deleted_sessions) {
+      _calCurrentSid = null;
+      calDisconnectSSE();
+      document.getElementById('cal-detail').innerHTML = '<div class="cal-empty">Choose a session to view logs</div>';
+    }
+    await calLoadSessions();
+    showToast(`Deleted ${data.deleted_sessions || 0} closed session(s).`, 'success');
+  } catch (err) {
+    showToast(`Clear closed failed: ${err.message || err}`, 'error');
+  }
+}
+
+// ================================================================
+// Modal
+// ================================================================
+async function openModal(toolName) {
+  if (toolApiStatus[toolName] === false) {
+    showToast(`Tool '${toolName}' is not available on the server (404). Refresh API check?`, 'error');
+    return;
+  }
+
+  const loadSeq = ++modalLoadSeq;
+  currentTool = toolName;
+  const t = TOOL_MAP[toolName];
+  document.getElementById('modal-title').textContent = `${t?t.icon:''} ${toolName}`;
+  document.getElementById('modal-body').innerHTML = '<div class="empty-st"><span class="spinner"></span>Loading form...</div>';
+  document.getElementById('btn-execute').disabled = false;
+  document.getElementById('modal-overlay').classList.add('active');
+  modalLoadPromise = (async () => {
+    let form = TOOL_FORMS[toolName];
+    if (!form) {
+      showToast(`Loading schema for ${toolName}...`, 'info');
+      form = await ensureToolForm(toolName);
+    }
+    if (loadSeq !== modalLoadSeq || currentTool !== toolName) return null;
+    if (!form) {
+      closeModal();
+      showToast('Form not found: '+toolName,'error');
+      return null;
+    }
+
+    let html = '';
+    if (form.warning) html += `<div class="form-warn">${form.warning}</div>`;
+    for (const f of form.fields) {
+      const val = f.default !== undefined ? f.default : '';
+      const reqMark = f.required ? '<span class="req">*</span>' : '';
+      const isTA = f.type==='textarea';
+      const isSelect = f.type==='select';
+      const optionsHtml = (f.options || []).map(opt => {
+        const selected = String(opt.value) === String(val) ? ' selected' : '';
+        return `<option value="${escapeHtml(opt.value)}"${selected}>${escapeHtml(opt.label)}</option>`;
+      }).join('');
+      html += `<div class="form-group">
+        <label class="form-label">${f.label} ${reqMark}</label>
+        ${isTA ? `<textarea class="form-input" name="${f.name}" placeholder="${f.hint}">${escapeHtml(val)}</textarea>`
+               : isSelect ? `<select class="form-input" name="${f.name}">${optionsHtml}</select>`
+               : `<input class="form-input" type="${f.type}" name="${f.name}" placeholder="${f.hint}" value="${escapeHtml(val)}">`}
+        <div class="form-hint">${f.hint}</div>
+      </div>`;
+    }
+    document.getElementById('modal-body').innerHTML = html;
+    if (folderPath) {
+      const pi = document.querySelector('#modal-body input[name="path"], #modal-body input[name="project_path"], #modal-body input[name="folder_path"]');
+      if (pi && !pi.value) pi.value = folderPath;
+    }
+    return form;
+  })();
+
+  try {
+    await modalLoadPromise;
+  } finally {
+    if (loadSeq === modalLoadSeq) modalLoadPromise = null;
+  }
+}
+function closeModal() {
+  modalLoadSeq++;
+  modalLoadPromise = null;
+  document.getElementById('modal-overlay').classList.remove('active');
+  document.getElementById('btn-execute').disabled = false;
+  currentTool = null;
+}
+
+// ================================================================
+// Natural Language Result Formatter
+// ================================================================
+function formatResult(toolName, result) {
+  if (!result || typeof result !== 'object') return String(result);
+  if (result.error) {
+    const name = result.error_name || 'TOOL_ERROR';
+    const hint = result.hint || result.ca_guidance?.notes?.[0] || '';
+    const next = result.ca_next_action || result.ca_guidance?.ca_next_action || '';
+    return `${name}: ${result.reason || result.error}${hint ? ' | hint: '+hint : ''}${next ? ' | next: '+next : ''}`;
+  }
+
+  const ok = result.ok !== false && !result.error;
+  const warn = result.warning || result.ok === false;
+  const icon = warn ? '⚠️' : '✅';
+
+  switch (toolName) {
+    case 'cache_status': {
+      if (!ok) return `Cache not initialized, running generate_project_map`;
+      const files = result.cache_files ?? result.files_count ?? '?';
+      const upd = result.last_updated_iso ? result.last_updated_iso.slice(11,19) : '?';
+      return `${icon} Cache ${(result.status||'ok').toUpperCase()} - ${files} files, updated ${upd}`;
+    }
+    case 'get_project_summary': {
+      const name = result.project || result.name || '?';
+      const files = result.stats?.files ?? result.stats?.total_files ?? result.total_files ?? '?';
+      const loc = result.stats?.loc ? (result.stats.loc / 1000).toFixed(1) + 'k LOC' : '';
+      const fn  = result.stats?.functions != null ? result.stats.functions + ' fn' : '';
+      const hot = result.hotspots?.slice(0,2).map(h => (h.file||h).split(/[\\/]/).pop()).join(', ') || '';
+      const entry = result.entrypoints?.slice(0,2).map(e => e.split(/[\\/]/).pop()).join(', ') || '';
+      const meta = [files + ' files', loc, fn].filter(Boolean).join(', ');
+      let s = `${icon} ${name} - ${meta}`;
+      if (hot) s += ` | hotspots: ${hot}`;
+      if (entry) s += ` | entry: ${entry}`;
+      return s;
+    }
+    case 'workflow_status': {
+      const mode = result.mode || result.state?.mode || result.workflow_mode || '?';
+      const state = result.state?.current_state || result.current_state || '';
+      return `Mode: ${mode}${state ? ' | state: '+state : ''}`;
+    }
+    case 'get_usage_stats': {
+      const calls = result.total_calls ?? result.entries?.length ?? '?';
+      const last = result.entries?.[result.entries.length-1];
+      const lastTool = last?.tool_name || last?.tool || '';
+      return `${calls} tool calls${lastTool ? ' | latest tool: '+lastTool : ''}`;
+    }
+    case 'get_folder_size': {
+      const size = result.total_size_mb ?? (result.total_bytes ? (result.total_bytes/1048576).toFixed(1) : '?');
+      const files = result.file_count ?? result.total_files ?? '?';
+      return `${files} files - ${size} MB`;
+    }
+    case 'list_structure': {
+      const tree = result.result || result.structure || result.tree || '';
+      const lines = tree ? tree.split('\n').length : '?';
+      return `Directory tree: ${lines} lines`;
+    }
+    case 'find_symbol': {
+      const file = result.file || result.found_in || '';
+      const line = result.line || result.start_line || '';
+      if (!result.found && result.ok === false) return `Symbol not found`;
+      return `Found${file ? ' in ' + file.split(/[\\/]/).pop() : ''}${line ? ' line '+line : ''}`;
+    }
+    case 'read_file_range': {
+      const lines = result.content ? result.content.split('\n').length : '?';
+      const range = result.range_id || '';
+      return `Read ${lines} lines${range ? ' ['+range+']' : ''}`;
+    }
+    case 'search_code': {
+      const count = result.total_matches ?? result.matches?.length ?? '?';
+      const files = result.files_matched ?? '';
+      return `${count} results${files ? ' in '+files+' files' : ''}`;
+    }
+    case 'get_file_symbols': {
+      const syms = result.symbols?.length ?? '?';
+      return ` ${syms} symbols`;
+    }
+    case 'write_fix': {
+      if (result.dry_run) {
+        const added = result.preview?.lines_added?.length ?? 0;
+        const removed = result.preview?.lines_removed?.length ?? 0;
+        return `Dry run - +${added} / -${removed} lines`;
+      }
+      const delta = result.lines_delta ?? '';
+      return `Written${delta !== '' ? ' (delta: '+(delta>0?'+':'')+delta+' lines)' : ''}`;
+    }
+    case 'write_fix_html': {
+      if (!ok) return `${result.delimiter_warning || result.warning || 'Delimiter check fail'}`;
+      return `HTML written - delimiter check: ${result.delimiter_check || 'passed'}`;
+    }
+    case 'write_new_file': {
+      const path = result.path || result.file || '';
+      return `Created file: ${path.split(/[\\/]/).pop() || path}`;
+    }
+    case 'delete_file': {
+      return result.ok ? `Deleted: ${(result.deleted||'').split(/[\\/]/).pop()}` : `${result.error}`;
+    }
+    case 'validate_file': {
+      if (!result.ok) return `Syntax error: ${result.error || '?'}`;
+      return `Syntax OK - ${result.lang || '?'}`;
+    }
+    case 'validate_symbols': {
+      const removed = result.symbols_removed?.length ?? 0;
+      const found = result.symbols_found?.length ?? '?';
+      if (removed > 0) return `${removed} symbols deleted: ${result.symbols_removed.join(', ')}`;
+      return `${found} symbols - no missing symbols`;
+    }
+    case 'run_project_command': {
+      const rc = result.returncode ?? '?';
+      const dur = result.duration_seconds ? result.duration_seconds.toFixed(2)+'s' : '';
+      const cmd = Array.isArray(result.command) ? result.command.slice(0,3).join(' ') : result.command || '';
+      return result.returncode === 0
+        ? `OK${dur?' ('+dur+')':''} - ${cmd}`
+        : `RC=${rc} - ${(result.stderr||'').slice(0,60)}`;
+    }
+    case 'run_test_profile': {
+      if (result.category === 'missing_dependency' || result.category === 'unsupported_profile') {
+        return ` Profile unavailable: ${result.error}`;
+      }
+      const rc = result.returncode ?? '?';
+      const dur = result.duration_seconds ? result.duration_seconds.toFixed(2)+'s' : '';
+      return rc === 0 ? `Test PASS${dur?' ('+dur+')':''}` : `Test FAIL RC=${rc}`;
+    }
+    case 'execute_script': {
+      const rc = result.returncode ?? '?';
+      const out = (result.stdout||'').trim().slice(0,60);
+      return rc === 0 ? `Script OK${out?' - '+out:''}` : `RC=${rc} - ${(result.stderr||'').slice(0,60)}`;
+    }
+    case 'generate_project_map':
+    case 'refresh_project_map': {
+      const files = result.files_indexed ?? result.total_files ?? '?';
+      return `Index created - ${files} files`;
+    }
+    case 'cache_delta': {
+      const added = result.added?.length ?? 0;
+      const modified = result.modified?.length ?? 0;
+      const deleted = result.deleted?.length ?? 0;
+      const total = added + modified + deleted;
+      return total === 0
+        ? `No drift - cache is in sync`
+        : `Drift: +${added} modified ${modified} deleted ${deleted} files`;
+    }
+    case 'update_file_cache': {
+      return ok ? `Cache file updated` : `${result.warning||'?'}`;
+    }
+    case 'backup_project': {
+      const path = result.backup_path || result.path || '';
+      return ok ? `Backup: ${path.split(/[\\/]/).pop() || path}` : `${result.error}`;
+    }
+    case 'backup_status': {
+      const count = result.backups?.length ?? result.count ?? '?';
+      const last = result.backups?.[0]?.timestamp || result.last_backup || '';
+      return `${count} backups${last ? ' | latest: '+last.slice(0,16) : ''}`;
+    }
+    case 'capability_status': {
+      const avail = result.available?.length ?? '?';
+      const miss = result.missing?.length ?? 0;
+      return `${avail} capabilities${miss ? ' | missing: '+miss : ' - complete'}`;
+    }
+    case 'prepare_ca_session': {
+      const len = result.prompt?.length ?? 0;
+      const files = resolveIndexedFileCount(result);
+      return `Prompt ready - ${(len/1000).toFixed(1)}k chars, ${files} files indexed`;
+    }
+    case 'set_workflow_mode':
+    case 'update_workflow_state': {
+      const mode = result.mode || result.state?.mode || '?';
+      return `Workflow - ${mode}`;
+    }
+    case 'create_session_bootstrap': {
+      return ok ? `CA_SESSION_BOOTSTRAP.md created` : `${result.warning||'?'}`;
+    }
+    case 'next_recommended_action': {
+      const action = result.action || result.next_action || result.recommendation || '?';
+      return `Suggestion: ${String(action).slice(0,80)}`;
+    }
+    case 'query_index': {
+      const count = result.files?.length ?? result.results?.length ?? '?';
+      return `${count} files matched`;
+    }
+    case 'create_benchmark_request': {
+      return ok ? `BENCHMARK_REQUEST.md created` : `${result.error}`;
+    }
+    case 'create_build_context': {
+      return ok ? `BUILD_CONTEXT.md created` : `${result.error}`;
+    }
+    default: {
+      if (!ok) return `${result.warning || result.message || JSON.stringify(result).slice(0,100)}`;
+      const msg = result.message || result.status || result.msg || '';
+      return `OK${msg ? ' - '+msg : ''}`;
+    }
+  }
+}
+
+// ================================================================
+// Execute Tool
+// ================================================================
+function coerceFormValue(inp, field) {
+  let v = inp.value;
+  if (inp.type === 'number' && v !== '') return parseFloat(v);
+  if (field?.type === 'checkbox') return inp.checked;
+  if (['true', 'false'].includes(String(v).toLowerCase())) {
+    return String(v).toLowerCase() === 'true';
+  }
+  if (typeof v === 'string') {
+    const trimmed = v.trim();
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        return JSON.parse(trimmed);
+      } catch (_) {}
+    }
+  }
+  return v;
+}
+async function executeTool() {
+  if (!currentTool) return;
+  const toolName = currentTool;
+  if (modalLoadPromise) {
+    const resolved = await modalLoadPromise.catch(() => null);
+    if (!resolved || currentTool !== toolName) return;
+  }
+  const form = TOOL_FORMS[toolName];
+  if (!form) { showToast('Form not ready yet. Retry once.', 'error'); return; }
+  const body = {};
+  document.querySelectorAll('#modal-body input,#modal-body textarea,#modal-body select').forEach(inp => {
+    if (!inp.name) return;
+    const field = form.fields?.find(f => f.name === inp.name);
+    body[inp.name] = coerceFormValue(inp, field);
+  });
+  for (const f of form.fields) {
+  if (f.required && !body[f.name] && body[f.name]!==0) { showToast(`Enter: ${f.label}`,'error'); return; }
+  }
+
+  const ro = document.getElementById('result-output');
+  ro.innerHTML = '<span><span class="spinner"></span>Running...</span>';
+  ro.className = 'scrollbox result-box';
+  appendLog('tool','call',JSON.stringify({toolName,body},null,2));
+  setToolRunState(toolName, 'running');
+  closeModal();
+
+  const t0 = Date.now();
+  const tMeta = TOOL_MAP[toolName];
+  let logEntry = {ts:new Date().toLocaleTimeString(),tool:toolName,tid:tMeta?tMeta.id:'',theme:currentTheme(),ms:0,status:'error',preview:''};
+  const requestedProjectPath = typeof body.project_path === 'string' ? body.project_path.trim() : '';
+
+  try {
+    const resp = await fetchWithFreshToken(`${BACKEND_API}/api/call/${toolName}`,{
+      method:'POST', body:JSON.stringify(body)
+    });
+    const result = await resp.json();
+    const ms = Date.now() - t0;
+    const rawTxt = typeof result==='string' ? result : typeof result?.result==='string' ? result.result : JSON.stringify(result,null,2);
+    const nlSummary = formatResult(toolName, result);
+    const advisory = buildCaAdvisoryFromResult(toolName, result, nlSummary);
+
+    if (result.error) {
+      ro.innerHTML = `<div style="margin-bottom:8px;font-size:13px;font-weight:600">${escapeHtml(nlSummary)}</div><details><summary style="cursor:pointer;color:var(--text-dim);font-size:11px">Raw JSON</summary><pre style="margin-top:6px;font-size:11px">${escapeHtml(rawTxt)}</pre></details>`;
+      ro.className='scrollbox result-box err';
+      showToast('Tool execution failed.', 'error', {syncAdvisory:false});
+      setCaAdvisoryNotice(advisory);
+      appendLog('tool','error',rawTxt);
+      setToolRunState(toolName, 'error');
+      logEntry = {...logEntry, ms, status:'error', preview:nlSummary};
+    } else {
+      const hasWarn = result.warning || result.ok === false;
+      ro.innerHTML = `<div style="margin-bottom:8px;font-size:13px;font-weight:600">${escapeHtml(nlSummary)}</div><details><summary style="cursor:pointer;color:var(--text-dim);font-size:11px">Raw JSON </summary><pre style="margin-top:6px;font-size:11px;color:var(--text-muted)">${escapeHtml(rawTxt)}</pre></details>`;
+      ro.className='scrollbox result-box ok';
+      showToast(hasWarn ? 'Completed with warnings.' : 'Execution succeeded!', hasWarn ? 'info' : 'success', {syncAdvisory:false});
+      setCaAdvisoryNotice(advisory);
+      appendLog('tool','result',rawTxt);
+      setToolRunState(toolName, hasWarn ? 'error' : 'done');
+      logEntry = {...logEntry, ms, status: hasWarn ? 'warn' : 'success', preview:nlSummary};
+      if (requestedProjectPath) syncFolderPath(requestedProjectPath);
+      if (['generate_project_map','refresh_project_map','update_file_cache','cache_status'].includes(toolName))
+        checkCacheStatus(body.project_path || folderPath);
+      if (toolName === 'open_session' || document.getElementById('ca-log-panel').classList.contains('active')) {
+        calLoadSessions();
+      }
+    }
+  } catch(err) {
+    const ms = Date.now()-t0;
+    ro.innerHTML=`<span style="color:var(--red-txt)">Error: ${escapeHtml(err.message)}</span>`;
+    ro.className='scrollbox result-box err';
+    showToast('Cannot connect to server','error', {
+      syncAdvisory:false,
+      chips:[{label:'warning', value:'Check [A] server root or API availability', kind:'warn'}]
+    });
+    setCaAdvisoryNotice({
+      label:'[A]',
+      title:`${toolName} transport error`,
+      body: err.message,
+      chips:[{label:'warning', value:'Cannot connect to backend API', kind:'warn'}]
+    });
+    appendLog('tool','error',err.message);
+    setToolRunState(toolName, 'error');
+    logEntry = {...logEntry, ms, status:'error', preview:`Connection error: ${err.message}`};
+  }
+  caLogAdd(logEntry);
+}
+
+// ================================================================
+// Mode Filter
+// ================================================================
+function applyModeFilter(mode) {
+  showCALogPanel(false);
+  document.querySelectorAll('[data-group]').forEach(row => {
+    const grp = row.dataset.group;
+    row.hidden = (mode !== 'all' && grp !== mode);
+    // V15 R9 i4 fix: clear any inline display='none' left by older T4 handler
+    if (row.style.display === 'none') row.style.display = '';
+  });
+}
+
+// ================================================================
+// Theme Toggle
+// ================================================================
+function setTheme(theme) {
+  document.body.classList.toggle('theme-dark', theme==='dark');
+  document.body.classList.toggle('theme-light', theme==='light');
+  const btn = document.getElementById('theme-toggle');
+  btn.textContent = theme==='dark' ? 'Light' : 'Dark';
+  localStorage.setItem('toolC_theme', theme);
+}
+
+// ================================================================
+// CA Drawer
+// ================================================================
+function toggleDrawer() {
+  drawerOpen = !drawerOpen;
+  document.getElementById('ca-drawer').className = drawerOpen ? 'expanded' : 'collapsed';
+  document.getElementById('ca-chevron').textContent = drawerOpen ? '' : '';
+}
+
+// ================================================================
+// Set Folder
+// ================================================================
+async function doSetFolder() {
+  const path = document.getElementById('folder-path').value.trim();
+  if (!path) { showToast('Enter a project path first.', 'error'); return; }
+  folderPath = path;
+  localStorage.setItem('toolC_folderPath', folderPath);
+  const bsPanel = document.getElementById('bootstrap-panel');
+  const bsStatus = document.getElementById('bootstrap-status');
+  const btnCopy = document.getElementById('btn-copy-prompt');
+  _bootstrapTxt = '';
+  bsPanel.hidden = false;
+  bsPanel.style.display = 'flex';
+  bsStatus.innerHTML = '<strong>Preparing project map...</strong>';
+  btnCopy.textContent = 'Preparing Prompt...';
+  btnCopy.disabled = true;
+  btnCopy.classList.remove('copied');
+
+  showToast('Checking project...', 'info');
+  let cacheResult = {};
+  try {
+    const r = await fetch(`${BACKEND_API}/api/call/cache_status`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({project_path:folderPath}) });
+    cacheResult = await r.json();
+  } catch {}
+
+  try {
+    if (cacheResult.status === 'ok') {
+      showToast('Refreshing project map...', 'info');
+      await fetch(`${BACKEND_API}/api/call/refresh_project_map`, { method:'POST', headers: await orchHeaders(), body:JSON.stringify({project_path:folderPath}) });
+    } else {
+      showToast('Creating project map...', 'info');
+      await fetch(`${BACKEND_API}/api/call/generate_project_map`, { method:'POST', headers: await orchHeaders(), body:JSON.stringify({project_path:folderPath}) });
+    }
+    await fetch(`${BACKEND_API}/api/call/list_structure`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({path:folderPath, depth:2, save_output:true}) });
+
+    showToast('Opening CA session...', 'info');
+    await fetch(`${BACKEND_API}/api/call/open_session`, { method:'POST', headers: await orchHeaders(), body:JSON.stringify({project_path:folderPath, mode:currentMode, session_title:'UI Get Folder'}) });
+
+    showToast('Creating agent prompt...', 'info');
+    const r = await fetch(`${BACKEND_API}/api/call/prepare_ca_session`, { method:'POST', headers: await orchHeaders(), body:JSON.stringify({project_path:folderPath, mode:currentMode, idea:''}) });
+    const sessionData = await r.json();
+    if (!r.ok || sessionData.error) throw new Error(sessionData.error || `prepare_ca_session failed (${r.status})`);
+    const refreshedCache = await checkCacheStatus(folderPath);
+    _bootstrapTxt = sessionData.prompt || '';
+    if (!_bootstrapTxt) throw new Error('Backend did not return prompt content');
+    const fc = resolveIndexedFileCount(sessionData, refreshedCache, cacheResult);
+    bsStatus.innerHTML = `<strong>Project map ready</strong> - ${fc} files indexed`;
+    btnCopy.textContent = 'Copy Agent Prompt';
+    btnCopy.disabled = false;
+    showToast('Project ready. Copy the prompt and paste it into the agent.', 'success');
+    if (document.getElementById('ca-log-panel').classList.contains('active')) calLoadSessions();
+  } catch (err) {
+    _bootstrapTxt = '';
+    bsStatus.innerHTML = `<strong>Prompt unavailable</strong> - ${escapeHtml(err.message || String(err))}`;
+    btnCopy.textContent = 'Copy Agent Prompt unavailable';
+    btnCopy.disabled = true;
+    showToast(`Could not create prompt: ${err.message || err}`, 'error');
+  }
+}
+
+// ================================================================
+// Init
+// ================================================================
+document.addEventListener('DOMContentLoaded', () => {
+  setCaAdvisoryNotice({
+    title:'Tool is waiting to run',
+    body:'App notification content for CA will appear here.'
+  });
+  renderTable();
+  checkApiTools(true); // force on first load
+  renderCaLog();
+  _appLogSince = currentLogCursor();
+
+  // Theme
+  const savedTheme = localStorage.getItem('toolC_theme') || 'dark';
+  setTheme(savedTheme);
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    setTheme(currentTheme()==='dark' ? 'light' : 'dark');
+  });
+
+  // Mode tabs
+  document.querySelectorAll('.mode-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const mode = tab.dataset.mode;
+      if (mode==='T1') currentMode='T1_DISCOVER_ANALYZE_READ';
+      else if (mode==='T2') currentMode='T2_MUTATE_VERIFY_REFRESH';
+      else if (mode==='T3') currentMode='T3_SESSION_AUDIT_AUXILIARY';
+      applyModeFilter(mode);
+    });
+  });
+
+  // Set Folder
+  document.getElementById('btn-set-folder').addEventListener('click', doSetFolder);
+
+  // Copy Prompt
+  document.getElementById('btn-copy-prompt').addEventListener('click', async () => {
+    if (!_bootstrapTxt) { showToast('No prompt yet. Click Get Folder first.', 'error'); return; }
+    try {
+      await navigator.clipboard.writeText(_bootstrapTxt);
+      const btn = document.getElementById('btn-copy-prompt');
+      btn.textContent = 'Copied!'; btn.classList.add('copied');
+      setTimeout(() => { btn.textContent='Copy Agent Prompt'; btn.classList.remove('copied'); }, 2500);
+      showToast('Prompt copied.', 'success');
+    } catch { showToast('Copy failed.', 'error'); }
+  });
+
+  document.getElementById('btn-copy-core-rule').addEventListener('click', openCoreRule);
+
+  // Modal
+  document.getElementById('modal-close').addEventListener('click', closeModal);
+  document.getElementById('btn-cancel').addEventListener('click', closeModal);
+  document.getElementById('btn-execute').addEventListener('click', executeTool);
+  document.getElementById('modal-overlay').addEventListener('click', e => { if (e.target===document.getElementById('modal-overlay')) closeModal(); });
+  document.addEventListener('keydown', e => { if (e.key==='Escape') closeModal(); });
+
+  // Session log toggle
+  let logOpen = true;
+  document.getElementById('log-toggle').addEventListener('click', () => {
+    logOpen = !logOpen;
+    document.getElementById('log-wrap').style.display = logOpen ? '' : 'none';
+    document.getElementById('log-icon').classList.toggle('open', logOpen);
+  });
+  document.querySelectorAll('#log-filter button').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#log-filter button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      activeLogFilter = b.dataset.filter || 'all';
+      renderLog(activeLogFilter);
+    });
+  });
+
+  // CA Drawer
+  document.getElementById('ca-drawer-header').addEventListener('click', toggleDrawer);
+  document.querySelectorAll('#ca-filter-bar button[data-cf]').forEach(b => {
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      document.querySelectorAll('#ca-filter-bar button[data-cf]').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      caFilter = b.dataset.cf;
+      renderCaLog();
+    });
+  });
+  document.getElementById('ca-export-btn').addEventListener('click', async e => {
+    e.stopPropagation();
+    const localData = caLogLoad();
+    // Merge with server-side ui_log for complete audit trail
+    let serverData = [];
+    try {
+      const r = await fetch(`${BACKEND_API}/api/ui_log`);
+      if (r.ok) { const d = await r.json(); serverData = d.entries || d || []; }
+    } catch {}
+    // Deduplicate by ts+tool (server mirror may overlap with localStorage)
+    const seen = new Set(localData.map(e => `${e.ts}|${e.tool}`));
+    const merged = [...localData, ...serverData.filter(e => !seen.has(`${e.ts}|${e.tool}`))];
+    merged.sort((a, b) => (a.ts || '').localeCompare(b.ts || ''));
+    navigator.clipboard.writeText(JSON.stringify(merged, null, 2))
+      .then(() => showToast('Copied CA USAGE LOG','success'))
+      .catch(() => showToast('Export failed', 'error'));
+  });
+  document.getElementById('cal-clear-closed-btn').addEventListener('click', clearClosedSessions);
+
+  document.getElementById('ca-clear-btn').addEventListener('click', async e => {
+    e.stopPropagation();
+    if (confirm('Clear all CA usage logs (localStorage + server)?')) {
+      localStorage.removeItem(CA_LOG_KEY);
+      // Also clear server-side mirror
+      try {
+        await fetch(`${BACKEND_API}/api/ui_log`, { method: 'DELETE' });
+      } catch {}
+      renderCaLog();
+      showToast('CA log cleared (local + server)', 'info');
+    }
+  });
+
+  // Saved path
+  const saved = localStorage.getItem('toolC_folderPath');
+  if (saved) { document.getElementById('folder-path').value = saved; folderPath = saved; checkCacheStatus(saved); }
+  const onFolderPathChanged = () => {
+    folderPath = document.getElementById('folder-path').value.trim();
+    localStorage.setItem('toolC_folderPath', folderPath);
+    if (typeof refreshActiveBanner === 'function') refreshActiveBanner();
+    if (typeof refreshWorkflowMenu === 'function') refreshWorkflowMenu();
+  };
+  document.getElementById('folder-path').addEventListener('change', onFolderPathChanged);
+  document.getElementById('folder-path').addEventListener('input', onFolderPathChanged);
+
+  setInterval(() => {
+    if (document.visibilityState === 'visible') checkApiTools();
+  }, 30000);
+  pollAppLogs();
+  caLogSyncFromServer();
+  setInterval(() => {
+    if (document.visibilityState === 'visible') pollAppLogs();
+  }, 1000);
+  setInterval(caLogSyncFromServer, 2000);
+  setInterval(() => {
+    const panel = document.getElementById('ca-log-panel');
+    if (document.visibilityState === 'visible' && panel && panel.classList.contains('active')) {
+      calLoadSessions();
+    }
+  }, 2000);
+  window.addEventListener('storage', handleCrossTabStorageSync);
+  applyModeFilter('all');
+
+  //  CA Log tab button  must use stopImmediatePropagation to beat generic mode-tab handler 
+  // Register this FIRST so it runs before the generic .mode-tab handler below.
+  // Check panel.classList (not btn.classList) to avoid race with generic handler.
+  document.getElementById('btn-calog-tab').addEventListener('click', (evt) => {
+    evt.stopImmediatePropagation();
+    document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('btn-calog-tab').classList.add('active');
+    showCALogPanel(true);
+  }, true); // useCapture=true  fires before bubbling handlers
+
+  // V15 R36 — Workflow dropdown + active banner
+  initWorkflowUI();
+  // V15 R42 — sync auto-token button label
+  refreshAutoTokenLabel();
+});
+
+// V15 R42 — Auto-token mode toggle (User trust mode opt-in)
+async function refreshAutoTokenLabel(){
+  try{
+    const r=await fetch('/api/config/auto_token_inject');
+    const j=await r.json();
+    const btn=document.getElementById('btn-auto-token');
+    if(!btn) return;
+    if(j.enabled){
+      btn.textContent='🔓 Auto-token';
+      btn.style.color='#f85149';
+      btn.title='AUTO_TOKEN_INJECT ON — protected tools bypass token check. Click to toggle to Strict mode.';
+    } else {
+      btn.textContent='🔒 Strict';
+      btn.style.color='';
+      btn.title='Strict mode — protected tools require X-Orchestrator-Token. Click to toggle to Auto-inject (User trust mode).';
+    }
+  }catch(e){}
+}
+
+async function toggleAutoToken(){
+  try{
+    const cur=await fetch('/api/config/auto_token_inject');
+    const curJ=await cur.json();
+    const tokRes=await fetch('/api/token');
+    const tok=(await tokRes.json()).token;
+    const newVal=!curJ.enabled;
+    if(newVal){
+      if(!confirm('AUTO_TOKEN_INJECT will bypass token checks for all mutating tools. Enable it only if you fully trust the CA. Continue?')) return;
+    }
+    const r=await fetch('/api/config/auto_token_inject',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-Orchestrator-Token':tok},
+      body:JSON.stringify({enabled:newVal})
+    });
+    const j=await r.json();
+    if(j.ok) refreshAutoTokenLabel();
+    else alert('Toggle failed: '+(j.error||JSON.stringify(j)));
+  }catch(e){alert('Network: '+e.message)}
+}
+
+// ================================================================
+// V15 R36 — Workflow UI ([A:Ed] launcher + activate/deactivate + live banner)
+// ================================================================
+function _wfCurrentProjectPath(){
+  // Prefer the live header path used by the rest of the UI, then fall back.
+  return (document.getElementById('folder-path')?.value
+    || folderPath
+    || localStorage.getItem('toolC_folderPath')
+    || document.getElementById('project-path-input')?.value
+    || document.getElementById('input-project-path')?.value
+    || window.__currentProjectPath
+    || localStorage.getItem('orch_last_project_path')
+    || '').trim();
+}
+
+async function _wfFetchToken(){
+  try{ const r=await fetch('/api/token'); const j=await r.json(); return j.token||''; }catch(e){return ''}
+}
+
+async function wfCallTool(name, body){
+  const tok=await _wfFetchToken();
+  const r=await fetch('/api/call/'+name,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','X-Orchestrator-Token':tok},
+    body:JSON.stringify(body||{})
+  });
+  return await r.json();
+}
+
+let _wfActivePollTimer=null;
+let _wfActiveCurrentName=null;
+
+function _wfUpdatePathLabel(pp){
+  const label = document.getElementById('wf-path-label');
+  if (!label) return;
+  const text = pp || 'not set';
+  label.textContent = `Project: ${text}`;
+  label.title = text;
+}
+
+async function refreshWorkflowMenu(){
+  const list=document.getElementById('wf-menu-list');
+  const pp=_wfCurrentProjectPath();
+  _wfUpdatePathLabel(pp);
+  try{
+    const j=await wfCallTool('workflow_list',{project_path:pp});
+    if(!j.ok || !j.workflows || j.workflows.length===0){
+      list.innerHTML='<div style="padding:8px 10px;color:#7d8590;font-size:11px">No workflows yet.</div>';
+      return;
+    }
+    list.innerHTML='';
+    j.workflows.forEach(w=>{
+      const item=document.createElement('div');
+      item.className='wf-menu-item';
+      item.style.cssText='padding:8px 10px;cursor:pointer;border-radius:4px;font-size:12px';
+      const activeIndicator = (w.name===_wfActiveCurrentName) ? '▶ ' : '⊙ ';
+      item.innerHTML=`<span style="color:${w.source==='project'?'#3fb950':'#7d8590'}">${activeIndicator}</span><strong>${w.name}</strong><br><span style="font-size:10px;color:#7d8590">${w.source} · ${w.step_count} steps · ${w.status}</span>`;
+      item.onclick=async()=>{
+        // V15 R37 Y2: project_path no longer required — workflow state là global.
+        // User có thể activate workflow rồi instruct CA biết project_path qua prompt.
+        const currentProjectPath = _wfCurrentProjectPath() || '';
+        if(typeof _wfUpdatePathLabel==='function') _wfUpdatePathLabel(currentProjectPath);
+        const res=await wfCallTool('workflow_activate',{name:w.name,project_path:currentProjectPath});
+        if(res.ok){
+          document.getElementById('wf-menu').style.display='none';
+          await refreshActiveBanner();
+        } else {
+          alert('Activate failed: '+(res.error||res.error_name));
+        }
+      };
+      item.onmouseenter=()=>item.style.background='#2d333b';
+      item.onmouseleave=()=>item.style.background='';
+      list.appendChild(item);
+    });
+  }catch(e){
+    list.innerHTML='<div style="padding:8px 10px;color:#f85149;font-size:11px">Load error: '+e.message+'</div>';
+  }
+}
+
+async function refreshActiveBanner(){
+  // V15 R37 Y2: state là global, không cần project_path
+  const pp=_wfCurrentProjectPath()||'';
+  const banner=document.getElementById('wf-active-banner');
+  const stopItem=document.getElementById('wf-stop-item');
+  try{
+    const r=await fetch('/api/workflow_active'+(pp?('?project_path='+encodeURIComponent(pp)):''));
+    const j=await r.json();
+    if(j.ok && j.active){
+      _wfActiveCurrentName=j.name;
+      banner.style.display='block';
+      stopItem.style.display='block';
+      document.getElementById('wf-active-name').textContent=j.name;
+      document.getElementById('wf-active-step').textContent=j.current_step||'?';
+      document.getElementById('wf-active-total').textContent=j.total_steps||'?';
+      const step=j.step;
+      let bodyHtml='';
+      if(j.complete){
+        bodyHtml='<em style="color:#3fb950">✅ Workflow complete</em>';
+      } else if(j.paused){
+        bodyHtml='<em style="color:#f85149">⏸ Paused: '+(j.step_statuses?.[j.current_step]?.evidence||'fail')+'</em>';
+      } else if(step){
+        bodyHtml=(step.title_blocks||[]).map(b=>`<div style="margin-bottom:6px"><strong style="color:#2f81f7">${b.title}</strong><br>${(b.context||'').replace(/</g,'&lt;')}</div>`).join('')||step.body||'';
+      } else {
+        bodyHtml='<em style="color:#7d8590">No step body</em>';
+      }
+      document.getElementById('wf-active-step-body').innerHTML=bodyHtml;
+    } else {
+      _wfActiveCurrentName=null;
+      banner.style.display='none';
+      stopItem.style.display='none';
+    }
+  }catch(e){
+    console.error('wf-active poll err',e);
+  }
+}
+
+async function workflowStop(){
+  // V15 R37 Y2: deactivate global state, không cần project_path
+  await wfCallTool('workflow_deactivate',{project_path:_wfCurrentProjectPath()||''});
+  await refreshActiveBanner();
+  document.getElementById('wf-menu').style.display='none';
+}
+
+function initWorkflowUI(){
+  const btn=document.getElementById('btn-wf-toggle');
+  const menu=document.getElementById('wf-menu');
+  if(!btn) return;
+  btn.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    const visible=menu.style.display==='block';
+    menu.style.display=visible?'none':'block';
+    if(!visible) refreshWorkflowMenu();
+  });
+  document.addEventListener('click',(e)=>{
+    if(!document.getElementById('wf-dropdown').contains(e.target)){
+      menu.style.display='none';
+    }
+  });
+  // menu actions (delegated by data-act)
+  menu.addEventListener('click',(e)=>{
+    const item=e.target.closest('[data-act]');
+    if(!item) return;
+    const act=item.dataset.act;
+    if(act==='new'){
+      const pp=_wfCurrentProjectPath();
+      const url='/ui/workflow_editor'+(pp?'?project_path='+encodeURIComponent(pp):'');
+      window.open(url,'_blank');
+      menu.style.display='none';
+    } else if(act==='open-editor'){
+      window.open('/ui/workflow_editor','_blank');
+      menu.style.display='none';
+    } else if(act==='stop'){
+      workflowStop();
+    }
+  });
+  // banner buttons
+  document.getElementById('wf-active-stop').addEventListener('click',workflowStop);
+  document.getElementById('wf-active-refresh').addEventListener('click',refreshActiveBanner);
+  // initial + polling
+  refreshActiveBanner();
+  _wfActivePollTimer=setInterval(refreshActiveBanner,5000);
+}
+
+// ================================================================
+// CA Session Log
+// ================================================================
+let _calSSE = null;
+let _calCurrentSid = null;
+let _calLastId = 0;
+
+function showCALogPanel(show) {
+  const panel = document.getElementById('ca-log-panel');
+  const toolSect = document.querySelector('.tools-section');
+  const logSect = document.querySelectorAll('.section');
+  const drawerEl = document.getElementById('ca-drawer');
+  if (show) {
+    panel.classList.add('active');
+    if (toolSect) toolSect.style.display = 'none';
+    logSect.forEach(s => s.style.display = 'none');
+    if (drawerEl) drawerEl.style.display = 'none';
+    calLoadSessions();
+  } else {
+    panel.classList.remove('active');
+    if (toolSect) toolSect.style.display = '';
+    logSect.forEach(s => s.style.display = '');
+    if (drawerEl) drawerEl.style.display = '';
+    calDisconnectSSE();
+  }
+}
+
+async function calLoadSessions() {
+  const fp = folderPath || localStorage.getItem('toolC_folderPath') || '';
+  if (!fp) {
+    document.getElementById('cal-session-list').innerHTML =
+      '<div class="cal-no-sess">No folder path set.<br>Set a folder above first.</div>';
+    return;
+  }
+  try {
+    const r = await fetch(`${BACKEND_API}/api/sessions?project_path=${encodeURIComponent(fp)}&limit=15`);
+    const data = await r.json();
+    const sessions = data.sessions || [];
+    const list = document.getElementById('cal-session-list');
+    if (!sessions.length) {
+      list.innerHTML = '<div class="cal-no-sess">No sessions yet.<br>Click Get Folder or call open_session to begin.</div>';
+      return;
+    }
+    list.innerHTML = sessions.map(s => {
+      const ts = s.started_at ? s.started_at.replace('T', ' ').slice(0, 16) : '';
+      const statusDot = s.status === 'active' ? 'active' : 'closed';
+      const evCnt = s.total_events || 0;
+      const sid = escapeHtml(s.session_id);
+      const sidJs = String(s.session_id || '').replace(/'/g, "\\'");
+      const title = escapeHtml(s.session_title || '');
+      const status = escapeHtml(s.status || '');
+      return `<div class="cal-session-item${s.session_id === _calCurrentSid ? ' active' : ''}"
+        data-sid="${sid}" onclick="calSelectSession('${sidJs}')">
+        <div class="cal-sess-title" title="${title}">${title}</div>
+        <div class="cal-sess-meta">
+          <span class="cal-dot ${statusDot}"></span>
+          ${status} - ${evCnt} ev  ${escapeHtml(ts)}
+        </div>
+      </div>`;
+    }).join('');
+    // Auto-select first active session
+    if (!_calCurrentSid) {
+      const first = sessions.find(s => s.status === 'active') || sessions[0];
+      if (first) calSelectSession(first.session_id);
+    }
+  } catch(e) {
+    document.getElementById('cal-session-list').innerHTML =
+      `<div class="cal-no-sess">Failed to load sessions:<br>${e.message}</div>`;
+  }
+}
+
+async function calSelectSession(sid) {
+  _calCurrentSid = sid;
+  _calLastId = 0;
+  calDisconnectSSE();
+  document.querySelectorAll('.cal-session-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.sid === sid);
+  });
+  const detail = document.getElementById('cal-detail');
+  detail.innerHTML = '<div class="cal-empty"><span class="spinner"></span> Loading...</div>';
+  try {
+    const r = await fetch(`${BACKEND_API}/api/sessions/${encodeURIComponent(sid)}/events?limit=200`);
+    const data = await r.json();
+    if (!data.ok) {
+      detail.innerHTML = `<div class="cal-empty">Error: ${data.error}</div>`; return;
+    }
+    calRenderDetail(data);
+    if (data.events && data.events.length) {
+      _calLastId = Math.max(...data.events.map(e => e.id || 0));
+    }
+    // Connect SSE if session is active
+    if (data.status === 'active') calConnectSSE(sid);
+  } catch(e) {
+    detail.innerHTML = `<div class="cal-empty">Error: ${e.message}</div>`;
+  }
+}
+
+function calRenderDetail(data) {
+  const events = data.events || [];
+  const detail = document.getElementById('cal-detail');
+  // Summary badge counts
+  const actionIcons = {read:'',write:'',execute:'',validate:'',cache:'',backup:'',workflow:'',other:''};
+  const summary = data.summary || {};
+  const okCnt   = events.filter(e => e.status === 'ok').length;
+  const errCnt  = events.filter(e => e.status === 'error').length;
+  const total   = events.length;
+  const badgesHtml = Object.entries(actionIcons)
+    .filter(([k]) => summary[k])
+    .map(([k,icon]) => `<span class="cal-bdg">${icon} ${k.charAt(0).toUpperCase()+k.slice(1)} <strong>${summary[k]}</strong></span>`)
+    .join('')
+    + `<span class="cal-bdg"> <strong>${okCnt}</strong></span>`
+    + `<span class="cal-bdg"> <strong>${errCnt}</strong></span>`
+    + `<span class="cal-bdg"> <strong>${total}</strong></span>`;
+  const isActive = data.status === 'active';
+  const titleEsc = escapeHtml(data.session_title || '');
+  const statusEsc = escapeHtml(data.status || '');
+  const sidJs = String(data.session_id || '').replace(/'/g, "\\'");
+  detail.innerHTML = `
+    <div class="cal-detail-hdr">
+      <div class="cal-detail-title" title="${titleEsc}">Session: ${titleEsc}</div>
+      <span class="cal-coverage">${statusEsc}</span>
+      <span class="cal-sse ${isActive ? 'live' : 'off'}" id="cal-sse-badge">${isActive ? 'SSE Live' : 'SSE Closed'}</span>
+      <div class="cal-detail-btns">
+        <button class="cal-btn" onclick="calRefresh()">Refresh</button>
+        <button class="cal-btn" onclick="calExport('${sidJs}')">Export</button>
+      </div>
+    </div>
+    <div class="cal-badges">${badgesHtml || '<span class="cal-bdg">No events</span>'}</div>
+    <div class="cal-events-hdr">
+      <span style="flex:1">TOOL</span>
+      <span>TARGET</span>
+      <span style="width:60px">RANGE</span>
+      <span style="width:52px">TIME</span>
+    </div>
+    <div class="cal-events-wrap" id="cal-events-wrap">
+      ${events.length ? events.map(calRenderEventLine).join('') : '<div class="cal-empty">No events in this session yet.</div>'}
+    </div>`;
+  // Scroll to bottom
+  const wrap = document.getElementById('cal-events-wrap');
+  if (wrap) wrap.scrollTop = wrap.scrollHeight;
+}
+
+function calRenderEventLine(ev) {
+  const toolName = String(ev.tool_name || '');
+  const status = String(ev.status || 'ok');
+  const reason = String(ev.reason || '');
+  const isNative = ev.tool_origin === 'native';
+  const cls = status === 'ok' ? 'cn-ok' : (status === 'error' ? 'cn-err' : 'cn-warn');
+  // Build event line by escape-then-substitute so neither tool_name nor
+  // natural_log_line content can break out of HTML context.
+  const naturalRaw = String(ev.natural_log_line || `${toolName} |  ${ev.duration_ms || 0}ms`);
+  const naturalEsc = escapeHtml(naturalRaw);
+  const toolNameEsc = escapeHtml(toolName);
+  const nativeBadge = isNative
+    ? ` <span style="color:var(--text-dim)">(native)</span>`
+    : '';
+  const replaceTarget = isNative ? toolNameEsc + ' (native)' : toolNameEsc;
+  const replacement = `<span class="${cls}">${toolNameEsc}${nativeBadge}</span>`;
+  // Replace the FIRST occurrence only; if no occurrence, just use escaped natural
+  const display = naturalEsc.includes(replaceTarget)
+    ? naturalEsc.replace(replaceTarget, replacement)
+    : `<span class="${cls}">${toolNameEsc}${nativeBadge}</span> ${naturalEsc}`;
+  const reasonEsc = escapeHtml(reason);
+  return `<div class="cal-ev">
+    <div class="cal-ev-main">${display}</div>
+    ${reason ? `<div class="cal-ev-reason${status==='warn'?' warn':''}">${reasonEsc}</div>` : ''}
+  </div>`;
+}
+
+function calConnectSSE(sid) {
+  calDisconnectSSE();
+  try {
+    _calSSE = new EventSource(`${BACKEND_API}/api/session/stream/${encodeURIComponent(sid)}?last_id=${_calLastId}`);
+    _calSSE.onmessage = (e) => {
+      try {
+        const ev = JSON.parse(e.data);
+        if (ev.id) _calLastId = ev.id;
+        const wrap = document.getElementById('cal-events-wrap');
+        if (wrap) {
+          // Remove empty message if present
+          const emptyEl = wrap.querySelector('.cal-empty');
+          if (emptyEl) emptyEl.remove();
+          wrap.insertAdjacentHTML('beforeend', calRenderEventLine(ev));
+          wrap.scrollTop = wrap.scrollHeight;
+          // Update badges: re-fetch session
+          calUpdateBadges(sid);
+        }
+      } catch(err) {}
+    };
+    _calSSE.onerror = () => {
+      const badge = document.getElementById('cal-sse-badge');
+      if (badge) { badge.className = 'cal-sse off'; badge.textContent = 'SSE Disconnected'; }
+    };
+    _calSSE.onopen = () => {
+      const badge = document.getElementById('cal-sse-badge');
+      if (badge) { badge.className = 'cal-sse live'; badge.textContent = 'SSE Live'; }
+    };
+  } catch(e) {}
+}
+
+function calDisconnectSSE() {
+  if (_calSSE) { try { _calSSE.close(); } catch(e){} _calSSE = null; }
+}
+
+async function calUpdateBadges(sid) {
+  //Lightweight: just re-fetch the current session events to update summary
+  try {
+    const r = await fetch(`${BACKEND_API}/api/sessions/${encodeURIComponent(sid)}/events?limit=500`);
+    const data = await r.json();
+    if (!data.ok) return;
+    const events = data.events || [];
+    const actionIcons = {read:'',write:'',execute:'',validate:'',cache:'',backup:'',workflow:''};
+    const summary = data.summary || {};
+    const okCnt = events.filter(e => e.status === 'ok').length;
+    const errCnt = events.filter(e => e.status === 'error').length;
+    const badgesEl = document.querySelector('.cal-badges');
+    if (!badgesEl) return;
+    badgesEl.innerHTML = Object.entries(actionIcons)
+      .filter(([k]) => summary[k])
+      .map(([k,icon]) => `<span class="cal-bdg">${icon} ${k.charAt(0).toUpperCase()+k.slice(1)} <strong>${summary[k]}</strong></span>`)
+      .join('')
+      + `<span class="cal-bdg"> <strong>${okCnt}</strong></span>`
+      + `<span class="cal-bdg"> <strong>${errCnt}</strong></span>`
+      + `<span class="cal-bdg"> <strong>${events.length}</strong></span>`;
+  } catch(e) {}
+}
+
+async function calExport(sid) {
+  try {
+    const url = `${BACKEND_API}/api/sessions/${encodeURIComponent(sid)}/export`;
+    const a = document.createElement('a');
+    a.href = url; a.download = `session_${sid}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    showToast(' Session exported', 'success');
+  } catch(e) { showToast('Export failed: ' + e.message, 'error'); }
+}
+
+async function calRefresh() {
+  if (_calCurrentSid) await calSelectSession(_calCurrentSid);
+  await calLoadSessions();
+}
+// ================================================================
+// Sprint 3 - Tool Inspector, Token Panel, Coverage, Command Helper
+// ================================================================
+async function s3FetchToken() {
+  var el = document.getElementById('s3-token-result');
+  if (!el) return;
+  el.textContent = 'Fetching...';
+  try {
+    var r = await fetch(BACKEND_API + '/api/token_panel');
+    var d = await r.json();
+    var badge = document.getElementById('s3-token-badge');
+    var panel = d.token_panel || d;
+    var status = panel.auth_status || d.status || 'unknown';
+    if (badge) { badge.textContent = status; badge.className = 's3-badge ' + (status === 'valid' ? 'ok' : 'err'); }
+    var pfx = document.getElementById('s3-token-prefix');
+    if (pfx) pfx.textContent = d.token_prefix ? d.token_prefix + '...(masked)' : '(none)';
+    el.textContent = 'Protected tiers: ' + ((panel.protected_tiers || []).join(', ') || 'none')
+      + '\nReuse: ' + (panel.reuse_policy || 'unknown')
+      + '\nMax retries: ' + (panel.max_retries || '?')
+      + '\n' + (d.message || '');
+  } catch(e) { el.textContent = 'Error: ' + e.message; }
+}
+
+async function s3InspectTool() {
+  var nameEl = document.getElementById('s3-inspect-name');
+  var el = document.getElementById('s3-inspect-result');
+  if (!nameEl || !el) return;
+  var name = nameEl.value.trim();
+  if (!name) return;
+  el.textContent = 'Loading...';
+  try {
+    var r = await fetch(BACKEND_API + '/api/tool_inspector/' + encodeURIComponent(name));
+    var d = await r.json();
+    var out = 'Tool: ' + d.tool_name + '  Tier: ' + (d.tier || '?') + '  Token: ' + (d.requires_token ? 'REQUIRED' : 'no') + '\n\n';
+    if (d.accepted_fields && d.accepted_fields.length) out += 'Fields: ' + d.accepted_fields.join(', ') + '\n\n';
+    if (d.accepted_aliases && Object.keys(d.accepted_aliases).length) out += 'Aliases: ' + JSON.stringify(d.accepted_aliases) + '\n\n';
+    if (d.payload_example) out += 'Payload example: ' + JSON.stringify(d.payload_example) + '\n\n';
+    if (d.last_error) out += 'Last error: ' + d.last_error + '\n\n';
+    if (d.retry_success !== undefined) out += 'Retry success: ' + d.retry_success + '\n\n';
+    if (d.known_gotchas && d.known_gotchas.length) out += 'Gotchas:\n' + d.known_gotchas.map(function(g){return '  - '+g;}).join('\n') + '\n\n';
+    if (d.recommended_prompt_rule) out += 'Rule: ' + d.recommended_prompt_rule;
+    el.textContent = out;
+    var tl = document.getElementById('s3-inspect-fields');
+    if (tl) tl.innerHTML = (d.accepted_fields || []).map(function(f){return '<span class="s3-tag">'+f+'</span>';}).join('');
+  } catch(e) { el.textContent = 'Error: ' + e.message; }
+}
+
+let _s3SchemaPayload = null;
+function s3SchemaAssist() {
+  var input = document.getElementById('s3-schema-input');
+  var el = document.getElementById('s3-schema-result');
+  if (!input || !el) return;
+  _s3SchemaPayload = null;
+  try {
+    var d = JSON.parse(input.value || '{}');
+    var payload = d.corrected_payload || (d.ca_guidance && d.ca_guidance.corrected_payload) || null;
+    var unsupported = d.unsupported_fields || [];
+    var accepted = d.accepted_fields || (d.ca_guidance && d.ca_guidance.accepted_fields) || [];
+    var action = d.ca_next_action || (d.ca_guidance && d.ca_guidance.ca_next_action) || 'inspect_schema';
+    _s3SchemaPayload = payload;
+    el.textContent = 'Unsupported fields: ' + (unsupported.join(', ') || '(none)')
+      + '\nAccepted fields: ' + (accepted.join(', ') || '(not supplied)')
+      + '\nca_next_action: ' + action
+      + '\n\ncorrected_payload:\n' + JSON.stringify(payload || {}, null, 2)
+      + '\n\nRetry note: mutating tools require token and any dry_run/confirm safety gate before retry.';
+  } catch(e) {
+    el.textContent = 'Invalid JSON: ' + e.message;
+  }
+}
+
+async function s3CopySchemaPayload() {
+  var el = document.getElementById('s3-schema-result');
+  if (!_s3SchemaPayload) {
+    if (el) el.textContent = 'No corrected_payload available to copy.';
+    return;
+  }
+  await navigator.clipboard.writeText(JSON.stringify(_s3SchemaPayload, null, 2));
+  showToast('Corrected payload copied', 'success');
+}
+
+function s3GenCommand() {
+  var tool = (document.getElementById('s3-cmd-tool') || {value:''}).value.trim() || 'write_fix';
+  var base = BACKEND_API;
+  var sub = (document.getElementById('s3-cmd-subpath') || {value:''}).value.trim();
+  var forbidden = /(^|\s)(curl|wget|bash|cat|grep|sed|awk)(\s|$)/i.test(tool);
+  var destructive = /delete|remove|rm\s|rmdir|del\s/i.test(tool);
+  if (forbidden || destructive) {
+    var warn = forbidden
+      ? 'Blocked: Windows-first sessions must use Invoke-RestMethod, not curl/wget/bash/cat/grep/sed/awk.'
+      : 'Blocked: destructive command templates require explicit confirmation outside Command Helper.';
+    var blockedEl = document.getElementById('s3-cmd-result');
+    if (blockedEl) blockedEl.textContent = warn;
+    return;
+  }
+  var cd = sub ? 'Set-Location -LiteralPath "' + sub.replace(/"/g, '""') + '"\n' : '';
+  var tmpl = '$token = (Invoke-RestMethod -Uri "' + base + '/api/token" -Method GET).token\n'
+    + cd
+    + '$body = @{\n  file_path = "relative/path.ext"\n  start_line = 1\n  end_line = 1\n  new_content = "replacement"\n} | ConvertTo-Json -Depth 5\n'
+    + 'Invoke-RestMethod -Uri "' + base + '/api/call/' + tool + '" -Method POST '
+    + '-Body $body -ContentType "application/json" '
+    + '-Headers @{ "X-Orchestrator-Token" = $token }\n'
+    + '# Preview cwd: ' + (sub || '(project_path cwd)') + '\n'
+    + '# Preview command_executed: POST /api/call/' + tool;
+  var el = document.getElementById('s3-cmd-result');
+  if (el) el.textContent = tmpl;
+}
+
+function s3RefreshCoverage() {
+  var log = [];
+  try { log = JSON.parse(localStorage.getItem(CA_LOG_KEY) || '[]'); } catch(e) {}
+  var byTool = {};
+  for (var i = 0; i < log.length; i++) {
+    var e = log[i];
+    if (!e.tool) continue;
+    if (!byTool[e.tool]) byTool[e.tool] = { ok:0, err:0, retryOk:0 };
+    if (e.status === 'success') byTool[e.tool].ok++;
+    else if (e.status === 'error') byTool[e.tool].err++;
+    else if (e.status === 'retry-pass') byTool[e.tool].retryOk++;
+  }
+  var tested = TOOLS.filter(function(t){ return !!byTool[t.name]; });
+  var untested = TOOLS.filter(function(t){ return !byTool[t.name]; });
+  var skipped = TOOLS.filter(function(t){ return !byTool[t.name]; }).map(function(t){ return {name:t.name, reason:'not run in current coverage log'}; });
+  var html = '<table class="cov-table"><thead><tr><th>Tool</th><th>Tested</th><th>Failed first attempt</th><th>Passed after retry</th></tr></thead><tbody>';
+  for (var j = 0; j < tested.length; j++) {
+    var t = tested[j]; var s = byTool[t.name];
+    html += '<tr><td>' + t.name + '</td>'
+      + '<td class="cov-ok">' + s.ok + '</td>'
+      + '<td class="' + (s.err ? 'cov-err' : '') + '">' + s.err + '</td>'
+      + '<td class="' + (s.retryOk ? 'cov-warn' : '') + '">' + s.retryOk + '</td></tr>';
+  }
+  html += '</tbody></table>';
+  var w = document.getElementById('s3-cov-tested');
+  if (w) w.innerHTML = html;
+  var el2 = document.getElementById('s3-cov-untested');
+  if (el2) el2.innerHTML = untested.length
+    ? skipped.map(function(t){ return '<span class="s3-tag">'+t.name+' - '+t.reason+'</span>'; }).join('')
+    : '<span style="color:var(--green-txt)">All tools tested!</span>';
+  var el3 = document.getElementById('s3-cov-summary');
+  if (el3) el3.textContent = 'Tested: ' + tested.length + ' / ' + TOOLS.length + ' | Untested: ' + untested.length
+    + ' | Failed first attempt: ' + tested.filter(function(t){ return byTool[t.name] && byTool[t.name].err > 0; }).length
+    + ' | Passed after retry: ' + tested.filter(function(t){ return byTool[t.name] && byTool[t.name].retryOk > 0; }).length;
+  var baseline = tested.filter(function(t){ return byTool[t.name] && byTool[t.name].err > 0; });
+  var retry = tested.filter(function(t){ return byTool[t.name] && byTool[t.name].retryOk > 0; });
+  var b = document.getElementById('s3-cov-baseline');
+  if (b) b.innerHTML = baseline.length
+    ? baseline.map(function(t){ return '<span class="s3-tag">'+t.name+'</span>'; }).join('')
+    : '<span style="color:var(--green-txt)">No baseline failures recorded</span>';
+  var rp = document.getElementById('s3-cov-retry');
+  if (rp) rp.innerHTML = retry.length
+    ? retry.map(function(t){ return '<span class="s3-tag">'+t.name+'</span>'; }).join('')
+    : '<span style="color:var(--text-dim)">No retry-pass entries recorded</span>';
+}
+
+function s3ClassifyHint() {
+  var input = document.getElementById('s3-hint-input');
+  var el = document.getElementById('s3-hint-result');
+  if (!input || !el) return;
+  try {
+    var d = JSON.parse(input.value || '{}');
+    var hasNext = !!(d.ca_next_action || (d.ca_guidance && d.ca_guidance.ca_next_action));
+    var retrySeq = d.retry_sequence || (d.ca_guidance && d.ca_guidance.retry_sequence) || [];
+    var payload = d.payload_example || (d.ca_guidance && d.ca_guidance.payload_example);
+    var accepted = d.accepted_fields || (d.ca_guidance && d.ca_guidance.accepted_fields);
+    var label = 'Weak';
+    var reason = 'Missing ca_next_action or concrete retry guidance.';
+    if (hasNext && retrySeq && retrySeq.length) {
+      label = 'Excellent';
+      reason = 'Has ca_next_action and concrete retry_sequence.';
+    } else if (hasNext && payload && accepted) {
+      label = 'Good';
+      reason = 'Has ca_next_action, payload_example, and accepted_fields.';
+    }
+    var severity = d.severity || '';
+    var issue = (label === 'Weak' && (severity === 'CRITICAL' || severity === 'P0')) ? '\nIssue: create weak P0 hint issue.' : '';
+    el.textContent = 'Hint quality: ' + label + '\nReason: ' + reason + issue;
+  } catch(e) {
+    el.textContent = 'Invalid JSON: ' + e.message;
+  }
+}
+
+/* ─── V15 panels (R3+ Skills, R5 T4, R6 Decision, [Ab..Az] Projects) ─── */
+
+function v15UpdateUiState() {
+  return null;
+}
+
+async function v15LoadSkills() {
+  const el = document.getElementById('v15-skills-list');
+  if (!el) return;
+  el.textContent = 'Scanning .ToolA_Skill/skills/...';
+  try {
+    const baseProj = (window.currentProjectPath || '').replace(/\\/g, '/');
+    if (!baseProj) {
+      el.textContent = 'Set project path first (header input). The skills folder lives in [A:P], not in your active project.';
+    }
+    const r = await fetch('/api/call/list_structure', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_path: '', path: '.ToolA_Skill/skills', depth: 2, save_output: false })
+    });
+    const j = await r.json();
+    const tree = j.result || j.error || '(empty)';
+    const lines = (tree.split('\n') || []).filter(l => l.includes('SKILL.md') || /^[├└│ ]*\d+_/.test(l));
+    if (lines.length === 0) {
+      el.innerHTML = '<pre style="font-family:Consolas,monospace;font-size:11px;margin:0">' + tree.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])) + '</pre>';
+    } else {
+      el.innerHTML = '<pre style="font-family:Consolas,monospace;font-size:11px;margin:0;color:var(--text-main)">' + lines.join('\n') + '</pre>';
+    }
+  } catch (e) {
+    el.textContent = 'Error: ' + e.message;
+  }
+}
+
+async function v15T4Check() {
+  const el = document.getElementById('v15-t4-result');
+  const tgt = document.getElementById('v15-t4-target').value.trim();
+  if (!tgt) { el.textContent = 'Enter URL or port first'; return; }
+  el.textContent = 'Checking ' + tgt + '...';
+  let url = tgt;
+  if (/^\d+$/.test(tgt)) url = 'http://127.0.0.1:' + tgt;
+  if (!/^https?:\/\//.test(url)) url = 'http://127.0.0.1:' + url.replace(/^:/, '');
+  try {
+    // Try /health then /json (CDP) then root
+    const probes = ['/health', '/api/health', '/json/version', '/'];
+    let result = '';
+    for (const p of probes) {
+      try {
+        const t0 = performance.now();
+        const r = await fetch(url + p, { method: 'GET' });
+        const dt = (performance.now() - t0).toFixed(0);
+        const txt = await r.text();
+        result += p + ' → ' + r.status + ' (' + dt + 'ms): ' + (txt.substring(0, 120).replace(/\s+/g, ' ')) + '\n';
+        if (r.ok) break;
+      } catch (e) {
+        result += p + ' → unreachable: ' + e.message + '\n';
+      }
+    }
+    el.innerHTML = '<pre style="font-family:Consolas,monospace;font-size:11px;margin:0;white-space:pre-wrap">' + result.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])) + '</pre>';
+  } catch (e) {
+    el.textContent = 'Error: ' + e.message;
+  }
+}
+
+function v15Decide() {
+  const el = document.getElementById('v15-decision-result');
+  const task = (document.getElementById('v15-decision-task').value || '').toLowerCase().trim();
+  if (!task) { el.textContent = 'Enter task description first'; return; }
+  // Inline rule engine (mirrors decision_examples.md). Future: replace with /api/call/tool_decision_hint
+  const rules = [
+    { match: /\b(ui|dom|browser|electron|render|click|button|css)\b/, tier: '[T4]', tool: 'browser_navigate / browser_snapshot', skill: '18_runtime_dom_T4', why: 'UI/runtime visible only at runtime, repo inspection alone insufficient' },
+    { match: /\b(port|server|stale|cache|admin|restart|pid|host)\b/, tier: '[T4c]', tool: 'server_lifecycle_status / port_owner_inspect', skill: '16_server_lifecycle (plan)', why: '2+ failed code cycles + unchanged runtime → check lifecycle first' },
+    { match: /\b(auth|token|password|credential|secret|delete|migration|schema)\b/, tier: '[T2] [A]', tool: 'write_fix + apply_after_dry_run', skill: '05_write_pipeline + 06_token_auth', why: 'Critical path: governance > speed' },
+    { match: /\b(callers|usage|find|search|lookup|where is|symbol)\b/, tier: '[T1]', tool: 'find_symbol (include=all) OR search_code (mode=smart)', skill: '15_search_code_intel', why: 'Read-only; indexed lookup saves context vs grep' },
+    { match: /\b(session|audit|handoff|close|summary|log)\b/, tier: '[T3]', tool: 'open_session / log_native_event / close_session', skill: '17_session_audit', why: 'Audit trail required for governance' },
+    { match: /\b(refactor|across.*files|migrate|atomic|rollback|multi.?file|batch)\b/, tier: '[T2] [A]', tool: 'write_fix per file + post_write_batch_verify', skill: '05_write_pipeline', why: 'Multi-file: [A] rollback essential' },
+    { match: /\b(typo|comment|css|color|1 line|small|tweak|simple)\b/, tier: 'Native', tool: 'Edit + log_native_event', skill: '12_native_audit', why: 'Single-file low-risk: native ~10× faster' },
+  ];
+  const matched = rules.find(r => r.match.test(task)) || { tier: '[T1] (default)', tool: 'find_symbol / search_code', skill: '00_skill_router', why: 'No specific signal in task; default to read-only analysis first' };
+  el.innerHTML = '<div style="font-family:Consolas,monospace;font-size:12px;line-height:1.6">' +
+    '<div><strong style="color:var(--accent-txt)">' + matched.tier + '</strong> — ' + matched.tool + '</div>' +
+    '<div style="color:var(--text-muted)">Skill: <code>' + matched.skill + '</code></div>' +
+    '<div style="color:var(--text-dim);font-size:11px;margin-top:4px">Why: ' + matched.why + '</div>' +
+    '</div>';
+}
+
+async function v15LoadProjects() {
+  const el = document.getElementById('v15-projects-list');
+  const sum = document.getElementById('v15-projects-summary');
+  el.textContent = 'Loading sessions across projects...';
+  try {
+    const r = await fetch('/api/call/list_sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_path: '', limit: 50 })
+    });
+    const j = await r.json();
+    const sessions = j.sessions || j.results || [];
+    const byProject = {};
+    sessions.forEach(s => {
+      const p = s.project_path || s.path || '(unknown)';
+      if (!byProject[p]) byProject[p] = { count: 0, latest: s.started_at || '' };
+      byProject[p].count++;
+    });
+    const slots = ['[Ab]', '[Ac]', '[Ad]', '[Ae]', '[Af]', '[Ag]'];
+    const projects = Object.entries(byProject).slice(0, slots.length);
+    sum.textContent = projects.length + ' registered project(s)';
+    if (projects.length === 0) {
+      el.textContent = 'No active sessions yet. Set folder + open_session to register a project.';
+    } else {
+      el.innerHTML = '<pre style="font-family:Consolas,monospace;font-size:11px;margin:0;color:var(--text-main)">' +
+        projects.map(([p, info], i) => slots[i] + ' (' + info.count + ' sess) ' + p).join('\n') +
+        '</pre>';
+    }
+  } catch (e) {
+    el.textContent = 'Error: ' + e.message;
+  }
+}
+
+/* V15 R9: T4 tools now in TOOLS array with group=T4, so standard applyModeFilter
+   handles them via row.hidden. Remove the inline-style override from R7 which
+   conflicted with applyModeFilter (i4 fix). Also clear any orphan inline-style
+   on init so prior session state cannot leak. */
+document.addEventListener('DOMContentLoaded', function() {
+  // Cleanup: clear inline display='none' that older builds may have set
+  document.querySelectorAll('#tool-tbody tr[style*="display"]').forEach(r => {
+    r.style.display = '';
+  });
+  // Remove obsolete T4 placeholder if exists
+  const oldPh = document.getElementById('t4-placeholder');
+  if (oldPh) oldPh.remove();
+  setCaAdvisoryNotice({
+    label:'[A]',
+    title:'Tool is waiting to run',
+    body:'Hints, warnings, next actions, schema, and payload guidance from the app will appear here.'
+  });
+});
+</script>
+</body>
+</html>
+
+
