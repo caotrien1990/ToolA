@@ -709,7 +709,7 @@ class TestSearchRegexBudget(unittest.IsolatedAsyncioTestCase):
                 encoding="utf-8",
             )
             env = {key: value for key, value in os.environ.items() if key not in ("PYTHONHOME", "PYTHONPATH", "PYTHONSTARTUP")}
-            done = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=120, env=env)
+            done = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=120, env=env, stdin=subprocess.DEVNULL)
             ran = marker.read_text(encoding="utf-8")
         self.assertEqual(done.returncode, 0, done.stderr[-2000:])
         self.assertEqual(done.stdout.strip(), "[2]")
@@ -804,9 +804,20 @@ class TestRegexDeadlineGuard(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._write(root)
+            # CI-2FAIL hardening (test-only, flake verdict): 0.3s is genuinely
+            # timing-fragile for the INPUT phase (snapshot pin/create + read) on a
+            # loaded runner. Measured under 28-core saturation: dl=0.3 -> 2/15 ok
+            # (13 REGEX_SEARCH_TIMEOUT, mostly phase=input / 0 files read); an explicit
+            # caller deadline disables the R39 retry (search.py:2408-2410), so a slow
+            # input wedge is abandoned at exactly 0.3s. dl=1.5 -> 20/20 ok under the
+            # same load (max elapsed 0.968s). 1.5 stays BELOW the 2.0 floor threshold,
+            # so a narrowed one-file pattern still skips the floor (an unscoped 1.5
+            # would floor to 2.0); tiny-deadline guard rejection is covered by the
+            # sibling unscoped / *.py tests. Production budget accounting is correct
+            # and unchanged. Assertions below are unchanged.
             payload = json.loads(await search_module.search_code(
                 query="needle", project_path=str(root), mode="regex",
-                file_pattern="search.py", regex_deadline_seconds=0.3))
+                file_pattern="search.py", regex_deadline_seconds=1.5))
         self.assertTrue(payload["ok"], payload)
         self.assertEqual(payload["count"], 2)
         self.assertNotIn("regex_deadline_floor_applied", payload)

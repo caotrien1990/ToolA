@@ -32,7 +32,11 @@ class PackagedPagesTests(unittest.TestCase):
             bundled = checkout / "orchestrator" / "web_ui" / "main.html"
             bundled.parent.mkdir(parents=True)
             bundled.touch()
-            self.assertEqual(resolve_ui_html(checkout), bundled)
+            # CI tempfile yields an 8.3 SHORT path (RUNNER~1); resolve_ui_html()
+            # returns the .resolve()d LONG path. Compare resolved paths on BOTH
+            # sides so the assertion no longer depends on TEMP spelling (same
+            # class as the search_snapshots 1.2 fix).
+            self.assertEqual(resolve_ui_html(checkout).resolve(), bundled.resolve())
 
     def test_navigation_is_in_body_not_head_script(self):
         html = '<html><head><script>const tag = "<body>";</script></head><body><main/></body></html>'
