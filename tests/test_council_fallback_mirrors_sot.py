@@ -96,15 +96,67 @@ def test_caps_fallback_enabled_flags_match_config():
         assert fb[aid]["enabled"] == meta.get("enabled", True), aid
 
 
-def test_default_models_fallback_matches_config():
-    """WHY: the fallback is only used when the SOT is unreadable, so it must
-    reproduce the SOT rows exactly (measured defect: hermes fallback said
-    opencode-zen/deepseek-v4-flash-free while the SOT row is
-    ltnai/deepseek-v4-pro)."""
+def test_default_models_are_config_only(monkeypatch):
+    """WHY: the hardcoded _COUNCIL_DEFAULT_MODELS_FALLBACK table was removed
+    (2026-11-26, Anh-directed): council_config.json is the SINGLE source of
+    truth for council models. Defaults must mirror the SOT rows exactly, the
+    table must not exist, and an unreadable SOT must yield NO defaults at all
+    (empty) -- never a stale hardcoded pin."""
     cfg = _real_cfg()
-    fb = orchestrator_server._COUNCIL_DEFAULT_MODELS_FALLBACK
+    assert not hasattr(orchestrator_server, "_COUNCIL_DEFAULT_MODELS_FALLBACK")
+    defaults = orchestrator_server._council_default_models_from_config()
     for aid, meta in _rows_in_order(cfg):
-        assert fb[aid] == {"provider": meta["provider"], "model": meta["model"]}, aid
+        assert defaults.get(aid) == {
+            "provider": str(meta.get("provider") or ""),
+            "model": str(meta.get("model") or ""),
+        }, aid
+    monkeypatch.setattr(orchestrator_server.ct, "_load_council_config",
+                        lambda force=False: None)
+    assert orchestrator_server._council_default_models_from_config() == {}
+
+
+def test_empty_config_resolves_unavailable_not_stale_model(monkeypatch, tmp_path):
+    """WHY: with no config model for an agent, resolution must report
+    unavailable + MODEL_NOT_CONFIGURED (the existing path), so dispatch
+    refuses instead of silently running a hardcoded default."""
+    monkeypatch.setattr(orchestrator_server, "_HERE", tmp_path)
+    monkeypatch.setattr(orchestrator_server.ct, "_load_council_config",
+                        lambda force=False: None)
+    monkeypatch.setattr(orchestrator_server, "_COUNCIL_DEFAULT_MODELS",
+                        orchestrator_server._council_default_models_from_config())
+    for agent in ("clau", "ope", "codo", "pic", "kilo", "hermes", "gro"):
+        res = orchestrator_server._council_resolve_model(agent)
+        assert res.resolution_status == "unavailable", agent
+        assert {"warning_name": "MODEL_NOT_CONFIGURED"} in res.warnings, agent
+
+
+def test_command_builder_has_no_hardcoded_model_defaults(monkeypatch, tmp_path):
+    """WHY: the 5 command-builder call sites used `or "<hardcoded model>"`
+    silent defaults (clau claude-opus-5, ope openai-compatible/grok-4.6-build,
+    codo grok-4.6-build, pic deepseek-v4-pro, kilo ltnai/glm-5.2). With an
+    empty config default the built --model slot must be EMPTY; the dispatch
+    gate (WORKER_MODEL_NOT_SET) and resolution (MODEL_NOT_CONFIGURED) own the
+    refusal, not a stale pin. Fail-before: each site returned its literal."""
+    monkeypatch.setattr(orchestrator_server, "_HERE", tmp_path)
+    monkeypatch.setattr(orchestrator_server.ct, "_load_council_config",
+                        lambda force=False: None)
+    monkeypatch.setattr(orchestrator_server, "_COUNCIL_DEFAULT_MODELS", {})
+    for agent in ("clau", "ope", "codo", "pic", "kilo"):
+        cmd = orchestrator_server._council_agent_command(agent, "probe", mode="broker")
+        assert cmd[cmd.index("--model") + 1] == "", (agent, cmd)
+
+
+def test_ope_empty_model_is_not_qualified_into_provider_slash(monkeypatch, tmp_path):
+    """WHY: the ope branch qualifies bare model IDs as provider/model. An
+    EMPTY model with a non-empty provider must stay empty -- qualifying it
+    would fabricate 'provider/' and mask MODEL_NOT_CONFIGURED."""
+    monkeypatch.setattr(orchestrator_server, "_HERE", tmp_path)
+    monkeypatch.setattr(orchestrator_server.ct, "_load_council_config",
+                        lambda force=False: None)
+    monkeypatch.setattr(orchestrator_server, "_COUNCIL_DEFAULT_MODELS",
+                        {"ope": {"provider": "probe-provider", "model": ""}})
+    cmd = orchestrator_server._council_agent_command("ope", "probe", mode="broker")
+    assert cmd[cmd.index("--model") + 1] == ""
 
 
 def test_code_tools_fallback_tables_mirror_enabled_config():

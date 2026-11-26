@@ -6995,20 +6995,13 @@ def _council_agent_caps(agent: str) -> dict:
     return _COUNCIL_AGENT_CAPS.get(agent, {"provider": agent, "broker": True, "context": False, "enabled": True})
 
 
-_COUNCIL_DEFAULT_MODELS_FALLBACK = {
-    "clau": {"provider": "claude",      "model": "claude-opus-5"},
-    "ope":  {"provider": "xingchi3", "model": "xingchi3/xingchi-pool"},
-    "codo": {"provider": "codex",        "model": "grok-4.6-build"},
-    "kilo": {"provider": "ltnai", "model": "ltnai/glm-5.2"},
-    "pic": {"provider": "ltnai", "model": "deepseek-v4-pro"},
-    "hermes": {"provider": "ltnai", "model": "deepseek-v4-pro"},
-    "gro": {"provider": "ltnai", "model": "grok-4.6-build"},
-}
-
-def _council_default_models_from_config(fallback: dict) -> dict:
-    """Per-agent default provider/model from council_config.json (SOT), code fallback
-    only fills gaps. worker_models.json still overrides at dispatch time."""
-    models = {k: dict(v) for k, v in fallback.items()}
+def _council_default_models_from_config() -> dict:
+    """Per-agent default provider/model from council_config.json (SOT) ONLY.
+    No code fallback table: an agent absent from the config -- or a failed
+    config load -- gets an empty default, so _council_resolve_model reports
+    unavailable/MODEL_NOT_CONFIGURED instead of silently dispatching a stale
+    hardcoded pin. worker_models.json still overrides at dispatch time."""
+    models: dict = {}
     try:
         cfg = ct._load_council_config() or {}
         for aid, m in (cfg.get("agents") or {}).items():
@@ -7024,7 +7017,7 @@ def _council_default_models_from_config(fallback: dict) -> dict:
     return models
 
 
-_COUNCIL_DEFAULT_MODELS = _council_default_models_from_config(_COUNCIL_DEFAULT_MODELS_FALLBACK)
+_COUNCIL_DEFAULT_MODELS = _council_default_models_from_config()
 
 def _council_effective_model(agent: str, provider_override: str = "", model_override: str = "") -> dict:
     """Deprecated compatibility view of the truthful model-resolution contract."""
@@ -10059,7 +10052,7 @@ def _council_agent_command(agent: str, prompt: str, *, mode: str = "broker",
 
     if agent == "clau":
         _, _model = _council_worker_model(
-            "clau", "", _COUNCIL_DEFAULT_MODELS.get("clau", {}).get("model") or "claude-opus-5",
+            "clau", "", _COUNCIL_DEFAULT_MODELS.get("clau", {}).get("model") or "",
             provider_override, model_override)
         # The custom --system-prompt overrides the CLI's default (which normally tells claude its
         # own model id), so inject the model id here or clauC won't know its model in council.
@@ -10087,11 +10080,13 @@ def _council_agent_command(agent: str, prompt: str, *, mode: str = "broker",
         return base
     if agent == "ope":
         _provider, _model = _council_worker_model(
-            "ope", "", _COUNCIL_DEFAULT_MODELS.get("ope", {}).get("model") or "openai-compatible/grok-4.6-build",
+            "ope", "", _COUNCIL_DEFAULT_MODELS.get("ope", {}).get("model") or "",
             provider_override, model_override)
         # Curated IDs may be bare API model IDs; OpenCode CLI requires provider/model.
-        # Preserve the selected model and already-qualified IDs.
-        if "/" not in _model and _provider:
+        # Preserve the selected model and already-qualified IDs. An EMPTY model
+        # (config-only, no default) must stay empty -- never qualify it into
+        # "provider/"; dispatch gates it as MODEL_NOT_CONFIGURED upstream.
+        if _model and "/" not in _model and _provider:
             _model = f"{'opencode' if _provider == 'opencode-zen' else _provider}/{_model}"
         _ope_thinking = _model.endswith("glm-5.2")
         base = [
@@ -10114,7 +10109,7 @@ def _council_agent_command(agent: str, prompt: str, *, mode: str = "broker",
         _rsum = ["-c", 'model_reasoning_summary="detailed"',
                  "-c", 'model_reasoning_effort="xhigh"']
         _, _model = _council_worker_model(
-            "codo", "codex", _COUNCIL_DEFAULT_MODELS.get("codo", {}).get("model") or "grok-4.6-build",
+            "codo", "codex", _COUNCIL_DEFAULT_MODELS.get("codo", {}).get("model") or "",
             provider_override, model_override)
         _route = ["--model", _model]
         _no_nested_sandbox = ["--dangerously-bypass-approvals-and-sandbox"]
@@ -10132,7 +10127,7 @@ def _council_agent_command(agent: str, prompt: str, *, mode: str = "broker",
                 *_no_nested_sandbox, "--skip-git-repo-check", prompt]
     if agent == "pic":
         _prov, _model = _council_worker_model(
-            "pic", "ltnai", _COUNCIL_DEFAULT_MODELS.get("pic", {}).get("model") or "deepseek-v4-pro",
+            "pic", "ltnai", _COUNCIL_DEFAULT_MODELS.get("pic", {}).get("model") or "",
             provider_override, model_override)
         return [cli("pi"), "--print", "--no-session", "--approve",
                 "--provider", _prov or "ltnai", "--model", _model,
@@ -10167,7 +10162,7 @@ def _council_agent_command(agent: str, prompt: str, *, mode: str = "broker",
         # whitespace ("Failed to change directory to D:\0."), so we rely on the
         # subprocess.Popen cwd= that _council_run_agent already sets.
         _prov, _model = _council_worker_model(
-            "kilo", "", _COUNCIL_DEFAULT_MODELS.get("kilo", {}).get("model") or "ltnai/glm-5.2",
+            "kilo", "", _COUNCIL_DEFAULT_MODELS.get("kilo", {}).get("model") or "",
             provider_override, model_override)
         base = [
             cli("kilo"), "run", "--model", _model,

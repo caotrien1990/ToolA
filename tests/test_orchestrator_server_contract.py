@@ -1284,10 +1284,12 @@ process.stdout.write(JSON.stringify(snapshots));
         codo_broker = orchestrator_server._council_agent_command('codo', 'hi', mode='broker')
         self.assertIn('--ephemeral', codo_broker)
         self.assertIn('--model', codo_broker)
-        # codo default model migrated to grok-4.6-build (claudeltnai/codexltnai route,
-        # Anh-directed 2026-08-27); stealth/ox-alpha is deferred, see
-        # _COUNCIL_DEFAULT_MODELS_FALLBACK.
-        self.assertEqual(codo_broker[codo_broker.index('--model') + 1], 'grok-4.6-build')
+        # codo's default model comes from council_config.json (SOT) only --
+        # the hardcoded _COUNCIL_DEFAULT_MODELS_FALLBACK table was removed
+        # (2026-11-26). Assert the pass-through, not a literal snapshot
+        # (same R57 lesson as test_codo_model_metadata_uses_codex_cli_provider).
+        self.assertEqual(codo_broker[codo_broker.index('--model') + 1],
+                         orchestrator_server._COUNCIL_DEFAULT_MODELS['codo']['model'])
         self.assertNotIn('model_provider="ltn-api"', codo_broker)
         self.assertIn('model_reasoning_effort="xhigh"', codo_broker)
         self.assertNotIn('--sandbox', codo_broker)
