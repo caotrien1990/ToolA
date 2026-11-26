@@ -328,13 +328,35 @@ const USAGE_WINDOW = "2026-11-08T03:40:01 → 2026-11-16T15:48:55 ICT (8.5d)";
 // RENDERING
 // ═══════════════════════════════════════════════════════════════
 
-// Tabs
-document.querySelectorAll('.tab').forEach(tab => {
+// All six views use the same click path, including shortcuts and lazy Radial setup.
+const matrixTabs = Array.from(document.querySelectorAll('#tabs .tab'));
+matrixTabs.forEach((tab, index) => {
+  const panel = document.getElementById('panel-' + tab.dataset.tab);
+  tab.id = 'tab-' + tab.dataset.tab;
+  tab.setAttribute('role', 'tab');
+  tab.setAttribute('aria-controls', panel.id);
+  panel.setAttribute('role', 'tabpanel');
+  panel.setAttribute('aria-labelledby', tab.id);
+  const active = tab.classList.contains('active');
+  tab.tabIndex = active ? 0 : -1;
+  tab.setAttribute('aria-selected', String(active));
   tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+    matrixTabs.forEach(item => {
+      const current = item === tab;
+      item.tabIndex = current ? 0 : -1;
+      item.setAttribute('aria-selected', String(current));
+      item.classList.toggle('active', current);
+      document.getElementById('panel-' + item.dataset.tab).classList.toggle('active', current);
+    });
+  });
+  tab.addEventListener('keydown', event => {
+    const targets = {ArrowLeft: (index + matrixTabs.length - 1) % matrixTabs.length,
+      ArrowRight: (index + 1) % matrixTabs.length, Home: 0, End: matrixTabs.length - 1};
+    if (!(event.key in targets) || event.altKey || event.ctrlKey || event.metaKey) return;
+    event.preventDefault();
+    const next = matrixTabs[targets[event.key]];
+    next.focus();
+    next.click();
   });
 });
 
@@ -342,53 +364,75 @@ document.querySelectorAll('.tab').forEach(tab => {
 const tierCounts = {T1:0,T2:0,T3:0,T4:0};
 TOOLS.forEach(t => tierCounts[t.t]++);
 document.getElementById('stats').innerHTML = `
-  <div class="stat stat-total"><div class="stat-value">${TOOLS.length}</div><div class="stat-label">Total Tools</div></div>
-  <div class="stat stat-t1"><div class="stat-value">${tierCounts.T1}</div><div class="stat-label">T1 Read/Inspect</div></div>
-  <div class="stat stat-t2"><div class="stat-value">${tierCounts.T2}</div><div class="stat-label">T2 Write/Mutate</div></div>
-  <div class="stat stat-t3"><div class="stat-value">${tierCounts.T3}</div><div class="stat-label">T3 Audit/Session</div></div>
-  <div class="stat stat-t4"><div class="stat-value">${tierCounts.T4}</div><div class="stat-label">T4 Desktop/UI</div></div>
+  <div class="stat stat-total"><div class="stat-value">${TOOLS.length}</div><div class="stat-label">Tổng số tool</div></div>
+  <div class="stat stat-t1"><div class="stat-value">${tierCounts.T1}</div><div class="stat-label">T1 Đọc</div></div>
+  <div class="stat stat-t2"><div class="stat-value">${tierCounts.T2}</div><div class="stat-label">T2 Ghi</div></div>
+  <div class="stat stat-t3"><div class="stat-value">${tierCounts.T3}</div><div class="stat-label">T3 Phiên</div></div>
+  <div class="stat stat-t4"><div class="stat-value">${tierCounts.T4}</div><div class="stat-label">T4 Desktop</div></div>
   <div class="stat"><div class="stat-value" style="color:var(--pink)">${SKILLS.length}</div><div class="stat-label">Skills</div></div>
-  <div class="stat"><div class="stat-value" style="color:var(--fg2)">${CHAINS.length}</div><div class="stat-label">Tool Chains</div></div>
+  <div class="stat"><div class="stat-value" style="color:var(--fg2)">${CHAINS.length}</div><div class="stat-label">Chuỗi tool</div></div>
 `;
 
-// Tool Grid
-let activeTiers = new Set(["T1","T2","T3","T4"]);
-let searchQuery = "";
+// Tool inventory
+function normalizeLookup(value) {
+  return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+const inventoryGrid = document.getElementById('tool-grid');
+const inventoryLayout = document.getElementById('inventory-layout');
+const inventoryDetail = document.getElementById('detail-panel');
+const inventoryContent = document.getElementById('inventory-detail-content');
+const inventorySearch = document.getElementById('search');
+const categoryFilter = document.getElementById('inventory-category');
+const tierFilters = document.querySelectorAll('.inventory-tiers [data-tier]');
+const activeTiers = new Set(Object.keys(tierCounts));
 let selectedTool = null;
+const inventoryEntries = TOOLS.map(tool => {
+  const categories = tool.cat.split(',').map(item => item.trim()).filter(Boolean);
+  const name = normalizeLookup(tool.n);
+  const searchable = [name, tool.t, ...categories, tool.fg, tool.eff, tool.uc].filter(Boolean).join(' ');
+  return {tool, categories, name, searchable: normalizeLookup(searchable)};
+});
+const categoryNames = new Set(inventoryEntries.flatMap(entry => entry.categories));
+Array.from(categoryNames).filter(name => !activeTiers.has(name.toUpperCase())).sort()
+  .forEach(name => categoryFilter.add(new Option(name, name)));
 
 function renderGrid() {
-  const grid = document.getElementById('tool-grid');
-  const filtered = TOOLS.filter(t => {
-    if (!activeTiers.has(t.t)) return false;
-    if (searchQuery && !t.n.includes(searchQuery.toLowerCase())) return false;
-    return true;
-  });
-  document.getElementById('result-count').textContent = filtered.length;
-  grid.innerHTML = filtered.map(t => `
-    <div class="tool-card${selectedTool===t.n?' selected':''}" data-tool="${t.n}">
-      <div class="tool-name" title="${t.n}">${t.n}</div>
-      <div class="tool-meta">
-        <span class="badge badge-${t.t.toLowerCase()}">${t.t}</span>
-        <span class="badge badge-cat">${t.cat.split(',')[0]}</span>
-        ${t.mut?'<span class="badge badge-mut">MUT</span>':''}
-        ${t.prot?'<span class="badge badge-protect">PROT</span>':''}
-        ${t.err?`<span class="badge badge-err-${t.err.c}">ERR(${t.err.c})</span>`:''}
-        ${t.dep?'<span class="badge badge-dep">DEP</span>':''}
-        ${t.miss?'<span class="badge badge-miss">⚠ MISSING</span>':''}
-      </div>
-    </div>
-  `).join('');
-  grid.querySelectorAll('.tool-card').forEach(card => {
-    card.addEventListener('click', () => selectTool(card.dataset.tool));
-  });
+  const query = normalizeLookup(inventorySearch.value);
+  const words = query.split(' ').filter(Boolean);
+  const filtered = inventoryEntries.filter(entry => activeTiers.has(entry.tool.t)
+    && (!categoryFilter.value || entry.categories.includes(categoryFilter.value))
+    && words.every(word => entry.searchable.includes(word)));
+  if (query) {
+    const rank = entry => entry.name === query ? 0 : entry.name.startsWith(query) ? 1 : entry.name.includes(query) ? 2 : 3;
+    filtered.sort((left, right) => rank(left) - rank(right));
+  }
+  if (selectedTool && !filtered.some(entry => entry.tool.n === selectedTool)) setInventoryDetail(null);
+  document.getElementById('result-count').textContent = filtered.length + ' / ' + TOOLS.length + ' tool';
+  document.getElementById('inventory-empty').hidden = filtered.length !== 0;
+  inventoryGrid.innerHTML = filtered.map(({tool: t}) => `
+    <button type="button" class="tool-card${selectedTool === t.n ? ' selected' : ''}" data-tool="${esc(t.n)}"
+        aria-label="${esc(t.n)}" aria-controls="detail-panel" aria-expanded="${selectedTool === t.n}">
+      <span class="tool-name">${esc(t.n)}</span>
+      ${t.eff ? '<span class="inventory-summary">' + esc(t.eff) + '</span>' : ''}
+      <span class="tool-meta">
+        <span class="badge badge-${t.t.toLowerCase()}">${esc(t.t)}</span>
+        <span class="badge badge-cat">${esc(t.cat.split(',')[0])}</span>
+        ${t.mut ? '<span class="badge badge-mut">Ghi</span>' : ''}
+        ${t.prot ? '<span class="badge badge-protect">Bảo vệ</span>' : ''}
+        ${t.err ? '<span class="badge badge-err-' + esc(t.err.c) + '">Lỗi (' + esc(t.err.c) + ')</span>' : ''}
+        ${t.dep ? '<span class="badge badge-dep">Ngừng dùng</span>' : ''}
+        ${t.miss ? '<span class="badge badge-miss">Thiếu dữ liệu</span>' : ''}
+      </span>
+    </button>`).join('');
 }
 
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function usageLabel(t) {
   const u = t.use || {b: 'unknown', c: null, ls: null};
   if (u.b === 'unknown') return 'chưa rõ mức dùng (không có nhật ký)' + (t.n === 'close_session' ? ' — R16: một dòng sự kiện duy nhất, không đáng tin' : '');
-  if (u.b === 'unused') return 'không dùng trong cửa sổ · 0 lầt · ' + USAGE_WINDOW_SHORT;
-  return u.b + ' · ' + u.c + ' lầt · lần cuối ' + (u.ls || '—') + ' · ' + USAGE_WINDOW_SHORT;
+  if (u.b === 'unused') return 'không dùng trong cửa sổ · 0 lượt · ' + USAGE_WINDOW_SHORT;
+  return u.b + ' · ' + u.c + ' lượt · lần cuối ' + (u.ls || '—') + ' · ' + USAGE_WINDOW_SHORT;
 }
 function detailHTML(t, opts) {
   const slim = !!(opts && opts.slim);
@@ -397,15 +441,12 @@ function detailHTML(t, opts) {
   CHAINS.forEach(c => { if (c.tools.includes(t.n)) stepIdx[c.name] = c.tools.indexOf(t.n); });
   const row = (label, value) => '<div class="detail-row"><span class="detail-label">' + label + '</span><span class="detail-value">' + value + '</span></div>';
   const yesNo = v => v === true ? 'Có' : v === false ? 'Không' : 'Chưa rõ';
-  // 'None' was compared as a literal two lines down, so the sentinel moves WITH the
-  // translation -- a half-translated comparison would make every tool read as having
-  // no writes while the panel still listed them.
   const NO_WRITES = 'Không ghi gì';
   const writesHtml = (!t.wr || !t.wr.length) ? NO_WRITES
     : '<ul class="detail-list">' + t.wr.map(w => '<li><b>' + esc(w.kind) + '</b> — ' + esc(w.target) + (w.condition ? ' <span class="detail-aside">(' + esc(w.condition) + ')</span>' : '') + '</li>').join('') + '</ul>';
   const errHtml = t.err ? row('Sai sót', '<span class="badge badge-err-' + t.err.c + '">SAI SÓT (' + t.err.c + ')</span> ' + esc(t.err.r) + (t.err.q ? ' — ' + esc(t.err.q) : '')) : '';
-  const depHtml = t.dep ? row('Ngững dùng', 'Có — máy đọc được (' + (t.n === 'electron_devtools_log' ? 'code_tools.py:19990-19992' : 'orchestrator_server.py:1922-1930') + ')') : '';
-  const docHtml = t.n === 'write_fix_html' ? row('Ngững dùng', 'Chỉ ở docstring [DEPRECATED V15 R8] code_tools.py:1664 — KHÔNG phải dấu ngững dùng (R8)') : '';
+  const depHtml = t.dep ? row('Ngừng dùng', 'Có — máy đọc được (' + (t.n === 'electron_devtools_log' ? 'code_tools.py:19990-19992' : 'orchestrator_server.py:1922-1930') + ')') : '';
+  const docHtml = t.n === 'write_fix_html' ? row('Ngừng dùng', 'Chỉ ở docstring [DEPRECATED V15 R8] code_tools.py:1664 — KHÔNG phải dấu ngừng dùng (R8)') : '';
   const missHtml = t.miss ? row('Thiếu', '⚠ THIẾU trong file gốc — bổ sung Wave 19 từ registry sống') : '';
   const wkHtml = (t.wk ?? 'Chưa rõ') + (t.der === true ? ' · derived_index_writer: CÓ (graph CBM)' : t.der === false ? ' · derived_index_writer: không' : ' · derived_index_writer: chưa rõ') +
     ((t.n === 'create_benchmark_request' || t.n === 'create_build_context') ? ' · lần ghi snapshot INDEX.json được ghi ở phần writes, không phải derived_index_writer (R54)' : '');
@@ -414,7 +455,7 @@ function detailHTML(t, opts) {
     + '<div class="chain-steps">'
     + c.tools.map((s, i) => '<span class="chain-step' + (s === t.n ? ' highlight' : '') + '">' + (i === stepIdx[c.name] ? '→ ' : '') + esc(s) + '</span>' + (i < c.tools.length - 1 ? '<span class="chain-arrow">›</span>' : '')).join('')
     + '</div></div>').join('');
-  const islandHtml = '<p class="detail-island">⚠ Tool cô lảp — không thuộc chuỗi nào</p>';
+  const islandHtml = '<p class="detail-island">Chưa có trong chuỗi tool nào</p>';
 
   if (slim) {
     // The map panel answers "what is this for" first and hides the machine facts
@@ -428,7 +469,7 @@ function detailHTML(t, opts) {
       + row('Hàm xử lý', esc(t.h || 'Chưa có trong bản kiểm kê'))
       + row('Ghi chỉ mục suy diễn', esc(wkHtml))
       + row('Mức dùng', esc(usageLabel(t)));
-    const provenance = writesHtml === NO_WRITES ? row('Ghi vào', NO_WRITES) : row('Ghi vào', writesHtml)
+    const provenance = row('Ghi vào', writesHtml)
       + row('Nguồn dẫn', (t.cit || []).length ? t.cit.map(esc).join('<br>') : 'Chưa có nguồn trong bản kiểm kê')
       + (t.note ? row('Ghi chú', esc(t.note)) : '')
       + errHtml + depHtml + docHtml + missHtml;
@@ -461,32 +502,70 @@ function detailHTML(t, opts) {
     ${inChains.length ? '<div class="detail-chain"><h3>Chuỗi (' + inChains.length + ')</h3>' + chainsInner + '</div>' : islandHtml}
   `;
 }
-function selectTool(name) {
-  selectedTool = selectedTool === name ? null : name;
-  renderGrid();
-  const panel = document.getElementById('detail-panel');
-  if (!selectedTool) { panel.style.display = 'none'; return; }
-  const t = TOOLS.find(x => x.n === selectedTool);
-  panel.style.display = 'block';
-  panel.innerHTML = detailHTML(t);
+function setInventoryDetail(tool) {
+  selectedTool = tool ? tool.n : null;
+  inventoryDetail.hidden = !tool;
+  inventoryLayout.classList.toggle('has-detail', Boolean(tool));
+  inventoryContent.innerHTML = tool ? detailHTML(tool) : '';
+  inventoryGrid.querySelectorAll('.tool-card.selected, .tool-card[aria-expanded="true"]').forEach(card => {
+    card.classList.remove('selected');
+    card.setAttribute('aria-expanded', 'false');
+  });
+  if (tool) {
+    const card = inventoryGrid.querySelector('[data-tool="' + CSS.escape(tool.n) + '"]');
+    card.classList.add('selected');
+    card.setAttribute('aria-expanded', 'true');
+    inventoryDetail.focus();
+  }
 }
 
-// Tier filter
-document.querySelectorAll('.filter-btn[data-tier]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const tier = btn.dataset.tier;
-    if (activeTiers.has(tier)) { activeTiers.delete(tier); btn.classList.remove('active'); }
-    else { activeTiers.add(tier); btn.classList.add('active'); }
-    renderGrid();
-  });
-});
+// A map leaf can be outside the directory's last filter. Reveal that tool while
+// preserving any category and tier filters compatible with the requested result.
+function revealInInventory(name) {
+  const entry = inventoryEntries.find(item => item.tool.n === name);
+  if (!entry) return;
+  document.getElementById('tab-inventory').click();
+  inventorySearch.value = name;
+  if (!entry.categories.includes(categoryFilter.value)) categoryFilter.value = '';
+  const tierButton = Array.from(tierFilters).find(button => button.dataset.tier === entry.tool.t);
+  if (!activeTiers.has(entry.tool.t)) tierButton.click();
+  else renderGrid();
+  setInventoryDetail(entry.tool);
+}
 
-// Search
-document.getElementById('search').addEventListener('input', e => {
-  searchQuery = e.target.value;
+inventoryGrid.addEventListener('click', event => {
+  const card = event.target.closest('.tool-card');
+  if (card) setInventoryDetail(selectedTool === card.dataset.tool ? null : TOOLS.find(t => t.n === card.dataset.tool));
+});
+function closeInventoryDetail() {
+  const card = inventoryGrid.querySelector('.selected');
+  setInventoryDetail(null);
+  if (card) card.focus();
+}
+document.getElementById('inventory-close').addEventListener('click', closeInventoryDetail);
+inventoryDetail.addEventListener('keydown', event => {
+  if (event.key === 'Escape') { event.preventDefault(); closeInventoryDetail(); }
+});
+tierFilters.forEach(btn => btn.addEventListener('click', () => {
+  const tier = btn.dataset.tier;
+  if (activeTiers.has(tier)) activeTiers.delete(tier);
+  else activeTiers.add(tier);
+  btn.classList.toggle('active', activeTiers.has(tier));
+  btn.setAttribute('aria-pressed', String(activeTiers.has(tier)));
   renderGrid();
+}));
+categoryFilter.addEventListener('change', renderGrid);
+inventorySearch.addEventListener('input', renderGrid);
+document.getElementById('inventory-reset').addEventListener('click', () => {
+  inventorySearch.value = categoryFilter.value = '';
+  tierFilters.forEach(btn => {
+    activeTiers.add(btn.dataset.tier);
+    btn.classList.add('active');
+    btn.setAttribute('aria-pressed', 'true');
+  });
+  renderGrid();
+  inventorySearch.focus();
 });
-
 renderGrid();
 
 // Chains
@@ -583,10 +662,10 @@ autoEl.innerHTML = `
   <h2 style="margin-top:20px">Tool Tier Usage Rules (từ CLAUDE.md)</h2>
   <div class="chain-card">
     <div class="chain-desc" style="font-size:0.82rem;line-height:1.7;">
-      <strong>T1 Read/Inspect</strong> — Không cần approval. Dùng native khi inspect, dùng [A] khi cần INDEX semantics.<br>
-      <strong>T2 Write/Mutate</strong> — Cần "tiến hành" + rõ ràng. Luôn validate post-write. Dùng [A] write tools, KHÔNG native write.<br>
-      <strong>T3 Audit/Session</strong> — Internal lifecycle. CA không gọi trực tiếp trừ khi rule yêu cầu.<br>
-      <strong>T4 Desktop/UI</strong> — Dùng MCP hoặc HTTP. Không dùng computer-use inline. Cần CDP port.<br><br>
+      <strong>T1 Đọc</strong> — Không cần approval. Dùng native khi inspect, dùng [A] khi cần INDEX semantics.<br>
+      <strong>T2 Ghi</strong> — Cần "tiến hành" + rõ ràng. Luôn validate post-write. Dùng [A] write tools, KHÔNG native write.<br>
+      <strong>T3 Phiên</strong> — Internal lifecycle. CA không gọi trực tiếp trừ khi rule yêu cầu.<br>
+      <strong>T4 Desktop</strong> — Dùng MCP hoặc HTTP. Không dùng computer-use inline. Cần CDP port.<br><br>
       <strong>Hard Rules:</strong><br>
       • Read Routing: native to LOOK, [A] to TOUCH<br>
       • Write Pipeline: read_file_range → write_fix → validate_file (LUÔN)<br>
@@ -2143,7 +2222,16 @@ const USAGE_WINDOW_SHORT = '08 Nov–16 Nov 2026 (8.5d window)';
   const serviceSnapshotTime = new Intl.DateTimeFormat('vi-VN', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
   const mapStatusLabels = {connecting:'Đang kết nối', live:'Dữ liệu mới', stale:'Dữ liệu cũ / thiếu', offline:'Mất kết nối'};
   const terminalErrors = new Set(['error','err','fail','failed','timeout']);
-  let mapSelected = null;
+  let mapSelected = null, selectedBranch = null, hoveredCard = null;
+  function selectBranch(button){
+    for (const previous of mapCanvas.querySelectorAll('.mm-return-flash')){
+      clearTimeout(previous._mmFlashTimer);
+      previous.classList.remove('mm-return-flash');
+    }
+    selectedBranch?.removeAttribute('aria-current');
+    selectedBranch = button;
+    button?.setAttribute('aria-current', 'location');
+  }
   // The overlay is armed by default and painted only when a tool is selected -- Anh's
   // ruling was "Overlay khi chọn 1 tool", not a permanent second web of lines over a
   // 260-node map. The toolbar button flips this and says so through aria-pressed.
@@ -2192,7 +2280,7 @@ let mapRelationsOn = true;
     return MAP_CLUSTER_ORDER.filter(id => bag.has(id)).map(id => ({ id, label: mapClusterLabels[id],
       groups: bag.get(id).slice().sort((x,y) => y.tools.length - x.tools.length || String(x.fg).localeCompare(String(y.fg))) }));
   };
-  const normalizeLookup = value => value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/[^a-z0-9]+/g,' ').trim();
+  // Inventory and map use the same accent-insensitive spelling.
   const mapLookupIndex = tools.map(t => ({
     t, name:normalizeLookup(t.n), alias:normalizeLookup(lookupToolAliases[t.n] || ''),
     tags:normalizeLookup([t.t, t.fg, t.cat, mapGroupName(mapGroupKey(t)), mapAliases[t.fg]].filter(Boolean).join(' ')),
@@ -2226,20 +2314,19 @@ let mapRelationsOn = true;
   // may be a leaf chip that owns no wire at all (.mm-more), and syncMapBranchLayout
   // empties the index before it repaints -- either case strands data-mm-lit on the
   // node and the map accumulates lit chips until everything glows.
-  function clearMapLit(){
+  function clearHoverPaint(){
+    hoveredCard = null;
     for (const node of mapCanvas.querySelectorAll('[data-mm-lit]')) node.removeAttribute('data-mm-lit');
     for (const e of wireEntries) e.path.classList.remove('mm-wire-lit');
     mapCanvas.classList.remove('mm-wire-hover');
-    clearMapFocus();
     hideTip();
-    // A hover does not OWN the map. Leaving one used to clear everything, which took the
-    // selection's dim with it: choose a tool, brush a wire, and the map came back fully
-    // lit with the detail panel still open claiming a focus that no longer existed.
-    // Repainting from the selection restores the dim the panel is actually showing.
+  }
+  function clearMapLit(){
+    clearHoverPaint();
     paintMapFocus();
   }
   function lightWire(entry){
-    clearMapLit();
+    clearHoverPaint();
     mapCanvas.classList.add('mm-wire-hover');
     entry.path.classList.add('mm-wire-lit');
     entry.a.setAttribute('data-mm-lit','true');
@@ -2250,7 +2337,8 @@ let mapRelationsOn = true;
     applyMapFocus(focusMapSubtree(entry.b));
   }
   function lightNode(node){
-    clearMapLit();
+    clearHoverPaint();
+    hoveredCard = node;
     mapCanvas.classList.add('mm-wire-hover');
     node.setAttribute('data-mm-lit','true');
     for (const e of nodeWires.get(node) || []){
@@ -2312,6 +2400,27 @@ let mapRelationsOn = true;
   // level exists to answer. .mm-more is a real button in the rail too, and a dashed
   // 'xem thêm' pill glowing inside a dimmed map is the same defect in miniature.
   const MM_CARD_SEL = '.mm-root, .mm-tier, .mm-cluster-btn, .mm-group > button, .mm-bucket-btn, .mm-tools > button, .mm-bucket-body > button';
+  // Pinned coordinates live in map space, independent of the camera and DOM lifetime.
+  const pinnedMapNodes = new Map();
+  function mapNodeKey(node){
+    if (node === chainPanelEl) return 'panel:' + chainAnchorTool;
+    return node.dataset.mmTool ? 'tool:' + node.dataset.mmTool : node.id || node.getAttribute('aria-controls');
+  }
+  function positionPinnedCards(){
+    if (!pinnedMapNodes.size) return;
+    const canvas = mapCanvas.getBoundingClientRect(), zoom = mapZoomNow();
+    for (const card of mapCanvas.querySelectorAll(MM_CARD_SEL)){
+      const pin = pinnedMapNodes.get(mapNodeKey(card));
+      if (!pin) continue;
+      const rect = card.getBoundingClientRect();
+      if (!rect.width) continue;
+      const baseX = (rect.left - canvas.left) / zoom - (parseFloat(card.style.left) || 0);
+      const baseY = (rect.top - canvas.top) / zoom - (parseFloat(card.style.top) || 0);
+      card.style.left = (pin.x - baseX) + 'px';
+      card.style.top = (pin.y - baseY) + 'px';
+      card.classList.add('mm-placed');
+    }
+  }
   function mapCardOf(el){
     if (!el) return null;
     if (el.matches && el.matches(MM_CARD_SEL)) return el;
@@ -2382,9 +2491,15 @@ let mapRelationsOn = true;
 
   function paintMapFocus(){
     const tool = mapToolIndex.get(mapSelected);
+    const branchRoad = selectedBranch ? focusMapSubtree(selectedBranch) : null;
+    if (branchRoad){
+      for (const {a,b,path} of wireEntries){
+        if (branchRoad.has(a) && branchRoad.has(b)) branchRoad.add(path);
+      }
+    }
     const focused = tool ? new Set([tool.t]) : searchTiers;
     const focusedGroups = tool ? new Set([mapGroupKey(tool)]) : searchGroups;
-    const dim = focused.size > 0;
+    const dim = !!branchRoad || focused.size > 0;
     const focusedClusters = new Set();
     if (tool) focusedClusters.add(tool.t + '|' + mapClusterOf(tool.fg || ''));
     else for (const key of searchGroups) focusedClusters.add(key.split('|')[0] + '|' + mapClusterOf(groupByKey(key)?.fg || ''));
@@ -2395,7 +2510,9 @@ let mapRelationsOn = true;
       const group = node.dataset.mmGroup;
       const tier = node.closest('[data-mm-tier]')?.dataset.mmTier;
       const clusterId = node.dataset.mmCluster;
-      const match = clusterId ? focusedClusters.has(tier + '|' + clusterId) : group ? focusedGroups.has(group) : focused.has(tier);
+      const match = branchRoad
+        ? branchRoad.has(node) || (node.classList.contains('mm-cluster') && branchRoad.has(node.querySelector('.mm-cluster-btn')))
+        : clusterId ? focusedClusters.has(tier + '|' + clusterId) : group ? focusedGroups.has(group) : focused.has(tier);
       node.classList.toggle('is-focus', match);
       node.classList.toggle('is-muted', dim && !match);
     }
@@ -2418,6 +2535,7 @@ let mapRelationsOn = true;
       applyMapFocus(focusMapSubtree(btn));
       return;
     }
+    if (branchRoad){ applyMapFocus(branchRoad); return; }
     if (!dim){ clearMapFocus(); return; }
     const cards = [];
     for (const t of focused){
@@ -2457,6 +2575,7 @@ let mapRelationsOn = true;
     }
   }
   function updateLookup(){
+    selectBranch(null);
     closeMapDetail();
     closeLookup();
     const query = normalizeLookup(mapSearch.value);
@@ -2493,6 +2612,8 @@ let mapRelationsOn = true;
   function chooseLookup(i){
     const tool = searchOptions[i];
     if (!tool) return;
+    if (!editingLookup) rememberMapStep();
+    editingLookup = false;
     const group = mapGroupKey(tool);
     closeLookup();
     mapSearch.value = tool.n;
@@ -2510,8 +2631,8 @@ let mapRelationsOn = true;
     // A paged group keeps later leaves out of the DOM until asked, so walk the pages.
     const button = findMapLeaf(list, tool.n);
     if (!button) return;
-    revealMapNode(button);
-    selectMapTool(button);
+    // selectMapTool reveals the chip and its route together.
+    selectMapTool(button, undefined, true);
   }
   // ── ISSUE 2: CHAIN PANEL ON THE LEAF + RING HIGHLIGHT ────────────────────────────
   // Anh 2026-11-24: "đem tool chain ra thẳng node ngọn, tool nào có chain thì show ra
@@ -2521,10 +2642,13 @@ let mapRelationsOn = true;
   // node pinned to the chip: absolute => no reflow => the fit/anchor censuses (measured to
   // 0.02px) and the stageVisible cap are untouched. One panel per selected chip, removed
   // on deselect -- never a second ghost state.
-  let chainPanelEl = null, chainAnchorTool = null;
+  let chainPanelEl = null, chainConnector = null, chainAnchorTool = null;
   function clearChainPanel(){
     if (chainPanelEl){ chainPanelEl.remove(); chainPanelEl = null; }
+    chainConnector?.remove();
+    chainConnector = null;
     chainAnchorTool = null;
+    activeRoute = null;
     for (const el of mapCanvas.querySelectorAll('.mm-chain-mate')) el.classList.remove('mm-chain-mate');
   }
   // A3 (direction B): the panel is an ABSOLUTE child of #mm-canvas, so it inherits the
@@ -2540,81 +2664,116 @@ let mapRelationsOn = true;
     if (r.width < 1) return;   // folded chip has no map position; keep the last anchor
     const cv = mapCanvas.getBoundingClientRect();
     const k = parseFloat(mapCanvas.style.zoom || '1') || 1;
-    // Clamp left so the 268px panel never overflows the canvas RIGHT edge: an absolute
-    // child feeds no intrinsic width, but it does feed scrollable overflow, and the
-    // fit/pan range locks read the stage's scrollWidth (census :667, test :1007).
-    const left = Math.max(0, Math.min((r.left - cv.left) / k, mapCanvas.offsetWidth - 268));
-    const top = (r.bottom - cv.top) / k + 4;   // one node below the tool chip
+    const scale = Math.max(1, 1 / k);
+    chainPanelEl.style.transform = 'scale(' + scale + ')';
+    // Put the terminal node past every laid-out tree column. The absolutely
+    // positioned card and connector do not move the tree or any existing node.
+    const chipRight = (r.right - cv.left) / k;
+    let lastColumn = chipRight;
+    for (const card of mapCanvas.querySelectorAll(MM_CARD_SEL)){
+      const rect = card.getBoundingClientRect();
+      if (rect.width) lastColumn = Math.max(lastColumn, (rect.right - cv.left) / k);
+    }
+    const pin = pinnedMapNodes.get(mapNodeKey(chainPanelEl));
+    const left = pin ? pin.x : lastColumn + 30;
+    const middle = (r.top + r.height / 2 - cv.top) / k;
+    const head = chainPanelEl.querySelector('.mm-chain-panel-head').getBoundingClientRect();
+    const headerMid = head.height / (2 * k) + 11 * scale;
+    const naturalTop = middle - headerMid;
+    const top = pin ? pin.y : chip.classList.contains('mm-placed') ? naturalTop : Math.max(0, naturalTop);
     chainPanelEl.style.left = left + 'px';
     chainPanelEl.style.top = top + 'px';
+    const panelWidth = chainPanelEl.offsetWidth * scale;
+    const facesLeft = pin && left + panelWidth / 2 < chipRight - r.width / (2 * k);
+    const x1 = facesLeft ? chipRight - r.width / k : chipRight;
+    const x2 = facesLeft ? left + panelWidth : left;
+    const dx = x2 - x1, dy = pin ? top + headerMid - middle : 0;
+    chainConnector.style.left = x1 + 'px';
+    chainConnector.style.top = middle + 'px';
+    chainConnector.style.width = Math.hypot(dx, dy) + 'px';
+    chainConnector.style.transform = 'translateY(-50%) rotate(' + Math.atan2(dy, dx) + 'rad)';
   }
-  function chainMates(name){
-    const mates = new Set();
-    for (const c of CHAINS){
-      if (!c.tools.includes(name)) continue;
-      for (const s of c.tools) if (s !== name) mates.add(s);
+  let activeRoute = null;
+  function renderChainPanel(name, preferredRoute){
+    const routes = CHAINS.filter(route => route.tools.includes(name));
+    activeRoute = routes.find(route => route.name === preferredRoute) || routes[0] || null;
+    const steps = activeRoute ? activeRoute.tools : [];
+    const index = steps.indexOf(name);
+    const neighbours = new Set(relationEdges().filter(edge => edge.from === name || edge.to === name)
+      .map(edge => edge.from === name ? edge.to : edge.from).filter(tool => !steps.includes(tool)));
+    const routePicker = routes.length > 1
+      ? '<select aria-label="Chọn chuỗi tool" class="mm-chain-picker">' + routes.map(route =>
+        '<option' + (route === activeRoute ? ' selected' : '') + '>' + esc(route.name) + '</option>').join('') + '</select>'
+      : '<strong class="mm-chain-title">' + esc(activeRoute ? activeRoute.name : name) + '</strong>';
+    const timeline = steps.map((tool, i) => {
+      const current = i === index;
+      return '<li><button type="button" data-mm-chain-tool="' + esc(tool) + '"'
+        + (current ? ' class="mm-chain-step is-current" aria-current="step"' : ' class="mm-chain-step"') + '>'
+        + '<span class="mm-step-number" aria-hidden="true">' + (i + 1) + '</span>'
+        + '<span>' + esc(tool) + '</span></button></li>';
+    }).join('');
+    const related = neighbours.size ? '<details class="mm-chain-panel-rel"><summary>Tool liên quan · ' + neighbours.size
+      + '</summary>' + [...neighbours].map(tool => '<button type="button" class="mm-chain-rel" data-mm-chain-tool="'
+        + esc(tool) + '">' + esc(tool) + '</button>').join('') + '</details>' : '';
+    chainPanelEl.innerHTML = '<div class="mm-chain-panel-head"><span class="mm-grip" title="Kéo để di chuyển" aria-hidden="true"></span>' + routePicker
+      + '<button type="button" class="mm-chain-panel-close" aria-label="Đóng chuỗi">×</button></div>'
+      + (activeRoute ? '<p class="mm-chain-progress">Bước ' + (index + 1) + ' / ' + steps.length + '</p>'
+        + '<ol class="mm-chain-panel-steps" aria-label="Các bước theo thứ tự">' + timeline + '</ol>'
+        : '<p class="mm-chain-empty">Tool này chưa thuộc chuỗi nào.</p>') + related
+      + '<button type="button" class="mm-inspect" data-mm-inspect aria-controls="mm-detail">Xem chi tiết</button>';
+
+    for (const chip of mapCanvas.querySelectorAll('.mm-chain-mate')) chip.classList.remove('mm-chain-mate');
+    for (const tool of [steps[index - 1], steps[index + 1]]){
+      if (!tool) continue;
+      const chip = mapCanvas.querySelector('[data-mm-tool="' + CSS.escape(tool) + '"]');
+      if (chip) chip.classList.add('mm-chain-mate');
     }
-    return mates;
   }
-  function chainPanelHTML(name){
-    const routes = CHAINS.filter(c => c.tools.includes(name));
-    const inRoutes = routes.map(c => ({ name:c.name, icon:c.icon,
-      step:c.tools.indexOf(name) + 1, total:c.tools.length, steps:c.tools }));
-    // "liên quan" is a SEPARATE section (q5=q): inventory edges, not chain order.
-    // Reuse relationPanel's deduped index but render only neighbour names, keeping one
-    // source of truth for what counts as an edge.
-    const edges = relationEdges().filter(e => e.from === name || e.to === name);
-    const neighbours = new Set();
-    for (const e of edges) neighbours.add(e.from === name ? e.to : e.from);
-    const rel = [...neighbours].filter(n => !inRoutes.some(c => c.steps.includes(n)));
-    const chainRows = inRoutes.map(c =>
-      '<div class="mm-chain-panel-route"><div class="mm-chain-panel-title">' + esc(c.icon) + ' '
-      + esc(c.name) + ' <span>' + c.step + '/' + c.total + '</span></div>'
-      + '<div class="mm-chain-panel-steps">' + c.steps.map((s,i) =>
-        '<button type="button" class="mm-chain-step' + (s === name ? ' is-current' : '') + '"'
-        + ' data-mm-chain-tool="' + esc(s) + '" title="' + esc(s) + '">'
-        + (i + 1) + '. ' + esc(s) + '</button>').join('') + '</div></div>').join('');
-    const relRows = rel.length
-      ? rel.map(n => '<button type="button" class="mm-chain-rel" data-mm-chain-tool="'
-          + esc(n) + '" title="' + esc(n) + '">📊 ' + esc(n) + '</button>').join('')
-      : '<span class="mm-chain-empty">Không có cạnh kiểm kê khác</span>';
-    return '<div class="mm-chain-panel-head"><strong>' + esc(name) + '</strong>'
-      + '<button type="button" class="mm-chain-panel-close" aria-label="Đóng panel chain">×</button></div>'
-      + (chainRows || '<p class="mm-chain-empty">Tool này không thuộc chuỗi nào</p>')
-      + '<div class="mm-chain-panel-rel"><h4>Liên quan · ' + rel.length + '</h4>' + relRows + '</div>';
-  }
-  function showChainPanel(name, chip){
+  function showChainPanel(name, chip, preferredRoute){
     clearChainPanel();
     if (!chip) return;
-    const mates = chainMates(name);
-    const rel = relationEdges().filter(e => e.from === name || e.to === name)
-      .map(e => e.from === name ? e.to : e.from);
-    // Ring ONLY the mates that are laid out right now. A folded chip has a zero rect;
-    // lighting nothing there is honest, and findMapLeaf can still reveal it on click.
-    for (const m of new Set([...mates, ...rel])){
-      const el = mapCanvas.querySelector('[data-mm-tool="' + m + '"]');
-      if (el && el.getBoundingClientRect().width >= 1) el.classList.add('mm-chain-mate');
-    }
     chainPanelEl = document.createElement('div');
     chainPanelEl.className = 'mm-chain-panel';
     chainPanelEl.setAttribute('role','group');
     chainPanelEl.setAttribute('aria-label','Tool chain của ' + name);
-    chainPanelEl.innerHTML = chainPanelHTML(name);
-    // A3 (direction B): mount INSIDE the canvas, position:absolute, left/top in map
-    // coords (repositionChainPanel). The panel is a node in the map: it pans/zooms with
-    // the canvas instead of sticking to the screen. Absolute is out of flow -- it feeds
-    // no intrinsic width to .mm-canvas { width:max-content } (CSS sizing spec; the old
-    // right=435@390 claim is re-measured in T-P3), and left is clamped so it never
-    // overflows the canvas right edge into the stage's scrollable overflow.
-    mapCanvas.appendChild(chainPanelEl);
+    renderChainPanel(name, preferredRoute);
+    chainPanelEl.addEventListener('change', e => {
+      if (!e.target.matches('.mm-chain-picker')) return;
+      rememberMapStep();
+      renderChainPanel(name, e.target.value);
+      chainPanelEl.querySelector('.mm-chain-picker').focus({preventScroll:true});
+      syncMapBranchLayout();
+    });
+    chainConnector = document.createElement('span');
+    chainConnector.className = 'mm-chain-connector';
+    chainConnector.setAttribute('aria-hidden', 'true');
+    mapCanvas.append(chainConnector, chainPanelEl);
     chainAnchorTool = name;
     repositionChainPanel();
   }
-  function selectMapTool(button){
+  function selectMapTool(button, preferredRoute, reveal = false){
+    const camera = panTotal();
+    cancelMapPan();
     closeMapDetail();
+    selectBranch(null);
+    hoveredCard = null;
     mapSelected = button.dataset.mmTool;
-    const tool = mapToolIndex.get(mapSelected);
     button.setAttribute('aria-current','true');
+    showChainPanel(mapSelected, button, preferredRoute);
+    syncMapBranchLayout();
+    if (restoringMapStep) return;
+    if (reveal){
+      button.focus({preventScroll:true});
+      revealMapNode(button, chainPanelEl);
+    } else {
+      // A click on a visible leaf already specifies where the user is looking.
+      // Swapping terminal cards can temporarily shorten the native scroll range.
+      setPanTotal(camera.x, camera.y);
+    }
+  }
+  function openMapInfo(moveFocus = true){
+    const tool = mapToolIndex.get(mapSelected);
+    if (!tool) return;
     const path = [['H\u1EC6 TH\u1ED0NG','ToolA'],[tool.t,mapTierNames.get(tool.t)],
       ['C\u1EE4M',mapClusterLabels[mapClusterOf(tool.fg || '')]],
       ['NH\u00d3M',mapGroupName(mapGroupKey(tool))],['TOOL',tool.n]];
@@ -2631,28 +2790,13 @@ let mapRelationsOn = true;
       + '<button type="button" data-mm-close>Đóng</button></div>'
       + '<div class="mm-path" data-mm-tier="' + tool.t + '" aria-label="Vị trí công cụ trong bản đồ">'
       + path.map(([label,value]) => '<div class="mm-path-node"><small>' + esc(label) + '</small><strong>' + esc(value) + '</strong></div>').join('') + '</div>'
-      + detailHTML(tool, {slim: true}) + relationPanel([mapSelected]);
+      + detailHTML(tool, {slim: true}) + relationPanel([mapSelected])
+      + '<button type="button" class="filter-btn" data-mm-inventory>Xem trong danh mục</button>';
     mapDetail.hidden = false;
-    paintMapFocus();
-    renderMap();
-    // Selecting a tool changes no layout by itself, so the overlay would stay blank until
-    // the next zoom or accordion click -- the map would look broken rather than idle. One
-    // layout pass per selection is the same cost the accordion already pays on every toggle
-    // (:3371), and it keeps ONE coordinate source: the edges are measured by the very pass
-    // that measured the cards, so a relation line cannot sit a fraction off its chip.
-    syncMapBranchLayout();
-    // Leaf chain panel (issue 2): absolute on the chip, so it adds no flow height
-    // and cannot move a rect or the stage cap. Rebuilt on every selection.
-    showChainPanel(mapSelected, button);
-    // preventScroll plus a minimal scroll, never a dropped focus: tests :1104 and :1139
-    // require #mm-detail to hold focus, and a hidden element cannot take it, so this stays
-    // after the unhide. Default focus scrolled 677px and put the map off-screen (measured
-    // stage top -340 at 1440x900, bottom -224 at 390x844). Removing the scroll alone was
-    // worse: the stage owns 337..913 at a 900px viewport, so everything after it sits
-    // below the fold by construction and the panel measured zero visible pixels. nearest
-    // scrolls the least that brings the panel into view and keeps the map on screen too.
-    mapDetail.focus({preventScroll: true});
-    mapDetail.scrollIntoView({block: 'nearest'});
+    showMapCount(mapDetail.querySelector('[data-mm-count]'), liveState.mapCounts?.tools.get(mapSelected));
+    if (moveFocus){
+      mapDetail.focus({preventScroll:true});
+    }
   }
 
   function setText(node, value){
@@ -2712,7 +2856,7 @@ let mapRelationsOn = true;
         showMapCount(el, counts?.groups.get(group.key), group.tools.length + ' tool · ');
       }
     }
-    if (mapSelected) showMapCount(mapDetail.querySelector('[data-mm-count]'), counts?.tools.get(mapSelected));
+    if (!mapDetail.hidden) showMapCount(mapDetail.querySelector('[data-mm-count]'), counts?.tools.get(mapSelected));
     for (const [name, el] of Object.entries(serviceNodes)){
       const service = services[name];
       let state = '', text = 'Chưa rõ', reason = 'Feed chưa cung cấp dữ liệu tình trạng cho dịch vụ này.';
@@ -2883,6 +3027,7 @@ let mapRelationsOn = true;
   }
   function syncMapBranchLayout(){
     if (!mapCanvas.offsetWidth) return;
+    positionPinnedCards();
     // The CTM scale is divided by the measured box scale, which is 1 in
     // Chromium and 1/k in Firefox. Firefox leaves ancestor CSS zoom out of
     // getScreenCTM (ctm.a stayed 1.000 while the box measured 0.875) yet it
@@ -2973,7 +3118,8 @@ let mapRelationsOn = true;
     };
     const screenPoint = (x,y) => new DOMPoint(x, y).matrixTransform(transform);
     const paths = document.createDocumentFragment();
-    clearMapLit();
+    const previousHover = hoveredCard;
+    clearHoverPaint();
     wireEntries.length = 0;
     nodeWires.clear();
     const emit = (parent,child,d,tier,kind,group) => {
@@ -3031,7 +3177,24 @@ let mapRelationsOn = true;
     const LANE_CLEAR = 7;
     const laneOffset = (lane, budget) => (!lane || lane.n <= 1) ? 0
       : (lane.i / (lane.n - 1) - 0.5) * Math.max(0, Math.abs(budget) - LANE_CLEAR * 2);
+    // Manually placed endpoints can be above, below or behind their old parents.
+    // Choose facing ports so the connector does not cross its own node.
+    const connectPlaced = (parent, child, tier, kind, group) => {
+      const a = parent.getBoundingClientRect(), b = child.getBoundingClientRect();
+      const ax = (a.left + a.right) / 2, ay = (a.top + a.bottom) / 2;
+      const bx = (b.left + b.right) / 2, by = (b.top + b.bottom) / 2;
+      const horizontal = Math.abs(bx - ax) - (a.width + b.width) / 2 >= Math.abs(by - ay) - (a.height + b.height) / 2;
+      const start = screenPoint(horizontal ? (bx >= ax ? a.right : a.left) : ax, horizontal ? ay : (by >= ay ? a.bottom : a.top));
+      const end = screenPoint(horizontal ? (bx >= ax ? b.left : b.right) : bx, horizontal ? by : (by >= ay ? b.top : b.bottom));
+      const x = (start.x + end.x) / 2, y = (start.y + end.y) / 2;
+      const controls = horizontal ? [x, start.y, x, end.y] : [start.x, y, end.x, y];
+      emit(parent, child, 'M ' + start.x + ' ' + start.y + ' C ' + controls.join(' ') + ' ' + end.x + ' ' + end.y, tier, kind, group);
+    };
     const connect = (parent,child,tier,kind,group,lane) => {
+      if (parent.classList.contains('mm-placed') || child.classList.contains('mm-placed')){
+        connectPlaced(parent, child, tier, kind, group);
+        return;
+      }
       const start = point(parent,'right'), end = point(child,'left');
       // A child in the second track of its grid cannot take the straight arc:
       // that arc is drawn across every card of the first track, and the wire
@@ -3220,7 +3383,12 @@ let mapRelationsOn = true;
         // connectTrunk keeps ONE spine, and since Anh moved it the spine lives to the
         // RIGHT of the rail, so the left gutter belongs to the arc INTO the head and to
         // nothing else. lane is still passed so the router's sibling set stays uniform.
-        connectTrunk(head, chips, tier, group, lane);
+        const onRail = [];
+        for (const chip of chips){
+          if (head.classList.contains('mm-placed') || chip.classList.contains('mm-placed')) connectPlaced(head, chip, tier, 'tool', group);
+          else onRail.push(chip);
+        }
+        if (onRail.length) connectTrunk(head, onRail, tier, group, lane);
       });
     };
     // Lane indices come from the loops themselves, because a lane is a property of a
@@ -3252,8 +3420,9 @@ let mapRelationsOn = true;
     // card the last layout moved. screenPoint is this pass's own screen->local map, handed
     // down rather than recomputed: a second getScreenCTM on a zoomed canvas is exactly the
     // drift the comment above it was written to stop.
-drawMapRelations(screenPoint);
-    paintMapFocus();
+    drawMapRelations(screenPoint);
+    if (previousHover?.isConnected && previousHover.matches(':hover')) lightNode(previousHover);
+    else paintMapFocus();
     // A3: every layout pass is also the moment a chip may have MOVED in map coords
     // (accordion toggle, label rewrap, resize). Re-anchor the chain panel to its chip
     // here -- the one place that sees every such move -- instead of on pan/zoom/scroll.
@@ -3442,6 +3611,8 @@ drawMapRelations(screenPoint);
       path.dataset.mmRelFrom = p.from;
       path.dataset.mmRelTo = p.to;
       path.dataset.mmRelDepth = p.a.depth + '-' + p.b.depth;
+      const contextHop = activeRoute && p.chain && (p.chain !== activeRoute.name || (p.from !== mapSelected && p.to !== mapSelected));
+      if (contextHop) path.classList.add('mm-route-context');
       if (p.chain) path.dataset.mmRelChain = p.chain;
       frag.appendChild(path);
       if (p.label){
@@ -3456,6 +3627,7 @@ drawMapRelations(screenPoint);
         t.setAttribute('x', ((x1 + x2) / 2).toFixed(2));
         t.setAttribute('y', laneY.toFixed(2));
         t.setAttribute('class', p.kind === 'chain' ? 'mm-chain-edge-label' : 'mm-auto-edge-label');
+        if (contextHop) t.classList.add('mm-route-context');
         t.textContent = p.label;
         frag.appendChild(t);
       }
@@ -3498,14 +3670,9 @@ drawMapRelations(screenPoint);
     const k = mapZoomNow();
     mapCanvas.style.transform = moved
       ? 'translate(' + (-mmPan.x / k) + 'px, ' + (-mmPan.y / k) + 'px)' : '';
-    // The dot tile is painted by the STAGE, so it would sit still while the
-  // content moved and read as a wall rather than as an endless board. Only the
-    // second layer is offset: the vignette stays put, and the first
-    // background-color of the computed value is still the solid var(--bg) the
-    // contrast lock measures wires against. The stage carries no zoom, so one
-    // scroll unit is one client px here and the shift needs no divisor.
-    mapStage.style.backgroundPosition = moved
-      ? '0px 0px, ' + (-mmPan.x) + 'px ' + (-mmPan.y) + 'px' : '';
+    // Match the grid's phase to the total camera offset on either side of home.
+    const total = panTotal();
+    mapStage.style.backgroundPosition = '0px 0px, ' + (-total.x % 22) + 'px ' + (-total.y % 22) + 'px';
   }
   function panTotal(){
     return {x: mapStage.scrollLeft + mmPan.x, y: mapStage.scrollTop + mmPan.y};
@@ -3516,19 +3683,14 @@ drawMapRelations(screenPoint);
   // clamping away is the wall Anh hit: after "Vua khung" the range is zero, so
   // every drag died on the first pixel.
   function setPanTotal(x, y){
-    const mx = Math.max(0, mapStage.scrollWidth - mapStage.clientWidth);
-    const my = Math.max(0, mapStage.scrollHeight - mapStage.clientHeight);
-    // Negative pan does not exist. The canvas starts at the stage origin and the
-    // layout grows right and down, so a total below zero is never a place the map
-    // can be -- it is always a bad delta that came in, and the scroll channel
-    // cannot say so because Math.max(0,..) hides the clamp. Carrying it anyway is
-    // what turned one phantom measurement into a canvas permanently displaced off
-    // its origin. Failing loud here costs nothing: every legitimate caller is
-    // already >= 0.
-    const tx = Math.max(0, x), ty = Math.max(0, y);
-    const sx = Math.min(mx, tx), sy = Math.min(my, ty);
-    mapStage.scrollTo(sx, sy);
-    mmPan.x = tx - sx; mmPan.y = ty - sy;
+    // A translated canvas can enlarge scrollWidth/Height. Measure the native
+    // range at rest before assigning the signed remainder to the transform.
+    if (mapCanvas.style.transform) mapCanvas.style.transform = '';
+    const maxX = mapStage.scrollWidth - mapStage.clientWidth;
+    const maxY = mapStage.scrollHeight - mapStage.clientHeight;
+    mapStage.scrollTo(Math.max(0, Math.min(maxX, x)), Math.max(0, Math.min(maxY, y)));
+    mmPan.x = x - mapStage.scrollLeft;
+    mmPan.y = y - mapStage.scrollTop;
     applyPan();
     // A3: the chain panel is a canvas child -- pan carries it with the map, no re-pin.
   }
@@ -3536,16 +3698,29 @@ drawMapRelations(screenPoint);
     const t = panTotal();
     setPanTotal(t.x + dx, t.y + dy);
   }
-  function revealMapNode(node){
+  function revealMapNode(node, routePanel){
     if (!node) return;
     const viewport = mapStage.getBoundingClientRect(), rect = node.getBoundingClientRect();
-    // Reveal the node without scrolling the containing web page.
+    if (rect.width < 1 || rect.height < 1) return;
     const scale = viewport.width / mapStage.offsetWidth || 1;
     const inset = 9;
-    const left = viewport.left + inset, right = viewport.left + mapStage.clientWidth * scale - inset;
-    const top = viewport.top + inset, bottom = viewport.top + mapStage.clientHeight * scale - inset;
-    const x = rect.left < left ? rect.left - left : Math.max(0,rect.right - right);
-    const y = rect.top < top ? rect.top - top : Math.max(0,rect.bottom - bottom);
+    // A route can sit flush with the canvas edge. Inventing a gutter there
+    // would translate the entire board just to show nine pixels of blank space.
+    const horizontalInset = routePanel ? 0 : inset;
+    const left = viewport.left + horizontalInset, right = viewport.left + mapStage.clientWidth * scale - horizontalInset;
+    const top = (routePanel ? Math.max(0, viewport.top) : viewport.top) + inset;
+    const bottom = (routePanel ? Math.min(innerHeight, viewport.top + mapStage.clientHeight * scale)
+      : viewport.top + mapStage.clientHeight * scale) - inset;
+    const tray = routePanel ? routePanel.getBoundingClientRect() : rect;
+    const nearX = Math.min(rect.left, tray.left), farX = Math.max(rect.right, tray.right);
+    const nearY = Math.min(rect.top, tray.top), farY = Math.max(rect.bottom, tray.bottom);
+    // When the pair is wider than the viewport, reveal the card with the smallest
+    // movement that still leaves as much of the selected leaf on screen as possible.
+    const cardOnly = routePanel && farX - nearX > right - left;
+    const visibleLeft = cardOnly ? tray.left : nearX, visibleRight = cardOnly ? tray.right : farX;
+    const x = visibleLeft < left || visibleRight - visibleLeft > right - left
+      ? visibleLeft - left : Math.max(0, visibleRight - right);
+    const y = nearY < top || farY - nearY > bottom - top ? nearY - top : Math.max(0, farY - bottom);
     const dx = x / scale, dy = y / scale;
     if (!dx && !dy) return;
     // The delta goes to the TOTAL, not to scrollTo. Past the scroll wall the
@@ -3858,7 +4033,7 @@ drawMapRelations(screenPoint);
   const LEAF_PAGE = 12;  // plain-rail chunk size; the stage decides how many chunks ship
   const LEAF_ROW_PX = 35, LEAF_HEAD_PX = 47, LEAF_RAIL_BASE_PX = -4, LEAF_STAGE_PX = 576;
   const leafRowPx = row => (row.head ? LEAF_HEAD_PX : 0) + row.chips * LEAF_ROW_PX;
-  function appendMapLeaves(list){
+  function appendMapLeaves(list, restoreEnd){
     const group = groupByKey(list.dataset.mmListFor);
     if (!group) return;
     const rows = mapLeafRows(group);
@@ -3880,6 +4055,7 @@ drawMapRelations(screenPoint);
     // the whole stage it still ships and the rail scrolls, rather than painting an
     // empty rail that carries a tail promising chips nobody can see.
     if (end === shown) end = shown + 1;
+    if (restoreEnd !== undefined) end = Math.min(rows.length, restoreEnd);
     const batch = rows.slice(shown, end);
     const more = list.querySelector('.mm-more');
     const tpl = document.createElement('template');
@@ -3946,6 +4122,67 @@ drawMapRelations(screenPoint);
     syncMapBranchLayout();
     return list;
   }
+  // Navigation history stores logical IDs. Panning, zoom, polling and redraws
+  // never create steps. A search result or a chain jump is one user action.
+  const mapSteps = [];
+  let restoringMapStep = false, editingLookup = false;
+  function rememberMapStep(){
+    if (restoringMapStep) return;
+    editingLookup = false;
+    const expanded = [...mapCanvas.querySelectorAll('button[aria-expanded="true"][aria-controls]')]
+      .map(button => button.getAttribute('aria-controls'));
+    const pages = [...mapCanvas.querySelectorAll('.mm-tools:not([hidden])[data-shown]')]
+      .map(list => [list.id, Number(list.dataset.shown)]);
+    const state = {expanded, pages, tool:mapSelected, route:activeRoute?.name,
+      branch:selectedBranch?.getAttribute('aria-controls'), info:!mapDetail.hidden,
+      panel:!!chainPanelEl, query:mapSearch.value, status:mapSearchStatus.textContent,
+      camera:panTotal(), zoom:mapZoomNow()};
+    if (JSON.stringify(state) === JSON.stringify(mapSteps.at(-1))) return;
+    mapSteps.push(state);
+    if (mapSteps.length > 100) mapSteps.shift();
+  }
+  function backOneMapStep(){
+    const state = mapSteps.pop();
+    if (!state) return;
+    editingLookup = false;
+    const scale = mapZoomNow() / state.zoom;
+    const expanded = new Set(state.expanded);
+    const isOpen = button => expanded.has(button.getAttribute('aria-controls'));
+    restoringMapStep = true;
+    try {
+      cancelMapPan();
+      closeMapDetail();
+      closeLookup();
+      for (const [tier, {button}] of mapBranches) setMapBranch(tier, isOpen(button));
+      for (const button of mapCanvas.querySelectorAll('.mm-cluster-btn')){
+        toggleMapCluster(button.closest('.mm-cluster'), isOpen(button));
+      }
+      for (const button of mapCanvas.querySelectorAll('button[data-mm-group]')) setMapGroup(button, isOpen(button));
+      for (const [id, count] of state.pages){
+        const list = document.getElementById(id);
+        if (!list || Number(list.dataset.shown) === count) continue;
+        resetMapLeaves(list);
+        appendMapLeaves(list, count);
+      }
+      for (const button of mapCanvas.querySelectorAll('.mm-bucket-btn')) toggleMapBucket(button.closest('.mm-bucket'), isOpen(button));
+      mapSearch.value = state.query;
+      updateLookup();
+      closeLookup();
+      setText(mapSearchStatus, state.status);
+      const leaf = state.tool && mapCanvas.querySelector('[data-mm-tool="' + CSS.escape(state.tool) + '"]');
+      if (leaf){
+        selectMapTool(leaf, state.route);
+        if (!state.panel) clearChainPanel();
+        if (state.info) openMapInfo(false);
+      } else if (state.branch){
+        selectBranch(mapCanvas.querySelector('button[aria-controls="' + CSS.escape(state.branch) + '"]'));
+      }
+      syncMapBranchLayout();
+      // Return to the previous branch even when revealing the leaf panned it off screen.
+      setPanTotal(state.camera.x * scale, state.camera.y * scale);
+      mapStage.focus({preventScroll:true});
+    } finally { restoringMapStep = false; }
+  }
   function initMap(){
     const zoomLabel = document.getElementById('mm-zoom-level');
     let zoom = 1;
@@ -3975,7 +4212,7 @@ drawMapRelations(screenPoint);
     // The pan state and its primitives live at module scope, next to the reveal
     // that needs them: a node off the edge may already be displaced by the
     // translate, and a scroll alone cannot undo that half.
-    function zoomAt(clientX, clientY, factor){
+    function zoomAt(clientX, clientY, factor, pinchGesture = false){
       const k0 = zoom, k1 = Math.min(4, Math.max(.25, Math.round(k0 * factor * 100) / 100));
       if (k1 === k0) return;
       // A3: anchor math that also holds in the slack (margin:auto) state. Measure the
@@ -3989,13 +4226,27 @@ drawMapRelations(screenPoint);
       setZoom(k1);
       syncMapBranchLayout();
       const cr1 = mapCanvas.getBoundingClientRect();
-      setPanTotal(t0.x + (cr1.left - cr0.left) + ux * (k1 - k0),
-                  t0.y + (cr1.top - cr0.top) + uy * (k1 - k0));
+      const x = t0.x + (cr1.left - cr0.left) + ux * (k1 - k0);
+      const y = t0.y + (cr1.top - cr0.top) + uy * (k1 - k0);
+      // A zoom from home retains the fitted-map origin. A freely dragged axis
+      // already beyond home keeps its signed offset and its cursor anchor.
+      setPanTotal(pinchGesture || t0.x < 0 ? x : Math.max(0, x), pinchGesture || t0.y < 0 ? y : Math.max(0, y));
     }
     // The wheel zooms, as it does in the demo. The stage is capped at 620px so it
     // never owns the whole page, and Shift+wheel is left alone for horizontal
     // scroll. A trackpad pinch arrives as ctrlKey+wheel and lands here too.
     mapStage.addEventListener('wheel', e => {
+      // Let the hovered local list own its wheel, including at either end.
+      // The native select popup handles its own input outside this DOM surface.
+      for (let el = e.target; el instanceof Element && el !== mapStage; el = el.parentElement){
+        const scrollable = el.matches('.mm-chain-panel, [role="listbox"]') ||
+          (/^(auto|scroll)$/.test(getComputedStyle(el).overflowY) && el.scrollHeight > el.clientHeight);
+        if (!scrollable) continue;
+        e.preventDefault();
+        const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? el.clientHeight : 1;
+        el.scrollBy({top:e.deltaY * unit, left:e.deltaX * unit, behavior:'instant'});
+        return;
+      }
       if (e.shiftKey) return;
       e.preventDefault();
       zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015));
@@ -4003,18 +4254,44 @@ drawMapRelations(screenPoint);
     // Double-clicking empty map space returns the map to its initial state.
     // Layout changes can move the card under the second click; remember the first
     // click so that a node dblclick stays two node toggles instead of resetting.
-    const mapCardClickSel = MM_CARD_SEL + ',a,.mm-wires';
-    let pendingMapCardClick = null;
+    const mapCardClickSel = MM_CARD_SEL + ',button,a,select,details,.mm-wires,.mm-relations,.mm-chain-panel';
+    let pendingMapCardClick = null, firstEmptyClick = null, handledEmptyDouble = false;
     mapStage.addEventListener('click', e => {
       const target = e.target instanceof Element ? e.target : null;
+      if (e.detail === 2 && firstEmptyClick && Date.now() < firstEmptyClick.until &&
+          Math.hypot(e.clientX - firstEmptyClick.x, e.clientY - firstEmptyClick.y) <= 8 &&
+          Date.now() >= squashClickUntil){
+        // The first back-step can put a node under the pointer before click two.
+        // Consume that click before it reaches the new node.
+        firstEmptyClick = null;
+        handledEmptyDouble = true;
+        e.stopPropagation();
+        e.preventDefault();
+        glideHandler(resetMapToInitial)();
+        return;
+      }
       if (e.detail === 1){
+        handledEmptyDouble = false;
         const card = target && target.closest(mapCardClickSel);
+        firstEmptyClick = card || Date.now() < squashClickUntil ? null : {x:e.clientX, y:e.clientY, until:Date.now()+600};
         pendingMapCardClick = card ? {card, at: Date.now(), x: e.clientX, y: e.clientY, second: null} : null;
       } else if (e.detail === 2 && pendingMapCardClick && Date.now() - pendingMapCardClick.at <= 500){
-        pendingMapCardClick.second = target && target.closest(mapCardClickSel);
+        const first = pendingMapCardClick;
+        first.second = target && target.closest(mapCardClickSel);
+        if (first.card.matches('button[aria-expanded]') && first.second !== first.card &&
+            first.card.isConnected && Math.hypot(e.clientX - first.x, e.clientY - first.y) <= 8){
+          // If the first toggle moved a sibling under the cursor, both clicks still
+          // belong to the original branch. Chromium may omit dblclick on retargeting.
+          pendingMapCardClick = null;
+          handledEmptyDouble = true;
+          e.stopPropagation();
+          e.preventDefault();
+          first.card.click();
+        }
       }
     }, true);
     mapStage.addEventListener('dblclick', glideHandler(e => {
+      if (handledEmptyDouble){ handledEmptyDouble = false; return; }
       const target = e.target instanceof Element ? e.target : null;
       if (Date.now() < squashClickUntil){ pendingMapCardClick = null; return; }
       if (target && target.closest(mapCardClickSel)){ pendingMapCardClick = null; return; }
@@ -4028,28 +4305,57 @@ drawMapRelations(screenPoint);
       e.preventDefault();
       resetMapToInitial();
     }));
+    mapStage.addEventListener('click', glideHandler(e => {
+      if (e.detail !== 1 || e.button !== 0 || Date.now() < squashClickUntil || e.target.closest(mapCardClickSel)) return;
+      backOneMapStep();
+    }));
+    function gestureNode(target){
+      if (target.closest('.mm-chain-panel-head') && !target.closest('button, select')) return chainPanelEl;
+      const card = mapCardOf(target);
+      return card && !card.hasAttribute('data-mm-more') ? card : null;
+    }
+    function startGesture(input){
+      const node = gestureNode(input.target);
+      const rect = node?.getBoundingClientRect();
+      const zoom = mapZoomNow();
+      return {node, x:input.clientX, y:input.clientY, total:panTotal(), moved:false,
+        grabX:rect ? (input.clientX - rect.left) / zoom : 0, grabY:rect ? (input.clientY - rect.top) / zoom : 0};
+    }
+    function moveGesture(g, input){
+      const dx = input.clientX - g.x, dy = input.clientY - g.y;
+      if (!g.moved && Math.hypot(dx, dy) < DRAG_SLOP) return;
+      g.moved = true;
+      squashClickUntil = Date.now() + 250;
+      mapStage.classList.add('is-panning');
+      if (g.node){
+        const rect = mapCanvas.getBoundingClientRect(), zoom = mapZoomNow();
+        pinnedMapNodes.set(mapNodeKey(g.node), {x:(input.clientX - rect.left) / zoom - g.grabX,
+          y:(input.clientY - rect.top) / zoom - g.grabY});
+        requestMapDraw();
+      } else {
+        const scale = mapStage.getBoundingClientRect().width / mapStage.offsetWidth || 1;
+        setPanTotal(g.total.x - dx / scale, g.total.y - dy / scale);
+      }
+    }
     mapStage.addEventListener('pointerdown', e => {
-      if (e.pointerType === 'touch') return;     // swipe already pans natively
-      if (e.button !== 0) return;
-      // A scrollbar press lands on the stage itself outside its content box.
-      if (e.target === mapStage && (e.offsetX >= mapStage.clientWidth || e.offsetY >= mapStage.clientHeight)) return;
-      drag = {id: e.pointerId, x: e.clientX, y: e.clientY, total: panTotal(), moved: false};
+      if (e.pointerType === 'touch' || e.button !== 0 || !e.isPrimary) return;
+      if (e.target.closest('.mm-chain-panel') && !gestureNode(e.target)) return;
+      drag = startGesture(e);
+      drag.id = e.pointerId;
       cancelMapPan();
     });
-    // C3: two-finger pinch zooms about the midpoint; a one-finger swipe stays native
-    // scroll (touch-action: pan-x pan-y) but squashes the click that follows it, exactly
-    // like a mouse drag past DRAG_SLOP. The mouse pointerdown path early-returns for
-    // touch, so these listeners never fight the drag.
     let pinch = null, touchStart = null;
     const touchDist = ts => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
     mapStage.addEventListener('touchstart', e => {
+      if (e.target.closest('.mm-chain-panel') && !gestureNode(e.target) && !touchStart) return;
+      cancelMapPan();
       if (e.touches.length === 2){
         pinch = {d0: touchDist(e.touches), k0: zoom};
         touchStart = null;
         e.preventDefault();
       } else if (e.touches.length === 1){
         pinch = null;
-        touchStart = {x: e.touches[0].clientX, y: e.touches[0].clientY};
+        touchStart = startGesture(e.touches[0]);
       }
     }, {passive: false});
     mapStage.addEventListener('touchmove', e => {
@@ -4058,42 +4364,45 @@ drawMapRelations(screenPoint);
         const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
         const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
         const target = Math.min(4, Math.max(.25, Math.round(pinch.k0 * touchDist(e.touches) / pinch.d0 * 100) / 100));
-        if (target !== zoom) zoomAt(mx, my, target / zoom);
+        if (target !== zoom) zoomAt(mx, my, target / zoom, true);
         squashClickUntil = Date.now() + 250;
       } else if (touchStart && e.touches.length === 1){
-        const dx = e.touches[0].clientX - touchStart.x, dy = e.touches[0].clientY - touchStart.y;
-        if (Math.abs(dx) + Math.abs(dy) > 12) squashClickUntil = Date.now() + 250;
+        // Cancel native scrolling from the first move, before Chromium commits
+        // the gesture to the finite scroll range. A stationary tap still clicks.
+        e.preventDefault();
+        moveGesture(touchStart, e.touches[0]);
       }
     }, {passive: false});
     mapStage.addEventListener('touchend', e => {
+      if (pinch || touchStart?.moved) squashClickUntil = Date.now() + 250;
+      if (pinch && e.touches.length === 1){
+        touchStart = startGesture(e.touches[0]);
+        touchStart.node = null;
+      }
       if (e.touches.length < 2) pinch = null;
-      if (e.touches.length === 0) touchStart = null;
+      if (!e.touches.length){ touchStart = null; mapStage.classList.remove('is-panning'); }
+    });
+    mapStage.addEventListener('touchcancel', () => {
+      pinch = null; touchStart = null;
+      mapStage.classList.remove('is-panning');
     });
     const onPanMove = e => {
       if (!drag || drag.id !== e.pointerId) return;
-      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-      if (!drag.moved){
-        if (Math.abs(dx) + Math.abs(dy) < DRAG_SLOP) return;
-        drag.moved = true;
-        squashClickUntil = Date.now() + 250;
-        mapStage.classList.add('is-panning');
-      }
-      squashClickUntil = Date.now() + 250;
-      const scale = mapStage.getBoundingClientRect().width / mapStage.offsetWidth || 1;
-      // Recomputed from the capture rather than from the live offset, so a
-      // sub-pixel rounding of scrollLeft cannot accumulate across the gesture.
-      setPanTotal(drag.total.x - dx / scale, drag.total.y - dy / scale);
+      const wasMoving = drag.moved;
+      moveGesture(drag, e);
+      if (!wasMoving && drag.moved && e.isTrusted && e.buttons) mapStage.setPointerCapture(e.pointerId);
     };
     const endPan = e => {
-      if (drag && (!e || drag.id === e.pointerId)) {
-        if (drag.moved) squashClickUntil = Date.now() + 250;
-        drag = null;
-      }
+      if (!drag || (e?.pointerId != null && drag.id !== e.pointerId)) return;
+      if (drag.moved) squashClickUntil = Date.now() + 250;
+      drag = null;
       mapStage.classList.remove('is-panning');
     };
     window.addEventListener('pointermove', onPanMove);
     window.addEventListener('pointerup', endPan);
     window.addEventListener('pointercancel', endPan);
+    mapStage.addEventListener('lostpointercapture', endPan);
+    window.addEventListener('blur', endPan);
     // Capture phase, so the bubble handler that activates a node never sees it.
     mapCanvas.addEventListener('click', e => {
       if (Date.now() >= squashClickUntil) return;
@@ -4123,8 +4432,29 @@ drawMapRelations(screenPoint);
         if (lastPointer) zoomAt(lastPointer.x, lastPointer.y, next / zoom);
         else setZoom(next);
       }
-      if (action === 'reset'){
+      if (action === 'reset' && pinnedMapNodes.size){
         cancelMapPan();
+        const bounds = () => {
+          const rects = [...mapCanvas.querySelectorAll(MM_CARD_SEL + ',.mm-chain-panel')]
+            .map(el => el.getBoundingClientRect()).filter(rect => rect.width > 0);
+          return {left:Math.min(...rects.map(r => r.left)), right:Math.max(...rects.map(r => r.right)),
+            top:Math.min(...rects.map(r => r.top)), bottom:Math.max(...rects.map(r => r.bottom))};
+        };
+        const frame = mapStage.getBoundingClientRect();
+        for (let i = 0; i < 5; i++){
+          const b = bounds(), ratio = Math.min((frame.width - 20) / (b.right - b.left), (frame.height - 20) / (b.bottom - b.top));
+          const next = Math.min(1, Math.max(.25, Math.floor(zoom * ratio * 100) / 100));
+          if (next === zoom) break;
+          setZoom(next);
+          syncMapBranchLayout();
+        }
+        const b = bounds();
+        const scale = frame.width / mapStage.offsetWidth || 1;
+        panMapBy((b.left + b.right - frame.left - frame.right) / (2 * scale),
+          (b.top + b.bottom - frame.top - frame.bottom) / (2 * scale));
+      } else if (action === 'reset'){
+        cancelMapPan();
+        setPanTotal(0, 0);
         const fit = Math.min(1, mapStage.clientWidth / mapCanvas.offsetWidth,
           mapStage.clientHeight / mapCanvas.offsetHeight);
         setZoom(Math.floor(fit * 100) / 100);
@@ -4157,10 +4487,18 @@ drawMapRelations(screenPoint);
       if (action === 'theme') toggleTheme();
       if (action) syncMapBranchLayout();
     });
-    // B1/B2: the empty-click reset returns the WHOLE map to its page-load state.
+    // A double-click on empty space restores the page-load state and ends the history.
     // A plain function on purpose: the glide wrappers call it synchronously, and
     // "Vừa khung" (FIT) is a different gesture that must never collapse branches.
     function resetMapToInitial(){
+      pinnedMapNodes.clear();
+      for (const card of mapCanvas.querySelectorAll('.mm-placed')){
+        card.classList.remove('mm-placed');
+        card.style.removeProperty('left');
+        card.style.removeProperty('top');
+      }
+      mapSteps.length = 0;
+      editingLookup = false;
       closeMapDetail({returnFocus:false});
       clearMapLit();
       mapSearch.value = '';
@@ -4190,12 +4528,17 @@ drawMapRelations(screenPoint);
     // no-op on the way in and a glide on the way out.
     mapCanvas.addEventListener('click',glideHandler(e => {
       const button = e.target.closest('button');
-      if (!button) return;
+      if (!button || !button.matches(MM_CARD_SEL + ',.mm-more') || button.closest('.mm-chain-panel')) return;
+      if (!chainPanelEl || !button.matches('[data-mm-tool][aria-current="true"]')) rememberMapStep();
       closeLookup();
       if (button.dataset.mmMore){
         appendMapLeaves(button.closest('.mm-tools'));
         syncMapBranchLayout();
         return;
+      }
+      if (!button.dataset.mmTool){
+        closeMapDetail();
+        selectBranch(button);
       }
       const open = button.getAttribute('aria-expanded') === 'false';
       if (button.classList.contains('mm-tier')) revealMapBranch(button,setMapBranch(button.dataset.mmTier,open));
@@ -4228,6 +4571,12 @@ drawMapRelations(screenPoint);
     syncMapBranchLayout();
     // updateLookup() opens with closeMapDetail(), so a keystroke that replaces an open leaf
     // collapses the panel exactly like the X button does. Same shield, same reason.
+    // Searching and choosing a result are one navigation. Save the old selection
+    // before the first keystroke closes it, including when moving between two tools.
+    mapSearch.addEventListener('beforeinput', () => {
+      if (!editingLookup) rememberMapStep();
+      editingLookup = true;
+    });
     mapSearch.addEventListener('input',glideHandler(updateLookup));
     mapSearch.addEventListener('keydown',e => {
       if (e.isComposing) return;
@@ -4254,11 +4603,26 @@ drawMapRelations(screenPoint);
     // the drag-squash capture handler exempts the panel -- so mate/× still land here.
     document.addEventListener('click', e => {
       if (e.target.closest('.tab')) { clearChainPanel(); return; }
-      if (e.target.closest('.mm-chain-panel-close')) { e.stopPropagation(); clearChainPanel(); return; }
+      if (e.target.closest('[data-mm-inspect]')){
+        if (mapDetail.hidden) rememberMapStep();
+        openMapInfo();
+        return;
+      }
+      if (e.target.closest('.mm-chain-panel-close')){
+        rememberMapStep();
+        e.stopPropagation();
+        clearChainPanel();
+        syncMapBranchLayout();
+        mapCanvas.querySelector('button[data-mm-tool][aria-current="true"]')?.focus({preventScroll:true});
+        return;
+      }
       const mate = e.target.closest('[data-mm-chain-tool]');
       if (!mate) return;
       e.stopPropagation(); e.preventDefault();
       const name = mate.dataset.mmChainTool;
+      const routeName = activeRoute?.name;
+      if (name === mapSelected) return;
+      rememberMapStep();
       const tool = mapToolIndex.get(name);
       if (!tool) return;
       const panel = setMapBranch(tool.t, true);
@@ -4268,7 +4632,15 @@ drawMapRelations(screenPoint);
       const group = mapGroupKey(tool);
       const gb = [...panel.querySelectorAll('[data-mm-group]')].find(el => el.dataset.mmGroup === group);
       const list = gb ? setMapGroup(gb, true) : null;
-      if (list){ const btn = findMapLeaf(list, name); if (btn){ revealMapNode(btn); selectMapTool(btn); } }
+      if (list){
+        const btn = findMapLeaf(list, name);
+        if (btn){
+          // The destination selection owns the reveal.
+          selectMapTool(btn, routeName, true);
+          const focusTarget = chainPanelEl?.querySelector('[aria-current="step"]') || chainPanelEl?.querySelector('.mm-chain-panel-close') || btn;
+          focusTarget.focus({preventScroll:true});
+        }
+      }
     });
     // Every one of these can END a leaf, and ending one takes the 378px panel out of the
     // flow. glideHandler is the collapse shield (see shieldMapHeight): without it the
@@ -4277,10 +4649,25 @@ drawMapRelations(screenPoint);
     // lookup dropdown cannot change the height -- .mm-hits is out of the map flow.
     // mapSearch.focus() carried preventScroll:false and was measured moving scrollY 483->0
     // (cause_probe stack trace). The glide owns that movement now, so the focus stays put.
-    mapSearchClear.addEventListener('click',glideHandler(() => { mapSearch.value = ''; updateLookup(); mapSearch.focus({preventScroll:true}); }));
+    mapSearchClear.addEventListener('click',glideHandler(() => {
+      rememberMapStep();
+      mapSearch.value = '';
+      updateLookup();
+      mapSearch.focus({preventScroll:true});
+    }));
     document.addEventListener('click',e => { if (!e.target.closest('.mm-lookup')) closeLookup(); });
-    mapDetail.addEventListener('click', glideHandler(e => { if (e.target.closest('[data-mm-close]')) closeMapDetail({returnFocus:true}); }));
-    mapDetail.addEventListener('keydown', glideHandler(e => { if (e.key === 'Escape') closeMapDetail({returnFocus:true}); }));
+    mapDetail.addEventListener('click', glideHandler(e => {
+      if (e.target.closest('[data-mm-close]')){
+        rememberMapStep();
+        closeMapDetail({returnFocus:true});
+      }
+      if (e.target.closest('[data-mm-inventory]') && mapSelected) revealInInventory(mapSelected);
+    }));
+    mapDetail.addEventListener('keydown', glideHandler(e => {
+      if (e.key !== 'Escape') return;
+      rememberMapStep();
+      closeMapDetail({returnFocus:true});
+    }));
     // Hover lights wires and paints a tooltip. It never writes #mm-detail: v5
     // \u00a71.8 excludes hover from the panel writers, and matrix.js:807 says so.
     mapWires.addEventListener('pointerover',e => {
@@ -4306,9 +4693,7 @@ drawMapRelations(screenPoint);
       const hit = e.target.closest('.mm-wire-hit');
       if (hit) return;                       // the wire handler owns this pointer
       const node = e.target.closest('button');
-      if (!node || !mapCanvas.contains(node)) return;
-      const prev = mapCanvas.querySelector('[data-mm-lit="true"]');
-      if (prev === node) return;             // no re-light, no repeated tone
+      if (!node || !node.matches(MM_CARD_SEL) || hoveredCard === node) return;
       lightNode(node);
       playMapTone(node.dataset.mmTool ? 660 : 430, 0.08, 'sine');
       const tool = node.dataset.mmTool ? mapToolIndex.get(node.dataset.mmTool) : null;
@@ -4321,7 +4706,7 @@ drawMapRelations(screenPoint);
     mapCanvas.addEventListener('pointerout',e => {
       if (e.target.closest('.mm-wire-hit')) return;
       const node = e.target.closest('button');
-      if (node && !e.relatedTarget?.closest?.('button')) clearMapLit();
+      if (node && hoveredCard === node && !node.contains(e.relatedTarget)) clearMapLit();
     });
     mapCanvas.addEventListener('pointerleave', clearMapLit);
     // A3: the chain panel is a canvas child now, so scroll carries it with the map --
@@ -4368,7 +4753,13 @@ drawMapRelations(screenPoint);
       if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
       const t = e.target;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
-      if (e.key === '/'){ e.preventDefault(); mapSearch.focus({preventScroll:true}); return; }
+      if (e.key === '/') {
+        const field = document.querySelector('.panel.active input[type="search"], .panel.active #sb-search');
+        e.preventDefault();
+        if (!field) document.getElementById('tab-mindmap').click();
+        (field || mapSearch).focus();
+        return;
+      }
       if (e.key === 't' || e.key === 'T'){ toggleTheme(); return; }
       if (e.key >= '1' && e.key <= '6'){
         const tab = document.querySelectorAll('#tabs .tab')[Number(e.key) - 1];

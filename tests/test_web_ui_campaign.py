@@ -572,6 +572,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                 open_geometry = await geometry()
                 tool = group.locator('..').locator('[data-mm-tool="write_fix"]')
                 await tool.click()
+                await page.locator('[data-mm-inspect]').click()
                 detail = page.locator('#mm-detail')
                 await expect(detail.locator('.toola-matrix-meta')).to_be_visible()
                 await expect(detail.locator('.toola-matrix-meta')).to_have_attribute('open', '')
@@ -857,6 +858,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                         await search.fill('write_fix')
                         await expect(hits.get_by_role('option').first).to_contain_text('write_fix')
                         await search.press('Enter')
+                        await page.locator('[data-mm-inspect]').click()
                         await expect(map_detail).to_be_focused()
                         initial = await nodes.evaluate_all(measurements)
                         self.assertEqual(len(initial), 5)
@@ -1191,7 +1193,11 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(sorted(after['keptNames']), sorted(sel['keptNames']),
                     'the focused road changed when a hover came and went')
 
+                await page.locator('[data-mm-inspect]').click()
                 await page.locator('#mm-detail [data-mm-close]').first.click()
+                # Closing the inspector can uncover a card beneath the pointer.
+                # Check the deselected state after leaving that real hover.
+                await page.mouse.move(4, 4)
                 await page.wait_for_timeout(300)
                 closed = await page.evaluate(CENSUS)
                 self.assertFalse(closed['armed'], 'the dim outlived the detail panel')
@@ -1390,7 +1396,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                         await page.evaluate('() => document.getElementById("mm-stage").scrollTo(0, 0)')
                         await page.wait_for_timeout(200)
                         await search.press('Enter')
-                        await expect(page.locator('#mm-detail')).to_be_focused()
+                        await expect(page.locator('button[data-mm-tool="' + QUERY + '"]')).to_be_focused()
                         samples = await settled_positions(page)
                         # The reveal has to have had somewhere to go, or every assertion
                         # below passes on an empty scroll.
@@ -1425,7 +1431,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                 await page.evaluate('() => document.getElementById("mm-stage").scrollTo(0, 0)')
                 await page.wait_for_timeout(200)
                 await search.press('Enter')
-                await expect(page.locator('#mm-detail')).to_be_focused()
+                await expect(page.locator('button[data-mm-tool="' + QUERY + '"]')).to_be_focused()
                 await page.wait_for_timeout(120)  # mid-flight, before the 650ms lands
                 await page.get_by_role('button', name='Vừa khung').click()
                 await page.wait_for_timeout(1200)  # longer than the whole tween
@@ -1538,120 +1544,71 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 await browser.close()
 
-    async def test_matrix_drag_pans_and_a_sub_slop_move_stays_a_click(self):
-        """Pointer panning has no coverage either: the locked pan test drives the
-        keyboard and the search reveal, never a mouse drag.
+    async def _canvas_pan_origin(self, page, travel):
+        point = await page.locator("#mm-stage").evaluate("""(el, travel) => {
+            const b = el.getBoundingClientRect();
+            for (let y=Math.max(b.top,0)+50; y<Math.min(b.bottom,innerHeight)-8; y+=12) {
+                for (let x=Math.max(b.left,0)+travel+8; x<Math.min(b.right,innerWidth)-8; x+=12) {
+                    const target=document.elementFromPoint(x,y);
+                    if (el.contains(target) && !target.closest('button,.mm-root,.mm-wires,.mm-chain-panel,.mm-relations')) return [x,y];
+                }
+            }
+        }""", travel)
+        self.assertIsNotNone(point, "camera pans must start on background")
+        return point
 
-
-        A drag that STARTS ON A NODE must pan without toggling it -- pointerdown rides
-        on the stage, so a node is a valid drag target, and the capture-phase squash is
-        the only thing between the pan and activating the node underneath. The reverse
-        matters just as much: under DRAG_SLOP the gesture must stay a click, or every
-        slightly shaky click on the map stops working.
-        """
+    async def test_matrix_drag_moves_only_the_node_and_a_sub_slop_move_stays_a_click(self):
         try:
             from playwright.async_api import async_playwright, expect
         except ImportError:
-            self.skipTest('Playwright is not installed')
+            self.skipTest("Playwright is not installed")
+
         async with async_playwright() as pw:
             if not Path(pw.chromium.executable_path).is_file():
                 self.skipTest('Playwright Chromium is not installed')
             browser = await pw.chromium.launch()
             try:
-                # 900x700 for the same reason the pan test picks it: the narrowest
-                # desktop frame that still overflows the stage with one branch open.
-                page = await browser.new_page(viewport={'width': 900, 'height': 700})
-                errors = []
-                page.on('pageerror', lambda error: errors.append(str(error)))
-                await page.route('**/api/monitor/activity*', lambda route: route.fulfill(status=502, json={}))
+                page = await browser.new_page(viewport={'width': 1440, 'height': 900}, reduced_motion='reduce')
                 await page.goto(str(self.client.make_url('/matrixtool')))
-                await page.wait_for_selector('#mm-canvas')
-                stage = page.locator('#mm-stage')
-                group = page.locator('button[data-mm-group="T2|write"]')
-                SL = '() => document.getElementById("mm-stage").scrollLeft'
-                SCALE = """() => {
-                    const s = document.getElementById('mm-stage');
-                    return s.getBoundingClientRect().width / s.offsetWidth || 1;
-                }"""
-                await page.locator('.mm-tier[data-mm-tier="T2"]').press('Enter')
-                await expect(page.locator('#mm-groups-T2')).to_be_visible()
-                await page.locator('#mm-groups-T2 .mm-cluster[data-mm-cluster="code"] .mm-cluster-btn').press('Enter')
-                await group.press('Enter')
-                await expect(group).to_have_attribute('aria-expanded', 'true')
-                await stage.evaluate('(node) => node.scrollTo(0, 0)')
-                # Zoom until the stage really has room instead of assuming one rung
-                # does. The rail went one-column, which narrows the canvas, and the
-                # single zoom-in that used to guarantee 229px now guarantees 113px --
-                # less than the 120px this drag travels, so the pan would reach the
-                # scroll wall mid-gesture and the delta assertion would be measuring
-                # the clamp instead of the pan. Whatever rung the loop stops on, room
-                # > 170 is what keeps scrollLeft the channel under test, and SCALE is
-                # read after it so 120/scale tracks the live zoom.
-                room = 0
-                for _ in range(8):
-                    await page.click('[data-mm-view-action="zoom-in"]')
-                    await page.wait_for_timeout(250)
-                    await group.scroll_into_view_if_needed()
-                    room = await stage.evaluate(
-                        '() => {const s=document.getElementById("mm-stage");return s.scrollWidth-s.clientWidth-s.scrollLeft}')
-                    if room > 170:
-                        break
-                self.assertGreater(room, 170,
-                    'no scroll room left for a drag to pan into after 8 zoom steps: ' + str(room));
-                scale = await stage.evaluate(SCALE)
-                start = await stage.evaluate(SL)
-                box = await group.bounding_box()
-                cx, cy = box['x'] + box['width'] / 2, box['y'] + box['height'] / 2
-                # Drag the mouse left by 120px: content follows the cursor, so the
-                # stage scrolls right by 120/scale (onPanMove divides by the zoom scale).
-                await page.mouse.move(cx, cy)
+                tier = page.locator('.mm-tier[data-mm-tier="T2"]')
+                wire = page.locator('.mm-tier-wire[data-mm-tier="T2"]')
+                for zoom in (100, 160):
+                    if zoom == 160:
+                        for _ in range(6):
+                            await page.locator('[data-mm-view-action="zoom-in"]').click()
+                    await tier.scroll_into_view_if_needed()
+                    before = await tier.bounding_box()
+                    root = await page.locator('#mm-root').bounding_box()
+                    x, y = before['x'] + before['width']/2, before['y'] + before['height']/2
+                    await page.mouse.move(x, y)
+                    await page.mouse.down()
+                    for dx, dy in [(30, -20), (70, -45)]:
+                        await page.mouse.move(x + dx, y + dy)
+                        await page.evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+                        rect = await tier.bounding_box()
+                        self.assertAlmostEqual(rect['x'] - before['x'], dx, delta=1)
+                        self.assertAlmostEqual(rect['y'] - before['y'], dy, delta=1)
+                        self.assertEqual(await page.locator('#mm-root').bounding_box(), root)
+                        tip = await wire.evaluate("""w => {
+                            const p = w.getPointAtLength(w.getTotalLength()).matrixTransform(w.getScreenCTM());
+                            return [p.x,p.y];
+                        }""")
+                        edges = [(0,.5), (1,.5), (.5,0), (.5,1)]
+                        self.assertTrue(any(abs(tip[0] - rect['x'] - u * rect['width']) < 1 and
+                                            abs(tip[1] - rect['y'] - v * rect['height']) < 1 for u,v in edges))
+                    await page.mouse.up()
+                    await expect(tier).to_have_attribute('aria-expanded', 'false')
+                await page.wait_for_timeout(260)
+                end = await tier.bounding_box()
+                x, y = end['x'] + end['width']/2, end['y'] + end['height']/2
+                await page.mouse.move(x, y)
                 await page.mouse.down()
-                await page.mouse.move(cx - 30, cy)
-                await page.mouse.move(cx - 75, cy)
-                panning_mid = await stage.evaluate(
-                    '() => document.getElementById("mm-stage").classList.contains("is-panning")')
-                expanded_mid = await group.get_attribute('aria-expanded')
-                await page.mouse.move(cx - 120, cy)
+                await page.mouse.move(x + 2, y)
                 await page.mouse.up()
-                await page.wait_for_timeout(300)
-                self.assertTrue(panning_mid, 'the panning class never appeared, so no drag ran at all')
-                self.assertEqual(expanded_mid, 'true', 'the drag collapsed the group mid-move')
-                self.assertEqual(await group.get_attribute('aria-expanded'), 'true',
-                    'a drag that started on a node also activated it')
-                self.assertAlmostEqual(await stage.evaluate(SL) - start, 120 / scale, delta=2.0,
-                    msg='drag did not pan by the cursor delta divided by the zoom scale')
-                self.assertFalse(await stage.evaluate(
-                    '() => document.getElementById("mm-stage").classList.contains("is-panning")'),
-                    'the panning cursor class outlived pointerup')
-                # Under DRAG_SLOP the same gesture must stay a click. 400ms of settle so
-                # the previous drag's 250ms squash window has provably expired.
-                await page.wait_for_timeout(400)
-                # Scroll and the panning class are sampled BEFORE pointerup. The click
-                # that follows collapses the group, which shrinks the canvas and clamps
-                # scrollLeft -- comparing across the toggle read 18 vs 236 and blamed
-                # that clamp for a pan. Between down and the 2px move the layout is
-                # untouched, so any difference there can only be a real pan.
-                scroll_before = await stage.evaluate(SL)
-                box2 = await group.bounding_box()
-                cx2, cy2 = box2['x'] + box2['width'] / 2, box2['y'] + box2['height'] / 2
-                await page.mouse.move(cx2, cy2)
-                await page.mouse.down()
-                await page.mouse.move(cx2 + 2, cy2)
-                mid_scroll = await stage.evaluate(SL)
-                mid_panning = await stage.evaluate(
-                    '() => document.getElementById("mm-stage").classList.contains("is-panning")')
-                await page.mouse.up()
-                await page.wait_for_timeout(300)
-                self.assertEqual(mid_scroll, scroll_before,
-                    'a sub-slop move panned the stage')
-                self.assertFalse(mid_panning,
-                    'a sub-slop move crossed DRAG_SLOP and started a pan')
-                self.assertEqual(await group.get_attribute('aria-expanded'), 'false',
-                    'a sub-slop move swallowed the click')
-                self.assertEqual(errors, [])
-                await page.close()
+                await expect(tier).to_have_attribute('aria-expanded', 'true')
             finally:
                 await browser.close()
+
     async def test_matrix_drag_is_unbounded_past_the_scroll_wall(self):
         """At the fit zoom the stage has zero horizontal range (measured), so a
         scroll-only pan cannot move at all: every drag died on its first pixel
@@ -1680,7 +1637,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                 await page.route('**/api/monitor/activity*', lambda route: route.fulfill(status=502, json={}))
                 await page.goto(str(self.client.make_url('/matrixtool')))
                 await page.wait_for_selector('#mm-canvas')
-                stage = page.locator('#mm-stage')
+
                 # Open real content first, then go home: the fit is the case where
                 # the scroll wall is absolute (hRange 0) and only the overflow
                 # channel can carry the gesture.
@@ -1706,8 +1663,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                     'the fit zoom was supposed to leave zero horizontal range')
                 self.assertIsNotNone(before['wireLeft'], 'no wire was drawn on the map')
 
-                box = await stage.bounding_box()
-                sx, sy = box['x'] + box['width'] / 2, box['y'] + box['height'] / 2
+                sx, sy = await self._canvas_pan_origin(page, 600)
                 await page.mouse.move(sx, sy)
                 await page.mouse.down()
                 for i in range(1, 7):
@@ -1780,6 +1736,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                         await page.locator('#mm-groups-T2 .mm-cluster[data-mm-cluster="code"] .mm-cluster-btn').press('Enter')
                         await page.locator('button[data-mm-group="T2|write"]').press('Enter')
                         await page.locator('[data-mm-tool="write_fix"]').click()
+                        await page.locator('[data-mm-inspect]').click()
                         await page.wait_for_timeout(450)
                         m = await page.evaluate(MEASURE)
                         self.assertLessEqual(m['h'], cap + 2,
@@ -1811,6 +1768,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                         await search.fill('cbm_cycle_point')
                         await expect(page.get_by_role('listbox', name='Kết quả tìm công cụ').get_by_role('option').first).to_contain_text('cbm_cycle_point')
                         await search.press('Enter')
+                        await page.locator('[data-mm-inspect]').click()
                         await page.wait_for_timeout(900)   # the reveal pan is 650ms
                         m2 = await page.evaluate(MEASURE)
                         self.assertLessEqual(m2['h'], cap + 2, msg='island panel too tall: ' + str(m2))
@@ -2906,7 +2864,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
             if (!mid) arrowless++;
             else if (!document.getElementById(mid)) dangling++;
           }
-          const sel = (document.querySelector('#mm-detail strong') || {}).textContent || null;
+          const sel = document.querySelector('button[data-mm-tool][aria-current="true"]')?.dataset.mmTool;
           let expected = 0;
           if (sel) {
             for (const c of CHAINS) if (c.tools.includes(sel)) expected += c.tools.length - 1;
@@ -3137,6 +3095,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(on['pressed'], 'true', msg=where + ': aria-pressed')
                         self.assertEqual(int(on['unanchored']), 0, msg=where + ': after retoggle')
                     # The roads to a tool nobody picked have to go with the selection.
+                    await page.locator('[data-mm-inspect]').click()
                     await page.locator('#mm-detail [data-mm-close]').click()
                     await page.wait_for_timeout(300)
                     gone = await page.evaluate(CENSUS)
@@ -3359,6 +3318,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                 # and would otherwise intercept the chip click for the full timeout.
                 await page.locator('#mm-search').press('Escape')
                 await page.locator('#mm-groups-T4 [data-mm-tool]').first.click()
+                await page.locator('[data-mm-inspect]').click()
                 await expect(page.locator('#mm-detail')).to_be_visible()
                 self.assertEqual(await page.locator('#mm-canvas > .mm-chain-panel').count(), 1)
                 await page.locator('.mm-tier[data-mm-tier="T1"]').hover()
@@ -3375,7 +3335,8 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                 await page.mouse.move(pt['x'] - 80, pt['y'])
                 await page.mouse.up()
                 await page.wait_for_timeout(300)
-                await page.evaluate('window.scrollTo(0, 150)')
+                start_y = await page.evaluate("() => { window.scrollTo(0, 150); return scrollY; }")
+                self.assertGreater(start_y, 0)
                 before = await page.evaluate(STATE)
                 self.assertNotEqual(before['zoomLabel'], '100%', 'setup left zoom at 100%')
                 self.assertTrue(before['sl'] > 0 or before['transform'] != '', 'setup left no pan to reset')
@@ -3384,7 +3345,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNotNone(pt, 'no bare canvas point found to click')
                 await page.mouse.dblclick(pt['x'], pt['y'])
                 y_now = await page.evaluate('window.scrollY')
-                self.assertEqual(y_now, 150, 'the collapse clamped the page scroll instead of shielding it')
+                self.assertEqual(y_now, start_y, 'reset moved the document while closing the inspector')
                 await page.wait_for_timeout(1500)
                 a = await page.evaluate(STATE)
                 self.assertTrue(a['detailHidden'], 'detail panel outlived the empty-click reset')
@@ -3600,7 +3561,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_matrix_non_empty_clicks_never_reset(self):
         """T-B4: node single clicks still toggle; non-empty chip/wire/control-bar/anchor
-        clicks do not reset, and one empty-canvas click remains a no-op."""
+        clicks do not reset, and one empty-canvas click undoes only the last navigation."""
         try:
             from playwright.async_api import async_playwright, expect
         except ImportError:
@@ -3627,7 +3588,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                 await page.wait_for_timeout(250)
                 chip = page.locator('button[data-mm-tool="write_fix"]')
                 await chip.click()
-                await expect(page.locator('#mm-detail')).to_be_visible()
+                await expect(page.locator('.mm-chain-panel')).to_be_visible()
                 zoom_sel = await page.evaluate("() => document.getElementById('mm-zoom-level').textContent")
                 self.assertNotEqual(zoom_sel, '100%')
                 # A wire click bubbles through the canvas delegate but is excluded.
@@ -3642,7 +3603,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                 await page.click('[data-mm-view-action="zoom-in"]')
                 await page.wait_for_timeout(150)
                 self.assertEqual(await page.locator('.mm-tier[data-mm-tier="T2"]').get_attribute('aria-expanded'), 'true')
-                await expect(page.locator('#mm-detail')).to_be_visible()
+                await expect(page.locator('.mm-chain-panel')).to_be_visible()
                 # Fit is NOT the initial-state reset: branches stay open.
                 await page.click('[data-mm-view-action="reset"]')
                 await page.wait_for_timeout(250)
@@ -3661,7 +3622,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                 }""")
                 self.assertEqual(await page.locator('.mm-tier[data-mm-tier="T2"]').get_attribute('aria-expanded'), 'true')
                 self.assertEqual(await page.evaluate("() => document.getElementById('mm-zoom-level').textContent"), zoom_fit)
-                # Node single clicks remain ordinary toggles; empty clicks are distinct no-ops.
+                # Node clicks toggle; empty space undoes the last toggle.
                 tier = page.locator('.mm-tier[data-mm-tier="T2"]')
                 await tier.click()
                 await page.wait_for_timeout(100)
@@ -3684,7 +3645,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNotNone(empty, 'no empty canvas point found for the B4 single-click control')
                 await page.mouse.click(empty['x'], empty['y'])
                 await page.wait_for_timeout(100)
-                self.assertEqual(await tier.get_attribute('aria-expanded'), 'true', 'empty single click changed branch state')
+                self.assertEqual(await tier.get_attribute('aria-expanded'), 'false', 'empty click did not undo reopening the tier')
                 self.assertEqual(await page.evaluate("() => document.getElementById('mm-zoom-level').textContent"), zoom_before_empty,
                     'empty single click changed the fitted zoom')
                 self.assertEqual(errors, [])
@@ -3865,7 +3826,8 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                     zoom: document.getElementById('mm-zoom-level').textContent,
                     tier: document.querySelector('.mm-tier[data-mm-tier="T2"]').getAttribute('aria-expanded')
                 })""")
-                self.assertEqual(after, before, 'one empty click reset state despite the explicit double-click gesture')
+                self.assertEqual(after, {'zoom': before['zoom'], 'tier': 'false'},
+                    'one empty click must undo navigation and keep the camera zoom')
                 self.assertEqual(errors, [])
                 await page.close()
             finally:
@@ -4334,6 +4296,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(after), len(before))
                 delta = max(abs(after[i][j] - before[i][j]) for i in range(len(before)) for j in range(4))
                 self.assertLessEqual(delta, 0.02, 'selection emphasis moved a rect by ' + str(delta))
+                await page.locator('[data-mm-inspect]').click()
                 await page.locator('#mm-detail [data-mm-close]').click()
                 await page.wait_for_timeout(250)
                 again = await page.evaluate(RECTS)
@@ -4414,6 +4377,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                 await page.locator('#mm-search').press('Escape')
                 await expect(page.locator('#mm-hits')).to_be_hidden()
                 await page.locator('button[data-mm-tool="write_fix"]').click()
+                await page.locator('[data-mm-inspect]').click()
                 await expect(page.locator('#mm-detail')).to_be_visible()
                 await page.locator('#mm-detail').press('Escape')
                 await expect(page.locator('#mm-detail')).to_be_hidden()
@@ -4563,6 +4527,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                     await page.wait_for_timeout(400)
                     before = await page.evaluate(RECTS)
                     await page.locator('button[data-mm-tool="write_fix"]').click()
+                    await page.locator('[data-mm-inspect]').click()
                     await expect(page.locator('#mm-detail')).to_be_visible()
                     await page.locator('#mm-detail').press('Escape')
                     await expect(page.locator('button[data-mm-tool="write_fix"]')).to_be_focused()
@@ -4650,8 +4615,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
     # ------------------------------------------------------------------
 
     async def test_matrix_chain_panel_is_an_absolute_node_inside_the_canvas(self):
-        """T-P1: mount + position + map-coord anchor below the chip, clamped inside
-        the canvas right edge (no scrollable-overflow feed)."""
+        """The terminal card attaches to the right of every visible node, with a continuous connector."""
         try:
             from playwright.async_api import async_playwright, expect
         except ImportError:
@@ -4669,7 +4633,11 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                     dx: (pr.left - cr.left) / k,
                     dy: (pr.top - cr.bottom) / k,
                     left: (pr.left - vr.left) / k,
-                    chipLeft: (cr.left - vr.left) / k,
+                    chipRight: cr.right, panelLeft: pr.left,
+                    lastRight: Math.max(...Array.from(cv.querySelectorAll('button[data-mm-tool]'),
+                        n => n.getBoundingClientRect().right)),
+                    lineLeft: cv.querySelector('.mm-chain-connector').getBoundingClientRect().left,
+                    lineRight: cv.querySelector('.mm-chain-connector').getBoundingClientRect().right,
                     width: pr.width / k,
                     canvasW: cv.offsetWidth};
         }"""
@@ -4688,20 +4656,14 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                 await page.locator('#mm-groups-T2 .mm-cluster[data-mm-cluster="code"] .mm-cluster-btn').press('Enter')
                 await page.locator('button[data-mm-group="T2|write"]').press('Enter')
                 await page.locator('[data-mm-tool="write_fix"]').click()
-                await expect(page.locator('#mm-detail')).to_be_visible()
+                await expect(page.locator('.mm-chain-panel')).to_be_visible()
                 a = await page.evaluate(ANCHOR)
                 self.assertIsNotNone(a, 'panel or anchor chip missing')
                 self.assertEqual(a['position'], 'absolute', 'panel is not position:absolute')
                 self.assertEqual(a['parent'], 'mm-canvas', 'panel is not a direct child of #mm-canvas')
-                # left = chip left, clamped so the 268px panel never overflows the canvas
-                # right edge (item 6). Near the right edge the clamp legitimately pulls the
-                # panel left of the chip; the invariant is the clamp formula, not dx==0.
-                expected_left = max(0, min(a['chipLeft'], a['canvasW'] - 268))
-                self.assertAlmostEqual(a['left'], expected_left, delta=0.5,
-                    msg='panel left != min(chip left, canvasW-268): ' + str(a))
-                self.assertAlmostEqual(a['dy'], 4, delta=0.5, msg='panel not one node (4px) below the chip')
-                self.assertLessEqual(a['left'] + a['width'], a['canvasW'] + 0.5,
-                    msg='panel overflows the canvas right edge: ' + str(a))
+                self.assertGreater(a['panelLeft'], a['lastRight'] + 10)
+                self.assertAlmostEqual(a['lineLeft'], a['chipRight'], delta=1)
+                self.assertAlmostEqual(a['lineRight'], a['panelLeft'], delta=1)
                 self.assertEqual(errors, [])
                 await page.close()
             finally:
@@ -4741,8 +4703,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                 await page.locator('[data-mm-tool="write_fix"]').click()
                 await expect(page.locator('.mm-chain-panel')).to_be_visible()
                 base = await page.evaluate(REL)
-                box = await page.locator('#mm-stage').bounding_box()
-                sx, sy = box['x'] + box['width'] / 2, box['y'] + box['height'] / 2
+                sx, sy = await self._canvas_pan_origin(page, 120)
                 await page.mouse.move(sx, sy)
                 await page.mouse.down()
                 await page.mouse.move(sx - 120, sy - 40)
@@ -4769,11 +4730,8 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 await browser.close()
 
-    async def test_matrix_chain_panel_feeds_no_canvas_width_or_overflow(self):
-        """T-P3: the max-content risk, measured. Opening the panel must not grow the
-        canvas intrinsic width (offsetWidth), its right edge at scrollLeft 0, or the
-        stage's scrollWidth -- absolute is out of flow and left is clamped inside the
-        canvas. Census :667/:1007 premise, re-verified @320/390/1440."""
+    async def test_matrix_terminal_node_extends_only_stage_scroll_range(self):
+        """The new right-hand node earns scroll room without reflowing any original chip."""
         try:
             from playwright.async_api import async_playwright, expect
         except ImportError:
@@ -4781,16 +4739,23 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
         CENSUS = """() => {
             const cv = document.getElementById('mm-canvas');
             const st = document.getElementById('mm-stage');
+            // Compare layout at the same camera origin after a reveal on a narrow screen.
+            const transform = cv.style.transform, x = st.scrollLeft, y = st.scrollTop;
+            cv.style.transform = 'none';
             st.scrollTo(0, 0);
             const vr = cv.getBoundingClientRect();
             const chip = cv.querySelector('[data-mm-tool="write_fix"]');
             const cr = chip ? chip.getBoundingClientRect() : null;
-            return {offsetW: cv.offsetWidth, right: vr.right,
+            const census = {offsetW: cv.offsetWidth, right: vr.right,
                     scrollW: st.scrollWidth, clientW: st.clientWidth,
+                    panelEnd: cv.querySelector('.mm-chain-panel')?.getBoundingClientRect().right - st.getBoundingClientRect().left,
                     chipDx: cr ? cr.left - vr.left : null,
                     chipDy: cr ? cr.top - vr.top : null,
                     panels: cv.querySelectorAll(':scope > .mm-chain-panel').length,
                     pageFits: document.documentElement.scrollWidth === innerWidth};
+            cv.style.transform = transform;
+            st.scrollTo(x, y);
+            return census;
         }"""
         async with async_playwright() as pw:
             if not Path(pw.chromium.executable_path).is_file():
@@ -4820,8 +4785,8 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                             msg='w' + str(width) + ': panel grew the canvas max-content width')
                         self.assertAlmostEqual(opened['right'], closed['right'], delta=0.5,
                             msg='w' + str(width) + ': panel moved the canvas right edge')
-                        self.assertAlmostEqual(opened['scrollW'], closed['scrollW'], delta=1,
-                            msg='w' + str(width) + ': panel fed the stage scrollable overflow')
+                        self.assertGreaterEqual(opened['scrollW'] + 1, opened['panelEnd'])
+                        self.assertLessEqual(opened['scrollW'], max(closed['scrollW'], opened['panelEnd']) + 2)
                         self.assertAlmostEqual(opened['chipDx'], closed['chipDx'], delta=0.5,
                             msg='w' + str(width) + ': selection moved the anchor chip (census :1007)')
                         self.assertAlmostEqual(opened['chipDy'], closed['chipDy'], delta=0.5,
@@ -4860,8 +4825,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                 await expect(page.locator('.mm-chain-panel')).to_have_count(0)
                 await page.locator('[data-mm-tool="write_fix"]').click()
                 await expect(page.locator('.mm-chain-panel')).to_be_visible()
-                box = await page.locator('#mm-stage').bounding_box()
-                sx, sy = box['x'] + box['width'] / 2, box['y'] + box['height'] / 2
+                sx, sy = await self._canvas_pan_origin(page, 90)
                 await page.mouse.move(sx, sy)
                 await page.mouse.down()
                 await page.mouse.move(sx - 90, sy)
@@ -4876,8 +4840,7 @@ class MonitorReadTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNotNone(mate, 'no mate button to jump to')
                 await expect(page.locator('[data-mm-tool="' + mate + '"]')).to_have_attribute('aria-current', 'true')
                 await expect(page.locator('.mm-chain-panel')).to_have_count(1)
-                box = await page.locator('#mm-stage').bounding_box()
-                sx, sy = box['x'] + box['width'] / 2, box['y'] + box['height'] / 2
+                sx, sy = await self._canvas_pan_origin(page, 90)
                 await page.mouse.move(sx, sy)
                 await page.mouse.down()
                 await page.mouse.move(sx - 90, sy)

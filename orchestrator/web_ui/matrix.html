@@ -288,7 +288,8 @@ html[data-toola-page="matrix"] body > .toola-nav { margin: 0 calc(-1 * var(--mm-
     which setPanTotal clamps away ("negative pan does not exist", matrix.js) and which
     the fit lock forbids outright by asserting scrollTop == 0 after "Vua khung".
     Anh's complaint was the fitting states -- closed and half-open -- and both are 0. */
-.mm-stage { display: flex; overflow: auto; max-height: min(620px, 64vh); min-height: min(380px, 52vh); overflow-anchor: none; scrollbar-width: thin; cursor: grab; --mm-ease: cubic-bezier(.22, 1, .36, 1); background: radial-gradient(circle at 50% 45%, transparent 0%, transparent 52%, var(--bg) 84%) , radial-gradient(circle, color-mix(in srgb, var(--fg2) 18%, transparent) 1px, transparent 1px) 0 0 / 22px 22px, var(--bg); }
+.mm-stage { display: flex; overflow: auto; height: min(620px, 64vh); overflow-anchor: none; scrollbar-width: none; cursor: grab; --mm-ease: cubic-bezier(.22, 1, .36, 1); background: radial-gradient(circle at 50% 45%, transparent 0%, transparent 52%, var(--bg) 84%) , radial-gradient(circle, color-mix(in srgb, var(--fg2) 18%, transparent) 1px, transparent 1px) 0 0 / 22px 22px, var(--bg); }
+.mm-stage::-webkit-scrollbar { display: none; }
 .mm-stage.is-panning, .mm-stage.is-panning * { cursor: grabbing; user-select: none !important; }
 .mm-stage:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; }
 /* Gap is pure sideways cost, and the 26px that used to sit here was chosen for a
@@ -323,7 +324,7 @@ html[data-toola-page="matrix"] body > .toola-nav { margin: 0 calc(-1 * var(--mm-
    already 26px so nothing shrinks, and mobile's 8px is the value that would have cut
    the stroke. matrix.js reads the same variable, so layout and geometry cannot drift. */
 .mm-canvas { position: relative; display: flex; align-items: center; flex: none; margin: auto; width: max-content; min-height: 366px; padding-block: 25px; padding-inline-start: var(--mm-pad); padding-inline-end: max(var(--mm-pad), var(--mm-trunk-runway)); gap: var(--mm-gap); --mm-pad: clamp(14px, 2.6vw, 26px); --mm-gap: clamp(26px, 2.4vw, 34px); --mm-trunk-runway: 16px; --mm-root-width: 148px; --mm-tier-width: 196px; --mm-cluster-width: 172px; --mm-group-width: 166px; --mm-tool-width: 170px; }
-.mm-wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+.mm-wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; overflow: visible; }
 /* THE RELATION LAYER (Anh 2026-11-24: "phần mind maps cần thể hiện tool chain và các tool
    liên quan, auto chain"). Until now the canvas drew ONE thing -- the taxonomy, tier >
    cluster > group > tool -- and the three tables that say what a tool LEADS TO (CHAINS 8
@@ -374,33 +375,52 @@ html[data-toola-page="matrix"] body > .toola-nav { margin: 0 calc(-1 * var(--mm-
 .mm-rel-defs { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
 .mm-wires path { fill: none; stroke: var(--mm-tone); stroke-width: 1.65; stroke-opacity: .65; vector-effect: non-scaling-stroke; }
 .mm-wires .is-focus { stroke-opacity: 1; stroke-width: 2.4; }
-/* ISSUE 2 (Anh 2026-11-24) + A3 (Anh 2026-11-25, direction B): chain panel on the LEAF
-   chip, now a NODE IN THE MAP: absolute inside #mm-canvas with left/top in map coords, so
-   it pans/zooms WITH the map instead of sticking to the screen. Absolute is out of flow and
-   feeds no intrinsic width (abspos descendants contribute zero to max-content); the old
-   right=435@390 claim is re-measured in T-P3. repositionChainPanel clamps left so the panel
-   never overflows the canvas right edge into the stage's scrollable overflow. */
-.mm-chain-panel { position: absolute; z-index: 60;
-  width: 268px; max-height: 300px; overflow: auto; padding: 8px 10px;
-  background: color-mix(in srgb, var(--bg2) 97%, var(--fg2)); border: 1px solid var(--amber);
-  border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.42); font: .74rem/1.35 var(--mono);
-  color: var(--fg); }
-.mm-chain-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding-bottom: 5px; margin-bottom: 6px; border-bottom: 1px solid var(--border); }
-.mm-chain-panel-head strong { color: var(--amber); font-size: .82rem; overflow: hidden; text-overflow: ellipsis; }
-.mm-chain-panel-close { flex: none; width: 22px; height: 22px; line-height: 1; cursor: pointer;
-  border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--fg2); }
-.mm-chain-panel-route { margin: 0 0 7px; }
-.mm-chain-panel-title { color: var(--fg); font-weight: 700; margin-bottom: 4px; }
-.mm-chain-panel-title span { color: var(--amber); font-weight: 500; }
-.mm-chain-panel-steps { display: flex; flex-wrap: wrap; gap: 3px; }
-.mm-chain-step, .mm-chain-rel { cursor: pointer; border: 1px solid var(--border); border-radius: 5px;
-  padding: 2px 5px; font: .68rem/1.3 var(--mono); color: var(--fg2); background: var(--bg2); }
-.mm-chain-step:hover, .mm-chain-rel:hover { border-color: var(--amber); color: var(--fg); }
-.mm-chain-step.is-current { border-color: var(--amber); color: var(--amber); background: color-mix(in srgb, var(--amber) 14%, var(--bg2)); }
-.mm-chain-panel-rel { margin-top: 7px; padding-top: 6px; border-top: 1px dashed var(--border); }
-.mm-chain-panel-rel h4 { margin: 0 0 4px; font-size: .7rem; color: var(--fg2); font-weight: 600; }
-.mm-chain-empty { color: var(--fg2); font-size: .7rem; }
+/* The terminal card occupies its own column to the right of the tree.
+   The connector and card travel with the selected tool while the camera pans. */
+.mm-chain-connector { position: absolute; height: 2px; background: var(--amber);
+  z-index: 1; pointer-events: none; transform-origin: left center; transform: translateY(-50%); }
+.mm-chain-connector::after { content: ''; position: absolute; right: 0; top: 50%;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--amber); transform: translateY(-50%); }
+#mm-hits { overscroll-behavior: contain; }
+/* This card stays anchored to the selected leaf. Its ordered list and the
+   highlighted incoming/outgoing hops use the same active route. */
+.mm-chain-panel { position: absolute; z-index: 60; width: 268px; max-height: 300px;
+  overflow: auto; overscroll-behavior: contain; transform-origin: top left; padding: 10px;
+  color: var(--fg); background: var(--bg2); border: 1px solid var(--ta-control-border);
+  border-radius: 10px; box-shadow: 0 8px 22px rgba(0,0,0,.24); font: .82rem/1.35 var(--font); }
+.mm-inspect { display: block; margin-top: 8px; min-height: 30px; padding: 4px 9px; border: 1px solid var(--ta-control-border); border-radius: 5px; color: var(--fg); background: var(--bg3); font: inherit; cursor: pointer; }
+.mm-inspect:hover { border-color: var(--accent); }
+.mm-canvas button[aria-current="location"] { outline: 2px solid var(--mm-tone); outline-offset: 1px; }
+.mm-chain-panel-head { display: flex; align-items: center; gap: 8px; justify-content: space-between; cursor: grab; user-select: none; }
+.mm-grip { width: 9px; height: 16px; flex: none; color: var(--fg2); background: radial-gradient(circle, currentColor 1px, transparent 1.4px) 0 0 / 4px 5px; }
+.mm-chain-panel-head :is(.mm-chain-title, .mm-chain-picker) { flex: 1; }
+#mm-canvas :is(.mm-root, .mm-tier, .mm-cluster-btn, .mm-group > button, .mm-bucket-btn, button[data-mm-tool]) { cursor: grab; user-select: none; }
+#mm-stage.is-panning #mm-canvas * { cursor: grabbing; user-select: none; }
+.mm-placed { z-index: 3; }
+.mm-chain-title, .mm-chain-picker { min-width: 0; font: 650 .9rem/1.3 var(--font); overflow-wrap: anywhere; }
+.mm-chain-picker { flex: 1; color: var(--fg); background: var(--bg3); border: 1px solid var(--ta-control-border); padding: 4px; border-radius: 5px; }
+.mm-chain-panel-close { width: 28px; height: 28px; flex: none; border-radius: 5px; border: 1px solid var(--border);
+  background: var(--bg3); color: var(--fg2); font: 1.15rem/1 var(--font); cursor: pointer; }
+.mm-chain-progress { color: var(--fg2); font-size: .77rem; margin: 0 0 6px; }
+.mm-chain-panel-steps { list-style: none; margin: 0; padding: 0; }
+.mm-chain-panel-steps li { position: relative; }
+.mm-chain-panel-steps li:not(:last-child)::after { content: ''; position: absolute; pointer-events:none;
+  left: 15px; top: calc(50% + 8px); height: calc(100% - 16px); width: 1px; background: var(--ta-control-border); }
+.mm-chain-step { width: 100%; display: grid; grid-template-columns: 20px minmax(0,1fr); gap: 8px; align-items: center;
+  min-height: 28px; text-align: left; color: var(--fg); background: transparent; border: 1px solid transparent;
+  border-radius: 5px; padding: 3px 5px; font: .76rem/1.35 var(--mono); overflow-wrap: anywhere; cursor: pointer; }
+.mm-step-number { width: 18px; height: 18px; border-radius: 50%; background: var(--bg3); display:grid; place-items:center; color: var(--fg2); font: 600 .69rem/1 var(--font); }
+.mm-chain-step:hover, .mm-chain-rel:hover { background: var(--bg3); }
+.mm-chain-step.is-current { background: var(--amber-dim); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.mm-chain-step.is-current .mm-step-number { background: var(--amber); color: var(--amber-dim); }
+.mm-chain-panel-rel { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; }
+.mm-chain-panel-rel summary { cursor: pointer; color: var(--fg2); }
+.mm-chain-rel { background: transparent; color: var(--fg); border: 1px solid var(--border); border-radius: 4px;
+  padding: 4px; margin: 4px 4px 0 0; font: .74rem var(--mono); overflow-wrap: anywhere; cursor: pointer; }
+.mm-chain-empty { color: var(--fg2); margin-top: 4px; }
+.mm-chain-panel :focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.mm-relations path.mm-route-context { stroke-opacity: .22; }
+.mm-relations text.mm-route-context { visibility: hidden; }
 /* q6=m: chain mates ring bright IN the tree. A ring, not a re-dimming. */
 .mm-canvas button[data-mm-tool].mm-chain-mate { border-color: var(--amber) !important;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--amber) 55%, transparent), 0 0 10px color-mix(in srgb, var(--amber) 35%, transparent);
@@ -457,8 +477,9 @@ html[data-toola-page="matrix"] body > .toola-nav { margin: 0 calc(-1 * var(--mm-
    its single named ease. Filter and stroke-width paint without reflowing, so the
    transition moves no rect the fit contract measures. */
 .mm-canvas :is(.mm-root, .mm-tier, .mm-cluster-btn, .mm-group > button, .mm-bucket-btn,
-    .mm-tools > button, .mm-bucket-body > button),
-.mm-wires path { transition: filter 180ms var(--mm-ease, cubic-bezier(.22, 1, .36, 1)); }
+    .mm-tools > button, .mm-bucket-body > button) { transition: filter 180ms var(--mm-ease, cubic-bezier(.22, 1, .36, 1)); }
+.mm-wires .mm-wire-keep:not(.mm-wire-lit) { filter: none; }
+.mm-canvas.mm-wire-hover .mm-wires .is-focus:not(.mm-wire-lit):not(.mm-wire-keep) { stroke-opacity: .65; stroke-width: 1.65; }
 .mm-wires .mm-wire-lit { stroke-opacity: 1; stroke-width: 2.6; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--mm-tone) 75%, transparent)); stroke-dasharray: 5 7; animation: mm-flow 1.5s linear infinite; }
 /* Branch arrival, Forest's stagger without Forest's motion. blur() and opacity are
    paint-only: they create no reflow, so a node's rect never moves and the fit contract
@@ -573,7 +594,9 @@ html[data-toola-page="matrix"] body > .toola-nav { margin: 0 calc(-1 * var(--mm-
 .mm-tier strong, .mm-group strong, .mm-cluster-btn strong { font-size: .92rem; line-height: 1.18; overflow-wrap: anywhere; }
 .mm-tier-label { margin-inline-end: 6px; color: var(--mm-tone); font: 700 .75rem var(--mono); }
 .mm-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 7px; }
-.mm-tier::after { position: absolute; content: ''; pointer-events: none; inset: auto auto 0 0; width: var(--mm-activity, 0%); height: 2px; background: var(--mm-tone); border-radius: inherit; }
+/* Keep the full activity scale inside the rounded bottom edge. */
+.mm-tier::after { position: absolute; content: ''; pointer-events: none; inset: auto 8px 2px; height: 2px;
+  background: var(--mm-tone); clip-path: inset(0 calc(100% - var(--mm-activity, 0%)) 0 0 round 2px); }
 .mm-more { grid-column: 1 / -1; justify-content: center !important; min-height: 28px !important; border-style: dashed !important; background: transparent !important; color: var(--mm-tone) !important; font: 600 .72rem/1.2 var(--mono) !important; }
 /* 71 of 241 tool names are wider than the chip; ellipsize with the full name in the
    button title rather than chopping the tail off with no signal. */
@@ -606,7 +629,10 @@ html[data-toola-page="matrix"] body > .toola-nav { margin: 0 calc(-1 * var(--mm-
 .mm-foot { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; align-items: center; padding: 12px 14px; border-top: 1px solid var(--border); color: var(--fg2); font-size: .8rem; }
 .mm-foot strong { color: var(--fg); }
 .mm-sample { grid-column: 1 / -1; }
-#mm-detail:not([hidden]) { margin-top: 12px; max-height: 42vh; overflow-y: auto; overscroll-behavior: contain; background: var(--bg2); border: 1px solid var(--border); padding: 12px; border-radius: 9px; }
+/* Opened explicitly from the tool card. The inspector never changes page height. */
+#mm-detail:not([hidden]) { position: fixed; z-index: 80; inset: auto 12px 10px; width: auto; max-width: 920px; margin-inline: auto;
+  max-height: 42vh; overflow-y: auto; overscroll-behavior: contain; background: var(--bg2); border: 1px solid var(--ta-control-border);
+  padding: 12px; border-radius: 9px; box-shadow: 0 8px 30px #0004; }
 /* Leaf panel head: one row carries the identity the 18 label/value rows used to
    spell out, so the answer to "what is this" is above the fold. Badges reuse the
    inventory classes; the count keeps data-mm-count so renderMap still finds it. */
@@ -711,7 +737,7 @@ html[data-toola-page="matrix"] body > .toola-nav { margin: 0 calc(-1 * var(--mm-
   #mm-canvas [data-mm-tool][aria-current="true"] {
     box-shadow: 0 0 0 2px var(--ta-accent, var(--accent)), 0 0 14px color-mix(in srgb, var(--ta-accent, var(--accent)) 45%, transparent);
   }
-  /* C3: one-finger swipe pans natively; the JS pinch handler preventDefaults two-finger moves. */
+  /* The board handles touch drags; the scrollable route card retains native touch scrolling. */
   .mm-stage { touch-action: pan-x pan-y; }
   /* C4: return-to-chip flash, paint only, removed by JS after ~2500ms. */
   #mm-canvas .mm-return-flash {
@@ -776,19 +802,56 @@ html[data-toola-page="matrix"] body > .toola-nav { margin: 0 calc(-1 * var(--mm-
     --pink: #f472b6; --pink-dim: #3d1428;
   }
 
+/* Inventory and Radial share the available page width; the map owns its own pan area. */
+#tabs, .panel { max-width: 1540px; margin-inline: auto; }
+#tabs .tab { min-height: 40px; }
+#tabs .tab:focus-visible, #panel-inventory :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#panel-inventory [hidden] { display: none; }
+.inventory-filters { padding-block: 6px; }
+.inventory-filters .search { flex: 1 1 230px; min-width: 0; width: auto; min-height: 38px; }
+.inventory-filters select { min-height: 38px; max-width: 100%; padding: 4px 8px; background: var(--bg2); color: var(--fg); border: 1px solid var(--ta-control-border); border-radius: var(--radius); font: inherit; font-size: .84rem; }
+.inventory-tiers { display: flex; flex-wrap: wrap; gap: 4px; }
+.inventory-tiers button, #inventory-reset, #inventory-close { min-height: 34px; }
+.inventory-layout { display: grid; align-items: start; gap: 14px; grid-template-columns: minmax(0,1fr); }
+.inventory-layout.has-detail { grid-template-columns: minmax(0,1fr) minmax(270px,32%); }
+.inventory-layout .tool-grid { grid-template-columns: repeat(auto-fill,minmax(min(240px,100%),1fr)); min-width: 0; gap: 8px; }
+.inventory-layout .tool-card { color: var(--fg); text-align: left; font: inherit; min-width: 0; display: grid; align-content: start; gap: 5px; padding: 12px; }
+.inventory-layout .tool-name { white-space: normal; overflow-wrap: anywhere; }
+.inventory-summary { color: var(--fg2); font-size: .78rem; line-height: 1.4; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.inventory-layout .detail-panel { min-width: 0; max-height: calc(100vh - 32px); overflow: auto; margin-top: 0; }
+#inventory-close { display: block; margin: 0 0 8px auto; }
+.inventory-empty { padding: 24px 16px; text-align: center; border: 1px dashed var(--ta-control-border); border-radius: var(--radius); }
+.inventory-empty p { margin-bottom: 10px; }
+@media (max-width: 960px) {
+  .dash-grid { grid-template-columns: minmax(0,1fr); grid-template-areas: "top" "stages" "gvbar" "center" "side" "status"; }
+  .dash-stages { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(135px,100%),1fr)); }
+  .dash-topbar, .dash-gvbar { flex-wrap: wrap; min-width: 0; }
+  .dash-side { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(230px,100%),1fr)); }
+}
+@media (max-width: 720px) {
+  .inventory-layout.has-detail { grid-template-columns: minmax(0,1fr); }
+  .inventory-layout .detail-panel { grid-row: 1; position: static; max-height: none; }
+  .inventory-filters .search { flex-basis: 100%; }
+  .inventory-layout .chain-step { white-space: normal; overflow-wrap: anywhere; }
+  #panel-inventory .stats { grid-template-columns: repeat(auto-fit,minmax(min(95px,100%),1fr)); gap: 4px; }
+  #panel-inventory .stat { padding: 7px 8px; }
+  #panel-inventory .stat-value { font-size: 1.1rem; }
+}
+@media (max-width: 550px) {
+  #tabs { flex-wrap: wrap; }
+  #tabs .tab { flex: 1 1 28%; padding-inline: 4px; }
+}
 </style>
 </head>
 <body>
 <header class="mm-heading">
-  <span class="mm-kicker">ToolA / System map</span>
   <h1>Ma trận vận hành</h1>
-  <p class="subtitle">Gõ chức năng hoặc chọn một nhánh để lần tới công cụ.</p>
 </header>
-<div class="tabs" id="tabs">
-  <button class="tab active" type="button" data-tab="mindmap">Mind map</button>
-  <button class="tab" type="button" data-tab="inventory">Inventory</button>
-  <button class="tab" type="button" data-tab="chains">Tool Chains</button>
-  <button class="tab" type="button" data-tab="gaps">Gap Analysis</button>
+<div class="tabs" id="tabs" role="tablist" aria-label="Góc nhìn ma trận">
+  <button class="tab active" type="button" data-tab="mindmap">Sơ đồ</button>
+  <button class="tab" type="button" data-tab="inventory">Danh mục</button>
+  <button class="tab" type="button" data-tab="chains">Chuỗi tool</button>
+  <button class="tab" type="button" data-tab="gaps">Phân tích</button>
   <button class="tab" type="button" data-tab="automation">Auto-Chain</button>
   <button class="tab" type="button" data-tab="sunburst">Radial</button>
 </div>
@@ -811,7 +874,7 @@ html[data-toola-page="matrix"] body > .toola-nav { margin: 0 calc(-1 * var(--mm-
       <button type="button" data-mm-view-action="sound" aria-pressed="false" aria-label="Bật tiếng khi rê chuột">♪</button>
       <button type="button" data-mm-view-action="relations" aria-pressed="true" aria-label="Hiện chuỗi và liên kết khi chọn một tool">Chuỗi &amp; liên kết</button>
       <button type="button" data-mm-view-action="theme" aria-pressed="false" aria-label="Đổi giao diện sáng/tối">◐</button>
-      <small class="mm-view-hint">Lăn chuột để thu phóng · Kéo để di chuyển</small>
+      <small class="mm-view-hint">Kéo node để xếp lại · Kéo nền để di chuyển · Bấm nền để lùi · Bấm đúp nền để đặt lại</small>
     </div>
     <div class="mm-stage" id="mm-stage" role="region" tabindex="0" aria-label="Sơ đồ ngang ToolA. Dùng phím mũi tên để di chuyển.">
       <div class="mm-canvas" id="mm-canvas">
@@ -887,18 +950,27 @@ html[data-toola-page="matrix"] body > .toola-nav { margin: 0 calc(-1 * var(--mm-
 <!-- INVENTORY PANEL -->
 <div class="panel" id="panel-inventory">
   <div class="stats" id="stats"></div>
-  <div class="filters">
-    <input class="search" id="search" placeholder="Search tool name..." autocomplete="off">
-    <button class="filter-btn t1 active" data-tier="T1">T1 Read</button>
-    <button class="filter-btn t2 active" data-tier="T2">T2 Write</button>
-    <button class="filter-btn t3 active" data-tier="T3">T3 Audit</button>
-    <button class="filter-btn t4 active" data-tier="T4">T4 Desktop</button>
-    <button class="filter-btn active" data-cat="all">All Cats</button>
-    <span class="result-count" id="result-count">260</span>
+  <div class="filters inventory-filters">
+    <input class="search" id="search" type="search" aria-label="Tìm tool trong danh mục" placeholder="Tìm tên tool hoặc chức năng…" autocomplete="off" spellcheck="false">
+    <select id="inventory-category" aria-label="Danh mục chức năng"><option value="">Tất cả danh mục</option></select>
+    <div class="inventory-tiers" role="group" aria-label="Lọc theo tầng">
+      <button type="button" class="filter-btn t1 active" data-tier="T1" aria-pressed="true">T1 Đọc</button>
+      <button type="button" class="filter-btn t2 active" data-tier="T2" aria-pressed="true">T2 Ghi</button>
+      <button type="button" class="filter-btn t3 active" data-tier="T3" aria-pressed="true">T3 Phiên</button>
+      <button type="button" class="filter-btn t4 active" data-tier="T4" aria-pressed="true">T4 Desktop</button>
+    </div>
+    <span class="result-count" id="result-count" role="status"></span>
   </div>
-  <div style="display:grid;grid-template-columns:1fr 300px;gap:12px;">
+  <div class="inventory-layout" id="inventory-layout">
     <div class="tool-grid" id="tool-grid"></div>
-    <div class="detail-panel" id="detail-panel" style="display:none;"></div>
+    <aside class="detail-panel" id="detail-panel" aria-label="Chi tiết tool" tabindex="-1" hidden>
+      <button class="filter-btn" type="button" id="inventory-close">Đóng chi tiết</button>
+      <div id="inventory-detail-content"></div>
+    </aside>
+  </div>
+  <div class="inventory-empty" id="inventory-empty" hidden>
+    <p>Không tìm thấy tool phù hợp.</p>
+    <button class="filter-btn" type="button" id="inventory-reset">Xóa bộ lọc</button>
   </div>
 </div>
 
