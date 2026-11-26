@@ -171,7 +171,7 @@ def test_real_powershell_entry_capture_once_then_resume(configured):
             "-PythonExe", sys.executable, "-MaxPolls", "1"]
     for _ in range(2):
         proc = subprocess.run(args, capture_output=True, text=True, timeout=45,
-                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), stdin=subprocess.DEVNULL)
         assert proc.returncode == 0, proc.stdout + proc.stderr
     captures = list(cfg["archive_dir"].glob("*capture.json"))
     assert len(captures) == 1

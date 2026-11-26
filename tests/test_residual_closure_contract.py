@@ -28,7 +28,7 @@ def test_ope_cli_qualifies_bare_model(monkeypatch, tmp_path, provider, model, ex
 
 
 def test_compact_git_keeps_exact_hashes_and_counts(tmp_path):
-    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True, stdin=subprocess.DEVNULL)
     folder = tmp_path / "%TEMP%toolq_tests"
     folder.mkdir()
     for i in range(30):

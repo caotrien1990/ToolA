@@ -111,7 +111,7 @@ class ThinClientOnTheWireTests(unittest.TestCase):
                    ORCHESTRATOR_BASE_URL="http://127.0.0.1:%d/" % cls.server.server_port)
         cls.proc = subprocess.run(
             [POWERSHELL, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-             "-File", str(driver)], capture_output=True, env=env, timeout=120)
+             "-File", str(driver)], capture_output=True, env=env, timeout=120, stdin=subprocess.DEVNULL)
         out = tmp / "out.json"
         cls.out = json.loads(out.read_bytes().decode("utf-8-sig")) if out.exists() else None
 

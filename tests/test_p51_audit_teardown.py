@@ -46,7 +46,7 @@ def test_cleanup_releases_owned_audit_but_preserves_real_leaks(tmp_path, leak):
     proc = subprocess.run(
         [sys.executable, "-m", "pytest", "-q", "-p", "no:randomly",
          str(Path(__file__).resolve()) + "::test_child_keeps_audit_handle_pinned_until_shutdown"],
-        cwd=ROOT, env=env, capture_output=True, text=True, timeout=45)
+        cwd=ROOT, env=env, capture_output=True, text=True, timeout=45, stdin=subprocess.DEVNULL)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     leftovers = sorted(p.name for p in tmp_path.iterdir() if not p.name.startswith("pytest-of-"))
     assert leftovers == (["p51_foreign_file.txt", "p51_intentional_leak"] if leak else [])

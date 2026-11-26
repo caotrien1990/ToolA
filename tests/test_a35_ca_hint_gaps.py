@@ -284,12 +284,12 @@ def _tmp_repo(tmp_path):
                  ['config', 'user.email', 'a35@local'],
                  ['config', 'commit.gpgsign', 'false']):
         subprocess.run(['git', '-C', str(r), *args], check=True,
-                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL)
     (r / "seed.txt").write_text("seed\n", encoding="utf-8")
     subprocess.run(['git', '-C', str(r), 'add', 'seed.txt'], check=True,
-                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL)
     subprocess.run(['git', '-C', str(r), 'commit', '-q', '-m', 'seed'], check=True,
-                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL)
     return r
 
 
@@ -303,12 +303,12 @@ def test_a35_staged_hash_is_identical_across_a_commit(tmp_path):
     r = _tmp_repo(tmp_path)
     (r / "seed.txt").write_text("seed\nmore\n", encoding="utf-8")
     subprocess.run(['git', '-C', str(r), 'add', 'seed.txt'], check=True,
-                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL)
 
     before = git_tools.status(str(r))
     assert before["counts"]["staged"] == 1
     subprocess.run(['git', '-C', str(r), 'commit', '-q', '-m', 'second'], check=True,
-                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL)
     after = git_tools.status(str(r))
 
     assert after["counts"]["staged"] == 0
@@ -410,7 +410,7 @@ def _run_home_probe(tmp_path, *, boot, **env):
     argv = ([sys.executable, "-c", code_tools._PY_CHILD_BOOT, _ROOT, str(script)]
             if boot else [sys.executable, str(script)])
     p = subprocess.run(argv, capture_output=True, text=True, timeout=120,
-                       env={**os.environ, **env})
+                       env={**os.environ, **env}, stdin=subprocess.DEVNULL)
     assert p.returncode == 0, p.stderr
     return _a31_payload(p.stdout), script
 
@@ -456,9 +456,9 @@ def test_f3_bootstrap_runs_the_text_that_was_scanned_not_a_coding_cookie(tmp_pat
     env = {**os.environ}
     env.pop("PYTHONHOME", None)
     ctrl = subprocess.run([sys.executable, str(script)], capture_output=True, text=True,
-                          timeout=120, env=env)
+                          timeout=120, env=env, stdin=subprocess.DEVNULL)
     assert "F3-UTF7-RAN" in ctrl.stdout, ctrl.stderr
     got = subprocess.run([sys.executable, "-c", code_tools._PY_CHILD_BOOT, _ROOT, str(script)],
-                         capture_output=True, text=True, timeout=120, env=env)
+                         capture_output=True, text=True, timeout=120, env=env, stdin=subprocess.DEVNULL)
     assert "F3-UTF7-RAN" not in got.stdout and got.returncode != 0, (got.stdout, got.stderr)
     assert "SyntaxError" in got.stderr, got.stderr

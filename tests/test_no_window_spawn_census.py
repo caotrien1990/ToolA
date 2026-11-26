@@ -204,7 +204,7 @@ def tracked_py_files() -> list[str]:
     out = subprocess.run(
         ["git", "ls-files"],
         cwd=str(REPO_ROOT), capture_output=True, text=True, check=True,
-    ).stdout
+    stdin=subprocess.DEVNULL).stdout
     return sorted(p for p in out.splitlines() if p.endswith(".py"))
 
 

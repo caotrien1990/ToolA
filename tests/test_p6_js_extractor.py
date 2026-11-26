@@ -116,7 +116,7 @@ class P6JsExtractorSuite(unittest.TestCase):
              "import os; os.environ['CBM_EXTRACT_JS'] = '0'; "
              "from orchestrator.graph import indexer; "
              "print(repr(indexer.DEFAULT_EXTS))"],
-            capture_output=True, text=True, cwd=_PROJ_ROOT)
+            capture_output=True, text=True, cwd=_PROJ_ROOT, stdin=subprocess.DEVNULL)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stdout.strip(), "('.py',)")
 
@@ -143,7 +143,7 @@ class P6JsExtractorSuite(unittest.TestCase):
         )
         proc = subprocess.run(
             [sys.executable, "-c", script],
-            capture_output=True, text=True, cwd=_PROJ_ROOT)
+            capture_output=True, text=True, cwd=_PROJ_ROOT, stdin=subprocess.DEVNULL)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         data = json.loads(proc.stdout.strip())
         self.assertEqual(data["files_indexed"], 3,

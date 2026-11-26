@@ -107,7 +107,7 @@ def test_1b_example_is_python_pair_and_executes(tmp_path):
     assert "print(" in ex["script_content"], ex
     r = subprocess.run([sys.executable, "-c", ex["script_content"]],
                        capture_output=True, text=True, timeout=60,
-                       cwd=str(tmp_path))
+                       cwd=str(tmp_path), stdin=subprocess.DEVNULL)
     assert r.returncode == 0, r.stderr
     assert "GV11_EXAMPLE_OK" in r.stdout, r.stdout
 
@@ -127,7 +127,7 @@ def git_repo(tmp_path):
         r = subprocess.run(
             ["git", "-c", "core.autocrlf=false", "-c", "user.email=t@t",
              "-c", "user.name=t", *args],
-            cwd=str(root), capture_output=True, text=True, timeout=60)
+            cwd=str(root), capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
         assert r.returncode == 0, r.stderr
         return r.stdout
     git("init", "-q")

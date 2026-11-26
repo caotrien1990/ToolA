@@ -185,7 +185,7 @@ def test_the_live_thresholds_are_five_seconds_and_a_thirty_second_wedge(tmp_path
         " s._SESSION_WRITE_WEDGE_MULTIPLIER, w.stall_seconds, w.wedge_seconds]))\n"
     )
     proc = subprocess.run([sys.executable, "-c", probe], cwd=ROOT, env=env,
-                          capture_output=True, text=True, timeout=120)
+                          capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
     assert proc.returncode == 0, proc.stderr[-2000:]
     assert json.loads(proc.stdout.strip().splitlines()[-1]) == [5.0, 6.0, 5.0, 30.0]
 

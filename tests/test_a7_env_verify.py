@@ -71,7 +71,7 @@ class A7EnvVerifySuite(unittest.TestCase):
              "os.environ['CBM_EXTRACT_JS'] = '1'; "
              "from orchestrator.graph import indexer; "
              "print(repr(indexer.DEFAULT_EXTS))"],
-            capture_output=True, text=True, cwd=_PROJ_ROOT)
+            capture_output=True, text=True, cwd=_PROJ_ROOT, stdin=subprocess.DEVNULL)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("'.js'", proc.stdout,
                       f"DEFAULT_EXTS should include .js when flag on; got {proc.stdout!r}")
@@ -83,7 +83,7 @@ class A7EnvVerifySuite(unittest.TestCase):
              "os.environ['CBM_EXTRACT_JS'] = '0'; "
              "from orchestrator.graph import indexer; "
              "print(repr(indexer.DEFAULT_EXTS))"],
-            capture_output=True, text=True, cwd=_PROJ_ROOT)
+            capture_output=True, text=True, cwd=_PROJ_ROOT, stdin=subprocess.DEVNULL)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stdout.strip(), "('.py',)")
 
