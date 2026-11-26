@@ -3104,8 +3104,21 @@ def _write_ledger_db_target_rows(conn, target: tuple[str, str], limit: int) -> l
     finally:
         conn.set_progress_handler(None, 0)
 
+def _ensure_write_ledger_schema() -> None:
+    """CI-2DEC production gap: the write-ledger tables are created lazily by the
+    session layer (open_session / _get_session_writer). Code that reaches the ledger
+    WITHOUT that startup path -- in-process dispatch, out-of-project (xroot) targets,
+    cross-drive TEMP where find_project_root resolves no project -- used to SELECT
+    write_operations on an uninitialized DB and die with 'no such table'. Ensure the
+    schema before any ledger read. _init_session_db is idempotent + thread-safe and
+    short-circuits once initialized, so behavior is unchanged when it already exists."""
+    ct._sync_session_db_alias()
+    ct._session_store_module._init_session_db()
+
+
 def _write_ledger_db_get(operation_id: str = "", target: tuple[str, str] | None = None):
     try:
+        _ensure_write_ledger_schema()
         conn = sqlite3.connect(str(ct._SESSIONS_DB), timeout=0.1)
         try:
             conn.execute("PRAGMA busy_timeout=100")
@@ -3141,6 +3154,7 @@ def _write_ledger_db_list(target: tuple[str, str], limit: int = 20) -> list:
     (_write_ledger_db_target_rows), not just the pair the caller repeated.
     """
     try:
+        _ensure_write_ledger_schema()
         conn = sqlite3.connect(str(ct._SESSIONS_DB), timeout=0.1)
         try:
             conn.execute("PRAGMA busy_timeout=100")

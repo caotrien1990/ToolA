@@ -46,6 +46,10 @@ jobs:
           pip install -r requirements.txt
         shell: pwsh
 
+      - name: Install esbuild
+        run: npm install -g esbuild
+        shell: pwsh
+
       - name: Compile entry modules
         run: |
           python -m py_compile code_tools.py orchestrator_server.py tools_v15.py surgical_mapper.py restart_orchestrator.py

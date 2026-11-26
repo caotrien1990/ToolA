@@ -1928,8 +1928,6 @@ class TestCodeToolsCache(unittest.TestCase):
         self.assertFalse((self.project_path / 'broken_new.py').exists())
 
     def test_pre_write_syntax_gate_rejects_broken_jsx_and_tsx(self):
-        if not _esbuild_available():
-            self.skipTest('real esbuild is not installed on this runner; JSX/TSX pre-write gate integration cannot run')
         for name in ('broken.jsx', 'broken.tsx'):
             with self.subTest(name=name):
                 result = json.loads(asyncio.run(code_tools.write_new_file(
@@ -1951,9 +1949,6 @@ class TestCodeToolsCache(unittest.TestCase):
         if not esbuild:
             candidate = Path(code_tools.os.environ.get('APPDATA', '')) / 'npm' / 'esbuild.cmd'
             esbuild = str(candidate) if candidate.is_file() else None
-        if not esbuild:
-            self.skipTest('real esbuild is not installed on this runner; slow-esbuild pre-write gate integration cannot run')
-
         # Reproduce a cold npm shim: exceed the old 5s pre-write budget while
         # staying inside validate_file's 10s budget. Never fake parser output.
         checker = self.project_path / 'slow_esbuild.py'
