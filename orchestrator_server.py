@@ -6997,7 +6997,7 @@ def _council_agent_caps(agent: str) -> dict:
 
 _COUNCIL_DEFAULT_MODELS_FALLBACK = {
     "clau": {"provider": "claude",      "model": "claude-opus-5"},
-    "ope":  {"provider": "openai-compatible", "model": "openai-compatible/grok-4.6-build"},
+    "ope":  {"provider": "xingchi3", "model": "xingchi3/xingchi-pool"},
     "codo": {"provider": "codex",        "model": "grok-4.6-build"},
     "kilo": {"provider": "ltnai", "model": "ltnai/glm-5.2"},
     "pic": {"provider": "ltnai", "model": "deepseek-v4-pro"},
