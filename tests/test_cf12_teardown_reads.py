@@ -6,6 +6,7 @@ import os
 import sqlite3
 import threading
 
+import code_tools
 import pytest
 from orchestrator.session import store
 
@@ -15,6 +16,9 @@ def db(tmp_path, monkeypatch):
     store.close_writer()
     path = tmp_path / "sessions.db"
     monkeypatch.setattr(store, "_SESSIONS_DB", path)
+    # F4 (CI shard-1): keep the code_tools alias aligned too, or a background
+    # ct wrapper syncs the store back to the shared run DB mid-test.
+    monkeypatch.setattr(code_tools, "_SESSIONS_DB", path)
     store._get_session_writer()
     yield path
     store.close_writer()

@@ -169,6 +169,26 @@ class AuditApplyTimeout(AuditWriterError):
     """The event remained pending beyond submit_and_wait's deadline."""
 
 
+# F-02 (CI shard-1, 2026-11-26): permanent sink errors are quarantined after
+# this many attempts instead of being retried forever.
+_SINK_PERMANENT_MAX_ATTEMPTS = 3
+
+
+def _is_permanent_sink_error(exc: BaseException) -> bool:
+    """True for sink errors that cannot heal by retrying.
+
+    Measured storm signature: the sessions DB was schema-less (F-01), so every
+    sink call raised OperationalError('no such table: ...'). Retry/backoff is
+    right for lock/busy contention, wrong for a missing schema object.
+    """
+    if isinstance(exc, AuditSchemaMismatch):
+        return True
+    if isinstance(exc, sqlite3.OperationalError):
+        msg = str(exc).lower()
+        return "no such table" in msg or "no such column" in msg
+    return False
+
+
 @dataclass(frozen=True)
 class AuditRecord:
     audit_id: str
@@ -358,6 +378,9 @@ class DurableAuditWriter:
             "lease_released_total": 0,
             "lease_lost_total": 0,
             "sink_retry_deferred_total": 0,
+            # F-02 permanent-sink-error quarantine, same _bump() reason.
+            "sink_permanent_quarantined_total": 0,
+            "sink_permanent_park_failures": 0,
             # D4 retention. Declared here because _bump() indexes _counters
             # directly and would raise KeyError on an undeclared key.
             "retention_runs_total": 0,
@@ -1151,6 +1174,20 @@ class DurableAuditWriter:
 
     def _record_sink_failure(self, record: AuditRecord, exc: BaseException) -> bool:
         message = f"{type(exc).__name__}: {exc}"[:2000]
+        # F-02 (CI shard-1, 2026-11-26): a schema-shape sink error cannot heal
+        # by retrying. The old code deferred it forever (~8 retries/s for the
+        # whole 40-minute shard run, each retry re-syncing the session-store
+        # alias). After a bounded number of attempts, dead-letter the row.
+        # Below the cap, keep the normal bounded backoff: a schema can
+        # legitimately appear mid-migration.
+        if (
+            _is_permanent_sink_error(exc)
+            and record.attempt_count + 1 >= _SINK_PERMANENT_MAX_ATTEMPTS
+        ):
+            if self._quarantine_sink_row(record, message):
+                return True
+            # Evidence or removal failed: fall through to the retry UPDATE so
+            # the row keeps a next_attempt_at and cannot hot-loop.
         exponent = min(max(record.attempt_count, 0), 16)
         retry_delay = min(
             self.sink_retry_max_s,
@@ -1189,6 +1226,56 @@ class DurableAuditWriter:
         changed = bool(self._retry_db("record sink failure", update))
         if changed and retry_delay > 0:
             self._bump("sink_retry_deferred_total")
+        return changed
+
+    def _quarantine_sink_row(self, record: AuditRecord, reason: str) -> bool:
+        """Dead-letter a row whose sink error is permanent (F-02, RT2).
+
+        Evidence goes to the quarantine dead-letter file -- NOT the replay
+        spool, which would re-stage the same doomed row and restart the loop.
+        The pending row is removed only AFTER the payload is durable there,
+        so the drain loop stops claiming it. Loud signal: the
+        sink_permanent_quarantined_total counter in metrics()/health plus the
+        sink last_error already recorded by _apply_one.
+        """
+        parked = self._quarantine_parked_row(
+            {
+                "audit_id": record.audit_id,
+                "kind": record.kind,
+                "payload": record.payload,
+                "attempt_count": record.attempt_count + 1,
+            },
+            reason,
+        )
+        if not parked:
+            self._bump("sink_permanent_park_failures")
+            return False
+
+        def delete() -> bool:
+            conn = self._connect()
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                cursor = conn.execute(
+                    f"""DELETE FROM {self.TABLE}
+                        WHERE audit_id=? AND state='pending' AND lease_owner=?""",
+                    (record.audit_id, self._owner_token),
+                )
+                changed = cursor.rowcount == 1
+                conn.execute("COMMIT")
+                return changed
+            except BaseException:
+                if conn.in_transaction:
+                    try:
+                        conn.execute("ROLLBACK")
+                    except sqlite3.Error:
+                        pass
+                raise
+            finally:
+                conn.close()
+
+        changed = bool(self._retry_db("quarantine permanent sink failure", delete))
+        if changed:
+            self._bump("sink_permanent_quarantined_total")
         return changed
 
     def _mark_applied(self, audit_id: str) -> bool:

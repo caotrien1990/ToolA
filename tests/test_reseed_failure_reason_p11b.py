@@ -31,6 +31,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import code_tools
+from orchestrator.session import store
 from orchestrator.tools.read import adaptive as _adaptive
 
 _REAL_GET_DOCUMENT = _adaptive.get_document
@@ -60,10 +61,23 @@ class ReseedFailureReasonTests(unittest.TestCase):
         (self.tmp / ".git").mkdir()
         self.file = self.tmp / "mod.py"
         self.file.write_text("print(1)\n", encoding="utf-8")
+        # F4 (CI shard-1): isolate the session DB too. Without this, the
+        # read-token upsert under test writes into the SHARED run DB, and a
+        # concurrent alias flip there surfaces as RESEED_FAILED/upsert_failed.
+        self._old_store_db = store._SESSIONS_DB
+        self._old_ct_db = code_tools._SESSIONS_DB
+        store.close_writer()
+        db_path = self.tmp / "sessions.db"
+        store._SESSIONS_DB = db_path
+        code_tools._SESSIONS_DB = db_path
+        store._init_session_db()
 
     def tearDown(self):
         import shutil
 
+        store.close_writer()
+        store._SESSIONS_DB = self._old_store_db
+        code_tools._SESSIONS_DB = self._old_ct_db
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_upsert_failure_does_not_blame_a_missing_project_path(self):

@@ -29,6 +29,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
+import code_tools as ct  # noqa: E402
 from orchestrator.session import store  # noqa: E402
 
 
@@ -46,6 +47,14 @@ def _forget(db: Path) -> None:
     store._SESSION_DB_INITIALIZED_PATHS.discard(
         os.path.normcase(os.path.abspath(str(db)))
     )
+
+
+def _point_aliases(db: Path) -> None:
+    # F4 (CI shard-1): a fixture that moves only store's alias gets stolen
+    # back by any code_tools wrapper (_sync_session_db_alias). Point BOTH at
+    # the test DB so background ct traffic cannot re-aim the store mid-test.
+    store._SESSIONS_DB = db
+    ct._SESSIONS_DB = db
 
 
 class ImportIsSideEffectFree(unittest.TestCase):
@@ -113,11 +122,13 @@ class ConcurrentInit(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self._old_db = store._SESSIONS_DB
+        self._old_ct_db = ct._SESSIONS_DB
         _reset_writer()
 
     def tearDown(self):
         _reset_writer()
         store._SESSIONS_DB = self._old_db
+        ct._SESSIONS_DB = self._old_ct_db
         try:
             self._tmp.cleanup()
         except (PermissionError, OSError):
@@ -129,7 +140,7 @@ class ConcurrentInit(unittest.TestCase):
         # schema must be complete exactly once.
         for round_index in range(8):
             db = Path(self._tmp.name) / f"race_{round_index}.db"
-            store._SESSIONS_DB = db
+            _point_aliases(db)
             _forget(db)
             _reset_writer()
             barrier = threading.Barrier(2)
@@ -162,7 +173,7 @@ class ConcurrentInit(unittest.TestCase):
 
     def test_second_call_is_a_noop_after_first_init(self):
         db = Path(self._tmp.name) / "idem.db"
-        store._SESSIONS_DB = db
+        _point_aliases(db)
         _forget(db)
         _reset_writer()
         store._init_session_db()
@@ -193,11 +204,13 @@ class MigrationLockRetry(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self._old_db = store._SESSIONS_DB
+        self._old_ct_db = ct._SESSIONS_DB
         _reset_writer()
 
     def tearDown(self):
         _reset_writer()
         store._SESSIONS_DB = self._old_db
+        ct._SESSIONS_DB = self._old_ct_db
         try:
             self._tmp.cleanup()
         except (PermissionError, OSError):
@@ -208,7 +221,7 @@ class MigrationLockRetry(unittest.TestCase):
         # must wait it out and complete the schema rather than dying.
         db = Path(self._tmp.name) / "transient.db"
         ready = Path(self._tmp.name) / "ready_t.flag"
-        store._SESSIONS_DB = db
+        _point_aliases(db)
         _forget(db)
         env = dict(os.environ)
         env["ORCHESTRATOR_SESSIONS_DB"] = str(db)
@@ -245,7 +258,7 @@ class MigrationLockRetry(unittest.TestCase):
         # schema. A single-attempt (no-retry) implementation raises here.
         db = Path(self._tmp.name) / "multi.db"
         ready = Path(self._tmp.name) / "ready_m.flag"
-        store._SESSIONS_DB = db
+        _point_aliases(db)
         _forget(db)
         env = dict(os.environ)
         env["ORCHESTRATOR_SESSIONS_DB"] = str(db)
@@ -279,7 +292,7 @@ class MigrationLockRetry(unittest.TestCase):
         # OperationalError the callers cannot classify.
         db = Path(self._tmp.name) / "stuck.db"
         ready = Path(self._tmp.name) / "ready_s.flag"
-        store._SESSIONS_DB = db
+        _point_aliases(db)
         _forget(db)
         env = dict(os.environ)
         env["ORCHESTRATOR_SESSIONS_DB"] = str(db)

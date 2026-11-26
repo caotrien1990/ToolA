@@ -124,6 +124,15 @@ class SessionStoreCommitPendingError(SessionStoreContentionError):
     """Caller wait expired; commit may still complete, so resending is unsafe."""
 
 
+class SessionStoreSchemaError(RuntimeError):
+    """The sessions database is missing or schema-less; serving it fails silent.
+
+    Raised by _verify_session_schema before a SessionWriter is created (F-03,
+    CI shard-1 2026-11-26). A typed error at the door replaces the permanent
+    "no such table" storm that a schema-less sessions.db used to cause.
+    """
+
+
 _SESSION_CALL_DEADLINE: contextvars.ContextVar[float | None] = contextvars.ContextVar(
     "session_call_deadline", default=None)
 _SESSION_CALL_WAIT_SECONDS = 30.0
@@ -1150,7 +1159,9 @@ def _get_session_writer() -> SessionWriter:
             os.path.normcase(os.path.abspath(str(wanted)))
             not in _SESSION_DB_INITIALIZED_PATHS
         ):
-            _init_session_db()
+            _init_session_db(wanted)
+        # F-03 (RT1): the mark is not proof -- never serve a schema-less DB.
+        _verify_session_schema(wanted)
         _SESSION_WRITER = SessionWriter(wanted)
         # STT-27 (B032): reset teardown flag when creating a new writer, so
         # _session_read_connection() returns real connections again.
@@ -1479,7 +1490,33 @@ def _apply_session_schema(conn: sqlite3.Connection) -> None:
         raise
 
 
-def _init_session_db():
+def _verify_session_schema(db_path: Path) -> None:
+    """Fail LOUD before a writer serves a schema-less database (F-03, RT1).
+
+    The initialized-path mark is an optimization, not proof: the file can be
+    deleted or created empty after the mark (the F-01 TOCTOU left exactly that
+    residue). One cheap read-only check per writer creation turns the
+    permanent "no such table" storm into a typed error at the door.
+    """
+    target = Path(os.path.abspath(str(db_path)))
+    try:
+        conn = sqlite3.connect(target.as_uri() + "?mode=ro", uri=True)
+    except sqlite3.OperationalError as exc:
+        raise SessionStoreSchemaError(
+            f"sessions database missing at {target}: {exc}") from exc
+    try:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'"
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise SessionStoreSchemaError(
+            f"sessions database at {target} has no sessions table; "
+            "refusing to serve a schema-less DB")
+
+
+def _init_session_db(db_path=None):
     """Run idempotent migrations before a writer opens the target database.
 
     Lazy + idempotent + thread-safe (A38):
@@ -1500,15 +1537,22 @@ def _init_session_db():
     * The whole schema pass is retried on lock contention (A28: a second process
       can hold the write lock), mirroring the A27 ``_enable_wal`` loop, then
       fails LOUD -- the schema is mandatory and, unlike WAL, cannot degrade.
+    * F-01 (CI shard-1, 2026-11-26): the target path is snapshotted ONCE at
+      entry, or passed explicitly by ``_get_session_writer``. The old code
+      snapshotted only db_key and re-read the LIVE ``_SESSIONS_DB`` alias for
+      mkdir/connect, so a concurrent alias swap marked path A initialized
+      while the DDL landed on path B -- A stayed schema-less forever (the
+      "no such table" storm). Every read below uses the local ``target``.
     """
+    target = Path(db_path) if db_path is not None else Path(_SESSIONS_DB)
     existing_writer = globals().get("_SESSION_WRITER")
     if (
         existing_writer is not None
-        and existing_writer.db_path == Path(_SESSIONS_DB)
+        and existing_writer.db_path == target
         and not existing_writer._closing.is_set()
     ):
         return
-    db_key = os.path.normcase(os.path.abspath(str(_SESSIONS_DB)))
+    db_key = os.path.normcase(os.path.abspath(str(target)))
     if db_key in _SESSION_DB_INITIALIZED_PATHS:
         return
     with _SESSION_INIT_LOCK:
@@ -1519,10 +1563,10 @@ def _init_session_db():
         failed_until, failure = _SESSION_INIT_FAILURES.get(db_key, (0.0, ""))
         if time.monotonic() < failed_until:
             raise SessionStoreContentionError(failure)
-        _SESSIONS_DB.parent.mkdir(parents=True, exist_ok=True)
+        target.parent.mkdir(parents=True, exist_ok=True)
         last_exc: sqlite3.OperationalError | None = None
         for attempt in range(_SESSION_MIGRATION_ATTEMPTS):
-            conn = sqlite3.connect(str(_SESSIONS_DB))
+            conn = sqlite3.connect(str(target))
             try:
                 _configure_sessions_connection(conn, _SESSION_DB_BUSY_TIMEOUT_MS)
                 _apply_session_schema(conn)

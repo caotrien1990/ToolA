@@ -6,6 +6,7 @@ import threading
 import time
 from pathlib import Path
 
+import code_tools
 import pytest
 
 from orchestrator.session import store
@@ -16,6 +17,10 @@ def session_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     store.close_writer()
     db_path = tmp_path / "sessions.db"
     monkeypatch.setattr(store, "_SESSIONS_DB", db_path)
+    # F4 (CI shard-1): point BOTH aliases at the test DB. Any code_tools
+    # wrapper (_sync_session_db_alias) otherwise steals the store alias back
+    # to the shared run DB mid-test.
+    monkeypatch.setattr(code_tools, "_SESSIONS_DB", db_path)
     store._init_session_db()
     yield db_path
     store.close_writer()
@@ -77,6 +82,8 @@ def test_init_migrates_legacy_database_and_preserves_data(
             ("legacy-session", "Legacy", "C:/legacy", "T1", "active", "A-only", "2026-07-17T10:00:00", None),
         )
     monkeypatch.setattr(store, "_SESSIONS_DB", db_path)
+    # F4 (CI shard-1): keep the code_tools alias aligned with the store alias.
+    monkeypatch.setattr(code_tools, "_SESSIONS_DB", db_path)
 
     store._init_session_db()
     store._init_session_db()
@@ -100,6 +107,8 @@ def test_init_migrates_legacy_events_with_result_json(
         )
         conn.execute("INSERT INTO events VALUES (?, ?)", (1, "legacy-session"))
     monkeypatch.setattr(store, "_SESSIONS_DB", db_path)
+    # F4 (CI shard-1): keep the code_tools alias aligned with the store alias.
+    monkeypatch.setattr(code_tools, "_SESSIONS_DB", db_path)
 
     store._init_session_db()
     store._init_session_db()
