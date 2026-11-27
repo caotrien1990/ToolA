@@ -1928,15 +1928,7 @@ def _query_int(request, name: str, default: int) -> int:
 # ─── Deprecated tools (Task 2: tool redundancy cleanup 2026-09-10) ───────────
 # Thin wrappers retained for backwards compat. Response includes deprecation hint.
 # Agents should migrate: search→search_code/find_symbol, read→read_file_range.
-_DEPRECATED_TOOLS: dict[str, str] = {
-    "regex_search": "Use search_code(mode='regex', query=...) directly.",
-    "find_callers": "Use find_symbol(name=..., include='callers') directly.",
-    "find_definition_and_usage": "Use find_symbol(name=..., include='all') directly.",
-    # P0-0 (2026-10-09): read_chunks was already taught as deprecated in the rule
-    # text (use read_file_range for chunk reads) but was missing here, so direct
-    # calls never got the deprecated:true + deprecation_hint stamp.
-    "read_chunks": "Use read_file_range(...) directly.",
-}
+from orchestrator.core.registry_data import DEPRECATED_TOOLS as _DEPRECATED_TOOLS
 
 # ─── Argument aliases (Fix 6: schema drift compat) ────────────────────────────
 # When agents call with the wrong key name, rename to the canonical one
@@ -3577,26 +3569,16 @@ def _shape_tool_response_text(tool_name: str, raw: str, max_bytes: int | None = 
     except Exception:
         source = {"ok": True, "raw": raw_text}
     # B8: bound the excerpt by its JSON-escaped byte length on the wire.
-    # The encoder used below is json.dumps(..., ensure_ascii=False), which
-    # escapes only '"' and '\\' (2 bytes each), the short control escapes
-    # \n \r \t \b \f (2 bytes each) and other control characters as
-    # \uXXXX (6 bytes), and leaves every other character as raw UTF-8.
-    # Cutting by characters keeps the cut on a UTF-8 character boundary,
-    # so the escaped excerpt is at most budget - 700 bytes.
-    _excerpt_limit = max(256, budget - 700)
-    _excerpt_escaped = 0
-    _excerpt_end = 0
-    for _ch in raw_text:
-        if _ch in '"\\' or _ch in "\n\r\t\b\f":
-            _ch_cost = 2
-        elif ord(_ch) < 0x20:
-            _ch_cost = 6
-        else:
-            _ch_cost = len(_ch.encode("utf-8"))
-        if _excerpt_escaped + _ch_cost > _excerpt_limit:
-            break
-        _excerpt_escaped += _ch_cost
-        _excerpt_end += 1
+    # Keep the caller's opt-in step outcomes visible even when step results spill.
+    pipeline = source.get("pipeline") if isinstance(source, dict) else None
+    pipeline_summary = None
+    if isinstance(pipeline, dict) and isinstance(pipeline.get("steps"), list):
+        from orchestrator.core.active_chain import MAX_STEPS_PER_CALL
+        pipeline_summary = {key: pipeline[key][:MAX_STEPS_PER_CALL] for key in ("ran", "skipped", "failed")
+                            if isinstance(pipeline.get(key), list)}
+        for key in ("rejected", "dropped"):
+            if pipeline.get(key):
+                pipeline_summary[key + "_count"] = len(pipeline[key])
     shaped = {
         "ok": bool(source.get("ok", not source.get("error"))) if isinstance(source, dict) else True,
         "error": source.get("error") if isinstance(source, dict) else None,
@@ -3614,10 +3596,34 @@ def _shape_tool_response_text(tool_name: str, raw: str, max_bytes: int | None = 
                       "back to a UTF-8 character boundary), place the chunk at Y and skip "
                       "its first X-Y bytes if you already hold bytes up to X, to avoid "
                       "duplicating Y..X."),
-        "excerpt": raw_text[:_excerpt_end],
+        "excerpt": "",
         "ca_next_action": "read_bounded_result_by_ref_if_more_context_is_required",
     }
-    return json.dumps({k: v for k, v in shaped.items() if v is not None}, ensure_ascii=False)
+    if pipeline_summary is not None:
+        shaped["pipeline"] = pipeline_summary
+    shaped = {k: v for k, v in shaped.items() if v is not None}
+    overhead = len(json.dumps(shaped, ensure_ascii=False).encode("utf-8"))
+    if overhead > budget:
+        shaped["read_hint"] = "Follow next_offset from result_ref_url to read the full response."
+        if "error" in shaped:
+            shaped["error"] = str(shaped["error"])[:100]
+        overhead = len(json.dumps(shaped, ensure_ascii=False).encode("utf-8"))
+    _excerpt_limit = max(0, budget - overhead)
+    _excerpt_escaped = 0
+    _excerpt_end = 0
+    for _ch in raw_text:
+        if _ch in '"\\' or _ch in "\n\r\t\b\f":
+            _ch_cost = 2
+        elif ord(_ch) < 0x20:
+            _ch_cost = 6
+        else:
+            _ch_cost = len(_ch.encode("utf-8"))
+        if _excerpt_escaped + _ch_cost > _excerpt_limit:
+            break
+        _excerpt_escaped += _ch_cost
+        _excerpt_end += 1
+    shaped["excerpt"] = raw_text[:_excerpt_end]
+    return json.dumps(shaped, ensure_ascii=False)
 
 
 _HARMLESS_IGNORE_FIELDS = {

@@ -178,3 +178,78 @@ class TestCampaignPrepassContract:
         ]
         live = [r["tool"] for r in v._campaign_routing_prepass(folded, {"cbm_dsm"})]
         assert "cbm_dsm" in live
+
+
+def test_bilingual_requests_respect_object_and_requested_action(monkeypatch):
+    import orchestrator_server  # register the full HTTP catalog
+    monkeypatch.setattr(v, "_wt_q_z2_refs", lambda _: [])
+    cases = (
+        ("Trước khi xóa hàm, ai đang gọi nó?", "find_symbol"),
+        ("xem lịch sử sửa đổi của file billing.py", "git_log"),
+        ("Đọc 30 dòng đầu file báo cáo", "read_file_range"),
+        ("xóa session cũ", "list_sessions"),
+        ("đóng session", "close_session"),
+        ("ghi đè file này bằng nội dung mới", "write_fix"),
+        ("create a draft patch for the existing file", "write_fix"),
+        ("repair the pending draft with draft_id", "write_draft_patch"),
+        ("chạy script PowerShell", "run_ps1_script"),
+        ("trạng thái trang web", "describe_page"),
+        ("xem trạng thái nút theo selector", "dom_state_diff"),
+        ("show the latest commits", "git_log"),
+        ("run command dir", "run_project_command"),
+        ("stage file app.py for commit", "git_stage"),
+        ("stage", "git_stage"),
+        ("inspect the staging area before I commit", "git_status"),
+        ("Gửi async brief cho worker, tôi sẽ xem kết quả sau", "council_message_async"),
+        ("before editing file X, which modules are affected?", "find_symbol"),
+    )
+    aliases = set(orchestrator_server._DEPRECATED_TOOLS)
+    for query, expected in cases:
+        answer = _hint(query)
+        ranked = [row["tool"] for row in answer["ranked_tools"]]
+        assert answer["recommended_tool"] == ranked[0] == expected, query
+        assert not aliases.intersection(ranked + _alt_tools(answer))
+    preview = _hint("tạo patch nháp cho file billing.py")
+    assert preview["suggestion"]["payload_example"]["dry_run"] is True
+    assert _hint("xyzzy qzx")["confidence"] < _hint("git status")["confidence"]
+
+
+def test_inspection_filters_every_offer_in_every_verbosity(monkeypatch):
+    import code_tools as ct
+    import orchestrator_server
+    assert "git_status" in orchestrator_server.ct.TOOL_MAP
+    monkeypatch.setattr(v, "_wt_q_z2_refs", lambda _: [])
+    for query, scope, risk, expected in (
+        ("sửa hàm trong file billing.py", "read", "", "read_file_range"),
+        ("xóa file billing.py", "", "destructive", "read_file_range"),
+        ("git commit", "", "destructive", "git_status"),
+        ("gửi tin cho worker", "read", "", "council_status"),
+        ("click nút X", "read", "", "describe_page"),
+        ("không sửa code, chỉ xem file billing.py", "", "", "read_file_range"),
+    ):
+        for mode in ("full", "terse", "ref"):
+            answer = json.loads(asyncio.run(v.tool_decision_hint(query, scope, risk, verbosity=mode)))
+            assert answer["ranked_tools"][0]["tool"] == answer["recommended_tool"] == expected
+            names = [row["tool"] for row in answer["ranked_tools"]] + _alt_tools(answer)
+            assert not set(names).intersection({
+                "close_browser_page", "write_draft_patch", "council_message",
+                "council_cron_job_delete", "convene_council", "manage_agent",
+            })
+            for name in names:
+                assert ct.tool_mutation_scope(name) in ct.NON_SOURCE_MUTATION_SCOPES
+                assert name not in ct.PROTECTED_TOOL_NAMES | ct.TOKEN_REQUIRED_TOOLS
+
+
+def test_deprecation_filter_works_without_importing_the_server(monkeypatch):
+    import builtins
+    from orchestrator.core.registry_data import DEPRECATED_TOOLS
+    original = builtins.__import__
+
+    def guarded(name, *args, **kwargs):
+        if name == "orchestrator_server":
+            raise AssertionError("a registry lookup must not re-run server registration")
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", guarded)
+    assert set(v._deprecated_tool_names()) == set(DEPRECATED_TOOLS)
+    assert "read_chunks" in DEPRECATED_TOOLS

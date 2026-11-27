@@ -58,7 +58,7 @@ def _index(documents):
     return postings, lengths, sum(lengths.values()) / max(len(lengths), 1)
 
 
-def rank_tools(query, schemas, purposes, excluded=(), boosts=(), eligible=None, limit=8):
+def rank_tools(query, schemas, purposes, excluded=(), boosts=(), eligible=None, limit=8, *, read_only=(), evidence=None):
     """Rank eligible non-deprecated tools by BM25 with explicit rule evidence."""
     curated = corpus_triggers()
     documents = []
@@ -84,6 +84,8 @@ def rank_tools(query, schemas, purposes, excluded=(), boosts=(), eligible=None, 
             matched[name].append(term)
     # Preserve verified rule routing until an independent dataset authorizes promotion.
     # First rule = primary, then sibling rules in existing precedence order.
+    if evidence is not None:
+        evidence.update(scores)
     ceiling = max(scores.values(), default=0)
     for order, name in enumerate(dict.fromkeys(boosts)):
         if name in lengths:
@@ -91,4 +93,4 @@ def rank_tools(query, schemas, purposes, excluded=(), boosts=(), eligible=None, 
             matched[name].insert(0, "routing rule")
     return [{"tool": name, "score": round(scores[name], 4),
              "why": ", ".join(matched[name][:8])}
-            for name in sorted(scores, key=lambda n: (-scores[n], n))[:limit]]
+            for name in sorted(scores, key=lambda n: (-scores[n], n not in read_only, n))[:limit]]

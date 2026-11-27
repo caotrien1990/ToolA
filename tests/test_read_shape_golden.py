@@ -394,8 +394,8 @@ def _envelope_raw() -> str:
 
 def test_envelope_baseline_excerpt_shape(tmp_path):
     raw = _envelope_raw()
-    shaped = json.loads(srv._shape_tool_response_text(
-        "read_file_range", raw, max_bytes=4096))
+    wire = srv._shape_tool_response_text("read_file_range", raw, max_bytes=4096)
+    shaped = json.loads(wire)
 
     assert set(shaped) == {
         "ok", "truncated", "original_bytes", "result_ref", "result_ref_url",
@@ -425,17 +425,16 @@ def test_envelope_baseline_excerpt_shape(tmp_path):
         "duplicating Y..X.")
     assert shaped["ca_next_action"] == (
         "read_bounded_result_by_ref_if_more_context_is_required")
-    # S2 (B8 carve-out): the excerpt is bounded on the WIRE -- it is cut
-    # at a UTF-8 character boundary so that its JSON-escaped byte
-    # length (json.dumps with ensure_ascii=False, the shaping encoder)
-    # is at most budget - 700 = 3396. The pre-B8 excerpt was cut by
-    # characters (raw[:3396] == 4546 bytes) and overran the budget.
-    assert shaped["excerpt"] == raw[:2536]
-    assert len(shaped["excerpt"]) == 2536
-    assert len(shaped["excerpt"].encode("utf-8")) == 3391
+    # The empty envelope occupies 879 bytes on the wire, leaving 3217 of
+    # the 4096 bytes for JSON-escaped text. Exactly 2400 characters fit.
+    # The old 700-byte reserve let this fixture exceed its budget by 179 bytes.
+    assert shaped["excerpt"] == raw[:2400]
+    assert len(shaped["excerpt"]) == 2400
+    assert len(shaped["excerpt"].encode("utf-8")) == 3212
     assert (len(json.dumps(shaped["excerpt"], ensure_ascii=False)
-                .encode("utf-8")) - 2) == 3396
-    assert shaped["excerpt"].endswith("Đọc tiếng Vi")
+                .encode("utf-8")) - 2) == 3217
+    assert shaped["excerpt"].endswith("Việt — dữ liệu t")
+    assert len(wire.encode("utf-8")) == 4096
     # The full payload is stored under the ref, byte-identical.
     assert srv._RESULT_REF_CACHE[ref] == raw
     # S2 store constants (B8 carve-out): 256 entries (was 64) with

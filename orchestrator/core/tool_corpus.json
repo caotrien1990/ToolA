@@ -1,10 +1,10 @@
 {
   "_meta": {
-    "purpose": "BM25 retrieval corpus for the 34 CURATED_CORE_TOOLS: one entry per tool carrying its registry name, purpose, full registry description, trigger phrases and sample request sentences, so a BM25 index built over this file can rank the right tool for a natural-language request.",
-    "consumer": "BM25 index build for tool retrieval (ToolA upgrade table item #5, code half implemented separately). This file is data only; no runtime code reads it yet.",
+    "purpose": "Registry-derived descriptions and bilingual triggers for tool retrieval, with separate labeled examples for evaluation.",
+    "consumer": "orchestrator/core/tool_retrieval.py indexes triggers. bin/evaluate_tool_retrieval.py reads samples for curated evaluation.",
     "created": "2026-11-05",
     "source_repo": "project-orchestrator @ HEAD e6afdf5513dacec06aa78066a96d9fa419ce388a",
-    "curated_list_source": "orchestrator/core/registry_data.py:5680-5703 (CURATED_CORE_TOOLS, 34 tools)",
+    "curated_list_source": "CURATED_CORE_TOOLS in orchestrator/core/registry_data.py, with the current validate dispatcher and additional Git and session discovery entries.",
     "entry_schema": {
       "name": "Tool name exactly as registered; repeats the entry key.",
       "purpose": "One-sentence purpose: first sentence of the registry description, whitespace-collapsed, capped at 140 chars — the same derivation code_tools.py bootstrap_tool_purposes()/_purpose_sentence applies for the bootstrap purpose map (code_tools.py:2679-2698 and 2701-2738).",
@@ -314,11 +314,11 @@
     "triggers": [
       "run a command in the project",
       "chạy lệnh trong thư mục project",
-      "run git log via command",
+      "execute a bounded project command",
       "chạy lệnh kiểm tra port và tiến trình"
     ],
     "samples": [
-      "Run git log --oneline -5 in the project directory and show me the output.",
+      "Run the project command python --version and show its output.",
       "Chạy lệnh kiểm tra tiến trình nào đang giữ port 8083 ngay trong thư mục project."
     ],
     "source": "orchestrator/core/registry_data.py:3118"
@@ -515,10 +515,10 @@
     ],
     "source": "orchestrator/core/registry_data.py:3216"
   },
-  "validate_file": {
-    "name": "validate_file",
-    "purpose": "Check syntax/validity of a file after write_fix/write_new_file.",
-    "description": "Check syntax/validity of a file after write_fix/write_new_file. Python: py_compile. JS: node --check. TS/JSX/TSX/Vue: esbuild syntax check (never a type check). Call immediately after a write to catch errors early.",
+  "validate": {
+    "name": "validate",
+    "purpose": "V15 R8: Unified validate dispatcher.",
+    "description": "V15 R8: Unified validate dispatcher. checks=['file','symbols','encoding'] — runs the selected sub-validators and aggregates one response. Replaces validate_file/validate_symbols/validate_encoding. NOTE: file_path is RELATIVE inside project_path (pass project_path absolute, file_path relative).",
     "triggers": [
       "validate a file",
       "kiểm tra cú pháp file vừa ghi",
@@ -529,7 +529,7 @@
       "Validate registry_data.py right after that edit to catch any syntax error early.",
       "Kiểm tra cú pháp file tool_corpus.json vừa tạo xem có hợp lệ không."
     ],
-    "source": "orchestrator/core/registry_data.py:3198"
+    "source": "orchestrator/core/registry_data.py:4633"
   },
   "ruff_fix": {
     "name": "ruff_fix",
@@ -562,5 +562,66 @@
       "Ghi vào session sự kiện native tôi vừa thực hiện để audit truy vết được."
     ],
     "source": "orchestrator/core/registry_data.py:3226"
+  },
+  "git_status": {
+    "name": "git_status",
+    "purpose": "Governed Git operation: git_status (argv-only, no shell).",
+    "description": "Governed Git operation: git_status (argv-only, no shell).",
+    "triggers": [
+      "working tree overview",
+      "index and untracked files",
+      "trạng thái kho Git"
+    ],
+    "samples": [
+      "Which files have been staged or left untracked in this working tree?",
+      "Kiểm tra trạng thái Git của kho trước khi bắt đầu."
+    ],
+    "source": "orchestrator_server.py:13280"
+  },
+  "git_diff": {
+    "name": "git_diff",
+    "purpose": "Governed Git operation: git_diff (argv-only, no shell).",
+    "description": "Governed Git operation: git_diff (argv-only, no shell).",
+    "triggers": [
+      "patch against the index",
+      "show unstaged edits",
+      "xem diff đã stage"
+    ],
+    "samples": [
+      "Show the staged patch for src/app.py.",
+      "So sánh thay đổi chưa stage của file này với index."
+    ],
+    "source": "orchestrator_server.py:13280"
+  },
+  "list_sessions": {
+    "name": "list_sessions",
+    "purpose": "List recent sessions for a project without events.",
+    "description": "List recent sessions for a project without events.",
+    "triggers": [
+      "recent project sessions",
+      "enumerate work sessions",
+      "danh sách phiên làm việc"
+    ],
+    "samples": [
+      "List the latest work sessions for this project.",
+      "Liệt kê các phiên làm việc gần đây của project."
+    ],
+    "source": "code_tools.py:1513"
+  },
+  "git_log": {
+    "name": "git_log",
+    "purpose": "Governed Git operation: git_log (argv-only, no shell).",
+    "description": "Governed Git operation: git_log (argv-only, no shell).",
+    "triggers": [
+      "commit timeline",
+      "repository history",
+      "nhật ký các commit"
+    ],
+    "samples": [
+      "Show this repository’s five latest commits on my branch.",
+      "Cho tôi xem lịch sử commit của nhánh hiện tại.",
+      "Run git log --oneline -5 in the project directory and show me the output."
+    ],
+    "source": "orchestrator_server.py:13280"
   }
 }

@@ -48,7 +48,12 @@ def test_curated_or_duplicate_audit_provenance_cannot_pass_release(monkeypatch):
 def test_pack_loads_samples_as_curated_not_audit():
     module = evaluation_module()
     rows = module.load_tasks(retrieval._CORPUS_PATH, curated=True)
-    assert len({tool for row in rows for tool in row["expected_tools"]}) == 34
+    from orchestrator.core.registry_data import CURATED_CORE_TOOLS
+
+    expected = (set(CURATED_CORE_TOOLS) - {"validate_file"}) | {
+        "validate", "git_status", "git_diff", "git_log", "list_sessions",
+    }
+    assert {tool for row in rows for tool in row["expected_tools"]} == expected
     assert all(row["source_type"] == "curated" and "audit_id" not in row for row in rows)
 
 

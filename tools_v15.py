@@ -1471,7 +1471,7 @@ _DECISION_RULES = [
       "also": ("run_project_test_script",),
       "skill": "09_testing_validation",
       "why": "Match runner to fixture language and check the dependency preflight."},
-     {"re": r"\b(copy.?file|dst.?exists|overwrite|backup.?existing)\b",
+     {"re": r"\b(copy.?file|dst.?exists|backup.?existing)\b",
       "tier": "T2", "tool": "copy_file",
       "skill": "05_write_pipeline",
       "why": "Use a new destination or overwrite=true with backup_existing=true after DST_EXISTS."},
@@ -1479,7 +1479,7 @@ _DECISION_RULES = [
       "tier": "T2", "tool": "write_draft_patch",
       "skill": "05_write_pipeline",
       "why": "Use draft_id and deterministic replacement content; never retry a stale range blindly."},
-     {"re": r"\b(utf.?8|base64|btoa|powershell)\b",
+     {"re": r"\b(utf.?8|base64|btoa)\b",
       "tier": "T2", "tool": "write_new_file",
       "also": ("run_project_test_script",),
       "skill": "05_write_pipeline + 08_command_windows",
@@ -1558,7 +1558,7 @@ _DECISION_RULES = [
      "also": ("port_owner_inspect",),
      "skill": "16_server_lifecycle",
      "why": "2+ failed code cycles + unchanged runtime → check lifecycle first."},
-    {"re": r"\b(auth|token|password|credential|secret|delete|migration|schema)\b",
+    {"re": r"\b(auth|token|password|credential|secret|migration|schema)\b",
      "tier": "T2 [A]", "tool": "write_fix",
      "also": ("apply_after_dry_run",),
      "skill": "05_write_pipeline + 06_token_auth",
@@ -1608,24 +1608,24 @@ def _rule_names(rule: dict) -> list:
 
 _WT_VN_HINTS = (
     # (regex on diacritics-folded Vietnamese intent, English tool-vocabulary to append)
-    (r"sua|chinh|patch|thay the|viet lai|vá", "edit fix write replace patch line range file"),
+    (r"sua|chinh sua|thay the|viet lai", "edit"),
     (r"tao file|file moi|viet file", "create new file write"),
     (r"doc file|xem noi dung|doc dong", "read file range content"),
     (r"tim|quet|scan|dinh vi|dem", "search find grep locate symbol code"),
-    (r"thu muc|cau truc|cay ", "folder structure tree list project"),
-    (r"phien lam viec|mo phien|session", "session open close list"),
-    (r"hoi dong|worker|gui tin|nhan tin|dieu phoi|dispatch", "council message dispatch worker model convene"),
+    (r"thu muc|cau truc|cay thu muc", "folder structure tree list project"),
+    (r"phien lam viec|mo phien", "session"),
+    (r"hoi dong", "council"),
     (r"nhiem vu dai|mission", "mission create dispatch status gate"),
     (r"sao luu|backup", "backup project status"),
     (r"khoi dong lai|restart", "restart orchestrator lifecycle server bat"),
     (r"man hinh|chup anh|screenshot|giao dien|cua so", "screenshot desktop page describe window"),
-    (r"kiem tra|xac minh|verify|validate", "validate verify check symbols file"),
+    (r"kiem tra|xac minh", "check"),
     (r"xoa file|xoa thu muc", "delete remove file"),
-    (r"chay lenh|thuc thi|run |test", "run execute test script command project"),
+    (r"chay lenh|thuc thi", "run command"),
     (r"rule|skill|dang ky|thao bo|agent config", "rule skill agent register unregister manage sync mode"),
     (r"token|quyen|bao mat", "token protected auth status"),
     (r"tri nho|bo nho|memory|ghi nho", "memory recall capture librarian"),
-    (r"loi |error|log|nhat ky", "error log console read all"),
+    (r"nhat ky", "log"),
     (r"do thi|graph|phu thuoc", "graph import callers architecture"),
 )
 
@@ -1642,7 +1642,7 @@ def _wt_vn_expand(task: str) -> str:
     matched Vietnamese intent phrase, so both the EN decision rules and the
     lexical ranker work on Vietnamese task descriptions."""
     folded = _wt_vn_fold(task)
-    extra = [en for vn_pat, en in _WT_VN_HINTS if re.search(vn_pat, folded)]
+    extra = [en for vn_pat, en in _WT_VN_HINTS if re.search(rf"\b(?:{vn_pat})\b", folded)]
     return folded + ((" " + " ".join(extra)) if extra else "")
 
 
@@ -1906,20 +1906,154 @@ def _campaign_routing_prepass(folded_raw: str, live_tools: set) -> list:
     return out
 
 
+# Match the requested operation on the original words. Translations are search terms,
+# not additional commands the caller asked to perform.
+_HINT_INTENTS = (
+    ("log_native_event", re.compile(r"(?:\b(?:log|record|ghi)\b.*\bnative\b|\bnative\b.*\b(?:audit|ghi log)\b)")),
+    ("get_rule_core_text", re.compile(r"\b(?:get_rule_core_text|core_rule|core rule text|quy tac cot loi)\b")),
+    ("tool_decision_hint", re.compile(r"\b(?:which (?:tier,? )?tool (?:and skill |should|would|to use)|goi y (?:cong cu|tool) phu hop)\b")),
+    ("cbm_council_context", re.compile(r"\b(?:council graph context|graph context for (?:the )?council|ngu canh graph.*\b(?:leader|hoi dong|worker))\b")),
+    ("council_tracker", re.compile(r"\b(?:council (?:live )?(?:snapshot|tracker)|snapshot council|council_live\.txt)\b")),
+    ("council_worker_model", re.compile(r"\b(?:worker(?:'s)? (?:council )?model|model (?:cho|cua) worker)\b")),
+    ("council_message_async", re.compile(r"^(?=.*\b(?:send|dispatch|gui)\b)(?=.*\bworkers?\b)(?=.*\b(?:parallel|async|without blocking|song song|cung luc)\b)")),
+    ("council_message", re.compile(r"\b(?:send|gui)\b.*\b(?:council|worker|tin)\b.*\b(?:reply|dong bo|tra loi)\b")),
+    ("cache_status", re.compile(r"\b(?:cache status|trang thai cache|cache freshness)\b")),
+    ("open_session", re.compile(r"^(?:open|start|mo|bat dau)\s+(?:(?:a|the|new|work|mot)\s+)*(?:session|phien lam viec)\b")),
+    ("validate", re.compile(r"^validate\b.*\b(?:file|syntax|encoding|symbols)\b|^kiem tra cu phap\b")),
+    ("ruff_fix", re.compile(r"\b(?:ruff (?:fix|safe fixes)|(?:apply|ap dung)\b.*\bruff\b)")),
+    ("run_project_test_script", re.compile(r"\b(?:chay|run)\b.{0,32}\b(?:script|file)\b.{0,22}\b(?:kiem thu|tests?)\b")),
+    ("read_file_range", re.compile(r"^doc\b.{0,35}\b(?:ham|class|phuong thuc)\b.*\b(?:trong|cua)\b")),
+    ("read_file_range", re.compile(r"\bread_chunks\b")),
+    ("find_symbol", re.compile(r"\b(?:find_callers|find_definition_and_usage)\b")),
+    ("search_code", re.compile(r"\bregex_search\b")),
+    ("read_context_batch", re.compile(r"^(?:read|doc)\b.*\b(?:batch|cung luc|nhieu file|multiple files)\b")),
+    ("write_fix_html", re.compile(r"^(?:edit|sua|fix)\b.*(?:\.html\b|\bhtml file\b)")),
+    ("apply_after_dry_run", re.compile(r"\b(?:apply|ap dung)\b.*\bdry_run_id\b")),
+    ("backup_project", re.compile(r"^(?:create|make|take|sao luu|back up)\b.*\b(?:backup|zip|whole project)\b")),
+    ("list_structure", re.compile(r"\b(?:folder tree|directory tree|cay thu muc)\b")),
+    ("query_index", re.compile(r"\b(?:filter|loc)\b.{0,30}\b(?:project index|index)\b")),
+    ("ocr_map", re.compile(r"\b(?:map this diff|map the diff|ban do diff)\b")),
+    ("find_symbol", re.compile(r"(?:\b(?:before (?:edit(?:ing)?|chang(?:e|ing)|delet(?:e|ing))|truoc khi (?:sua|doi|xoa))\b.*\b(?:affect\w*|impact\w*|anh huong|callers?|ai (?:dang )?goi|phu thuoc)\b|\b(?:affect\w*|impact\w*|anh huong)\b.*\b(?:before editing|truoc khi sua)\b)")),
+    ("cbm_what_if", re.compile(r"\b(?:doi ten|rename)\b.*\b(?:anh huong|impact|affect\w*|break)\b|\b(?:what if|anh huong)\b.*\b(?:rename|doi ten)\b")),
+    ("git_log", re.compile(r"\b(?:git[ _]log|commit history|history of (?:changes|commits)|(?:file|change|revision) history|lich su (?:sua doi|thay doi|commit)|(?:recent|latest|last|previous|gan day) (?:\d+ )?commits?|(?:show|list|xem) (?:recent |last )?commits)\b")),
+    ("git_diff", re.compile(r"\b(?:git[ _]diff|(?:so sanh|compare)\b.*\b(?:phien ban|revisions?|versions?)|(?:staged|unstaged) (?:diff|changes|patch)|(?:so sanh|compare)\b.*\b(?:index|working tree|chua stage|da stage))\b")),
+    ("git_status", re.compile(r"\b(?:git[ _]status|(?:trang thai|status)\s+(?:cua\s+)?git|working tree status|(?:inspect|check|show|xem)\b.{0,30}\b(?:staging area|working tree status))\b")),
+    ("git_stage", re.compile(r"^(?:please\s+)?(?:git add\b|stage$|stage\s+(?!environment\b|deployment\b)(?:the\s+)?(?:files?\b|changes?\b|patch\b|[\w./\\-]+\.\w+\b))")),
+    ("git_commit", re.compile(r"^(?:please\s+)?(?:git[ _]commit|commit)\b(?!\s+(?:history|log|message|status)\b)")),
+    ("list_sessions", re.compile(r"\b(?:list|show|liet ke|danh sach|xoa|delete|remove)\b.{0,35}\b(?:sessions?|phien lam viec)\b")),
+    ("close_session", re.compile(r"\b(?:close|end|dong|ket thuc)\s+(?:the |active |my )?(?:sessions?|phien lam viec)\b")),
+    ("run_ps1_script", re.compile(r"\b(?:run|execute|chay)\b.{0,40}\b(?:powershell|ps1)\b")),
+    ("run_project_command", re.compile(r"\b(?:run (?:a |the |this )?(?:command|cmd)|chay (?:cau )?lenh)\b")),
+    ("write_fix", re.compile(r"\b(?:ghi de|overwrite)\b.{0,35}\b(?:file|tap tin)\b.*\b(?:noi dung|contents?|text)\b|\b(?:tao|create|prepare|preview)\b.{0,28}\b(?:patch nhap|draft patch|patch preview)\b")),
+    ("write_draft_patch", re.compile(r"\b(?:sua|fix|repair)\b.{0,32}\b(?:patch nhap|draft_id|pending draft)\b")),
+    ("delete_file", re.compile(r"^(?:(?:please|hay|vui long)\s+)?(?:delete|remove|xoa)\s+(?:(?:the|a|one|stale|scratch|temporary|mot|tep|tap tin)\s+){0,4}(?:file|tep|tap tin)\b")),
+    ("copy_file", re.compile(r"^(?:(?:please|hay)\s+)?(?:copy|sao chep)\b")),
+    ("read_file_range", re.compile(r"\b(?:read|doc|xem)\b.{0,42}\b(?:dong|lines?|noi dung|contents?)\b.{0,30}\b(?:file|tep|tap tin)\b|\b(?:read|doc|xem)\s+(?:(?:the|this|mot)\s+)?file\b|\b(?:read|doc)\s+(?:lines?\s+)?\d+\s*[-:]\s*\d+\b")),
+    ("search_code", re.compile(r"\b(?:find|search|locate|tim|quet)\b.{0,50}\b(?:strings?|literal|regex|chuoi)\b|\b(?:regex search|tim trong repo.{0,30}chuoi)\b")),
+    ("server_lifecycle_status", re.compile(r"\b(?:daemon|server)\b.{0,40}\b(?:running|alive|dang chay|trang thai)\b|\b(?:is|status of|trang thai)\s+(?:the\s+)?daemon\b")),
+    ("dom_state_diff", re.compile(r"\b(?:trang thai|state)\b.{0,35}\b(?:nut|button|selector|element|phan tu|baseline)\b")),
+    ("describe_page", re.compile(r"\b(?:trang thai trang web|trang web hien tai|current (?:web ?)?page state|describe (?:the )?(?:current )?page)\b")),
+    ("council_message_async", re.compile(r"\b(?:gui|send|dispatch)\b.*\b(?:worker|hoi dong|council)\b.*\b(?:async|bat dong bo|khong (?:doi|cho)|without waiting)\b")),
+    ("council_message", re.compile(r"\b(?:gui tin|gui (?:mot )?(?:tin nhan|yeu cau)|send (?:a )?message)\b.*\b(?:worker|hoi dong|council)\b")),
+    ("convene_council", re.compile(r"^(?:bat|trieu tap|convene|start|open)\s+(?:the\s+)?(?:hoi dong|council)\b")),
+    ("click", re.compile(r"\b(?:click|bam|nhan)\s+(?:vao\s+|the\s+|a\s+)?(?:nut|button|selector)\b(?!.*\b(?:watch|poll|wait)\b)")),
+    ("validate", re.compile(r"^(?:kiem tra|validate|check)\s+(?:the |this )?(?:file|tep)\b.*\b(?:loi|errors?|syntax|encoding)\b")),
+    ("read_file_range", re.compile(r"\b(?:fix|edit|sua)\s+(?:the\s+)?(?:wording|cau chu)\b")),
+)
+
+
+def _hint_inspection_only(task, scope, risk):
+    return (_wt_campaign_fold_raw(scope) in {"read", "read-only", "read only", "chi doc"}
+            or _wt_campaign_fold_raw(risk) == "destructive"
+            or re.search(r"\b(?:no code changes|(?:do not|don't) (?:edit|modify|change) (?:the )?(?:code|file)|"
+                         r"(?:do not|don't|never) (?:delete|remove|overwrite)|khong (?:xoa|ghi de)|khong (?:chinh )?sua (?:code|ma nguon|file)|chi (?:doc|xem))\b", task) is not None)
+
+
+# A missing mutation-scope entry also reads as "none" (including council dispatch,
+# browser close, and draft edits). Only offer known inspections in read-only mode.
+_HINT_INSPECTIONS = frozenset("""
+    acceptance_dashboard architecture_audit_compact architecture_context_pack ast_query
+    audit_reconciliation_report audit_tool_matrix backup_status bundle_version_check cache_status
+    capability_status cbm_council_context cbm_cycle_point cbm_dead_code cbm_dsm cbm_edges_query
+    cbm_evolution cbm_get_architecture cbm_graph_status cbm_nodes_query cbm_quality_gate
+    cbm_template_query cbm_test_gap cbm_trace_path cbm_what_if cep_extension_status
+    check_window_visibility compare_dom_snapshot council_config_diff council_cron_job_list
+    council_status council_tracker describe_page desktop_window_list detect_stale_server
+    dom_state_diff extract_log_section file_profile file_sha256 find_symbol folder_diff
+    folder_exists folder_stats get_file_symbols get_folder_size get_project_summary
+    get_session_events get_skill_state get_token_meter get_usage_stats git_blame_symbol
+    git_diff git_log git_stale_check git_status import_graph inspect_project_runtime
+    inspect_project_usage list_cdp_targets list_projects list_sessions list_structure
+    memory_query mission_status ocr_map parse_log_section port_owner_inspect process_tree_inspect
+    query_dom_candidates query_index query_selector read_all_logs read_console_errors
+    read_context_batch read_file_range read_network_errors read_page read_skill read_value
+    resolve_candidate_paths search_code server_lifecycle_status static_asset_cache_check
+    ui_state_summary workflow_list workflow_read_md workflow_status write_draft_status write_status
+""".split())
+
+
+def _hint_readable(ct, name):
+    return (name in _HINT_INSPECTIONS
+            and ct.tool_mutation_scope(name) in ct.NON_SOURCE_MUTATION_SCOPES
+            and name not in ct.PROTECTED_TOOL_NAMES and name not in ct.TOKEN_REQUIRED_TOOLS)
+
+
+def _hint_route(task, live, ct, inspection_only):
+    def route(name, why, **example):
+        if name in live:
+            return {"re": "", "tool": name, "tier": ct.tool_phase(name), "skill": "00_skill_router",
+                    "why": why, "example": example}
+        return None
+
+    preview = re.search(r"\b(?:tao|create|prepare|preview)\b.{0,28}\b(?:patch nhap|draft patch|patch preview)\b", task)
+    if preview and not inspection_only:
+        return route("write_fix", "Preview the edit to the existing file using dry_run=true.", dry_run=True)
+    for name, pattern in _HINT_INTENTS:
+        if not pattern.search(task):
+            continue
+        if name == "list_sessions" and re.search(r"\b(?:xoa|delete|remove)\b", task):
+            return route(name, "Identify the session first. Closing a session does not delete its history.")
+        if name == "read_file_range" and re.search(r"\b(?:wording|cau chu)\b", task):
+            return route(name, "Read the report passage to locate the wording change.")
+        if inspection_only and name not in live:
+            if name in {"convene_council", "council_message", "council_message_async", "council_worker_model"}:
+                return route("council_status", "Inspect the current council without dispatching work.")
+            if name == "click":
+                return route("describe_page", "Inspect the page before interacting with it.")
+            if name in {"git_commit", "git_stage"}:
+                return route("git_status", "Inspect the working tree and staging area first.")
+            if name in {"close_session", "open_session"}:
+                return route("list_sessions", "Identify the session before changing it.")
+            break
+        if name == "find_symbol" and re.search(r"\b(?:ai (?:dang )?goi|callers?|find_callers)\b", task):
+            return route(name, "Find the symbol and its callers.", include="callers")
+        if name == "delete_file":
+            return route(name, "Permanent file deletion requires a separately confirmed exact path.")
+        if name == "git_log":
+            return route(name, "Inspect repository commits. For history limited to one path, use a read-only git log -- <path> command.")
+        if name == "git_diff":
+            return route(name, "Compare staged or working-tree changes. For two named revisions use git diff <old> <new> -- <path>.")
+        if name == "describe_page":
+            return route(name, "Inspect the current page. For an element state comparison, use dom_state_diff with page_id and selector.")
+        return route(name, "The requested operation matches " + name + ".")
+    if inspection_only and re.search(r"\b(?:xoa|delete|remove|sua|edit|fix|overwrite|ghi de)\b", task):
+        return route("read_file_range", "Inspect the target before any change.")
+    if task in live:
+        return route(task, "The request names this registered tool.")
+    return None
+
+
 def _deprecated_tool_names() -> frozenset:
     """Tools the server itself marks deprecated (orchestrator_server._DEPRECATED_TOOLS;
     code_tools flags its own through the schema's `deprecated` key). Machine-readable
     marks only, never description prose. Measured 2026-09-24: "find callers of foo"
     offered the deprecated alias find_callers as an alternate, because the ranker
     scores a name segment the query repeats."""
-    try:
-        from orchestrator_server import _DEPRECATED_TOOLS as _dep
-    except Exception:
-        return frozenset()
-    return frozenset(_dep)
+    from orchestrator.core.registry_data import DEPRECATED_TOOLS
+    return frozenset(DEPRECATED_TOOLS)
 
 
-def _wt_rank_lexical(task_expanded: str, top_k: int = 3) -> list:
+def _wt_rank_lexical(task_expanded: str, top_k: int = 3, eligible=None) -> list:
     """Score every live tool by token overlap between the (VN-expanded) intent
     and the tool's name + description from the live TOOL_SCHEMAS — no hardcoded
     catalog, so new tools are rankable the moment they are registered."""
@@ -1940,7 +2074,7 @@ def _wt_rank_lexical(task_expanded: str, top_k: int = 3) -> list:
     for sch in schemas:
         fn = sch.get("function", {})
         name = fn.get("name") or ""
-        if not name or fn.get("deprecated") or name in deprecated:
+        if not name or fn.get("deprecated") or name in deprecated or (eligible is not None and name not in eligible):
             continue
         name_words = set(name.split("_"))
         desc = _wt_vn_fold(str(fn.get("description") or "")[:400])
@@ -1956,7 +2090,7 @@ def _wt_rank_lexical(task_expanded: str, top_k: int = 3) -> list:
                 score += 1
         if score > 0:
             scored.append((score, name, fn, phases.get(name, "T1")))
-    scored.sort(key=lambda x: (-x[0], x[1]))
+    scored.sort(key=lambda x: (-x[0], not _hint_readable(_ct, x[1]), x[1]))
     return scored[:top_k]
 
 
@@ -2069,16 +2203,15 @@ def _wt_q_z2_refs(task: str) -> list:
         return []
 
 
-def _rank_hint(task, legacy, eligible=None):
+def _rank_hint(task, legacy, eligible=None, *, evidence=None):
     import code_tools as ct
     from orchestrator.core.tool_retrieval import rank_tools
 
-    # Only actual routing rules get a prior. A lexical fallback cannot vote for itself.
+    # The ranked list is the execution order of this hint, including a named tool or preflight.
     primary = legacy.get("recommended_tool", "")
-    qualified = "tools_validation" in legacy or "recipe" in legacy or primary in {"file_sha256", "write_status"}
-    boosts = [primary] if qualified else []
-    return rank_tools(_wt_vn_expand(task), ct.TOOL_SCHEMAS, ct.bootstrap_tool_purposes(),
-                      _deprecated_tool_names(), boosts, eligible)
+    return rank_tools(task, ct.TOOL_SCHEMAS, ct.bootstrap_tool_purposes(),
+                      _deprecated_tool_names(), [primary] if primary else [], eligible, evidence=evidence,
+                      read_only={n for n in ct.TOOL_MAP if _hint_readable(ct, n)})
 
 
 async def tool_decision_hint(task_description: str = "", scope_hint: str = "",
@@ -2086,16 +2219,27 @@ async def tool_decision_hint(task_description: str = "", scope_hint: str = "",
                              verbosity: str = "full") -> str:
     """Return the current routing recommendation and scored BM25 candidates."""
     query = (task_description or task).strip()
-    legacy = json.loads(await _legacy_decision_hint(query, scope_hint, risk_hint))
+    import code_tools as ct
+    inspection = _hint_inspection_only(_wt_campaign_fold_raw(query), scope_hint, risk_hint)
+    eligible = {n for n in ct.TOOL_MAP if _hint_readable(ct, n)} if inspection else None
+    legacy = json.loads(await _legacy_decision_hint(query, scope_hint, risk_hint, eligible=eligible))
     if not legacy.get("ok"):
         return json.dumps(legacy, ensure_ascii=False)
-    legacy["ranked_tools"] = _rank_hint(query, legacy)
+    confidence_evidence = {}
+    legacy["ranked_tools"] = _rank_hint(query, legacy, eligible, evidence=confidence_evidence)
+    primary = legacy["recommended_tool"]
+    if "recipe" in legacy or "tools_validation" in legacy:
+        best_other = max((v for k, v in confidence_evidence.items() if k != primary), default=0)
+        support = confidence_evidence.get(primary, 0)
+        margin = (support - best_other) / max(support, best_other, 1)
+        base = legacy.get("confidence", 0.78)
+        legacy["confidence"] = round(max(0.4, min(0.94, base + 0.13 * margin)), 3)
     return _ok(_apply_verbosity(legacy, verbosity, "decision_hint"))
 
 
 async def _legacy_decision_hint(task_description: str = "", scope_hint: str = "",
                                 risk_hint: str = "", task: str = "",
-                                verbosity: str = "full", *, use_memory=True) -> str:
+                                verbosity: str = "full", *, use_memory=True, eligible=None) -> str:
     """V15 R8 B.2: server-side rule engine matching task description → tier+skill.
 
     V15 R16.6: accepts both `task_description` (canonical) and `task` (alias).
@@ -2114,9 +2258,13 @@ async def _legacy_decision_hint(task_description: str = "", scope_hint: str = ""
     # that doesn't exist in current build (drift detector for decision rules)
     try:
         import code_tools as _ct
-        live_tools = set(_ct.TOOL_MAP.keys())
-    except Exception:
-        live_tools = set()
+        live_tools = {entry["function"]["name"] for entry in _ct.TOOL_SCHEMAS
+                      if not entry["function"].get("deprecated")} & _ct.TOOL_MAP.keys()
+        live_tools.difference_update(_deprecated_tool_names())
+        if eligible is not None:
+            live_tools.intersection_update(eligible)
+    except ImportError:
+        return _err("Tool registry unavailable", error_name="REGISTRY_UNAVAILABLE")
 
     def _validate_tools(names: list) -> dict:
         # N2: rows name callable tools, so this is membership. The CAN-053 regex
@@ -2129,10 +2277,9 @@ async def _legacy_decision_hint(task_description: str = "", scope_hint: str = ""
 
     # R16.10: per-tool payload examples — CA needs field schema, not just names
     def _examples_for(tool_names: list) -> dict:
-        try:
-            from orchestrator_server import _PAYLOAD_EXAMPLES as _PE
-        except Exception:
-            _PE = {}
+        import sys
+        server = sys.modules.get("orchestrator_server") or sys.modules.get("__main__")
+        _PE = getattr(server, "_PAYLOAD_EXAMPLES", {})
         out = {}
         for tn in tool_names:
             ex = _PE.get(tn)
@@ -2172,6 +2319,10 @@ async def _legacy_decision_hint(task_description: str = "", scope_hint: str = ""
     # folded specific match. A07 must not revoke a confirmed campaign primary.
     folded_raw = _wt_campaign_fold_raw(task)
     _campaign = _campaign_routing_prepass(folded_raw, live_tools)
+    specific = _hint_route(folded_raw, live_tools, _ct, eligible is not None)
+    if specific:
+        _campaign.insert(0, specific)
+    _campaign = [rule for rule in _campaign if rule["tool"] in live_tools]
     # Exact LOOK intents must never fall through to lexical write-tool matches.
     look_tool = ""
     if not _campaign:
@@ -2192,7 +2343,7 @@ async def _legacy_decision_hint(task_description: str = "", scope_hint: str = ""
         re.search(r"\b(?:recycle|restart|relaunch|khoi dong lai)\b", folded_raw)
         and re.search(r"\b(?:process|app|application|server|service|tien trinh|ung dung|orchestrator|toola)\b", folded_raw)
     )
-    if recycle_intent and not _campaign:
+    if recycle_intent and not _campaign and eligible is None:
         own_server = bool(re.search(r"\b(?:orchestrator|toola)\b", folded_raw))
         steps = [
             {"tool": "server_lifecycle_status", "action": "Inspect the target port and confirm its owner."},
@@ -2220,7 +2371,7 @@ async def _legacy_decision_hint(task_description: str = "", scope_hint: str = ""
                        "execution_note": "This hint executes nothing. Stop/restart needs explicit authorization for the identified target; never infer a PID or launch command."},
             "suggestion": {"tool": "server_lifecycle_status", "tier": "T4",
                            "payload_example": _examples_for(["server_lifecycle_status"]).get("server_lifecycle_status", {}),
-                           "reason": "Recycling requires inspection, replacement and verification, not just termination."},
+                           "reason": "First inspect the target. The restart action and its verification follow in recipe.steps."},
             "all_recommended_tools_live": True,
         }
         return _ok(_apply_verbosity(resp, verbosity, "decision_hint"))
@@ -2241,7 +2392,9 @@ async def _legacy_decision_hint(task_description: str = "", scope_hint: str = ""
     for probe in (task, task_expanded):
         for rule in _DECISION_RULES:
             # H3 2026-10-08: never recommend write_fix when task explicitly says no code changes
-            if rule.get("tool") == "write_fix" and "no code changes" in probe:
+            if rule["tool"] not in live_tools:
+                continue
+            if rule["tool"] == "write_fix" and _campaign_suppress_write_fix(folded_raw):
                 continue
             if re.search(rule["re"], probe):
                 _key = tuple(_rule_names(rule))
@@ -2251,7 +2404,7 @@ async def _legacy_decision_hint(task_description: str = "", scope_hint: str = ""
     # A07: compute the lexical rank once — it feeds three decisions: the
     # stage-1/stage-2 defer check, the always-present escape hatch, and stage 2
     # itself. Ranker is pure/read-only so computing it eagerly is cheap.
-    _lex_ranked = _wt_rank_lexical(task_expanded, top_k=3)
+    _lex_ranked = _wt_rank_lexical(task_expanded, top_k=3, eligible=eligible)
     # A07: a broad rule that fired on a single query word must not shadow a
     # tool whose multi-segment name the query spells out. When that happens,
     # drop stage 1 entirely and let the lexical ranker answer.
@@ -2264,9 +2417,11 @@ async def _legacy_decision_hint(task_description: str = "", scope_hint: str = ""
         _matched = []
     if _matched:
         rule = _matched[0]
-        _names = _rule_names(rule)
+        _names = [n for n in _rule_names(rule) if eligible is None or n in eligible]
         validation = _validate_tools(_names)
         examples = _examples_for(validation["present"])
+        if rule.get("example"):
+            examples.setdefault(rule["tool"], {}).update(rule["example"])
         # A07 escape hatch: prefer distinct sibling rules; if only one rule
         # fired there are none, so fall back to lexical candidates so the
         # caller always sees a second option. A sibling is shown by its first
@@ -2274,7 +2429,7 @@ async def _legacy_decision_hint(task_description: str = "", scope_hint: str = ""
         _shown = set(_names)
         _alternates = []
         for r in _matched[1:]:
-            _alt = next((n for n in _rule_names(r) if n not in _shown), "")
+            _alt = next((n for n in _rule_names(r) if n not in _shown and n in live_tools), "")
             if _alt:
                 _shown.add(_alt)
                 _alternates.append({"tool": _alt, "tier": r["tier"], "why": r["why"]})
@@ -2295,7 +2450,9 @@ async def _legacy_decision_hint(task_description: str = "", scope_hint: str = ""
             "rationale": rule["why"],
             "scope_hint": scope_hint,
             "risk_hint": risk_hint,
-            "confidence": 0.85,
+            "confidence": (0.88 if specific else 0.83 if _campaign_primary else
+                           min(0.79, 0.53 + 0.08 * sum(bool(re.search(rule["re"], word))
+                                                       for word in set(folded_raw.split())))),
             # R16.9: tools_validation flags drift between rules and live TOOL_MAP
             "tools_validation": validation,
             "all_recommended_tools_live": (None if validation.get("inconclusive")
@@ -2315,6 +2472,18 @@ async def _legacy_decision_hint(task_description: str = "", scope_hint: str = ""
     # (VN-aware) instead of the old flat 0.4 find_symbol/search_code default,
     # and enrich with [Q] Z2 memory refs (fail-open).
     ranked = _lex_ranked
+    from orchestrator.core.tool_retrieval import rank_tools
+    read_tools = {name for name in live_tools if _hint_readable(_ct, name)}
+    evidence = rank_tools(folded_raw, _ct.TOOL_SCHEMAS, _ct.bootstrap_tool_purposes(),
+                          _deprecated_tool_names(), eligible=live_tools, limit=3, read_only=read_tools)
+    query_words = set(re.findall(r"[a-z0-9_]+", folded_raw))
+    named = bool(ranked and (ranked[0][1] in query_words or
+                             len(set(ranked[0][1].split("_")) & query_words) >= 2))
+    if not named:
+        schemas = {entry["function"]["name"]: entry["function"] for entry in _ct.TOOL_SCHEMAS}
+        ranked = [(row["score"], row["tool"], schemas[row["tool"]], _ct.tool_phase(row["tool"]))
+                  for row in evidence if row["score"] >= 5 and
+                  (row["tool"] in read_tools or row["score"] >= 12)]
     q_refs = _wt_q_z2_refs(task_description or task) if use_memory else []
     if ranked:
         q_text = " ".join(_wt_vn_fold(str(h.get("snippet") or "")) for h in q_refs)
@@ -2324,7 +2493,7 @@ async def _legacy_decision_hint(task_description: str = "", scope_hint: str = ""
                 if re.search(rf"\btool {re.escape(name)}\b", q_text) or f" {name} " in q_text:
                     score += 4
                 boosted.append((score, name, fn, tier))
-            boosted.sort(key=lambda x: (-x[0], x[1]))
+            boosted.sort(key=lambda x: (-x[0], x[1] not in read_tools, x[1]))
             ranked = boosted
         top_names = [name for _, name, _, _ in ranked]
         candidates = [{
@@ -2338,9 +2507,11 @@ async def _legacy_decision_hint(task_description: str = "", scope_hint: str = ""
             "recommended_tier": ranked[0][3],
             "recommended_tool": ranked[0][1],
             "recommended_skill": "00_skill_router",
-            "rationale": "Lexical rank over live TOOL_SCHEMAS (VN-aware)"
+            "rationale": ("Named tool in the request" if named else "BM25 over live tool descriptions and curated triggers")
                          + (" + [Q] Z2 memory boost" if q_refs else ""),
-            "confidence": min(0.8, 0.45 + 0.05 * ranked[0][0]),
+            "confidence": round(min(0.84, 0.44 + (0.21 if named else 0) +
+                                    0.24 * (ranked[0][0] - (ranked[1][0] if len(ranked) > 1 else 0)) /
+                                    max(1, ranked[0][0])), 3),
             "candidates": candidates,
             "payload_example_per_tool": _examples_for(top_names[:2]),
             "q_memory_refs": [{"id": h.get("id"), "ts": h.get("ts"),
@@ -2363,7 +2534,7 @@ async def _legacy_decision_hint(task_description: str = "", scope_hint: str = ""
         # {tool, tier, payload_example, reason} — so a CA can act without parsing prose.
         "suggestion": {"tool": "search_code", "tier": "T1",
                        "payload_example": {"project_path": "D:/path/to/project",
-                                           "query": "<keyword>", "mode": "auto"},
+                                           "query": "<keyword>", "mode": "text"},
                        "reason": "No specific signal in task; start with read-only code search."},
         "q_memory_refs": [{"id": h.get("id"), "snippet": str(h.get("snippet") or "")[:160]} for h in q_refs],
     }, verbosity, "decision_hint"))

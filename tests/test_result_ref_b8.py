@@ -55,6 +55,22 @@ def _chunk(ref: str, offset: int, max_bytes: int) -> dict:
     return json.loads(response.text)
 
 
+def test_pipeline_outcomes_survive_spill_and_full_steps_remain_addressable():
+    report = {
+        "steps": [{"step": "top_hit", "state": "ran", "target": "read_file_range",
+                   "result": VIET_TEXT * 800}],
+        "ran": ["top_hit"], "skipped": [], "failed": [],
+        "rejected": ["unknown-step"], "dropped": [],
+    }
+    raw = json.dumps({"ok": True, "pipeline": report}, ensure_ascii=False)
+    shaped = srv._shape_tool_response_text("search_code", raw, max_bytes=4096)
+    result = json.loads(shaped)
+    assert result["truncated"] and len(shaped.encode()) <= 4096
+    assert result["pipeline"] == {"ran": ["top_hit"], "skipped": [], "failed": [], "rejected_count": 1}
+    stored, _ = _reassemble(result["result_ref"], 16000)
+    assert json.loads(stored)["pipeline"] == report
+    assert "pipeline" not in json.loads(srv._shape_tool_response_text("search_code", _fixture_raw(), 4096))
+
 def _store(text: str) -> str:
     ref = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
     srv._result_ref_store(ref, text)

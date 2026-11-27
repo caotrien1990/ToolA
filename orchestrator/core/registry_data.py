@@ -22,6 +22,16 @@ from typing import Any
 # code_tools" promise in the module docstring -- no cycle is introduced.
 from orchestrator.core.active_chain import ACTIVE_CHAIN_STEPS, MAX_STEPS_PER_CALL
 
+DEPRECATED_TOOLS: dict[str, str] = {
+    "regex_search": "Use search_code(mode='regex', query=...) directly.",
+    "find_callers": "Use find_symbol(name=..., include='callers') directly.",
+    "find_definition_and_usage": "Use find_symbol(name=..., include='all') directly.",
+    # P0-0 (2026-10-09): read_chunks was already taught as deprecated in the rule
+    # text (use read_file_range for chunk reads) but was missing here, so direct
+    # calls never got the deprecated:true + deprecation_hint stamp.
+    "read_chunks": "Use read_file_range(...) directly.",
+}
+
 
 
 T1_TOOLS = [
@@ -5596,7 +5606,7 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
             "task_description": {"description": "The task to route: a plain-language description of what the caller wants to do; the hint ranks tools/tiers/skills against it.", "example": 'read a file range in a large repo', "type": "string"},
 
-            "scope_hint": {"description": "Optional scope hint (e.g. read vs write, target area) that biases the tool recommendation.", "example": 'read', "type": "string"}, "risk_hint": {"description": "Optional risk hint (e.g. destructive, runtime, external) that biases the recommendation toward safer tiers/tools.", "example": 'none', "type": "string"},
+            "scope_hint": {"description": "Use 'read' or 'read-only' to restrict suggestions to inspection. An open_session T1/T2 mode describes the project workflow and does not grant execution permission.", "example": 'read', "type": "string"}, "risk_hint": {"description": "Use 'destructive' for an inspection-first recommendation before a destructive action. The hint does not authorize or execute any tool.", "example": 'none', "type": "string"},
 
             "verbosity": {"example": 'terse', "type": "string", "enum": ["full", "terse", "ref"], "default": "full", "description": "R22: terse drops reasoning blocks; full = back-compat."},
 
