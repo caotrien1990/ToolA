@@ -325,16 +325,39 @@ def capture_system(cfg):
                 result["scan_truncated"] = True
                 break
             result["processes_scanned"] += 1
-            try:
-                info = dict(process.info)
-                for opened in process.open_files():
-                    path = os.path.normcase(os.path.abspath(opened.path))
-                    is_db = path in (db, db + "-wal", db + "-shm", db + "-journal")
-                    in_cache = path == cache or path.startswith(cache + os.sep)
-                    if is_db or in_cache:
-                        result["holders"].append(dict(info, path=opened.path, database=is_db))
-            except (psutil.AccessDenied, psutil.NoSuchProcess, OSError):
-                result["denied_processes"] += 1
+            info = dict(process.info)
+            # psutil 7.2.2 on Windows can UNDER-REPORT a live handle table with
+            # no exception: each duplicated handle is named on its own thread
+            # with THREAD_TIMEOUT=100ms; on timeout psutil TerminateThread's it
+            # and skips the handle silently (return 0 = success). A loaded CI
+            # runner (Defender minifilter on freshly written files, handle-table
+            # pressure after 2000+ tests) can therefore yield an empty/partial
+            # list, or a transient AccessDenied/OSError. Retry the probe a few
+            # times with a short pause, bounded by the scan deadline so retries
+            # cannot starve later processes. A persistently denied process is
+            # counted once, after its retries; NoSuchProcess is not retried.
+            opened_files = None
+            for attempt in range(3):
+                try:
+                    opened_files = process.open_files()
+                except psutil.NoSuchProcess:
+                    result["denied_processes"] += 1
+                    break
+                except (psutil.AccessDenied, OSError):
+                    if attempt == 2 or time.monotonic() >= deadline:
+                        result["denied_processes"] += 1
+                        break
+                    time.sleep(0.1 * (attempt + 1))
+                    continue
+                if opened_files or attempt == 2 or time.monotonic() >= deadline:
+                    break
+                time.sleep(0.1 * (attempt + 1))
+            for opened in opened_files or ():
+                path = os.path.normcase(os.path.abspath(opened.path))
+                is_db = path in (db, db + "-wal", db + "-shm", db + "-journal")
+                in_cache = path == cache or path.startswith(cache + os.sep)
+                if is_db or in_cache:
+                    result["holders"].append(dict(info, path=opened.path, database=is_db))
         result["handle_scan"] = "psutil.open_files (best effort; not exhaustive kernel handles)"
     except ImportError:
         result["handle_scan"] = "unknown: psutil unavailable"
