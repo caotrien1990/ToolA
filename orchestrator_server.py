@@ -5725,10 +5725,9 @@ _PAYLOAD_EXAMPLE_OVERRIDES: dict[str, dict] = {
         "name": "my_function",
         "project_path": "D:/path/to/project",
     },
-    "find_callers": {
-        "symbol": "my_function",
-        "project_path": "D:/path/to/project",
-    },
+    # D1b phase 1 (2026-11-27): find_callers curated override REMOVED. The
+    # deprecated alias class is served without payload_example (_prepare_tool_schema);
+    # post-call repair falls back to the registry-generated example (required=["symbol"]).
     # SEARCH_CODE_PATH_REQUIREMENT (2026-11-21): project_path is REQUIRED (anyOf
     # with the legacy path alias). The example carries a REAL absolute root of the
     # repo-root shape the tool expects, not the "D:/path/to/project" placeholder a
@@ -15996,7 +15995,15 @@ def _prepare_tool_schema(name: str, schema: dict) -> dict:
 
     out_schema = copy.deepcopy(schema)
     out_fn = out_schema["function"]
-    out_fn["payload_example"] = _payload_example_for_tool(name, out_fn)
+    # D1b phase 1 (TOOLA_4DECISIONS 2026-11-27, user-approved): the deprecated
+    # alias class (_DEPRECATED_TOOLS, one SOT) is served WITHOUT payload_example.
+    # A working example on a deprecated alias is a PRE-CALL attractant (G6: 2/4
+    # CAs called read_chunks first). Presentation-only: handlers, dispatch and
+    # read_chunks' 0-based semantics are unchanged; retirement is phase 2,
+    # separately gated. Post-call error-repair examples are NOT stripped (they
+    # help a legacy caller fix its call; test_regex_search_path_b019 asserts one).
+    if name not in _DEPRECATED_TOOLS:
+        out_fn["payload_example"] = _payload_example_for_tool(name, out_fn)
     # v11 §2a (GUIDANCE_V11_CLAIM_OPE_20261121): guidance rides the served
     # schema (one SOT: _V11_GUIDANCE).
     out_fn["usage_guidance"] = _V11_GUIDANCE
@@ -16008,6 +16015,14 @@ def _prepare_tool_schema(name: str, schema: dict) -> dict:
     out_fn.pop("returns", None)
     purpose = (ct._purpose_sentence(out_fn.get("description"))
                if out_fn["mutation_scope"] in ct.NON_SOURCE_MUTATION_SCOPES else "")
+    # D1b phase 1: uniform PRE-CALL deprecation marker on the served description,
+    # from the same SOT. Placed AFTER purpose derivation so definition_version
+    # (source schema + purpose) stays byte-stable -- zero drift signal.
+    if name in _DEPRECATED_TOOLS:
+        out_fn["description"] = (
+            "DEPRECATED alias (backward compat only). "
+            + _DEPRECATED_TOOLS[name] + " " + out_fn.get("description", "")
+        )
     return decorate_schema(out_schema, schema, purpose)
 
 

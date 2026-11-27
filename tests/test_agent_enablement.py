@@ -251,6 +251,17 @@ class TestPayloadExamples(unittest.TestCase):
         self.assertNotIn("query", example)
         self.assertNotIn("name", example)
 
+    def test_deprecated_alias_class_served_without_example_with_marker(self):
+        """D1b phase 1 (2026-11-27): every deprecated alias is served WITHOUT a
+        payload_example and WITH a pre-call DEPRECATED marker naming its
+        replacement (one SOT: _DEPRECATED_TOOLS). Presentation-only; the alias
+        stays callable. Post-call repair examples are registry-generated and
+        still covered by test_payload_example_fields_are_accepted."""
+        for tool in srv._DEPRECATED_TOOLS:
+            fn = srv._enriched_tool_schema(tool)["function"]
+            self.assertNotIn("payload_example", fn, tool)
+            self.assertIn("DEPRECATED", fn["description"], tool)
+
     def test_search_code_payload_example_mode_in_enum(self):
         """Example mode must be one of the registry enum values."""
         example = srv._payload_example_for_tool("search_code",
