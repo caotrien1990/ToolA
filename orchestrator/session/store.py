@@ -1383,6 +1383,21 @@ def _apply_session_schema(conn: sqlite3.Connection) -> None:
             "CREATE INDEX IF NOT EXISTS ix_events_error_scope "
             "ON events(session_id, event_kind, id)",
         )
+        # SS-3 (2026-11-28): the stale-session sweep's _session_active_today runs
+        # SELECT 1 FROM events WHERE session_id=? AND created_at>=? LIMIT 1 per
+        # candidate INSIDE the write txn. No index covered (session_id, created_at):
+        # measured 8.6s per no-match candidate on 510k rows -> SLOW_WRITE_FN
+        # "close stale active sessions" held the lock 34.5s (log 28/11 11:10:52),
+        # the root of the SS-1/SS-2 contention drops. This index turns it into a seek.
+        # Guarded: a pre-created legacy events table (test fixture / ancient DB)
+        # may lack created_at; the migration above does not ALTER it in, and the
+        # sweep's query would not use such a table anyway. Skip, do not crash init.
+        _ev_cols = {row[1] for row in conn.execute("PRAGMA table_info(events)")}
+        if "created_at" in _ev_cols:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS ix_events_session_created "
+                "ON events(session_id, created_at)",
+            )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS ix_events_correlation "
             "ON events(correlation_type, correlation_key, id) "
@@ -1874,13 +1889,26 @@ def _close_stale_active_sessions(project_path: str) -> int:
             if not stale_ids:
                 continue
 
+            # SS-3 (2026-11-28): the activity reads run OUTSIDE the write txn.
+            # Previously _session_active_today ran per candidate INSIDE _close's
+            # BEGIN IMMEDIATE; a no-match candidate scanned ~8.6s of events while
+            # holding the write lock (measured SLOW_WRITE_FN 34.5s). Read first on
+            # the read connection, then write ONLY the close UPDATEs. The in-txn
+            # re-check below still guards the started_at race; an activity read
+            # that races a new event is safe in the conservative direction (the
+            # session stays open one more sweep).
+            read_conn = _session_read_connection()
+            active_today = {sid for sid in stale_ids if _session_active_today(read_conn, sid)}
+            close_ids = tuple(sid for sid in stale_ids if sid not in active_today)
+            if not close_ids:
+                continue
+
             def _close(conn):
                 current = conn.execute(
                     "SELECT session_id, started_at FROM sessions WHERE status='active' "
-                    f"AND session_id IN ({','.join('?' for _ in stale_ids)})", stale_ids).fetchall()
+                    f"AND session_id IN ({','.join('?' for _ in close_ids)})", close_ids).fetchall()
                 current_stale = [sid for sid, started in current
-                                 if not _session_started_today(started)
-                                 and not _session_active_today(conn, sid)]
+                                 if not _session_started_today(started)]
                 if current_stale:
                     now = datetime.now().isoformat(timespec="seconds")
                     conn.executemany(
@@ -2500,7 +2528,11 @@ def _log_session_event(session_id: str, tool_name: str, body: dict, result: dict
         target = target[:120]
         start, end = body.get("start_line"), body.get("end_line")
         range_label = f"{start}p{end}" if start and end else (f"L{start}" if start else "")
-        reason = error_msg[:300] if status != "ok" else ""
+        # SD-3 (2026-11-28): 300 -> 2000. This is the LAST cut before the
+        # events.reason column and it BINDS: raising only the upstream sites
+        # (orchestrator_server detail chain / stage / persist) still left every
+        # reason at exactly 300 (measured: MAX(LENGTH(reason))=300 over 509k rows).
+        reason = error_msg[:2000] if status != "ok" else ""
         outcome = _derive_outcome(status, result)
         metadata = result if isinstance(result, dict) else {}
         qw = metadata.get("queue_wait_ms")

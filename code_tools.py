@@ -1007,6 +1007,7 @@ _R49_PHASE_MAP = {
     "UNC_AUTH_CONTEXT_MISMATCH": "environment",
     # retryable_transport
     "SESSION_STORE_CONTENTION": "retryable_transport",
+    "SNAPSHOT_CAPTURE_RACE": "retryable_transport",  # SD-4: transient writer race, not ACL
     "STALE_INDEX": "retryable_transport",
     "FILE_CHANGED_OUTSIDE_ORCHESTRATOR": "retryable_transport",
     "CDP_UNREACHABLE_AFTER_LAUNCH": "retryable_transport",

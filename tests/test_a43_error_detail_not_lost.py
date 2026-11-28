@@ -86,7 +86,9 @@ class TestTheProducerNamesTheFailure:
             _failing_pytest_answer(tail="E   assert 0 == 1  LAST_LINE_MARKER"))
         assert "LAST_LINE_MARKER" in detail
         assert "collected 742 items" not in detail
-        assert len(detail) <= 300
+        # SD-3 (2026-11-28): the detail cap moved 300 -> 2000 (the 300 cut lost
+        # Playwright's diagnostic tail; 8 CLICK_FAILED reasons exactly 300).
+        assert len(detail) <= 2000
 
     def test_exit_code_is_reached_when_both_streams_are_empty(self):
         detail = srv._error_detail_from_result(
@@ -166,7 +168,12 @@ class TestTheCompactKeepsTheOneGroupableField:
 
 class TestOneProducerOnly:
     def test_the_decision_has_exactly_one_definition_and_one_caller(self):
-        assert _SERVER_SRC.count("_error_detail_from_result(") == 2
+        # SD-1 (2026-11-28): the dispatcher's generic fallback now REUSES the one
+        # producer instead of the fixed string, so there are TWO callers of the
+        # single definition (finally detail + fallback). The invariant is still
+        # ONE definition; a second inline chain would fail the test below.
+        assert _SERVER_SRC.count("def _error_detail_from_result(") == 1
+        assert _SERVER_SRC.count("_error_detail_from_result(") == 3
 
     def test_the_inline_chain_is_gone_for_good(self):
         """Its return was the whole bug; a copy left behind would silently win again."""

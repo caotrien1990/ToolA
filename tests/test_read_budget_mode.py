@@ -332,6 +332,10 @@ def test_sot_case_code_tools_at_cap():
     # on code_tools.py). Lines 1-905 untouched, so shown 1-905 and
     # estimated_tokens 11,987 re-measured identical in-process; only
     # total_lines moved. Cross-checked with the repo's own split_lines.
+    # Re-pinned 2026-11-28 (SS/SD round): SD-4 added the SNAPSHOT_CAPTURE_RACE
+    # phase-map line to code_tools.py (+1 -> 24,133). Lines 1-905 untouched;
+    # shown/estimated_tokens re-measured identical. Forced by this round's own
+    # code_tools.py edit, not an unrelated pin change.
     root = Path(__file__).resolve().parents[1]
     assert (root / "code_tools.py").exists()
     raw = asyncio.run(code_tools.read_file_range(
@@ -339,7 +343,7 @@ def test_sot_case_code_tools_at_cap():
         start_line=1, end_line=3000, max_lines=3000, token_budget=100_000))
     body = json.loads(raw)
     assert body["ok"] is True
-    assert body["total_lines"] == 24_132
+    assert body["total_lines"] == 24_133
     assert body["selection"]["start_line"] == 1
     assert body["selection"]["end_line"] == 3000
     assert body["budget_mode"] is True

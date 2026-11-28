@@ -888,8 +888,10 @@ def _error_detail_from_result(result) -> str:
     for key in ("error", "stderr", "warning"):
         value = result.get(key)
         if value:
-            return str(value)[:300]
-    tail = str(result.get("stdout") or "")[-300:].strip()
+            # SD-3 (2026-11-28): 300 -> 2000. The 300 cut lost Playwright's
+            # diagnostic tail (8 CLICK_FAILED reasons exactly 300, mid-word).
+            return str(value)[:2000]
+    tail = str(result.get("stdout") or "")[-2000:].strip()
     if tail:
         return tail
     for rc_key in ("returncode", "exit_code"):
@@ -913,8 +915,12 @@ def _compact_accounting_result(result, task_meta: dict) -> dict:
         for key in ("stdout", "stderr"):
             if result.get(key) is not None:
                 value = str(result.get(key) or "")
-                if len(value) > 400:
-                    n = 400
+                # SD-2 (2026-11-28): 400 -> 2000, matching the live response's
+                # stderr_max_chars default. The 400 cut kept only the HEAD of an
+                # ExceptionGroup traceback and lost the final exception line
+                # (measured: 4 events with stderr_truncated=true, final line gone).
+                if len(value) > 2000:
+                    n = 2000
                     if re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", value[:n]):
                         n -= n % 4
                     compact[key] = value[:n]
@@ -943,6 +949,26 @@ def _compact_accounting_result(result, task_meta: dict) -> dict:
             compact["overall_status"] = str(result.get("overall_status"))[:80]
         if result.get("queue_wait_ms") is not None:
             compact["queue_wait_ms"] = result.get("queue_wait_ms")
+        # SD-6 (2026-11-28): keep the small diagnostic scalars the live error
+        # payloads carry. Measured: 29 T4 events (PAGE_SUSPECT/T4_BUSY/
+        # T4_CALL_TIMEOUT) stored ONLY error_name because this whitelist dropped
+        # page_id/reason/holder/deadline_ms/elapsed_ms/retry_after_seconds/
+        # ca_next_action/retryable -- the monitor then showed a bare name and
+        # readers invented wrong causes. These are bounded scalars (holder is a
+        # small dict); keeping them costs bytes only on rows that carry them.
+        for key in ("page_id", "reason", "ca_next_action"):
+            if result.get(key) is not None:
+                compact[key] = str(result.get(key))[:300]
+        for key in ("deadline_ms", "elapsed_ms", "retry_after_seconds"):
+            if result.get(key) is not None:
+                compact[key] = result.get(key)
+        if result.get("retryable") is not None:
+            compact["retryable"] = bool(result.get("retryable"))
+        holder = result.get("holder")
+        if isinstance(holder, dict):
+            compact["holder"] = {k: str(v)[:120] for k, v in list(holder.items())[:6]}
+        elif holder is not None:
+            compact["holder"] = str(holder)[:300]
     compact.update({
         "_host_session_id": task_meta.get("host_session_id") or None,
         "_task_epoch": task_meta.get("task_epoch"),
@@ -970,7 +996,7 @@ def _persist_post_call_accounting(record: dict) -> None:
     body = dict(record.get("body") or {})
     status = str(record.get("status") or "error")
     duration_ms = int(record.get("duration_ms") or 0)
-    error_msg = str(record.get("error_msg") or "")[:300]
+    error_msg = str(record.get("error_msg") or "")[:2000]  # SD-3 optional: USAGE_LOG consistency
     try:
         # USAGE_LOG patch (spec 2187/mapping 2188): session fields travel
         # top-level on the record (see the enqueue site). Present-but-None
@@ -1022,7 +1048,7 @@ def _persist_durable_session_event(record: AuditRecord) -> None:
         dict(payload.get("result") or {}),
         int(payload.get("duration_ms") or 0),
         str(payload.get("status") or "error"),
-        str(payload.get("error_msg") or "")[:300],
+        str(payload.get("error_msg") or "")[:2000],  # SD-3: 300 -> 2000
         audit_id=record.audit_id,
     )
     if event_id is None:
@@ -1690,7 +1716,7 @@ def _stage_durable_session_event(
         "result": _compact_accounting_result(result_dict, task_meta),
         "duration_ms": int(duration_ms or 0),
         "status": str(status or "error"),
-        "error_msg": str(error_msg or "")[:300],
+        "error_msg": str(error_msg or "")[:2000],  # SD-3: 300 -> 2000 (events.reason chain)
     }
     staged_id = _durable_audit_id(audit_id)
     writer = None
@@ -4861,6 +4887,13 @@ def _exception_text(exc) -> str:
 def _infer_error_name(tool_name: str, error: str, body: dict | None = None) -> str:
     lower = (error or "").lower()
     body = body if isinstance(body, dict) else {}
+    # SD-4 (2026-11-28): a snapshot-capture race (search_snapshots.py:356
+    # SnapshotCaptureChanged, "could not capture a stable version of ...") can
+    # carry "[Errno 13] Permission denied" when a live writer holds the source
+    # file. That is TRANSIENT contention, not an ACL problem -- recognize it
+    # BEFORE the permission substring branch and name it retryable.
+    if "could not capture a stable version of" in lower:
+        return "SNAPSHOT_CAPTURE_RACE"
     if "permission denied" in lower:
         return "FILE_ACCESS_DENIED"
     if "token" in lower:
@@ -4910,6 +4943,7 @@ def _ca_next_action(error_name: str, tool_name: str) -> str:
         "ACTIVE_SESSION_REQUIRED": "open_session",
         "FILE_CHANGED_OUTSIDE_ORCHESTRATOR": "read_file_range",
         "FILE_ACCESS_DENIED": "check_file_permissions_or_run_with_access_to_project",
+        "SNAPSHOT_CAPTURE_RACE": "retry_after_writer_releases_or_narrow_scope",  # SD-4
         "OCR_TIMEOUT": "raise_timeout_or_narrow_scope_then_retry",
         "INVALID_JSON_BODY": "fix_json_escaping_then_resend_body",
         "INVALID_GIT_PATHSPEC": "retry_with_relative_paths_inside_the_project_repo",
@@ -4940,6 +4974,8 @@ def _error_contract_meta(error_name: str, status: int) -> dict:
         "PROJECT_PATH_REQUIRED": ("INVALID_REQUEST", "ERROR", False, "SET_PROJECT_PATH"),
         "SESSION_NOT_FOUND": ("SESSION_REQUIRED", "ERROR", True, "LIST_SESSIONS"),
         "FILE_ACCESS_DENIED": ("PERMISSION_ERROR", "error", False, "CHECK_PERMISSIONS"),
+        # SD-4: transient snapshot-capture race -- retryable, NOT a permission problem.
+        "SNAPSHOT_CAPTURE_RACE": ("STALE_STATE", "error", True, "RETRY_AFTER_WRITER_RELEASES"),
     }
     if error_name in mapping:
         err_type, severity, retryable, suggested = mapping[error_name]
@@ -17743,8 +17779,14 @@ accepted_fields=sorted(accepted_fields),
         # partial _result exactly as before this move.
         try:
             if _status == "error":
+                # SD-1 (2026-11-28): the fixed fallback string made all 23
+                # TOOL_ERROR reasons identical ("Tool returned ok=false / non-zero
+                # exit") while the real failure sat in stderr/stdout. Reuse the
+                # measured detail chain (error -> stderr -> warning -> stdout-tail
+                # -> exit_code) instead; it never returns "" (names the gap).
                 err_text = str(_result.get("error") or _result.get("reason")
-                               or ("timed out" if _result.get("timed_out") else "Tool returned ok=false / non-zero exit"))
+                               or ("timed out" if _result.get("timed_out")
+                                   else _error_detail_from_result(_result)))
                 err_name = _result.get("error_name") or _infer_error_name(tool_name, err_text, body)
                 # CAN-050: block the 2nd identical deterministic tool-body failure.
                 if err_name in _DETERMINISTIC_TOOLBODY_ERRORS:
