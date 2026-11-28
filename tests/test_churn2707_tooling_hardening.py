@@ -342,9 +342,9 @@ class PersistentWriteLedgerTests(unittest.TestCase):
             blocker.rollback()
             blocker.close()
         self.assertEqual(before, orchestrator_server._WRITE_LEDGER)
-        # Three 2s SQLite attempts plus bounded retry backoff, not the former
-        # 100ms budget that rejected ordinary short lock holders.
-        self.assertLess(elapsed, 8.0)
+        # Five 2s SQLite attempts plus bounded retry backoff (C3 budget), not the
+        # former 100ms budget that rejected ordinary short lock holders.
+        self.assertLess(elapsed, 14.0)
         # Once persistence recovers, admission creates a retrievable durable row.
         operation_id = orchestrator_server._write_ledger_begin("write_fix", body, "round-host")
         self.assertEqual(orchestrator_server._write_ledger_db_get(

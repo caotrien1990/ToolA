@@ -138,8 +138,9 @@ class TestFlagAndParams(unittest.TestCase):
     def test_plan_parameter_defaults(self):
         p = ls.SupervisorParams()
         self.assertEqual(p.probe_interval_s, 5.0)
-        self.assertEqual(p.probe_timeout_s, 2.0)
+        self.assertEqual(p.probe_timeout_s, 5.0)
         self.assertEqual(p.confirm_failures, 3)
+        self.assertEqual(p.timeout_confirm_failures, 6)
         self.assertEqual(p.revive_passes, 3)
         self.assertEqual(p.verify_pass_gap_s, 1.0)
         self.assertEqual(p.window_s, 600.0)

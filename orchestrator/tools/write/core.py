@@ -2640,11 +2640,16 @@ skip_verify :bool =False )->str :
     try :
         target .relative_to (root )
     except ValueError :
+        # B5 (2026-11-28): name BOTH sides of the mismatch so the CA sees at once
+        # which file landed outside which project. The containment block itself
+        # is unchanged -- it still refuses the apply.
         return ct._json_error (
         "dry_run target is outside project_path",
         error_name ="DRY_RUN_PROJECT_MISMATCH",
         retryable =False ,
         ca_next_action ="repeat_dry_run_with_correct_project_path",
+        dry_run_target =str (target ),
+        project_path =str (root ),
         )
     current_hash =ct._sha256_file (target )
     if current_hash !=dry .get ("target_file_hash"):

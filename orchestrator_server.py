@@ -2947,18 +2947,60 @@ def _setup_cancellation_scope(tool_name: str, body: dict, task_session_id: str,
                      daemon=True).start()
     return scope_op_id, scope_id, cancel_event, disconnect_stop
 
+# C3: per-attempt contention diagnostics for the ledger-upsert retry loop. The
+# bool contract of _write_ledger_db_upsert / _write_ledger_db_upsert_once is
+# unchanged (spool drain, memory-gap replay and terminal persist all still branch
+# on True/False); the begin site reads .last to name WHY a rejected begin failed.
+# Thread-local: concurrent begins on different threads must not read each other's
+# diagnostics. .attempts is the per-attempt history [{attempt, elapsed_s, error}]
+# of the current call (reset at entry, never dropped by the finally); .last is
+# the summary of the current call including the final attempt's elapsed.
+_WRITE_LEDGER_UPSERT_DIAG = threading.local()
+
+
 def _write_ledger_db_upsert(rec: dict, db_path=None) -> bool:
-    for attempt in range(3):
-        if _write_ledger_db_upsert_once(rec, db_path):
-            return True
-        if attempt < 2:
-            time.sleep(0.05 * (attempt + 1))
-    return False
+    # C3: 3 -> 5 attempts, backoff 0.1*(attempt+1) between attempts (sleeps
+    # 0.1/0.2/0.3/0.4s, total <= 1.0s). The observed CI/watcher contention shape
+    # fails 4x then succeeds; the old 3-attempt budget rejected it. Connect
+    # timeout (2.0s) and busy_timeout (2000ms) in the once-layer are UNCHANGED;
+    # worst-case begin wait ~10.4s (was ~6.15s). Return type stays bool.
+    history: list = []
+    _WRITE_LEDGER_UPSERT_DIAG.attempts = history
+    attempts_made = 0
+    last_error = ""
+    last_elapsed = 0.0
+    t0 = time.monotonic()
+    try:
+        for attempt in range(5):
+            attempts_made = attempt + 1
+            a0 = time.monotonic()
+            ok = _write_ledger_db_upsert_once(rec, db_path)
+            elapsed = time.monotonic() - a0
+            err = None
+            if not ok:
+                err = getattr(_WRITE_LEDGER_UPSERT_DIAG, "attempt_error", None) or "unknown"
+                last_error = err
+                last_elapsed = elapsed
+            history.append({"attempt": attempts_made, "elapsed_s": elapsed, "error": err})
+            if ok:
+                return True
+            if attempt < 4:
+                time.sleep(0.1 * (attempt + 1))
+        return False
+    finally:
+        # Summary only; .attempts (the per-attempt history) stays intact.
+        _WRITE_LEDGER_UPSERT_DIAG.last = {
+            "attempts": attempts_made,
+            "total_wait_s": time.monotonic() - t0,
+            "last_error": last_error,
+            "last_elapsed_s": last_elapsed,
+        }
 
 
 def _write_ledger_db_upsert_once(rec: dict, db_path=None) -> bool:
     """Persist one ledger record: a later send replaces an earlier one (#36), and a
     send never regresses its own terminal state."""
+    _WRITE_LEDGER_UPSERT_DIAG.attempt_error = None
     try:
         # 2DEC cleanup 2: self-ensure the schema before INSERT, the same idempotent
         # + thread-safe call the SELECT branch (db_get / db_list) already uses. Every
@@ -3017,6 +3059,9 @@ def _write_ledger_db_upsert_once(rec: dict, db_path=None) -> bool:
         finally:
             conn.close()
     except Exception as exc:
+        # C3: keep the warning + bool False (spool fallback contract unchanged);
+        # additionally capture the exception class for the begin-site diagnostics.
+        _WRITE_LEDGER_UPSERT_DIAG.attempt_error = type(exc).__name__
         logger.warning("write ledger persistence failed: %s", exc)
         return False
 
@@ -3395,8 +3440,46 @@ def _write_ledger_begin(tool_name: str, body: dict, session_id: str = "",
             "updated_at": now,
         }
         if not _write_ledger_db_upsert(rec):
+            diag = getattr(_WRITE_LEDGER_UPSERT_DIAG, "last", None) or {}
+            detail = (
+                "attempts=%s total_wait_s=%s last_elapsed_s=%s last_error=%s" % (
+                    diag.get("attempts", 0),
+                    round(float(diag.get("total_wait_s", 0.0)), 3),
+                    round(float(diag.get("last_elapsed_s", 0.0)), 3),
+                    diag.get("last_error") or "unknown",
+                )
+            )[:200]
+            # B6 (2026-11-28): name a lock-holder CANDIDATE when one is observable.
+            # SQLite itself never discloses the holder of a busy lock (no API), so
+            # the only honest source is this process's own in-flight ledger rows on
+            # the same DB. An external process holding the lock is NOT identifiable
+            # here -- the message says so instead of guessing. Best-effort only:
+            # any failure in this probe leaves the error exactly as it was.
+            holder = "lock_holder=unknown (SQLite does not disclose the holder; no in-flight ledger op observed)"
+            try:
+                now_wall = time.time()
+                candidates = [
+                    r for r in list(_WRITE_LEDGER.values())
+                    if r.get("status") == "in_flight"
+                    and r.get("operation_id") != op_id
+                    # pp is the normcase/normpath STORAGE key (:2890); rows keep
+                    # the pair as recorded, so normalize the row side the same way.
+                    and os.path.normcase(os.path.normpath(str(r.get("project_path") or ""))) == str(pp)
+                ]
+                if candidates:
+                    oldest = min(candidates, key=lambda r: r.get("started_at") or now_wall)
+                    held_s = max(0.0, now_wall - float(oldest.get("started_at") or now_wall))
+                    holder = (
+                        "lock_holder_candidate=%s tool=%s session=%s held_s=%.1f (in-flight ledger op, not proof)" % (
+                            oldest.get("operation_id"), oldest.get("tool"),
+                            oldest.get("session_id") or "?", held_s,
+                        )
+                    )[:200]
+            except Exception:
+                pass
             raise ct._session_store_module.SessionStoreContentionError(
-                "write ledger begin could not be persisted; tool was not started")
+                "write ledger begin could not be persisted; tool was not started"
+                + "; " + detail + "; " + holder)
         rec["persistence"] = "sqlite"
         _WRITE_LEDGER[op_id] = rec
         _write_ledger_target_remember(pp, fp, op_id)

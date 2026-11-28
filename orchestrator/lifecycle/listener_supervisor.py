@@ -128,8 +128,12 @@ class SupervisorParams:
     so the prescribed cycle count is reachable in bounded time."""
 
     probe_interval_s: float = 5.0
-    probe_timeout_s: float = 2.0
+    probe_timeout_s: float = 5.0
     confirm_failures: int = 3
+    # C5: consecutive-failure threshold while the current probe kind is
+    # "timeout" (a wedged accept loop manifests as SYN-backlog timeout, so
+    # timeout must still confirm death -- just slower: 6 probes ~60s).
+    timeout_confirm_failures: int = 6
     revive_passes: int = 3
     verify_pass_gap_s: float = 1.0
     window_s: float = 600.0
@@ -169,6 +173,9 @@ class FamilyState:
     deaths: deque = field(default_factory=deque)  # monotonic timestamps
     next_attempt_at: float | None = None
     exhausted_logged_at: float | None = None
+    # C5: kind of the last real probe ("ok"/"refused"/"timeout"/"http"/"error");
+    # None for legacy bool probe fakes -> the original confirm threshold.
+    last_probe_kind: str | None = None
 
 
 def _site_is_listening(site) -> bool:
@@ -187,13 +194,33 @@ def _site_is_listening(site) -> bool:
         return False
 
 
-async def _probe_once(address: str, port: int, timeout_s: float) -> bool:
+class _ProbeKind(str):
+    """C5: the probe answer is a KIND string ("ok"/"refused"/"timeout"/
+    "http"/"error"). It subclasses str so direct _probe_once consumers that
+    still read the answer as a bool (the fi suite's BaselineChurn probe
+    pattern) keep the legacy semantics: truthy iff the kind is "ok"."""
+
+    def __bool__(self) -> bool:
+        return self == "ok"
+
+
+async def _probe_once(address: str, port: int, timeout_s: float) -> str:
     """One fresh-connection probe: connect, GET /health, require HTTP 200.
     A new connection is opened (and closed) for every probe; keep-alive is
-    never reused (plan 4.3). Never raises."""
+    never reused (plan 4.3). Never raises.
 
-    async def _inner() -> bool:
-        reader, writer = await asyncio.open_connection(address, port)
+    C5: returns the failure KIND instead of a bare bool -- "ok" (HTTP 200),
+    "refused" (ConnectionRefusedError / OSError at connect), "timeout"
+    (asyncio.TimeoutError / TimeoutError), "http" (answered non-200),
+    "error" (other). Classification lives in the except branches."""
+
+    async def _inner() -> str:
+        try:
+            reader, writer = await asyncio.open_connection(address, port)
+        except (asyncio.TimeoutError, TimeoutError):
+            return _ProbeKind("timeout")
+        except (ConnectionRefusedError, OSError):
+            return _ProbeKind("refused")
         try:
             request = (
                 "GET /health HTTP/1.1\r\n"
@@ -205,7 +232,13 @@ async def _probe_once(address: str, port: int, timeout_s: float) -> bool:
             await writer.drain()
             status_line = await reader.readline()
             parts = status_line.split(b" ")
-            return len(parts) >= 2 and parts[1] == b"200"
+            if len(parts) >= 2 and parts[1] == b"200":
+                return _ProbeKind("ok")
+            return _ProbeKind("http")
+        except (asyncio.TimeoutError, TimeoutError):
+            return _ProbeKind("timeout")
+        except Exception:
+            return _ProbeKind("error")
         finally:
             try:
                 writer.close()
@@ -214,8 +247,12 @@ async def _probe_once(address: str, port: int, timeout_s: float) -> bool:
 
     try:
         return await asyncio.wait_for(_inner(), timeout_s)
+    except (asyncio.TimeoutError, TimeoutError):
+        return _ProbeKind("timeout")
+    except (ConnectionRefusedError, OSError):
+        return _ProbeKind("refused")
     except Exception:
-        return False
+        return _ProbeKind("error")
 
 
 class ListenerSupervisor:
@@ -285,7 +322,11 @@ class ListenerSupervisor:
         return web.TCPSite(self._runner, fam.address, self._port)
 
     async def _default_probe(self, fam: FamilyState) -> bool:
-        return await _probe_once(fam.address, self._port, self.params.probe_timeout_s)
+        # C5: adapt the kind-classified probe to the bool contract every
+        # caller uses; store the kind for the kind-aware confirm threshold.
+        kind = await _probe_once(fam.address, self._port, self.params.probe_timeout_s)
+        fam.last_probe_kind = kind
+        return kind == "ok"
 
     # -- read-only views --------------------------------------------------------
 
@@ -467,7 +508,17 @@ class ListenerSupervisor:
             logger.error(
                 "%s family=%s reason=%s", MARKER_SUSPECT, fam.key, REASON_PROBE
             )
-        if fam.state == "suspect" and fam.consec_probe_fail >= self.params.confirm_failures:
+        # C5: threshold per failure using the CURRENT kind. The count spans
+        # ALL consecutive failures regardless of kind; a refused after
+        # timeouts is a strong death signal (5 timeouts + 1 refused = 6 >= 3
+        # -> death). Legacy bool probe fakes leave last_probe_kind None ->
+        # the original confirm_failures threshold, unchanged semantics.
+        threshold = (
+            self.params.timeout_confirm_failures
+            if fam.last_probe_kind == "timeout"
+            else self.params.confirm_failures
+        )
+        if fam.state == "suspect" and fam.consec_probe_fail >= threshold:
             self._confirm_death(fam)
 
     async def _cycle_dead_family(self, fam: FamilyState, armed: bool, now: float) -> None:
