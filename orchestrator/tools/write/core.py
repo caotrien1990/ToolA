@@ -563,24 +563,41 @@ async def _post_write_symbol_check(fp: Path, backup_path: Path, project_path: st
             except Exception:
                 pass
             # C1: name the nearest project files so the CA can fix the import
-            # without trial-and-error. Bounded scan of the project's own source
-            # dirs (never the venv/typeshed), ranked by difflib similarity to the
-            # missing module; the searched paths are already reported alongside.
+            # without trial-and-error. R2 (2026-11-28): the old rglob("*.py")
+            # pool scan walked the WHOLE tree (venv included) and only pruned
+            # dot-dirs/venv AFTER stat-ing every entry -- measured 1.3-2.8s
+            # serial, >5s under load, so the 5s symbol-check guard fired and
+            # let bad imports LAND. The cached project index (_load_index,
+            # already maintained by the search lane) builds the same stem pool
+            # in <1ms; the rglob remains ONLY as a cold-index fallback, now with
+            # os.walk + in-place dirs pruning so it never descends into
+            # venv/node_modules/dot-dirs at all.
             import difflib as _difflib
             _pool = {}
-            for _d in (fp.parent, root, root / "src", root / "bin"):
-                try:
-                    if not _d.is_dir():
-                        continue
-                    for _p in _d.rglob("*.py"):
-                        if len(_pool) >= 4000:
-                            break
-                        _rel = _p.relative_to(root).as_posix()
-                        if any(_part.startswith(".") or _part in ("venv", "venv312", ".venv", "node_modules", "__pycache__") for _part in _p.relative_to(root).parts):
+            try:
+                _idx_files = (ct._load_index(str(root)).get("files") or {})
+                for _rel in _idx_files:
+                    if _rel.endswith(".py"):
+                        _pool.setdefault(_rel.rsplit("/", 1)[-1][:-3], _rel)
+            except Exception:
+                _pool = {}
+            if not _pool:
+                _skip = {"venv", "venv312", ".venv", "node_modules", "__pycache__"}
+                for _d in (fp.parent, root, root / "src", root / "bin"):
+                    try:
+                        if not _d.is_dir():
                             continue
-                        _pool.setdefault(_p.stem, _rel)
-                except Exception:
-                    continue
+                        for _base, _dirs, _names in os.walk(_d):
+                            _dirs[:] = [d for d in _dirs
+                                        if not d.startswith(".") and d not in _skip]
+                            for _n in _names:
+                                if len(_pool) >= 4000:
+                                    break
+                                if _n.endswith(".py"):
+                                    _p = Path(_base) / _n
+                                    _pool.setdefault(_p.stem, _p.relative_to(root).as_posix())
+                    except Exception:
+                        continue
             _near = _difflib.get_close_matches(module, list(_pool), n=3, cutoff=0.6)
             _similar = [{"module": _n, "path": _pool[_n]} for _n in _near]
             return {"ok": False, "module": module, "line": new_mods[module],
@@ -621,9 +638,23 @@ async def _post_write_symbol_check(fp: Path, backup_path: Path, project_path: st
     if fp.suffix.lower() != ".py":
         return {"ok":True}
     try:
-        return await ct.asyncio.wait_for(ct.asyncio.to_thread(_run), timeout=5)
+        return await ct.asyncio.wait_for(ct.asyncio.to_thread(_run), timeout=15)
     except ct.asyncio.TimeoutError:
-        return {"ok":True, "warn":"symbol_check_timeout_5s"}
+        # R2 (2026-11-28): the old 5s guard returned ok:True on timeout, so a
+        # bad import LANDED under load (measured live: import reqests passed
+        # with warn symbol_check_timeout_5s). The scan is now index-first
+        # (<20ms warm), but a COLD import graph / heavy GIL contention can
+        # still exceed any fixed budget -- and a timeout must never silently
+        # allow the write. Fail CLOSED: answer a retryable verification
+        # timeout; the caller's auto-revert path restores the backup, so the
+        # unverified write does not stay on disk. 15s covers the measured
+        # cold-import worst case with headroom; no consumer pinned the old
+        # ok:True+warn shape (repo-wide search: this line was its only site).
+        return {"ok": False,
+                "error_name": "SYMBOL_CHECK_TIMEOUT",
+                "error": "symbol/import verification exceeded 15s under load; the write was reverted, retry when the daemon is less busy",
+                "retryable": True,
+                "ca_next_action": "retry_write_fix"}
 
 
 async def _post_write_batch_verify_or_revert(project_path: str, changed_files: list[str],
@@ -1755,6 +1786,16 @@ skip_symbol_check :bool =False )->str :
         if new_lines and not new_lines [-1 ].endswith (('\n','\r')):
             new_lines [-1 ]+=_eol
         proposed =('\ufeff' if _bom else '')+''.join (lines [:start_line -1 ]+new_lines +lines [end :])
+        # R3 (2026-11-28): preserve the file's ORIGINAL trailing-newline state.
+        # The splice above always terminates the inserted last line (needed so
+        # it cannot merge with a following line), which silently ADDED a final
+        # newline to files that had none (measured live: 5-byte "x = 1" became
+        # 6 bytes). Only the final-EOF case changes: if the original did not end
+        # with a line break and the edit reaches EOF, strip the one appended
+        # terminator back off. Mid-file splices keep the terminator (the
+        # lone-CR merge contract), and files that ended WITH a newline keep it.
+        if not _text.endswith(('\n', '\r')) and end == total and proposed.endswith(_eol):
+            proposed = proposed[:-len(_eol)]
         span =(end -start_line )+len (new_lines )
         return {
         "original":original ,

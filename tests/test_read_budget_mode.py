@@ -327,6 +327,11 @@ def test_sot_case_code_tools_at_cap():
     # 948c698 net +0). shown 1-905 and estimated_tokens 11,987 re-measured
     # identical; only total_lines moved. Per-commit totals measured with
     # the repo's own split_lines (git show), HEAD cross-checked in-process.
+    # Re-pinned 2026-11-28 (real-test residual R1): commits 948c698..fe6bd8a
+    # grew the file 24,110 -> 24,132 (b082364 B1-B4 +22; c47baff/fe6bd8a net +0
+    # on code_tools.py). Lines 1-905 untouched, so shown 1-905 and
+    # estimated_tokens 11,987 re-measured identical in-process; only
+    # total_lines moved. Cross-checked with the repo's own split_lines.
     root = Path(__file__).resolve().parents[1]
     assert (root / "code_tools.py").exists()
     raw = asyncio.run(code_tools.read_file_range(
@@ -334,7 +339,7 @@ def test_sot_case_code_tools_at_cap():
         start_line=1, end_line=3000, max_lines=3000, token_budget=100_000))
     body = json.loads(raw)
     assert body["ok"] is True
-    assert body["total_lines"] == 24_110
+    assert body["total_lines"] == 24_132
     assert body["selection"]["start_line"] == 1
     assert body["selection"]["end_line"] == 3000
     assert body["budget_mode"] is True
