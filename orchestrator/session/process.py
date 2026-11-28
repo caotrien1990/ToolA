@@ -53,6 +53,32 @@ async def kill_process(pid: int = 0, process_name: str = "", force: bool = True)
             except Exception as exc:
                 failed.append({**info, "error": str(exc)})
     except Exception as exc:
+        # C2: a PID that is already gone is the OUTCOME the caller wanted, not a
+        # kill failure. psutil.NoSuchProcess escapes here when the process exited
+        # before the kill (a stale/racy PID). Say so explicitly and point at the
+        # verification step, instead of a bare PROCESS_KILL_FAILED the CA cannot
+        # interpret. The error_name is kept (pinned: a missing PID still answers
+        # PROCESS_KILL_FAILED); only the message gains the next-step hint. A REAL
+        # kill failure (AccessDenied, timeout, ...) is unchanged.
+        _gone = False
+        try:
+            import psutil as _ps
+            _gone = isinstance(exc, _ps.NoSuchProcess)
+        except Exception:
+            _gone = "not found" in str(exc).lower()
+        if _gone:
+            return _json_error(
+                f"kill_process: process already exited before the kill (pid={pid}); "
+                "if the goal was to stop it, it is already stopped - verify with "
+                "tasklist /FI \"PID eq %s\". PID may be stale/reused; re-resolve it "
+                "before killing again." % pid,
+                error_name="PROCESS_KILL_FAILED",
+                pid=pid,
+                process_name=process_name,
+                force=force,
+                already_exited=True,
+                ca_next_action="verify_pid_gone_then_proceed",
+            )
         return _json_error(
             f"kill_process failed: {exc}",
             error_name="PROCESS_KILL_FAILED",

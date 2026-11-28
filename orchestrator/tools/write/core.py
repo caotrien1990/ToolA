@@ -562,8 +562,30 @@ async def _post_write_symbol_check(fp: Path, backup_path: Path, project_path: st
                     continue
             except Exception:
                 pass
+            # C1: name the nearest project files so the CA can fix the import
+            # without trial-and-error. Bounded scan of the project's own source
+            # dirs (never the venv/typeshed), ranked by difflib similarity to the
+            # missing module; the searched paths are already reported alongside.
+            import difflib as _difflib
+            _pool = {}
+            for _d in (fp.parent, root, root / "src", root / "bin"):
+                try:
+                    if not _d.is_dir():
+                        continue
+                    for _p in _d.rglob("*.py"):
+                        if len(_pool) >= 4000:
+                            break
+                        _rel = _p.relative_to(root).as_posix()
+                        if any(_part.startswith(".") or _part in ("venv", "venv312", ".venv", "node_modules", "__pycache__") for _part in _p.relative_to(root).parts):
+                            continue
+                        _pool.setdefault(_p.stem, _rel)
+                except Exception:
+                    continue
+            _near = _difflib.get_close_matches(module, list(_pool), n=3, cutoff=0.6)
+            _similar = [{"module": _n, "path": _pool[_n]} for _n in _near]
             return {"ok": False, "module": module, "line": new_mods[module],
-                    "searched_paths": searched, "new_modules_checked": new_modules}
+                    "searched_paths": searched, "new_modules_checked": new_modules,
+                    "similar_names": _similar}
         return {"ok": True}
 
     def _run() -> dict:
@@ -584,6 +606,7 @@ async def _post_write_symbol_check(fp: Path, backup_path: Path, project_path: st
             "error":f"line {import_check.get('line')}: Import not found: {import_check.get('module')} (new import; resolved against project paths, not only [A] env)",
             "searched_paths": import_check.get("searched_paths"),
             "new_modules_checked": import_check.get("new_modules_checked"),
+            "similar_names": import_check.get("similar_names"),
             }
         removed = sorted(_top_level_symbols(old_text) - _top_level_symbols(new_text))
         if removed:
@@ -2017,6 +2040,14 @@ skip_symbol_check :bool =False )->str :
                     result ["error"]=sym .get ("error","Symbol check failed")
                     result ["auto_reverted"]=True
                     result ["cache_synced"]=reverted_synced
+                    # C1: surface the import-check hint fields (searched_paths /
+                    # new_modules_checked / similar_names) on the FAILURE answer too,
+                    # not only inside symbol_check on success -- the CA must see where
+                    # the import was looked for and the nearest project names without
+                    # guessing. Additive; the block itself is unchanged.
+                    for _hint_key in ("searched_paths", "new_modules_checked", "similar_names"):
+                        if sym.get(_hint_key) is not None:
+                            result[_hint_key] = sym.get(_hint_key)
                     if not reverted_synced:
                         result ["cache_sync_warning"]=(
                     "INDEX chua duoc reseed sau auto-revert. Goi cache_delta hoac "

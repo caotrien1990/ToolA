@@ -6561,9 +6561,9 @@ V15_R8_NEW_SCHEMA_SPECS = (
 
         }, ["project_path", "script_content"]),
 
-    ('run_node_script', 'V15 R50 T2 narrow wrapper for Node.js script-file execution. Hides runtime=node selection. Writes .js artifact + invokes `node <temp.js>` → JS source bytes (JSON.stringify, regex literals, UNC paths) pass through unchanged. Use INSTEAD of inline `node -e` (blocked by R49 guard NODE_INLINE_FORBIDDEN). CASE-2008 destructive guard: fs.rm/unlink/rmdir/truncate and rimraf require confirm_destructive to match the scanned count, trigger a pre-run backup, and disable output truncation.', {
+    ('run_node_script', 'V15 R50 T2 narrow wrapper for Node.js script-file execution. Hides runtime=node selection. Writes the .js artifact into <project_path>/.orchestrator_cache/test_scripts/<label>_<hash>.js and invokes `node <that staged file>` with cwd=project_path -> JS source bytes (JSON.stringify, regex literals, UNC paths) pass through unchanged. CommonJS require("./x") resolves against the STAGING dir (__dirname), NOT the project root, while process.cwd() IS the project root: reference project-root files via require(path.join(process.cwd(), "x.cjs")) or an absolute path, never a bare "./x" (it fails with Cannot find module). Use INSTEAD of inline `node -e` (blocked by R49 guard NODE_INLINE_FORBIDDEN). CASE-2008 destructive guard: fs.rm/unlink/rmdir/truncate and rimraf require confirm_destructive to match the scanned count, trigger a pre-run backup, and disable output truncation.', {
 
-            "project_path": {"description": "Project root the Node.js script runs under; used for session resolution and the working directory.", "type": "string"},
+            "project_path": {"description": "Project root the Node.js script runs under; used for session resolution and the working directory (process.cwd()). The script itself is staged in <project_path>/.orchestrator_cache/test_scripts/, so a relative require('./...') resolves there, not here.", "type": "string"},
 
             "script_content": {"type": "string", "description": "Full JS body (multiline OK)"},
 
