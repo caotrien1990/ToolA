@@ -1177,6 +1177,17 @@ def _attach_regex_input_phase(resp: dict, partial_source: object | None) -> dict
         "regex search ran out of budget while READING input after "
         f"{files_read} file(s) / {bytes_read} byte(s) -- matching never started"
     )
+    # B2 (2026-11-28): say plainly what the caller gets for the spent budget.
+    # The counters above already state how far the read got; this states the
+    # match outcome (zero -- the pattern never ran) so "no results" cannot be
+    # misread as "no matches in the files read". No partial_results are claimed:
+    # an input-phase death spawned no child (ISS-12 owns partials, see above).
+    resp["input_phase_matches_found"] = 0
+    resp["input_phase_matches_reason"] = (
+        "matching never started: the deadline was fully spent reading input, "
+        "so no file was ever matched -- absence of results here is NOT evidence "
+        "of absence in the files already read"
+    )
     resp["hint"] = (
         "The deadline was spent reading candidate files off disk, so the "
         "pattern was never run against them and rewriting it will not help. "

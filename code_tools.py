@@ -1677,7 +1677,13 @@ async def write_fix_html(file_path: str, start_line: int, end_line: int, new_con
         force = force.strip().lower() in {"1", "true", "yes", "y", "on"}
     fp = _resolve_project_file(project_path, file_path)
     if not fp.exists():
-        return json.dumps({"ok": False, "error": f"File not found: {file_path}"})
+        # B1 (2026-11-28): same missing-file naming as write_fix -- FILE_NOT_FOUND,
+        # not the dispatcher's TOOL_ERROR fallback for an unnamed error.
+        return _json_error(
+            f"File not found: {file_path}",
+            error_name="FILE_NOT_FOUND",
+            ca_next_action="check_file_path",
+        )
     # V15 R8 A.7: route non-html to write_fix instead of rejecting — write_fix already
     # handles css/js/ts/json/md/txt/py uniformly (no ext gate).
     if fp.suffix.lower() != ".html":
@@ -14833,14 +14839,18 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
             write_performed=False,
         )
     if not fp.exists():
+        # B3 (2026-11-28): a missing file is FILE_NOT_FOUND, not a syntax
+        # validation failure -- the message already said "File not found" while
+        # error_name/reason/ca_next_action told the CA to fix syntax that was
+        # never read. Match the name to the fact (same family as read_fs).
         return _json_error(
             f"File not found: {file_path}",
-            error_name="VALIDATION_FAILED",
+            error_name="FILE_NOT_FOUND",
             type="VALIDATION_ERROR",
             severity="error",
             retryable=False,
-            reason="syntax validation failed",
-            ca_next_action="fix_syntax_before_retry",
+            reason="file not found",
+            ca_next_action="check_file_path",
             write_performed=False,
         )
 
@@ -14980,13 +14990,16 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
             try:
                 r = subprocess.run(
                     ["node", "--check", str(fp)],
-                    capture_output=True, text=True, timeout=10,
+                    capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=10,
                     stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family, see :1794
                     creationflags=NOWINDOW_FLAGS,  # F-A1: no console flash
                 )
                 if r.returncode == 0:
                     return {"ok": True, "lang": "js", "file": str(fp)}
-                return {"ok": False, "lang": "js", "file": str(fp), "error": _strip_ansi(r.stderr.strip())}
+                # B4: same cp1252-decode crash shape as the html branch -- keep the
+                # real Node error even when the offending line is non-ASCII.
+                return {"ok": False, "lang": "js", "file": str(fp), "error": _strip_ansi((r.stderr or "").strip())}
             except FileNotFoundError:
                 return {"ok": False, "lang": "js", "file": str(fp), "error": "node not found in PATH"}
             except Exception as exc:
@@ -15004,7 +15017,8 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                         resolved = str(candidate)
                 if resolved:
                     cmd[0] = resolved
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=10,
+                r = subprocess.run(cmd, capture_output=True, text=True,
+                                   encoding="utf-8", errors="replace", timeout=10,
                                    stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family, see :1794
                                    creationflags=NOWINDOW_FLAGS)  # F-A1: no console flash
                 try:
@@ -15048,12 +15062,19 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                     with tempfile.NamedTemporaryFile(suffix=".js", delete=False, mode="w", encoding="utf-8") as tmp:
                         tmp.write(body)
                         tmp_path = tmp.name
-                    r = subprocess.run(["node", "--check", tmp_path], capture_output=True, text=True, timeout=10,
+                    r = subprocess.run(["node", "--check", tmp_path], capture_output=True, text=True,
+                                       encoding="utf-8", errors="replace", timeout=10,
                                        stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family, see :1794
                                        creationflags=NOWINDOW_FLAGS)  # F-A1: no console flash
                     os.unlink(tmp_path)
                     if r.returncode != 0:
-                        return {"ok": False, "lang": "html", "file": str(fp), "error": f"script[{i}] syntax error: {_strip_ansi(r.stderr.strip())}"}
+                        # B4 (2026-11-28): text=True without encoding decoded Node's
+                        # stderr as cp1252; a Vietnamese source line in the error made
+                        # the decode raise, stderr became None, and .strip() crashed --
+                        # the REAL syntax error was replaced by a NoneType message.
+                        # utf-8+replace above keeps the bytes; the or "" guard keeps
+                        # the branch total even if a future spawn shape loses stderr.
+                        return {"ok": False, "lang": "html", "file": str(fp), "error": f"script[{i}] syntax error: {_strip_ansi((r.stderr or '').strip())}"}
                 except FileNotFoundError:
                     return {"ok": False, "lang": "html", "file": str(fp), "error": "node not found in PATH - cannot validate <script> blocks"}
                 except Exception as exc:
@@ -15085,7 +15106,8 @@ async def validate_file(file_path: str, lang: str = "auto", project_path: str = 
                         resolved = str(candidate)
                 if resolved:
                     cmd[0] = resolved
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=10,
+                r = subprocess.run(cmd, capture_output=True, text=True,
+                                   encoding="utf-8", errors="replace", timeout=10,
                                    stdin=subprocess.DEVNULL,  # TESTGAPS-1124: WinError 6 family, see :1794
                                    creationflags=NOWINDOW_FLAGS)  # F-A1: no console flash
                 for path in (tmp_path, out_path):

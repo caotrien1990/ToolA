@@ -1674,7 +1674,14 @@ skip_symbol_check :bool =False )->str :
     if _xroot_err:
         return _xroot_err
     if not fp.exists():
-        return ct.json.dumps({"error": f"File not found: {file_path}"})
+        # B1 (2026-11-28): the bare {"error": ...} shape left error_name unset and
+        # the dispatcher stamped TOOL_ERROR while the message already said
+        # "File not found". Name the fact: FILE_NOT_FOUND (same family as read_fs).
+        return ct._json_error(
+            f"File not found: {file_path}",
+            error_name="FILE_NOT_FOUND",
+            ca_next_action="check_file_path",
+        )
     if ct._is_binary_file (fp ):
         return ct._json_error (
         f"Binary file unsupported by write_fix: {file_path}",
